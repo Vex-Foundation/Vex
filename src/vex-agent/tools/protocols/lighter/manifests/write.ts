@@ -1,14 +1,13 @@
 import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
-import { LIGHTER_ENVIRONMENTS } from "@tools/lighter/constants.js";
+import { LIGHTER_DEFAULT_ENVIRONMENT, LIGHTER_ENVIRONMENTS } from "@tools/lighter/constants.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 
 const ENVIRONMENT_PARAM: ProtocolParamDef = {
   key: "environment",
   type: "string",
-  required: true,
   enum: LIGHTER_ENVIRONMENTS,
   description:
-    "REQUIRED. Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Any other value is rejected.",
+    `Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to ${LIGHTER_DEFAULT_ENVIRONMENT}. Any other value is rejected.`,
 };
 
 const PREVIEW_ID_PARAM: ProtocolParamDef = {

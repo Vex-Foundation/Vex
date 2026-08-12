@@ -1,5 +1,6 @@
 import {
   LIGHTER_CANDLE_RESOLUTIONS,
+  LIGHTER_DEFAULT_ENVIRONMENT,
   LIGHTER_ENVIRONMENTS,
   LIGHTER_MARKET_FILTERS,
 } from "@tools/lighter/constants.js";
@@ -32,10 +33,9 @@ import {
 const ENVIRONMENT_PARAM: ProtocolParamDef = {
   key: "environment",
   type: "string",
-  required: true,
   enum: LIGHTER_ENVIRONMENTS,
   description:
-    "REQUIRED. Public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Any other value is rejected.",
+    `Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to ${LIGHTER_DEFAULT_ENVIRONMENT} for conversational Lighter requests. Any other value is rejected.`,
 };
 
 const MARKET_ID_REQUIRED_PARAM: ProtocolParamDef = {
@@ -51,6 +51,13 @@ const MARKET_ID_OPTIONAL_PARAM: ProtocolParamDef = {
   required: false,
   description:
     "Optional numeric Lighter market id from lighter.markets. When omitted, the market list reads the environment's visible markets.",
+};
+
+const MARKET_SYMBOL_PARAM: ProtocolParamDef = {
+  key: "marketSymbol",
+  type: "string",
+  description:
+    "Optional market symbol such as ETH. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets.",
 };
 
 const MARKET_FILTER_PARAM: ProtocolParamDef = {
@@ -152,7 +159,7 @@ const ORDER_SIDE_PARAM: ProtocolParamDef = {
   required: true,
   enum: LIGHTER_ORDER_SIDES,
   description:
-    "Order side to preview: buy for bid/long-increasing orders, sell for ask/long-reducing orders. Unsupported values are rejected.",
+    "Order side to preview: buy or sell. If the user does not say which direction, ask a short clarification instead of guessing. Unsupported values are rejected.",
 };
 
 const BASE_AMOUNT_PARAM: ProtocolParamDef = {
@@ -174,27 +181,24 @@ const ORDER_PRICE_PARAM: ProtocolParamDef = {
 const ORDER_TYPE_PARAM: ProtocolParamDef = {
   key: "orderType",
   type: "string",
-  required: true,
   enum: LIGHTER_ORDER_TYPES,
   description:
-    "Order type supported by this preview gate: limit or market. Conditional and TWAP order previews are intentionally refused in this wave.",
+    "Optional order type supported by this preview gate: limit or market. Defaults to limit for normal price-at-size preview requests. Conditional and TWAP order previews are intentionally refused in this wave.",
 };
 
 const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
   key: "timeInForce",
   type: "string",
-  required: true,
   enum: LIGHTER_ORDER_TIME_IN_FORCE,
   description:
-    "Lighter time-in-force for the preview: good-till-time, immediate-or-cancel, or post-only. Market previews require immediate-or-cancel.",
+    "Optional Lighter time-in-force for the preview: good-till-time, immediate-or-cancel, or post-only. Defaults to good-till-time for normal limit previews. Market previews require immediate-or-cancel.",
 };
 
 const REDUCE_ONLY_PARAM: ProtocolParamDef = {
   key: "reduceOnly",
   type: "boolean",
-  required: true,
   description:
-    "Whether the preview is reduce-only. When true, Vex requires live account position evidence that the side reduces the current position.",
+    "Optional reduce-only flag. Defaults to false. When true, Vex requires live account position evidence that the side reduces the current position.",
 };
 
 const ORDER_EXPIRY_PARAM: ProtocolParamDef = {
@@ -215,7 +219,7 @@ const API_KEY_INDEX_PARAM: ProtocolParamDef = {
   key: "apiKeyIndex",
   type: "number",
   description:
-    "Optional Lighter API-key index to bind into the preview identity. This does not require or expose API private key material.",
+    "Optional Lighter API-key index override. Omit for normal order previews; Vex resolves a trading API-key index from public Lighter API-key metadata for the preview account. This does not require or expose API private key material.",
 };
 
 const CLIENT_ORDER_INDEX_POLICY_PARAM: ProtocolParamDef = {
@@ -339,14 +343,15 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview on Core or Robinhood Chain for a future exact matching order. Use this directly when the user says preview/preflight/check a Lighter order. For phrases like 'expiry 30 minutes from now', pass orderExpiryOffsetMinutes: 30. Reads live market detail, order book top-of-book context, and public account position data, converts display amount/price into exact integer fields, stores a session-scoped preview identity, and returns the preview id/hash. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, reduceOnly, and clientOrderIndexPolicy unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [
       ENVIRONMENT_PARAM,
       AUTH_ACCOUNT_INDEX_PARAM,
       API_KEY_INDEX_PARAM,
-      MARKET_ID_REQUIRED_PARAM,
+      MARKET_ID_OPTIONAL_PARAM,
+      MARKET_SYMBOL_PARAM,
       ORDER_SIDE_PARAM,
       BASE_AMOUNT_PARAM,
       ORDER_PRICE_PARAM,
@@ -357,18 +362,14 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       ORDER_EXPIRY_OFFSET_MINUTES_PARAM,
       CLIENT_ORDER_INDEX_POLICY_PARAM,
     ],
-    atMostOne: [["orderExpiry", "orderExpiryOffsetMinutes"]],
-    atLeastOneOf: [["orderExpiry", "orderExpiryOffsetMinutes"]],
+    atMostOne: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
+    atLeastOneOf: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     exampleParams: {
-      environment: "rhc",
-      accountIndex: 42,
-      marketId: 0,
+      marketSymbol: "ETH",
       side: "buy",
-      baseAmount: "0.25",
+      baseAmount: "0.001",
       price: "3000",
       orderType: "limit",
-      timeInForce: "good-till-time",
-      reduceOnly: false,
       orderExpiryOffsetMinutes: 30,
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],
