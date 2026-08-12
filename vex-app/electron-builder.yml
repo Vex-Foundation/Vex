@@ -31,6 +31,9 @@ extraResources:
   - from: resources/migrations
     to: migrations
     filter: ["**/*.sql"]
+  - from: resources/lighter-signer
+    to: lighter-signer
+    filter: ["vex-lighter-signer-*"]
 
 mac:
   category: public.app-category.finance

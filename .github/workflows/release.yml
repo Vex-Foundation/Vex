@@ -147,6 +147,11 @@ jobs:
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
         run: |
@@ -193,8 +198,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Full app build chain (same as `pnpm --dir vex-app make` up to packaging):
-      # prebuild copy-migrations -> lint + process-boundary check -> build
-      # main/preload/renderer -> postbuild check-build-artifacts.
+      # build:assets (migrations + Lighter signer helper binaries) -> lint +
+      # process-boundary check -> build main/preload/renderer -> check-build-artifacts.
       - name: Build app
         working-directory: vex-app
         run: pnpm run build
@@ -276,6 +281,11 @@ jobs:
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
         run: |
@@ -325,6 +335,11 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app

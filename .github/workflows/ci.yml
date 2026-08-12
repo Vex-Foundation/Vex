@@ -49,6 +49,11 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
       - run: corepack enable
 
       - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
@@ -85,6 +90,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
 
       - run: corepack enable
 

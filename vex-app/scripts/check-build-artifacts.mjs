@@ -32,6 +32,9 @@
  *      `REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN` placeholders behind.
  *   10. Packaged migration resources are byte-for-byte in sync with the
  *      canonical `src/vex-agent/db/migrations/` source.
+ *   11. Lighter signer helper resources exist for every supported packaged
+ *      Electron platform/arch pair, so live order signing cannot ship without
+ *      its privileged helper.
  *
  * Exit non-zero on any violation.
  */
@@ -472,6 +475,45 @@ check("migration resources — mirror canonical vex-agent migrations", () => {
     throw new Error(
       `packaged migration content differs for: ${mismatches.join(", ")}.\n` +
         `Run \`node scripts/copy-migrations.mjs\` from vex-app/ before building.`
+    );
+  }
+});
+
+// 11. Lighter signer helper resources are built for every packaged target.
+check("lighter signer helpers — built for supported packaged targets", () => {
+  const signerDir = path.join(root, "resources", "lighter-signer");
+  const expected = [
+    "vex-lighter-signer-darwin-arm64",
+    "vex-lighter-signer-darwin-x64",
+    "vex-lighter-signer-linux-arm64",
+    "vex-lighter-signer-linux-x64",
+    "vex-lighter-signer-win32-arm64.exe",
+    "vex-lighter-signer-win32-x64.exe",
+  ];
+
+  if (!existsSync(signerDir)) {
+    throw new Error(
+      `missing signer resource dir: ${signerDir}. Run \`node ../scripts/build-lighter-signer-runtime.mjs\` from vex-app/.`
+    );
+  }
+
+  const issues = [];
+  for (const name of expected) {
+    const full = path.join(signerDir, name);
+    if (!existsSync(full)) {
+      issues.push(`${name}: missing`);
+      continue;
+    }
+    const size = statSync(full).size;
+    if (size < 1_000_000) {
+      issues.push(`${name}: unexpectedly small (${size} bytes)`);
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new Error(
+      `Lighter signer helper issues:\n    ${issues.join("\n    ")}\n` +
+        `Run \`node ../scripts/build-lighter-signer-runtime.mjs\` from vex-app/.`
     );
   }
 });
