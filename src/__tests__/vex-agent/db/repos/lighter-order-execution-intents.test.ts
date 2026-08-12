@@ -234,6 +234,95 @@ describe("lighter order execution intents repo", () => {
     expect(decided).toBeNull();
   });
 
+  it("attaches one nonce reservation to an approved intent by exact scope", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      nonce_reservation_id: "reservation-1",
+      nonce_value: "1784732515923",
+    }));
+
+    const attached = await repo.attachNonceReservation({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      reservationId: "reservation-1",
+      nonceValue: "1784732515923",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("UPDATE lighter_order_execution_intents");
+    expect(sql).toContain("AND session_id = $2");
+    expect(sql).toContain("AND environment = $3");
+    expect(sql).toContain("AND approval_status = 'approved'");
+    expect(sql).toContain("AND execution_state = 'approval_pending'");
+    expect(sql).toContain("AND nonce_reservation_id IS NULL");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      42,
+      7,
+      "reservation-1",
+      "1784732515923",
+    ]);
+    expect(attached).toMatchObject({
+      nonceReservationId: "reservation-1",
+      nonceValue: "1784732515923",
+    });
+  });
+
+  it("attaches a nonce reservation inside an existing transaction client", async () => {
+    const txClient = { tx: true };
+    mockQueryOneWith.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      nonce_reservation_id: "reservation-tx",
+      nonce_value: "1784732515923",
+    }));
+
+    const attached = await repo.attachNonceReservationWith(txClient as never, {
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      reservationId: "reservation-tx",
+      nonceValue: "1784732515923",
+    });
+
+    const [client, sql] = mockQueryOneWith.mock.calls[0]!;
+    expect(client).toBe(txClient);
+    expect(sql).toContain("UPDATE lighter_order_execution_intents");
+    expect(attached).toMatchObject({
+      nonceReservationId: "reservation-tx",
+      nonceValue: "1784732515923",
+    });
+  });
+
+  it("refuses empty reservation ids and zero nonce values before DB writes", async () => {
+    await expect(repo.attachNonceReservation({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      reservationId: "",
+      nonceValue: "1784732515923",
+    })).rejects.toThrow("reservationId is required");
+    await expect(repo.attachNonceReservation({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      reservationId: "reservation-1",
+      nonceValue: "0",
+    })).rejects.toThrow("nonceValue must be a positive decimal integer");
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
   it("finds session-scoped intents by id and by live preview", async () => {
     mockQueryOne.mockResolvedValueOnce(dbRow());
     await repo.findByIntentId("session-1", "lighter-exec-1");

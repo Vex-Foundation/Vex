@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 
 import type { LighterEnvironment } from "@tools/lighter/types.js";
-import { execute, queryOne } from "../client.js";
+import { execute, queryOne, queryOneWith } from "../client.js";
 
 export const LIGHTER_NONCE_SOURCE = "live_lighter_public_api";
 
@@ -81,8 +82,28 @@ export async function recordObserved(input: RecordObservedLighterNonceInput): Pr
 export async function reserveObserved(
   input: ReserveObservedLighterNonceInput,
 ): Promise<LighterNonceStateRow | null> {
+  return reserveObservedWithQuery(
+    (sql, params) => queryOne<Record<string, unknown>>(sql, params),
+    input,
+  );
+}
+
+export async function reserveObservedWith(
+  client: PoolClient,
+  input: ReserveObservedLighterNonceInput,
+): Promise<LighterNonceStateRow | null> {
+  return reserveObservedWithQuery(
+    (sql, params) => queryOneWith<Record<string, unknown>>(client, sql, params),
+    input,
+  );
+}
+
+async function reserveObservedWithQuery(
+  run: (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>,
+  input: ReserveObservedLighterNonceInput,
+): Promise<LighterNonceStateRow | null> {
   const reservationId = input.reservationId ?? randomUUID();
-  const row = await queryOne<Record<string, unknown>>(
+  const row = await run(
     `UPDATE lighter_nonce_state
       SET status = 'reserved',
           reserved_nonce = provider_nonce,

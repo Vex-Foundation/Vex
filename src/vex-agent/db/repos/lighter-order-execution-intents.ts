@@ -78,6 +78,16 @@ export interface MarkLighterOrderApprovalDecisionInput {
   readonly reason?: string | null;
 }
 
+export interface AttachLighterOrderNonceReservationInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+}
+
 const SELECT_COLUMNS =
   "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
@@ -109,6 +119,21 @@ const MARK_APPROVAL_DECISION_SQL = `UPDATE lighter_order_execution_intents
    AND approval_status = 'approval_pending'
  RETURNING ${SELECT_COLUMNS}`;
 
+const ATTACH_NONCE_RESERVATION_SQL = `UPDATE lighter_order_execution_intents
+   SET nonce_reservation_id = $6,
+       nonce_value = $7,
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND account_index = $4
+   AND api_key_index = $5
+   AND approval_status = 'approved'
+   AND execution_state = 'approval_pending'
+   AND nonce_reservation_id IS NULL
+   AND nonce_value IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
 export async function createApprovalPending(
   input: CreateLighterOrderExecutionIntentInput,
 ): Promise<LighterOrderExecutionIntentRow | null> {
@@ -135,6 +160,28 @@ export async function markApprovalDecision(
       input.approvalId ?? null,
       input.reason ?? null,
     ],
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function attachNonceReservation(
+  input: AttachLighterOrderNonceReservationInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    ATTACH_NONCE_RESERVATION_SQL,
+    toAttachNonceReservationParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function attachNonceReservationWith(
+  client: PoolClient,
+  input: AttachLighterOrderNonceReservationInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    ATTACH_NONCE_RESERVATION_SQL,
+    toAttachNonceReservationParams(input),
   );
   return row ? mapRow(row) : null;
 }
@@ -193,6 +240,24 @@ function toCreateParams(input: CreateLighterOrderExecutionIntentInput): unknown[
     preview.providerVersion,
     jsonb(credentialReadiness.reference),
     input.expiresAt,
+  ];
+}
+
+function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservationInput): unknown[] {
+  if (input.reservationId.trim().length === 0) {
+    throw new Error("lighter_order_execution_intents: reservationId is required");
+  }
+  if (!/^\d+$/.test(input.nonceValue) || BigInt(input.nonceValue) === 0n) {
+    throw new Error("lighter_order_execution_intents: nonceValue must be a positive decimal integer");
+  }
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    input.accountIndex,
+    input.apiKeyIndex,
+    input.reservationId,
+    BigInt(input.nonceValue).toString(),
   ];
 }
 

@@ -7,6 +7,9 @@ type ExecuteMock = Mock<(sql: string, params?: unknown[]) => Promise<number>>;
 
 let mockQueryOne: QueryOneMock;
 let mockExecute: ExecuteMock;
+let mockQueryOneWith: Mock<
+  (client: unknown, sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
+>;
 
 function resetMocks() {
   mockQueryOne = vi
@@ -15,11 +18,15 @@ function resetMocks() {
   mockExecute = vi
     .fn<(sql: string, params?: unknown[]) => Promise<number>>()
     .mockResolvedValue(1);
+  mockQueryOneWith = vi
+    .fn<(client: unknown, sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>>()
+    .mockResolvedValue(null);
 }
 resetMocks();
 
 vi.mock("@vex-agent/db/client.js", () => ({
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
+  queryOneWith: (client: unknown, sql: string, params?: unknown[]) => mockQueryOneWith(client, sql, params),
   execute: (sql: string, params?: unknown[]) => mockExecute(sql, params),
 }));
 
@@ -126,6 +133,29 @@ describe("lighter nonce state repo", () => {
     });
 
     expect(reserved).toBeNull();
+  });
+
+  it("reserves inside an existing transaction client", async () => {
+    const txClient = { tx: true };
+    mockQueryOneWith.mockResolvedValueOnce(row({ reservation_id: "reservation-tx" }));
+
+    const reserved = await repo.reserveObservedWith(txClient as never, {
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 1,
+      reservationId: "reservation-tx",
+    });
+
+    const [client, sql, params] = mockQueryOneWith.mock.calls[0]!;
+    expect(client).toBe(txClient);
+    expect(sql).toContain("UPDATE lighter_nonce_state");
+    expect(sql).toContain("AND status = 'observed'");
+    expect(params).toEqual(["rhc", 42, 1, "reservation-tx"]);
+    expect(reserved).toMatchObject({
+      reservationId: "reservation-tx",
+      reservedNonce: "1784732515923",
+      status: "reserved",
+    });
   });
 
   it("finds the nonce state by environment/account/api-key identity", async () => {

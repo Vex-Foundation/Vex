@@ -8,6 +8,7 @@ import {
 
 export interface LighterOrderReadyForSignerPlan {
   readonly intentId: string;
+  readonly sessionId: string;
   readonly previewId: string;
   readonly matchHash: string;
   readonly environment: LighterOrderExecutionIntentRow["environment"];
@@ -60,6 +61,7 @@ export function buildLighterOrderReadyForSignerPlan(
 
   return {
     intentId: intent.intentId,
+    sessionId: intent.sessionId,
     previewId: intent.previewId,
     matchHash: intent.matchHash,
     environment: intent.environment,

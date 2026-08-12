@@ -54,6 +54,7 @@ describe("Lighter order execution plan", () => {
 
     expect(plan).toMatchObject({
       intentId: "lighter-exec-1",
+      sessionId: "session-1",
       previewId: "lighter-preview-1",
       matchHash: "a".repeat(64),
       environment: "rhc",

@@ -50,6 +50,7 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `handlers/read.ts` | Calls the public client and projects bounded results |
 | `handlers/write.ts` | Creates local order execution intents and refuses approved create before signing |
 | `nonce-sync.ts` | Internal helper that records public API-key nonce observations into durable state |
+| `nonce-reservation.ts` | Internal helper that atomically reserves an observed nonce and attaches it to the approved order intent |
 | `params.ts` | Agent-layer param readers and stricter output caps |
 | `projectors.ts` | Compact model-facing result projection |
 | `../embeddings/lighter/market-data.ts` | Discovery passages and aliases |
@@ -207,6 +208,13 @@ internal public nonce sync helper:
   suggesting a blind retry.
 - This nonce foundation stores no API private key, read-only auth token,
   signature, signed transaction JSON, `sendTx` payload, or provider auth error.
+- `nonce-reservation.ts` is the current nonce consumption boundary. It reserves
+  an observed nonce with the `lighter_nonce_state` compare-and-set update and
+  attaches that same reservation to the exact approved
+  `lighter_order_execution_intents` row inside one transaction. The attach is
+  scoped by session id, environment, account index, and API-key index, and
+  refuses if the intent already has a nonce or is not approved. This helper
+  still creates no signature and performs no provider submission.
 
 ## Milestone 4 Auth Boundary
 
