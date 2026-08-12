@@ -122,12 +122,12 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.preview": {
     embeddingText: embeddingText(
       `Create a read-only Lighter order preview for Core or Robinhood Chain using live market detail, live order book, and live account data before any future order approval or submission. ` +
-      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say a relative expiry such as "30 minutes from now", call lighter.order.preview with orderExpiryOffsetMinutes rather than inventing an epoch timestamp. ` +
+      `Use when: the user asks in normal language to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol: "ETH" rather than asking for market id. If they omit environment, account index, API key index, time-in-force, or reduce-only, omit those params and let Vex resolve/default them. If they omit buy/sell direction, ask that one clarification instead of guessing. If they say a relative expiry such as "30 minutes from now", call lighter.order.preview with orderExpiryOffsetMinutes rather than inventing an epoch timestamp. ` +
       `Returns a session-scoped preview id, exact identity hash, integer base amount and price, minimum checks, best bid and ask, position context, and risk notes. ` +
-      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: preview lighter order, preflight rhc buy order, preview RHC limit buy expiry 30 minutes from now, check core reduce-only sell.`,
+      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: show me a preview limit buy order of 0.001 ETH at 3000 expires 30 minutes from now, preview lighter order, preflight rhc buy order, check core reduce-only sell.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
-    exampleIntents: ["preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
+    exampleIntents: ["show me a preview limit buy order of 0.001 ETH at 3000 expires 30 minutes from now", "preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
