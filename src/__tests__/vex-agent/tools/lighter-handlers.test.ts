@@ -432,6 +432,25 @@ describe("Lighter agent read handlers", () => {
     expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
   });
 
+  it("refuses approved Lighter create when unsigned signer order assembly no longer matches policy", async () => {
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
+    mocks.executionIntentsRepo.markApprovalDecision.mockResolvedValueOnce(executionIntentRow({
+      approvalId: "approval-1",
+      approvalStatus: "approved",
+      decisionReason: "user approved exact Lighter order create intent",
+      decidedAt: "2026-08-12T00:01:00.000Z",
+      clientOrderIndexPolicy: "caller_supplied",
+    }));
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    }, APPROVED_CTX);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Unsupported Lighter client-order-index policy");
+    expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
+  });
+
   it("reads system status and config for the requested environment", async () => {
     mocks.client.getStatus.mockResolvedValue({
       status: 200,

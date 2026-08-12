@@ -169,9 +169,11 @@ Signer and credential strategy:
   local execution-intent row and uses Vex's trusted prepared-action registry to
   request approval for `lighter.order.create`.
 - Approved `lighter.order.create` records the approval decision against the
-  local Lighter execution intent, then refuses before signer initialization or
+  local Lighter execution intent, builds the signer-bound execution plan, builds
+  the unsigned create-order request, then refuses at the explicit live-trading
+  gate before any private-key read, signer initialization, signature, or
   provider submission. This is intentional until the privileged signer adapter
-  is implemented and reviewed.
+  and `sendTx` milestone is explicitly approved.
 
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order

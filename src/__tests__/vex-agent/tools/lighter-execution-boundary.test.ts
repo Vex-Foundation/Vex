@@ -155,4 +155,11 @@ describe("Lighter execution boundary", () => {
     expect(source).not.toMatch(FORBIDDEN_UNTIL_CREATE_MILESTONE);
     expect(source).not.toMatch(FORBIDDEN_SIGNED_ARTIFACT_RE);
   });
+
+  it("keeps agent Lighter handlers away from trading secret material", () => {
+    const file = join(ROOT, "src/vex-agent/tools/protocols/lighter/handlers/write.ts");
+    const source = readFileSync(file, "utf-8");
+    expect(source).not.toContain("trading-secret");
+    expect(source).not.toContain("loadLighterTradingSecretMaterial");
+  });
 });

@@ -15,6 +15,7 @@ import {
   buildLighterOrderReadyForSignerPlan,
   requireLighterLiveTradingEnabled,
 } from "../execution-plan.js";
+import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -198,8 +199,9 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`Lighter order execution intent ${intent.intentId} has already left approval_pending.`);
     }
 
-    buildLighterOrderReadyForSignerPlan(approved);
     try {
+      const plan = buildLighterOrderReadyForSignerPlan(approved);
+      buildLighterUnsignedCreateOrderRequest(plan);
       requireLighterLiveTradingEnabled();
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
