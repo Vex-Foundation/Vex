@@ -396,7 +396,7 @@ function toMarkSignedParams(input: MarkLighterOrderSignedInput): unknown[] {
     input.sessionId,
     input.environment,
     requiredSafeId(input.nonceReservationId, "nonceReservationId"),
-    requiredPositiveDecimal(input.nonceValue, "nonceValue"),
+    requiredNonNegativeDecimal(input.nonceValue, "nonceValue"),
     requiredSafeId(input.signerTxHash, "signerTxHash"),
   ];
 }
@@ -439,9 +439,7 @@ function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservatio
   if (input.reservationId.trim().length === 0) {
     throw new Error("lighter_order_execution_intents: reservationId is required");
   }
-  if (!/^\d+$/.test(input.nonceValue) || BigInt(input.nonceValue) === 0n) {
-    throw new Error("lighter_order_execution_intents: nonceValue must be a positive decimal integer");
-  }
+  const nonceValue = requiredNonNegativeDecimal(input.nonceValue, "nonceValue");
   return [
     input.intentId,
     input.sessionId,
@@ -449,13 +447,13 @@ function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservatio
     input.accountIndex,
     input.apiKeyIndex,
     input.reservationId,
-    BigInt(input.nonceValue).toString(),
+    nonceValue,
   ];
 }
 
-function requiredPositiveDecimal(value: string, field: string): string {
-  if (!/^\d+$/.test(value) || BigInt(value) === 0n) {
-    throw new Error(`lighter_order_execution_intents: ${field} must be a positive decimal integer`);
+function requiredNonNegativeDecimal(value: string, field: string): string {
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a non-negative decimal integer`);
   }
   return BigInt(value).toString();
 }

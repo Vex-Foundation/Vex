@@ -311,7 +311,39 @@ describe("lighter order execution intents repo", () => {
     });
   });
 
-  it("refuses empty reservation ids and zero nonce values before DB writes", async () => {
+  it("accepts nonce zero when attaching the first reservation for a fresh API key", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      nonce_reservation_id: "reservation-zero",
+      nonce_value: "0",
+    }));
+
+    const attached = await repo.attachNonceReservation({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      reservationId: "reservation-zero",
+      nonceValue: "0",
+    });
+
+    expect(mockQueryOne.mock.calls[0]![1]).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      42,
+      7,
+      "reservation-zero",
+      "0",
+    ]);
+    expect(attached).toMatchObject({
+      nonceReservationId: "reservation-zero",
+      nonceValue: "0",
+    });
+  });
+
+  it("refuses empty reservation ids and malformed nonce values before DB writes", async () => {
     await expect(repo.attachNonceReservation({
       intentId: "lighter-exec-1",
       sessionId: "session-1",
@@ -328,8 +360,8 @@ describe("lighter order execution intents repo", () => {
       accountIndex: 42,
       apiKeyIndex: 7,
       reservationId: "reservation-1",
-      nonceValue: "0",
-    })).rejects.toThrow("nonceValue must be a positive decimal integer");
+      nonceValue: "-1",
+    })).rejects.toThrow("nonceValue must be a non-negative decimal integer");
 
     expect(mockQueryOne).not.toHaveBeenCalled();
   });
@@ -371,6 +403,39 @@ describe("lighter order execution intents repo", () => {
       executionState: "signed",
       signerTxHash: "0xabc123",
       signedAt: "2026-08-12T00:02:00.000Z",
+    });
+  });
+
+  it("marks a nonce-zero approved intent as signed", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "signed",
+      nonce_reservation_id: "reservation-zero",
+      nonce_value: "0",
+      signer_tx_hash: "0xabc123",
+      signed_at: new Date("2026-08-12T00:02:00.000Z"),
+    }));
+
+    const signed = await repo.markSigned({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      nonceReservationId: "reservation-zero",
+      nonceValue: "0",
+      signerTxHash: "0xabc123",
+    });
+
+    expect(mockQueryOne.mock.calls[0]![1]).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "reservation-zero",
+      "0",
+      "0xabc123",
+    ]);
+    expect(signed).toMatchObject({
+      executionState: "signed",
+      nonceValue: "0",
     });
   });
 
