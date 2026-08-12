@@ -44,6 +44,7 @@ export interface LighterCreateOrderSignerResult {
   readonly matchHash: string;
   readonly txType: number;
   readonly txInfo: string;
+  readonly txHash: string;
 }
 
 export function buildLighterCreateOrderSigningInput(input: {
@@ -53,7 +54,9 @@ export function buildLighterCreateOrderSigningInput(input: {
 }): LighterCreateOrderSigningInput {
   const { order, secret } = input;
   assertUnsignedCreateOrderFitsOfficialSigner(order);
-  const nonce = requireDecimalInteger("nonce", input.nonce, LIGHTER_SIGNER_UINT48_MAX);
+  const nonce = requireDecimalInteger("nonce", input.nonce, LIGHTER_SIGNER_UINT48_MAX, {
+    allowZero: true,
+  });
 
   return {
     kind: "lighter_create_order_signing_input",
@@ -73,7 +76,9 @@ export async function signLighterCreateOrderWithAdapter(
   adapter: LighterSignerAdapter,
 ): Promise<LighterCreateOrderSignerResult> {
   assertUnsignedCreateOrderFitsOfficialSigner(input.order);
-  requireDecimalInteger("nonce", input.nonce, LIGHTER_SIGNER_UINT48_MAX);
+  requireDecimalInteger("nonce", input.nonce, LIGHTER_SIGNER_UINT48_MAX, {
+    allowZero: true,
+  });
   if (adapter.source !== "official_lighter_signer") {
     throw invalidSigner("Lighter create-order signing requires the official Lighter signer adapter.");
   }
@@ -95,6 +100,9 @@ export async function signLighterCreateOrderWithAdapter(
   if (result.txInfo.trim().length === 0) {
     throw invalidSigner("Lighter signer result did not return transaction info.");
   }
+  if (result.txHash.trim().length === 0) {
+    throw invalidSigner("Lighter signer result did not return a transaction hash.");
+  }
   return result;
 }
 
@@ -105,7 +113,7 @@ export function assertUnsignedCreateOrderFitsOfficialSigner(
   requireSafeNonNegativeInteger("apiKeyIndex", order.apiKeyIndex);
   requireSafeNonNegativeInteger("marketIndex", order.marketIndex);
   requireDecimalInteger("clientOrderIndex", order.clientOrderIndex, LIGHTER_SIGNER_UINT48_MAX);
-  requireDecimalInteger("baseAmountInteger", order.baseAmountInteger, LIGHTER_SIGNER_INT64_MAX);
+  requireDecimalInteger("baseAmountInteger", order.baseAmountInteger, LIGHTER_SIGNER_UINT48_MAX);
   requireDecimalInteger("priceInteger", order.priceInteger, LIGHTER_SIGNER_UINT32_MAX);
   requireDecimalInteger("triggerPriceInteger", order.triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, {
     allowZero: true,

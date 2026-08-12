@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	lighterclient "github.com/elliottech/lighter-go/client"
@@ -14,29 +15,29 @@ import (
 
 const maxInputBytes = 32 * 1024
 
-var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{64}$`)
+var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 
 type signerRequest struct {
 	Operation    string             `json:"operation"`
 	PrivateKey   string             `json:"privateKey"`
 	ChainID      uint32             `json:"chainId"`
-	AccountIndex int64              `json:"accountIndex"`
+	AccountIndex string             `json:"accountIndex"`
 	APIKeyIndex  uint8              `json:"apiKeyIndex"`
-	Nonce        int64              `json:"nonce"`
+	Nonce        string             `json:"nonce"`
 	Order        createOrderRequest `json:"order"`
 }
 
 type createOrderRequest struct {
 	MarketIndex      int16  `json:"marketIndex"`
-	ClientOrderIndex int64  `json:"clientOrderIndex"`
-	BaseAmount       int64  `json:"baseAmount"`
-	Price            uint32 `json:"price"`
+	ClientOrderIndex string `json:"clientOrderIndex"`
+	BaseAmount       string `json:"baseAmount"`
+	Price            string `json:"price"`
 	IsAsk            uint8  `json:"isAsk"`
 	OrderType        uint8  `json:"orderType"`
 	TimeInForce      uint8  `json:"timeInForce"`
 	ReduceOnly       uint8  `json:"reduceOnly"`
-	TriggerPrice     uint32 `json:"triggerPrice"`
-	OrderExpiry      int64  `json:"orderExpiry"`
+	TriggerPrice     string `json:"triggerPrice"`
+	OrderExpiry      string `json:"orderExpiry"`
 }
 
 type signerResponse struct {
@@ -85,38 +86,70 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if request.ChainID == 0 {
 		return request, fmt.Errorf("invalid chain id")
 	}
-	if request.AccountIndex <= 0 {
+	if _, err := parseNonNegativeInt64(request.AccountIndex, "account index"); err != nil {
 		return request, fmt.Errorf("invalid account index")
 	}
 	if request.APIKeyIndex < 4 || request.APIKeyIndex > 254 {
 		return request, fmt.Errorf("invalid api key index")
 	}
-	if request.Nonce <= 0 {
+	if _, err := parseNonNegativeInt64(request.Nonce, "nonce"); err != nil {
 		return request, fmt.Errorf("invalid nonce")
 	}
-	if request.Order.ClientOrderIndex < 0 {
+	if _, err := parseNonNegativeInt64(request.Order.ClientOrderIndex, "client order index"); err != nil {
 		return request, fmt.Errorf("invalid client order index")
 	}
-	if request.Order.BaseAmount <= 0 {
+	if _, err := parsePositiveInt64(request.Order.BaseAmount, "base amount"); err != nil {
 		return request, fmt.Errorf("invalid base amount")
 	}
-	if request.Order.Price == 0 {
+	if _, err := parsePositiveUint32(request.Order.Price, "price"); err != nil {
 		return request, fmt.Errorf("invalid price")
 	}
 	if request.Order.IsAsk > 1 || request.Order.ReduceOnly > 1 {
 		return request, fmt.Errorf("invalid boolean field")
 	}
-	if request.Order.OrderExpiry <= 0 {
+	if _, err := parseNonNegativeUint32(request.Order.TriggerPrice, "trigger price"); err != nil {
+		return request, fmt.Errorf("invalid trigger price")
+	}
+	if _, err := parsePositiveInt64(request.Order.OrderExpiry, "order expiry"); err != nil {
 		return request, fmt.Errorf("invalid order expiry")
 	}
 	return request, nil
 }
 
 func signCreateOrder(request signerRequest) (signerResponse, error) {
+	accountIndex, err := parseNonNegativeInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	clientOrderIndex, err := parseNonNegativeInt64(request.Order.ClientOrderIndex, "client order index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	baseAmount, err := parsePositiveInt64(request.Order.BaseAmount, "base amount")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	price, err := parsePositiveUint32(request.Order.Price, "price")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	triggerPrice, err := parseNonNegativeUint32(request.Order.TriggerPrice, "trigger price")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	orderExpiry, err := parsePositiveInt64(request.Order.OrderExpiry, "order expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+
 	client, err := lighterclient.NewTxClient(
 		nil,
 		strings.TrimPrefix(request.PrivateKey, "0x"),
-		request.AccountIndex,
+		accountIndex,
 		request.APIKeyIndex,
 		request.ChainID,
 	)
@@ -126,19 +159,17 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 
 	order := &types.CreateOrderTxReq{
 		MarketIndex:      request.Order.MarketIndex,
-		ClientOrderIndex: request.Order.ClientOrderIndex,
-		BaseAmount:       request.Order.BaseAmount,
-		Price:            request.Order.Price,
+		ClientOrderIndex: clientOrderIndex,
+		BaseAmount:       baseAmount,
+		Price:            price,
 		IsAsk:            request.Order.IsAsk,
 		Type:             request.Order.OrderType,
 		TimeInForce:      request.Order.TimeInForce,
 		ReduceOnly:       request.Order.ReduceOnly,
-		TriggerPrice:     request.Order.TriggerPrice,
-		OrderExpiry:      request.Order.OrderExpiry,
+		TriggerPrice:     triggerPrice,
+		OrderExpiry:      orderExpiry,
 	}
 	apiKeyIndex := request.APIKeyIndex
-	accountIndex := request.AccountIndex
-	nonce := request.Nonce
 	tx, err := client.GetCreateOrderTransaction(order, &types.TransactOpts{
 		FromAccountIndex: &accountIndex,
 		ApiKeyIndex:      &apiKeyIndex,
@@ -161,6 +192,53 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 		TxInfo: txInfo,
 		TxHash: tx.GetTxHash(),
 	}, nil
+}
+
+func parsePositiveInt64(value string, field string) (int64, error) {
+	parsed, err := parseNonNegativeInt64(value, field)
+	if err != nil {
+		return 0, err
+	}
+	if parsed == 0 {
+		return 0, fmt.Errorf("%s must be positive", field)
+	}
+	return parsed, nil
+}
+
+func parseNonNegativeInt64(value string, field string) (int64, error) {
+	if !regexp.MustCompile(`^\d+$`).MatchString(value) {
+		return 0, fmt.Errorf("%s must be a decimal integer", field)
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s is outside int64 range", field)
+	}
+	if parsed < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", field)
+	}
+	return parsed, nil
+}
+
+func parsePositiveUint32(value string, field string) (uint32, error) {
+	parsed, err := parseNonNegativeUint32(value, field)
+	if err != nil {
+		return 0, err
+	}
+	if parsed == 0 {
+		return 0, fmt.Errorf("%s must be positive", field)
+	}
+	return parsed, nil
+}
+
+func parseNonNegativeUint32(value string, field string) (uint32, error) {
+	if !regexp.MustCompile(`^\d+$`).MatchString(value) {
+		return 0, fmt.Errorf("%s must be a decimal integer", field)
+	}
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%s is outside uint32 range", field)
+	}
+	return uint32(parsed), nil
 }
 
 func writeFailure(code string, message string) {

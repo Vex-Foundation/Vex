@@ -8,14 +8,14 @@ approval preparation for a future order create. The approval-prepared create
 path persists `lighter_order_execution_intents` and can ask the Vex approval
 runtime for consent. Approved create can now build an internal signer-bound
 execution plan and unsigned signer order from the durable intent. Vex also has a
-validated official-signer adapter boundary for a future `SignCreateOrder` call,
-and a low-level signed-transaction submit client for Lighter's official
+validated official signer helper and binary adapter for local `SignCreateOrder`,
+plus a low-level signed-transaction submit client for Lighter's official
 `sendTx` form contract. The execution-intent store also has safe lifecycle
 metadata for future signed/submitted/API-accepted/ambiguous transitions. The
-submit client is not reachable from agent order handlers yet. Vex still has no
-concrete API private-key reader, signer binary/process implementation,
-agent-facing order submission, order cancel, deposit, withdrawal, transfer, or
-other reachable provider state-changing Lighter path.
+signer adapter and submit client are not reachable from agent order handlers
+yet. Vex still has no concrete API private-key reader, agent-facing order
+submission, order cancel, deposit, withdrawal, transfer, or other reachable
+provider state-changing Lighter path.
 
 ## Sources
 
@@ -41,6 +41,8 @@ other reachable provider state-changing Lighter path.
 | `trading-secret.ts` | Typed private-key material loader that accepts only an injected privileged reader and redacts ordinary serialization |
 | `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
 | `signer-adapter.ts` | Official Lighter signer adapter interface plus create-order signer input/range validation; no provider submission |
+| `signer-binary-adapter.ts` | Privileged-process adapter that invokes the official signer helper with secrets over stdin only |
+| `signer-runtime/` | Go helper built on `github.com/elliottech/lighter-go` for local create-order signing |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 | `../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
 
@@ -185,6 +187,18 @@ Signer and credential strategy:
   fields. It validates the official integer ranges before any future native
   signer call. The adapter result must still match the prepared order identity.
   The module deliberately creates no provider submission.
+- `signer-runtime/` contains the local Go helper that uses the official
+  `github.com/elliottech/lighter-go` signer to build L2 create-order
+  transactions. Its protocol accepts string decimal values for nonce,
+  client-order-index, base amount, price, trigger price, and expiry so
+  JavaScript number precision cannot corrupt signer inputs. It accepts only full
+  40-byte hex Lighter trading API private keys, with optional `0x` prefix.
+- `signer-binary-adapter.ts` locates and invokes that helper as a child process
+  with an empty argument list, sends the signing request over stdin, drains
+  stderr without retaining text, bounds stdout, validates the helper's
+  structured output, and returns only `txType`, `txInfo`, and `txHash` to the
+  privileged execution path. Helper failure messages remain structural and do
+  not echo key material or signed payloads.
 - `client.ts` now exposes the low-level `sendTx` transport that posts official
   form data (`tx_type`, `tx_info`, optional `price_protection`) and validates
   the API-acceptance response (`code`, `tx_hash`,

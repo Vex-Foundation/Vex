@@ -41,18 +41,18 @@ export async function loadLighterTradingSecretMaterial(
 
 export function materialFromSecret(secret: string): LighterTradingSecretMaterial {
   const privateKey = secret.trim();
-  if (privateKey.length < 16) {
-    throw new VexError(
-      ErrorCodes.LIGHTER_INVALID_REQUEST,
-      "Lighter trading API private key is not usable.",
-      "Import a complete Lighter trading API private key in the encrypted local vault.",
-    );
-  }
   if (/^ro:\d+:(?:single|all):\d+:[a-fA-F0-9]+$/.test(privateKey)) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       "Read-only Lighter tokens cannot sign trading transactions.",
       "Use a Lighter trading API private key stored in the encrypted local vault.",
+    );
+  }
+  if (!/^(?:0x)?[a-fA-F0-9]{80}$/.test(privateKey)) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Lighter trading API private key is not usable.",
+      "Import the full hex Lighter trading API private key in the encrypted local vault.",
     );
   }
   return Object.defineProperties({} as LighterTradingSecretMaterial, {

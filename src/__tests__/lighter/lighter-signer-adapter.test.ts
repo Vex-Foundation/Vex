@@ -9,6 +9,8 @@ import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-or
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 
+const PRIVATE_KEY = `0x${"1".repeat(80)}`;
+
 function plan(overrides: Partial<LighterOrderReadyForSignerPlan> = {}): LighterOrderReadyForSignerPlan {
   return {
     intentId: "lighter-exec-1",
@@ -48,7 +50,7 @@ function plan(overrides: Partial<LighterOrderReadyForSignerPlan> = {}): LighterO
 function signingInput(overrides: Partial<LighterOrderReadyForSignerPlan> = {}) {
   return buildLighterCreateOrderSigningInput({
     order: buildLighterUnsignedCreateOrderRequest(plan(overrides)),
-    secret: materialFromSecret("lighter-private-key-material-1234567890"),
+    secret: materialFromSecret(PRIVATE_KEY),
     nonce: "123",
   });
 }
@@ -85,13 +87,18 @@ describe("Lighter official signer adapter boundary", () => {
   it("refuses signer values outside the official create-order ranges", () => {
     expect(() => buildLighterCreateOrderSigningInput({
       order: buildLighterUnsignedCreateOrderRequest(plan()),
-      secret: materialFromSecret("lighter-private-key-material-1234567890"),
+      secret: materialFromSecret(PRIVATE_KEY),
       nonce: "0",
+    })).not.toThrow();
+    expect(() => buildLighterCreateOrderSigningInput({
+      order: buildLighterUnsignedCreateOrderRequest(plan()),
+      secret: materialFromSecret(PRIVATE_KEY),
+      nonce: String(2n ** 48n),
     })).toThrow("nonce");
 
     expect(() => signingInput({ priceInteger: String(2n ** 32n) }))
       .toThrow("priceInteger");
-    expect(() => signingInput({ baseAmountInteger: String(2n ** 63n) }))
+    expect(() => signingInput({ baseAmountInteger: String(2n ** 48n) }))
       .toThrow("baseAmountInteger");
     expect(() => signingInput({
       matchHash: `${"f".repeat(12)}${"b".repeat(52)}`,
@@ -112,6 +119,7 @@ describe("Lighter official signer adapter boundary", () => {
         matchHash: input.order.matchHash,
         txType: 14,
         txInfo: "{\"opaque\":\"provider body\"}",
+        txHash: "0xabc123",
       })),
     };
 
@@ -142,6 +150,7 @@ describe("Lighter official signer adapter boundary", () => {
         matchHash: input.order.matchHash,
         txType: 14,
         txInfo: "{\"opaque\":\"provider body\"}",
+        txHash: "0xabc123",
       }),
     };
 
