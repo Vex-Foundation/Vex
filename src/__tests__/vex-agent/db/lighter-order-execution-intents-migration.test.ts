@@ -13,7 +13,7 @@ describe("Lighter order execution intents migration", () => {
     expect(migration).toMatch(/preview_id\s+TEXT NOT NULL REFERENCES lighter_order_previews\(preview_id\) ON DELETE RESTRICT/i);
     expect(migration).toMatch(/approval_id\s+TEXT UNIQUE REFERENCES approval_queue\(id\) ON DELETE SET NULL/i);
     expect(migration).toMatch(/protocol_execution_id\s+BIGINT REFERENCES protocol_executions\(id\) ON DELETE RESTRICT/i);
-    expect(migration).toMatch(/api_key_index\s+INTEGER NOT NULL CHECK \(api_key_index >= 2 AND api_key_index <= 254\)/i);
+    expect(migration).toMatch(/api_key_index\s+INTEGER NOT NULL CHECK \(api_key_index >= 4 AND api_key_index <= 254\)/i);
   });
 
   it("keeps execution state separate from approval status", () => {

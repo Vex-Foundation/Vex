@@ -57,6 +57,17 @@ export interface LighterOrderExecutionIntentRow {
   readonly decidedAt: string | null;
   readonly nonceReservationId: string | null;
   readonly nonceValue: string | null;
+  readonly signerTxHash: string | null;
+  readonly submittedTxHash: string | null;
+  readonly submitCode: number | null;
+  readonly submitMessage: string | null;
+  readonly predictedExecutionTimeMs: number | null;
+  readonly volumeQuotaRemaining: string | null;
+  readonly ambiguousReason: string | null;
+  readonly signedAt: string | null;
+  readonly submittedAt: string | null;
+  readonly apiAcceptedAt: string | null;
+  readonly ambiguousAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly expiresAt: string;
@@ -88,12 +99,49 @@ export interface AttachLighterOrderNonceReservationInput {
   readonly nonceValue: string;
 }
 
+export interface MarkLighterOrderSignedInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly nonceReservationId: string;
+  readonly nonceValue: string;
+  readonly signerTxHash: string;
+}
+
+export interface MarkLighterOrderSubmittedInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly signerTxHash: string;
+}
+
+export interface MarkLighterOrderApiAcceptedInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly signerTxHash: string;
+  readonly submittedTxHash: string;
+  readonly submitCode: number;
+  readonly submitMessage?: string | null;
+  readonly predictedExecutionTimeMs: number;
+  readonly volumeQuotaRemaining?: number | null;
+}
+
+export interface MarkLighterOrderAmbiguousInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly reason: string;
+}
+
 const SELECT_COLUMNS =
   "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
   "order_type, time_in_force, reduce_only, trigger_price_integer, order_expiry_ms, " +
   "client_order_index_policy, provider_version, credential_ref_json, approval_status, " +
   "execution_state, decision_reason, decided_at, nonce_reservation_id, nonce_value, " +
+  "signer_tx_hash, submitted_tx_hash, submit_code, submit_message, predicted_execution_time_ms, " +
+  "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
   "created_at, updated_at, expires_at";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
@@ -132,6 +180,65 @@ const ATTACH_NONCE_RESERVATION_SQL = `UPDATE lighter_order_execution_intents
    AND execution_state = 'approval_pending'
    AND nonce_reservation_id IS NULL
    AND nonce_value IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_SIGNED_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'signed',
+       signer_tx_hash = $6,
+       signed_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state = 'approval_pending'
+   AND nonce_reservation_id = $4
+   AND nonce_value = $5
+   AND signer_tx_hash IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_SUBMITTED_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'submitted',
+       submitted_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state = 'signed'
+   AND signer_tx_hash = $4
+   AND submitted_at IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_API_ACCEPTED_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'api_accepted',
+       submitted_tx_hash = $5,
+       submit_code = $6,
+       submit_message = $7,
+       predicted_execution_time_ms = $8,
+       volume_quota_remaining = $9,
+       api_accepted_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state = 'submitted'
+   AND signer_tx_hash = $4
+   AND api_accepted_at IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_AMBIGUOUS_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'ambiguous',
+       ambiguous_reason = $4,
+       ambiguous_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state IN ('signed','submitted','api_accepted','sequencer_pending')
+   AND ambiguous_at IS NULL
  RETURNING ${SELECT_COLUMNS}`;
 
 export async function createApprovalPending(
@@ -182,6 +289,46 @@ export async function attachNonceReservationWith(
     client,
     ATTACH_NONCE_RESERVATION_SQL,
     toAttachNonceReservationParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markSigned(
+  input: MarkLighterOrderSignedInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_SIGNED_SQL,
+    toMarkSignedParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markSubmitted(
+  input: MarkLighterOrderSubmittedInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_SUBMITTED_SQL,
+    toMarkSubmittedParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markApiAccepted(
+  input: MarkLighterOrderApiAcceptedInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_API_ACCEPTED_SQL,
+    toMarkApiAcceptedParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markAmbiguous(
+  input: MarkLighterOrderAmbiguousInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_AMBIGUOUS_SQL,
+    toMarkAmbiguousParams(input),
   );
   return row ? mapRow(row) : null;
 }
@@ -243,6 +390,51 @@ function toCreateParams(input: CreateLighterOrderExecutionIntentInput): unknown[
   ];
 }
 
+function toMarkSignedParams(input: MarkLighterOrderSignedInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    requiredSafeId(input.nonceReservationId, "nonceReservationId"),
+    requiredPositiveDecimal(input.nonceValue, "nonceValue"),
+    requiredSafeId(input.signerTxHash, "signerTxHash"),
+  ];
+}
+
+function toMarkSubmittedParams(input: MarkLighterOrderSubmittedInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    requiredSafeId(input.signerTxHash, "signerTxHash"),
+  ];
+}
+
+function toMarkApiAcceptedParams(input: MarkLighterOrderApiAcceptedInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    requiredSafeId(input.signerTxHash, "signerTxHash"),
+    requiredSafeId(input.submittedTxHash, "submittedTxHash"),
+    requiredNonNegativeInt(input.submitCode, "submitCode"),
+    optionalSafeText(input.submitMessage, "submitMessage"),
+    requiredNonNegativeInt(input.predictedExecutionTimeMs, "predictedExecutionTimeMs"),
+    input.volumeQuotaRemaining === null || input.volumeQuotaRemaining === undefined
+      ? null
+      : requiredNonNegativeInt(input.volumeQuotaRemaining, "volumeQuotaRemaining"),
+  ];
+}
+
+function toMarkAmbiguousParams(input: MarkLighterOrderAmbiguousInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    requiredSafeText(input.reason, "reason"),
+  ];
+}
+
 function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservationInput): unknown[] {
   if (input.reservationId.trim().length === 0) {
     throw new Error("lighter_order_execution_intents: reservationId is required");
@@ -259,6 +451,60 @@ function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservatio
     input.reservationId,
     BigInt(input.nonceValue).toString(),
   ];
+}
+
+function requiredPositiveDecimal(value: string, field: string): string {
+  if (!/^\d+$/.test(value) || BigInt(value) === 0n) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a positive decimal integer`);
+  }
+  return BigInt(value).toString();
+}
+
+function requiredNonNegativeInt(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a safe non-negative integer`);
+  }
+  return value;
+}
+
+function requiredSafeId(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 160 || /[\s{}"]/.test(trimmed)) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a safe structural id`);
+  }
+  return trimmed;
+}
+
+function optionalSafeText(value: string | null | undefined, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return safeText(trimmed, field);
+}
+
+function requiredSafeText(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`lighter_order_execution_intents: ${field} is required`);
+  }
+  return safeText(trimmed, field);
+}
+
+function safeText(value: string, field: string): string {
+  if (value.length > 240 || /[{}"]/.test(value)) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be bounded structural text`);
+  }
+  assertNoSignedPayloadShape(value, field);
+  return value;
+}
+
+function assertNoSignedPayloadShape(value: string, field: string): void {
+  if (
+    /\b(?:tx_info|sig|signature|private|secret|payload)\b/i.test(value)
+    || /(?:0x)?[a-fA-F0-9]{64}/.test(value)
+  ) {
+    throw new Error(`lighter_order_execution_intents: ${field} must not contain signed payload material`);
+  }
 }
 
 function assertCredentialMatchesPreview(
@@ -311,6 +557,25 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
     decidedAt: toIsoOrNull(row.decided_at as string | Date | null | undefined),
     nonceReservationId: (row.nonce_reservation_id as string | null) ?? null,
     nonceValue: (row.nonce_value as string | null) ?? null,
+    signerTxHash: (row.signer_tx_hash as string | null) ?? null,
+    submittedTxHash: (row.submitted_tx_hash as string | null) ?? null,
+    submitCode: row.submit_code === null || row.submit_code === undefined
+      ? null
+      : Number(row.submit_code),
+    submitMessage: (row.submit_message as string | null) ?? null,
+    predictedExecutionTimeMs:
+      row.predicted_execution_time_ms === null || row.predicted_execution_time_ms === undefined
+        ? null
+        : Number(row.predicted_execution_time_ms),
+    volumeQuotaRemaining:
+      row.volume_quota_remaining === null || row.volume_quota_remaining === undefined
+        ? null
+        : String(row.volume_quota_remaining),
+    ambiguousReason: (row.ambiguous_reason as string | null) ?? null,
+    signedAt: toIsoOrNull(row.signed_at as string | Date | null | undefined),
+    submittedAt: toIsoOrNull(row.submitted_at as string | Date | null | undefined),
+    apiAcceptedAt: toIsoOrNull(row.api_accepted_at as string | Date | null | undefined),
+    ambiguousAt: toIsoOrNull(row.ambiguous_at as string | Date | null | undefined),
     createdAt: toIso(row.created_at as string | Date),
     updatedAt: toIso(row.updated_at as string | Date),
     expiresAt: toIso(row.expires_at as string | Date),

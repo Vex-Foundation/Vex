@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS lighter_order_execution_intents (
   match_hash                 TEXT NOT NULL CHECK (match_hash ~ '^[0-9a-f]{64}$'),
   environment                TEXT NOT NULL CHECK (environment IN ('core','rhc')),
   account_index              BIGINT NOT NULL CHECK (account_index >= 0),
-  api_key_index              INTEGER NOT NULL CHECK (api_key_index >= 2 AND api_key_index <= 254),
+  api_key_index              INTEGER NOT NULL CHECK (api_key_index >= 4 AND api_key_index <= 254),
   market_index               INTEGER NOT NULL CHECK (market_index >= 0 AND market_index <= 65535),
   side                       TEXT NOT NULL CHECK (side IN ('buy','sell')),
   base_amount_integer        TEXT NOT NULL CHECK (base_amount_integer ~ '^[1-9][0-9]*$'),

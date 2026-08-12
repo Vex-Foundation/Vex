@@ -95,6 +95,17 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
     decided_at: null,
     nonce_reservation_id: null,
     nonce_value: null,
+    signer_tx_hash: null,
+    submitted_tx_hash: null,
+    submit_code: null,
+    submit_message: null,
+    predicted_execution_time_ms: null,
+    volume_quota_remaining: null,
+    ambiguous_reason: null,
+    signed_at: null,
+    submitted_at: null,
+    api_accepted_at: null,
+    ambiguous_at: null,
     created_at: new Date("2026-08-12T00:00:01.000Z"),
     updated_at: new Date("2026-08-12T00:00:02.000Z"),
     expires_at: new Date("2026-08-12T00:05:00.000Z"),
@@ -319,6 +330,179 @@ describe("lighter order execution intents repo", () => {
       reservationId: "reservation-1",
       nonceValue: "0",
     })).rejects.toThrow("nonceValue must be a positive decimal integer");
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  it("marks a nonce-reserved approved intent as signed without payload material", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "signed",
+      nonce_reservation_id: "reservation-1",
+      nonce_value: "1784732515923",
+      signer_tx_hash: "0xabc123",
+      signed_at: new Date("2026-08-12T00:02:00.000Z"),
+    }));
+
+    const signed = await repo.markSigned({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      nonceReservationId: "reservation-1",
+      nonceValue: "1784732515923",
+      signerTxHash: "0xabc123",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'signed'");
+    expect(sql).toContain("AND approval_status = 'approved'");
+    expect(sql).toContain("AND execution_state = 'approval_pending'");
+    expect(sql).toContain("AND nonce_reservation_id = $4");
+    expect(sql).toContain("AND nonce_value = $5");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "reservation-1",
+      "1784732515923",
+      "0xabc123",
+    ]);
+    expect(signed).toMatchObject({
+      executionState: "signed",
+      signerTxHash: "0xabc123",
+      signedAt: "2026-08-12T00:02:00.000Z",
+    });
+  });
+
+  it("marks a signed intent as submitted before the provider response is interpreted", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "submitted",
+      signer_tx_hash: "0xabc123",
+      signed_at: new Date("2026-08-12T00:02:00.000Z"),
+      submitted_at: new Date("2026-08-12T00:02:01.000Z"),
+    }));
+
+    const submitted = await repo.markSubmitted({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      signerTxHash: "0xabc123",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'submitted'");
+    expect(sql).toContain("AND execution_state = 'signed'");
+    expect(sql).toContain("AND signer_tx_hash = $4");
+    expect(params).toEqual(["lighter-exec-1", "session-1", "rhc", "0xabc123"]);
+    expect(submitted).toMatchObject({
+      executionState: "submitted",
+      signerTxHash: "0xabc123",
+      submittedAt: "2026-08-12T00:02:01.000Z",
+    });
+  });
+
+  it("marks a submitted intent as API accepted without treating it as final execution", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "api_accepted",
+      signer_tx_hash: "0xabc123",
+      submitted_tx_hash: "0xabc123",
+      submit_code: 200,
+      submit_message: "accepted",
+      predicted_execution_time_ms: 250,
+      volume_quota_remaining: "10780",
+      signed_at: new Date("2026-08-12T00:02:00.000Z"),
+      submitted_at: new Date("2026-08-12T00:02:01.000Z"),
+      api_accepted_at: new Date("2026-08-12T00:02:02.000Z"),
+    }));
+
+    const accepted = await repo.markApiAccepted({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      signerTxHash: "0xabc123",
+      submittedTxHash: "0xabc123",
+      submitCode: 200,
+      submitMessage: "accepted",
+      predictedExecutionTimeMs: 250,
+      volumeQuotaRemaining: 10780,
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'api_accepted'");
+    expect(sql).toContain("AND execution_state = 'submitted'");
+    expect(sql).toContain("AND signer_tx_hash = $4");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "0xabc123",
+      "0xabc123",
+      200,
+      "accepted",
+      250,
+      10780,
+    ]);
+    expect(accepted).toMatchObject({
+      executionState: "api_accepted",
+      submittedTxHash: "0xabc123",
+      submitCode: 200,
+      submitMessage: "accepted",
+      predictedExecutionTimeMs: 250,
+      volumeQuotaRemaining: "10780",
+      apiAcceptedAt: "2026-08-12T00:02:02.000Z",
+    });
+  });
+
+  it("marks in-flight submit outcomes ambiguous with bounded structural reasons", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "ambiguous",
+      ambiguous_reason: "provider_transport_after_submit",
+      ambiguous_at: new Date("2026-08-12T00:03:00.000Z"),
+    }));
+
+    const ambiguous = await repo.markAmbiguous({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      reason: "provider_transport_after_submit",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'ambiguous'");
+    expect(sql).toContain("execution_state IN ('signed','submitted','api_accepted','sequencer_pending')");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "provider_transport_after_submit",
+    ]);
+    expect(ambiguous).toMatchObject({
+      executionState: "ambiguous",
+      ambiguousReason: "provider_transport_after_submit",
+      ambiguousAt: "2026-08-12T00:03:00.000Z",
+    });
+  });
+
+  it("refuses signed payload-shaped submit metadata before DB writes", async () => {
+    await expect(repo.markApiAccepted({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      signerTxHash: "0xabc123",
+      submittedTxHash: "0xabc123",
+      submitCode: 200,
+      submitMessage: "accepted with tx_info Sig payload",
+      predictedExecutionTimeMs: 250,
+    })).rejects.toThrow("submitMessage must not contain signed payload material");
+    await expect(repo.markAmbiguous({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      reason: "secret 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    })).rejects.toThrow("reason must not contain signed payload material");
 
     expect(mockQueryOne).not.toHaveBeenCalled();
   });

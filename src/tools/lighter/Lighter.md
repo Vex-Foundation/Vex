@@ -10,11 +10,12 @@ runtime for consent. Approved create can now build an internal signer-bound
 execution plan and unsigned signer order from the durable intent. Vex also has a
 validated official-signer adapter boundary for a future `SignCreateOrder` call,
 and a low-level signed-transaction submit client for Lighter's official
-`sendTx` form contract. The submit client is not reachable from agent order
-handlers yet. Vex still has no concrete API private-key reader, signer
-binary/process implementation, agent-facing order submission, order cancel,
-deposit, withdrawal, transfer, or other reachable provider state-changing
-Lighter path.
+`sendTx` form contract. The execution-intent store also has safe lifecycle
+metadata for future signed/submitted/API-accepted/ambiguous transitions. The
+submit client is not reachable from agent order handlers yet. Vex still has no
+concrete API private-key reader, signer binary/process implementation,
+agent-facing order submission, order cancel, deposit, withdrawal, transfer, or
+other reachable provider state-changing Lighter path.
 
 ## Sources
 
@@ -41,6 +42,7 @@ Lighter path.
 | `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
 | `signer-adapter.ts` | Official Lighter signer adapter interface plus create-order signer input/range validation; no provider submission |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
+| `../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
@@ -197,6 +199,13 @@ Signer and credential strategy:
   `protocol_executions` anchors, and the opaque encrypted-vault credential
   reference. It does not store key bytes, auth tokens, signatures, signed
   payloads, or provider submit bodies.
+- The execution-intent repo also owns the future submit lifecycle CAS
+  transitions: `markSigned` requires an approved intent with an attached nonce
+  reservation, `markSubmitted` advances only the matching signed hash,
+  `markApiAccepted` records the provider API-acceptance hash/timing/quota data
+  without marking a final order outcome, and `markAmbiguous` preserves uncertain
+  post-sign or post-submit states for repair. These methods reject raw
+  signed-payload-shaped text before writing.
 - `lighter.order.create.prepare` is the user-facing bridge from preview to
   approval today. In the normal conversational flow it uses the latest fresh
   preview in the session and derives the local encrypted-vault reference from
