@@ -133,6 +133,12 @@ Signer and credential strategy:
   credential readiness, nonce reservation, durable activity intent, privileged
   signing, provider submission, and provider/WebSocket outcome reconciliation in
   that order.
+- `lighter_order_execution_intents` now stores the durable bridge between a
+  preview and any future signer path. It records preview identity fields,
+  approval status, execution state, optional `approval_queue` /
+  `protocol_executions` anchors, and the opaque encrypted-vault credential
+  reference. It does not store key bytes, auth tokens, signatures, signed
+  payloads, or provider submit bodies.
 
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order
