@@ -12,12 +12,12 @@ validated official signer helper and binary adapter for local `SignCreateOrder`,
 plus a low-level signed-transaction submit client for Lighter's official
 `sendTx` form contract. The execution-intent store also has safe lifecycle
 metadata for future signed/submitted/API-accepted/ambiguous transitions. The
-signer adapter and submit client are not reachable from agent order handlers
-yet. Vex now has main-process encrypted-vault import, status, removal, and
-reader functions for Lighter trading credentials stored as non-env extra
-secrets, but they are not wired to agent order handlers. Vex still has no
-agent-facing order submission, order cancel, deposit, withdrawal, transfer, or
-other reachable provider state-changing Lighter path.
+approved create handler now has a gated execution pipeline that can load the
+main-process vault reader, reserve a nonce, sign with the packaged helper, mark
+submitted, call `sendTx`, and persist API acceptance only after the explicit
+live-trading release gate opens. The gate remains closed, so Vex still has no
+agent-facing live order submission, order cancel, deposit, withdrawal, transfer,
+or other reachable provider state-changing Lighter path.
 
 ## Sources
 
@@ -47,6 +47,7 @@ other reachable provider state-changing Lighter path.
 | `signer-runtime/` | Go helper built on `github.com/elliottech/lighter-go` for local create-order signing |
 | `../../vex-app/src/main/secrets/lighter-trading-credential.ts` | Main-process encrypted-vault import, status, removal, and reader boundary for Lighter trading private keys stored as non-env extra secrets |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
+| `../vex-agent/tools/protocols/lighter/order-create-execution.ts` | Gated approved-create pipeline for vault secret load, nonce reservation, local signing, submit metadata, `sendTx`, and API-acceptance persistence |
 | `../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
@@ -217,8 +218,15 @@ Signer and credential strategy:
   `predicted_execution_time_ms`, and optional `volume_quota_remaining`). Submit rejection
   errors do not include provider response bodies because those may echo signed
   payload material. This client method is disconnected from agent order
-  handlers until the concrete privileged signer and durable post-submit
-  lifecycle are wired.
+  handlers while the explicit live-trading release gate remains closed.
+- `order-create-execution.ts` is the only reviewed agent-side owner of the
+  future live create path. It is dependency-injected by the Vex main process
+  with the unlocked-vault secret reader, packaged signer adapter, and Lighter
+  client. Its order is: release gate, key load, nonce reservation, local signer,
+  signed-state persistence, submitted-state persistence before `sendTx`, API
+  acceptance persistence, and ambiguous-state marking for send-time uncertainty
+  or post-reservation failures. It returns only bounded hashes/status metadata,
+  never key bytes or `tx_info`.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /

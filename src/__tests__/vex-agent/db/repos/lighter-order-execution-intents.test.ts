@@ -551,6 +551,40 @@ describe("lighter order execution intents repo", () => {
     });
   });
 
+  it("marks nonce-reserved pre-submit failures ambiguous", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "ambiguous",
+      nonce_reservation_id: "reservation-zero",
+      nonce_value: "0",
+      ambiguous_reason: "signing_failed_after_nonce_reservation",
+      ambiguous_at: new Date("2026-08-12T00:03:00.000Z"),
+    }));
+
+    const ambiguous = await repo.markAmbiguous({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      reason: "signing_failed_after_nonce_reservation",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("execution_state = 'approval_pending'");
+    expect(sql).toContain("nonce_reservation_id IS NOT NULL");
+    expect(sql).toContain("nonce_value IS NOT NULL");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "signing_failed_after_nonce_reservation",
+    ]);
+    expect(ambiguous).toMatchObject({
+      executionState: "ambiguous",
+      nonceValue: "0",
+      ambiguousReason: "signing_failed_after_nonce_reservation",
+    });
+  });
+
   it("refuses signed payload-shaped submit metadata before DB writes", async () => {
     await expect(repo.markApiAccepted({
       intentId: "lighter-exec-1",

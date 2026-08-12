@@ -16,6 +16,11 @@ import {
   requireLighterLiveTradingEnabled,
 } from "../execution-plan.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
+import { isLighterLiveTradingEnabled } from "../execution-boundary.js";
+import {
+  executeApprovedLighterCreateOrder,
+  getConfiguredLighterCreateOrderExecutionDeps,
+} from "../order-create-execution.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -201,14 +206,31 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
 
     try {
       const plan = buildLighterOrderReadyForSignerPlan(approved);
-      buildLighterUnsignedCreateOrderRequest(plan);
+      const unsignedOrder = buildLighterUnsignedCreateOrderRequest(plan);
+      if (isLighterLiveTradingEnabled()) {
+        const deps = getConfiguredLighterCreateOrderExecutionDeps();
+        if (deps === null) {
+          return fail(
+            "Lighter live order create is enabled, but the privileged signer and vault dependencies are not configured. No order was signed or submitted.",
+          );
+        }
+        const execution = await executeApprovedLighterCreateOrder({
+          plan,
+          unsignedOrder,
+          deps,
+        });
+        return ok({
+          source: "vex_lighter_live_order_create",
+          ...execution,
+        });
+      }
       requireLighterLiveTradingEnabled();
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
 
     return fail(
-      "Lighter order create approval was recorded, but live submission is still blocked until the privileged signer adapter is implemented. No order was signed or submitted.",
+      "Lighter order create approval was recorded, but live submission is still blocked by the explicit Lighter live-trading release gate. No order was signed or submitted.",
     );
   },
 };

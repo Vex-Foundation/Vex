@@ -237,7 +237,14 @@ const MARK_AMBIGUOUS_SQL = `UPDATE lighter_order_execution_intents
    AND session_id = $2
    AND environment = $3
    AND approval_status = 'approved'
-   AND execution_state IN ('signed','submitted','api_accepted','sequencer_pending')
+   AND (
+     execution_state IN ('signed','submitted','api_accepted','sequencer_pending')
+     OR (
+       execution_state = 'approval_pending'
+       AND nonce_reservation_id IS NOT NULL
+       AND nonce_value IS NOT NULL
+     )
+   )
    AND ambiguous_at IS NULL
  RETURNING ${SELECT_COLUMNS}`;
 

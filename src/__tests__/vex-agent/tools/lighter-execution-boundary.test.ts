@@ -25,6 +25,10 @@ const EXECUTION_BOUNDARY_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/execution-boundary.ts",
 );
+const ORDER_CREATE_EXECUTION_SOURCE = join(
+  ROOT,
+  "src/vex-agent/tools/protocols/lighter/order-create-execution.ts",
+);
 const LOW_LEVEL_SUBMIT_CLIENT_SOURCE = join(ROOT, "src/tools/lighter/client.ts");
 
 const FORBIDDEN_AGENT_SUBMIT_RE = /\b(sendTx|sendTxBatch|createOrder|cancelOrder)\s*\(/;
@@ -126,11 +130,12 @@ describe("Lighter execution boundary", () => {
     expect(handlerIds.has("lighter.order.cancel")).toBe(false);
   });
 
-  it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks", () => {
+  it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks outside the execution pipeline", () => {
     const offenders: string[] = [];
     for (const root of [join(ROOT, "src/vex-agent/tools/protocols/lighter")]) {
       for (const file of walk(root)) {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
+        if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (
           FORBIDDEN_AGENT_SUBMIT_RE.test(source)
@@ -150,6 +155,7 @@ describe("Lighter execution boundary", () => {
       for (const file of walk(root)) {
         if (file === LOW_LEVEL_SUBMIT_CLIENT_SOURCE) continue;
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
+        if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (/\bsendTx\s*\(/.test(source) || /\bsendTxBatch\s*\(/.test(source)) {
           offenders.push(relative(ROOT, file));
@@ -187,5 +193,17 @@ describe("Lighter execution boundary", () => {
     const source = readFileSync(file, "utf-8");
     expect(source).not.toContain("trading-secret");
     expect(source).not.toContain("loadLighterTradingSecretMaterial");
+  });
+
+  it("keeps the order-create execution pipeline behind injected privileged dependencies", () => {
+    const source = readFileSync(ORDER_CREATE_EXECUTION_SOURCE, "utf-8");
+    expect(source).toContain("liveTradingEnabled");
+    expect(source).toContain("loadLighterTradingSecretMaterial");
+    expect(source).toContain("signLighterCreateOrderWithAdapter");
+    expect(source).toContain("markSubmitted");
+    expect(source).toContain("sendTx");
+    expect(source).not.toContain("vex-app/src/main");
+    expect(source).not.toMatch(TRADING_CREDENTIAL_ENV_KEY_RE);
+    expect(source).not.toMatch(FORBIDDEN_TRADING_SECRET_SHORTCUT_RE);
   });
 });

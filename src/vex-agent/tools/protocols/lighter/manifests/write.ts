@@ -52,7 +52,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated Lighter order create resume target for a prepared execution intent. In restricted mode this tool is enqueued for approval by lighter.order.create.prepare. The current implementation records the approval decision and refuses before signer or provider submission until the privileged signer adapter is built. No direct call should be made without a prepared intent and approval-resume context.",
+      "Approval-gated Lighter order create resume target for a prepared execution intent. In restricted mode this tool is enqueued for approval by lighter.order.create.prepare. The current implementation records the approval decision and stays behind the explicit Lighter live-trading release gate until final provider-outcome repair and live proof are complete. No direct call should be made without a prepared intent and approval-resume context.",
     mutating: true,
     actionKind: "external_post",
     params: [INTENT_ID_PARAM],

@@ -121,10 +121,10 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.preview": {
     embeddingText: embeddingText(
-      `Create a read-only Lighter order preview for Core or Robinhood Chain using live market detail, live order book, and live account data before any future order approval or submission. ` +
-      `Use when: the user asks in normal language to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol: "ETH" rather than asking for market id. If they omit environment, account index, API key index, time-in-force, or reduce-only, omit those params and let Vex resolve/default them. If they omit buy/sell direction, ask that one clarification instead of guessing. If they say a relative expiry such as "30 minutes from now", call lighter.order.preview with orderExpiryOffsetMinutes rather than inventing an epoch timestamp. ` +
-      `Returns a session-scoped preview id, exact identity hash, integer base amount and price, minimum checks, best bid and ask, position context, and risk notes. ` +
-      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: show me a preview limit buy order of 0.001 ETH at 3000 expires 30 minutes from now, preview lighter order, preflight rhc buy order, check core reduce-only sell.`,
+      `Create a read-only Lighter order preview using live market detail, order book, and account data. ` +
+      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol. Omit environment, account index, API key index, time-in-force, and reduce-only unless explicit; Vex resolves/defaults them. For "30 minutes from now", pass orderExpiryOffsetMinutes. ` +
+      `Returns preview id, match hash, integer amount/price, minimum checks, best bid/ask, position context, and risk notes. Never signs, submits, or calls sendTx. ` +
+      `Example queries: preview 0.001 ETH at 3000, preflight RHC limit buy.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
     exampleIntents: ["show me a preview limit buy order of 0.001 ETH at 3000 expires 30 minutes from now", "preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
@@ -134,10 +134,10 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.create.prepare": {
     embeddingText: embeddingText(
-      `Prepare an approval-gated Lighter order create from a fresh persisted preview and an opaque encrypted-vault credential reference. ` +
-      `Use when: the user has already run lighter.order.preview and says to prepare that order, create that order, or send it for approval before any signer or submission path can run. Use the latest fresh preview when no preview id is specified; Vex derives the local vault reference from the preview-bound environment, account index, and API-key index. ` +
-      `Creates local durable execution intent state and hands off to the approval card; it never reads API private key bytes, signs, submits, cancels, deposits, withdraws, transfers, or calls sendTx. ` +
-      `Example queries: prepare that lighter order for approval, create that RHC order after approval, ready the latest lighter preview for order create.`,
+      `Prepare an approval-gated Lighter order create from a fresh persisted preview and opaque encrypted-vault credential reference. ` +
+      `Use when: the user has previewed an order and says to prepare it, create it, or send it for approval. Use the latest fresh preview when no preview id is specified; Vex derives the vault reference from preview environment, account, and API-key index. ` +
+      `Creates durable execution intent state and an approval card. It never reads private-key bytes, signs, submits, or calls sendTx. ` +
+      `Example queries: prepare that order for approval, ready latest preview.`,
     ),
     aliases: ["lighter create prepare", "lighter order approval", "prepare order create", "approval gated lighter order"],
     exampleIntents: ["prepare that lighter order for approval", "create that RHC order after approval", "ready the latest lighter preview for order create"],
@@ -148,8 +148,8 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.create": {
     embeddingText: embeddingText(
       `Approval-gated Lighter order create resume target for a prepared execution intent. ` +
-      `Use only as the trusted approval follow-up after lighter.order.create.prepare; direct model calls without a prepared intent and approval-resume context are refused. ` +
-      `Current implementation records approval and refuses before privileged signer support, so it never signs, submits, cancels, deposits, withdraws, transfers, or calls sendTx. ` +
+      `Use when: the trusted approval follow-up from lighter.order.create.prepare resumes after the user approves. Direct model calls without a prepared intent and approval-resume context are refused. ` +
+      `Current implementation records approval and stays behind the explicit live-trading release gate until final provider-outcome repair and live proof are complete. ` +
       `Example queries: execute approved lighter order intent, resume lighter order create approval.`,
     ),
     aliases: ["lighter order create", "approved lighter order", "lighter order intent execute"],
