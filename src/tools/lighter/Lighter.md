@@ -30,6 +30,7 @@ module through read-only tools under the `lighter` namespace.
 | `throttle.ts` | Per-process public REST throttle, small TTL cache, in-flight dedupe |
 | `client.ts` | Read-only REST client and singleton |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
+| `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
@@ -83,6 +84,13 @@ until these boundaries are implemented and reviewed:
   transcript, logs, telemetry, CLI arguments, and provider error text must never
   receive API private keys, signatures, signed payloads, auth tokens, or raw
   trading credential material.
+- Trading credentials must enter future signer code only through an opaque
+  encrypted-vault reference. Vex must reject raw private-key-shaped strings,
+  read-only tokens, handler params, CLI args, and environment variables as
+  trading credential sources.
+- Lighter API key indexes `0` and `1` are reserved for Lighter interfaces, and
+  index `255` is the all-keys inspection sentinel. Future trading paths may use
+  only indexes `2` through `254`.
 - Nonces are per `(environment, accountIndex, apiKeyIndex)`. Vex must serialize
   signing for that key, persist the nonce before submit, and reconcile from
   provider state after ambiguous failures.
@@ -106,6 +114,25 @@ Execution lifecycle vocabulary:
 | `canceled` | Provider evidence proves cancellation |
 | `rejected` | Provider evidence proves rejection |
 | `ambiguous` | Vex cannot prove the final state and must not suggest blind retry |
+
+Signer and credential strategy:
+
+- Official Lighter docs require API-key-backed signing before transaction
+  submission. The signer client receives `{ apiKeyIndex: privateKey }`,
+  account index, and base URL.
+- Official docs state API private keys can trade, authenticate, and process
+  withdrawals. Vex therefore treats them as trading-capable secrets, not
+  read-only credentials.
+- Vex currently stores only a readiness boundary for this: `trading-credentials.ts`
+  validates `(environment, accountIndex, apiKeyIndex, vaultCredentialId)` and
+  returns a nonce scope. It never reads a private key and cannot sign.
+- The acceptable secret source for a future implementation is the encrypted
+  local vault. The agent layer may hold an opaque vault id, but not key bytes,
+  signatures, auth tokens, or signed payload JSON.
+- The future create path must combine a fresh preview match, user approval,
+  credential readiness, nonce reservation, durable activity intent, privileged
+  signing, provider submission, and provider/WebSocket outcome reconciliation in
+  that order.
 
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order
