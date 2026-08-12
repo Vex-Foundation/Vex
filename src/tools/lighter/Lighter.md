@@ -6,7 +6,8 @@ Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, a live-data-backed order preview gate, and local
 approval preparation for a future order create. The approval-prepared create
 path persists `lighter_order_execution_intents` and can ask the Vex approval
-runtime for consent, but Vex still has no API private-key reader, signer client,
+runtime for consent. Approved create can now build an internal signer-bound
+execution plan from the durable intent, but Vex still has no API private-key reader, signer client,
 signature, `sendTx`, order submission, order cancel, deposit, withdrawal,
 transfer, or other provider state-changing Lighter path.
 
@@ -31,6 +32,7 @@ transfer, or other provider state-changing Lighter path.
 | `client.ts` | Read-only REST client and singleton |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
+| `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
@@ -135,6 +137,12 @@ Signer and credential strategy:
   credential readiness, nonce reservation, durable activity intent, privileged
   signing, provider submission, and provider/WebSocket outcome reconciliation in
   that order.
+- `execution-plan.ts` is the current ready-for-signer boundary. It accepts only
+  an approved, unexpired, session-scoped durable intent whose opaque vault
+  reference still matches the preview-bound environment/account/API-key scope.
+  It refuses intents that are unapproved, already advanced, expired, nonce
+  reserved, or credential-scope mismatched. The live submit gate is hard-coded
+  disabled until the user explicitly approves the trading milestone.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /

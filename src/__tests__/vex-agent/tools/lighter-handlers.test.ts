@@ -427,7 +427,9 @@ describe("Lighter agent read handlers", () => {
       reason: "user approved exact Lighter order create intent",
     });
     expect(result.success).toBe(false);
+    expect(result.output).toContain("live trading is disabled");
     expect(result.output).toContain("No order was signed or submitted.");
+    expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
   });
 
   it("reads system status and config for the requested environment", async () => {

@@ -12,6 +12,7 @@ import {
   LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   LIGHTER_ORDER_WRITE_ACTION_KIND,
   LIGHTER_ORDER_WRITE_TOOL_IDS,
+  isLighterLiveTradingEnabled,
 } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 
 const ROOT = process.cwd();
@@ -89,7 +90,10 @@ describe("Lighter execution boundary", () => {
       "durable_activity_intent_before_submit",
       "api_acceptance_not_final_execution",
       "provider_evidence_before_terminal_state",
+      "explicit_live_trading_release_gate",
     ]);
+    expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.liveTradingEnabled).toBe(false);
+    expect(isLighterLiveTradingEnabled()).toBe(false);
   });
 
   it("registers create only through the approval-gated execution path", () => {

@@ -11,6 +11,10 @@ import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../typ
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { readEnvironment } from "../params.js";
+import {
+  buildLighterOrderReadyForSignerPlan,
+  requireLighterLiveTradingEnabled,
+} from "../execution-plan.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -192,6 +196,13 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     });
     if (approved === null) {
       return fail(`Lighter order execution intent ${intent.intentId} has already left approval_pending.`);
+    }
+
+    buildLighterOrderReadyForSignerPlan(approved);
+    try {
+      requireLighterLiveTradingEnabled();
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
     }
 
     return fail(

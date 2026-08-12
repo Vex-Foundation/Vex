@@ -52,6 +52,7 @@ export const LIGHTER_ORDER_EXECUTION_REQUIRED_BOUNDARIES = [
   "durable_activity_intent_before_submit",
   "api_acceptance_not_final_execution",
   "provider_evidence_before_terminal_state",
+  "explicit_live_trading_release_gate",
 ] as const;
 
 export type LighterOrderExecutionRequiredBoundary =
@@ -65,4 +66,14 @@ export const LIGHTER_ORDER_EXECUTION_BOUNDARY = {
   executionStates: LIGHTER_ORDER_EXECUTION_STATES,
   terminalStates: LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   liveSubmitMilestone: "approval-gated order create",
+  liveTradingEnabled: false,
 } as const;
+
+export const LIGHTER_LIVE_TRADING_DISABLED_MESSAGE =
+  "Lighter order create reached the approved execution boundary, but live trading is disabled until the privileged signer and sendTx milestone is explicitly approved. No order was signed or submitted.";
+
+export const LIGHTER_LIVE_TRADING_ENABLED: boolean = false;
+
+export function isLighterLiveTradingEnabled(): boolean {
+  return LIGHTER_LIVE_TRADING_ENABLED;
+}
