@@ -32,6 +32,7 @@ transfer, or other provider state-changing Lighter path.
 | `client.ts` | Read-only REST client and singleton |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
+| `trading-secret.ts` | Typed private-key material loader that only accepts an injected privileged reader and refuses env/managed-vault shortcuts |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
@@ -143,6 +144,12 @@ Signer and credential strategy:
   It refuses intents that are unapproved, already advanced, expired, nonce
   reserved, or credential-scope mismatched. The live submit gate is hard-coded
   disabled until the user explicitly approves the trading milestone.
+- `trading-secret.ts` defines the private-key material boundary for the later
+  privileged signer adapter. It can load key bytes only from an injected
+  privileged reader and refuses missing, incomplete, or read-only-token material.
+  It deliberately does not read `process.env`, handler params, CLI args, or the
+  current managed vault keys that are mirrored into environment variables on
+  unlock.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /

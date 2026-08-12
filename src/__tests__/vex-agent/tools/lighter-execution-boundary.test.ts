@@ -29,6 +29,8 @@ const EXECUTION_BOUNDARY_SOURCE = join(
 const FORBIDDEN_UNTIL_CREATE_MILESTONE =
   /\b(sendTx|sendTxBatch|createOrder|cancelOrder|signOrder|signTransaction)\s*\(/;
 const TRADING_CREDENTIAL_ENV_KEY_RE = /\bLIGHTER_(CORE|RHC)_API_PRIVATE_KEY\b/;
+const FORBIDDEN_TRADING_SECRET_SHORTCUT_RE =
+  /\b(process\.env|readUnlockedSecret|writeSecretVaultSecrets|VAULT_SECRET_KEYS)\b/;
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -136,5 +138,12 @@ describe("Lighter execution boundary", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("keeps the trading secret boundary away from env and managed-vault shortcuts", () => {
+    const file = join(ROOT, "src/tools/lighter/trading-secret.ts");
+    const source = readFileSync(file, "utf-8");
+    expect(source).not.toMatch(FORBIDDEN_TRADING_SECRET_SHORTCUT_RE);
+    expect(source).not.toMatch(TRADING_CREDENTIAL_ENV_KEY_RE);
   });
 });
