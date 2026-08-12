@@ -5,7 +5,11 @@
  * reaches the network, each failure finalized against the SAME execution.
  */
 
-import { signStageKhalaniLeg, type KhalaniStagedLeg } from "@tools/khalani/bridge-executor.js";
+import {
+  signStageKhalaniLeg,
+  type KhalaniStagedLeg,
+  type KhalaniStagedOutcome,
+} from "@tools/khalani/bridge-executor.js";
 import type { KhalaniChain } from "@tools/khalani/types.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import {
@@ -20,6 +24,13 @@ import {
   failActivityEvent,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
+import {
+  authorizedDepositRecipients,
+  confirmDepositWithProvenAmounts,
+  proveErc20DepositAmount,
+  receiptDepositSettlement,
+  type DepositSettlement,
+} from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import logger from "@utils/logger.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import type { ToolResult } from "../../../../types.js";
@@ -41,6 +52,10 @@ export interface KhalaniLegLoopInput {
   readonly bridgeLegCount: number;
   readonly intentLegs: readonly AgentActivityEvent[];
   readonly sourceChain: KhalaniChain;
+  /** The source-chain input token of the bridge - the token a deposit transfer must move. */
+  readonly fromToken: string;
+  /** What the venue was quoted for: the ABSOLUTE upper bound on the deposit's declared amount. */
+  readonly quotedAmountRaw: string;
   readonly chains: KhalaniChain[];
   readonly signer: ChainWallet;
   readonly fromChainId: number;
@@ -57,6 +72,54 @@ export type KhalaniLegLoopOutcome =
   | { readonly outcome: "confirmed"; readonly depositTxHash: string | undefined; readonly currentIndex: number }
   /** The loop stopped and the handler must return this result verbatim. */
   | { readonly outcome: "halted"; readonly result: ToolResult; readonly currentIndex: number };
+
+/**
+ * What the confirmed DEPOSIT leg may declare it moved.
+ *
+ * A Vex-built NATIVE transfer is proven by the transaction Vex itself signed:
+ * its whole value is the principal, and no log exists for a plain native
+ * transfer. Everything else is an ERC-20 question the RECEIPT answers - Vex-built
+ * calldata narrows which log is ours, but it cannot promise that a token emitted
+ * the standard `Transfer` the amount must be read from, and AgentScan's
+ * verification scans exactly those logs. A leg the plan never stamped (a Solana
+ * deposit, which has no EVM receipt) declines.
+ */
+function khalaniDepositSettlement(
+  stagedLeg: KhalaniStagedLeg,
+  outcome: Extract<KhalaniStagedOutcome, { kind: "confirmed" }>,
+  input: KhalaniLegLoopInput,
+): DepositSettlement {
+  const evidence = stagedLeg.kind === "evm" ? stagedLeg.depositEvidence : undefined;
+  if (evidence === undefined || outcome.receiptLogs === null) {
+    return { kind: "declined", reason: "unusable_evidence_request", candidateCount: 0 };
+  }
+  if (evidence.kind === "vex_built_native_transfer") {
+    return {
+      kind: "proven",
+      evidence: { kind: "vex_built_exact", amountRaw: evidence.valueWei.toString() },
+    };
+  }
+  // A spender is an authorized destination only for the token its OWN approval
+  // named, and only up to the allowance that approval leaves in force once the
+  // execution's approvals are replayed in order.
+  const recipients = evidence.kind === "vex_built_erc20_transfer"
+    ? [{ address: evidence.recipient, maxAmountRaw: null }]
+    : authorizedDepositRecipients({
+      inputToken: input.fromToken,
+      callTarget: evidence.callTarget,
+      approvals: evidence.approvedSpenders,
+    });
+  return receiptDepositSettlement(proveErc20DepositAmount({
+    logs: outcome.receiptLogs,
+    tokenAddress: evidence.kind === "vex_built_erc20_transfer" ? evidence.token : input.fromToken,
+    senderAddress: input.signer.address,
+    recipients,
+    quotedAmountInRaw: input.quotedAmountRaw,
+    ...(evidence.kind === "vex_built_erc20_transfer"
+      ? { expectedAmountRaw: evidence.amountRaw.toString() }
+      : {}),
+  }));
+}
 
 export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<KhalaniLegLoopOutcome> {
   const {
@@ -139,16 +202,23 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
       let legStatus = "confirmed";
       priorLeg = priorLegAnchorFrom(outcome.settledAtBlock);
       try {
-        // R1 Step 3b, the NO-amount arm, stated rather than left silent. This
-        // loop is shared by allowance and deposit rows, and a Khalani
-        // `CONTRACT_CALL` or Solana deposit leg comes from a PROVIDER payload:
-        // confirming it proves inclusion, never the principal it carried. Only a
-        // Vex-built exact `TRANSFER` plan could claim otherwise, and this site
-        // cannot tell the two apart — so it claims nothing.
-        const confirmResult = await confirmActivityEvent(
-          legRow.id,
-          provenLegAmounts(legRow.eventRole, { kind: "opaque_provider_payload" }),
-        );
+        // What this leg may declare it moved. An allowance leg moves nothing; a
+        // deposit leg declares only what its own receipt proves, or declines by
+        // name (`bridge-deposit-evidence.ts`). Confirming a leg proves inclusion
+        // and never, on its own, the principal it carried.
+        const confirmResult = stagedLeg.isDeposit
+          ? await confirmDepositWithProvenAmounts({
+            eventId: legRow.id,
+            role: legRow.eventRole,
+            txHash: outcome.txHash,
+            chainId: fromChainId,
+            settlement: khalaniDepositSettlement(stagedLeg, outcome, input),
+            logScope: "khalani.bridge",
+          })
+          : await confirmActivityEvent(
+            legRow.id,
+            provenLegAmounts(legRow.eventRole, { kind: "opaque_provider_payload" }),
+          );
         if (!confirmResult.applied) {
           const alreadyMatches =
             confirmResult.row.status === "confirmed" && confirmResult.row.txHash === outcome.txHash;

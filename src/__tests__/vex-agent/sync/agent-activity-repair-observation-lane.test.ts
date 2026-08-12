@@ -123,7 +123,7 @@ describe("the lane's post-RPC writes are all fenced by the claim token", () => {
 
 describe("the 90 s money gate — observe-only inside the window", () => {
   it("does NOT confirm a mined-success row inside the window", async () => {
-    const outcome = await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success" }), {
+    const outcome = await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success", blockTimeIso: null }), {
       claimToken: CLAIM_TOKEN,
       allowTerminalize: false,
     });
@@ -133,7 +133,7 @@ describe("the 90 s money gate — observe-only inside the window", () => {
   });
 
   it("does NOT fail a mined-revert row inside the window", async () => {
-    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "reverted" }), {
+    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "reverted", blockTimeIso: null }), {
       claimToken: CLAIM_TOKEN,
       allowTerminalize: false,
     });
@@ -142,7 +142,7 @@ describe("the 90 s money gate — observe-only inside the window", () => {
   });
 
   it("confirms once the window has passed", async () => {
-    const outcome = await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success" }), {
+    const outcome = await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success", blockTimeIso: null }), {
       claimToken: CLAIM_TOKEN,
       allowTerminalize: true,
     });
@@ -272,7 +272,7 @@ describe("the MINED paths are fenced too — the adjudicated counterexample", ()
    * fix. The 90 s gate does not cover it: by then the window is long past.
    */
   it("passes the claim context to the status-only confirm on mined success", async () => {
-    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success" }), {
+    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "success", blockTimeIso: null }), {
       claimToken: CLAIM_TOKEN,
       allowTerminalize: true,
     });
@@ -284,7 +284,7 @@ describe("the MINED paths are fenced too — the adjudicated counterexample", ()
   });
 
   it("passes the claim context to the failure CAS on mined revert", async () => {
-    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "reverted" }), {
+    await resolveEvmPendingRow(row(), depsReturning({ kind: "mined", status: "reverted", blockTimeIso: null }), {
       claimToken: CLAIM_TOKEN,
       allowTerminalize: true,
     });
@@ -305,7 +305,7 @@ describe("the MINED paths are fenced too — the adjudicated counterexample", ()
 
     const outcome = await resolveEvmPendingRow(
       row(),
-      depsReturning({ kind: "mined", status: "success" }),
+      depsReturning({ kind: "mined", status: "success", blockTimeIso: null }),
       { claimToken: CLAIM_TOKEN, allowTerminalize: true },
     );
 
@@ -324,7 +324,7 @@ describe("the MINED paths are fenced too — the adjudicated counterexample", ()
 
     const outcome = await resolveEvmPendingRow(
       row(),
-      depsReturning({ kind: "mined", status: "reverted" }),
+      depsReturning({ kind: "mined", status: "reverted", blockTimeIso: null }),
       { claimToken: CLAIM_TOKEN, allowTerminalize: true },
     );
 
@@ -353,7 +353,7 @@ describe("a lost claim is reported ONCE", () => {
 
     const outcome = await resolveEvmPendingRow(
       row(),
-      depsReturning({ kind: "mined", status: "success" }),
+      depsReturning({ kind: "mined", status: "success", blockTimeIso: null }),
       { claimToken: CLAIM_TOKEN, allowTerminalize: true },
     );
 
@@ -379,7 +379,7 @@ describe("a lost claim is reported ONCE", () => {
     });
 
     const result = await repairPendingActivity(
-      depsReturning({ kind: "mined", status: "success" }),
+      depsReturning({ kind: "mined", status: "success", blockTimeIso: null }),
     );
 
     expect(result).toMatchObject({ checked: 1, confirmed: 0, failed: 0, stillPending: 1 });

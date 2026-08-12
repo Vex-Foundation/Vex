@@ -101,6 +101,8 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
         : Number(r.last_valid_block_height),
     broadcastAt: toIsoOrNull(r.broadcast_at),
     confirmedAt: toIsoOrNull(r.confirmed_at),
+    // Migration 078 — chain block time, NULL on every row written before it.
+    settledBlockTime: toIsoOrNull(r.settled_block_time),
     lastCheckedAt: toIsoOrNull(r.last_checked_at),
     verificationAttempts: Number(r.verification_attempts ?? 0),
     lastVerificationReason:

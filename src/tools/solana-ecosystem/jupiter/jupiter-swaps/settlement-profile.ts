@@ -4,13 +4,14 @@
  * `assertBuildResponseSafeToSign` already PROVED about the exact bytes that
  * were signed.
  *
- * WRITE-ONLY TODAY (owner decree 2026-07-30). It was written for the Solana
- * repair sweep's protocol-aware settlement decoder, which distinguished a
- * landed swap's wallet-sourced `system` transfers (the landing tip, and the
- * wrap funding transfer for a native-SOL input) from an unrelated payment. That
- * sweep is now STATUS-ONLY and decodes nothing, so the in-repo READER is gone.
- * The WRITE stays: it is audit metadata for a self-custodial money app and the
- * only durable record of the economics behind a signed swap.
+ * READ BY THE SOLANA ACTIVITY SWEEP. `readJupiterFeeSwapSettlementProfile`
+ * below is the reader: it supplies the input/output MINTS that bound the sweep's
+ * SPL balance-delta decode
+ * (`vex-agent/sync/solana-activity-repair/executed-amounts.ts`), so an executed
+ * amount can only ever describe the swap Vex itself approved. The profile is
+ * also audit metadata for a self-custodial money app - the only durable record
+ * of the economics behind a signed swap - which is why it is written even for
+ * rows no decoder ends up reading.
  *
  * NEVER A GUESS. The profile is written ONLY when every field can be stated
  * honestly. An approved tip whose recipient was not certified yields NO profile
@@ -113,4 +114,25 @@ export function buildSolanaSettlementRouteProvenance(
   if (!parsed.success) return undefined;
 
   return { [ROUTE_PROVENANCE_SETTLEMENT_KEY]: parsed.data };
+}
+
+/**
+ * The persisted profile out of a row's `route_provenance` bag, or `null` when
+ * this row carries none it can trust.
+ *
+ * `route_provenance` is a shared bag written by several protocols and read back
+ * out of the database as `unknown`, so it is VALIDATED here with the same schema
+ * the write used - including the version literal. A shape this build does not
+ * recognise (a future `v`, another protocol's key, a hand-edited row) yields
+ * `null`, and its caller decodes nothing rather than bounding a money decode by
+ * mints it could not verify.
+ */
+export function readJupiterFeeSwapSettlementProfile(
+  routeProvenance: Record<string, unknown> | null,
+): JupiterFeeSwapSettlementProfile | null {
+  if (routeProvenance === null) return null;
+  const parsed = jupiterFeeSwapSettlementProfileSchema.safeParse(
+    routeProvenance[ROUTE_PROVENANCE_SETTLEMENT_KEY],
+  );
+  return parsed.success ? parsed.data : null;
 }

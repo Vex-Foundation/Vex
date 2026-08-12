@@ -24,8 +24,8 @@
  *
  * `last_error` carries status/code words only ("429 rate_limited"), never
  * response bodies and never the ingest token. The eligibility predicate keeps
- * contract-inexpressible rows (kinds beyond swap/bridge, non-public roles,
- * status `superseded_unproven`) out of the outbox entirely.
+ * rows the ingest contract cannot express (the approval roles the server's enum
+ * does not contain) out of the outbox entirely.
  */
 
 import type { PoolClient } from "pg";
@@ -56,22 +56,112 @@ export interface AgentscanReportingState {
 export interface ClaimedOutboxEvent {
   readonly outboxId: number;
   readonly activityId: number;
-  readonly status: "pending" | "confirmed" | "definitively_failed";
+  readonly status: "pending" | "confirmed" | "definitively_failed" | "superseded_unproven";
   readonly backfill: boolean;
   /** Raw `agent_activity` row for payload building; null if the row vanished between claim and read. */
   readonly activity: Record<string, unknown> | null;
 }
 
 /**
- * The contract-v1 eligibility predicate — the single source of truth for what
- * is reportable at all. Kept as one fragment so the scan can never drift from
- * the vocabulary the server's closed enums accept.
+ * The eligibility predicate — the single source of truth for what is reportable
+ * at all. Kept as one fragment so the scan can never drift from the vocabulary
+ * the server's closed enums accept.
+ *
+ * It is the FULL contract vocabulary minus one deliberate exclusion:
+ * `allowance` and `allowance_reset` are absent because the server's role enum
+ * does not contain them, so every such event would be rejected item by item.
+ * Approvals are still recorded locally; they simply have nowhere to go.
+ * `wrap`/`unwrap` are in the server's vocabulary but have no producer in this
+ * install, so they are left out until one exists.
  */
 const ELIGIBILITY_SQL = `
-      a.kind IN ('swap','bridge')
-  AND a.event_role IN ('swap','bridge_deposit','bridge_fill_expected','bridge_fill_observed','bridge_refund')
-  AND a.status IN ('pending','confirmed','definitively_failed')
+      a.kind IN ('swap','bridge','lend','prediction','yield','launch')
+  AND a.event_role IN (
+        'swap','swap_fee','trench_fee',
+        'bridge_deposit','bridge_fee','bridge_fill_expected','bridge_fill_observed','bridge_refund',
+        'lend_deposit','lend_withdraw','lend_borrow_operate',
+        'predict_buy','predict_sell','predict_claim','predict_close',
+        'yield_pt','yield_yt','yield_py','yield_lp','yield_sy','yield_claim',
+        'token_launch')
+  AND a.status IN ('pending','confirmed','definitively_failed','superseded_unproven')
   AND a.chain_family IN ('eip155','solana')`;
+
+/**
+ * How long a confirmed row may wait for its executed amounts before it is
+ * reported without them.
+ *
+ * The amounts have to ride the TERMINAL event: the server's only merge window
+ * is `pending -> terminal`, and a second terminal event for the same pair is
+ * silently dropped, so an amount that arrives after the confirmed event was
+ * sent can never reach the server. Holding is therefore the only way to report
+ * a settled amount at all. The grace bounds the hold: a decoder that never
+ * finishes, or a lane that is not running, must not make the activity itself
+ * invisible.
+ */
+const CONFIRMED_AMOUNT_GRACE_MINUTES = 15;
+
+/** The roles whose completeness means BOTH executed legs. */
+const BOTH_LEGS_ROLES_SQL = `(
+  'swap','wrap','unwrap','token_launch',
+  'yield_pt','yield_yt','yield_sy',
+  'lend_deposit','lend_withdraw','lend_borrow_operate',
+  'predict_buy','predict_sell','predict_claim','predict_close')`;
+
+/**
+ * "This row's role has every executed leg it requires" — the SQL mirror of
+ * `roleLegsIncomplete` (`./agent-activity/role-legs.ts`), negated.
+ *
+ * A mirror rather than a shared implementation because the scan is one set
+ * query over the whole table and cannot call a row predicate. It must be kept
+ * arm for arm with that function: `yield_claim` is output-only,
+ * `bridge_deposit` is input-only, the second legs are required only where the
+ * row populated their tokens, and a role that bears no amounts is never
+ * incomplete.
+ */
+const ROLE_LEGS_COMPLETE_SQL = `
+  CASE
+    WHEN a.event_role = 'yield_claim' THEN a.executed_amount_out_raw IS NOT NULL
+    WHEN a.event_role = 'bridge_deposit' THEN a.executed_amount_in_raw IS NOT NULL
+    WHEN a.event_role IN ('yield_py','yield_lp') THEN
+      a.executed_amount_in_raw IS NOT NULL
+      AND a.executed_amount_out_raw IS NOT NULL
+      AND (a.token_in2_address IS NULL OR a.executed_amount_in2_raw IS NOT NULL)
+      AND (a.token_out2_address IS NULL OR a.executed_amount_out2_raw IS NOT NULL)
+    WHEN a.event_role IN ${BOTH_LEGS_ROLES_SQL} THEN
+      a.executed_amount_in_raw IS NOT NULL AND a.executed_amount_out_raw IS NOT NULL
+    ELSE TRUE
+  END`;
+
+/**
+ * The settlement provenances that END the wait without amounts: a decoder that
+ * declined by name (`noteSettlementDeclined`) and the durable quarantine two
+ * disagreeing decoders leave behind. Each is a CONCLUSION that no reportable
+ * amount is coming, so holding the row longer would only delay the activity.
+ */
+const SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL =
+  `a.settlement_source IN ('amounts_incomplete','amounts_undecodable','conflict_quarantined')`;
+
+/**
+ * HOLD A CONFIRMED ROW UNTIL ITS MONEY IS KNOWN — the readiness gate, applied
+ * before the pair is ever enqueued.
+ *
+ * The server merges `pending -> terminal` exactly once and silently drops a
+ * repeat of a terminal pair, so executed amounts that miss their own confirmed
+ * event are lost to it forever. Enqueueing the pending snapshot immediately and
+ * the confirmed snapshot only when its amounts are settled is what makes the
+ * one merge window carry the money.
+ *
+ * Three ways out, so the hold can never be permanent: the amounts arrived, a
+ * decoder concluded by name that none are coming, or the grace elapsed. Every
+ * other status bypasses the gate entirely — a pending row has no amounts to
+ * wait for, and neither a definitive failure nor a superseded row ever will.
+ */
+const CONFIRMED_READINESS_SQL = `
+  (a.status <> 'confirmed'
+   OR ${ROLE_LEGS_COMPLETE_SQL}
+   OR ${SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL}
+   OR a.confirmed_at IS NULL
+   OR a.confirmed_at < NOW() - make_interval(mins => ${CONFIRMED_AMOUNT_GRACE_MINUTES}))`;
 
 /** Exponential claim backoff: 30 s · 2^n, capped at 1 h (exponent clamped so POWER stays finite). */
 const CLAIM_BACKOFF_SQL = `LEAST(30 * POWER(2, LEAST(o.attempt_count, 20)), 3600)`;
@@ -293,9 +383,12 @@ export async function markBackfillEnqueued(): Promise<void> {
 }
 
 /**
- * The diff scan. Inserts every eligible (activity, status) pair the outbox has
- * never seen; returns how many were enqueued. `backfill` stamps the rows as
- * belonging to the one-time post-registration history send.
+ * The diff scan. Inserts every eligible-AND-READY (activity, status) pair the
+ * outbox has never seen; returns how many were enqueued. `backfill` stamps the
+ * rows as belonging to the one-time post-registration history send.
+ *
+ * A confirmed pair that is held back by `CONFIRMED_READINESS_SQL` is not lost:
+ * the scan is a diff, so the next tick that finds it ready enqueues it then.
  */
 export async function enqueueEligibleActivity(backfill: boolean): Promise<number> {
   return execute(
@@ -303,6 +396,7 @@ export async function enqueueEligibleActivity(backfill: boolean): Promise<number
      SELECT a.id, a.status, $1
        FROM agent_activity a
       WHERE ${ELIGIBILITY_SQL}
+        AND ${CONFIRMED_READINESS_SQL}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
                          WHERE o.activity_id = a.id AND o.status = a.status)
      ON CONFLICT (activity_id, status) DO NOTHING`,

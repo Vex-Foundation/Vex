@@ -171,6 +171,37 @@ describe("decodeCurveSell", () => {
     });
   });
 
+  it("declines the ETH leg when Sold's token leg disagrees with the receipt's own transfers", () => {
+    // The receipt says 100 left the wallet; the event claims 90. Nothing proves
+    // the positional mapping, so the ETH figure is not executed truth.
+    const logs: DecodedLog[] = [
+      transferLog(TOKEN, WALLET, DIAMOND, 100n),
+      curveEventLog("Sold", WALLET, TOKEN, 490_000_000_000_000n, 90n, 1n),
+    ];
+    expect(decodeCurveSell({ logs, diamond: DIAMOND, wallet: WALLET, token: TOKEN, amountInRaw: 100n }))
+      .toEqual({ tokensInRaw: 100n, ethOutRaw: null });
+  });
+
+  it("declines the ETH leg when the receipt's token leg EXCEEDS the planned amount", () => {
+    // Self-consistent event and receipt, but more left the wallet than the plan
+    // authorized: the bound is absolute, so the proceeds are not declared.
+    const logs: DecodedLog[] = [
+      transferLog(TOKEN, WALLET, DIAMOND, 150n),
+      curveEventLog("Sold", WALLET, TOKEN, 490_000_000_000_000n, 150n, 1n),
+    ];
+    expect(decodeCurveSell({ logs, diamond: DIAMOND, wallet: WALLET, token: TOKEN, amountInRaw: 100n }))
+      .toEqual({ tokensInRaw: 150n, ethOutRaw: null });
+  });
+
+  it("accepts a PARTIAL sell the receipt and the event agree on, under the planned bound", () => {
+    const logs: DecodedLog[] = [
+      transferLog(TOKEN, WALLET, DIAMOND, 60n),
+      curveEventLog("Sold", WALLET, TOKEN, 490_000_000_000_000n, 60n, 1n),
+    ];
+    const out = decodeCurveSell({ logs, diamond: DIAMOND, wallet: WALLET, token: TOKEN, amountInRaw: 100n });
+    expect(out).toEqual({ tokensInRaw: 60n, ethOutRaw: 490_000_000_000_000n });
+  });
+
   it("declines the ETH leg (null) when the token-leg cross-check fails", () => {
     const logs: DecodedLog[] = [
       transferLog(TOKEN, WALLET, DIAMOND, 100n),

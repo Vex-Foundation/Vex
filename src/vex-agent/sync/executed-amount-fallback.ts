@@ -58,6 +58,10 @@ import {
   decodeVenueSettlement,
   type VenueDecodeLog,
 } from "./executed-amount-fallback/venue-dispatch.js";
+import type {
+  DepositEvidenceDeps,
+  MinedTransaction,
+} from "./executed-amount-fallback/deposit-evidence-resolver.js";
 
 /**
  * The decoder-set identity+version stamped on a COMPLETED decline.
@@ -67,12 +71,12 @@ import {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-04.kyber-correlated-native-out";
+export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-12.bridge-deposit-and-trench";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;
 
-export interface AmountFallbackDeps {
+export interface AmountFallbackDeps extends DepositEvidenceDeps {
   /**
    * The mined receipt's logs, by hash. Read-only, and the ONLY dependency this
    * module has — it holds no signer and never re-quotes or re-executes.
@@ -90,7 +94,7 @@ export interface AmountFallbackResult {
   readonly checked: number;
   readonly filled: number;
   readonly declined: number;
-  /** Receipt unreadable this pass — the row keeps its eligibility. */
+  /** A receipt or transaction was unreadable this pass: the row keeps its eligibility. */
   readonly deferred: number;
   readonly conflicted: number;
 }
@@ -139,15 +143,35 @@ export async function repairMissingExecutedAmounts(
  */
 export function buildProductionAmountFallbackDeps(): AmountFallbackDeps {
   const clientsByChainId = new Map<number, Promise<unknown>>();
+  const clientFor = async (chainId: number) => {
+    let cached = clientsByChainId.get(chainId);
+    if (!cached) {
+      cached = resolveReadOnlyReceiptClient(chainId);
+      clientsByChainId.set(chainId, cached);
+    }
+    return asJsonRpcClient(await cached);
+  };
 
   return {
-    fetchReceiptLogs: async ({ chainId, txHash }) => {
-      let cached = clientsByChainId.get(chainId);
-      if (!cached) {
-        cached = resolveReadOnlyReceiptClient(chainId);
-        clientsByChainId.set(chainId, cached);
+    fetchTransaction: async ({ chainId, txHash }) => {
+      const client = await clientFor(chainId);
+      if (!client) return null;
+      try {
+        const transaction = await client.request({
+          method: "eth_getTransactionByHash",
+          params: [txHash],
+        });
+        return readMinedTransaction(transaction);
+      } catch (err) {
+        logger.debug("sync.amount_fallback.transaction_unreadable", {
+          chainId,
+          error: summarizeProtocolError(err).message,
+        });
+        return null;
       }
-      const client = asJsonRpcClient(await cached);
+    },
+    fetchReceiptLogs: async ({ chainId, txHash }) => {
+      const client = await clientFor(chainId);
       if (!client) return null;
       try {
         const receipt = await client.request({
@@ -164,6 +188,23 @@ export function buildProductionAmountFallbackDeps(): AmountFallbackDeps {
       }
     },
   };
+}
+
+/**
+ * The raw JSON-RPC transaction is UNTRUSTED: every field a money decision can
+ * touch is validated here, and anything malformed reads as UNREADABLE (`null`),
+ * never as a transaction with missing parts.
+ *
+ * `value` arrives as a hex quantity and leaves as decimal atomic units, because
+ * that is the only form the amount columns and the bounds ever speak.
+ */
+function readMinedTransaction(transaction: unknown): MinedTransaction | null {
+  if (typeof transaction !== "object" || transaction === null) return null;
+  const { from, to, input, value } = transaction as Record<string, unknown>;
+  if (typeof from !== "string" || typeof input !== "string") return null;
+  if (to !== null && typeof to !== "string") return null;
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) return null;
+  return { from, to: to ?? null, input, valueRaw: BigInt(value).toString() };
 }
 
 /**
@@ -202,11 +243,23 @@ async function repairOneRow(
     return "deferred";
   }
 
-  const decoded = decodeVenueSettlement({
+  const decoded = await decodeVenueSettlement({
     row,
     logs,
     hint: readSettlementDecodeHint(row.routeProvenance),
+    deps,
   });
+
+  if (decoded.kind === "deferred") {
+    // A chain read the decode needed did not answer. Nothing was decided, so the
+    // row keeps its eligibility instead of burning it on a transport failure.
+    logger.debug("sync.amount_fallback.deferred", {
+      id: row.id,
+      protocol: row.protocol,
+      detail: decoded.detail,
+    });
+    return "deferred";
+  }
 
   if (decoded.kind === "declined") {
     await noteSettlementDeclined(row.id, decoded.reason);

@@ -86,7 +86,7 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
 
     expect(mockGetPendlePublicClient).toHaveBeenCalledWith(MONAD_CHAIN_ID);
     // Status only — the raw receipt is deliberately NOT carried any more.
-    expect(result).toEqual({ kind: "mined", status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success", blockTimeIso: null });
   });
 
   it("resolves a Robinhood (4663) receipt through the LOCAL evm-chains registry — the stuck-row case", async () => {
@@ -98,7 +98,7 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
 
     expect(mockGetLocalPublicClient).toHaveBeenCalledWith(robinhood);
     expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
-    expect(result).toEqual({ kind: "mined", status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success", blockTimeIso: null });
   });
 
   it("memoizes the resolved client per chain for the lifetime of ONE sweep run", async () => {
@@ -124,7 +124,7 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
 
     await expect(
       buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID)),
-    ).resolves.toEqual({ kind: "mined", status: "reverted" });
+    ).resolves.toEqual({ kind: "mined", status: "reverted", blockTimeIso: null });
   });
 
   // A receipt whose status we cannot READ must never be reported as a revert:
@@ -167,7 +167,7 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
 
     const result = await buildProductionRepairDeps().observeTransaction(input(8453));
 
-    expect(result).toEqual({ kind: "mined", status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success", blockTimeIso: null });
     expect(mockGetLocalPublicClient).not.toHaveBeenCalled();
     expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
   });

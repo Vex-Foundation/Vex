@@ -27,9 +27,11 @@
 
 export {
   khalaniLegNativeValueCall,
+  type KhalaniDepositEvidence,
   type KhalaniLegPurpose,
   type KhalaniLegRole,
   type KhalaniStagedLeg,
+  type KhalaniReceiptLog,
   type KhalaniStagedOutcome,
   type KhalaniStageHandles,
   type KhalaniStageHooks,

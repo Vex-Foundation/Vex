@@ -12,9 +12,17 @@
  *
  * 1 x `eth_getTransactionReceipt`. ONLY on a miss: 1 x
  * `eth_getTransactionByHash`. ONLY when that misses too: 1 x
- * `eth_getTransactionCount(from, 'latest')`. So the common case — a mined
- * transaction — stays exactly one call, and the extra calls are spent precisely
- * on the rows that are actually interesting.
+ * `eth_getTransactionCount(from, 'latest')`. So the extra calls are spent
+ * precisely on the rows that are actually interesting.
+ *
+ * A MINED transaction spends one more: `eth_getBlockByNumber` for the block's
+ * TIMESTAMP. That is the only source of the settling block time, and the row's
+ * own `confirmed_at` cannot substitute for it — that is when WE looked, which
+ * after a restart can be hours later, and reporting it is what earns a
+ * time-mismatch strike from AgentScan. The call happens once per row, at the
+ * moment the row terminalizes, inside the same deadline and under the lane's
+ * existing concurrency bound. A block we cannot read is simply no block time:
+ * the observation still concludes `mined` and the row still terminalizes.
  *
  * ── The cancellation contract (E1.2 rule 3) ────────────────────────────────
  *
@@ -65,7 +73,16 @@ if (EVM_OBSERVATION_DEADLINE_MS >= EVM_CLAIM_LEASE_MS) {
 
 /** What ONE look at the chain concluded about a pending transaction. */
 export type EvmObservation =
-  | { readonly kind: "mined"; readonly status: "success" | "reverted" }
+  | {
+      readonly kind: "mined";
+      readonly status: "success" | "reverted";
+      /**
+       * The settling block's own time, ISO-8601. `null` when the node did not
+       * answer with a readable block — an accuracy loss on the report and
+       * nothing more, never a reason to withhold the settlement itself.
+       */
+      readonly blockTimeIso: string | null;
+    }
   /** A receipt exists and its status is a value we cannot read. NOT a revert. */
   | { readonly kind: "unreadable_receipt" }
   /** `eth_getTransactionByHash` returned a transaction with `blockNumber === null`. */
@@ -136,7 +153,10 @@ export async function observeEvmTransaction(
       { signal },
     );
     const status = readReceiptStatus(receipt);
-    if (status !== "absent") return status === "unreadable" ? { kind: "unreadable_receipt" } : { kind: "mined", status };
+    if (status === "unreadable") return { kind: "unreadable_receipt" };
+    if (status !== "absent") {
+      return { kind: "mined", status, blockTimeIso: await readBlockTime(client, receipt, signal) };
+    }
 
     // No receipt. Is it in a mempool we can see?
     const tx = await client.request(
@@ -198,6 +218,35 @@ function readReceiptStatus(receipt: unknown): "success" | "reverted" | "unreadab
 function isMempoolTransaction(tx: unknown): boolean {
   if (typeof tx !== "object" || tx === null) return false;
   return (tx as { blockNumber?: unknown }).blockNumber === null;
+}
+
+/**
+ * The settling block's timestamp, from the receipt's own block number.
+ *
+ * Never throws: this is a precision improvement on a report, so a node that
+ * cannot answer costs the report its block time and costs the row nothing. The
+ * shared observation signal bounds it like every other call here.
+ */
+async function readBlockTime(
+  client: JsonRpcClient,
+  receipt: unknown,
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (typeof receipt !== "object" || receipt === null) return null;
+  const blockNumber = (receipt as { blockNumber?: unknown }).blockNumber;
+  if (typeof blockNumber !== "string" || !/^0x[0-9a-fA-F]+$/.test(blockNumber)) return null;
+  try {
+    const block = await client.request(
+      { method: "eth_getBlockByNumber", params: [blockNumber, false] },
+      { signal },
+    );
+    if (typeof block !== "object" || block === null) return null;
+    const seconds = readQuantity((block as { timestamp?: unknown }).timestamp);
+    if (seconds === null || seconds <= 0) return null;
+    return new Date(seconds * 1000).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 /** A `0x`-prefixed JSON-RPC quantity, or `null` when the node answered something else. */

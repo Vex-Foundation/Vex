@@ -1,6 +1,6 @@
 /**
- * The outbox drain, split out of `../agentscan-report.ts` (550-line facade
- * decree). A different reason to change from the facade: the facade owns the
+ * The outbox drain, split out of `../agentscan-report.ts` (the 550-line file
+ * limit). A different reason to change from the facade: the facade owns the
  * lane's state machine (register, backfill, when to drain); this file owns how
  * claimed outbox rows become HTTP batches and how every server verdict maps
  * back onto row state. Shared verbatim by the periodic lane and the push
@@ -13,6 +13,7 @@ import { mapActivityToEvent } from "../../agentscan/mapper.js";
 import type { AgentscanClient, SendOutcome } from "../../agentscan/client.js";
 import logger from "@utils/logger.js";
 import type { AgentscanReportResult } from "../agentscan-report.js";
+import { tryConsumeAgentscanSendSlot } from "./rate-limit.js";
 
 /** Contract batch ceiling (server rejects larger batches with 413). */
 export const AGENTSCAN_BATCH_LIMIT = 500;
@@ -63,6 +64,15 @@ export async function drainOutbox(
 
     let stop = false;
     for (const group of groups) {
+      if (!tryConsumeAgentscanSendSlot()) {
+        // The lane's minute budget is spent. The rows are already claimed and
+        // still owed, so the next tick resumes here — see `./rate-limit.ts` for
+        // why this refuses instead of sleeping.
+        logger.info("agentscan.report.rate_budget_exhausted", { rows: group.length });
+        deferred += group.length;
+        stop = true;
+        break;
+      }
       const outcome = await sendGroup(client, agentHash, ingestToken, group);
       sent += outcome.sent;
       rejected += outcome.rejected;

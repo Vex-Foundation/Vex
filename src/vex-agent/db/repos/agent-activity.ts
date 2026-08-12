@@ -88,6 +88,10 @@ export {
 // rule is how a row starts satisfying one caller and violating another.
 export type { RoleLegRow } from "./agent-activity/role-legs.js";
 
+// Every leg of one execution, in `event_index` order — the repair lane reads it
+// to re-derive which approvals THIS execution signed before its deposit.
+export { listActivityLegsByExecutionId } from "./agent-activity/execution-legs.js";
+
 // R1 Step 3b: WHAT a signed leg proves about what it moved. The default is NO
 // amount — "we signed it and it confirmed" is not proof of the principal.
 export type { LegAmountEvidence } from "./agent-activity/proven-leg-amounts.js";
@@ -107,6 +111,11 @@ export {
   fillExecutedAmountsOnConfirmed,
   noteSettlementDeclined,
 } from "./agent-activity/settlement-enrichment.js";
+
+// The settling block's own time (migration 078) — a report-precision fact with
+// its own writer, deliberately separate from the status CAS that confirmed the
+// row. See `./agent-activity/settled-block-time.ts`.
+export { noteSettledBlockTime } from "./agent-activity/settled-block-time.js";
 
 // WHICH confirmed rows still owe their amounts, and the durable decode marker
 // that stops the fallback re-deciding one immutable receipt forever. Its own
@@ -159,9 +168,10 @@ export {
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   confirmActivityEvent,
-  // The repair sweeps' status-only finalizer (owner decree 2026-07-30) —
-  // exported from the facade so the sweeps never reach into the implementation
-  // module. See its doc in `./agent-activity/swap-lifecycle.ts`.
+  // The repair sweeps' status-only finalizer — a terminal confirm that writes
+  // no executed amounts, for rows whose settlement evidence could not be
+  // decoded. Exported from the facade so the sweeps never reach into the
+  // implementation module. See its doc in `./agent-activity/swap-lifecycle.ts`.
   confirmActivityEventStatusOnly,
   failActivityEvent,
   abortPlannedEvents,

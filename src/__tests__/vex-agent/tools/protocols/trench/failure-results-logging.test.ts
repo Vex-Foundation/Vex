@@ -78,7 +78,7 @@ function activityEvent(id: number): AgentActivityEvent {
     providerStatus: null, evidenceSource: null, observedAt: null, lastAttemptedAt: null,
     submitAttemptedAt: null,
     recentBlockhash: null, lastValidBlockHeight: null,
-    broadcastAt: null, confirmedAt: null, lastCheckedAt: null,
+    broadcastAt: null, confirmedAt: null, settledBlockTime: null, lastCheckedAt: null,
     createdAt: "2026-08-02T09:00:00.000Z", updatedAt: "2026-08-02T09:00:00.000Z",
     verificationAttempts: 0, lastVerificationReason: null,
   confirmationSource: null,

@@ -376,11 +376,8 @@ describe("bridge repo — abortPlannedEvents exclusive bound (FIX-A blocker 1)",
       fill.protocolExecutionId, 0, "earlier bridge_deposit ambiguous", fill.eventIndex,
     );
 
-    const rows = await repo.listActivityEventsByExecution?.(fill.protocolExecutionId)
-      ?? null;
-    // Fallback: read directly if no list helper exists.
     const { query } = await import("../../../vex-agent/db/client.js");
-    const dbRows = rows ?? (await query<Record<string, unknown>>(
+    const dbRows = (await query<Record<string, unknown>>(
       `SELECT event_index, event_role, status FROM agent_activity
         WHERE protocol_execution_id = $1 ORDER BY event_index`,
       [fill.protocolExecutionId],
