@@ -13,9 +13,10 @@ plus a low-level signed-transaction submit client for Lighter's official
 `sendTx` form contract. The execution-intent store also has safe lifecycle
 metadata for future signed/submitted/API-accepted/ambiguous transitions. The
 signer adapter and submit client are not reachable from agent order handlers
-yet. Vex still has no concrete API private-key reader, agent-facing order
-submission, order cancel, deposit, withdrawal, transfer, or other reachable
-provider state-changing Lighter path.
+yet. Vex now has a main-process encrypted-vault reader for Lighter trading
+credentials, but it is not wired to agent order handlers. Vex still has no
+agent-facing order submission, order cancel, deposit, withdrawal, transfer, or
+other reachable provider state-changing Lighter path.
 
 ## Sources
 
@@ -43,6 +44,7 @@ provider state-changing Lighter path.
 | `signer-adapter.ts` | Official Lighter signer adapter interface plus create-order signer input/range validation; no provider submission |
 | `signer-binary-adapter.ts` | Privileged-process adapter that invokes the official signer helper with secrets over stdin only |
 | `signer-runtime/` | Go helper built on `github.com/elliottech/lighter-go` for local create-order signing |
+| `../../vex-app/src/main/secrets/lighter-trading-credential.ts` | Main-process encrypted-vault reader for Lighter trading private keys stored as non-env extra secrets |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 | `../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
 
@@ -175,6 +177,13 @@ Signer and credential strategy:
   current managed vault keys that are mirrored into environment variables on
   unlock. The material keeps key bytes non-enumerable and returns a redacted
   JSON shape if ordinary serialization is attempted.
+- `vex-app/src/main/secrets/lighter-trading-credential.ts` is the concrete
+  main-process reader for that injected-reader contract. It reads only the exact
+  default credential id `lighter/<environment>/account-<accountIndex>/api-key-<apiKeyIndex>`
+  from the encrypted vault's non-env `extraSecrets`, refuses mismatched
+  references before vault access, does not fall back to environment variables,
+  and maps vault failures without echoing secret material. This reader is not
+  yet invoked by `lighter.order.create`.
 - `signer-order.ts` maps a ready-for-signer plan into unsigned Lighter
   create-order fields, including official order type and time-in-force enum
   codes, ask/bid side, integer size/price, expiry, and a deterministic uint48
