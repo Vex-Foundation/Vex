@@ -73,13 +73,13 @@ describe("Lighter agent discovery surface", () => {
     });
   });
 
-  it("requires an explicit core or rhc environment on environment-scoped tools", () => {
+  it("accepts core or rhc environment on environment-scoped tools", () => {
     for (const tool of LIGHTER_TOOLS.filter((candidate) =>
       candidate.params.some((param) => param.key === "environment"),
     )) {
       const environment = tool.params.find((param) => param.key === "environment");
       expect(environment, `${tool.toolId} environment param`).toBeDefined();
-      expect(environment?.required, `${tool.toolId} environment required`).toBe(true);
+      expect(environment?.required, `${tool.toolId} environment optional`).not.toBe(true);
       expect(environment?.enum, `${tool.toolId} environment enum`).toEqual(LIGHTER_ENVIRONMENTS);
 
       const rejected = validateProtocolParams(tool, { ...tool.exampleParams, environment: "mainnet" });
@@ -104,11 +104,9 @@ describe("Lighter agent discovery surface", () => {
       } else if (tool.toolId === "lighter.order.create.prepare") {
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("approval_prepare");
-        expect(tool.requiredParams).toContain("environment");
       } else {
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("read");
-        expect(tool.requiredParams).toContain("environment");
       }
       expect(tool).not.toHaveProperty("params");
     }
@@ -127,8 +125,7 @@ describe("Lighter agent discovery surface", () => {
       if (tool.toolId === "lighter.order.create") {
         expect(tool.required).toContain("intentId");
       } else {
-        expect(tool.required).toContain("environment");
-        expect(tool.exampleParams.environment).toMatch(/^(core|rhc)$/);
+        expect(tool.required).not.toContain("environment");
       }
     }
   });

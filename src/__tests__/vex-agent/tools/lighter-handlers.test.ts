@@ -308,6 +308,8 @@ async function callFail(toolId: string, params: Record<string, unknown>): Promis
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
+  delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
 });
 
@@ -846,6 +848,95 @@ describe("Lighter agent read handlers", () => {
     }
   });
 
+  it("creates a conversational RHC ETH preview without ids or internal policy params", async () => {
+    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 12, symbol: "BTC-USD", status: "active" },
+        { ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" },
+      ],
+    });
+    mocks.client.getApiKeys.mockResolvedValue({
+      code: 200,
+      api_keys: [
+        { account_index: 42, api_key_index: 1, nonce: 10, public_key: "reserved", transaction_time: 1 },
+        { account_index: 42, api_key_index: 7, nonce: 11, public_key: "trading", transaction_time: 2 },
+      ],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmount: "0.004",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(mocks.client.getMarkets).toHaveBeenCalledWith("rhc", { filter: "all" });
+    expect(mocks.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 255,
+    });
+    expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
+      marketId: 0,
+      filter: "all",
+    });
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
+      by: "index",
+      value: 42,
+      activeOnly: true,
+    });
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: {
+          readonly environment: string;
+          readonly accountIndex: string;
+          readonly apiKeyIndex: string;
+          readonly marketIndex: string;
+          readonly clientOrderIndexPolicy: string;
+        };
+      };
+    };
+    expect(persisted.preview.identity).toMatchObject({
+      environment: "rhc",
+      accountIndex: "42",
+      apiKeyIndex: "7",
+      marketIndex: "0",
+      clientOrderIndexPolicy: "vex_assigned_uint48",
+    });
+    expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
+  });
+
+  it("asks for a plain buy or sell choice when conversational preview omits direction", async () => {
+    const output = await callFail("lighter.order.preview", {
+      marketSymbol: "ETH",
+      baseAmount: "0.001",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("Please choose buy or sell");
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+  });
+
   it("refuses order preview without a host session id", async () => {
     const handler = LIGHTER_HANDLERS["lighter.order.preview"];
     expect(handler).toBeDefined();
@@ -1004,8 +1095,8 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("rejects missing or invalid params before reaching the client", async () => {
-    const missingEnv = await callFail("lighter.orderbook", { marketId: 0 });
-    expect(missingEnv).toContain("Missing required: environment");
+    const invalidEnv = await callFail("lighter.orderbook", { environment: "mainnet", marketId: 0 });
+    expect(invalidEnv).toContain("environment must be core, rhc");
 
     const secondsTimestamp = await callFail("lighter.candles", {
       environment: "rhc",

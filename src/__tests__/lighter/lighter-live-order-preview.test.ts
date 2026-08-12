@@ -182,6 +182,7 @@ describeLivePreview("Lighter live order preview through protocol runtime", () =>
         toolId: "lighter.order.preview",
         environment,
         endpointPaths: [
+          LIGHTER_ENDPOINT_PATHS.apiKeys,
           LIGHTER_ENDPOINT_PATHS.orderBookDetails,
           LIGHTER_ENDPOINT_PATHS.orderBookOrders,
           LIGHTER_ENDPOINT_PATHS.account,
