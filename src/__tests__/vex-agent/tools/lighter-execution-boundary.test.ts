@@ -156,6 +156,14 @@ describe("Lighter execution boundary", () => {
     expect(source).not.toMatch(FORBIDDEN_SIGNED_ARTIFACT_RE);
   });
 
+  it("keeps the signer adapter disconnected from provider submission", () => {
+    const file = join(ROOT, "src/tools/lighter/signer-adapter.ts");
+    const source = readFileSync(file, "utf-8");
+    expect(source).not.toMatch(/\b(sendTx|sendTxBatch)\s*\(/);
+    expect(source).not.toMatch(/\bprice_protection\b/);
+    expect(source).not.toMatch(TRADING_CREDENTIAL_ENV_KEY_RE);
+  });
+
   it("keeps agent Lighter handlers away from trading secret material", () => {
     const file = join(ROOT, "src/vex-agent/tools/protocols/lighter/handlers/write.ts");
     const source = readFileSync(file, "utf-8");

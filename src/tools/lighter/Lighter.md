@@ -7,8 +7,10 @@ read-only account visibility, a live-data-backed order preview gate, and local
 approval preparation for a future order create. The approval-prepared create
 path persists `lighter_order_execution_intents` and can ask the Vex approval
 runtime for consent. Approved create can now build an internal signer-bound
-execution plan from the durable intent, but Vex still has no API private-key reader, signer client,
-signature, `sendTx`, order submission, order cancel, deposit, withdrawal,
+execution plan and unsigned signer order from the durable intent. Vex also has a
+validated official-signer adapter boundary for a future `SignCreateOrder` call,
+but still has no concrete API private-key reader, signer binary/process
+implementation, `sendTx`, order submission, order cancel, deposit, withdrawal,
 transfer, or other provider state-changing Lighter path.
 
 ## Sources
@@ -34,6 +36,7 @@ transfer, or other provider state-changing Lighter path.
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
 | `trading-secret.ts` | Typed private-key material loader that only accepts an injected privileged reader and refuses env/managed-vault shortcuts |
 | `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
+| `signer-adapter.ts` | Official Lighter signer adapter interface plus create-order signer input/range validation; no provider submission |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
@@ -156,6 +159,14 @@ Signer and credential strategy:
   codes, ask/bid side, integer size/price, expiry, and a deterministic uint48
   Vex-assigned client order index derived from the preview match hash. It
   creates no signature and performs no provider call.
+- `signer-adapter.ts` is the next boundary toward the official Lighter signer.
+  It maps an unsigned create-order request plus privileged private-key material
+  and an explicit nonce into the exact signer input envelope: REST base URL,
+  chain id (`304` Core, `466324` RHC), account/API-key scope, nonce, and order
+  fields. It validates the official integer ranges before any future native
+  signer call. The adapter result must still match the prepared order identity.
+  The module deliberately creates no `sendTx` body and performs no provider
+  submission.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /
