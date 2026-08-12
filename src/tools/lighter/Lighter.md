@@ -3,12 +3,12 @@
 **Last updated: 2026-08-12**
 
 Lighter support now covers Core + Robinhood Chain public market data,
-read-only account visibility, and a preview-only Lighter order gate. The
-preview gate persists live-data-backed `lighter_order` identities for a future
-exact matching order, but Vex still has no API private keys, signer client,
-`sendTx`, order create, order cancel, deposit, withdrawal, transfer, or other
-state-changing Lighter path. The Vex agent protocol surface consumes this
-module through read-only tools under the `lighter` namespace.
+read-only account visibility, a live-data-backed order preview gate, and local
+approval preparation for a future order create. The approval-prepared create
+path persists `lighter_order_execution_intents` and can ask the Vex approval
+runtime for consent, but Vex still has no API private-key reader, signer client,
+signature, `sendTx`, order submission, order cancel, deposit, withdrawal,
+transfer, or other provider state-changing Lighter path.
 
 ## Sources
 
@@ -38,8 +38,10 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 |------|------|
 | `manifest.ts` | Aggregates the `lighter.*` protocol manifests |
 | `manifests/read.ts` | Six read-only market-data tool schemas |
+| `manifests/write.ts` | Approval-prepare and approval-resume Lighter order-create tool schemas |
 | `handlers.ts` | Aggregates handler maps for the namespace |
 | `handlers/read.ts` | Calls the public client and projects bounded results |
+| `handlers/write.ts` | Creates local order execution intents and refuses approved create before signing |
 | `nonce-sync.ts` | Internal helper that records public API-key nonce observations into durable state |
 | `params.ts` | Agent-layer param readers and stricter output caps |
 | `projectors.ts` | Compact model-facing result projection |
@@ -139,6 +141,15 @@ Signer and credential strategy:
   `protocol_executions` anchors, and the opaque encrypted-vault credential
   reference. It does not store key bytes, auth tokens, signatures, signed
   payloads, or provider submit bodies.
+- `lighter.order.create.prepare` is the only user-facing bridge from preview
+  to approval today. It requires the fresh preview id and an opaque encrypted
+  vault credential reference, creates the local execution-intent row, then uses
+  Vex's trusted prepared-action registry to request approval for
+  `lighter.order.create`.
+- Approved `lighter.order.create` records the approval decision against the
+  local Lighter execution intent, then refuses before signer initialization or
+  provider submission. This is intentional until the privileged signer adapter
+  is implemented and reviewed.
 
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order
@@ -207,6 +218,8 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | `lighter.trades` | `getAccountTrades` | Authenticated account trade rows through read-only token |
 | `lighter.apiKeys.inspect` | `getApiKeys` | Public API-key indexes, public keys, and nonce metadata |
 | `lighter.order.preview` | market detail, order book, public account | Persisted preview-only Lighter order preflight |
+| `lighter.order.create.prepare` | persisted preview, local vault reference boundary | Local approval-prepared execution intent |
+| `lighter.order.create` | approval resume context, local execution intent | Records approval then refuses before signer/provider submit |
 | `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
 | `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
