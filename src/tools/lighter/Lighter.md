@@ -400,7 +400,7 @@ read-only token; `/tokens` rejected the read-only lane with `401 invalid auth`.
 
 2026-08-10 local time: `pnpm run test:lighter:live:preview` passed against real
 Core and RHC live data through `executeProtocolTool`, with the repo e2e
-Postgres on port 5777 and migration `074_lighter_order_previews` applied. The
+Postgres on port 5777 and the Lighter order-preview migration applied. The
 proof created persisted `lighter_order` previews for both environments from
 live market details, live order books, and live public account reads. No signer,
 API private key, signature, `sendTx`, order placement, cancellation, deposit,

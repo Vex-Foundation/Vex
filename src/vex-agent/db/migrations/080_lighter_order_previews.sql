@@ -1,4 +1,4 @@
--- 074_lighter_order_previews.sql — Lighter order preview gate store.
+-- 080_lighter_order_previews.sql — Lighter order preview gate store.
 --
 -- Purpose: every successful `lighter.order.preview` records one exact,
 -- session-scoped order identity before any future create-order path can exist.

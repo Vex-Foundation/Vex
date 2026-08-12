@@ -1,4 +1,4 @@
--- 079_lighter_order_execution_intents.sql — Lighter order execution intent store.
+-- 081_lighter_order_execution_intents.sql — Lighter order execution intent store.
 --
 -- Purpose: persist the exact approval-gated Lighter order intent between the
 -- preview gate and any future signer/sendTx path. A row here is a durable
