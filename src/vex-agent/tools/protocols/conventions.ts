@@ -93,6 +93,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["endTimestamp", "epoch-millisecond end bound for time-series reads"],
   ["countBack", "provider row cap for time-series reads"],
   ["setTimestampToEnd", "candle timestamp placement flag for time-series providers that expose it"],
+  ["orderExpiryOffsetMinutes", "relative order expiry in whole minutes from preview time"],
   ["dryRun", "preview switch, reserved by runtime/params.ts"],
   [
     "imageId",

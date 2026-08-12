@@ -23,6 +23,8 @@ import {
   LIGHTER_AGENT_MARKET_PAGE_MAX,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_DEFAULT,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX,
+  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX,
+  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN,
   LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT,
   LIGHTER_AGENT_RECENT_TRADES_LIMIT_MAX,
 } from "../params.js";
@@ -198,9 +200,15 @@ const REDUCE_ONLY_PARAM: ProtocolParamDef = {
 const ORDER_EXPIRY_PARAM: ProtocolParamDef = {
   key: "orderExpiry",
   type: "number",
-  required: true,
   description:
-    "Order expiry as a JavaScript epoch-milliseconds integer. Vex requires it to be between 5 minutes and 30 days from preview time.",
+    "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time.",
+};
+
+const ORDER_EXPIRY_OFFSET_MINUTES_PARAM: ProtocolParamDef = {
+  key: "orderExpiryOffsetMinutes",
+  type: "number",
+  description:
+    `Preferred for relative expiries such as '30 minutes from now'. Whole minutes from preview time, between ${LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN} and ${LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX}. Do not combine with orderExpiry.`,
 };
 
 const API_KEY_INDEX_PARAM: ProtocolParamDef = {
@@ -332,7 +340,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview on Core or Robinhood Chain for a future exact matching order. Reads live market detail, order book top-of-book context, and public account position data, converts display amount/price into exact integer fields, stores a session-scoped preview identity, and returns the preview id/hash. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Lighter order preview on Core or Robinhood Chain for a future exact matching order. Use this directly when the user says preview/preflight/check a Lighter order. For phrases like 'expiry 30 minutes from now', pass orderExpiryOffsetMinutes: 30. Reads live market detail, order book top-of-book context, and public account position data, converts display amount/price into exact integer fields, stores a session-scoped preview identity, and returns the preview id/hash. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -347,8 +355,11 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       TIME_IN_FORCE_PARAM,
       REDUCE_ONLY_PARAM,
       ORDER_EXPIRY_PARAM,
+      ORDER_EXPIRY_OFFSET_MINUTES_PARAM,
       CLIENT_ORDER_INDEX_POLICY_PARAM,
     ],
+    atMostOne: [["orderExpiry", "orderExpiryOffsetMinutes"]],
+    atLeastOneOf: [["orderExpiry", "orderExpiryOffsetMinutes"]],
     exampleParams: {
       environment: "rhc",
       accountIndex: 42,
@@ -359,7 +370,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       orderType: "limit",
       timeInForce: "good-till-time",
       reduceOnly: false,
-      orderExpiry: 1786233600000,
+      orderExpiryOffsetMinutes: 30,
       clientOrderIndexPolicy: "vex_assigned_uint48",
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],

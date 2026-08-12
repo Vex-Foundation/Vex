@@ -790,6 +790,54 @@ describe("Lighter agent read handlers", () => {
     expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
   });
 
+  it("creates an order preview from a relative expiry in minutes", async () => {
+    const nowMs = 1_786_500_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(nowMs);
+    try {
+      mocks.client.getMarketDetails.mockResolvedValue({
+        code: 200,
+        order_book_details: [DETAIL],
+        spot_order_book_details: [],
+      });
+      mocks.client.getOrderBookOrders.mockResolvedValue({
+        code: 200,
+        total_asks: 1,
+        asks: [order(1, "3500.50")],
+        total_bids: 1,
+        bids: [order(2, "3499.50")],
+      });
+      mocks.client.getAccount.mockResolvedValue({
+        code: 200,
+        accounts: [ACCOUNT],
+      });
+      mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+      const data = await callJson("lighter.order.preview", {
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        marketId: 0,
+        side: "buy",
+        baseAmount: "0.25",
+        price: "3499.99",
+        orderType: "limit",
+        timeInForce: "good-till-time",
+        reduceOnly: false,
+        orderExpiryOffsetMinutes: 30,
+        clientOrderIndexPolicy: "vex_assigned_uint48",
+      });
+
+      expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
+      const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+        readonly preview: { readonly identity: { readonly expiryMs: string } };
+      };
+      expect(persisted.preview.identity.expiryMs).toBe(String(nowMs + 30 * 60 * 1000));
+      expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("refuses order preview without a host session id", async () => {
     const handler = LIGHTER_HANDLERS["lighter.order.preview"];
     expect(handler).toBeDefined();

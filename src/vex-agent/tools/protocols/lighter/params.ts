@@ -36,6 +36,8 @@ export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX = 50;
 export const LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_API_KEY_LIMIT_MAX = 50;
+export const LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN = 5;
+export const LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX = 30 * 24 * 60;
 
 export type ParamRead<T> =
   | { readonly ok: true; readonly value: T }
@@ -313,6 +315,7 @@ export function readMarketListPage(params: Record<string, unknown>): ParamRead<n
 
 export function readLighterOrderPreviewParams(
   params: Record<string, unknown>,
+  nowMs = Date.now(),
 ): ParamRead<LighterOrderPreviewParams> {
   const accountIndex = readOptionalAccountIndex(params);
   if (!accountIndex.ok) return accountIndex;
@@ -331,7 +334,7 @@ export function readLighterOrderPreviewParams(
   if (!baseAmount.ok) return baseAmount;
   const price = readRequiredString(params, "price");
   if (!price.ok) return price;
-  const orderExpiry = readEpochMs(params, "orderExpiry");
+  const orderExpiry = readOrderExpiry(params, nowMs);
   if (!orderExpiry.ok) return orderExpiry;
   const reduceOnly = readBoolean(params, "reduceOnly");
   if (reduceOnly === undefined) return { ok: false, reason: "Missing required: reduceOnly." };
@@ -371,6 +374,34 @@ export function readApiKeyIndex(params: Record<string, unknown>): ParamRead<numb
     return { ok: false, reason: "apiKeyIndex must be an integer from 0 to 255." };
   }
   return { ok: true, value };
+}
+
+function readOrderExpiry(params: Record<string, unknown>, nowMs: number): ParamRead<number> {
+  const absolute = readNumber(params, "orderExpiry");
+  const offsetMinutes = readNumber(params, "orderExpiryOffsetMinutes");
+  if (absolute !== undefined && offsetMinutes !== undefined) {
+    return { ok: false, reason: "Provide orderExpiry or orderExpiryOffsetMinutes, not both." };
+  }
+  if (offsetMinutes !== undefined) return readRelativeOrderExpiry(offsetMinutes, nowMs);
+  return readEpochMs(params, "orderExpiry");
+}
+
+function readRelativeOrderExpiry(offsetMinutes: number, nowMs: number): ParamRead<number> {
+  if (!Number.isInteger(offsetMinutes)) {
+    return { ok: false, reason: "orderExpiryOffsetMinutes must be a whole number of minutes." };
+  }
+  if (
+    offsetMinutes < LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN
+    || offsetMinutes > LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX
+  ) {
+    return {
+      ok: false,
+      reason:
+        `orderExpiryOffsetMinutes must be between ${LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN} `
+        + `and ${LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX} minutes.`,
+    };
+  }
+  return { ok: true, value: nowMs + offsetMinutes * 60 * 1000 };
 }
 
 function readEpochMs(params: Record<string, unknown>, key: "orderExpiry"): ParamRead<number> {

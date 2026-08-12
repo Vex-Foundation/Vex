@@ -474,7 +474,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!sessionId) return fail("Lighter order preview requires a host session id.");
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
-    const previewParams = readLighterOrderPreviewParams(params);
+    const nowMs = Date.now();
+    const previewParams = readLighterOrderPreviewParams(params, nowMs);
     if (!previewParams.ok) return fail(previewParams.reason);
 
     try {
@@ -524,6 +525,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         reduceOnly: previewParams.value.reduceOnly,
         orderExpiry: previewParams.value.orderExpiry,
         clientOrderIndexPolicy: previewParams.value.clientOrderIndexPolicy,
+        nowMs,
       }, {
         market,
         orderBook,

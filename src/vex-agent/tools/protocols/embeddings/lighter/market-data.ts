@@ -122,9 +122,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.preview": {
     embeddingText: embeddingText(
       `Create a read-only Lighter order preview for Core or Robinhood Chain using live market detail, live order book, and live account data before any future order approval or submission. ` +
-      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. ` +
+      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say a relative expiry such as "30 minutes from now", call lighter.order.preview with orderExpiryOffsetMinutes rather than inventing an epoch timestamp. ` +
       `Returns a session-scoped preview id, exact identity hash, integer base amount and price, minimum checks, best bid and ask, position context, and risk notes. ` +
-      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: preview lighter order, preflight rhc buy order, check core reduce-only sell.`,
+      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: preview lighter order, preflight rhc buy order, preview RHC limit buy expiry 30 minutes from now, check core reduce-only sell.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
     exampleIntents: ["preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
