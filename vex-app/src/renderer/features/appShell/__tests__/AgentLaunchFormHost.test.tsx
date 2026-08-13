@@ -227,7 +227,10 @@ describe("when the agent has drafted a launch", () => {
       expect(dialogTitle()).not.toBeNull();
     });
 
-    screen.getByRole("button", { name: /^Cancel$/i }).click();
+    // The dialog TITLE can be on screen while its footer is still mounting
+    // (the host animates the panel in), so the button is awaited rather
+    // than grabbed synchronously: a slow machine failed exactly here.
+    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
 
     await waitFor(() => {
       expect(cancelMock).toHaveBeenCalledWith({
@@ -247,7 +250,10 @@ describe("when the agent has drafted a launch", () => {
       expect(dialogTitle()).not.toBeNull();
     });
 
-    screen.getByRole("button", { name: /^Cancel$/i }).click();
+    // The dialog TITLE can be on screen while its footer is still mounting
+    // (the host animates the panel in), so the button is awaited rather
+    // than grabbed synchronously: a slow machine failed exactly here.
+    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
 
     // The cancel is fire-and-forget, so the cache still holds the row for a
     // moment. Without the dismissed set the modal would reopen over the user.
@@ -582,7 +588,10 @@ describe("the snapshot", () => {
 
     getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    screen.getByRole("button", { name: /^Cancel$/i }).click();
+    // The dialog TITLE can be on screen while its footer is still mounting
+    // (the host animates the panel in), so the button is awaited rather
+    // than grabbed synchronously: a slow machine failed exactly here.
+    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
 
     await waitFor(() => {
       expect(cancelMock).toHaveBeenCalledWith({
