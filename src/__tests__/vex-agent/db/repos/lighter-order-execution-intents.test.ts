@@ -113,6 +113,8 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
     provider_outcome_source: null,
     provider_outcome_json: null,
     provider_outcome_checked_at: null,
+    pre_submit_revalidation_json: null,
+    pre_submit_revalidated_at: null,
     created_at: new Date("2026-08-12T00:00:01.000Z"),
     updated_at: new Date("2026-08-12T00:00:02.000Z"),
     expires_at: new Date("2026-08-12T00:05:00.000Z"),
@@ -133,7 +135,9 @@ describe("lighter order execution intents repo", () => {
       expiresAt: "2026-08-12T00:05:00.000Z",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const call = mockQueryOne.mock.calls.at(0);
+    if (call === undefined) throw new Error("expected a database call");
+    const [sql, params] = call;
     expect(sql).toContain("INSERT INTO lighter_order_execution_intents");
     expect(sql).toContain("ON CONFLICT (intent_id) DO NOTHING");
     expect(sql).toContain("RETURNING intent_id, session_id, preview_id");
@@ -225,7 +229,9 @@ describe("lighter order execution intents repo", () => {
       reason: "user approved exact preview",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const call = mockQueryOne.mock.calls.at(0);
+    if (call === undefined) throw new Error("expected a database call");
+    const [sql, params] = call;
     expect(sql).toContain("UPDATE lighter_order_execution_intents");
     expect(sql).toContain("AND approval_status = 'approval_pending'");
     expect(sql).toContain("RETURNING intent_id");
@@ -250,6 +256,54 @@ describe("lighter order execution intents repo", () => {
     });
 
     expect(decided).toBeNull();
+  });
+
+  it("persists bounded pre-submit revalidation evidence before nonce reservation", async () => {
+    const evidence = {
+      kind: "lighter_order_pre_submit_revalidation",
+      previewId: "lighter-preview-1",
+      matchHash: "a".repeat(64),
+      checkedAt: "2026-08-12T00:01:30.000Z",
+    };
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      pre_submit_revalidation_json: evidence,
+      pre_submit_revalidated_at: new Date("2026-08-12T00:01:30.000Z"),
+    }));
+
+    const updated = await repo.markPreSubmitRevalidated({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      evidence,
+    });
+
+    const call = mockQueryOne.mock.calls.at(0);
+    if (call === undefined) throw new Error("expected a database call");
+    const [sql, params] = call;
+    expect(sql).toContain("pre_submit_revalidation_json = $4::jsonb");
+    expect(sql).toContain("nonce_reservation_id IS NULL");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      JSON.stringify(evidence),
+    ]);
+    expect(updated).toMatchObject({
+      preSubmitRevalidationJson: evidence,
+      preSubmitRevalidatedAt: "2026-08-12T00:01:30.000Z",
+    });
+  });
+
+  it("refuses secret-like pre-submit revalidation evidence", async () => {
+    await expect(repo.markPreSubmitRevalidated({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      evidence: { authToken: "do-not-store" },
+    })).rejects.toThrow("must be bounded and non-secret");
+
+    expect(mockQueryOne).not.toHaveBeenCalled();
   });
 
   it("attaches one nonce reservation to an approved intent by exact scope", async () => {

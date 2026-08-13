@@ -128,7 +128,7 @@ export interface LighterOrderPreview {
   };
 }
 
-const PREVIEW_FRESHNESS_MS = 2 * 60 * 1000;
+export const LIGHTER_ORDER_PREVIEW_FRESHNESS_MS = 2 * 60 * 1000;
 const MIN_ORDER_EXPIRY_OFFSET_MS = 5 * 60 * 1000;
 const MAX_ORDER_EXPIRY_OFFSET_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -223,7 +223,7 @@ export function buildLighterOrderPreview(
     previewId,
     matchHash,
     identity,
-    expiresAt: new Date(nowMs + PREVIEW_FRESHNESS_MS).toISOString(),
+    expiresAt: new Date(nowMs + LIGHTER_ORDER_PREVIEW_FRESHNESS_MS).toISOString(),
     preview: {
       environment: input.environment,
       accountIndex: input.accountIndex,
@@ -479,7 +479,10 @@ function compareDecimalStrings(left: string, right: string): number {
   const a = decimalParts(left);
   const b = decimalParts(right);
   if (a === null || b === null) return 0;
-  if (a.integer !== b.integer) return a.integer < b.integer ? -1 : 1;
+  const scale = Math.max(a.scale, b.scale);
+  const leftInteger = a.integer * (10n ** BigInt(scale - a.scale));
+  const rightInteger = b.integer * (10n ** BigInt(scale - b.scale));
+  if (leftInteger !== rightInteger) return leftInteger < rightInteger ? -1 : 1;
   return 0;
 }
 
@@ -491,23 +494,22 @@ function classifyPriceComparison(
   bestAsk: string | null,
 ): "resting" | "crossing_or_taker" | "unknown" {
   if (orderType === "market") return "crossing_or_taker";
-  const target = decimalParts(price);
-  if (target === null) return "unknown";
   if (side === "buy") {
-    const ask = bestAsk === null ? null : decimalParts(bestAsk);
-    if (ask === null) return "unknown";
-    return target.integer >= ask.integer ? "crossing_or_taker" : "resting";
+    if (bestAsk === null || decimalParts(price) === null || decimalParts(bestAsk) === null) return "unknown";
+    return compareDecimalStrings(price, bestAsk) >= 0 ? "crossing_or_taker" : "resting";
   }
-  const bid = bestBid === null ? null : decimalParts(bestBid);
-  if (bid === null) return "unknown";
-  return target.integer <= bid.integer ? "crossing_or_taker" : "resting";
+  if (bestBid === null || decimalParts(price) === null || decimalParts(bestBid) === null) return "unknown";
+  return compareDecimalStrings(price, bestBid) <= 0 ? "crossing_or_taker" : "resting";
 }
 
-function decimalParts(value: string): { readonly integer: bigint } | null {
+function decimalParts(value: string): { readonly integer: bigint; readonly scale: number } | null {
   const trimmed = value.trim();
   if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(trimmed)) return null;
   const [whole, fraction = ""] = trimmed.split(".");
-  return { integer: BigInt(`${whole}${fraction}`.replace(/^0+(?=\d)/, "")) };
+  return {
+    integer: BigInt(`${whole}${fraction}`.replace(/^0+(?=\d)/, "")),
+    scale: fraction.length,
+  };
 }
 
 function readReferencePrice(market: LighterMarketDetail): string | null {

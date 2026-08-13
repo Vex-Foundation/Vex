@@ -74,6 +74,8 @@ export interface LighterOrderExecutionIntentRow {
   readonly providerOutcomeSource: LighterProviderOutcomeSource | null;
   readonly providerOutcomeJson: Record<string, unknown> | null;
   readonly providerOutcomeCheckedAt: string | null;
+  readonly preSubmitRevalidationJson: Record<string, unknown> | null;
+  readonly preSubmitRevalidatedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly expiresAt: string;
@@ -163,6 +165,13 @@ export interface MarkLighterOrderSequencerPendingInput {
   readonly submittedTxHash: string;
 }
 
+export interface MarkLighterOrderPreSubmitRevalidatedInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly evidence: Record<string, unknown>;
+}
+
 export interface MarkLighterOrderProviderOutcomeInput {
   readonly intentId: string;
   readonly sessionId: string;
@@ -183,6 +192,7 @@ const SELECT_COLUMNS =
   "client_order_index, signer_tx_hash, submitted_tx_hash, submit_code, submit_message, predicted_execution_time_ms, " +
   "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
   "provider_order_id, provider_order_status, provider_outcome_source, provider_outcome_json, provider_outcome_checked_at, " +
+  "pre_submit_revalidation_json, pre_submit_revalidated_at, " +
   "created_at, updated_at, expires_at";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
@@ -206,6 +216,19 @@ const MARK_APPROVAL_DECISION_SQL = `UPDATE lighter_order_execution_intents
        updated_at = NOW()
  WHERE intent_id = $1
    AND approval_status = 'approval_pending'
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_PRE_SUBMIT_REVALIDATED_SQL = `UPDATE lighter_order_execution_intents
+   SET pre_submit_revalidation_json = $4::jsonb,
+       pre_submit_revalidated_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state = 'approval_pending'
+   AND nonce_reservation_id IS NULL
+   AND nonce_value IS NULL
  RETURNING ${SELECT_COLUMNS}`;
 
 const ATTACH_NONCE_RESERVATION_SQL = `UPDATE lighter_order_execution_intents
@@ -356,6 +379,21 @@ export async function attachNonceReservation(
   const row = await queryOne<Record<string, unknown>>(
     ATTACH_NONCE_RESERVATION_SQL,
     toAttachNonceReservationParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markPreSubmitRevalidated(
+  input: MarkLighterOrderPreSubmitRevalidatedInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_PRE_SUBMIT_REVALIDATED_SQL,
+    [
+      input.intentId,
+      input.sessionId,
+      input.environment,
+      jsonb(assertPreSubmitRevalidationEvidence(input.evidence)),
+    ],
   );
   return row ? mapRow(row) : null;
 }
@@ -681,6 +719,24 @@ function assertProviderOutcomeJson(value: Record<string, unknown>): Record<strin
   return value;
 }
 
+function assertPreSubmitRevalidationEvidence(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("lighter_order_execution_intents: pre-submit revalidation evidence must be an object");
+  }
+  const encoded = JSON.stringify(value);
+  if (
+    encoded.length > 2_000
+    || /(?:auth|token|tx_info|private|secret|signature|payload)/i.test(encoded)
+  ) {
+    throw new Error(
+      "lighter_order_execution_intents: pre-submit revalidation evidence must be bounded and non-secret",
+    );
+  }
+  return value;
+}
+
 function assertCredentialMatchesPreview(
   preview: LighterOrderPreviewRow,
   credentialReadiness: Extract<LighterTradingCredentialReadiness, { ready: true }>,
@@ -756,6 +812,10 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
     providerOutcomeSource: (row.provider_outcome_source as LighterProviderOutcomeSource | null) ?? null,
     providerOutcomeJson: (row.provider_outcome_json as Record<string, unknown> | null) ?? null,
     providerOutcomeCheckedAt: toIsoOrNull(row.provider_outcome_checked_at as string | Date | null | undefined),
+    preSubmitRevalidationJson:
+      (row.pre_submit_revalidation_json as Record<string, unknown> | null) ?? null,
+    preSubmitRevalidatedAt:
+      toIsoOrNull(row.pre_submit_revalidated_at as string | Date | null | undefined),
     createdAt: toIso(row.created_at as string | Date),
     updatedAt: toIso(row.updated_at as string | Date),
     expiresAt: toIso(row.expires_at as string | Date),

@@ -1,4 +1,9 @@
--- 078_lighter_nonce_state.sql — Lighter API-key nonce tracking.
+-- 079_lighter_nonce_state.sql - Lighter API-key nonce tracking.
+--
+-- This was originally numbered 078 on the Lighter feature branch. Main also
+-- introduced an AgentScan migration at 078, so the merged migration chain
+-- must use 079 here. Every statement is idempotent for databases that already
+-- recorded the former Lighter migration as schema version 78.
 --
 -- Purpose: record public Lighter API-key nonce observations and reserve one
 -- exact nonce before a future signer path can submit an order. This table is

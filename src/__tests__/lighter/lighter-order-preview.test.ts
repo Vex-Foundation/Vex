@@ -88,6 +88,12 @@ const ACCOUNT: LighterAccountResponse = {
   ],
 };
 
+function first<T>(values: readonly T[]): T {
+  const value = values.at(0);
+  if (value === undefined) throw new Error("test fixture must not be empty");
+  return value;
+}
+
 const INPUT: LighterOrderPreviewInput = {
   sessionId: "session-1",
   environment: "core",
@@ -138,6 +144,22 @@ describe("Lighter order preview", () => {
     expect(result.preview.minimumChecks.minQuoteAmountDisplay).toBe("100");
     expect(result.preview.minimumChecks.baseAmountPasses).toBe(true);
     expect(result.preview.minimumChecks.quoteAmountPasses).toBe(true);
+    expect(result.preview.marketData.priceComparison).toBe("resting");
+  });
+
+  it("compares best prices exactly when decimal string scales differ", () => {
+    const result = buildLighterOrderPreview(
+      { ...INPUT, side: "sell", baseAmount: "10", price: "10.01" },
+      {
+        market: MARKET,
+        account: ACCOUNT,
+        orderBook: {
+          ...ORDER_BOOK,
+          bids: [{ ...first(ORDER_BOOK.bids), price: "9.9" }],
+        },
+      },
+    );
+
     expect(result.preview.marketData.priceComparison).toBe("resting");
   });
 

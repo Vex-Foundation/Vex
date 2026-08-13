@@ -7,19 +7,118 @@ import {
   type ExecuteApprovedLighterCreateOrderDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
+import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
+import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
 
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const TX_INFO = "{\"signed\":\"payload\"}";
 const TX_HASH = "0xabc123";
 const PUBLIC_KEY = "b".repeat(80);
 const AUTH_TOKEN = `1893456600:42:7:${"a".repeat(128)}`;
+const NOW = 1_893_456_000_000;
+const ORDER_EXPIRY = NOW + 10 * 60 * 1_000;
+const MARKET = {
+  symbol: "ETH",
+  market_id: 0,
+  market_type: "perp",
+  base_asset_id: 1,
+  quote_asset_id: 0,
+  status: "active",
+  taker_fee: "0",
+  maker_fee: "0",
+  liquidation_fee: "0",
+  min_base_amount: "0.001",
+  min_quote_amount: "100",
+  supported_size_decimals: 4,
+  supported_price_decimals: 2,
+  supported_quote_decimals: 6,
+  order_quote_limit: "1000000000000",
+  is_maker_fee_enabled: true,
+  is_taker_fee_enabled: true,
+  mark_price: "3000.00",
+};
+const ORDER_BOOK = {
+  code: 200,
+  total_asks: 1,
+  asks: [{
+    order_index: 1,
+    order_id: "1",
+    owner_account_index: 8,
+    initial_base_amount: "1",
+    remaining_base_amount: "1",
+    price: "3001.00",
+    order_expiry: ORDER_EXPIRY,
+    transaction_time: NOW,
+  }],
+  total_bids: 1,
+  bids: [{
+    order_index: 2,
+    order_id: "2",
+    owner_account_index: 9,
+    initial_base_amount: "1",
+    remaining_base_amount: "1",
+    price: "2999.00",
+    order_expiry: ORDER_EXPIRY,
+    transaction_time: NOW,
+  }],
+};
+const ACCOUNT = {
+  code: 200,
+  total: 1,
+  accounts: [{
+    index: 42,
+    status: 1,
+    collateral: "1000",
+    available_balance: "900",
+    positions: [],
+  }],
+};
+const APPROVED_PREVIEW = buildLighterOrderPreview({
+  sessionId: "session-1",
+  environment: "rhc",
+  accountIndex: 42,
+  apiKeyIndex: 7,
+  marketId: 0,
+  side: "buy",
+  baseAmount: "1",
+  price: "3000",
+  orderType: "limit",
+  timeInForce: "good-till-time",
+  reduceOnly: false,
+  orderExpiry: ORDER_EXPIRY,
+  clientOrderIndexPolicy: "vex_assigned_uint48",
+  nowMs: NOW,
+}, { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT });
+const APPROVED_PREVIEW_ROW = {
+  previewId: APPROVED_PREVIEW.previewId,
+  sessionId: "session-1",
+  matchHash: APPROVED_PREVIEW.matchHash,
+  environment: "rhc" as const,
+  accountIndex: 42,
+  apiKeyIndex: 7,
+  marketIndex: 0,
+  side: "buy" as const,
+  baseAmountInteger: APPROVED_PREVIEW.identity.baseAmountInteger,
+  priceInteger: APPROVED_PREVIEW.identity.priceInteger,
+  orderType: "limit" as const,
+  timeInForce: "good-till-time" as const,
+  reduceOnly: false,
+  triggerPriceInteger: null,
+  orderExpiryMs: ORDER_EXPIRY,
+  clientOrderIndexPolicy: "vex_assigned_uint48",
+  providerVersion: APPROVED_PREVIEW.identity.providerVersion,
+  previewJson: { ...APPROVED_PREVIEW.preview },
+  liveSourceJson: { source: "live_lighter_public_api" },
+  createdAt: new Date(NOW).toISOString(),
+  expiresAt: APPROVED_PREVIEW.expiresAt,
+};
 
 const PLAN: LighterOrderReadyForSignerPlan = {
   intentId: "lighter-exec-1",
   sessionId: "session-1",
-  previewId: "lighter-preview-1",
-  matchHash: "a".repeat(64),
+  previewId: APPROVED_PREVIEW.previewId,
+  matchHash: APPROVED_PREVIEW.matchHash,
   environment: "rhc",
   accountIndex: 42,
   apiKeyIndex: 7,
@@ -31,9 +130,9 @@ const PLAN: LighterOrderReadyForSignerPlan = {
   timeInForce: "good-till-time",
   reduceOnly: false,
   triggerPriceInteger: null,
-  orderExpiryMs: 1893456000000,
+  orderExpiryMs: ORDER_EXPIRY,
   clientOrderIndexPolicy: "vex_assigned_uint48",
-  providerVersion: "lighter-preview-v1",
+  providerVersion: APPROVED_PREVIEW.identity.providerVersion,
   credentialReference: {
     kind: "encrypted_vault_reference",
     environment: "rhc",
@@ -47,6 +146,63 @@ const PLAN: LighterOrderReadyForSignerPlan = {
     apiKeyIndex: 7,
   },
 };
+const APPROVED_INTENT_ROW: LighterOrderExecutionIntentRow = {
+  intentId: PLAN.intentId,
+  sessionId: PLAN.sessionId,
+  previewId: PLAN.previewId,
+  protocolExecutionId: null,
+  approvalId: "approval-1",
+  matchHash: PLAN.matchHash,
+  environment: PLAN.environment,
+  accountIndex: PLAN.accountIndex,
+  apiKeyIndex: PLAN.apiKeyIndex,
+  marketIndex: PLAN.marketIndex,
+  side: PLAN.side,
+  baseAmountInteger: PLAN.baseAmountInteger,
+  priceInteger: PLAN.priceInteger,
+  orderType: PLAN.orderType,
+  timeInForce: PLAN.timeInForce,
+  reduceOnly: PLAN.reduceOnly,
+  triggerPriceInteger: PLAN.triggerPriceInteger,
+  orderExpiryMs: PLAN.orderExpiryMs,
+  clientOrderIndexPolicy: PLAN.clientOrderIndexPolicy,
+  providerVersion: PLAN.providerVersion,
+  credentialRefJson: PLAN.credentialReference,
+  approvalStatus: "approved",
+  executionState: "approval_pending",
+  decisionReason: "user approved exact Lighter order create intent",
+  decidedAt: new Date(NOW).toISOString(),
+  nonceReservationId: null,
+  nonceValue: null,
+  clientOrderIndex: null,
+  signerTxHash: null,
+  submittedTxHash: null,
+  submitCode: null,
+  submitMessage: null,
+  predictedExecutionTimeMs: null,
+  volumeQuotaRemaining: null,
+  ambiguousReason: null,
+  signedAt: null,
+  submittedAt: null,
+  apiAcceptedAt: null,
+  ambiguousAt: null,
+  providerOrderId: null,
+  providerOrderStatus: null,
+  providerOutcomeSource: null,
+  providerOutcomeJson: null,
+  providerOutcomeCheckedAt: null,
+  preSubmitRevalidationJson: null,
+  preSubmitRevalidatedAt: null,
+  createdAt: new Date(NOW).toISOString(),
+  updatedAt: new Date(NOW).toISOString(),
+  expiresAt: APPROVED_PREVIEW.expiresAt,
+};
+
+function first<T>(values: readonly T[]): T {
+  const value = values.at(0);
+  if (value === undefined) throw new Error("test fixture must not be empty");
+  return value;
+}
 
 const UNSIGNED_ORDER = buildLighterUnsignedCreateOrderRequest(PLAN);
 
@@ -109,6 +265,13 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       })),
     },
     client: {
+      getMarketDetails: vi.fn(async () => ({
+        code: 200,
+        order_book_details: [MARKET],
+        spot_order_book_details: [],
+      })),
+      getOrderBookOrders: vi.fn(async () => ORDER_BOOK),
+      getAccount: vi.fn(async () => ACCOUNT),
       getApiKeys: vi.fn(async () => ({
         code: 200,
         api_keys: [{
@@ -143,9 +306,13 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     nonceState: {
       recordExecutionObserved: vi.fn(async () => ({ status: "observed" }) as never),
     },
-    now: vi.fn(() => 1_893_456_000_000),
+    previews: {
+      findFreshById: vi.fn(async () => APPROVED_PREVIEW_ROW),
+    },
+    now: vi.fn(() => NOW),
     wait: vi.fn(async () => undefined),
     intents: {
+      markPreSubmitRevalidated: vi.fn(async () => APPROVED_INTENT_ROW),
       markSigned: vi.fn(async () => ({ ok: true }) as never),
       markSubmitted: vi.fn(async () => ({ ok: true }) as never),
       markApiAccepted: vi.fn(async () => ({
@@ -188,6 +355,67 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks an unavailable approved preview before provider credential or vault access", async () => {
+    const d = deps({
+      previews: { findFreshById: vi.fn(async () => null) },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("no longer fresh or available");
+
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks changed live price behavior before provider credential or vault access", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getOrderBookOrders: vi.fn(async () => ({
+          ...ORDER_BOOK,
+          asks: [{ ...first(ORDER_BOOK.asks), price: "2999.00" }],
+        })),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("changed between resting and taker behavior");
+
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks when safe revalidation evidence cannot persist before vault access", async () => {
+    const d = deps({
+      intents: {
+        ...deps().intents,
+        markPreSubmitRevalidated: vi.fn(async () => null),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("evidence could not be persisted");
+
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
@@ -295,6 +523,22 @@ describe("Lighter approved create execution pipeline", () => {
       deps: d,
     });
 
+    expect(d.previews.findFreshById).toHaveBeenCalledWith(
+      PLAN.sessionId,
+      PLAN.environment,
+      PLAN.previewId,
+    );
+    expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      evidence: expect.objectContaining({
+        kind: "lighter_order_pre_submit_revalidation",
+        previewId: PLAN.previewId,
+        matchHash: PLAN.matchHash,
+        priceComparison: "resting",
+      }),
+    });
     expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledWith(PLAN.credentialReference);
     expect(d.reserveNonce).toHaveBeenCalledWith(PLAN);
     expect(d.signer.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({

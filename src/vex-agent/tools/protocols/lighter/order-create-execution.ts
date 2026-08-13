@@ -14,6 +14,7 @@ import {
 } from "@tools/lighter/trading-secret.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
   reserveLighterOrderNonceForSigning,
@@ -24,6 +25,7 @@ import {
   LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
   isLighterLiveTradingEnabled,
 } from "./execution-boundary.js";
+import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -90,16 +92,21 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     | "sendTx"
     | "getApiKeys"
     | "getNextNonce"
+    | "getMarketDetails"
+    | "getOrderBookOrders"
+    | "getAccount"
     | "getAccountActiveOrders"
     | "getAccountInactiveOrders"
     | "getAccountTrades"
   >;
   readonly nonceState: Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">;
+  readonly previews: Pick<typeof lighterOrderPreviewsRepo, "findFreshById">;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
   readonly intents: Pick<
     typeof lighterOrderExecutionIntentsRepo,
     | "markSigned"
+    | "markPreSubmitRevalidated"
     | "markSubmitted"
     | "markApiAccepted"
     | "markSequencerPending"
@@ -137,6 +144,7 @@ export async function executeApprovedLighterCreateOrder(input: {
     );
   }
 
+  await revalidateLiveOrderState(plan, deps);
   const providerCredential = await readLiveProviderCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(
     plan.credentialReference,
@@ -282,6 +290,9 @@ export function defaultLighterCreateOrderExecutionDeps(
       | "sendTx"
       | "getApiKeys"
       | "getNextNonce"
+      | "getMarketDetails"
+      | "getOrderBookOrders"
+      | "getAccount"
       | "getAccountActiveOrders"
       | "getAccountInactiveOrders"
       | "getAccountTrades"
@@ -293,10 +304,77 @@ export function defaultLighterCreateOrderExecutionDeps(
     reserveNonce: reserveLighterOrderNonceForSigning,
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,
+    previews: lighterOrderPreviewsRepo,
     now: Date.now,
     wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
     ...overrides,
   };
+}
+
+async function revalidateLiveOrderState(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<void> {
+  const approvedPreview = await deps.previews.findFreshById(
+    plan.sessionId,
+    plan.environment,
+    plan.previewId,
+  );
+  if (approvedPreview === null) {
+    throw blockedBeforeSubmit(
+      "The exact approved Lighter preview is no longer fresh or available. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
+
+  let market: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
+  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  let account: Awaited<ReturnType<LighterClient["getAccount"]>>;
+  try {
+    [market, orderBook, account] = await Promise.all([
+      deps.client.getMarketDetails(plan.environment, {
+        marketId: plan.marketIndex,
+        filter: "all",
+      }),
+      deps.client.getOrderBookOrders(plan.environment, {
+        marketId: plan.marketIndex,
+        limit: 250,
+      }),
+      deps.client.getAccount(plan.environment, {
+        by: "index",
+        value: plan.accountIndex,
+      }),
+    ]);
+  } catch {
+    throw blockedBeforeSubmit(
+      "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
+  const marketDetail = market.order_book_details.find(
+    (detail) => detail.market_id === plan.marketIndex,
+  );
+  if (marketDetail === undefined) {
+    throw blockedBeforeSubmit(
+      "Lighter did not return the approved market during post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
+
+  const evidence = revalidateApprovedLighterOrder({
+    plan,
+    approvedPreview,
+    context: { market: marketDetail, orderBook, account },
+    nowMs: deps.now(),
+  });
+  const persisted = await deps.intents.markPreSubmitRevalidated({
+    intentId: plan.intentId,
+    sessionId: plan.sessionId,
+    environment: plan.environment,
+    evidence: { ...evidence },
+  });
+  if (persisted === null) {
+    throw blockedBeforeSubmit(
+      "Lighter pre-submit revalidation evidence could not be persisted. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
 }
 
 async function readLiveProviderCredential(
