@@ -133,7 +133,9 @@ describe("Lighter order preview", () => {
       decimals: 6,
     });
     expect(result.preview.minimumChecks.minBaseAmountInteger).toBe("10");
+    expect(result.preview.minimumChecks.minBaseAmountDisplay).toBe("0.001");
     expect(result.preview.minimumChecks.minQuoteAmountInteger).toBe("100000000");
+    expect(result.preview.minimumChecks.minQuoteAmountDisplay).toBe("100");
     expect(result.preview.minimumChecks.baseAmountPasses).toBe(true);
     expect(result.preview.minimumChecks.quoteAmountPasses).toBe(true);
     expect(result.preview.marketData.priceComparison).toBe("resting");

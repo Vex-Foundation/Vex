@@ -263,6 +263,15 @@ export function buildProtocolsPrompt(): string {
   lines.push("- Reads on Robinhood Chain go direct-RPC: `wallet_balances` for balances, `chain_read` for tx receipts / ERC-721 mints / a direct `erc20_balance` read (alias `robinhood` / id 4663). `khalani.tokens.balances` does NOT cover it.");
   lines.push("");
 
+  lines.push("## Lighter Order Preview Routing");
+  lines.push("");
+  lines.push("- `lighter.order.preview` is a live-data-backed read-only preview and never places, submits, executes, or broadcasts an order. Do not call it a simulation.");
+  lines.push("- After a successful Lighter preview, inspect `approvalReady`. If it is true, say the next step is preparing it for approval with `lighter.order.create.prepare`. If it is false, say the preview is read-only and approval preparation requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.");
+  lines.push("- Do not ask the user to confirm that you should place, execute, submit, or broadcast directly from a preview. Do not say a preview can be broadcast after only supplying an API-key index. Approval preparation is not live submission, and live trading may still be release-gated.");
+  lines.push("- For amounts and minimums, show the `display` fields from the preview object. Do not present raw integer fields such as `minBaseAmountInteger` or `minQuoteAmountInteger` as human ETH or USD amounts.");
+  lines.push("- Format preview notes with normal Markdown bullets or sentences; never emit raw HTML such as `<br>`.");
+  lines.push("");
+
   cached = { fingerprint, text: lines.join("\n") };
   return cached.text;
 }

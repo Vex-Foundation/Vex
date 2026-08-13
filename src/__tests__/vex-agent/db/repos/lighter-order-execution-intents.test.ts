@@ -95,6 +95,7 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
     decided_at: null,
     nonce_reservation_id: null,
     nonce_value: null,
+    client_order_index: null,
     signer_tx_hash: null,
     submitted_tx_hash: null,
     submit_code: null,
@@ -106,6 +107,11 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
     submitted_at: null,
     api_accepted_at: null,
     ambiguous_at: null,
+    provider_order_id: null,
+    provider_order_status: null,
+    provider_outcome_source: null,
+    provider_outcome_json: null,
+    provider_outcome_checked_at: null,
     created_at: new Date("2026-08-12T00:00:01.000Z"),
     updated_at: new Date("2026-08-12T00:00:02.000Z"),
     expires_at: new Date("2026-08-12T00:05:00.000Z"),
@@ -372,6 +378,7 @@ describe("lighter order execution intents repo", () => {
       execution_state: "signed",
       nonce_reservation_id: "reservation-1",
       nonce_value: "1784732515923",
+      client_order_index: "187649984473770",
       signer_tx_hash: "0xabc123",
       signed_at: new Date("2026-08-12T00:02:00.000Z"),
     }));
@@ -382,6 +389,7 @@ describe("lighter order execution intents repo", () => {
       environment: "rhc",
       nonceReservationId: "reservation-1",
       nonceValue: "1784732515923",
+      clientOrderIndex: "187649984473770",
       signerTxHash: "0xabc123",
     });
 
@@ -391,16 +399,19 @@ describe("lighter order execution intents repo", () => {
     expect(sql).toContain("AND execution_state = 'approval_pending'");
     expect(sql).toContain("AND nonce_reservation_id = $4");
     expect(sql).toContain("AND nonce_value = $5");
+    expect(sql).toContain("AND client_order_index IS NULL");
     expect(params).toEqual([
       "lighter-exec-1",
       "session-1",
       "rhc",
       "reservation-1",
       "1784732515923",
+      "187649984473770",
       "0xabc123",
     ]);
     expect(signed).toMatchObject({
       executionState: "signed",
+      clientOrderIndex: "187649984473770",
       signerTxHash: "0xabc123",
       signedAt: "2026-08-12T00:02:00.000Z",
     });
@@ -412,6 +423,7 @@ describe("lighter order execution intents repo", () => {
       execution_state: "signed",
       nonce_reservation_id: "reservation-zero",
       nonce_value: "0",
+      client_order_index: "187649984473770",
       signer_tx_hash: "0xabc123",
       signed_at: new Date("2026-08-12T00:02:00.000Z"),
     }));
@@ -422,6 +434,7 @@ describe("lighter order execution intents repo", () => {
       environment: "rhc",
       nonceReservationId: "reservation-zero",
       nonceValue: "0",
+      clientOrderIndex: "187649984473770",
       signerTxHash: "0xabc123",
     });
 
@@ -431,11 +444,13 @@ describe("lighter order execution intents repo", () => {
       "rhc",
       "reservation-zero",
       "0",
+      "187649984473770",
       "0xabc123",
     ]);
     expect(signed).toMatchObject({
       executionState: "signed",
       nonceValue: "0",
+      clientOrderIndex: "187649984473770",
     });
   });
 
@@ -472,6 +487,7 @@ describe("lighter order execution intents repo", () => {
       approval_status: "approved",
       execution_state: "api_accepted",
       signer_tx_hash: "0xabc123",
+      client_order_index: "187649984473770",
       submitted_tx_hash: "0xabc123",
       submit_code: 200,
       submit_message: "accepted",
@@ -517,6 +533,89 @@ describe("lighter order execution intents repo", () => {
       predictedExecutionTimeMs: 250,
       volumeQuotaRemaining: "10780",
       apiAcceptedAt: "2026-08-12T00:02:02.000Z",
+    });
+  });
+
+  it("moves API-accepted orders to sequencer pending for provider outcome repair", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "sequencer_pending",
+      signer_tx_hash: "0xabc123",
+      submitted_tx_hash: "0xabc123",
+      client_order_index: "187649984473770",
+      api_accepted_at: new Date("2026-08-12T00:02:02.000Z"),
+    }));
+
+    const pending = await repo.markSequencerPending({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      signerTxHash: "0xabc123",
+      submittedTxHash: "0xabc123",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'sequencer_pending'");
+    expect(sql).toContain("AND execution_state = 'api_accepted'");
+    expect(sql).toContain("AND client_order_index IS NOT NULL");
+    expect(params).toEqual(["lighter-exec-1", "session-1", "rhc", "0xabc123", "0xabc123"]);
+    expect(pending).toMatchObject({
+      executionState: "sequencer_pending",
+      clientOrderIndex: "187649984473770",
+    });
+  });
+
+  it("records bounded provider outcome evidence without raw provider rows", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "open",
+      client_order_index: "187649984473770",
+      provider_order_id: "123",
+      provider_order_status: "open",
+      provider_outcome_source: "active_order",
+      provider_outcome_json: {
+        source: "active_order",
+        clientOrderIndex: "187649984473770",
+        orderId: "123",
+      },
+      provider_outcome_checked_at: new Date("2026-08-12T00:02:03.000Z"),
+    }));
+
+    const outcome = await repo.markProviderOutcome({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      state: "open",
+      source: "active_order",
+      providerOrderId: "123",
+      providerOrderStatus: "open",
+      providerOutcomeJson: {
+        source: "active_order",
+        clientOrderIndex: "187649984473770",
+        orderId: "123",
+      },
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = $4");
+    expect(sql).toContain("provider_outcome_json = $8::jsonb");
+    expect(sql).toContain("execution_state IN ('api_accepted','sequencer_pending')");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "session-1",
+      "rhc",
+      "open",
+      "active_order",
+      "123",
+      "open",
+      expect.stringContaining("clientOrderIndex"),
+    ]);
+    expect(outcome).toMatchObject({
+      executionState: "open",
+      providerOrderId: "123",
+      providerOrderStatus: "open",
+      providerOutcomeSource: "active_order",
+      providerOutcomeCheckedAt: "2026-08-12T00:02:03.000Z",
     });
   });
 
@@ -602,6 +701,17 @@ describe("lighter order execution intents repo", () => {
       environment: "rhc",
       reason: "secret 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     })).rejects.toThrow("reason must not contain signed payload material");
+    await expect(repo.markProviderOutcome({
+      intentId: "lighter-exec-1",
+      sessionId: "session-1",
+      environment: "rhc",
+      state: "open",
+      source: "active_order",
+      providerOutcomeJson: {
+        source: "active_order",
+        payload: "tx_info should never be stored here",
+      },
+    })).rejects.toThrow("providerOutcomeJson must be bounded non-secret evidence");
 
     expect(mockQueryOne).not.toHaveBeenCalled();
   });

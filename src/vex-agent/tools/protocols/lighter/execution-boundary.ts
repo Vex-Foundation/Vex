@@ -70,7 +70,7 @@ export const LIGHTER_ORDER_EXECUTION_BOUNDARY = {
 } as const;
 
 export const LIGHTER_LIVE_TRADING_DISABLED_MESSAGE =
-  "Lighter order create reached the approved execution boundary, but live trading is disabled until the privileged signer and sendTx milestone is explicitly approved. No order was signed or submitted.";
+  "Lighter order create reached the approved execution boundary, but live trading is disabled until final release-gate review and live provider proof are complete. No order was signed or submitted.";
 
 export const LIGHTER_LIVE_TRADING_ENABLED: boolean = false;
 

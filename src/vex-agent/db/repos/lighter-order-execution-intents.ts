@@ -57,6 +57,7 @@ export interface LighterOrderExecutionIntentRow {
   readonly decidedAt: string | null;
   readonly nonceReservationId: string | null;
   readonly nonceValue: string | null;
+  readonly clientOrderIndex: string | null;
   readonly signerTxHash: string | null;
   readonly submittedTxHash: string | null;
   readonly submitCode: number | null;
@@ -68,10 +69,29 @@ export interface LighterOrderExecutionIntentRow {
   readonly submittedAt: string | null;
   readonly apiAcceptedAt: string | null;
   readonly ambiguousAt: string | null;
+  readonly providerOrderId: string | null;
+  readonly providerOrderStatus: string | null;
+  readonly providerOutcomeSource: LighterProviderOutcomeSource | null;
+  readonly providerOutcomeJson: Record<string, unknown> | null;
+  readonly providerOutcomeCheckedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly expiresAt: string;
 }
+
+export type LighterProviderOutcomeSource =
+  | "active_order"
+  | "inactive_order"
+  | "account_trade"
+  | "not_found";
+
+export type LighterProviderOutcomeExecutionState =
+  | "sequencer_pending"
+  | "open"
+  | "partially_filled"
+  | "filled"
+  | "canceled"
+  | "rejected";
 
 export interface CreateLighterOrderExecutionIntentInput {
   readonly intentId: string;
@@ -105,6 +125,7 @@ export interface MarkLighterOrderSignedInput {
   readonly environment: LighterEnvironment;
   readonly nonceReservationId: string;
   readonly nonceValue: string;
+  readonly clientOrderIndex: string;
   readonly signerTxHash: string;
 }
 
@@ -134,14 +155,34 @@ export interface MarkLighterOrderAmbiguousInput {
   readonly reason: string;
 }
 
+export interface MarkLighterOrderSequencerPendingInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly signerTxHash: string;
+  readonly submittedTxHash: string;
+}
+
+export interface MarkLighterOrderProviderOutcomeInput {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly state: LighterProviderOutcomeExecutionState;
+  readonly source: LighterProviderOutcomeSource;
+  readonly providerOrderId?: string | null;
+  readonly providerOrderStatus?: string | null;
+  readonly providerOutcomeJson: Record<string, unknown>;
+}
+
 const SELECT_COLUMNS =
   "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
   "order_type, time_in_force, reduce_only, trigger_price_integer, order_expiry_ms, " +
   "client_order_index_policy, provider_version, credential_ref_json, approval_status, " +
   "execution_state, decision_reason, decided_at, nonce_reservation_id, nonce_value, " +
-  "signer_tx_hash, submitted_tx_hash, submit_code, submit_message, predicted_execution_time_ms, " +
+  "client_order_index, signer_tx_hash, submitted_tx_hash, submit_code, submit_message, predicted_execution_time_ms, " +
   "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
+  "provider_order_id, provider_order_status, provider_outcome_source, provider_outcome_json, provider_outcome_checked_at, " +
   "created_at, updated_at, expires_at";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
@@ -184,7 +225,8 @@ const ATTACH_NONCE_RESERVATION_SQL = `UPDATE lighter_order_execution_intents
 
 const MARK_SIGNED_SQL = `UPDATE lighter_order_execution_intents
    SET execution_state = 'signed',
-       signer_tx_hash = $6,
+       client_order_index = $6,
+       signer_tx_hash = $7,
        signed_at = NOW(),
        updated_at = NOW()
  WHERE intent_id = $1
@@ -194,6 +236,7 @@ const MARK_SIGNED_SQL = `UPDATE lighter_order_execution_intents
    AND execution_state = 'approval_pending'
    AND nonce_reservation_id = $4
    AND nonce_value = $5
+   AND client_order_index IS NULL
    AND signer_tx_hash IS NULL
  RETURNING ${SELECT_COLUMNS}`;
 
@@ -226,6 +269,35 @@ const MARK_API_ACCEPTED_SQL = `UPDATE lighter_order_execution_intents
    AND execution_state = 'submitted'
    AND signer_tx_hash = $4
    AND api_accepted_at IS NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_SEQUENCER_PENDING_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'sequencer_pending',
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state = 'api_accepted'
+   AND signer_tx_hash = $4
+   AND submitted_tx_hash = $5
+   AND client_order_index IS NOT NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+const MARK_PROVIDER_OUTCOME_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = $4,
+       provider_outcome_source = $5,
+       provider_order_id = $6,
+       provider_order_status = $7,
+       provider_outcome_json = $8::jsonb,
+       provider_outcome_checked_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND session_id = $2
+   AND environment = $3
+   AND approval_status = 'approved'
+   AND execution_state IN ('api_accepted','sequencer_pending')
+   AND client_order_index IS NOT NULL
  RETURNING ${SELECT_COLUMNS}`;
 
 const MARK_AMBIGUOUS_SQL = `UPDATE lighter_order_execution_intents
@@ -340,6 +412,26 @@ export async function markAmbiguous(
   return row ? mapRow(row) : null;
 }
 
+export async function markSequencerPending(
+  input: MarkLighterOrderSequencerPendingInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_SEQUENCER_PENDING_SQL,
+    toMarkSequencerPendingParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
+export async function markProviderOutcome(
+  input: MarkLighterOrderProviderOutcomeInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    MARK_PROVIDER_OUTCOME_SQL,
+    toMarkProviderOutcomeParams(input),
+  );
+  return row ? mapRow(row) : null;
+}
+
 export async function findByIntentId(
   sessionId: string,
   intentId: string,
@@ -404,6 +496,7 @@ function toMarkSignedParams(input: MarkLighterOrderSignedInput): unknown[] {
     input.environment,
     requiredSafeId(input.nonceReservationId, "nonceReservationId"),
     requiredNonNegativeDecimal(input.nonceValue, "nonceValue"),
+    requiredUint48Decimal(input.clientOrderIndex, "clientOrderIndex"),
     requiredSafeId(input.signerTxHash, "signerTxHash"),
   ];
 }
@@ -442,6 +535,29 @@ function toMarkAmbiguousParams(input: MarkLighterOrderAmbiguousInput): unknown[]
   ];
 }
 
+function toMarkSequencerPendingParams(input: MarkLighterOrderSequencerPendingInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    requiredSafeId(input.signerTxHash, "signerTxHash"),
+    requiredSafeId(input.submittedTxHash, "submittedTxHash"),
+  ];
+}
+
+function toMarkProviderOutcomeParams(input: MarkLighterOrderProviderOutcomeInput): unknown[] {
+  return [
+    input.intentId,
+    input.sessionId,
+    input.environment,
+    providerOutcomeState(input.state),
+    providerOutcomeSource(input.source),
+    optionalSafeId(input.providerOrderId, "providerOrderId"),
+    optionalSafeText(input.providerOrderStatus, "providerOrderStatus"),
+    jsonb(assertProviderOutcomeJson(input.providerOutcomeJson)),
+  ];
+}
+
 function toAttachNonceReservationParams(input: AttachLighterOrderNonceReservationInput): unknown[] {
   if (input.reservationId.trim().length === 0) {
     throw new Error("lighter_order_execution_intents: reservationId is required");
@@ -465,6 +581,16 @@ function requiredNonNegativeDecimal(value: string, field: string): string {
   return BigInt(value).toString();
 }
 
+const UINT48_MAX = (1n << 48n) - 1n;
+
+function requiredUint48Decimal(value: string, field: string): string {
+  const decimal = requiredNonNegativeDecimal(value, field);
+  if (BigInt(decimal) > UINT48_MAX) {
+    throw new Error(`lighter_order_execution_intents: ${field} must fit uint48`);
+  }
+  return decimal;
+}
+
 function requiredNonNegativeInt(value: number, field: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`lighter_order_execution_intents: ${field} must be a safe non-negative integer`);
@@ -478,6 +604,12 @@ function requiredSafeId(value: string, field: string): string {
     throw new Error(`lighter_order_execution_intents: ${field} must be a safe structural id`);
   }
   return trimmed;
+}
+
+function optionalSafeId(value: string | null | undefined, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : requiredSafeId(trimmed, field);
 }
 
 function optionalSafeText(value: string | null | undefined, field: string): string | null {
@@ -510,6 +642,43 @@ function assertNoSignedPayloadShape(value: string, field: string): void {
   ) {
     throw new Error(`lighter_order_execution_intents: ${field} must not contain signed payload material`);
   }
+}
+
+function providerOutcomeSource(source: LighterProviderOutcomeSource): LighterProviderOutcomeSource {
+  if (
+    source !== "active_order"
+    && source !== "inactive_order"
+    && source !== "account_trade"
+    && source !== "not_found"
+  ) {
+    throw new Error("lighter_order_execution_intents: provider outcome source is invalid");
+  }
+  return source;
+}
+
+function providerOutcomeState(state: LighterProviderOutcomeExecutionState): LighterProviderOutcomeExecutionState {
+  if (
+    state !== "sequencer_pending"
+    && state !== "open"
+    && state !== "partially_filled"
+    && state !== "filled"
+    && state !== "canceled"
+    && state !== "rejected"
+  ) {
+    throw new Error("lighter_order_execution_intents: provider outcome state is invalid");
+  }
+  return state;
+}
+
+function assertProviderOutcomeJson(value: Record<string, unknown>): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("lighter_order_execution_intents: providerOutcomeJson must be an object");
+  }
+  const encoded = JSON.stringify(value);
+  if (encoded.length > 2_000 || /\b(?:tx_info|private|secret|signature|payload)\b/i.test(encoded)) {
+    throw new Error("lighter_order_execution_intents: providerOutcomeJson must be bounded non-secret evidence");
+  }
+  return value;
 }
 
 function assertCredentialMatchesPreview(
@@ -562,6 +731,7 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
     decidedAt: toIsoOrNull(row.decided_at as string | Date | null | undefined),
     nonceReservationId: (row.nonce_reservation_id as string | null) ?? null,
     nonceValue: (row.nonce_value as string | null) ?? null,
+    clientOrderIndex: (row.client_order_index as string | null) ?? null,
     signerTxHash: (row.signer_tx_hash as string | null) ?? null,
     submittedTxHash: (row.submitted_tx_hash as string | null) ?? null,
     submitCode: row.submit_code === null || row.submit_code === undefined
@@ -581,6 +751,11 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
     submittedAt: toIsoOrNull(row.submitted_at as string | Date | null | undefined),
     apiAcceptedAt: toIsoOrNull(row.api_accepted_at as string | Date | null | undefined),
     ambiguousAt: toIsoOrNull(row.ambiguous_at as string | Date | null | undefined),
+    providerOrderId: (row.provider_order_id as string | null) ?? null,
+    providerOrderStatus: (row.provider_order_status as string | null) ?? null,
+    providerOutcomeSource: (row.provider_outcome_source as LighterProviderOutcomeSource | null) ?? null,
+    providerOutcomeJson: (row.provider_outcome_json as Record<string, unknown> | null) ?? null,
+    providerOutcomeCheckedAt: toIsoOrNull(row.provider_outcome_checked_at as string | Date | null | undefined),
     createdAt: toIso(row.created_at as string | Date),
     updatedAt: toIso(row.updated_at as string | Date),
     expiresAt: toIso(row.expires_at as string | Date),

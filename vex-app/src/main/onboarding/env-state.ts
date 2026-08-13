@@ -235,6 +235,10 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
   const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
   const hasRelay = secretPresence.secrets.RELAY_API_KEY === true;
+  const hasLighterCoreReadOnly =
+    secretPresence.secrets.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN === true;
+  const hasLighterRhcReadOnly =
+    secretPresence.secrets.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN === true;
 
   return {
     hasKeystorePassword: hasPwd,
@@ -244,6 +248,8 @@ export async function gatherEnvState(): Promise<EnvState> {
       tavilyConfigured: hasTavily,
       rettiwtConfigured: hasRettiwt,
       relayConfigured: hasRelay,
+      lighterCoreReadOnlyConfigured: hasLighterCoreReadOnly,
+      lighterRhcReadOnlyConfigured: hasLighterRhcReadOnly,
     },
     secrets: {
       vaultConfigured: secretPresence.vaultConfigured,

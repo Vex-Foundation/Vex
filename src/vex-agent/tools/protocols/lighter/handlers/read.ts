@@ -190,7 +190,7 @@ function resolvePreviewAccountIndex(
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       `No active Lighter ${environment} read-only account credential is configured.`,
-      "Connect or refresh the Lighter account credential in Vex, then ask again without an account id.",
+      "Open Settings > API keys and save a Lighter read-only token for this environment, then ask again without an account id.",
     );
   }
   return status.metadata.accountIndex;
@@ -201,25 +201,41 @@ async function resolvePreviewApiKeyIndex(
   environment: LighterEnvironment,
   accountIndex: number,
   requestedApiKeyIndex: number | null | undefined,
-): Promise<number | null> {
-  if (requestedApiKeyIndex !== null && requestedApiKeyIndex !== undefined) return requestedApiKeyIndex;
-  const response = await client.getApiKeys(environment, {
-    accountIndex,
-    apiKeyIndex: LIGHTER_API_KEY_INDEX_ALL,
-  });
-  const selected = response.api_keys
-    .filter((key) =>
-      key.api_key_index >= LIGHTER_TRADING_API_KEY_INDEX_MIN
-      && key.api_key_index <= LIGHTER_TRADING_API_KEY_INDEX_MAX)
-    .sort((left, right) => left.api_key_index - right.api_key_index)[0];
-  if (!selected) {
-    throw new VexError(
-      ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `No public Lighter trading API-key index found for account ${accountIndex} on ${environment}.`,
-      "Create or connect a Lighter trading API key in Vex before preparing order previews for approval.",
-    );
+): Promise<{
+  readonly apiKeyIndex: number | null;
+  readonly apiKeyLookupStatus: "caller_supplied" | "resolved" | "not_found" | "unavailable";
+}> {
+  if (requestedApiKeyIndex !== null && requestedApiKeyIndex !== undefined) {
+    return {
+      apiKeyIndex: requestedApiKeyIndex,
+      apiKeyLookupStatus: "caller_supplied",
+    };
   }
-  return selected.api_key_index;
+  try {
+    const response = await client.getApiKeys(environment, {
+      accountIndex,
+      apiKeyIndex: LIGHTER_API_KEY_INDEX_ALL,
+    });
+    const selected = response.api_keys
+      .filter((key) =>
+        key.api_key_index >= LIGHTER_TRADING_API_KEY_INDEX_MIN
+        && key.api_key_index <= LIGHTER_TRADING_API_KEY_INDEX_MAX)
+      .sort((left, right) => left.api_key_index - right.api_key_index)[0];
+    return {
+      apiKeyIndex: selected?.api_key_index ?? null,
+      apiKeyLookupStatus: selected ? "resolved" : "not_found",
+    };
+  } catch (err) {
+    logger.warn("lighter.order.preview.api_key_lookup_unavailable", {
+      environment,
+      accountIndex,
+      error: describeFailureForLog(err),
+    });
+    return {
+      apiKeyIndex: null,
+      apiKeyLookupStatus: "unavailable",
+    };
+  }
 }
 
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
@@ -581,7 +597,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         environment.value,
         previewParams.value.accountIndex,
       );
-      const [marketId, apiKeyIndex] = await Promise.all([
+      const [marketId, apiKeyResolution] = await Promise.all([
         resolvePreviewMarketId(client, environment.value, previewParams.value),
         resolvePreviewApiKeyIndex(
           client,
@@ -590,6 +606,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           previewParams.value.apiKeyIndex,
         ),
       ]);
+      const { apiKeyIndex, apiKeyLookupStatus } = apiKeyResolution;
       const [marketDetails, orderBook, account] = await Promise.all([
         client.getMarketDetails(environment.value, {
           marketId,
@@ -622,6 +639,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         marketSymbol: previewParams.value.marketSymbol ?? null,
         accountIndex,
         apiKeyIndex,
+        apiKeyLookupStatus,
         authenticated: false,
         persistedPreview: true,
       });
@@ -649,13 +667,34 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         preview,
         liveSourceJson: source.provenance as Record<string, unknown>,
       });
+      const approvalReady = apiKeyIndex !== null;
       return ok({
         ...source,
+        status: "preview_ready",
         environment: environment.value,
         previewId: preview.previewId,
         matchHash: preview.matchHash,
         expiresAt: preview.expiresAt,
         preview: preview.preview,
+        approvalReady,
+        nextStep: approvalReady
+          ? "prepare_for_approval"
+          : "connect_trading_api_key_before_approval",
+        nextToolId: approvalReady ? "lighter.order.create.prepare" : null,
+        responseRules: [
+          "Describe this as a live-data-backed read-only preview, not as a simulation.",
+          "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
+          "Show human display values from preview.*.display fields for amounts and minimums; do not present integer fields as human ETH or USD amounts.",
+          "Do not say the order can be placed, executed, submitted, or broadcast directly from this preview.",
+          approvalReady
+            ? "If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
+            : "If the user wants to continue, explain that approval preparation requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.",
+        ],
+        userGuidance: approvalReady
+          ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
+          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.",
+        safety:
+          "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
       });
     } catch (err) {
       return fail(`Lighter order preview unavailable (${failureDetail("lighter.order.preview", err)})`);

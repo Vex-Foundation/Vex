@@ -7,11 +7,14 @@ describe("apiKeysSetInputSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts a payload with jupiter/tavily/rettiwt keys", () => {
+  it("accepts a payload with supported key fields", () => {
     const parsed = apiKeysSetInputSchema.safeParse({
       jupiterApiKey: "j",
       tavilyApiKey: "t",
       rettiwtApiKey: "r",
+      relayApiKey: "relay",
+      lighterCoreReadOnlyToken: "ro:1:single:2000000000:abcdef",
+      lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
     });
     expect(parsed.success).toBe(true);
   });

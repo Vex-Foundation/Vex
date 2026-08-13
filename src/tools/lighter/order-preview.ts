@@ -107,7 +107,9 @@ export interface LighterOrderPreview {
     };
     readonly minimumChecks: {
       readonly minBaseAmountInteger: string;
+      readonly minBaseAmountDisplay: string;
       readonly minQuoteAmountInteger: string;
+      readonly minQuoteAmountDisplay: string;
       readonly baseAmountPasses: boolean;
       readonly quoteAmountPasses: boolean;
     };
@@ -258,7 +260,15 @@ export function buildLighterOrderPreview(
       },
       minimumChecks: {
         minBaseAmountInteger: minBaseAmount.toString(),
+        minBaseAmountDisplay: formatInteger(
+          minBaseAmount,
+          context.market.supported_size_decimals,
+        ),
         minQuoteAmountInteger: minQuoteAmount.toString(),
+        minQuoteAmountDisplay: formatInteger(
+          minQuoteAmount,
+          context.market.supported_quote_decimals,
+        ),
         baseAmountPasses: true,
         quoteAmountPasses: true,
       },

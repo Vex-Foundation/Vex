@@ -38,6 +38,8 @@ export const apiKeysStateSchema = z
     tavilyConfigured: z.boolean(),
     rettiwtConfigured: z.boolean(),
     relayConfigured: z.boolean(),
+    lighterCoreReadOnlyConfigured: z.boolean().optional(),
+    lighterRhcReadOnlyConfigured: z.boolean().optional(),
   })
   .strict();
 

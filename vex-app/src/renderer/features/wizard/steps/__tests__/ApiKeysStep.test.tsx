@@ -9,8 +9,8 @@
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
- *  - 4 provider cards render in canonical order (jupiter → tavily →
- *    rettiwt) and each carries the correct external link.
+ *  - Provider cards render in canonical order and each external link
+ *    carries the correct browser safety attributes.
  *  - Every external "Get key" link opens with target="_blank" +
  *    rel="noopener noreferrer".
  */
@@ -84,6 +84,8 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      lighterCoreReadOnlyConfigured: false,
+      lighterRhcReadOnlyConfigured: false,
       ...overrides,
     },
     secrets: {
@@ -130,6 +132,18 @@ function renderWithQuery(ui: JSX.Element) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
+function embeddingWizardState(): Result<WizardState> {
+  return {
+    ok: true,
+    data: {
+      schemaVersion: 2,
+      currentStepId: "embedding",
+      completedSteps: ["keystore", "wallets", "apiKeys"],
+      completed: false,
+    },
+  };
+}
+
 beforeEach(() => {
   mockUseEnvState.mockReset();
   mockSetApiKeys.mockReset();
@@ -158,15 +172,7 @@ describe("ApiKeysStep", () => {
       ok: true,
       data: { fieldsWritten: ["JUPITER_API_KEY"] },
     } as Result<ApiKeysSetResult>);
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { container, getByLabelText } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -182,6 +188,37 @@ describe("ApiKeysStep", () => {
     await waitFor(() => {
       expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
     });
+  });
+
+  it("submits Lighter read-only tokens without keeping them in the form", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetApiKeys.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: [
+          "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+          "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
+        ],
+      },
+    } as Result<ApiKeysSetResult>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
+    const { container, getByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const rhcInput = getByLabelText(/Lighter RHC read-only token/i) as HTMLInputElement;
+    const coreInput = getByLabelText(/Lighter Core read-only token/i) as HTMLInputElement;
+    fireEvent.input(rhcInput, { target: { value: "ro:1:single:2000000000:abcdef" } });
+    fireEvent.input(coreInput, { target: { value: "ro:2:all:2000000000:123456" } });
+    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
+    fireEvent.submit(form);
+    await waitFor(() => {
+      expect(mockSetApiKeys).toHaveBeenCalledWith({
+        lighterCoreReadOnlyToken: "ro:2:all:2000000000:123456",
+        lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
+      });
+    });
+    expect(rhcInput.value).toBe("");
+    expect(coreInput.value).toBe("");
   });
 
   // Optional-connections model: API keys never block advancement. The
@@ -200,15 +237,7 @@ describe("ApiKeysStep", () => {
 
   it("'Skip optional' ADVANCES even when Jupiter is not configured (optional model)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { getByText } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -221,15 +250,7 @@ describe("ApiKeysStep", () => {
 
   it("'Skip optional' advances when Jupiter configured", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { getByText, container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -244,15 +265,7 @@ describe("ApiKeysStep", () => {
 
   it("'Save and continue' empty submit ADVANCES without calling setApiKeys (optional model)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -289,16 +302,16 @@ describe("ApiKeysStep", () => {
 
   // ── PR8 redesign — per-provider cards ────────────────────────────────
 
-  it("renders 4 provider cards in canonical order (PR8 + Relay)", () => {
+  it("renders provider cards in canonical order", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(6);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt", "relay"]);
+    ).toEqual(["jupiter", "tavily", "rettiwt", "relay", "lighter-rhc", "lighter-core"]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {

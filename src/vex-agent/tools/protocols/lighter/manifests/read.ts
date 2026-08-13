@@ -219,7 +219,7 @@ const API_KEY_INDEX_PARAM: ProtocolParamDef = {
   key: "apiKeyIndex",
   type: "number",
   description:
-    "Optional Lighter API-key index override. Omit for normal order previews; Vex resolves a trading API-key index from public Lighter API-key metadata for the preview account. This does not require or expose API private key material.",
+    "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
 };
 
 const CLIENT_ORDER_INDEX_POLICY_PARAM: ProtocolParamDef = {
@@ -343,7 +343,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, reduceOnly, and clientOrderIndexPolicy unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, reduceOnly, and clientOrderIndexPolicy unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. After a successful preview, inspect approvalReady: if true, say the next step is preparing the preview for approval with lighter.order.create.prepare; if false, say the preview is read-only and a Lighter trading API key is needed before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [

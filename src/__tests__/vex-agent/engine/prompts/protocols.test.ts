@@ -54,6 +54,23 @@ describe("buildProtocolsPrompt", () => {
     expect(routingLine).not.toContain("—");
   });
 
+  it("tells the model that Lighter previews prepare approval rather than execute", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("## Lighter Order Preview Routing")[1]?.split("\n## ")[0] ?? "";
+    expect(section).toContain("live-data-backed read-only preview");
+    expect(section).toContain("never places, submits, executes, or broadcasts");
+    expect(section).toContain("Do not call it a simulation");
+    expect(section).toContain("inspect `approvalReady`");
+    expect(section).toContain("preparing it for approval");
+    expect(section).toContain("encrypted local vault");
+    expect(section).toContain("Do not say a preview can be broadcast after only supplying an API-key index");
+    expect(section).toContain("show the `display` fields");
+    expect(section).toContain("Do not present raw integer fields");
+    expect(section).toContain("Do not ask the user to confirm");
+    expect(section).toContain("never emit raw HTML");
+  });
+
   // Owner add-on (2026-07-23): the kyberswap entry's chain list must be
   // DERIVED from the live registry, never hand-written, so a future chain
   // add/drop in `@tools/kyberswap/chains.ts` flows into the prompt

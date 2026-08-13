@@ -35,11 +35,43 @@ describe("writeApiKeys", () => {
     });
   });
 
+  it("stores Lighter read-only tokens in the encrypted vault", async () => {
+    const result = await writeApiKeys({
+      lighterCoreReadOnlyToken: "ro:1:single:2000000000:abcdef",
+      lighterRhcReadOnlyToken: "ro:1:all:2000000000:123456",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).toEqual([
+        "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+        "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
+      ]);
+    }
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      LIGHTER_CORE_READ_ONLY_AUTH_TOKEN: "ro:1:single:2000000000:abcdef",
+      LIGHTER_RHC_READ_ONLY_AUTH_TOKEN: "ro:1:all:2000000000:123456",
+    });
+  });
+
+  it("rejects malformed Lighter credentials before writing", async () => {
+    const result = await writeApiKeys({
+      lighterRhcReadOnlyToken: "not-a-read-only-token",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("provider.invalid_api_key");
+      expect(result.error.message).not.toContain("not-a-read-only-token");
+    }
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
+  });
+
   it("returns fieldsWritten in canonical order", async () => {
     const result = await writeApiKeys({
       rettiwtApiKey: "r",
       tavilyApiKey: "t",
       jupiterApiKey: "j",
+      lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
     });
 
     expect(result.ok).toBe(true);
@@ -48,6 +80,7 @@ describe("writeApiKeys", () => {
         "JUPITER_API_KEY",
         "TAVILY_API_KEY",
         "RETTIWT_API_KEY",
+        "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
       ]);
     }
   });

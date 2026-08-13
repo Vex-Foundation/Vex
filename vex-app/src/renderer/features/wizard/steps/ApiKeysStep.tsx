@@ -48,7 +48,13 @@ import {
 import { statusFor } from "./api-keys/status-helpers.js";
 import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
 import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
-import { JupiterCard, TavilyCard, RettiwtCard, RelayCard } from "./api-keys/ProviderCards.js";
+import {
+  JupiterCard,
+  LighterReadOnlyCard,
+  TavilyCard,
+  RettiwtCard,
+  RelayCard,
+} from "./api-keys/ProviderCards.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -77,6 +83,8 @@ export function ApiKeysStep({
     tavily: useRef<HTMLInputElement | null>(null),
     rettiwt: useRef<HTMLInputElement | null>(null),
     relay: useRef<HTMLInputElement | null>(null),
+    lighterCoreReadOnly: useRef<HTMLInputElement | null>(null),
+    lighterRhcReadOnly: useRef<HTMLInputElement | null>(null),
   };
 
   const envState = envQuery.data?.ok === true ? envQuery.data.data : null;
@@ -85,6 +93,10 @@ export function ApiKeysStep({
   const tavilyConfigured = apiKeysState?.tavilyConfigured ?? false;
   const rettiwtConfigured = apiKeysState?.rettiwtConfigured ?? false;
   const relayConfigured = apiKeysState?.relayConfigured ?? false;
+  const lighterCoreReadOnlyConfigured =
+    apiKeysState?.lighterCoreReadOnlyConfigured ?? false;
+  const lighterRhcReadOnlyConfigured =
+    apiKeysState?.lighterRhcReadOnlyConfigured ?? false;
   // Back-edit ALWAYS renders the full form. In setup mode the skip-card
   // stays available whenever Jupiter is already configured (the skip-card
   // copy assumes it).
@@ -213,6 +225,20 @@ export function ApiKeysStep({
         <RelayCard
           status={statusFor(relayConfigured)}
           inputRef={refs.relay}
+        />
+
+        <LighterReadOnlyCard
+          environment="rhc"
+          status={statusFor(lighterRhcReadOnlyConfigured)}
+          configured={lighterRhcReadOnlyConfigured}
+          inputRef={refs.lighterRhcReadOnly}
+        />
+
+        <LighterReadOnlyCard
+          environment="core"
+          status={statusFor(lighterCoreReadOnlyConfigured)}
+          configured={lighterCoreReadOnlyConfigured}
+          inputRef={refs.lighterCoreReadOnly}
         />
 
         {formError ? (

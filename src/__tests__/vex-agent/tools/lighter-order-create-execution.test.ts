@@ -48,6 +48,24 @@ const PLAN: LighterOrderReadyForSignerPlan = {
 
 const UNSIGNED_ORDER = buildLighterUnsignedCreateOrderRequest(PLAN);
 
+function accountOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    order_index: 123,
+    client_order_index: Number(UNSIGNED_ORDER.clientOrderIndex),
+    order_id: "123",
+    client_order_id: UNSIGNED_ORDER.clientOrderIndex,
+    market_index: PLAN.marketIndex,
+    owner_account_index: PLAN.accountIndex,
+    initial_base_amount: PLAN.baseAmountInteger,
+    remaining_base_amount: PLAN.baseAmountInteger,
+    filled_base_amount: "0",
+    filled_quote_amount: "0",
+    price: PLAN.priceInteger,
+    status: "open",
+    ...overrides,
+  };
+}
+
 function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): ExecuteApprovedLighterCreateOrderDeps {
   return {
     liveTradingEnabled: vi.fn(() => true),
@@ -87,6 +105,18 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
         predicted_execution_time_ms: 250,
         volume_quota_remaining: 99,
       })),
+      getAccountActiveOrders: vi.fn(async () => ({
+        code: 200,
+        orders: [],
+      })),
+      getAccountInactiveOrders: vi.fn(async () => ({
+        code: 200,
+        orders: [],
+      })),
+      getAccountTrades: vi.fn(async () => ({
+        code: 200,
+        trades: [],
+      })),
     },
     intents: {
       markSigned: vi.fn(async () => ({ ok: true }) as never),
@@ -94,6 +124,13 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       markApiAccepted: vi.fn(async () => ({
         executionState: "api_accepted",
         volumeQuotaRemaining: "99",
+      }) as never),
+      markSequencerPending: vi.fn(async () => ({
+        executionState: "sequencer_pending",
+      }) as never),
+      markProviderOutcome: vi.fn(async (input) => ({
+        executionState: input.state,
+        providerOutcomeSource: input.source,
       }) as never),
       markAmbiguous: vi.fn(async () => ({ executionState: "ambiguous" }) as never),
     },
@@ -127,7 +164,29 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("signs with the privileged reader, submits once, and stores API acceptance metadata only", async () => {
+  it("blocks before reading key material when provider outcome repair is unavailable", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountActiveOrders: vi.fn(async () => {
+          throw new Error("read-only auth unavailable");
+        }),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("provider outcome repair is unavailable");
+
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("signs with the privileged reader, submits once, and stores sequencer-pending repair evidence", async () => {
     const d = deps();
 
     const result = await executeApprovedLighterCreateOrder({
@@ -150,6 +209,7 @@ describe("Lighter approved create execution pipeline", () => {
       environment: PLAN.environment,
       nonceReservationId: `lighter-order:${PLAN.intentId}`,
       nonceValue: "0",
+      clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
       signerTxHash: TX_HASH,
     });
     expect(d.intents.markSubmitted).toHaveBeenCalledWith({
@@ -173,19 +233,97 @@ describe("Lighter approved create execution pipeline", () => {
       predictedExecutionTimeMs: 250,
       volumeQuotaRemaining: 99,
     });
-    expect(result).toMatchObject({
-      status: "api_accepted",
-      executionState: "api_accepted",
+    expect(d.intents.markSequencerPending).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
       signerTxHash: TX_HASH,
       submittedTxHash: TX_HASH,
+    });
+    expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(2);
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledWith("rhc", {
+      accountIndex: PLAN.accountIndex,
+      marketId: PLAN.marketIndex,
+      marketType: "all",
+      limit: 100,
+    });
+    expect(d.client.getAccountTrades).toHaveBeenCalledWith("rhc", {
+      accountIndex: PLAN.accountIndex,
+      limit: 100,
+      sortBy: "timestamp",
+    });
+    expect(d.intents.markProviderOutcome).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      state: "sequencer_pending",
+      source: "not_found",
+      providerOrderId: null,
+      providerOrderStatus: null,
+      providerOutcomeJson: {
+        source: "not_found",
+        clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+        checkedEndpoints: ["accountActiveOrders", "accountInactiveOrders", "trades"],
+      },
+    });
+    expect(result).toMatchObject({
+      status: "sequencer_pending",
+      executionState: "sequencer_pending",
+      signerTxHash: TX_HASH,
+      submittedTxHash: TX_HASH,
+      clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+      evidenceSource: "not_found",
     });
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
     expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);
   });
 
+  it("records active provider order evidence when the submitted client order is visible", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountActiveOrders: vi
+          .fn()
+          .mockResolvedValueOnce({ code: 200, orders: [] })
+          .mockResolvedValueOnce({ code: 200, orders: [accountOrder()] }),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    expect(d.intents.markProviderOutcome).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      state: "open",
+      source: "active_order",
+      providerOrderId: "123",
+      providerOrderStatus: "open",
+      providerOutcomeJson: expect.objectContaining({
+        source: "active_order",
+        clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+        orderId: "123",
+      }),
+    });
+    expect(d.client.getAccountInactiveOrders).not.toHaveBeenCalled();
+    expect(d.client.getAccountTrades).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "provider_confirmed",
+      executionState: "open",
+      evidenceSource: "active_order",
+      providerOrderId: "123",
+    });
+    expect(JSON.stringify(result)).not.toContain(TX_INFO);
+  });
+
   it("marks send-time uncertainty ambiguous without exposing signed payloads", async () => {
     const d = deps({
       client: {
+        ...deps().client,
         sendTx: vi.fn(async () => {
           throw new Error(`provider echoed ${TX_INFO}`);
         }),
@@ -266,6 +404,7 @@ describe("Lighter approved create execution pipeline", () => {
   it("marks a provider hash mismatch ambiguous after submission", async () => {
     const d = deps({
       client: {
+        ...deps().client,
         sendTx: vi.fn(async () => ({
           code: 200,
           message: "ok",
@@ -292,5 +431,36 @@ describe("Lighter approved create execution pipeline", () => {
       reason: "provider_tx_hash_mismatch",
     });
     expect(d.intents.markApiAccepted).not.toHaveBeenCalled();
+  });
+
+  it("marks provider outcome read failures ambiguous after API acceptance without echoing provider text", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountActiveOrders: vi
+          .fn()
+          .mockResolvedValueOnce({ code: 200, orders: [] })
+          .mockRejectedValueOnce(new Error(`provider echoed ${TX_INFO}`)),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    expect(result).toMatchObject({
+      status: "ambiguous",
+      reason: "provider_outcome_read_failed",
+      signerTxHash: TX_HASH,
+    });
+    expect(d.intents.markAmbiguous).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      reason: "provider_outcome_read_failed",
+    });
+    expect(JSON.stringify(result)).not.toContain(TX_INFO);
   });
 });

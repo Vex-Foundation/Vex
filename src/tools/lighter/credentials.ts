@@ -65,7 +65,7 @@ export function requireLighterReadOnlyAuthToken(
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       `Missing Lighter read-only auth token for ${environment}.`,
-      `Add ${envKey} to the encrypted local secret vault. Do not use a Lighter API private key.`,
+      `Open Settings > API keys and save ${envKey} in the encrypted local vault. Do not use a Lighter API private key.`,
     );
   }
   const metadata = parseLighterReadOnlyAuthToken(environment, token, nowMs);
@@ -73,7 +73,7 @@ export function requireLighterReadOnlyAuthToken(
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       `Expired Lighter read-only auth token for ${environment}.`,
-      `Replace ${envKey} with a current Lighter read-only token. Do not use a Lighter API private key.`,
+      `Open Settings > API keys and replace ${envKey} with a current Lighter read-only token. Do not use a Lighter API private key.`,
     );
   }
   return token;
@@ -90,7 +90,7 @@ export function authorizeLighterReadOnlyAuthTokenForAccount(
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       `Expired Lighter read-only auth token for ${environment}.`,
-      `Replace ${lighterReadOnlyAuthTokenEnvKey(environment)} with a current Lighter read-only token. Do not use a Lighter API private key.`,
+      `Open Settings > API keys and replace ${lighterReadOnlyAuthTokenEnvKey(environment)} with a current Lighter read-only token. Do not use a Lighter API private key.`,
     );
   }
 

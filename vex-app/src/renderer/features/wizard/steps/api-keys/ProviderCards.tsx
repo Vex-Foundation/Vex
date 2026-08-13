@@ -15,7 +15,11 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
-import { VexIcon, WaypointsIcon } from "../../../../components/icons/index.js";
+import {
+  KeyRoundIcon,
+  VexIcon,
+  WaypointsIcon,
+} from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
@@ -227,6 +231,59 @@ export function RelayCard({
         autoComplete="new-password"
         ref={inputRef}
       />
+    </ProviderCard>
+  );
+}
+
+export interface LighterReadOnlyCardProps {
+  readonly environment: "core" | "rhc";
+  readonly status: ProviderCardStatus;
+  readonly configured: boolean;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+}
+
+export function LighterReadOnlyCard({
+  environment,
+  status,
+  configured,
+  inputRef,
+}: LighterReadOnlyCardProps): JSX.Element {
+  const title =
+    environment === "rhc"
+      ? "Lighter RHC read-only"
+      : "Lighter Core read-only";
+  const inputId = `vex-apikey-lighter-${environment}-readonly`;
+  return (
+    <ProviderCard
+      slug={environment === "rhc" ? "lighter-rhc" : "lighter-core"}
+      iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
+      name={title}
+      status={status}
+      description="Lets Vex read your Lighter account state for previews."
+      detail={
+        <>
+          Paste a Lighter token that starts with{" "}
+          <span className="font-medium text-[var(--color-text-primary)]">
+            ro:
+          </span>
+          . It can read account orders and trades, but it cannot sign,
+          submit, cancel, deposit, withdraw, or transfer.
+        </>
+      }
+    >
+      <Label htmlFor={inputId} className="sr-only">
+        {title} token
+      </Label>
+      <PasswordField
+        id={inputId}
+        autoComplete="new-password"
+        ref={inputRef}
+      />
+      <p className="text-xs text-[var(--color-text-muted)]">
+        {configured
+          ? "Leave blank to keep the saved token, or paste a fresh read-only token to replace it."
+          : "Required for Lighter account reads and order previews on this environment."}
+      </p>
     </ProviderCard>
   );
 }

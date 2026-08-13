@@ -148,6 +148,24 @@ Execution lifecycle vocabulary:
 | `rejected` | Provider evidence proves rejection |
 | `ambiguous` | Vex cannot prove the final state and must not suggest blind retry |
 
+Current outcome-repair behavior:
+
+- Before signing, the live create path verifies that authenticated account-order
+  reads are available for the target account and market. If not, it stops
+  before reading the trading key, reserving nonce, signing, or calling
+  `sendTx`.
+- After `sendTx` code `200`, Vex records `api_accepted`, immediately moves the
+  intent to `sequencer_pending`, then checks authenticated active orders,
+  inactive orders, and account trades for the exact Vex-assigned
+  `client_order_id`.
+- Vex records compact provider evidence only: source, client order id, order id,
+  status, market/account, and bounded fill fields. It does not store `tx_info`,
+  signed payload JSON, signatures, API private keys, auth tokens, or raw
+  provider error bodies.
+- If provider outcome reads fail after submission, Vex marks the intent
+  `ambiguous` and must not retry `sendTx` without nonce and provider-state
+  reconciliation.
+
 Signer and credential strategy:
 
 - Official Lighter docs require API-key-backed signing before transaction

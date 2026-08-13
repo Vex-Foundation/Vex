@@ -944,6 +944,13 @@ describe("Lighter agent read handlers", () => {
       readonly preview: { readonly matchHash: string };
     };
     expect(persisted.preview.matchHash).toBe(data.matchHash);
+    expect(data.status).toBe("preview_ready");
+    expect(data.approvalReady).toBe(true);
+    expect(data.nextStep).toBe("prepare_for_approval");
+    expect(data.nextToolId).toBe("lighter.order.create.prepare");
+    expect(data.userGuidance).toContain("preview only");
+    expect(data.userGuidance).toContain("prepare it for approval");
+    expect(data.safety).toContain("No signer");
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
     expect((data.preview as Record<string, unknown>).symbol).toBe("ETH-USD");
@@ -1081,6 +1088,81 @@ describe("Lighter agent read handlers", () => {
       clientOrderIndexPolicy: "vex_assigned_uint48",
     });
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
+  });
+
+  it("creates a read-only conversational preview when no trading API-key index is published", async () => {
+    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" },
+      ],
+    });
+    mocks.client.getApiKeys.mockResolvedValue({
+      code: 200,
+      api_keys: [
+        { account_index: 42, api_key_index: 1, nonce: 10, public_key: "reserved", transaction_time: 1 },
+        { account_index: 42, api_key_index: 2, nonce: 11, public_key: "reserved", transaction_time: 2 },
+        { account_index: 42, api_key_index: 3, nonce: 12, public_key: "reserved", transaction_time: 3 },
+      ],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: {
+          readonly apiKeyIndex: string;
+        };
+        readonly preview: {
+          readonly apiKeyIndex: number | null;
+        };
+      };
+    };
+    expect(persisted.preview.identity.apiKeyIndex).toBe("");
+    expect(persisted.preview.preview.apiKeyIndex).toBeNull();
+    expect(data.approvalReady).toBe(false);
+    expect(data.nextStep).toBe("connect_trading_api_key_before_approval");
+    expect(data.nextToolId).toBeNull();
+    expect(data.userGuidance).toContain("read-only preview only");
+    expect(data.userGuidance).toContain("not a simulation");
+    expect(data.userGuidance).toContain("trading API key");
+    expect(data.userGuidance).toContain("encrypted local vault");
+    expect(data.userGuidance).not.toContain("<br>");
+    expect(data.userGuidance).not.toMatch(/simulation only/i);
+    expect(data.responseRules).toContain(
+      "Describe this as a live-data-backed read-only preview, not as a simulation.",
+    );
+    expect(data.responseRules).toContain(
+      "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
+    );
+    expect(data.responseRules).toContain(
+      "Show human display values from preview.*.display fields for amounts and minimums; do not present integer fields as human ETH or USD amounts.",
+    );
+    expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("not_found");
   });
 
   it("asks for a plain buy or sell choice when conversational preview omits direction", async () => {
