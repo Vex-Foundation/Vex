@@ -11,12 +11,11 @@
  *   - RELAY_API_KEY (optional) — bridging works fully WITHOUT it; a key only
  *     raises Relay's rate limits. It is deliberately not a tool prerequisite,
  *     so no relay manifest declares it as a required env.
- *   - LIGHTER_*_READ_ONLY_AUTH_TOKEN (optional) — read-only account tokens
- *     used by Lighter account reads and order previews. These are not trading
- *     API private keys and cannot sign or submit orders.
  *   - LIGHTER_*_TRADING_API_PRIVATE_KEY (optional) — one-time import fields
- *     for Lighter trading credentials. These are stored only as encrypted-vault
- *     extra secrets under an opaque local reference, never as env keys.
+ *     for Lighter credentials. This is the normal one-key Lighter setup:
+ *     previews stay read-only, and approval/execution paths remain gated.
+ *     These keys are stored only as encrypted-vault extra secrets under an
+ *     opaque local reference, never as env keys.
  */
 
 import { z } from "zod";
@@ -32,8 +31,6 @@ export const apiKeysSetInputSchema = z
     tavilyApiKey: optionalSecret,
     rettiwtApiKey: optionalSecret,
     relayApiKey: optionalSecret,
-    lighterCoreReadOnlyToken: optionalSecret,
-    lighterRhcReadOnlyToken: optionalSecret,
     lighterCoreTradingAccountIndex: optionalNonNegativeInteger,
     lighterCoreTradingApiKeyIndex: optionalApiKeyIndex,
     lighterCoreTradingApiPrivateKey: optionalSecret,
@@ -52,8 +49,6 @@ export const MANAGED_API_KEYS_CANONICAL_ORDER = [
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
   "RELAY_API_KEY",
-  "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
-  "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
 ] as const;
 
 /**

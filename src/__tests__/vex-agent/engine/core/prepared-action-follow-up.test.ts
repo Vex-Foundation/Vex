@@ -64,6 +64,7 @@ const { processTurnToolBatch } = await import(
 );
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
+const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 const trustedPreview = {
   toolName: "wallet_send_confirm",
@@ -86,6 +87,43 @@ function prepareResult(overrides: Record<string, unknown> = {}) {
       args: { walletFamily: "solana", intentId: INTENT_ID },
       expiresAt: EXPIRES_AT,
       approvalPreview: trustedPreview,
+    },
+    ...overrides,
+  };
+}
+
+function lighterPrepareResult(overrides: Record<string, unknown> = {}) {
+  return {
+    success: true,
+    output: "lighter create prepared",
+    actionKind: "approval_prepare",
+    preparedActionFollowUp: {
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+      expiresAt: EXPIRES_AT,
+      approvalPreview: {
+        toolName: "order.create",
+        namespace: "lighter",
+        criticalArgs: {
+          toolId: "lighter.order.create",
+          intentId: LIGHTER_INTENT_ID,
+          environment: "rhc",
+          accountIndex: 42,
+          apiKeyIndex: 7,
+          marketIndex: 0,
+          side: "buy",
+          baseAmountInteger: "10000",
+          priceInteger: "300000",
+          orderType: "limit",
+          timeInForce: "good-till-time",
+          reduceOnly: false,
+          previewId: "lighter-preview-1",
+          matchHash: "a".repeat(64),
+        },
+      },
     },
     ...overrides,
   };
@@ -119,6 +157,29 @@ async function run(permission: "restricted" | "full", abortSignal?: AbortSignal)
             network: "solana",
             to: "model-recipient-must-not-feed-preview",
             amount: "999999",
+          },
+        },
+      ],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
+async function runLighterInjectedPrepare(permission: "restricted" | "full") {
+  return processTurnToolBatch({
+    context: context(permission),
+    turnResult: {
+      content: "Preparing Lighter order.",
+      reasoning: null,
+      toolCalls: [
+        {
+          id: "lighter-prepare-call",
+          name: "lighter__order__create__prepare",
+          arguments: {
+            environment: "rhc",
           },
         },
       ],
@@ -184,6 +245,60 @@ describe("prepared-action follow-up handoff", () => {
       executedCalls: [expect.objectContaining({ name: "wallet_send_confirm" })],
       executedResults: [],
       systemOriginated: true,
+    });
+  });
+
+  it("restricted sessions accept injected Lighter prepare and enqueue the trusted create approval", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterPrepareResult())
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterInjectedPrepare("restricted");
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(dispatchTool).toHaveBeenCalledTimes(2);
+    expect(dispatchTool.mock.calls[0]![0]).toMatchObject({
+      name: "lighter__order__create__prepare",
+    });
+    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+    });
+    expect(dispatchTool.mock.calls[1]![1]).not.toHaveProperty(
+      "modelOriginated",
+      true,
+    );
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trustedPreview: expect.objectContaining({
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: expect.objectContaining({
+            toolId: "lighter.order.create",
+            intentId: LIGHTER_INTENT_ID,
+            matchHash: "a".repeat(64),
+          }),
+        }),
+        trustedExpiresAt: EXPIRES_AT,
+        toolCall: expect.objectContaining({ name: "execute_tool" }),
+      }),
+    );
+    expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
+      content: "Preparing Lighter order.",
+      executedCalls: [expect.objectContaining({ name: "lighter__order__create__prepare" })],
+      executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
     });
   });
 

@@ -40,6 +40,25 @@ import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.
 
 const CONFIRM_RESET_MS = 4_000;
 
+function isLighterOrderCreateApproval(summary: ApprovalSummaryDto): boolean {
+  return (
+    summary.preview?.namespace === "lighter" &&
+    summary.preview.toolName === "order.create"
+  ) || summary.preview?.criticalArgs.toolId === "lighter.order.create";
+}
+
+function approveLabelFor(summary: ApprovalSummaryDto): string {
+  return isLighterOrderCreateApproval(summary)
+    ? "Approve and execute trade"
+    : "Approve";
+}
+
+function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
+  return isLighterOrderCreateApproval(summary)
+    ? "Click again to approve and execute trade"
+    : "Click again to confirm approve";
+}
+
 export interface ApprovalCardProps {
   readonly summary: ApprovalSummaryDto;
   readonly sessionId: string;
@@ -197,6 +216,8 @@ export function ApprovalCard({
   const namespace = summary.preview?.namespace ?? null;
   const toolName = previewTool ?? summary.toolName ?? "(unknown tool)";
   const criticalArgs = summary.preview?.criticalArgs ?? null;
+  const approveLabel = approveLabelFor(summary);
+  const confirmApproveLabel = confirmApproveLabelFor(summary);
 
   return (
     <section
@@ -232,6 +253,8 @@ export function ApprovalCard({
         onApprove={onApproveClick}
         rejectReason={rejectReason}
         onRejectReasonChange={setRejectReason}
+        approveLabel={approveLabel}
+        confirmApproveLabel={confirmApproveLabel}
       />
     </section>
   );

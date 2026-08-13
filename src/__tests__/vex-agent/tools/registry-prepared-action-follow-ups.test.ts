@@ -32,7 +32,8 @@ function lighterCandidate() {
     },
     expiresAt: EXPIRES_AT,
     approvalPreview: {
-      toolName: "execute_tool",
+      toolName: "order.create",
+      namespace: "lighter",
       criticalArgs: {
         toolId: "lighter.order.create",
         intentId: LIGHTER_INTENT_ID,
@@ -72,6 +73,15 @@ describe("prepared-action follow-up registry", () => {
     });
   });
 
+  it("allows the injected Lighter prepare function to hand off to execute_tool lighter.order.create", () => {
+    const input = lighterCandidate();
+    const result = validatePreparedActionFollowUp("lighter__order__create__prepare", input);
+    expect(result).toEqual({
+      ok: true,
+      followUp: input,
+    });
+  });
+
   it("rejects unknown source→target pairs", () => {
     expect(
       validatePreparedActionFollowUp("token_find", candidate()),
@@ -94,6 +104,24 @@ describe("prepared-action follow-up registry", () => {
   });
 
   it("rejects malformed Lighter create follow-ups", () => {
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterCandidate(),
+        approvalPreview: {
+          ...lighterCandidate().approvalPreview,
+          namespace: undefined,
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterCandidate(),
+        approvalPreview: {
+          ...lighterCandidate().approvalPreview,
+          toolName: "execute_tool",
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
     expect(
       validatePreparedActionFollowUp("execute_tool", {
         ...lighterCandidate(),

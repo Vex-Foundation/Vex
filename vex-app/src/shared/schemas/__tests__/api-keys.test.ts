@@ -13,8 +13,6 @@ describe("apiKeysSetInputSchema", () => {
       tavilyApiKey: "t",
       rettiwtApiKey: "r",
       relayApiKey: "relay",
-      lighterCoreReadOnlyToken: "ro:1:single:2000000000:abcdef",
-      lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
       lighterCoreTradingAccountIndex: 42,
       lighterCoreTradingApiKeyIndex: 7,
       lighterCoreTradingApiPrivateKey: `0x${"1".repeat(80)}`,
@@ -30,6 +28,13 @@ describe("apiKeysSetInputSchema", () => {
       lighterRhcTradingAccountIndex: 1171,
       lighterRhcTradingApiKeyIndex: 3,
       lighterRhcTradingApiPrivateKey: `0x${"2".repeat(80)}`,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects separate Lighter read-only token fields in the normal API-key setup path", () => {
+    const parsed = apiKeysSetInputSchema.safeParse({
+      lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
     });
     expect(parsed.success).toBe(false);
   });

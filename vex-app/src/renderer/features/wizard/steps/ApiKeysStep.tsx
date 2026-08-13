@@ -50,7 +50,6 @@ import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
 import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
 import {
   JupiterCard,
-  LighterReadOnlyCard,
   LighterTradingCard,
   TavilyCard,
   RettiwtCard,
@@ -84,8 +83,6 @@ export function ApiKeysStep({
     tavily: useRef<HTMLInputElement | null>(null),
     rettiwt: useRef<HTMLInputElement | null>(null),
     relay: useRef<HTMLInputElement | null>(null),
-    lighterCoreReadOnly: useRef<HTMLInputElement | null>(null),
-    lighterRhcReadOnly: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingAccountIndex: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingPrivateKey: useRef<HTMLInputElement | null>(null),
@@ -102,10 +99,6 @@ export function ApiKeysStep({
   const tavilyConfigured = apiKeysState?.tavilyConfigured ?? false;
   const rettiwtConfigured = apiKeysState?.rettiwtConfigured ?? false;
   const relayConfigured = apiKeysState?.relayConfigured ?? false;
-  const lighterCoreReadOnlyConfigured =
-    apiKeysState?.lighterCoreReadOnlyConfigured ?? false;
-  const lighterRhcReadOnlyConfigured =
-    apiKeysState?.lighterRhcReadOnlyConfigured ?? false;
   const lighterCoreTradingConfigured =
     apiKeysState?.lighterCoreTradingConfigured ?? false;
   const lighterRhcTradingConfigured =
@@ -240,13 +233,6 @@ export function ApiKeysStep({
           inputRef={refs.relay}
         />
 
-        <LighterReadOnlyCard
-          environment="rhc"
-          status={statusFor(lighterRhcReadOnlyConfigured)}
-          configured={lighterRhcReadOnlyConfigured}
-          inputRef={refs.lighterRhcReadOnly}
-        />
-
         <LighterTradingCard
           environment="rhc"
           status={statusFor(lighterRhcTradingConfigured)}
@@ -255,13 +241,6 @@ export function ApiKeysStep({
           apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
           privateKeyRef={refs.lighterRhcTradingPrivateKey}
           removeRef={refs.lighterRhcTradingRemove}
-        />
-
-        <LighterReadOnlyCard
-          environment="core"
-          status={statusFor(lighterCoreReadOnlyConfigured)}
-          configured={lighterCoreReadOnlyConfigured}
-          inputRef={refs.lighterCoreReadOnly}
         />
 
         <LighterTradingCard

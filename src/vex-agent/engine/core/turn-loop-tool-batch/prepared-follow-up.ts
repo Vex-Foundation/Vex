@@ -129,7 +129,10 @@ export async function dispatchPreparedActionFollowUp(args: {
       args: syntheticCall.arguments,
       toolCallId: syntheticCall.id,
     },
-    args.toolContext,
+    {
+      ...args.toolContext,
+      modelOriginated: undefined,
+    },
   );
 
   // Only one trusted hop is permitted. Never dispatch recursively.

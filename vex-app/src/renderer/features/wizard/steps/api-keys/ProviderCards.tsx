@@ -235,59 +235,6 @@ export function RelayCard({
   );
 }
 
-export interface LighterReadOnlyCardProps {
-  readonly environment: "core" | "rhc";
-  readonly status: ProviderCardStatus;
-  readonly configured: boolean;
-  readonly inputRef: RefObject<HTMLInputElement | null>;
-}
-
-export function LighterReadOnlyCard({
-  environment,
-  status,
-  configured,
-  inputRef,
-}: LighterReadOnlyCardProps): JSX.Element {
-  const title =
-    environment === "rhc"
-      ? "Lighter RHC read-only"
-      : "Lighter Core read-only";
-  const inputId = `vex-apikey-lighter-${environment}-readonly`;
-  return (
-    <ProviderCard
-      slug={environment === "rhc" ? "lighter-rhc" : "lighter-core"}
-      iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
-      name={title}
-      status={status}
-      description="Lets Vex read your Lighter account state for previews."
-      detail={
-        <>
-          Paste a Lighter token that starts with{" "}
-          <span className="font-medium text-[var(--color-text-primary)]">
-            ro:
-          </span>
-          . It can read account orders and trades, but it cannot sign,
-          submit, cancel, deposit, withdraw, or transfer.
-        </>
-      }
-    >
-      <Label htmlFor={inputId} className="sr-only">
-        {title} token
-      </Label>
-      <PasswordField
-        id={inputId}
-        autoComplete="new-password"
-        ref={inputRef}
-      />
-      <p className="text-xs text-[var(--color-text-muted)]">
-        {configured
-          ? "Leave blank to keep the saved token, or paste a fresh read-only token to replace it."
-          : "Required for Lighter account reads and order previews on this environment."}
-      </p>
-    </ProviderCard>
-  );
-}
-
 export interface LighterTradingCardProps {
   readonly environment: "core" | "rhc";
   readonly status: ProviderCardStatus;
@@ -318,12 +265,12 @@ export function LighterTradingCard({
       iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
       name={title}
       status={status}
-      description="Required before a Lighter preview can be prepared for approval."
+      description="One key for Lighter previews, approval preparation, and trading actions."
       detail={
         <>
-          Paste the trading API private key for the exact Lighter account and
-          API-key index you will approve from. Vex stores it only in the
-          encrypted local vault and never mirrors it into environment variables.
+          Add the trading API private key from Lighter. Vex uses it only from
+          the encrypted local vault, keeps preview paths read-only, and still
+          requires your explicit approval before any order can be submitted.
         </>
       }
     >
@@ -389,7 +336,7 @@ export function LighterTradingCard({
       <p className="text-xs text-[var(--color-text-muted)]">
         {configured
           ? "Leave blank to keep the saved trading key, paste a replacement, or check remove."
-          : "Needed only when moving from preview to approval preparation."}
+          : "Needed once to enable Lighter account-aware previews and approval preparation."}
       </p>
     </ProviderCard>
   );

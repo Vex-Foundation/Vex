@@ -37,6 +37,8 @@ export interface ApprovalDecisionActionsProps {
    */
   readonly rejectReason: string;
   readonly onRejectReasonChange: (value: string) => void;
+  readonly approveLabel?: string;
+  readonly confirmApproveLabel?: string;
 }
 
 // Shared key shape — the landing's mono-uppercase pill. Tone classes below
@@ -61,6 +63,8 @@ export function ApprovalDecisionActions({
   onApprove,
   rejectReason,
   onRejectReasonChange,
+  approveLabel = "Approve",
+  confirmApproveLabel = "Click again to confirm approve",
 }: ApprovalDecisionActionsProps): JSX.Element {
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
@@ -92,12 +96,12 @@ export function ApprovalDecisionActions({
         type="button"
         onClick={onApprove}
         disabled={inFlight}
-        aria-label={approveArmed ? "Confirm approve" : "Approve"}
+        aria-label={approveArmed ? "Confirm approve" : approveLabel}
         className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[color-mix(in_oklab,var(--vex-pin)_85%,white)] ${
           approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >
-        {approveArmed ? "Click again to confirm approve" : "Approve"}
+        {approveArmed ? confirmApproveLabel : approveLabel}
       </button>
     </footer>
   );

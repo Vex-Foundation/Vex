@@ -62,10 +62,11 @@ describe("buildProtocolsPrompt", () => {
     expect(section).toContain("never places, submits, executes, or broadcasts");
     expect(section).toContain("Do not call it a simulation");
     expect(section).toContain("Inspect `approvalReady`");
-    expect(section).toContain("preparing it for approval");
+    expect(section).toContain("Prepare trade approval button");
+    expect(section).toContain("Do not print internal tool names");
     expect(section).toContain("Settings/API keys");
-    expect(section).toContain("Do not ask normal users to choose an API-key index");
-    expect(section).toContain("Vex should infer it from the saved key scope");
+    expect(section).toContain("Do not ask normal users to add a separate read-only token");
+    expect(section).toContain("Vex should infer the key scope from the saved trading key");
     expect(section).toContain("Do not say a preview can be broadcast after only supplying an API-key index");
     expect(section).toContain("render `previewSummary.rows` as a Markdown table");
     expect(section).toContain("Parameter | Value | Notes");

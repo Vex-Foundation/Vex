@@ -5,6 +5,7 @@ import {
   evaluateLighterTradingCredentialReadiness,
 } from "@tools/lighter/trading-credentials.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
@@ -51,6 +52,70 @@ function scalarApprovalPreview(
   values: Record<string, ApprovalPreviewScalar>,
 ): Record<string, ApprovalPreviewScalar> {
   return values;
+}
+
+function buildCreateApprovalFollowUp(
+  intent: LighterOrderExecutionIntentRow,
+): PreparedActionFollowUp {
+  const criticalArgs = scalarApprovalPreview({
+    toolId: "lighter.order.create",
+    intentId: intent.intentId,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    marketIndex: intent.marketIndex,
+    side: intent.side,
+    baseAmountInteger: intent.baseAmountInteger,
+    priceInteger: intent.priceInteger,
+    orderType: intent.orderType,
+    timeInForce: intent.timeInForce,
+    reduceOnly: intent.reduceOnly,
+    previewId: intent.previewId,
+    matchHash: intent.matchHash,
+  });
+  return {
+    toolName: "execute_tool",
+    args: {
+      toolId: "lighter.order.create",
+      params: { intentId: intent.intentId },
+    },
+    expiresAt: intent.expiresAt,
+    approvalPreview: {
+      toolName: "order.create",
+      namespace: "lighter",
+      criticalArgs,
+    },
+  };
+}
+
+function approvalPreparedPayload(
+  intent: LighterOrderExecutionIntentRow,
+  input: {
+    readonly status: "approval_prepared" | "approval_prepared_existing";
+    readonly message: string;
+  },
+): Record<string, unknown> {
+  return {
+    source: "vex_lighter_local_execution_intent",
+    status: input.status,
+    message: input.message,
+    intentId: intent.intentId,
+    previewId: intent.previewId,
+    matchHash: intent.matchHash,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    executionState: intent.executionState,
+    approvalStatus: intent.approvalStatus,
+    expiresAt: intent.expiresAt,
+    approvalUi: {
+      surface: "approval_card",
+      approveLabel: "Approve and execute trade",
+      rejectLabel: "Reject",
+    },
+    userGuidance:
+      "An approval card is now available in the app. Tell the user to review the card and click Approve and execute trade only if the exact order details are correct; do not ask them to type another approval command.",
+  };
 }
 
 export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
@@ -103,8 +168,22 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       preview.previewId,
     );
     if (existing !== null) {
+      if (
+        existing.approvalStatus === "approval_pending"
+        && existing.executionState === "approval_pending"
+        && Date.parse(existing.expiresAt) > Date.now()
+      ) {
+        return {
+          ...ok(approvalPreparedPayload(existing, {
+            status: "approval_prepared_existing",
+            message:
+              "Lighter order create was already prepared; Vex will request approval for the existing pending intent.",
+          })),
+          preparedActionFollowUp: buildCreateApprovalFollowUp(existing),
+        };
+      }
       return fail(
-        `Lighter preview ${preview.previewId} already has a live order execution intent (${existing.intentId}).`,
+        `Lighter preview ${preview.previewId} already has a live order execution intent (${existing.intentId}) in state ${existing.executionState}. It cannot be prepared again from the same preview.`,
       );
     }
 
@@ -122,51 +201,12 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`Lighter order execution intent ${intentId} already exists. Retry preparation.`);
     }
 
-    const criticalArgs = scalarApprovalPreview({
-      toolId: "lighter.order.create",
-      intentId: created.intentId,
-      environment: created.environment,
-      accountIndex: created.accountIndex,
-      apiKeyIndex: created.apiKeyIndex,
-      marketIndex: created.marketIndex,
-      side: created.side,
-      baseAmountInteger: created.baseAmountInteger,
-      priceInteger: created.priceInteger,
-      orderType: created.orderType,
-      timeInForce: created.timeInForce,
-      reduceOnly: created.reduceOnly,
-      previewId: created.previewId,
-      matchHash: created.matchHash,
-    });
-    const followUp: PreparedActionFollowUp = {
-      toolName: "execute_tool",
-      args: {
-        toolId: "lighter.order.create",
-        params: { intentId: created.intentId },
-      },
-      expiresAt,
-      approvalPreview: {
-        toolName: "execute_tool",
-        criticalArgs,
-      },
-    };
-
     return {
-      ...ok({
-        source: "vex_lighter_local_execution_intent",
+      ...ok(approvalPreparedPayload(created, {
         status: "approval_prepared",
         message: "Lighter order create prepared; Vex will request approval before any signer path can run.",
-        intentId: created.intentId,
-        previewId: created.previewId,
-        matchHash: created.matchHash,
-        environment: created.environment,
-        accountIndex: created.accountIndex,
-        apiKeyIndex: created.apiKeyIndex,
-        executionState: created.executionState,
-        approvalStatus: created.approvalStatus,
-        expiresAt,
-      }),
-      preparedActionFollowUp: followUp,
+      })),
+      preparedActionFollowUp: buildCreateApprovalFollowUp(created),
     };
   },
 

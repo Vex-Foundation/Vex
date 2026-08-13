@@ -20,6 +20,7 @@
  */
 
 import type { JSX } from "react";
+import type { ReactNode } from "react";
 import { cn } from "../../../lib/utils.js";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import { transcriptEntryKey as entryKey } from "../agentActivity.js";
@@ -30,40 +31,49 @@ export function TranscriptRows({
   settledIds,
   pendingApprovals,
   workingAgentEntryKey,
+  lighterPreviewActionRowId,
+  lighterPreviewAction,
 }: {
   readonly rows: readonly TranscriptEntry[];
   /** Ids that are HISTORY. `null` while the first page is still landing. */
   readonly settledIds: ReadonlySet<number> | null;
   readonly pendingApprovals: ReadonlyMap<string, string>;
   readonly workingAgentEntryKey: string | null;
+  readonly lighterPreviewActionRowId?: number | null;
+  readonly lighterPreviewAction?: ReactNode;
 }): JSX.Element {
   return (
     <>
       {rows.map((row) => {
         const liveAppend = settledIds !== null && !settledIds.has(row.id);
         return (
-          <div
-            key={entryKey(row)}
-            data-vex-entry-id={row.id}
-            data-vex-entry-variant={row.variant}
-            className={cn(row.variant === "user" && "mt-4")}
-          >
+          <div key={entryKey(row)}>
             <div
-              className={cn(
-                liveAppend &&
-                  // The user's own message gets the fuller SEND entry; every
-                  // other live arrival keeps the quieter print.
-                  (row.variant === "user"
-                    ? "vex-message-send"
-                    : "vex-entry-settle"),
-              )}
+              data-vex-entry-id={row.id}
+              data-vex-entry-variant={row.variant}
+              className={cn(row.variant === "user" && "mt-4")}
             >
-              <TranscriptMessage
-                row={row}
-                pendingApprovals={pendingApprovals}
-                agentWorking={workingAgentEntryKey === entryKey(row)}
-              />
+              <div
+                className={cn(
+                  liveAppend &&
+                    // The user's own message gets the fuller SEND entry; every
+                    // other live arrival keeps the quieter print.
+                    (row.variant === "user"
+                      ? "vex-message-send"
+                      : "vex-entry-settle"),
+                )}
+              >
+                <TranscriptMessage
+                  row={row}
+                  pendingApprovals={pendingApprovals}
+                  agentWorking={workingAgentEntryKey === entryKey(row)}
+                />
+              </div>
             </div>
+            {lighterPreviewActionRowId === row.id &&
+            lighterPreviewAction !== undefined ? (
+              <div className="mt-3">{lighterPreviewAction}</div>
+            ) : null}
           </div>
         );
       })}

@@ -6,7 +6,6 @@ import {
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
-import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
 import {
   buildLighterOrderPreview,
   type LighterOrderPreview,
@@ -59,7 +58,10 @@ import {
   sortMarketsForDisplay,
   takePage,
 } from "../projectors.js";
-import { resolveSavedLighterTradingCredentialScope } from "../trading-credential-scope.js";
+import {
+  resolveDefaultLighterTradingCredentialScope,
+  resolveSavedLighterTradingCredentialScope,
+} from "../trading-credential-scope.js";
 
 function failureDetail(toolId: string, err: unknown): string {
   logger.warn("lighter.handler.error", {
@@ -304,15 +306,15 @@ function resolvePreviewAccountIndex(
   requestedAccountIndex?: number,
 ): number {
   if (requestedAccountIndex !== undefined) return requestedAccountIndex;
-  const status = getLighterReadOnlyCredentialStatus(environment);
-  if (!status.configured || !status.metadata || status.metadata.expired) {
+  const savedScope = resolveDefaultLighterTradingCredentialScope(environment);
+  if (!savedScope) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `No active Lighter ${environment} read-only account credential is configured.`,
-      "Open Settings > API keys and save a Lighter read-only token for this environment, then ask again without an account id.",
+      `No saved Lighter ${environment} trading API key is configured.`,
+      "Open Settings > API keys and save one Lighter trading API key for this environment, then ask again without an account id.",
     );
   }
-  return status.metadata.accountIndex;
+  return savedScope.accountIndex;
 }
 
 async function resolvePreviewApiKeyIndex(
@@ -815,12 +817,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
           "Do not say the order can be placed, executed, submitted, or broadcast directly from this preview.",
           approvalReady
-            ? "If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
-            : "If the user wants to continue, explain that approval preparation requires adding a Lighter trading API key in Settings/API keys. Do not ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
+            ? "Tell the user they can continue with the Prepare trade approval button in the host UI. Do not mention internal tool names."
+            : "If the user wants to continue, explain that approval preparation requires adding one Lighter trading API key in Settings/API keys. Do not ask for a separate read-only token or ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
         ],
         userGuidance: approvalReady
-          ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
-          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires a Lighter trading API key stored in Vex's encrypted local vault through Settings/API keys.",
+          ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. Tell the user they can continue with the Prepare trade approval button in the host UI; do not mention internal tool names."
+          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires one Lighter trading API key stored in Vex's encrypted local vault through Settings/API keys.",
         safety:
           "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
       });

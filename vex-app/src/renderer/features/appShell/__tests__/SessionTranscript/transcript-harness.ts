@@ -25,6 +25,7 @@ export const SESSION = "00000000-0000-4000-8000-0000000000aa";
 export const ISO = "2026-05-26T10:00:00.000Z";
 
 export const listMock = vi.fn();
+export const submitMock = vi.fn();
 // S5: SessionTranscript observes pending approvals (act-ledger stamps + the
 // working strip's circuit-break). Default: none pending.
 export const listPendingMock = vi.fn();
@@ -39,6 +40,8 @@ export function msg(p: {
   readonly kind: MessageKind;
   readonly content: string;
   readonly toolName?: string | null;
+  readonly toolCallId?: string | null;
+  readonly toolCalls?: SessionMessageDto["toolCalls"];
 }): SessionMessageDto {
   return {
     id: p.id,
@@ -47,9 +50,9 @@ export function msg(p: {
     kind: p.kind,
     content: p.content,
     createdAt: ISO,
-    toolCallId: null,
+    toolCallId: p.toolCallId ?? null,
     toolName: p.toolName ?? null,
-    toolCalls: null,
+    toolCalls: p.toolCalls ?? null,
     explorerRefs: null,
     reasoning: null,
     durationMs: null,
@@ -87,6 +90,9 @@ export function setVex(): void {
     value: {
       messages: { list: listMock },
       approvals: { listPending: listPendingMock },
+      chat: {
+        submit: submitMock,
+      },
     },
   });
 }

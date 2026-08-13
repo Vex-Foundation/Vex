@@ -192,37 +192,6 @@ describe("ApiKeysStep", () => {
     });
   });
 
-  it("submits Lighter read-only tokens without keeping them in the form", async () => {
-    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    mockSetApiKeys.mockResolvedValue({
-      ok: true,
-      data: {
-        fieldsWritten: [
-          "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
-          "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
-        ],
-      },
-    } as Result<ApiKeysSetResult>);
-    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
-    const { container, getByLabelText } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const rhcInput = getByLabelText(/Lighter RHC read-only token/i) as HTMLInputElement;
-    const coreInput = getByLabelText(/Lighter Core read-only token/i) as HTMLInputElement;
-    fireEvent.input(rhcInput, { target: { value: "ro:1:single:2000000000:abcdef" } });
-    fireEvent.input(coreInput, { target: { value: "ro:2:all:2000000000:123456" } });
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
-    fireEvent.submit(form);
-    await waitFor(() => {
-      expect(mockSetApiKeys).toHaveBeenCalledWith({
-        lighterCoreReadOnlyToken: "ro:2:all:2000000000:123456",
-        lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
-      });
-    });
-    expect(rhcInput.value).toBe("");
-    expect(coreInput.value).toBe("");
-  });
-
   it("submits Lighter trading credentials without keeping them in the form", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     mockSetApiKeys.mockResolvedValue({
@@ -326,6 +295,18 @@ describe("ApiKeysStep", () => {
     expect(html).not.toContain("legacyapikey");
   });
 
+  it("does not ask normal users for separate Lighter read-only tokens", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container, queryByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    expect(queryByLabelText(/Lighter RHC read-only token/i)).toBeNull();
+    expect(queryByLabelText(/Lighter Core read-only token/i)).toBeNull();
+    expect(container.textContent ?? "").not.toContain("ro:");
+    expect(container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]')).not.toBeNull();
+    expect(container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]')).not.toBeNull();
+  });
+
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(
@@ -347,7 +328,7 @@ describe("ApiKeysStep", () => {
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(6);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
     ).toEqual([
@@ -355,9 +336,7 @@ describe("ApiKeysStep", () => {
       "tavily",
       "rettiwt",
       "relay",
-      "lighter-rhc",
       "lighter-rhc-trading",
-      "lighter-core",
       "lighter-core-trading",
     ]);
   });

@@ -392,6 +392,7 @@ beforeEach(() => {
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   configureLighterTradingCredentialScopeResolver({
     findSavedScope: () => null,
+    findDefaultScope: () => null,
   });
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
@@ -443,7 +444,8 @@ describe("Lighter agent read handlers", () => {
       },
       expiresAt: "2030-01-01T00:00:00.000Z",
       approvalPreview: {
-        toolName: "execute_tool",
+        toolName: "order.create",
+        namespace: "lighter",
         criticalArgs: expect.objectContaining({
           toolId: "lighter.order.create",
           intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
@@ -460,7 +462,61 @@ describe("Lighter agent read handlers", () => {
       status: "approval_prepared",
       approvalStatus: "approval_pending",
       executionState: "approval_pending",
+      approvalUi: {
+        surface: "approval_card",
+        approveLabel: "Approve and execute trade",
+        rejectLabel: "Reject",
+      },
     });
+    expect(String(data.userGuidance)).toContain("approval card");
+    expect(String(data.userGuidance)).toContain("Approve and execute trade");
+    expect(String(data.userGuidance)).toContain(
+      "do not ask them to type another approval command",
+    );
+  });
+
+  it("re-emits the approval follow-up for an existing pending Lighter create intent", async () => {
+    mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(previewRow());
+    mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(executionIntentRow());
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+      environment: "rhc",
+    }, READ_CTX);
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.executionIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+    expect(result.preparedActionFollowUp).toEqual({
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: "lighter-exec-00000000-0000-4000-8000-000000000001" },
+      },
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      approvalPreview: {
+        toolName: "order.create",
+        namespace: "lighter",
+        criticalArgs: expect.objectContaining({
+          toolId: "lighter.order.create",
+          intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+          previewId: "lighter-preview-1",
+          matchHash: "a".repeat(64),
+        }),
+      },
+    });
+    const data = JSON.parse(result.output) as Record<string, unknown>;
+    expect(data).toMatchObject({
+      source: "vex_lighter_local_execution_intent",
+      status: "approval_prepared_existing",
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+      approvalUi: {
+        surface: "approval_card",
+        approveLabel: "Approve and execute trade",
+        rejectLabel: "Reject",
+      },
+    });
+    expect(String(data.userGuidance)).toContain("approval card");
   });
 
   it("refuses raw secret-shaped credential references during create preparation", async () => {
@@ -955,7 +1011,9 @@ describe("Lighter agent read handlers", () => {
     expect(data.nextStep).toBe("prepare_for_approval");
     expect(data.nextToolId).toBe("lighter.order.create.prepare");
     expect(data.userGuidance).toContain("preview only");
-    expect(data.userGuidance).toContain("prepare it for approval");
+    expect(data.userGuidance).toContain("Prepare trade approval button");
+    expect(data.userGuidance).not.toContain("lighter.order.create.prepare");
+    expect(JSON.stringify(data.responseRules)).toContain("Prepare trade approval button");
     expect(data.safety).toContain("No signer");
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
@@ -1037,21 +1095,21 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("creates a conversational RHC ETH preview without ids or internal policy params", async () => {
-    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "rhc" && accountIndex === 42
+          ? { environment, accountIndex, apiKeyIndex: 7 }
+          : null,
+      findDefaultScope: (environment) =>
+        environment === "rhc"
+          ? { environment, accountIndex: 42, apiKeyIndex: 7 }
+          : null,
+    });
     mocks.client.getMarkets.mockResolvedValue({
       code: 200,
       order_books: [
         { ...MARKET, market_id: 12, symbol: "BTC-USD", status: "active" },
         { ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" },
-      ],
-    });
-    mocks.client.getApiKeys.mockResolvedValue({
-      code: 200,
-      api_keys: [
-        { account_index: 42, api_key_index: 1, nonce: 10, public_key: "reserved", transaction_time: 1 },
-        { account_index: 42, api_key_index: 2, nonce: 11, public_key: "reserved", transaction_time: 2 },
-        { account_index: 42, api_key_index: 3, nonce: 12, public_key: "reserved", transaction_time: 3 },
-        { account_index: 42, api_key_index: 7, nonce: 11, public_key: "trading", transaction_time: 2 },
       ],
     });
     mocks.client.getMarketDetails.mockResolvedValue({
@@ -1081,10 +1139,7 @@ describe("Lighter agent read handlers", () => {
     });
 
     expect(mocks.client.getMarkets).toHaveBeenCalledWith("rhc", { filter: "all" });
-    expect(mocks.client.getApiKeys).toHaveBeenCalledWith("rhc", {
-      accountIndex: 42,
-      apiKeyIndex: 255,
-    });
+    expect(mocks.client.getApiKeys).not.toHaveBeenCalled();
     expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
       marketId: 0,
       filter: "all",
@@ -1116,11 +1171,14 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("uses the saved Lighter trading credential scope instead of asking the user for an API-key index", async () => {
-    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
     configureLighterTradingCredentialScopeResolver({
       findSavedScope: (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 9 }
+          : null,
+      findDefaultScope: (environment) =>
+        environment === "rhc"
+          ? { environment, accountIndex: 42, apiKeyIndex: 9 }
           : null,
     });
     mocks.client.getMarkets.mockResolvedValue({
@@ -1171,7 +1229,6 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("creates a read-only conversational preview when no trading API-key index is published", async () => {
-    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
     mocks.client.getMarkets.mockResolvedValue({
       code: 200,
       order_books: [
@@ -1206,6 +1263,7 @@ describe("Lighter agent read handlers", () => {
 
     const data = await callJson("lighter.order.preview", {
       marketSymbol: "ETH",
+      accountIndex: 42,
       side: "buy",
       baseAmount: "0.25",
       price: "3000",
@@ -1245,8 +1303,61 @@ describe("Lighter agent read handlers", () => {
     expect(data.responseRules).toContain(
       "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
     );
+    expect(data.responseRules).toContain(
+      "If the user wants to continue, explain that approval preparation requires adding one Lighter trading API key in Settings/API keys. Do not ask for a separate read-only token or ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
+    );
     expect(data.userGuidance).not.toContain("4 to 254");
     expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("not_found");
+  });
+
+  it("uses the saved Lighter trading credential scope as the default preview account", async () => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "rhc" && accountIndex === 42
+          ? { environment, accountIndex, apiKeyIndex: 9 }
+          : null,
+      findDefaultScope: (environment) =>
+        environment === "rhc"
+          ? { environment, accountIndex: 42, apiKeyIndex: 9 }
+          : null,
+    });
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" },
+      ],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    await callJson("lighter.order.preview", {
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
+      by: "index",
+      value: 42,
+      activeOnly: true,
+    });
   });
 
   it("asks for a plain buy or sell choice when conversational preview omits direction", async () => {
@@ -1375,7 +1486,9 @@ describe("Lighter agent read handlers", () => {
       orders: [accountOrder()],
     }, 1);
 
-    const first = data.orders[0] as Record<string, unknown>;
+    expect(Array.isArray(data.orders)).toBe(true);
+    if (!Array.isArray(data.orders)) throw new Error("projected orders should be an array");
+    const first = data.orders[0];
     expect(data.nextCursor).toBe("cursor-1");
     expect(first.orderIndex).toBe(String(UNSAFE_INTEGER));
     expect(first.orderIndexPrecision).toBe("provider_string_canonical");

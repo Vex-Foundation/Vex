@@ -11,10 +11,14 @@ export interface LighterTradingCredentialScopeResolver {
     environment: LighterEnvironment,
     accountIndex: number,
   ) => LighterSavedTradingCredentialScope | null;
+  readonly findDefaultScope?: (
+    environment: LighterEnvironment,
+  ) => LighterSavedTradingCredentialScope | null;
 }
 
 const EMPTY_RESOLVER: LighterTradingCredentialScopeResolver = {
   findSavedScope: () => null,
+  findDefaultScope: () => null,
 };
 
 let configuredResolver: LighterTradingCredentialScopeResolver = EMPTY_RESOLVER;
@@ -33,4 +37,10 @@ export function resolveSavedLighterTradingCredentialScope(
   accountIndex: number,
 ): LighterSavedTradingCredentialScope | null {
   return configuredResolver.findSavedScope(environment, accountIndex);
+}
+
+export function resolveDefaultLighterTradingCredentialScope(
+  environment: LighterEnvironment,
+): LighterSavedTradingCredentialScope | null {
+  return configuredResolver.findDefaultScope?.(environment) ?? null;
 }

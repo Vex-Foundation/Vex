@@ -380,6 +380,7 @@ export interface PreparedActionFollowUp {
   /** Trusted, renderer-safe preview sourced from validated prepared state. */
   readonly approvalPreview: {
     readonly toolName: string;
+    readonly namespace?: string;
     readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
   };
 }

@@ -18,7 +18,6 @@ import {
   type ApiKeysSetInput,
   type ApiKeysSetResult,
 } from "@shared/schemas/api-keys.js";
-import { parseLighterReadOnlyAuthToken } from "@tools/lighter/auth-token.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import {
   defaultLighterTradingVaultCredentialId,
@@ -42,37 +41,6 @@ const API_KEYS_WRITER_CORRELATION_ID = "api-keys-writer";
 type TradingFieldName =
   | "LIGHTER_CORE_TRADING_API_PRIVATE_KEY"
   | "LIGHTER_RHC_TRADING_API_PRIVATE_KEY";
-
-function validateLighterReadOnlyToken(
-  environment: LighterEnvironment,
-  token: string,
-): Result<void> {
-  try {
-    const metadata = parseLighterReadOnlyAuthToken(environment, token);
-    if (metadata.expired) {
-      return err({
-        code: "provider.invalid_api_key",
-        domain: "onboarding",
-        message: `The Lighter ${environment.toUpperCase()} read-only token is expired. Generate a fresh read-only token and try again.`,
-        retryable: true,
-        userActionable: true,
-        redacted: true,
-        correlationId: API_KEYS_WRITER_CORRELATION_ID,
-      });
-    }
-    return ok(undefined);
-  } catch {
-    return err({
-      code: "provider.invalid_api_key",
-      domain: "onboarding",
-      message: `The Lighter ${environment.toUpperCase()} credential must be a read-only token beginning with ro:. Do not paste a trading API private key here.`,
-      retryable: true,
-      userActionable: true,
-      redacted: true,
-      correlationId: API_KEYS_WRITER_CORRELATION_ID,
-    });
-  }
-}
 
 function invalidTradingInput(message: string): Result<never> {
   return err({
@@ -178,22 +146,6 @@ export async function writeApiKeys(
   }
   if (input.relayApiKey !== undefined) {
     writes.push({ key: "RELAY_API_KEY", value: input.relayApiKey });
-  }
-  if (input.lighterCoreReadOnlyToken !== undefined) {
-    const validation = validateLighterReadOnlyToken("core", input.lighterCoreReadOnlyToken);
-    if (!validation.ok) return validation;
-    writes.push({
-      key: "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
-      value: input.lighterCoreReadOnlyToken,
-    });
-  }
-  if (input.lighterRhcReadOnlyToken !== undefined) {
-    const validation = validateLighterReadOnlyToken("rhc", input.lighterRhcReadOnlyToken);
-    if (!validation.ok) return validation;
-    writes.push({
-      key: "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
-      value: input.lighterRhcReadOnlyToken,
-    });
   }
   const coreTrading = readTradingCredentialAction(input, "core");
   if (!coreTrading.ok) return coreTrading;

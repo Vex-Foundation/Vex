@@ -155,6 +155,70 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("labels Lighter create approvals as approve-and-execute trades", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "info",
+        actionKind: "external_post",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+            environment: "rhc",
+            side: "buy",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+    );
+
+    expect(screen.getByText("lighter:order.create")).toBeTruthy();
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("keeps the two-click guard on high-risk Lighter create approvals", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "high",
+        actionKind: "external_post",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+    );
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: /confirm approve/i });
+    expect(confirm.textContent).toContain(
+      "Click again to approve and execute trade",
+    );
+    fireEvent.click(confirm);
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
   it("low-risk: single click on Reject fires mutate", () => {
     renderCard(
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),

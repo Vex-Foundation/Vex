@@ -14,6 +14,7 @@ export interface ValidatedWalletSendFollowUp {
   readonly expiresAt: string;
   readonly approvalPreview: {
     readonly toolName: "wallet_send_confirm";
+    readonly namespace?: string;
     readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
   };
 }
@@ -28,7 +29,8 @@ export interface ValidatedLighterOrderCreateFollowUp {
   };
   readonly expiresAt: string;
   readonly approvalPreview: {
-    readonly toolName: "execute_tool";
+    readonly toolName: "order.create";
+    readonly namespace?: "lighter";
     readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
   };
 }
@@ -43,6 +45,10 @@ export type PreparedActionFollowUpValidation =
 
 const WALLET_INTENT_ID_RE = /^intent-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_INTENT_ID_RE = /^lighter-exec-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__order__create__prepare",
+]);
 const PREVIEW_KEYS = ["network", "chain", "to", "amount", "token"] as const;
 const LIGHTER_PREVIEW_KEYS = [
   "toolId",
@@ -86,7 +92,10 @@ export function validatePreparedActionFollowUp(
   sourceToolName: string,
   candidate: PreparedActionFollowUp,
 ): PreparedActionFollowUpValidation {
-  if (sourceToolName === "execute_tool" && candidate.toolName === "execute_tool") {
+  if (
+    LIGHTER_ORDER_CREATE_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+  ) {
     return validateLighterOrderCreateFollowUp(candidate);
   }
 
@@ -184,7 +193,7 @@ function validateLighterOrderCreateFollowUp(
   }
 
   const preview = candidate.approvalPreview;
-  if (preview.toolName !== "execute_tool") {
+  if (preview.toolName !== "order.create" || preview.namespace !== "lighter") {
     return { ok: false, reason: "invalid_contract" };
   }
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
@@ -238,7 +247,8 @@ function validateLighterOrderCreateFollowUp(
       },
       expiresAt: candidate.expiresAt,
       approvalPreview: {
-        toolName: "execute_tool",
+        toolName: "order.create",
+        namespace: "lighter",
         criticalArgs,
       },
     },

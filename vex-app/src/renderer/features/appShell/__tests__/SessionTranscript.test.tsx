@@ -26,6 +26,7 @@ import { useStreamStore } from "../../../stores/streamStore.js";
 import {
   ISO,
   SESSION,
+  submitMock,
   failure,
   freshClient,
   getScroller,
@@ -35,6 +36,7 @@ import {
   resetTranscriptEnv,
   setVex,
 } from "./SessionTranscript/transcript-harness.js";
+import { LIGHTER_PREPARE_TRADE_APPROVAL_MESSAGE } from "../LighterPreviewAction.js";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { readonly children: ReactNode }) {
@@ -45,6 +47,189 @@ function makeWrapper(client: QueryClient) {
 afterEach(resetTranscriptEnv);
 
 describe("SessionTranscript", () => {
+  it("renders a host button after an approval-ready Lighter preview", { timeout: 10_000 }, async () => {
+    submitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          text: null,
+          toolCallsMade: 0,
+          pendingApprovals: [],
+          stopReason: null,
+          missionStatus: null,
+          treatedAsInitialGoal: false,
+        },
+      }),
+      cancel: () => undefined,
+    });
+    listMock.mockResolvedValue(
+      page(
+        [
+          msg({
+            id: 1,
+            role: "assistant",
+            kind: "tool_call",
+            content: "",
+            toolName: "lighter.order.preview",
+            toolCalls: [
+              {
+                toolCallId: "call-preview",
+                toolName: "lighter.order.preview",
+                toolArgs: null,
+              },
+            ],
+          }),
+          msg({
+            id: 2,
+            role: "tool",
+            kind: "tool_result",
+            content: JSON.stringify({
+              source: "live_lighter_public_api",
+              status: "preview_ready",
+              approvalReady: true,
+              nextStep: "prepare_for_approval",
+            }),
+            toolName: "lighter.order.preview",
+            toolCallId: "call-preview",
+          }),
+          msg({
+            id: 3,
+            role: "assistant",
+            kind: "text",
+            content:
+              "Preview of your Lighter RHC limit-buy order\n\nThis is a read-only preview.",
+          }),
+        ],
+        null,
+      ),
+    );
+    setVex();
+    render(createElement(SessionTranscript, { sessionId: SESSION }), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    const action = await screen.findByRole("button", {
+      name: /^prepare trade approval$/i,
+    });
+    expect(screen.queryByText(/lighter\.order\.create\.prepare/)).toBeNull();
+    const summary = await screen.findByText(
+      /Preview of your Lighter RHC limit-buy order/,
+    );
+    expect(
+      summary.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+
+    fireEvent.click(action);
+
+    await waitFor(() => {
+      expect(submitMock).toHaveBeenCalledWith({
+        sessionId: SESSION,
+        message: LIGHTER_PREPARE_TRADE_APPROVAL_MESSAGE,
+      });
+    });
+  });
+
+  it("hides the Lighter preview action after prepare starts", async () => {
+    listMock.mockResolvedValue(
+      page(
+        [
+          msg({
+            id: 1,
+            role: "assistant",
+            kind: "tool_call",
+            content: "",
+            toolName: "lighter.order.preview",
+            toolCalls: [
+              {
+                toolCallId: "call-preview",
+                toolName: "lighter.order.preview",
+                toolArgs: null,
+              },
+            ],
+          }),
+          msg({
+            id: 2,
+            role: "tool",
+            kind: "tool_result",
+            content: JSON.stringify({
+              source: "live_lighter_public_api",
+              status: "preview_ready",
+              approvalReady: true,
+              nextStep: "prepare_for_approval",
+            }),
+            toolName: "lighter.order.preview",
+            toolCallId: "call-preview",
+          }),
+          msg({
+            id: 3,
+            role: "assistant",
+            kind: "text",
+            content:
+              "Preview of your Lighter RHC limit-buy order\n\nThis is a read-only preview.",
+          }),
+          msg({
+            id: 4,
+            role: "assistant",
+            kind: "tool_call",
+            content: "",
+            toolName: "lighter.order.create.prepare",
+            toolCalls: [
+              {
+                toolCallId: "call-prepare",
+                toolName: "lighter.order.create.prepare",
+                toolArgs: null,
+              },
+            ],
+          }),
+        ],
+        null,
+      ),
+    );
+    setVex();
+    render(createElement(SessionTranscript, { sessionId: SESSION }), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", {
+        name: /^prepare trade approval$/i,
+      })).toBeNull();
+    });
+  });
+
+  it("does not render the Lighter preview action when approval is not ready", async () => {
+    listMock.mockResolvedValue(
+      page(
+        [
+          msg({
+            id: 1,
+            role: "tool",
+            kind: "tool_result",
+            content: JSON.stringify({
+              source: "live_lighter_public_api",
+              status: "preview_ready",
+              approvalReady: false,
+              nextStep: "connect_trading_api_key_before_approval",
+            }),
+            toolName: "lighter.order.preview",
+          }),
+        ],
+        null,
+      ),
+    );
+    setVex();
+    render(createElement(SessionTranscript, { sessionId: SESSION }), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("lighter.order.preview_output")).not.toBeNull();
+    });
+    expect(screen.queryByRole("button", {
+      name: /^prepare trade approval$/i,
+    })).toBeNull();
+  });
+
   it("renders the newest page rows and never parses content as HTML", async () => {
     const injected = '<img src=x onerror="alert(1)"> **not bold**';
     listMock.mockResolvedValue(
