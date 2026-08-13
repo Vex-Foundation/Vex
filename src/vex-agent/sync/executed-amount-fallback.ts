@@ -147,7 +147,17 @@ export async function repairMissingExecutedAmounts(
     checked++;
 
     const outcome = await repairOneRow(row, deps, solanaLane);
-    if (outcome === "filled") filled++;
+    if (outcome === "filled") {
+      filled++;
+      // A SUCCESSFUL decode is just as final as a refusal, and it must be
+      // marked as such. A role whose contract wants BOTH legs (lend, prediction)
+      // stays `roleLegsIncomplete` when the chain only proves one of them, so
+      // without this stamp the row remains a candidate, keeps its ordering key,
+      // and is re-decoded from the same immutable receipt on every single pass -
+      // one wasted chain read per row per tick, and on Solana the whole body
+      // budget spent re-proving what is already stored.
+      await noteSettlementDecodeVersion(row.id, SETTLEMENT_DECODER_SET_VERSION);
+    }
     else if (outcome === "declined") declined++;
     else if (outcome === "conflicted") conflicted++;
     else {
