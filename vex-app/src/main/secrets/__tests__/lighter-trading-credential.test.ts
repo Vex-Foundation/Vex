@@ -260,6 +260,28 @@ describe("Lighter trading credential vault status and removal", () => {
     expect(hasUnlockedLighterTradingCredential("core")).toBe(false);
   });
 
+  it("lists saved trading credential scopes without returning key material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        "lighter/rhc/account-1171/api-key-9": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-3": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-255": PRIVATE_KEY,
+        "lighter/core/account-42/api-key-7": PRIVATE_KEY,
+        "lighter/core/account-42/api-key-8": "",
+        "other/provider/key": PRIVATE_KEY,
+      },
+    });
+    const { listUnlockedLighterTradingCredentialScopes } = await loadModule();
+
+    expect(listUnlockedLighterTradingCredentialScopes("rhc")).toEqual([
+      { environment: "rhc", accountIndex: 1171, apiKeyIndex: 9 },
+    ]);
+    expect(JSON.stringify(listUnlockedLighterTradingCredentialScopes())).not.toContain(PRIVATE_KEY);
+  });
+
   it("reports environment-level absence while locked", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({
       ok: false,

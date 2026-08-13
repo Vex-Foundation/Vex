@@ -90,6 +90,9 @@ vi.mock("@utils/logger.js", () => ({
 const { LIGHTER_HANDLERS } = await import("@vex-agent/tools/protocols/lighter/handlers.js");
 const { projectAccountOrders } = await import("@vex-agent/tools/protocols/lighter/projectors.js");
 const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
+const { configureLighterTradingCredentialScopeResolver } = await import(
+  "@vex-agent/tools/protocols/lighter/trading-credential-scope.js"
+);
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -387,6 +390,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
+  configureLighterTradingCredentialScopeResolver({
+    findSavedScope: () => null,
+  });
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
@@ -953,6 +959,25 @@ describe("Lighter agent read handlers", () => {
     expect(data.safety).toContain("No signer");
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
+    expect(data.previewSummary).toMatchObject({
+      title: "Preview of your Lighter RHC limit-buy order",
+      columns: ["Parameter", "Value", "Notes"],
+      rows: expect.arrayContaining([
+        { parameter: "Side", value: "BUY", notes: "limit-buy order" },
+        { parameter: "Amount", value: "0.25 ETH", notes: "Passes minimum: 0.001 ETH" },
+        { parameter: "Limit price", value: "$3,499.99 per ETH", notes: expect.any(String) },
+        { parameter: "Quote notional", value: "$874.9975", notes: "0.25 ETH x $3,499.99" },
+      ]),
+      safety: expect.arrayContaining([
+        "Read-only preview. No order was signed, submitted, broadcast, or placed.",
+      ]),
+    });
+    expect(data.responseRules).toContain(
+      "Render previewSummary as a Markdown table using its columns and rows. Do not use bullets for the main preview unless the user asks for a shorter summary.",
+    );
+    expect(data.responseRules).toContain(
+      "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
+    );
     expect((data.preview as Record<string, unknown>).symbol).toBe("ETH-USD");
     expect(((data.preview as Record<string, unknown>).baseAmount as Record<string, unknown>).integer).toBe("2500");
     expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
@@ -1090,6 +1115,61 @@ describe("Lighter agent read handlers", () => {
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 
+  it("uses the saved Lighter trading credential scope instead of asking the user for an API-key index", async () => {
+    process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "rhc" && accountIndex === 42
+          ? { environment, accountIndex, apiKeyIndex: 9 }
+          : null,
+    });
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" },
+      ],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(mocks.client.getApiKeys).not.toHaveBeenCalled();
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: {
+          readonly apiKeyIndex: string;
+        };
+      };
+    };
+    expect(persisted.preview.identity.apiKeyIndex).toBe("9");
+    expect(data.approvalReady).toBe(true);
+    expect(data.nextStep).toBe("prepare_for_approval");
+    expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("saved_vault_scope");
+    expect(JSON.stringify(data)).not.toContain("let me know which index");
+  });
+
   it("creates a read-only conversational preview when no trading API-key index is published", async () => {
     process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN = "ro:42:single:4102444800:abcdef0123456789";
     mocks.client.getMarkets.mockResolvedValue({
@@ -1160,8 +1240,12 @@ describe("Lighter agent read handlers", () => {
       "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
     );
     expect(data.responseRules).toContain(
-      "Show human display values from preview.*.display fields for amounts and minimums; do not present integer fields as human ETH or USD amounts.",
+      "Render previewSummary as a Markdown table using its columns and rows. Do not use bullets for the main preview unless the user asks for a shorter summary.",
     );
+    expect(data.responseRules).toContain(
+      "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
+    );
+    expect(data.userGuidance).not.toContain("4 to 254");
     expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("not_found");
   });
 

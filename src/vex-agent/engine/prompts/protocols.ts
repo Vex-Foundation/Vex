@@ -266,9 +266,9 @@ export function buildProtocolsPrompt(): string {
   lines.push("## Lighter Order Preview Routing");
   lines.push("");
   lines.push("- `lighter.order.preview` is a live-data-backed read-only preview and never places, submits, executes, or broadcasts an order. Do not call it a simulation.");
-  lines.push("- After a successful Lighter preview, inspect `approvalReady`. If it is true, say the next step is preparing it for approval with `lighter.order.create.prepare`. If it is false, say the preview is read-only and approval preparation requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.");
+  lines.push("- After a successful Lighter preview, render `previewSummary.rows` as a Markdown table with `Parameter | Value | Notes`. Do not use bullets for the main preview unless the user asks for a shorter summary. Do not render raw preview internals such as `integer`, `decimals`, `display` wrappers, booleans, or JSON object fragments unless the user asks for technical details.");
+  lines.push("- Inspect `approvalReady`. If it is true, say the next step is preparing it for approval with `lighter.order.create.prepare`. If it is false, say the preview is read-only and approval preparation requires adding a Lighter trading API key in Settings/API keys. Do not ask normal users to choose an API-key index; Vex should infer it from the saved key scope when possible.");
   lines.push("- Do not ask the user to confirm that you should place, execute, submit, or broadcast directly from a preview. Do not say a preview can be broadcast after only supplying an API-key index. Approval preparation is not live submission, and live trading may still be release-gated.");
-  lines.push("- For amounts and minimums, show the `display` fields from the preview object. Do not present raw integer fields such as `minBaseAmountInteger` or `minQuoteAmountInteger` as human ETH or USD amounts.");
   lines.push("- Format preview notes with normal Markdown bullets or sentences; never emit raw HTML such as `<br>`.");
   lines.push("");
 

@@ -77,7 +77,7 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (preview.apiKeyIndex === null) {
       return fail(
-        "Lighter order create preparation requires a preview bound to a trading API key index from 4 to 254.",
+        "Lighter order create preparation needs a saved Lighter trading API key for this account. Open Settings > API keys, add the Lighter trading key, then run a fresh preview.",
       );
     }
 

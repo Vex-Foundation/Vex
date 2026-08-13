@@ -19,6 +19,12 @@ export interface UnlockedLighterTradingCredentialStatus {
   readonly reference: LighterTradingCredentialVaultReference;
 }
 
+export interface UnlockedLighterTradingCredentialScope {
+  readonly environment: LighterTradingCredentialVaultReference["environment"];
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+}
+
 export function createUnlockedVaultLighterTradingSecretReader(): LighterTradingSecretReader {
   return {
     readTradingApiPrivateKey: async (reference) =>
@@ -108,22 +114,50 @@ export function getUnlockedLighterTradingCredentialStatus(
 export function hasUnlockedLighterTradingCredential(
   environment: LighterTradingCredentialVaultReference["environment"],
 ): boolean {
+  return listUnlockedLighterTradingCredentialScopes(environment).length > 0;
+}
+
+export function listUnlockedLighterTradingCredentialScopes(
+  environment?: LighterTradingCredentialVaultReference["environment"],
+): readonly UnlockedLighterTradingCredentialScope[] {
   const password = requireUnlockedMasterPassword();
-  if (!password.ok) return false;
+  if (!password.ok) return [];
 
   try {
     const contents = unlockSecretVault(password.data, {
       filePath: SECRETS_VAULT_FILE,
     });
     const extraSecrets = contents.extraSecrets ?? {};
-    const prefix = `lighter/${environment}/account-`;
-    return Object.entries(extraSecrets).some(([key, value]) =>
-      key.startsWith(prefix)
-      && /\/api-key-(?:[4-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(key)
-      && typeof value === "string"
-      && value.trim().length > 0);
+    const scopes: UnlockedLighterTradingCredentialScope[] = [];
+    for (const [key, value] of Object.entries(extraSecrets)) {
+      if (typeof value !== "string" || value.trim().length === 0) continue;
+      const match = /^lighter\/(core|rhc)\/account-(\d+)\/api-key-(\d+)$/.exec(key);
+      if (!match) continue;
+      const [, env, accountIndexRaw, apiKeyIndexRaw] = match;
+      if (environment !== undefined && env !== environment) continue;
+      const accountIndex = Number(accountIndexRaw);
+      const apiKeyIndex = Number(apiKeyIndexRaw);
+      if (
+        !Number.isSafeInteger(accountIndex)
+        || accountIndex < 0
+        || !Number.isInteger(apiKeyIndex)
+        || apiKeyIndex < 4
+        || apiKeyIndex > 254
+      ) {
+        continue;
+      }
+      scopes.push({
+        environment: env as LighterTradingCredentialVaultReference["environment"],
+        accountIndex,
+        apiKeyIndex,
+      });
+    }
+    return scopes.sort((left, right) =>
+      left.environment.localeCompare(right.environment)
+      || left.accountIndex - right.accountIndex
+      || left.apiKeyIndex - right.apiKeyIndex);
   } catch {
-    return false;
+    return [];
   }
 }
 

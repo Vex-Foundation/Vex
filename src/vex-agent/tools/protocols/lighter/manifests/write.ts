@@ -17,13 +17,6 @@ const PREVIEW_ID_PARAM: ProtocolParamDef = {
     "Optional session-scoped Lighter order preview id returned by lighter.order.preview. Omit for normal 'prepare that order' requests; Vex uses the latest fresh preview in this session and environment.",
 };
 
-const VAULT_CREDENTIAL_ID_PARAM: ProtocolParamDef = {
-  key: "vaultCredentialId",
-  type: "string",
-  description:
-    "Optional internal encrypted local vault reference override. Omit for normal approval preparation; Vex derives the local vault reference from the preview's environment, account index, and API-key index. Never pass raw key bytes, read-only tokens, signatures, or provider payloads.",
-};
-
 const INTENT_ID_PARAM: ProtocolParamDef = {
   key: "intentId",
   type: "string",
@@ -41,7 +34,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Prepare an approval-gated Lighter order create from a fresh persisted lighter.order.preview. Use this directly when the user says to prepare that Lighter order for approval after previewing it; no user-facing vault id or preview id is required for the normal latest-preview flow. Creates a local durable execution intent and asks the engine to enqueue the approval card for lighter.order.create. This is a preparation step only: no signer, API private key read, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "approval_prepare",
-    params: [ENVIRONMENT_PARAM, PREVIEW_ID_PARAM, VAULT_CREDENTIAL_ID_PARAM],
+    params: [ENVIRONMENT_PARAM, PREVIEW_ID_PARAM],
     exampleParams: {
       environment: "rhc",
     },

@@ -7,7 +7,10 @@ import {
 } from "@tools/lighter/constants.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
-import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
+import {
+  buildLighterOrderPreview,
+  type LighterOrderPreview,
+} from "@tools/lighter/order-preview.js";
 import {
   LIGHTER_TRADING_API_KEY_INDEX_MAX,
   LIGHTER_TRADING_API_KEY_INDEX_MIN,
@@ -56,6 +59,7 @@ import {
   sortMarketsForDisplay,
   takePage,
 } from "../projectors.js";
+import { resolveSavedLighterTradingCredentialScope } from "../trading-credential-scope.js";
 
 function failureDetail(toolId: string, err: unknown): string {
   logger.warn("lighter.handler.error", {
@@ -115,6 +119,121 @@ function liveProvenance(
       independentOnchainVerification: false,
       ...details,
     },
+  };
+}
+
+function compactDisplay(value: string): string {
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
+}
+
+function formatUsd(value: string | null): string {
+  if (value === null) return "unknown";
+  const compact = compactDisplay(value);
+  const number = Number(compact);
+  return Number.isFinite(number)
+    ? `$${number.toLocaleString("en-US", { maximumFractionDigits: 6 })}`
+    : `$${compact}`;
+}
+
+function formatAsset(value: string, symbol: string): string {
+  return `${compactDisplay(value)} ${symbol}`;
+}
+
+function labelTimeInForce(value: string): string {
+  if (value === "good-till-time") return "Good-till-time";
+  if (value === "immediate-or-cancel") return "Immediate-or-cancel";
+  if (value === "post-only") return "Post-only";
+  return value;
+}
+
+function previewSummary(
+  orderPreview: LighterOrderPreview,
+): {
+  readonly title: string;
+  readonly columns: readonly ["Parameter", "Value", "Notes"];
+  readonly rows: readonly {
+    readonly parameter: string;
+    readonly value: string;
+    readonly notes: string;
+  }[];
+  readonly safety: readonly string[];
+} {
+  const preview = orderPreview.preview;
+  const baseSymbol = preview.symbol.split("-")[0] ?? preview.symbol;
+  const orderExpiry = preview.timeInForce === "good-till-time"
+    ? new Date(Number(orderPreview.identity.expiryMs))
+    : null;
+  const price = formatUsd(preview.price.display);
+  const quote = formatUsd(preview.quoteNotional.display);
+  const bestBid = formatUsd(preview.marketData.bestBid);
+  const bestAsk = formatUsd(preview.marketData.bestAsk);
+  const minimums =
+    `${formatAsset(preview.minimumChecks.minBaseAmountDisplay, baseSymbol)} base minimum; `
+    + `${formatUsd(preview.minimumChecks.minQuoteAmountDisplay)} quote minimum`;
+  const marketNote = preview.marketData.priceComparison === "crossing_or_taker"
+    ? "The limit price is marketable against the current book if submitted."
+    : preview.marketData.priceComparison === "resting"
+      ? "This price would rest on the book unless the market moves to it."
+      : "Book comparison is unavailable from the current snapshot.";
+  const position = preview.positionContext.verified
+    ? `${preview.positionContext.positionSide}${preview.positionContext.marketPosition ? ` ${preview.positionContext.marketPosition}` : ""}`
+    : "Not verified";
+  return {
+    title: `Preview of your Lighter ${preview.environment.toUpperCase()} ${preview.orderType}-${preview.side} order`,
+    columns: ["Parameter", "Value", "Notes"],
+    rows: [
+      {
+        parameter: "Side",
+        value: preview.side.toUpperCase(),
+        notes: `${preview.orderType}-${preview.side} order`,
+      },
+      {
+        parameter: "Market",
+        value: `${preview.symbol} market #${preview.marketIndex}`,
+        notes: "Resolved from live Lighter market data",
+      },
+      {
+        parameter: "Amount",
+        value: formatAsset(preview.baseAmount.display, baseSymbol),
+        notes: `Passes minimum: ${formatAsset(preview.minimumChecks.minBaseAmountDisplay, baseSymbol)}`,
+      },
+      {
+        parameter: "Limit price",
+        value: `${price} per ${baseSymbol}`,
+        notes: marketNote,
+      },
+      {
+        parameter: "Quote notional",
+        value: quote,
+        notes: `${formatAsset(preview.baseAmount.display, baseSymbol)} x ${price}`,
+      },
+      {
+        parameter: "Time-in-force",
+        value: labelTimeInForce(preview.timeInForce),
+        notes: orderExpiry ? `Expires ${orderExpiry.toISOString()}` : "Provider default expiry",
+      },
+      {
+        parameter: "Market snapshot",
+        value: `Bid ${bestBid} / Ask ${bestAsk}`,
+        notes: preview.marketData.referencePrice === null
+          ? "Reference price unavailable"
+          : `Reference ${formatUsd(preview.marketData.referencePrice)}`,
+      },
+      {
+        parameter: "Minimum checks",
+        value: "Passed",
+        notes: minimums,
+      },
+      {
+        parameter: "Position context",
+        value: position,
+        notes: preview.reduceOnly ? "Reduce-only was requested" : "No reduce-only constraint",
+      },
+    ],
+    safety: [
+      "Read-only preview. No order was signed, submitted, broadcast, or placed.",
+      "Approval preparation is a separate step and still does not mean live submission.",
+    ],
   };
 }
 
@@ -203,12 +322,19 @@ async function resolvePreviewApiKeyIndex(
   requestedApiKeyIndex: number | null | undefined,
 ): Promise<{
   readonly apiKeyIndex: number | null;
-  readonly apiKeyLookupStatus: "caller_supplied" | "resolved" | "not_found" | "unavailable";
+  readonly apiKeyLookupStatus: "caller_supplied" | "saved_vault_scope" | "resolved" | "not_found" | "unavailable";
 }> {
   if (requestedApiKeyIndex !== null && requestedApiKeyIndex !== undefined) {
     return {
       apiKeyIndex: requestedApiKeyIndex,
       apiKeyLookupStatus: "caller_supplied",
+    };
+  }
+  const savedScope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
+  if (savedScope !== null) {
+    return {
+      apiKeyIndex: savedScope.apiKeyIndex,
+      apiKeyLookupStatus: "saved_vault_scope",
     };
   }
   try {
@@ -675,6 +801,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         previewId: preview.previewId,
         matchHash: preview.matchHash,
         expiresAt: preview.expiresAt,
+        previewSummary: previewSummary(preview),
         preview: preview.preview,
         approvalReady,
         nextStep: approvalReady
@@ -683,16 +810,17 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         nextToolId: approvalReady ? "lighter.order.create.prepare" : null,
         responseRules: [
           "Describe this as a live-data-backed read-only preview, not as a simulation.",
+          "Render previewSummary as a Markdown table using its columns and rows. Do not use bullets for the main preview unless the user asks for a shorter summary.",
+          "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
           "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
-          "Show human display values from preview.*.display fields for amounts and minimums; do not present integer fields as human ETH or USD amounts.",
           "Do not say the order can be placed, executed, submitted, or broadcast directly from this preview.",
           approvalReady
             ? "If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
-            : "If the user wants to continue, explain that approval preparation requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.",
+            : "If the user wants to continue, explain that approval preparation requires adding a Lighter trading API key in Settings/API keys. Do not ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
         ],
         userGuidance: approvalReady
           ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. If the user wants to continue, prepare it for approval with lighter.order.create.prepare."
-          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires a Lighter trading API key stored in Vex's encrypted local vault with a trading API-key index from 4 to 254.",
+          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires a Lighter trading API key stored in Vex's encrypted local vault through Settings/API keys.",
         safety:
           "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
       });
