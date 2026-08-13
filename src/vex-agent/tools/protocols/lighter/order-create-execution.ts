@@ -1,7 +1,9 @@
 import type { LighterClient } from "@tools/lighter/client.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import {
+  buildLighterAccountAuthSigningInput,
   buildLighterCreateOrderSigningInput,
+  createLighterAccountAuthWithAdapter,
   signLighterCreateOrderWithAdapter,
   type LighterSignerAdapter,
 } from "@tools/lighter/signer-adapter.js";
@@ -12,6 +14,7 @@ import {
 } from "@tools/lighter/trading-secret.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
   reserveLighterOrderNonceForSigning,
   type LighterOrderNonceReservation,
@@ -32,6 +35,10 @@ const SUBMITTED_PERSIST_AMBIGUOUS_REASON = "submitted_state_persist_failed";
 const SEQUENCER_PENDING_PERSIST_AMBIGUOUS_REASON = "sequencer_pending_persist_failed";
 const PROVIDER_OUTCOME_READ_AMBIGUOUS_REASON = "provider_outcome_read_failed";
 const PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON = "provider_outcome_persist_failed";
+const ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
+const PROVIDER_OUTCOME_ACTIVE_ATTEMPTS = 3;
+const PROVIDER_OUTCOME_MIN_DELAY_MS = 100;
+const PROVIDER_OUTCOME_MAX_DELAY_MS = 2_000;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
@@ -80,8 +87,16 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   readonly signer: LighterSignerAdapter;
   readonly client: Pick<
     LighterClient,
-    "sendTx" | "getAccountActiveOrders" | "getAccountInactiveOrders" | "getAccountTrades"
+    | "sendTx"
+    | "getApiKeys"
+    | "getNextNonce"
+    | "getAccountActiveOrders"
+    | "getAccountInactiveOrders"
+    | "getAccountTrades"
   >;
+  readonly nonceState: Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">;
+  readonly now: () => number;
+  readonly wait: (delayMs: number) => Promise<void>;
   readonly intents: Pick<
     typeof lighterOrderExecutionIntentsRepo,
     | "markSigned"
@@ -122,12 +137,34 @@ export async function executeApprovedLighterCreateOrder(input: {
     );
   }
 
-  await assertProviderOutcomeRepairReady(plan, unsignedOrder, deps);
-
+  const providerCredential = await readLiveProviderCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(
     plan.credentialReference,
     deps.secretReader,
   );
+  const auth = await createLighterAccountAuthWithAdapter(
+    buildLighterAccountAuthSigningInput({
+      order: unsignedOrder,
+      secret,
+      deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS,
+    }),
+    deps.signer,
+  );
+  assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
+  await assertProviderOutcomeRepairReady(plan, unsignedOrder, auth.authToken, deps);
+  const observedNonce = await deps.nonceState.recordExecutionObserved({
+    environment: plan.environment,
+    accountIndex: plan.accountIndex,
+    apiKeyIndex: plan.apiKeyIndex,
+    nonce: providerCredential.nextNonce,
+    publicKey: providerCredential.publicKey,
+    transactionTime: providerCredential.transactionTime,
+  });
+  if (observedNonce === null) {
+    throw blockedBeforeSubmit(
+      "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted.",
+    );
+  }
   const nonce = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
 
@@ -226,6 +263,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       submitCode: response.code,
       predictedExecutionTimeMs: response.predicted_execution_time_ms,
       volumeQuotaRemaining: accepted.volumeQuotaRemaining,
+      accountAuthToken: auth.authToken,
     });
   } catch (error) {
     if (nonce !== null && signerTxHash === null) {
@@ -241,7 +279,12 @@ export function defaultLighterCreateOrderExecutionDeps(
     readonly signer: LighterSignerAdapter;
     readonly client: Pick<
       LighterClient,
-      "sendTx" | "getAccountActiveOrders" | "getAccountInactiveOrders" | "getAccountTrades"
+      | "sendTx"
+      | "getApiKeys"
+      | "getNextNonce"
+      | "getAccountActiveOrders"
+      | "getAccountInactiveOrders"
+      | "getAccountTrades"
     >;
   },
 ): ExecuteApprovedLighterCreateOrderDeps {
@@ -249,32 +292,112 @@ export function defaultLighterCreateOrderExecutionDeps(
     liveTradingEnabled: isLighterLiveTradingEnabled,
     reserveNonce: reserveLighterOrderNonceForSigning,
     intents: lighterOrderExecutionIntentsRepo,
+    nonceState: lighterNonceStateRepo,
+    now: Date.now,
+    wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
     ...overrides,
   };
+}
+
+async function readLiveProviderCredential(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<{
+  readonly publicKey: string;
+  readonly nextNonce: number;
+  readonly transactionTime: number;
+}> {
+  let apiKeys: Awaited<ReturnType<LighterClient["getApiKeys"]>>;
+  let nextNonce: Awaited<ReturnType<LighterClient["getNextNonce"]>>;
+  try {
+    [apiKeys, nextNonce] = await Promise.all([
+      deps.client.getApiKeys(plan.environment, {
+        accountIndex: plan.accountIndex,
+        apiKeyIndex: plan.apiKeyIndex,
+      }),
+      deps.client.getNextNonce(plan.environment, {
+        accountIndex: plan.accountIndex,
+        apiKeyIndex: plan.apiKeyIndex,
+      }),
+    ]);
+  } catch {
+    throw blockedBeforeSubmit(
+      "Lighter API-key identity or next nonce is unavailable. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
+  const matches = apiKeys.api_keys.filter((key) =>
+    key.account_index === plan.accountIndex && key.api_key_index === plan.apiKeyIndex);
+  const key = matches[0];
+  if (matches.length !== 1 || key === undefined) {
+    throw blockedBeforeSubmit(
+      "The exact Lighter trading API key is not registered for the approved account scope. No trading key was loaded and no order was signed or submitted.",
+    );
+  }
+  return {
+    publicKey: key.public_key,
+    nextNonce: nextNonce.nonce,
+    transactionTime: key.transaction_time,
+  };
+}
+
+function assertProviderPublicKeyMatches(providerPublicKey: string, signerPublicKey: string): void {
+  const normalize = (value: string) => value.trim().replace(/^0x/i, "").toLowerCase();
+  if (normalize(providerPublicKey) !== normalize(signerPublicKey)) {
+    throw blockedBeforeSubmit(
+      "The encrypted Lighter trading key does not match the public key registered for the approved account scope. No nonce was reserved and no order was signed or submitted.",
+    );
+  }
 }
 
 async function assertProviderOutcomeRepairReady(
   plan: LighterOrderReadyForSignerPlan,
   unsignedOrder: LighterUnsignedCreateOrderRequest,
+  accountAuthToken: string,
   deps: ExecuteApprovedLighterCreateOrderDeps,
 ): Promise<void> {
+  const privilegedAuth = { token: accountAuthToken, accountIndex: plan.accountIndex };
   let activeOrders: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
+  let inactiveOrders: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
+  let trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
   try {
-    activeOrders = await deps.client.getAccountActiveOrders(plan.environment, {
-      accountIndex: plan.accountIndex,
-      marketId: plan.marketIndex,
-      marketType: "all",
-    });
+    [activeOrders, inactiveOrders, trades] = await Promise.all([
+      deps.client.getAccountActiveOrders(plan.environment, {
+        accountIndex: plan.accountIndex,
+        marketId: plan.marketIndex,
+        marketType: "all",
+      }, privilegedAuth),
+      deps.client.getAccountInactiveOrders(plan.environment, {
+        accountIndex: plan.accountIndex,
+        marketId: plan.marketIndex,
+        marketType: "all",
+        limit: 100,
+      }, privilegedAuth),
+      deps.client.getAccountTrades(plan.environment, {
+        accountIndex: plan.accountIndex,
+        limit: 100,
+        sortBy: "timestamp",
+      }, privilegedAuth),
+    ]);
   } catch {
     throw blockedBeforeSubmit(
       "Lighter provider outcome repair is unavailable before submission. No order was signed or submitted.",
     );
   }
 
-  const existing = findMatchingOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
-  if (existing !== null) {
+  const existingOrder = findMatchingOrder(
+    [...activeOrders.orders, ...inactiveOrders.orders],
+    plan,
+    unsignedOrder.clientOrderIndex,
+  );
+  const existingTrade = findMatchingTrade(
+    trades.trades,
+    plan,
+    unsignedOrder.clientOrderIndex,
+    "__vex_preflight_no_tx_hash__",
+  );
+  if (existingOrder !== null || existingTrade !== null) {
     throw blockedBeforeSubmit(
-      "A Lighter order with the same Vex client order id is already visible before submission. No order was signed or submitted.",
+      "A Lighter order or trade with the same Vex client order id is already visible before submission. No order was signed or submitted.",
     );
   }
 }
@@ -288,6 +411,7 @@ async function reconcileProviderOutcome(input: {
   readonly submitCode: number;
   readonly predictedExecutionTimeMs: number;
   readonly volumeQuotaRemaining: string | null;
+  readonly accountAuthToken: string;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const {
     plan,
@@ -298,42 +422,57 @@ async function reconcileProviderOutcome(input: {
     submitCode,
     predictedExecutionTimeMs,
     volumeQuotaRemaining,
+    accountAuthToken,
   } = input;
 
   try {
-    const activeOrders = await deps.client.getAccountActiveOrders(plan.environment, {
-      accountIndex: plan.accountIndex,
-      marketId: plan.marketIndex,
-      marketType: "all",
-    });
-    const active = findMatchingOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
-    if (active !== null) {
-      return persistProviderOutcome({
-        plan,
-        unsignedOrder,
-        deps,
-        signerTxHash,
-        submittedTxHash,
-        source: "active_order",
-        state: stateFromActiveOrder(active),
-        providerOrderId: active.order_id,
-        providerOrderStatus: active.status ?? null,
-        providerOutcomeJson: orderEvidence("active_order", active, unsignedOrder.clientOrderIndex),
-        submitCode,
-        predictedExecutionTimeMs,
-        volumeQuotaRemaining,
-      });
+    const delayMs = providerOutcomeDelayMs(predictedExecutionTimeMs);
+    for (let attempt = 0; attempt < PROVIDER_OUTCOME_ACTIVE_ATTEMPTS; attempt += 1) {
+      const activeOrders = await deps.client.getAccountActiveOrders(
+        plan.environment,
+        {
+          accountIndex: plan.accountIndex,
+          marketId: plan.marketIndex,
+          marketType: "all",
+        },
+        { token: accountAuthToken, accountIndex: plan.accountIndex },
+      );
+      const active = findMatchingOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
+      if (active !== null) {
+        return persistProviderOutcomeSafely({
+          plan,
+          unsignedOrder,
+          deps,
+          signerTxHash,
+          submittedTxHash,
+          source: "active_order",
+          state: stateFromActiveOrder(active),
+          providerOrderId: active.order_id,
+          providerOrderStatus: active.status ?? null,
+          providerOutcomeJson: orderEvidence("active_order", active, unsignedOrder.clientOrderIndex),
+          submitCode,
+          predictedExecutionTimeMs,
+          volumeQuotaRemaining,
+        });
+      }
+      if (attempt < PROVIDER_OUTCOME_ACTIVE_ATTEMPTS - 1) {
+        await deps.wait(delayMs * (attempt + 1));
+      }
     }
 
-    const inactiveOrders = await deps.client.getAccountInactiveOrders(plan.environment, {
-      accountIndex: plan.accountIndex,
-      marketId: plan.marketIndex,
-      marketType: "all",
-      limit: 100,
-    });
+    const inactiveOrders = await deps.client.getAccountInactiveOrders(
+      plan.environment,
+      {
+        accountIndex: plan.accountIndex,
+        marketId: plan.marketIndex,
+        marketType: "all",
+        limit: 100,
+      },
+      { token: accountAuthToken, accountIndex: plan.accountIndex },
+    );
     const inactive = findMatchingOrder(inactiveOrders.orders, plan, unsignedOrder.clientOrderIndex);
     if (inactive !== null) {
-      return persistProviderOutcome({
+      return persistProviderOutcomeSafely({
         plan,
         unsignedOrder,
         deps,
@@ -350,11 +489,15 @@ async function reconcileProviderOutcome(input: {
       });
     }
 
-    const trades = await deps.client.getAccountTrades(plan.environment, {
-      accountIndex: plan.accountIndex,
-      limit: 100,
-      sortBy: "timestamp",
-    });
+    const trades = await deps.client.getAccountTrades(
+      plan.environment,
+      {
+        accountIndex: plan.accountIndex,
+        limit: 100,
+        sortBy: "timestamp",
+      },
+      { token: accountAuthToken, accountIndex: plan.accountIndex },
+    );
     const trade = findMatchingTrade(
       trades.trades,
       plan,
@@ -362,7 +505,7 @@ async function reconcileProviderOutcome(input: {
       submittedTxHash,
     );
     if (trade !== null) {
-      return persistProviderOutcome({
+      return persistProviderOutcomeSafely({
         plan,
         unsignedOrder,
         deps,
@@ -383,20 +526,26 @@ async function reconcileProviderOutcome(input: {
     return ambiguous(plan, PROVIDER_OUTCOME_READ_AMBIGUOUS_REASON, signerTxHash);
   }
 
-  const persisted = await deps.intents.markProviderOutcome({
-    intentId: plan.intentId,
-    sessionId: plan.sessionId,
-    environment: plan.environment,
-    state: "sequencer_pending",
-    source: "not_found",
-    providerOrderId: null,
-    providerOrderStatus: null,
-    providerOutcomeJson: {
+  let persisted: Awaited<ReturnType<ExecuteApprovedLighterCreateOrderDeps["intents"]["markProviderOutcome"]>>;
+  try {
+    persisted = await deps.intents.markProviderOutcome({
+      intentId: plan.intentId,
+      sessionId: plan.sessionId,
+      environment: plan.environment,
+      state: "sequencer_pending",
       source: "not_found",
-      clientOrderIndex: unsignedOrder.clientOrderIndex,
-      checkedEndpoints: ["accountActiveOrders", "accountInactiveOrders", "trades"],
-    },
-  });
+      providerOrderId: null,
+      providerOrderStatus: null,
+      providerOutcomeJson: {
+        source: "not_found",
+        clientOrderIndex: unsignedOrder.clientOrderIndex,
+        checkedEndpoints: ["accountActiveOrders", "accountInactiveOrders", "trades"],
+      },
+    });
+  } catch {
+    await markAmbiguous(deps, plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);
+    return ambiguous(plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON, signerTxHash);
+  }
   if (persisted === null) {
     await markAmbiguous(deps, plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);
     return ambiguous(plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON, signerTxHash);
@@ -419,6 +568,14 @@ async function reconcileProviderOutcome(input: {
     message:
       "Lighter accepted the signed order submission, but the order was not visible in account order or trade reads yet. Vex recorded sequencer_pending and will not retry sendTx without reconciliation.",
   };
+}
+
+function providerOutcomeDelayMs(predictedExecutionTimeMs: number): number {
+  if (!Number.isFinite(predictedExecutionTimeMs)) return PROVIDER_OUTCOME_MIN_DELAY_MS;
+  return Math.min(
+    PROVIDER_OUTCOME_MAX_DELAY_MS,
+    Math.max(PROVIDER_OUTCOME_MIN_DELAY_MS, Math.ceil(predictedExecutionTimeMs)),
+  );
 }
 
 async function persistProviderOutcome(input: {
@@ -482,6 +639,17 @@ async function persistProviderOutcome(input: {
     providerOrderStatus: input.providerOrderStatus,
     message: `Lighter provider evidence confirmed order state ${input.state}.`,
   };
+}
+
+async function persistProviderOutcomeSafely(
+  input: Parameters<typeof persistProviderOutcome>[0],
+): Promise<ExecuteApprovedLighterCreateOrderResult> {
+  try {
+    return await persistProviderOutcome(input);
+  } catch {
+    await markAmbiguous(input.deps, input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);
+    return ambiguous(input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON, input.signerTxHash);
+  }
 }
 
 function findMatchingOrder(

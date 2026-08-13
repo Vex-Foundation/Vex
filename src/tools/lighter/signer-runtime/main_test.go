@@ -49,6 +49,34 @@ func TestSignCreateOrderUsesStringDecimalPayload(t *testing.T) {
 	}
 }
 
+func TestCreateAccountAuthReturnsCanonicalTokenAndPublicKey(t *testing.T) {
+	request, err := readRequest(strings.NewReader(`{
+		"operation": "createAccountAuth",
+		"privateKey": "11111111111111111111111111111111111111111111111111111111111111111111111111111111",
+		"chainId": 466324,
+		"accountIndex": "42",
+		"apiKeyIndex": 7,
+		"deadlineUnixSeconds": "1893456600"
+	}`))
+	if err != nil {
+		t.Fatalf("readRequest() error = %v", err)
+	}
+
+	response, err := createAccountAuth(request)
+	if err != nil {
+		t.Fatalf("createAccountAuth() error = %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("createAccountAuth() returned OK=false")
+	}
+	if !strings.HasPrefix(response.AuthToken, "1893456600:42:7:") {
+		t.Fatalf("AuthToken has unexpected scope")
+	}
+	if len(response.PublicKey) != 80 {
+		t.Fatalf("PublicKey length = %d, want 80", len(response.PublicKey))
+	}
+}
+
 func TestReadRequestRejectsReservedAPIKeyIndexes(t *testing.T) {
 	_, err := readRequest(strings.NewReader(`{
 		"operation": "signCreateOrder",

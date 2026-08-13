@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { ErrorCodes, VexError } from "../../errors.js";
 import type {
+  LighterAccountAuthSignerResult,
+  LighterAccountAuthSigningInput,
   LighterCreateOrderSignerResult,
   LighterCreateOrderSigningInput,
   LighterSignerAdapter,
@@ -34,12 +36,20 @@ export interface LighterSignerBinaryPathOptions {
   readonly arch?: string;
 }
 
-interface LighterSignerBinaryPayload {
-  readonly operation: "signCreateOrder";
+interface LighterSignerBinaryBasePayload {
   readonly privateKey: string;
   readonly chainId: number;
   readonly accountIndex: string;
   readonly apiKeyIndex: number;
+}
+
+interface LighterSignerBinaryAuthPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "createAccountAuth";
+  readonly deadlineUnixSeconds: string;
+}
+
+interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signCreateOrder";
   readonly nonce: string;
   readonly order: {
     readonly marketIndex: number;
@@ -55,6 +65,10 @@ interface LighterSignerBinaryPayload {
   };
 }
 
+type LighterSignerBinaryPayload =
+  | LighterSignerBinaryAuthPayload
+  | LighterSignerBinaryCreateOrderPayload;
+
 export function createLighterSignerBinaryAdapter(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterSignerAdapter {
@@ -64,6 +78,23 @@ export function createLighterSignerBinaryAdapter(
 
   return {
     source: "official_lighter_signer",
+    createAccountAuth: async (input) => {
+      const raw = await runner({
+        binaryPath,
+        payload: buildAccountAuthPayload(input),
+        timeoutMs,
+      });
+      const output = parseAccountAuthOutput(raw);
+      return {
+        kind: "lighter_account_auth_signer_result",
+        environment: input.environment,
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        deadlineUnixSeconds: input.deadlineUnixSeconds,
+        authToken: output.authToken,
+        publicKey: output.publicKey,
+      };
+    },
     signCreateOrder: async (input) => {
       const raw = await runner({
         binaryPath,
@@ -84,6 +115,19 @@ export function createLighterSignerBinaryAdapter(
         txHash: output.txHash,
       };
     },
+  };
+}
+
+function buildAccountAuthPayload(
+  input: LighterAccountAuthSigningInput,
+): LighterSignerBinaryAuthPayload {
+  return {
+    operation: "createAccountAuth",
+    privateKey: input.secret.privateKey,
+    chainId: input.chainId,
+    accountIndex: String(input.accountIndex),
+    apiKeyIndex: input.apiKeyIndex,
+    deadlineUnixSeconds: String(input.deadlineUnixSeconds),
   };
 }
 
@@ -217,6 +261,23 @@ function parseSignerOutput(raw: unknown): Pick<
     txType,
     txInfo,
     txHash,
+  };
+}
+
+function parseAccountAuthOutput(raw: unknown): Pick<
+  LighterAccountAuthSignerResult,
+  "authToken" | "publicKey"
+> {
+  if (!isRecord(raw) || raw.ok !== true) throw signerProcessFailed(raw);
+  if (typeof raw.authToken !== "string" || raw.authToken.trim().length === 0) {
+    throw signerProcessFailed(raw);
+  }
+  if (typeof raw.publicKey !== "string" || !/^[a-fA-F0-9]{80}$/.test(raw.publicKey)) {
+    throw signerProcessFailed(raw);
+  }
+  return {
+    authToken: raw.authToken,
+    publicKey: raw.publicKey,
   };
 }
 

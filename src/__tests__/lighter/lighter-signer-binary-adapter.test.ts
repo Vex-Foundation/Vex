@@ -8,7 +8,9 @@ import {
   type LighterSignerBinaryRunRequest,
 } from "@tools/lighter/signer-binary-adapter.js";
 import {
+  buildLighterAccountAuthSigningInput,
   buildLighterCreateOrderSigningInput,
+  createLighterAccountAuthWithAdapter,
   signLighterCreateOrderWithAdapter,
 } from "@tools/lighter/signer-adapter.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
@@ -62,6 +64,39 @@ function signingInput() {
 }
 
 describe("Lighter signer binary adapter", () => {
+  it("creates canonical account auth without putting the key in process arguments", async () => {
+    const calls: LighterSignerBinaryRunRequest[] = [];
+    const input = buildLighterAccountAuthSigningInput({
+      order: buildLighterUnsignedCreateOrderRequest(plan()),
+      secret: materialFromSecret(PRIVATE_KEY),
+      deadlineUnixSeconds: 1_893_456_600,
+    });
+    const adapter = createLighterSignerBinaryAdapter({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: async (request) => {
+        calls.push(request);
+        return {
+          ok: true,
+          authToken: `1893456600:42:7:${"a".repeat(128)}`,
+          publicKey: "b".repeat(80),
+        };
+      },
+    });
+
+    await expect(createLighterAccountAuthWithAdapter(input, adapter)).resolves.toMatchObject({
+      authToken: `1893456600:42:7:${"a".repeat(128)}`,
+      publicKey: "b".repeat(80),
+    });
+    expect(calls[0]?.payload).toEqual({
+      operation: "createAccountAuth",
+      privateKey: PRIVATE_KEY,
+      chainId: 466324,
+      accountIndex: "42",
+      apiKeyIndex: 7,
+      deadlineUnixSeconds: "1893456600",
+    });
+  });
+
   it("maps signer input into the helper stdin payload with exact decimal strings", async () => {
     const calls: LighterSignerBinaryRunRequest[] = [];
     const input = signingInput();

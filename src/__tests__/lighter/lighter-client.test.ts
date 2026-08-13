@@ -185,6 +185,31 @@ describe("LighterClient URL selection", () => {
     expect(response.api_keys[0]?.nonce).toBe(1784732515923);
   });
 
+  it("reads the exact live next nonce without Authorization", async () => {
+    mockOk({ code: 200, nonce: 1784732515923 });
+
+    const response = await client.getNextNonce("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 7,
+    });
+
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/nextNonce");
+    expect(url.searchParams.get("account_index")).toBe("42");
+    expect(url.searchParams.get("api_key_index")).toBe("7");
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+    expect(response.nonce).toBe(1784732515923);
+  });
+
+  it("rejects the API-key listing sentinel for next nonce reads", async () => {
+    await expect(client.getNextNonce("core", {
+      accountIndex: 42,
+      apiKeyIndex: 255,
+    })).rejects.toMatchObject({ code: ErrorCodes.LIGHTER_INVALID_REQUEST });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("attaches Authorization from the privileged provider for authenticated reads", async () => {
     mockOk({ code: 200, tokens: [] });
     const authClient = new LighterClient(
@@ -225,6 +250,32 @@ describe("LighterClient URL selection", () => {
     expect(url.pathname).toBe("/api/v1/accountInactiveOrders");
     expect(url.searchParams.get("account_index")).toBe("42");
     expect(url.searchParams.get("limit")).toBe("1");
+  });
+
+  it("uses exact privileged canonical auth without reading the read-only token provider", async () => {
+    mockOk({ code: 200, orders: [] });
+    const authProvider = vi.fn(() => { throw new Error("must not run"); });
+    const authClient = new LighterClient(ENDPOINTS, undefined, authProvider);
+    const token = `1893456600:42:7:${"a".repeat(128)}`;
+
+    await authClient.getAccountActiveOrders(
+      "rhc",
+      { accountIndex: 42, marketId: 0 },
+      { token, accountIndex: 42 },
+    );
+
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get("Authorization")).toBe(token);
+    expect(authProvider).not.toHaveBeenCalled();
+  });
+
+  it("rejects privileged canonical auth for a different account before sending", async () => {
+    await expect(client.getAccountActiveOrders(
+      "rhc",
+      { accountIndex: 42 },
+      { token: `1893456600:43:7:${"a".repeat(128)}`, accountIndex: 43 },
+    )).rejects.toMatchObject({ code: ErrorCodes.LIGHTER_INVALID_REQUEST });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("defaults authenticated account reads to the token account index", async () => {

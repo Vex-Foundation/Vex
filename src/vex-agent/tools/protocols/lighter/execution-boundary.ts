@@ -66,14 +66,54 @@ export const LIGHTER_ORDER_EXECUTION_BOUNDARY = {
   executionStates: LIGHTER_ORDER_EXECUTION_STATES,
   terminalStates: LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   liveSubmitMilestone: "approval-gated order create",
-  liveTradingEnabled: false,
+  defaultLiveTradingEnabled: false,
 } as const;
 
 export const LIGHTER_LIVE_TRADING_DISABLED_MESSAGE =
   "Lighter order create reached the approved execution boundary, but live trading is disabled until final release-gate review and live provider proof are complete. No order was signed or submitted.";
 
-export const LIGHTER_LIVE_TRADING_ENABLED: boolean = false;
+export type LighterLiveTradingReleaseGateSource =
+  | "default_closed"
+  | "privileged_runtime";
+
+export interface LighterLiveTradingReleaseGateStatus {
+  readonly enabled: boolean;
+  readonly source: LighterLiveTradingReleaseGateSource;
+  readonly reason: string;
+}
+
+const DEFAULT_LIVE_TRADING_RELEASE_GATE_STATUS: LighterLiveTradingReleaseGateStatus = {
+  enabled: false,
+  source: "default_closed",
+  reason: "Lighter live trading is closed by default.",
+};
+
+let liveTradingReleaseGateStatusReader = (): LighterLiveTradingReleaseGateStatus =>
+  DEFAULT_LIVE_TRADING_RELEASE_GATE_STATUS;
+
+export function configureLighterLiveTradingReleaseGate(
+  readStatus: () => LighterLiveTradingReleaseGateStatus,
+): () => void {
+  liveTradingReleaseGateStatusReader = readStatus;
+  return () => {
+    if (liveTradingReleaseGateStatusReader === readStatus) {
+      liveTradingReleaseGateStatusReader = () => DEFAULT_LIVE_TRADING_RELEASE_GATE_STATUS;
+    }
+  };
+}
+
+export function getLighterLiveTradingReleaseGateStatus(): LighterLiveTradingReleaseGateStatus {
+  try {
+    return liveTradingReleaseGateStatusReader();
+  } catch {
+    return {
+      enabled: false,
+      source: "default_closed",
+      reason: "Lighter live trading release-gate status could not be read, so it failed closed.",
+    };
+  }
+}
 
 export function isLighterLiveTradingEnabled(): boolean {
-  return LIGHTER_LIVE_TRADING_ENABLED;
+  return getLighterLiveTradingReleaseGateStatus().enabled;
 }

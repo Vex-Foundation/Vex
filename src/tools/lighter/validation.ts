@@ -12,6 +12,7 @@ import type {
   LighterCandlesResponse,
   LighterMarketDetailsResponse,
   LighterMarketsResponse,
+  LighterNextNonceResponse,
   LighterOrderBookOrdersResponse,
   LighterReadOnlyTokensResponse,
   LighterRecentTradesResponse,
@@ -219,6 +220,14 @@ const apiKeysResponseSchema = z
   })
   .passthrough();
 
+const nextNonceResponseSchema = z
+  .object({
+    code: int,
+    message,
+    nonce: providerInteger,
+  })
+  .passthrough();
+
 const sendTxResponseSchema = z
   .object({
     code: int,
@@ -370,6 +379,10 @@ export function validateLighterReadOnlyTokens(raw: unknown): LighterReadOnlyToke
 
 export function validateLighterApiKeys(raw: unknown): LighterApiKeysResponse {
   return parseOrThrow(apiKeysResponseSchema, raw, "api keys");
+}
+
+export function validateLighterNextNonce(raw: unknown): LighterNextNonceResponse {
+  return parseOrThrow(nextNonceResponseSchema, raw, "next nonce");
 }
 
 export function validateLighterSendTx(raw: unknown): LighterSendTxResponse {

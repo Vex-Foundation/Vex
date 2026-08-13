@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	lighterclient "github.com/elliottech/lighter-go/client"
 	"github.com/elliottech/lighter-go/types"
@@ -18,13 +20,14 @@ const maxInputBytes = 32 * 1024
 var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 
 type signerRequest struct {
-	Operation    string             `json:"operation"`
-	PrivateKey   string             `json:"privateKey"`
-	ChainID      uint32             `json:"chainId"`
-	AccountIndex string             `json:"accountIndex"`
-	APIKeyIndex  uint8              `json:"apiKeyIndex"`
-	Nonce        string             `json:"nonce"`
-	Order        createOrderRequest `json:"order"`
+	Operation           string              `json:"operation"`
+	PrivateKey          string              `json:"privateKey"`
+	ChainID             uint32              `json:"chainId"`
+	AccountIndex        string              `json:"accountIndex"`
+	APIKeyIndex         uint8               `json:"apiKeyIndex"`
+	Nonce               string              `json:"nonce"`
+	DeadlineUnixSeconds string              `json:"deadlineUnixSeconds"`
+	Order               *createOrderRequest `json:"order"`
 }
 
 type createOrderRequest struct {
@@ -45,6 +48,8 @@ type signerResponse struct {
 	TxType    uint8  `json:"txType,omitempty"`
 	TxInfo    string `json:"txInfo,omitempty"`
 	TxHash    string `json:"txHash,omitempty"`
+	AuthToken string `json:"authToken,omitempty"`
+	PublicKey string `json:"publicKey,omitempty"`
 	ErrorCode string `json:"errorCode,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
@@ -62,9 +67,17 @@ func main() {
 		return
 	}
 
-	response, err := signCreateOrder(request)
+	var response signerResponse
+	switch request.Operation {
+	case "createAccountAuth":
+		response, err = createAccountAuth(request)
+	case "signCreateOrder":
+		response, err = signCreateOrder(request)
+	default:
+		err = fmt.Errorf("unsupported signer operation")
+	}
 	if err != nil {
-		writeFailure("signing_failed", "Lighter signer runtime could not sign the prepared order.")
+		writeFailure("signing_failed", "Lighter signer runtime could not complete the requested operation.")
 		return
 	}
 	writeJSON(response)
@@ -77,7 +90,7 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" {
+	if request.Operation != "signCreateOrder" && request.Operation != "createAccountAuth" {
 		return request, fmt.Errorf("unsupported signer operation")
 	}
 	if !privateKeyPattern.MatchString(request.PrivateKey) {
@@ -91,6 +104,15 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	}
 	if request.APIKeyIndex < 4 || request.APIKeyIndex > 254 {
 		return request, fmt.Errorf("invalid api key index")
+	}
+	if request.Operation == "createAccountAuth" {
+		if _, err := parsePositiveInt64(request.DeadlineUnixSeconds, "auth deadline"); err != nil {
+			return request, fmt.Errorf("invalid auth deadline")
+		}
+		return request, nil
+	}
+	if request.Order == nil {
+		return request, fmt.Errorf("missing create order")
 	}
 	if _, err := parseNonNegativeInt64(request.Nonce, "nonce"); err != nil {
 		return request, fmt.Errorf("invalid nonce")
@@ -116,7 +138,42 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	return request, nil
 }
 
+func createAccountAuth(request signerRequest) (signerResponse, error) {
+	accountIndex, err := parseNonNegativeInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	deadline, err := parsePositiveInt64(request.DeadlineUnixSeconds, "auth deadline")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	client, err := lighterclient.NewTxClient(
+		nil,
+		strings.TrimPrefix(request.PrivateKey, "0x"),
+		accountIndex,
+		request.APIKeyIndex,
+		request.ChainID,
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	authToken, err := client.GetAuthToken(time.Unix(deadline, 0))
+	if err != nil {
+		return signerResponse{}, err
+	}
+	publicKey := client.GetKeyManager().PubKeyBytes()
+	return signerResponse{
+		OK:        true,
+		AuthToken: authToken,
+		PublicKey: hex.EncodeToString(publicKey[:]),
+	}, nil
+}
+
 func signCreateOrder(request signerRequest) (signerResponse, error) {
+	if request.Order == nil {
+		return signerResponse{}, fmt.Errorf("missing create order")
+	}
+	orderRequest := request.Order
 	accountIndex, err := parseNonNegativeInt64(request.AccountIndex, "account index")
 	if err != nil {
 		return signerResponse{}, err
@@ -125,23 +182,23 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 	if err != nil {
 		return signerResponse{}, err
 	}
-	clientOrderIndex, err := parseNonNegativeInt64(request.Order.ClientOrderIndex, "client order index")
+	clientOrderIndex, err := parseNonNegativeInt64(orderRequest.ClientOrderIndex, "client order index")
 	if err != nil {
 		return signerResponse{}, err
 	}
-	baseAmount, err := parsePositiveInt64(request.Order.BaseAmount, "base amount")
+	baseAmount, err := parsePositiveInt64(orderRequest.BaseAmount, "base amount")
 	if err != nil {
 		return signerResponse{}, err
 	}
-	price, err := parsePositiveUint32(request.Order.Price, "price")
+	price, err := parsePositiveUint32(orderRequest.Price, "price")
 	if err != nil {
 		return signerResponse{}, err
 	}
-	triggerPrice, err := parseNonNegativeUint32(request.Order.TriggerPrice, "trigger price")
+	triggerPrice, err := parseNonNegativeUint32(orderRequest.TriggerPrice, "trigger price")
 	if err != nil {
 		return signerResponse{}, err
 	}
-	orderExpiry, err := parsePositiveInt64(request.Order.OrderExpiry, "order expiry")
+	orderExpiry, err := parsePositiveInt64(orderRequest.OrderExpiry, "order expiry")
 	if err != nil {
 		return signerResponse{}, err
 	}
@@ -158,14 +215,14 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 	}
 
 	order := &types.CreateOrderTxReq{
-		MarketIndex:      request.Order.MarketIndex,
+		MarketIndex:      orderRequest.MarketIndex,
 		ClientOrderIndex: clientOrderIndex,
 		BaseAmount:       baseAmount,
 		Price:            price,
-		IsAsk:            request.Order.IsAsk,
-		Type:             request.Order.OrderType,
-		TimeInForce:      request.Order.TimeInForce,
-		ReduceOnly:       request.Order.ReduceOnly,
+		IsAsk:            orderRequest.IsAsk,
+		Type:             orderRequest.OrderType,
+		TimeInForce:      orderRequest.TimeInForce,
+		ReduceOnly:       orderRequest.ReduceOnly,
 		TriggerPrice:     triggerPrice,
 		OrderExpiry:      orderExpiry,
 	}

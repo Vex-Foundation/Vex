@@ -12,6 +12,8 @@ import {
   LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   LIGHTER_ORDER_WRITE_ACTION_KIND,
   LIGHTER_ORDER_WRITE_TOOL_IDS,
+  configureLighterLiveTradingReleaseGate,
+  getLighterLiveTradingReleaseGateStatus,
   isLighterLiveTradingEnabled,
 } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 
@@ -101,8 +103,44 @@ describe("Lighter execution boundary", () => {
       "provider_evidence_before_terminal_state",
       "explicit_live_trading_release_gate",
     ]);
-    expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.liveTradingEnabled).toBe(false);
+    expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.defaultLiveTradingEnabled).toBe(false);
+    expect(getLighterLiveTradingReleaseGateStatus()).toMatchObject({
+      enabled: false,
+      source: "default_closed",
+    });
     expect(isLighterLiveTradingEnabled()).toBe(false);
+  });
+
+  it("opens live trading only through an installed privileged release-gate reader", () => {
+    const teardown = configureLighterLiveTradingReleaseGate(() => ({
+      enabled: true,
+      source: "privileged_runtime",
+      reason: "test privileged gate",
+    }));
+
+    expect(getLighterLiveTradingReleaseGateStatus()).toEqual({
+      enabled: true,
+      source: "privileged_runtime",
+      reason: "test privileged gate",
+    });
+    expect(isLighterLiveTradingEnabled()).toBe(true);
+
+    teardown();
+    expect(isLighterLiveTradingEnabled()).toBe(false);
+  });
+
+  it("fails closed when the installed release-gate reader throws", () => {
+    const teardown = configureLighterLiveTradingReleaseGate(() => {
+      throw new Error("gate storage unavailable");
+    });
+
+    expect(getLighterLiveTradingReleaseGateStatus()).toMatchObject({
+      enabled: false,
+      source: "default_closed",
+    });
+    expect(isLighterLiveTradingEnabled()).toBe(false);
+
+    teardown();
   });
 
   it("registers create only through the approval-gated execution path", () => {

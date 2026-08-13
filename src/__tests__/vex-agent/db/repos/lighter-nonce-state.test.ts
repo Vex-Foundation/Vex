@@ -95,6 +95,61 @@ describe("lighter nonce state repo", () => {
     expect(mockExecute).not.toHaveBeenCalled();
   });
 
+  it("refreshes execution nonce state only from a live next nonce that advances an old reservation", async () => {
+    mockQueryOne.mockResolvedValueOnce(row({
+      status: "observed",
+      provider_nonce: "1784732515924",
+      reserved_nonce: null,
+      reservation_id: null,
+    }));
+
+    const observed = await repo.recordExecutionObserved({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 1,
+      nonce: 1784732515924,
+      publicKey: "public-key",
+      transactionTime: 1784732516903382,
+      observedAt: new Date("2026-08-13T00:00:00.000Z"),
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("status = 'observed'");
+    expect(sql).toContain("reserved_nonce = NULL");
+    expect(sql).toContain("reservation_id = NULL");
+    expect(sql).toContain("EXCLUDED.provider_nonce::numeric > lighter_nonce_state.reserved_nonce::numeric");
+    expect(params).toEqual([
+      "rhc",
+      42,
+      1,
+      "1784732515924",
+      "public-key",
+      "1784732516903382",
+      "live_lighter_public_api",
+      "2026-08-13T00:00:00.000Z",
+    ]);
+    expect(observed).toMatchObject({
+      status: "observed",
+      providerNonce: "1784732515924",
+      reservedNonce: null,
+      reservationId: null,
+    });
+  });
+
+  it("keeps an unresolved reservation locked when the live nonce has not advanced", async () => {
+    const observed = await repo.recordExecutionObserved({
+      environment: "core",
+      accountIndex: 42,
+      apiKeyIndex: 1,
+      nonce: 7,
+      publicKey: "public-key",
+    });
+
+    expect(observed).toBeNull();
+    const [sql] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("lighter_nonce_state.status IN ('reserved','submitted','ambiguous')");
+  });
+
   it("reserves exactly one observed nonce with a compare-and-set update", async () => {
     mockQueryOne.mockResolvedValueOnce(row());
 

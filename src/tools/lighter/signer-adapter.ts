@@ -29,9 +29,33 @@ export interface LighterCreateOrderSigningInput {
 
 export interface LighterSignerAdapter {
   readonly source: "official_lighter_signer";
+  readonly createAccountAuth: (
+    input: LighterAccountAuthSigningInput,
+  ) => Promise<LighterAccountAuthSignerResult>;
   readonly signCreateOrder: (
     input: LighterCreateOrderSigningInput,
   ) => Promise<LighterCreateOrderSignerResult>;
+}
+
+export interface LighterAccountAuthSigningInput {
+  readonly kind: "lighter_account_auth_signing_input";
+  readonly environment: LighterEnvironment;
+  readonly restBaseUrl: string;
+  readonly chainId: number;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly deadlineUnixSeconds: number;
+  readonly secret: LighterTradingSecretMaterial;
+}
+
+export interface LighterAccountAuthSignerResult {
+  readonly kind: "lighter_account_auth_signer_result";
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly deadlineUnixSeconds: number;
+  readonly authToken: string;
+  readonly publicKey: string;
 }
 
 export interface LighterCreateOrderSignerResult {
@@ -45,6 +69,50 @@ export interface LighterCreateOrderSignerResult {
   readonly txType: number;
   readonly txInfo: string;
   readonly txHash: string;
+}
+
+export function buildLighterAccountAuthSigningInput(input: {
+  readonly order: LighterUnsignedCreateOrderRequest;
+  readonly secret: LighterTradingSecretMaterial;
+  readonly deadlineUnixSeconds: number;
+}): LighterAccountAuthSigningInput {
+  assertUnsignedCreateOrderFitsOfficialSigner(input.order);
+  if (!Number.isSafeInteger(input.deadlineUnixSeconds) || input.deadlineUnixSeconds <= 0) {
+    throw invalidRequest("deadlineUnixSeconds must be a positive safe integer before Lighter auth signing.");
+  }
+  return {
+    kind: "lighter_account_auth_signing_input",
+    environment: input.order.environment,
+    restBaseUrl: LIGHTER_ENDPOINTS[input.order.environment].restBaseUrl,
+    chainId: LIGHTER_SIGNER_CHAIN_IDS[input.order.environment],
+    accountIndex: input.order.accountIndex,
+    apiKeyIndex: input.order.apiKeyIndex,
+    deadlineUnixSeconds: input.deadlineUnixSeconds,
+    secret: input.secret,
+  };
+}
+
+export async function createLighterAccountAuthWithAdapter(
+  input: LighterAccountAuthSigningInput,
+  adapter: LighterSignerAdapter,
+): Promise<LighterAccountAuthSignerResult> {
+  if (adapter.source !== "official_lighter_signer") {
+    throw invalidSigner("Lighter account authentication requires the official Lighter signer adapter.");
+  }
+  const result = await adapter.createAccountAuth(input);
+  if (
+    result.environment !== input.environment
+    || result.accountIndex !== input.accountIndex
+    || result.apiKeyIndex !== input.apiKeyIndex
+    || result.deadlineUnixSeconds !== input.deadlineUnixSeconds
+  ) {
+    throw invalidSigner("Lighter account-auth result does not match the requested credential scope.");
+  }
+  if (!/^[a-fA-F0-9]{80}$/.test(result.publicKey)) {
+    throw invalidSigner("Lighter account-auth result returned an invalid public key.");
+  }
+  assertCanonicalAuthToken(result.authToken, input);
+  return result;
 }
 
 export function buildLighterCreateOrderSigningInput(input: {
@@ -158,4 +226,20 @@ function invalidSigner(message: string): VexError {
     message,
     "Retry after the privileged Lighter signer adapter is configured.",
   );
+}
+
+function assertCanonicalAuthToken(
+  token: string,
+  input: LighterAccountAuthSigningInput,
+): void {
+  const parts = token.trim().split(":");
+  if (
+    parts.length !== 4
+    || parts[0] !== String(input.deadlineUnixSeconds)
+    || parts[1] !== String(input.accountIndex)
+    || parts[2] !== String(input.apiKeyIndex)
+    || !/^[a-fA-F0-9]+$/.test(parts[3] ?? "")
+  ) {
+    throw invalidSigner("Lighter account-auth result returned an invalid canonical auth token.");
+  }
 }

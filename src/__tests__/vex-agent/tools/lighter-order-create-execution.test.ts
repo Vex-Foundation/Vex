@@ -12,6 +12,8 @@ import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-or
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const TX_INFO = "{\"signed\":\"payload\"}";
 const TX_HASH = "0xabc123";
+const PUBLIC_KEY = "b".repeat(80);
+const AUTH_TOKEN = `1893456600:42:7:${"a".repeat(128)}`;
 
 const PLAN: LighterOrderReadyForSignerPlan = {
   intentId: "lighter-exec-1",
@@ -72,7 +74,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
     },
-    reserveNonce: vi.fn(async () => ({
+    reserveNonce: vi.fn<ExecuteApprovedLighterCreateOrderDeps["reserveNonce"]>(async () => ({
       kind: "lighter_order_nonce_reservation",
       intentId: PLAN.intentId,
       sessionId: PLAN.sessionId,
@@ -84,7 +86,16 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     })),
     signer: {
       source: "official_lighter_signer",
-      signCreateOrder: vi.fn(async (input) => ({
+      createAccountAuth: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["createAccountAuth"]>(async (input) => ({
+        kind: "lighter_account_auth_signer_result",
+        environment: input.environment,
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        deadlineUnixSeconds: input.deadlineUnixSeconds,
+        authToken: AUTH_TOKEN,
+        publicKey: PUBLIC_KEY,
+      })),
+      signCreateOrder: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["signCreateOrder"]>(async (input) => ({
         kind: "lighter_create_order_signer_result",
         environment: input.environment,
         accountIndex: input.accountIndex,
@@ -98,6 +109,17 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       })),
     },
     client: {
+      getApiKeys: vi.fn(async () => ({
+        code: 200,
+        api_keys: [{
+          account_index: PLAN.accountIndex,
+          api_key_index: PLAN.apiKeyIndex,
+          nonce: 0,
+          public_key: PUBLIC_KEY,
+          transaction_time: 1_784_732_516_903_382,
+        }],
+      })),
+      getNextNonce: vi.fn(async () => ({ code: 200, nonce: 0 })),
       sendTx: vi.fn(async () => ({
         code: 200,
         message: "ok",
@@ -118,6 +140,11 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
         trades: [],
       })),
     },
+    nonceState: {
+      recordExecutionObserved: vi.fn(async () => ({ status: "observed" }) as never),
+    },
+    now: vi.fn(() => 1_893_456_000_000),
+    wait: vi.fn(async () => undefined),
     intents: {
       markSigned: vi.fn(async () => ({ ok: true }) as never),
       markSubmitted: vi.fn(async () => ({ ok: true }) as never),
@@ -164,12 +191,34 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("blocks before reading key material when provider outcome repair is unavailable", async () => {
+  it("blocks before key material when live key identity or next nonce is unavailable", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getNextNonce: vi.fn(async () => {
+          throw new Error("next nonce unavailable");
+        }),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("next nonce is unavailable");
+
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks before nonce reservation when canonical account reads are unavailable", async () => {
     const d = deps({
       client: {
         ...deps().client,
         getAccountActiveOrders: vi.fn(async () => {
-          throw new Error("read-only auth unavailable");
+          throw new Error("canonical auth unavailable");
         }),
       },
     });
@@ -180,9 +229,60 @@ describe("Lighter approved create execution pipeline", () => {
       deps: d,
     })).rejects.toThrow("provider outcome repair is unavailable");
 
-    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalled();
+    expect(d.signer.createAccountAuth).toHaveBeenCalled();
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks before nonce reservation when the client order id already has inactive evidence", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountInactiveOrders: vi.fn(async () => ({
+          code: 200,
+          orders: [accountOrder({ status: "filled" })],
+        })),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("same Vex client order id");
+
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks a vault key that does not match the live registered public key", async () => {
+    const d = deps({
+      signer: {
+        ...deps().signer,
+        createAccountAuth: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["createAccountAuth"]>(async (input) => ({
+          kind: "lighter_account_auth_signer_result",
+          environment: input.environment,
+          accountIndex: input.accountIndex,
+          apiKeyIndex: input.apiKeyIndex,
+          deadlineUnixSeconds: input.deadlineUnixSeconds,
+          authToken: AUTH_TOKEN,
+          publicKey: "c".repeat(80),
+        })),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("does not match the public key");
+
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
@@ -240,18 +340,27 @@ describe("Lighter approved create execution pipeline", () => {
       signerTxHash: TX_HASH,
       submittedTxHash: TX_HASH,
     });
-    expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(2);
-    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledWith("rhc", {
-      accountIndex: PLAN.accountIndex,
-      marketId: PLAN.marketIndex,
-      marketType: "all",
-      limit: 100,
-    });
-    expect(d.client.getAccountTrades).toHaveBeenCalledWith("rhc", {
-      accountIndex: PLAN.accountIndex,
-      limit: 100,
-      sortBy: "timestamp",
-    });
+    expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(4);
+    expect(d.wait).toHaveBeenCalledTimes(2);
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledWith(
+      "rhc",
+      {
+        accountIndex: PLAN.accountIndex,
+        marketId: PLAN.marketIndex,
+        marketType: "all",
+        limit: 100,
+      },
+      { token: AUTH_TOKEN, accountIndex: PLAN.accountIndex },
+    );
+    expect(d.client.getAccountTrades).toHaveBeenCalledWith(
+      "rhc",
+      {
+        accountIndex: PLAN.accountIndex,
+        limit: 100,
+        sortBy: "timestamp",
+      },
+      { token: AUTH_TOKEN, accountIndex: PLAN.accountIndex },
+    );
     expect(d.intents.markProviderOutcome).toHaveBeenCalledWith({
       intentId: PLAN.intentId,
       sessionId: PLAN.sessionId,
@@ -276,6 +385,7 @@ describe("Lighter approved create execution pipeline", () => {
     });
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
     expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);
+    expect(JSON.stringify(result)).not.toContain(AUTH_TOKEN);
   });
 
   it("records active provider order evidence when the submitted client order is visible", async () => {
@@ -309,8 +419,8 @@ describe("Lighter approved create execution pipeline", () => {
         orderId: "123",
       }),
     });
-    expect(d.client.getAccountInactiveOrders).not.toHaveBeenCalled();
-    expect(d.client.getAccountTrades).not.toHaveBeenCalled();
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(1);
+    expect(d.client.getAccountTrades).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: "provider_confirmed",
       executionState: "open",
@@ -318,6 +428,43 @@ describe("Lighter approved create execution pipeline", () => {
       providerOrderId: "123",
     });
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
+  });
+
+  it("marks provider evidence persistence failures ambiguous after API acceptance", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountActiveOrders: vi
+          .fn()
+          .mockResolvedValueOnce({ code: 200, orders: [] })
+          .mockResolvedValueOnce({ code: 200, orders: [accountOrder()] }),
+      },
+      intents: {
+        ...deps().intents,
+        markProviderOutcome: vi.fn(async () => {
+          throw new Error("database unavailable");
+        }),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    expect(result).toMatchObject({
+      status: "ambiguous",
+      reason: "provider_outcome_persist_failed",
+      signerTxHash: TX_HASH,
+    });
+    expect(d.intents.markAmbiguous).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      reason: "provider_outcome_persist_failed",
+    });
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
   });
 
   it("marks send-time uncertainty ambiguous without exposing signed payloads", async () => {
@@ -354,7 +501,7 @@ describe("Lighter approved create execution pipeline", () => {
   it("marks a signer failure after nonce reservation ambiguous and never submits", async () => {
     const d = deps({
       signer: {
-        source: "official_lighter_signer",
+        ...deps().signer,
         signCreateOrder: vi.fn(async () => {
           throw new Error("signer unavailable");
         }),

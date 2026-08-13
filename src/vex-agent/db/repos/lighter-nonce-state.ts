@@ -33,6 +33,8 @@ export interface RecordObservedLighterNonceInput {
   readonly observedAt?: Date;
 }
 
+export type RecordExecutionObservedLighterNonceInput = RecordObservedLighterNonceInput;
+
 export interface ReserveObservedLighterNonceInput {
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
@@ -77,6 +79,53 @@ export async function recordObserved(input: RecordObservedLighterNonceInput): Pr
       input.observedAt?.toISOString() ?? null,
     ],
   );
+}
+
+export async function recordExecutionObserved(
+  input: RecordExecutionObservedLighterNonceInput,
+): Promise<LighterNonceStateRow | null> {
+  const providerNonce = exactSafeIntegerString(input.nonce, "nonce");
+  const transactionTime = input.transactionTime === undefined || input.transactionTime === null
+    ? null
+    : exactSafeIntegerString(input.transactionTime, "transactionTime");
+  if (input.publicKey.trim().length === 0) {
+    throw new Error("lighter_nonce_state: publicKey is required");
+  }
+
+  const row = await queryOne<Record<string, unknown>>(
+    `INSERT INTO lighter_nonce_state (
+      environment, account_index, api_key_index, provider_nonce, public_key,
+      provider_transaction_time, source, observed_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()), NOW())
+    ON CONFLICT (environment, account_index, api_key_index) DO UPDATE SET
+      provider_nonce = EXCLUDED.provider_nonce,
+      public_key = EXCLUDED.public_key,
+      provider_transaction_time = EXCLUDED.provider_transaction_time,
+      status = 'observed',
+      reserved_nonce = NULL,
+      reservation_id = NULL,
+      source = EXCLUDED.source,
+      observed_at = EXCLUDED.observed_at,
+      updated_at = NOW()
+    WHERE lighter_nonce_state.status = 'observed'
+       OR (
+         lighter_nonce_state.status IN ('reserved','submitted','ambiguous')
+         AND lighter_nonce_state.reserved_nonce IS NOT NULL
+         AND EXCLUDED.provider_nonce::numeric > lighter_nonce_state.reserved_nonce::numeric
+       )
+    RETURNING ${SELECT_COLUMNS}`,
+    [
+      input.environment,
+      input.accountIndex,
+      input.apiKeyIndex,
+      providerNonce,
+      input.publicKey,
+      transactionTime,
+      LIGHTER_NONCE_SOURCE,
+      input.observedAt?.toISOString() ?? null,
+    ],
+  );
+  return row ? mapRow(row) : null;
 }
 
 export async function reserveObserved(

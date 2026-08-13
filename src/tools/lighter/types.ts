@@ -72,6 +72,13 @@ export interface LighterApiKeysResponse {
   [key: string]: unknown;
 }
 
+export interface LighterNextNonceResponse {
+  code: number;
+  message?: string;
+  nonce: number;
+  [key: string]: unknown;
+}
+
 export interface LighterSendTxParams {
   txType: number;
   txInfo: string;
@@ -302,6 +309,11 @@ export interface LighterReadOnlyTokensParams {
 export interface LighterApiKeysParams {
   accountIndex: number;
   apiKeyIndex?: number;
+}
+
+export interface LighterNextNonceParams {
+  accountIndex: number;
+  apiKeyIndex: number;
 }
 
 export interface LighterAccountTradesParams {

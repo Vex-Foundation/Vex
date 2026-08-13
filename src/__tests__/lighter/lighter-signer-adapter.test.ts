@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildLighterAccountAuthSigningInput,
   buildLighterCreateOrderSigningInput,
+  createLighterAccountAuthWithAdapter,
   signLighterCreateOrderWithAdapter,
   type LighterSignerAdapter,
 } from "@tools/lighter/signer-adapter.js";
@@ -56,6 +58,59 @@ function signingInput(overrides: Partial<LighterOrderReadyForSignerPlan> = {}) {
 }
 
 describe("Lighter official signer adapter boundary", () => {
+  it("creates bounded canonical account auth for the exact credential scope", async () => {
+    const order = buildLighterUnsignedCreateOrderRequest(plan());
+    const input = buildLighterAccountAuthSigningInput({
+      order,
+      secret: materialFromSecret(PRIVATE_KEY),
+      deadlineUnixSeconds: 1_893_456_600,
+    });
+    const adapter: LighterSignerAdapter = {
+      source: "official_lighter_signer",
+      createAccountAuth: vi.fn<LighterSignerAdapter["createAccountAuth"]>(async () => ({
+        kind: "lighter_account_auth_signer_result",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        deadlineUnixSeconds: 1_893_456_600,
+        authToken: `1893456600:42:7:${"a".repeat(128)}`,
+        publicKey: "b".repeat(80),
+      })),
+      signCreateOrder: vi.fn(async () => { throw new Error("not used"); }),
+    };
+
+    await expect(createLighterAccountAuthWithAdapter(input, adapter)).resolves.toMatchObject({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      publicKey: "b".repeat(80),
+    });
+  });
+
+  it("rejects canonical auth returned for another credential scope", async () => {
+    const input = buildLighterAccountAuthSigningInput({
+      order: buildLighterUnsignedCreateOrderRequest(plan()),
+      secret: materialFromSecret(PRIVATE_KEY),
+      deadlineUnixSeconds: 1_893_456_600,
+    });
+    const adapter: LighterSignerAdapter = {
+      source: "official_lighter_signer",
+      createAccountAuth: vi.fn<LighterSignerAdapter["createAccountAuth"]>(async () => ({
+        kind: "lighter_account_auth_signer_result",
+        environment: "rhc",
+        accountIndex: 43,
+        apiKeyIndex: 7,
+        deadlineUnixSeconds: 1_893_456_600,
+        authToken: `1893456600:43:7:${"a".repeat(128)}`,
+        publicKey: "b".repeat(80),
+      })),
+      signCreateOrder: vi.fn(async () => { throw new Error("not used"); }),
+    };
+
+    await expect(createLighterAccountAuthWithAdapter(input, adapter))
+      .rejects.toThrow("does not match");
+  });
+
   it("builds an official signer input with chain id, base URL, nonce, and unsigned order", () => {
     const input = signingInput();
 
@@ -109,7 +164,8 @@ describe("Lighter official signer adapter boundary", () => {
     const input = signingInput();
     const adapter: LighterSignerAdapter = {
       source: "official_lighter_signer",
-      signCreateOrder: vi.fn(async () => ({
+      createAccountAuth: vi.fn(async () => { throw new Error("not used"); }),
+      signCreateOrder: vi.fn<LighterSignerAdapter["signCreateOrder"]>(async () => ({
         kind: "lighter_create_order_signer_result",
         environment: "rhc",
         accountIndex: 42,
@@ -140,6 +196,7 @@ describe("Lighter official signer adapter boundary", () => {
     const input = signingInput();
     const adapter: LighterSignerAdapter = {
       source: "official_lighter_signer",
+      createAccountAuth: vi.fn(async () => { throw new Error("not used"); }),
       signCreateOrder: async () => ({
         kind: "lighter_create_order_signer_result",
         environment: "rhc",

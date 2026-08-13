@@ -65,6 +65,7 @@ const READINESS = evaluateLighterTradingCredentialReadiness({
 });
 
 if (!READINESS.ready) throw new Error("test readiness should be ready");
+const CREDENTIAL_REFERENCE = READINESS.reference;
 
 function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -88,7 +89,7 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
     order_expiry_ms: "1786234200000",
     client_order_index_policy: "vex_assigned_uint48",
     provider_version: "lighter-preview-v1",
-    credential_ref_json: READINESS.reference,
+    credential_ref_json: CREDENTIAL_REFERENCE,
     approval_status: "approval_pending",
     execution_state: "approval_pending",
     decision_reason: null,

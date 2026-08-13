@@ -42,6 +42,8 @@ import type {
   LighterMarketDetailsResponse,
   LighterMarketQuery,
   LighterMarketsResponse,
+  LighterNextNonceParams,
+  LighterNextNonceResponse,
   LighterOrderBookOrdersParams,
   LighterOrderBookOrdersResponse,
   LighterReadOnlyTokensParams,
@@ -61,6 +63,7 @@ import {
   validateLighterCandles,
   validateLighterMarketDetails,
   validateLighterMarkets,
+  validateLighterNextNonce,
   validateLighterOrderBookOrders,
   validateLighterReadOnlyTokens,
   validateLighterRecentTrades,
@@ -89,6 +92,11 @@ export type LighterAuthTokenProvider = (
 interface RequestOptions {
   readonly auth?: LighterAuthMode;
   readonly authToken?: string;
+}
+
+export interface LighterPrivilegedAccountAuth {
+  readonly token: string;
+  readonly accountIndex: number;
 }
 
 export class LighterClient {
@@ -219,6 +227,31 @@ export class LighterClient {
     );
   }
 
+  private accountAuth(
+    environment: LighterEnvironment,
+    requestedAccountIndex: number | undefined,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
+  ): Pick<LighterReadOnlyAccountAuthorization, "token" | "accountIndex"> {
+    if (privilegedAuth === undefined) {
+      return this.readOnlyAuthForAccount(environment, requestedAccountIndex);
+    }
+    const accountIndex = readAccountIndex(privilegedAuth.accountIndex);
+    if (requestedAccountIndex === undefined || requestedAccountIndex !== accountIndex) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        "Privileged Lighter account auth must match an explicit account index.",
+      );
+    }
+    const token = privilegedAuth.token.trim();
+    if (token.length === 0) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        "Privileged Lighter account auth token is empty.",
+      );
+    }
+    return { token, accountIndex };
+  }
+
   getStatus(environment: LighterEnvironment): Promise<LighterStatusResponse> {
     return this.request(environment, LIGHTER_ENDPOINT_PATHS.status, validateLighterStatus);
   }
@@ -285,6 +318,28 @@ export class LighterClient {
     );
   }
 
+  async getNextNonce(
+    environment: LighterEnvironment,
+    params: LighterNextNonceParams,
+  ): Promise<LighterNextNonceResponse> {
+    const accountIndex = readAccountIndex(params.accountIndex);
+    const apiKeyIndex = readBoundedInt(
+      params.apiKeyIndex,
+      "apiKeyIndex",
+      LIGHTER_API_KEY_INDEX_MIN,
+      LIGHTER_API_KEY_INDEX_ALL - 1,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.nextNonce,
+      validateLighterNextNonce,
+      {
+        account_index: String(accountIndex),
+        api_key_index: String(apiKeyIndex),
+      },
+    );
+  }
+
   async sendTx(
     environment: LighterEnvironment,
     params: LighterSendTxParams,
@@ -316,8 +371,9 @@ export class LighterClient {
   async getAccountActiveOrders(
     environment: LighterEnvironment,
     params: LighterAccountActiveOrdersParams,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
   ): Promise<LighterAccountOrdersResponse> {
-    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
     return this.request(
       environment,
       LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
@@ -330,8 +386,9 @@ export class LighterClient {
   async getAccountInactiveOrders(
     environment: LighterEnvironment,
     params: LighterAccountInactiveOrdersParams,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
   ): Promise<LighterAccountOrdersResponse> {
-    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
     const limit = readBoundedInt(
       params.limit ?? 25,
       "limit",
@@ -423,8 +480,9 @@ export class LighterClient {
   async getAccountTrades(
     environment: LighterEnvironment,
     params: LighterAccountTradesParams,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
   ): Promise<LighterAccountTradesResponse> {
-    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
     const accountIndex = readAccountIndex(auth.accountIndex);
     const limit = readBoundedInt(
       params.limit ?? 25,
