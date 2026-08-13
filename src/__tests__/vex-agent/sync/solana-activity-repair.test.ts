@@ -836,9 +836,33 @@ describe("repairPendingSolanaActivity - executed amounts from SPL balance deltas
     expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
   });
 
+  it("bounds a Solana bridge_deposit INPUT-ONLY, ignoring any output mint the row declares", async () => {
+    // A deposit's counter-leg lands on the destination chain, in another
+    // transaction, on the fill row - so its output is never decoded here even
+    // when the row names one.
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: "bridge_deposit", kind: "bridge", tokenInAddress: JUP_USD, tokenOutAddress: USDC }),
+    ]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, {
+      executedAmountInRaw: "4584000",
+      executedAmountInHuman: "4.584",
+    });
+  });
+
   it("writes no amounts on a kind this lane has no declared-mint rule for", async () => {
     mockListSolanaStagedPending.mockResolvedValueOnce([
-      declaredRow({ eventRole: "bridge_deposit", kind: "bridge" }),
+      declaredRow({ eventRole: "yield_pt", kind: "yield" }),
     ]);
     const getFinalizedTransaction = vi.fn();
 

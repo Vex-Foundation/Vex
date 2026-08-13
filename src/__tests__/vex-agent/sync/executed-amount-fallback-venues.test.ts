@@ -38,6 +38,7 @@ const mockFill = vi.fn();
 const mockDeclined = vi.fn();
 const mockNoteVersion = vi.fn();
 const mockListLegs = vi.fn();
+const mockTouch = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -48,6 +49,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => {
     noteSettlementDeclined: (...a: unknown[]) => mockDeclined(...a),
     noteSettlementDecodeVersion: (...a: unknown[]) => mockNoteVersion(...a),
     listActivityLegsByExecutionId: (...a: unknown[]) => mockListLegs(...a),
+    touchAmountCorrectionChecked: (...a: unknown[]) => mockTouch(...a),
   };
 });
 
@@ -56,7 +58,9 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-const { repairMissingExecutedAmounts } = await import("@vex-agent/sync/executed-amount-fallback.js");
+const { repairMissingExecutedAmounts, SETTLEMENT_DECODER_SET_VERSION } = await import(
+  "@vex-agent/sync/executed-amount-fallback.js"
+);
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const TOKEN = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
@@ -141,11 +145,14 @@ function allowanceLeg(over: Partial<AgentActivityEvent> = {}): AgentActivityEven
 function deps(args: {
   logs: unknown;
   transactions?: Record<string, { from: string; to: string | null; input: string; valueRaw: string }>;
+  /** The receipt status the native arm must see before it believes any value. */
+  receiptStatus?: "success" | "reverted" | "unreadable" | "absent" | null;
 }) {
   return {
     fetchReceiptLogs: vi.fn().mockResolvedValue(args.logs),
     fetchTransaction: vi.fn(async ({ txHash }: { txHash: string }) =>
       args.transactions?.[txHash] ?? null),
+    fetchReceiptStatus: vi.fn().mockResolvedValue(args.receiptStatus ?? "success"),
   };
 }
 
@@ -317,16 +324,202 @@ describe("the crash-window bridge deposit", () => {
     expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
   });
 
-  it("declines a NATIVE deposit leg - no ERC-20 transfer can prove it", async () => {
-    mockListCandidates.mockResolvedValue([depositRow({ tokenInAddress: NATIVE })]);
+});
+
+describe("the NATIVE bridge deposit arm", () => {
+  const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+  function nativeRow(tokenInAddress: string) {
+    return depositRow({ tokenInAddress, amountInRaw: "10000" });
+  }
+
+  it("fills from the value of the transaction Vex signed, on the sentinel shape", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    const result = await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+      receiptStatus: "success",
+    }));
+
+    expect(result).toMatchObject({ filled: 1 });
+    expect(mockFill).toHaveBeenCalledWith(expect.objectContaining({
+      amounts: { executedAmountInRaw: "9000" },
+    }));
+  });
+
+  it("fills the ZERO-ADDRESS native shape too - relay writes its native legs that way", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(ZERO_ADDRESS)]);
 
     await repairMissingExecutedAmounts(deps({
       logs: [],
-      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "5000" } },
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+    }));
+
+    expect(mockFill).toHaveBeenCalledWith(expect.objectContaining({
+      amounts: { executedAmountInRaw: "9000" },
+    }));
+  });
+
+  it("matches the sentinel case-insensitively", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE.toLowerCase())]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+    }));
+
+    expect(mockFill).toHaveBeenCalled();
+  });
+
+  it("NEVER fills from a REVERTED transaction, whose value moved nothing", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    const result = await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+      receiptStatus: "reverted",
+    }));
+
+    expect(result).toMatchObject({ declined: 1, filled: 0 });
+    expect(mockFill).not.toHaveBeenCalled();
+    expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
+  });
+
+  it("DEFERS on a malformed receipt status rather than reading it as either answer", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    const result = await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+      receiptStatus: "unreadable",
+    }));
+
+    expect(result).toMatchObject({ deferred: 1, declined: 0, filled: 0 });
+    expect(mockNoteVersion).not.toHaveBeenCalled();
+    expect(mockTouch).toHaveBeenCalledWith(11);
+  });
+
+  it("DEFERS when the receipt is absent altogether", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    const result = await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+      receiptStatus: "absent",
+    }));
+
+    expect(result).toMatchObject({ deferred: 1 });
+    expect(mockDeclined).not.toHaveBeenCalled();
+  });
+
+  it("checks the status BEFORE the value: a revert never even reads the transaction", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+    const d = deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "9000" } },
+      receiptStatus: "reverted",
+    });
+
+    await repairMissingExecutedAmounts(d);
+
+    expect(d.fetchTransaction).not.toHaveBeenCalled();
+  });
+
+  it("declines a value above the quoted input - the bound is absolute", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "10001" } },
     }));
 
     expect(mockFill).not.toHaveBeenCalled();
     expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
+  });
+
+  it("declines a zero-value transaction, which deposited nothing", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, valueRaw: "0" } },
+    }));
+
+    expect(mockFill).not.toHaveBeenCalled();
+    expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
+  });
+
+  it("declines a transaction sent by another wallet", async () => {
+    mockListCandidates.mockResolvedValue([nativeRow(NATIVE)]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: { [DEPOSIT_HASH]: { ...depositTx, from: SPENDER, valueRaw: "9000" } },
+    }));
+
+    expect(mockFill).not.toHaveBeenCalled();
+    expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
+  });
+});
+
+describe("the candidate window has to ROTATE", () => {
+  it("touches a deferred row, so the next pass can reach later candidates", async () => {
+    mockListCandidates.mockResolvedValue([depositRow()]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      transactions: {},
+    }));
+
+    expect(mockTouch).toHaveBeenCalledWith(11);
+  });
+
+  it("touches a row the role contract calls COMPLETE, which the prefilter keeps selecting", async () => {
+    // A bridge deposit is input-only: with its input filled it is complete, yet
+    // the loose SQL prefilter still selects it because its OUTPUT leg is null.
+    mockListCandidates.mockResolvedValue([depositRow({ executedAmountInRaw: "999000" })]);
+
+    await repairMissingExecutedAmounts(deps({ logs: [], transactions: {} }));
+
+    expect(mockTouch).toHaveBeenCalledWith(11);
+  });
+
+  it("does NOT touch a row it filled or declined - those leave their own marker", async () => {
+    mockListCandidates.mockResolvedValue([depositRow()]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      transactions: { [DEPOSIT_HASH]: depositTx },
+    }));
+
+    expect(mockFill).toHaveBeenCalled();
+    expect(mockTouch).not.toHaveBeenCalled();
+  });
+
+  it("a permanently deferring row does not starve the candidates behind it", async () => {
+    // Two ticks with a batch of one. Without rotation the same row is served
+    // twice and the second candidate is never reached; the writer's timestamp is
+    // what moves it to the back of the ordering.
+    const stuck = depositRow({ id: 11 });
+    const next = depositRow({ id: 12 });
+    const served: number[][] = [];
+    const queue = [stuck, next];
+    mockListCandidates.mockImplementation(async (limit: number) => {
+      const batch = queue.slice(0, limit);
+      served.push(batch.map((r) => r.id));
+      return batch;
+    });
+
+    const d = deps({ logs: [transferLog(WALLET, DEPOSITORY, 999_000n)], transactions: {} });
+    await repairMissingExecutedAmounts(d, 1);
+    // The rotation the lane performed is what the ordering consumes: emulate the
+    // window moving on, exactly as `ORDER BY last_checked_at` would.
+    expect(mockTouch).toHaveBeenCalledWith(11);
+    queue.push(...queue.splice(0, 1));
+    await repairMissingExecutedAmounts(d, 1);
+
+    expect(served).toEqual([[11], [12]]);
   });
 });
 
@@ -548,5 +741,18 @@ describe("the trench branch", () => {
 
     expect(mockFill).not.toHaveBeenCalled();
     expect(mockDeclined).toHaveBeenCalledWith(21, "amounts_undecodable");
+  });
+});
+
+describe("the decoder-set version is what lets a declined row back in", () => {
+  it("asks for candidates under the CURRENT version, so older declines re-enter once", async () => {
+    mockListCandidates.mockResolvedValue([]);
+
+    await repairMissingExecutedAmounts(deps({ logs: [], transactions: {} }));
+
+    expect(mockListCandidates).toHaveBeenCalledWith(expect.any(Number), SETTLEMENT_DECODER_SET_VERSION);
+    // The rows declined as "no decoder is wired for this protocol" carry the
+    // previous identity, so bumping it is the only thing that re-admits them.
+    expect(SETTLEMENT_DECODER_SET_VERSION).not.toBe("2026-08-12.bridge-deposit-and-trench");
   });
 });

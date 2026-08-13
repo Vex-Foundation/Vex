@@ -184,14 +184,16 @@ export async function observeEvmTransaction(
 }
 
 /**
- * The receipt's status, as raw JSON-RPC delivers it.
+ * The receipt's status, as raw JSON-RPC delivers it. The ONE reading of that
+ * field in this repository: the amount-correction lane imports it rather than
+ * interpreting `status` a second time.
  *
  * `absent` = no receipt (the node answered `null`). `unreadable` = a receipt
  * exists whose status is neither literal — which the caller must NEVER report as
  * a revert, because a `definitively_failed` write is irreversible and we cannot
  * prove it.
  */
-function readReceiptStatus(receipt: unknown): "success" | "reverted" | "unreadable" | "absent" {
+export function readReceiptStatus(receipt: unknown): "success" | "reverted" | "unreadable" | "absent" {
   if (receipt === null || receipt === undefined) return "absent";
   if (typeof receipt !== "object") return "unreadable";
   const status = (receipt as { status?: unknown }).status;
