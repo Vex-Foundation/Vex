@@ -98,6 +98,7 @@ function deps(logs: unknown = KYBER.logs) {
   return {
     fetchReceiptLogs: vi.fn().mockResolvedValue(logs),
     fetchTransaction: vi.fn().mockResolvedValue(null),
+    fetchReceiptStatus: vi.fn().mockResolvedValue("success"),
   };
 }
 

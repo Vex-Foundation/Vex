@@ -37,7 +37,7 @@ import { mapRow } from "./mappers.js";
 import type { AgentActivityEvent } from "./types.js";
 
 /**
- * Confirmed EVM rows that may still be missing executed amounts, oldest
+ * Confirmed rows that may still be missing executed amounts, oldest
  * observation first so the window rotates instead of re-serving the same rows.
  *
  * `decoderVersion` is the marker gate: a row that already COMPLETED a decline
@@ -51,7 +51,11 @@ export async function listAmountCorrectionCandidates(
   const rows = await query<Record<string, unknown>>(
     `SELECT * FROM agent_activity
       WHERE status = 'confirmed'
-        AND chain_family = 'eip155'
+        -- BOTH families. An EVM row is repaired from its receipt; a Solana row
+        -- is repaired from its finalized transaction body by the Solana lane,
+        -- which never issues an EVM RPC method. Excluding Solana here is what
+        -- left confirmed Jupiter and Khalani-on-Solana rows amountless forever.
+        AND chain_family IN ('eip155', 'solana')
         AND tx_hash IS NOT NULL
         -- A quarantined row is EXCLUDED: two decoders already disagreed about
         -- its money, and re-running one of them cannot settle that dispute.
@@ -121,5 +125,33 @@ export async function noteSettlementDecodeVersion(
         SET settlement_decode_version = $2, updated_at = NOW()
       WHERE id = $1 AND status = 'confirmed'`,
     [id, decoderVersion],
+  );
+}
+
+/**
+ * Record that the amount-correction lane LOOKED at this confirmed row and could
+ * not conclude - a deferral, or a row the role contract says is already
+ * complete.
+ *
+ * WHY A DEDICATED WRITER. The candidate window is ordered by
+ * `COALESCE(last_checked_at, confirmed_at, created_at) ASC`, and a row that
+ * neither fills nor declines writes no marker at all: it keeps its original
+ * ordering key and is re-served at the head of every subsequent pass. Once as
+ * many such rows exist as the batch limit, the lane re-reads the same rows
+ * forever and never reaches a single later candidate. Touching the ordering
+ * column is what rotates the window.
+ *
+ * It is deliberately NOT the pending lane's `touchLastChecked`: that writer
+ * belongs to still-pending rows and carries their verification bookkeeping
+ * (reasons, claim tokens, stall counters). This one is guarded to
+ * `status = 'confirmed'`, writes nothing but the timestamp, and therefore cannot
+ * express an opinion about a row whose amounts are simply not knowable yet.
+ */
+export async function touchAmountCorrectionChecked(id: number): Promise<void> {
+  await execute(
+    `UPDATE agent_activity
+        SET last_checked_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND status = 'confirmed'`,
+    [id],
   );
 }

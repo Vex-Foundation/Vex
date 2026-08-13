@@ -419,45 +419,142 @@ describe("mapActivityToEvent — second legs (yield_py / yield_lp)", () => {
   });
 });
 
-describe("mapActivityToEvent — executed-amount suppressions", () => {
-  const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+describe("mapActivityToEvent — native legs: one address, one verified slot", () => {
+  const SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  const SENTINEL_MIXED = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+  const ZERO = "0x" + "0".repeat(40);
 
-  it("withholds a native leg's executed amount, matching the sentinel case-insensitively", () => {
-    for (const casing of [NATIVE, NATIVE.toLowerCase(), NATIVE.toUpperCase()]) {
-      const row = { ...confirmedSwapRow(), token_in_address: casing };
-      const event = mapActivityToEvent(row, { status: "confirmed" });
-      expect(event.executedInRaw).toBeNull();
-      // The ERC-20 leg of the same row is unaffected.
-      expect(event.executedOutRaw).toBe("2407113000000000000000");
-      // The QUOTED amount still travels: it is not a settlement claim.
-      expect(event.amountInRaw).toBe("1000000000000000000");
+  function nativeInRow(address: string): Record<string, unknown> {
+    return { ...confirmedSwapRow(), token_in_address: address, token_in_symbol: "ETH" };
+  }
+
+  it("emits every native alias as the SENTINEL, because that is the only address its verifier calls native", () => {
+    // A native leg declared with the zero address is cross-checked as an ERC-20
+    // token, finds no Transfer log, and takes a strike.
+    for (const alias of [SENTINEL, SENTINEL_MIXED, SENTINEL.toUpperCase(), ZERO]) {
+      const event = mapActivityToEvent(nativeInRow(alias), { status: "confirmed" });
+      expect(event.tokenIn?.address).toBe(SENTINEL);
+      expect(serverEventSchema.safeParse(event).success).toBe(true);
     }
   });
 
-  it("withholds a native SECOND leg's executed amount too", () => {
+  it("normalizes every token ref the event carries, not just the input", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "yield",
+      event_role: "yield_py",
+      protocol: "pendle",
+      token_in_address: ZERO,
+      token_out_address: SENTINEL_MIXED,
+      token_in2_address: ZERO,
+      token_in2_symbol: "ETH",
+      token_in2_decimals: 18,
+      token_out2_address: SENTINEL_MIXED,
+      token_out2_symbol: "ETH",
+      token_out2_decimals: 18,
+    };
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+    expect(event.tokenIn?.address).toBe(SENTINEL);
+    expect(event.tokenOut?.address).toBe(SENTINEL);
+    expect(event.tokenIn2?.address).toBe(SENTINEL);
+    expect(event.tokenOut2?.address).toBe(SENTINEL);
+  });
+
+  it("leaves an ERC-20 address exactly as the row stored it", () => {
+    const event = mapActivityToEvent(confirmedSwapRow(), { status: "confirmed" });
+    expect(event.tokenIn?.address).toBe("0x" + "1".repeat(40));
+    expect(event.tokenOut?.address).toBe("0x" + "2".repeat(40));
+  });
+
+  it("emits a native INPUT's executed amount: the server checks it against the transaction value", () => {
+    for (const alias of [SENTINEL, SENTINEL_MIXED, ZERO]) {
+      const event = mapActivityToEvent(nativeInRow(alias), { status: "confirmed" });
+      expect(event.executedInRaw).toBe("1000000000000000000");
+      // The ERC-20 output of the same row is unaffected either way.
+      expect(event.executedOutRaw).toBe("2407113000000000000000");
+    }
+  });
+
+  it("still withholds a native OUTPUT's executed amount: the server SKIPS that check, which is not the same as passing it", () => {
+    for (const alias of [SENTINEL, ZERO]) {
+      const row = { ...confirmedSwapRow(), token_out_address: alias, token_out_symbol: "ETH" };
+      const event = mapActivityToEvent(row, { status: "confirmed" });
+      expect(event.executedOutRaw).toBeNull();
+      // The QUOTED amount still travels: it is not a settlement claim.
+      expect(event.amountOutRaw).toBe("2410000000000000000000");
+      expect(event.executedInRaw).toBe("1000000000000000000");
+    }
+  });
+
+  it("a mixed row reports BOTH sides: native in by value, ERC-20 out by its Transfer log", () => {
+    const event = mapActivityToEvent(nativeInRow(ZERO), { status: "confirmed" });
+    expect(event.tokenIn?.address).toBe(SENTINEL);
+    expect(event.executedInRaw).toBe("1000000000000000000");
+    expect(event.tokenOut?.address).toBe("0x" + "2".repeat(40));
+    expect(event.executedOutRaw).toBe("2407113000000000000000");
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it("withholds a native SECOND leg's executed amounts — they are not in the verifier's input at all", () => {
     const row = {
       ...confirmedSwapRow(),
       kind: "yield",
       event_role: "yield_lp",
       protocol: "pendle",
-      token_out2_address: NATIVE,
+      token_in2_address: ZERO,
+      token_in2_symbol: "ETH",
+      token_in2_decimals: 18,
+      amount_in2_raw: "8000000000000000",
+      executed_amount_in2_raw: "7999000000000000",
+      token_out2_address: SENTINEL_MIXED,
       token_out2_symbol: "ETH",
       token_out2_decimals: 18,
       amount_out2_raw: "7000000000000000",
       executed_amount_out2_raw: "6999000000000000",
     };
     const event = mapActivityToEvent(row, { status: "confirmed" });
-    expect(event.amountOut2Raw).toBe("7000000000000000");
+    expect(event.executedIn2Raw).toBeNull();
     expect(event.executedOut2Raw).toBeNull();
+    // The quotes still travel, on the normalized address.
+    expect(event.amountIn2Raw).toBe("8000000000000000");
+    expect(event.amountOut2Raw).toBe("7000000000000000");
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
   });
 
-  it("withholds EVERY executed amount when settlement is conflict_quarantined", () => {
+  it("leaves an ERC-20 second leg completely unchanged", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "yield",
+      event_role: "yield_py",
+      protocol: "pendle",
+      token_out2_address: "0x" + "3".repeat(40),
+      token_out2_symbol: "YT-sUSDe",
+      token_out2_decimals: 18,
+      amount_out2_raw: "5000000000000000000",
+      executed_amount_out2_raw: "4999000000000000000",
+    };
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+    expect(event.tokenOut2?.address).toBe("0x" + "3".repeat(40));
+    expect(event.amountOut2Raw).toBe("5000000000000000000");
+    expect(event.executedOut2Raw).toBe("4999000000000000000");
+  });
+
+  it("normalizes nothing on a non-EIP-155 row", () => {
+    // Solana mints are base58 and can never BE a native alias; the guard exists
+    // so the rule stays scoped to the family whose verifier it describes.
+    const row = { ...confirmedSwapRow(), chain_family: "solana", protocol: "jupiter" };
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+    expect(event.tokenIn?.address).toBe("0x" + "1".repeat(40));
+  });
+
+  it("withholds EVERY executed amount when settlement is conflict_quarantined, native input included", () => {
     const row = {
       ...confirmedSwapRow(),
       settlement_source: "conflict_quarantined",
       kind: "yield",
       event_role: "yield_py",
       protocol: "pendle",
+      token_in_address: ZERO,
       token_out2_address: "0x" + "3".repeat(40),
       token_out2_symbol: "YT",
       token_out2_decimals: 18,
@@ -476,6 +573,12 @@ describe("mapActivityToEvent — executed-amount suppressions", () => {
     const event = mapActivityToEvent(confirmedSwapRow(), { status: "confirmed" });
     expect(event.executedInRaw).toBe("1000000000000000000");
     expect(event.executedOutRaw).toBe("2407113000000000000000");
+  });
+
+  it("a pending snapshot of a native row still carries no executed amount", () => {
+    const event = mapActivityToEvent(nativeInRow(ZERO), { status: "pending" });
+    expect(event.executedInRaw).toBeNull();
+    expect(event.executedOutRaw).toBeNull();
   });
 });
 

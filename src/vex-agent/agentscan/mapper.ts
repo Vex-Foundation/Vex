@@ -48,27 +48,43 @@ const SERVER_FAILURE_CODES = new Set([
 ]);
 
 /**
- * The EVM native-asset sentinel, matched case-insensitively (the row stores
- * whatever casing the venue used).
+ * The EVM native-asset sentinel — the ONE address a native leg may leave here
+ * carrying, whatever the venue stored.
  */
 const EVM_NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 /**
- * Executed amounts of a NATIVE leg are withheld from the report while the
- * server's cross-check cannot verify them.
+ * The addresses that MEAN "the chain's native asset" on an EIP-155 row, all
+ * lowercase and matched case-insensitively.
  *
- * The server verifies declared amounts exclusively against ERC-20 `Transfer`
- * logs; a native leg produces none, so a declared native executed amount can
- * never match, and every mismatch is a strike. Three strikes quarantine the
- * install and stop ALL reporting. Withholding those amounts costs the server a
- * price it cannot compute today; declaring them costs the install everything.
- *
- * Scope is the leg, not the row: an ERC-20 leg on the same row reports its
- * executed amount normally. The local database keeps every amount in full —
- * this is a reporting rule, not a decoding one. Retire it once the server
- * verifies native value.
+ * The zero address is here because Relay records native ETH legs with it rather
+ * than with the sentinel. Both are native to us; only one of them is native to
+ * the server (see the normalization below).
  */
-const NATIVE_EXECUTED_SUPPRESSED = true;
+const EVM_NATIVE_ALIASES: ReadonlySet<string> = new Set([
+  EVM_NATIVE_SENTINEL,
+  `0x${"0".repeat(40)}`,
+]);
+
+/**
+ * The executed slots the server actually VERIFIES for a native leg.
+ *
+ * Its verifier reads `tokenIn`/`tokenOut` only, and it splits on them:
+ * a native INPUT is cross-checked against the transaction's own `value`, a
+ * native OUTPUT is skipped outright, and the second-leg slots are not part of
+ * its verification input at all. Skipping is not verifying, so only the slot it
+ * genuinely checks may carry a native amount; the rest stay null until the
+ * server states what it does with them. A declared amount the verifier cannot
+ * match is a strike, and three strikes quarantine the whole install.
+ *
+ * Scope is the LEG, not the row: an ERC-20 leg on the same row reports its
+ * executed amount normally, and the local database keeps every amount in full.
+ * This is a reporting rule, not a decoding one.
+ */
+const NATIVE_VERIFIED_EXECUTED_SLOTS: ReadonlySet<ExecutedSlot> = new Set(["primary_input"]);
+
+/** Which executed field is being reported — the axis the native rule turns on. */
+type ExecutedSlot = "primary_input" | "primary_output" | "second_input" | "second_output";
 
 /**
  * The settlement provenance that means "our reading of this row's amounts is
@@ -135,16 +151,17 @@ export function mapActivityToEvent(
   const role = str(activity.event_role) ?? "";
   const inputLegAllowed = !INPUT_LEG_FORBIDDEN_ROLES.has(role);
   const secondLegAllowed = SECOND_LEG_ROLES.has(role);
+  const evm = str(activity.chain_family) === "eip155";
 
   const tokenIn = inputLegAllowed
-    ? tokenRef(activity.token_in_address, activity.token_in_symbol, activity.token_in_decimals)
+    ? tokenRef(activity.token_in_address, activity.token_in_symbol, activity.token_in_decimals, evm)
     : null;
-  const tokenOut = tokenRef(activity.token_out_address, activity.token_out_symbol, activity.token_out_decimals);
+  const tokenOut = tokenRef(activity.token_out_address, activity.token_out_symbol, activity.token_out_decimals, evm);
   const tokenIn2 = secondLegAllowed
-    ? tokenRef(activity.token_in2_address, activity.token_in2_symbol, activity.token_in2_decimals)
+    ? tokenRef(activity.token_in2_address, activity.token_in2_symbol, activity.token_in2_decimals, evm)
     : null;
   const tokenOut2 = secondLegAllowed
-    ? tokenRef(activity.token_out2_address, activity.token_out2_symbol, activity.token_out2_decimals)
+    ? tokenRef(activity.token_out2_address, activity.token_out2_symbol, activity.token_out2_decimals, evm)
     : null;
 
   const executed = executedAmountReporter(activity, confirmed);
@@ -166,9 +183,9 @@ export function mapActivityToEvent(
     amountInRaw: inputLegAllowed ? guarded(activity.amount_in_raw, RAW_AMOUNT) : null,
     amountOutRaw: guarded(activity.amount_out_raw, RAW_AMOUNT),
     executedInRaw: inputLegAllowed
-      ? executed(activity.executed_amount_in_raw, activity.token_in_address)
+      ? executed(activity.executed_amount_in_raw, activity.token_in_address, "primary_input")
       : null,
-    executedOutRaw: executed(activity.executed_amount_out_raw, activity.token_out_address),
+    executedOutRaw: executed(activity.executed_amount_out_raw, activity.token_out_address, "primary_output"),
     tokenIn2,
     tokenOut2,
     // A second-leg amount may never travel without the token carrying its
@@ -178,10 +195,10 @@ export function mapActivityToEvent(
     amountOut2Raw: tokenOut2 === null ? null : guarded(activity.amount_out2_raw, RAW_AMOUNT),
     executedIn2Raw: tokenIn2 === null
       ? null
-      : executed(activity.executed_amount_in2_raw, activity.token_in2_address),
+      : executed(activity.executed_amount_in2_raw, activity.token_in2_address, "second_input"),
     executedOut2Raw: tokenOut2 === null
       ? null
-      : executed(activity.executed_amount_out2_raw, activity.token_out2_address),
+      : executed(activity.executed_amount_out2_raw, activity.token_out2_address, "second_output"),
     usdInEst: guarded(activity.usd_in_est, USD_STRING),
     usdOutEst: guarded(activity.usd_out_est, USD_STRING),
     usdFeeEst: guarded(activity.usd_fee_est, USD_STRING),
@@ -204,18 +221,18 @@ export function mapActivityToEvent(
 function executedAmountReporter(
   activity: Record<string, unknown>,
   confirmed: boolean,
-): (value: unknown, legTokenAddress: unknown) => string | null {
+): (value: unknown, legTokenAddress: unknown, slot: ExecutedSlot) => string | null {
   const disputed = str(activity.settlement_source) === DISPUTED_SETTLEMENT_SOURCE;
-  return (value, legTokenAddress) => {
+  return (value, legTokenAddress, slot) => {
     if (!confirmed || disputed) return null;
-    if (NATIVE_EXECUTED_SUPPRESSED && isEvmNative(legTokenAddress)) return null;
+    if (isEvmNativeAlias(legTokenAddress) && !NATIVE_VERIFIED_EXECUTED_SLOTS.has(slot)) return null;
     return guarded(value, RAW_AMOUNT);
   };
 }
 
-/** The leg's stored address, whatever its casing, against the native sentinel. */
-function isEvmNative(address: unknown): boolean {
-  return typeof address === "string" && address.toLowerCase() === EVM_NATIVE_SENTINEL;
+/** The leg's stored address, whatever its casing, against every native alias. */
+function isEvmNativeAlias(address: unknown): boolean {
+  return typeof address === "string" && EVM_NATIVE_ALIASES.has(address.toLowerCase());
 }
 
 function str(value: unknown): string | null {
@@ -238,14 +255,30 @@ function guarded(value: unknown, shape: RegExp): string | null {
   return s !== null && shape.test(s) ? s : null;
 }
 
-/** All three parts or nothing — the server requires the full object when present. */
-function tokenRef(address: unknown, symbol: unknown, decimals: unknown): AgentscanTokenRef | null {
+/**
+ * All three parts or nothing — the server requires the full object when present.
+ *
+ * A native EIP-155 leg is emitted with the SENTINEL whatever alias the row
+ * stored, because the server has exactly one native address: its verifier calls
+ * a leg native only when the address equals the sentinel, and it prices the
+ * sentinel correctly by mapping it to the zero address itself. A native leg
+ * declared with the zero address would therefore be cross-checked as an ERC-20
+ * token, find no `Transfer` log for it, and take a strike. The normalization is
+ * OUTGOING only: the local row keeps the address its venue wrote.
+ */
+function tokenRef(
+  address: unknown,
+  symbol: unknown,
+  decimals: unknown,
+  evm: boolean,
+): AgentscanTokenRef | null {
   const addr = str(address);
   const sym = str(symbol);
   if (addr === null || sym === null || decimals === null || decimals === undefined) return null;
   const dec = Number(decimals);
   if (!Number.isInteger(dec)) return null;
-  return { address: addr, symbol: sym.slice(0, 16), decimals: dec };
+  const reported = evm && isEvmNativeAlias(addr) ? EVM_NATIVE_SENTINEL : addr;
+  return { address: reported, symbol: sym.slice(0, 16), decimals: dec };
 }
 
 function mapFailureCode(value: unknown): string | null {

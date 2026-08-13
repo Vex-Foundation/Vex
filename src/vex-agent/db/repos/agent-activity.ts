@@ -121,6 +121,7 @@ export { noteSettledBlockTime } from "./agent-activity/settled-block-time.js";
 // that stops the fallback re-deciding one immutable receipt forever. Its own
 // module: scheduling, not a money guard.
 export {
+  touchAmountCorrectionChecked,
   findBroadcastSenderByTxHash,
   listAmountCorrectionCandidates,
   noteSettlementDecodeVersion,
