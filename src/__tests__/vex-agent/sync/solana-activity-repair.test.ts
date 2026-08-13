@@ -1,12 +1,12 @@
 /**
- * `solana-activity-repair` — the STATUS-ONLY Solana sweep (owner decree
- * 2026-07-30), pure orchestration over the injected `SolanaActivitySweepDeps`
- * port. Mocked-DB unit test (mock the whole
+ * `solana-activity-repair` - the Solana sweep, pure orchestration over the
+ * injected `SolanaActivitySweepDeps` port. Mocked-DB unit test (mock the whole
  * `@vex-agent/db/repos/agent-activity.js` module; inject fake RPC deps).
  *
- * Pins the terminality table, which is the whole product now:
- *   - `confirmed`/`finalized` + `err == null`  → `confirmed`, status-only, NO
- *     amounts and NO transaction-body fetch (there is nothing left to learn);
+ * Pins the terminality table:
+ *   - `confirmed`/`finalized` + `err == null`  → `confirmed`; status-only, with
+ *     NO transaction-body fetch, for every row the amount lane finds ineligible
+ *     (see the executed-amounts block at the bottom for the eligible ones);
  *   - `confirmed`/`finalized` + `err != null`  → `definitively_failed`;
  *   - `processed`/unknown commitment           → stays `pending` in BOTH
  *     directions — a processed transaction can still be dropped with its fork,
@@ -22,6 +22,9 @@
  * than one per row.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
@@ -31,20 +34,25 @@ import type {
 } from "@vex-agent/sync/solana-activity-repair.js";
 
 const mockListSolanaStagedPending = vi.fn();
+const mockConfirmActivityEvent = vi.fn();
 const mockConfirmActivityEventStatusOnly = vi.fn();
+const mockNoteSettlementDeclined = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockTouchLastChecked = vi.fn();
 const mockClearVerificationStall = vi.fn();
 const mockRecoverStaleHashlessIntents = vi.fn();
+const mockNoteSettledBlockTime = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   listSolanaStagedPending: (...args: unknown[]) => mockListSolanaStagedPending(...args),
-  confirmActivityEvent: vi.fn(),
+  confirmActivityEvent: (...args: unknown[]) => mockConfirmActivityEvent(...args),
   confirmActivityEventStatusOnly: (...args: unknown[]) => mockConfirmActivityEventStatusOnly(...args),
+  noteSettlementDeclined: (...args: unknown[]) => mockNoteSettlementDeclined(...args),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   touchLastChecked: (...args: unknown[]) => mockTouchLastChecked(...args),
   clearVerificationStall: (...args: unknown[]) => mockClearVerificationStall(...args),
   recoverStaleHashlessIntents: (...args: unknown[]) => mockRecoverStaleHashlessIntents(...args),
+  noteSettledBlockTime: (...args: unknown[]) => mockNoteSettledBlockTime(...args),
   HASHLESS_INTENT_RECOVERY_LEASE_MS: 15 * 60 * 1000,
 }));
 
@@ -61,6 +69,10 @@ const {
   SOLANA_HASHLESS_RECOVERY_BATCH_LIMIT,
   SOLANA_SWEEP_BATCH_LIMIT,
 } = await import("@vex-agent/sync/solana-activity-repair.js");
+
+const { SOLANA_SWEEP_AMOUNT_BODY_FETCH_LIMIT } = await import(
+  "@vex-agent/sync/solana-activity-repair/amount-decode-lane.js"
+);
 
 function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
   const base: AgentActivityEvent = {
@@ -117,6 +129,7 @@ function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActiv
     broadcastAt: "2026-07-24T10:00:01.000Z",
     confirmedAt: null,
     lastCheckedAt: null,
+    settledBlockTime: null,
     createdAt: "2026-07-24T09:59:00.000Z",
     updatedAt: "2026-07-24T10:00:01.000Z",
     // Columns the live contract requires that this fixture never exercises.
@@ -182,6 +195,11 @@ beforeEach(() => {
   mockRecoverStaleHashlessIntents.mockResolvedValue([]);
   mockListSolanaStagedPending.mockResolvedValue([]);
   mockConfirmActivityEventStatusOnly.mockResolvedValue({
+    applied: true,
+    row: candidateEvent({ status: "confirmed" }),
+  });
+  mockNoteSettlementDeclined.mockResolvedValue({ applied: true });
+  mockConfirmActivityEvent.mockResolvedValue({
     applied: true,
     row: candidateEvent({ status: "confirmed" }),
   });
@@ -469,6 +487,381 @@ describe("repairPendingSolanaActivity — cadence and batching", () => {
       SOLANA_HASHLESS_RECOVERY_BATCH_LIMIT,
     );
     expect(mockListSolanaStagedPending).toHaveBeenCalledWith(SOLANA_SWEEP_BATCH_LIMIT);
+  });
+});
+
+describe("repairPendingSolanaActivity - executed amounts from SPL balance deltas", () => {
+  const WALLET = "AeyBYFtgm85BrsZMKrAWdc2qGQqYvwfkt88dZdfYEndS";
+  const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const JUP_USD = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
+  const WSOL = "So11111111111111111111111111111111111111112";
+
+  function body(name: string): unknown {
+    const path = fileURLToPath(new URL(`./fixtures/jupiter-settlement/${name}.json`, import.meta.url));
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  }
+
+  /** A row whose persisted settlement profile names the two mints the decode is bounded by. */
+  function profiledRow(
+    inputMint: string,
+    outputMint: string,
+    overrides: Partial<AgentActivityEvent> = {},
+  ): AgentActivityEvent {
+    return candidateEvent({
+      walletAddress: WALLET,
+      routeProvenance: {
+        settlement: {
+          v: 1,
+          kind: "jupiter_fee_swap_exact_in",
+          inputMint,
+          outputMint,
+          inputAmountRaw: "4584000",
+          tipRecipient: null,
+          tipLamports: 0,
+          wrapAndUnwrapSol: inputMint === WSOL || outputMint === WSOL,
+        },
+      },
+      ...overrides,
+    });
+  }
+
+  const landed = { err: null, confirmationStatus: "finalized" } as const;
+
+  it("confirms a fully-SPL swap WITH both executed legs, from one transaction body", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(JUP_USD, USDC)]);
+    const getFinalizedTransaction = vi.fn(async () => ({
+      outcome: "found" as const,
+      value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+    }));
+
+    const result = await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).toHaveBeenCalledTimes(1);
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, {
+      executedAmountInRaw: "4584000",
+      executedAmountInHuman: "4.584",
+      executedAmountOutRaw: "4572791",
+      executedAmountOutHuman: "4.572791",
+    });
+    // The same body carries the settling block's time (result.blockTime,
+    // seconds); the sweep records it so the AgentScan report can state the
+    // chain's own confirmation time instead of nothing.
+    expect(mockNoteSettledBlockTime).toHaveBeenCalledWith(1, "2026-07-26T17:10:52.000Z");
+    expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ confirmed: 1 });
+  });
+
+  it("confirms a wrapped-SOL swap with BOTH legs: the wrap principal and the SPL credit", async () => {
+    // The wSOL account is created and closed inside the transaction, so the
+    // native leg has no balance entry; it is proven from the instructions, and
+    // never from the fee payer's lamport delta or the close payout.
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(WSOL, USDC)]);
+
+    const result = await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-sol-to-usdc-3SC5Mi5L"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, {
+      executedAmountInRaw: "15000000",
+      executedAmountInHuman: "0.015",
+      executedAmountOutRaw: "1103883",
+      executedAmountOutHuman: "1.103883",
+    });
+    expect(mockNoteSettlementDeclined).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ confirmed: 1 });
+  });
+
+  it("stamps the settlement decline after a body-read refusal, so the outbox stops holding the row", async () => {
+    // The profile names a mint this transaction never moved for us: the body was
+    // READ and refused, which is a conclusion about the amounts, not a deferral.
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      profiledRow("MintNobodyMovedHere111111111111111111111111", USDC),
+    ]);
+    // ORDER IS THE CONTRACT: `noteSettlementDeclined` only writes on a row that
+    // is already `confirmed`, so it must run after the status-only confirm.
+    mockNoteSettlementDeclined.mockImplementationOnce(async () => {
+      expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalled();
+      return { applied: true };
+    });
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+    expect(mockNoteSettlementDeclined).toHaveBeenCalledWith(1, "amounts_undecodable");
+  });
+
+  it("stamps NOTHING when the body was never read - a deferral is not a refusal", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(JUP_USD, USDC)]);
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)) }),
+    );
+
+    expect(mockNoteSettlementDeclined).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
+  });
+
+  it("stamps NOTHING on a row the lane never had a reason to decode", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([candidateEvent({ routeProvenance: null })]);
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)) }),
+    );
+
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+    expect(mockNoteSettlementDeclined).not.toHaveBeenCalled();
+  });
+
+  it("spends NO transaction body on a row without a settlement profile", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([candidateEvent({ routeProvenance: null })]);
+    const getFinalizedTransaction = vi.fn();
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+  });
+
+  it("spends no transaction body on a MINED FAILURE - a reverted transaction moved nothing", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(JUP_USD, USDC)]);
+    const getFinalizedTransaction = vi.fn();
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () =>
+          statusesFound({ err: { InstructionError: [0, "Custom"] }, confirmationStatus: "finalized" }),
+        ),
+        getFinalizedTransaction,
+      }),
+    );
+
+    expect(getFinalizedTransaction).not.toHaveBeenCalled();
+    expect(mockFailActivityEvent).toHaveBeenCalledWith(1, expect.objectContaining({ failureCode: "mined_revert" }));
+  });
+
+  it("leaves an eligible row PENDING when its body could not be read - the confirm is one-shot", async () => {
+    // Confirming status-only here would burn the row's single terminal write and
+    // lose amounts that were there to be read. Nothing was checked either, so
+    // `last_checked_at` is deliberately not rotated: this row goes first again.
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(JUP_USD, USDC)]);
+
+    const result = await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)) }),
+    );
+
+    expect(mockConfirmActivityEvent).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
+    expect(mockTouchLastChecked).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ confirmed: 0, stillPending: 1 });
+  });
+
+  it("bounds body fetches per run: rows past the limit wait for the next tick", async () => {
+    const rows = Array.from({ length: SOLANA_SWEEP_AMOUNT_BODY_FETCH_LIMIT + 2 }, (_unused, index) =>
+      profiledRow(JUP_USD, USDC, { id: index + 1, txHash: `sig${index}` }),
+    );
+    mockListSolanaStagedPending.mockResolvedValueOnce(rows);
+    const getFinalizedTransaction = vi.fn(async () => ({
+      outcome: "found" as const,
+      value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+    }));
+
+    const result = await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(...rows.map(() => landed))),
+        getFinalizedTransaction,
+      }),
+    );
+
+    expect(getFinalizedTransaction).toHaveBeenCalledTimes(SOLANA_SWEEP_AMOUNT_BODY_FETCH_LIMIT);
+    expect(mockConfirmActivityEvent).toHaveBeenCalledTimes(SOLANA_SWEEP_AMOUNT_BODY_FETCH_LIMIT);
+    expect(result).toMatchObject({ confirmed: SOLANA_SWEEP_AMOUNT_BODY_FETCH_LIMIT, stillPending: 2 });
+  });
+
+  it("reuses the not-found fallback's body instead of fetching a second one", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([profiledRow(JUP_USD, USDC)]);
+    const getFinalizedTransaction = vi.fn(async () => ({
+      outcome: "found" as const,
+      value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+    }));
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(null)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).toHaveBeenCalledTimes(1);
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, expect.objectContaining({ executedAmountInRaw: "4584000" }));
+  });
+
+  /**
+   * lend/prediction rows carry no settlement profile, so their mints come from
+   * the token columns the row itself declared at intent time. The bodies are the
+   * same real mainnet captures: the decode is bounded by owner and mint, so what
+   * makes a case lend-shaped or prediction-shaped is the ROW, not the body.
+   */
+  function declaredRow(overrides: Partial<AgentActivityEvent>): AgentActivityEvent {
+    return candidateEvent({
+      walletAddress: WALLET,
+      routeProvenance: null,
+      tokenInAddress: JUP_USD,
+      tokenOutAddress: USDC,
+      ...overrides,
+    });
+  }
+
+  it.each([
+    ["lend_deposit", "lend"],
+    ["predict_buy", "prediction"],
+  ])("confirms a %s row with the legs its declared mints prove", async (eventRole, kind) => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: eventRole as AgentActivityEvent["eventRole"], kind: kind as AgentActivityEvent["kind"] }),
+    ]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, {
+      executedAmountInRaw: "4584000",
+      executedAmountInHuman: "4.584",
+      executedAmountOutRaw: "4572791",
+      executedAmountOutHuman: "4.572791",
+    });
+  });
+
+  it("stamps the ONE leg a prediction claim proves, and invents nothing for the side it never declared", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: "predict_claim", kind: "prediction", tokenInAddress: null, tokenOutAddress: USDC }),
+    ]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEvent).toHaveBeenCalledWith(1, {
+      executedAmountOutRaw: "4572791",
+      executedAmountOutHuman: "4.572791",
+    });
+  });
+
+  it("falls back to a status-only confirm when the per-role leg guard rejects the proven legs", async () => {
+    // The repo's confirm guard is the authority on which legs a role may be
+    // confirmed with. A rejection must not abort the sweep tick, and must not be
+    // worked around from here - the row confirms without amounts instead.
+    mockConfirmActivityEvent.mockRejectedValueOnce(new Error("event_role 'lend_withdraw' requires more"));
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: "lend_withdraw", kind: "lend", tokenInAddress: null }),
+    ]);
+
+    const result = await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+    expect(result).toMatchObject({ confirmed: 1 });
+  });
+
+  it("confirms status-only when no declared leg is provable", async () => {
+    // The row declares a wSOL input this body has no wallet-owned entry for, and
+    // no output at all. Nothing proven means nothing written.
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: "lend_deposit", kind: "lend", tokenInAddress: WSOL, tokenOutAddress: null }),
+    ]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(landed)),
+        getFinalizedTransaction: vi.fn(async () => ({
+          outcome: "found" as const,
+          value: body("swap-jupusd-to-usdc-3g3NAiBJ"),
+        })),
+      }),
+    );
+
+    expect(mockConfirmActivityEvent).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+  });
+
+  it("spends no transaction body on a lend row whose token columns name no Solana mint", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({
+        eventRole: "lend_deposit",
+        kind: "lend",
+        tokenInAddress: null,
+        tokenOutAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      }),
+    ]);
+    const getFinalizedTransaction = vi.fn();
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+  });
+
+  it("writes no amounts on a kind this lane has no declared-mint rule for", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      declaredRow({ eventRole: "bridge_deposit", kind: "bridge" }),
+    ]);
+    const getFinalizedTransaction = vi.fn();
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
+  });
+
+  it("ignores a settlement profile whose shape this build does not recognise", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([
+      candidateEvent({ walletAddress: WALLET, routeProvenance: { settlement: { v: 99, inputMint: JUP_USD } } }),
+    ]);
+    const getFinalizedTransaction = vi.fn();
+
+    await repairPendingSolanaActivity(
+      deps({ getSignatureStatuses: vi.fn(async () => statusesFound(landed)), getFinalizedTransaction }),
+    );
+
+    expect(getFinalizedTransaction).not.toHaveBeenCalled();
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
   });
 });
 

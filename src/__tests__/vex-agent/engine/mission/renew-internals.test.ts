@@ -72,4 +72,28 @@ describe("cloneMissionAsDraft", () => {
     expect(sql).toContain("NULL AS contract_hash_version");
     expect(sql).toContain("$1 AS renewed_from_mission_id");
   });
+
+  it("clones capital_source_json VERBATIM, carrying the deployedCapital declaration", async () => {
+    // Deliberate behavior, pinned: a renewed draft inherits the previous
+    // mission's typed deployed-capital declaration wholesale. The clone is
+    // unaccepted by construction (NULL acceptance above), and the setup
+    // prompt's measurability warnings are what surface a stale denominator
+    // to the model - the clone itself must not silently strip or rewrite it.
+    type CloneClient = Parameters<typeof cloneMissionAsDraft>[0];
+    const partialClient: Partial<CloneClient> = {};
+    await cloneMissionAsDraft(
+      partialClient as CloneClient,
+      "mission-source",
+      "mission-new",
+      "session-1",
+    );
+
+    const call = mockExecuteWith.mock.calls.at(0);
+    expect(call).toBeDefined();
+    const sql = String(call?.[1]);
+    const selectClause = sql.slice(sql.indexOf("SELECT"));
+    // Verbatim column reference in the SELECT list - unlike constraints_json,
+    // which is stripped of its legacy key, capital travels untransformed.
+    expect(selectClause).toMatch(/\n\s+capital_source_json,/);
+  });
 });

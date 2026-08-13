@@ -452,8 +452,11 @@ describe("bridge-executor — Solana staged leg", () => {
     // threaded through the SAME staged-hash callback — no second write.
     expect(staged[0]!.recentBlockhash).toBe(PREPARED.recentBlockhash);
     expect(staged[0]!.lastValidBlockHeight).toBe(PREPARED.lastValidBlockHeight);
-    // No EVM block to anchor on — a Solana plan never estimates EVM gas.
-    expect(outcome).toEqual({ kind: "confirmed", txHash: "BASE58SIGNATURE", settledAtBlock: null });
+    // No EVM block to anchor on, and no EVM receipt to read logs from — a
+    // Solana plan never estimates EVM gas and carries no deposit evidence.
+    expect(outcome).toEqual({
+      kind: "confirmed", txHash: "BASE58SIGNATURE", settledAtBlock: null, receiptLogs: null,
+    });
   });
 
   it("a broadcast failure is ambiguous(send) — signature already staged", async () => {

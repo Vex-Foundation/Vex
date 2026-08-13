@@ -93,7 +93,12 @@ function legacyRow(over: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
 }
 
 function deps(logs: unknown = KYBER.logs) {
-  return { fetchReceiptLogs: vi.fn().mockResolvedValue(logs) };
+  // The Kyber branch never reads a transaction; the dep exists because the
+  // bridge branches do, and an unreadable one is `null` by contract.
+  return {
+    fetchReceiptLogs: vi.fn().mockResolvedValue(logs),
+    fetchTransaction: vi.fn().mockResolvedValue(null),
+  };
 }
 
 beforeEach(() => {

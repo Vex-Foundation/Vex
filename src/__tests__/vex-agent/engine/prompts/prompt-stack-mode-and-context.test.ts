@@ -49,6 +49,7 @@ describe("prompt-stack — mode & context", () => {
           missionSetupContext: {
             currentDraft: { title: "SOL DCA", goal: "Accumulate SOL" },
             missingFields: ["capitalSource", "startingCapital"],
+            warnings: [],
           },
         },
       );

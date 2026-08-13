@@ -29,7 +29,7 @@ const SESSION_EVM = "0x33eF000000000000000000000000000000000001";
 const OTHER_CREATOR = "0x9999000000000000000000000000000000009999";
 
 /** The default-source context the existing trench suite already invokes these handlers with. */
-const UNRESOLVED_CTX: ProtocolExecutionContext = makeProtocolContext();
+const DEFAULT_CTX: ProtocolExecutionContext = makeProtocolContext();
 
 function sessionContext(): ProtocolExecutionContext {
   return makeProtocolContext({
@@ -146,7 +146,7 @@ describe("trench.tokens marks the session wallet's own launches", () => {
     stubResolvedWallet(null);
     stubTokens([token({ token: "0xA" }), token({ token: "0xB" })]);
 
-    const res = await listTokens(UNRESOLVED_CTX);
+    const res = await listTokens(DEFAULT_CTX);
 
     expect(res.success).toBe(true);
     const rows = rowsOf(res.output);
@@ -154,18 +154,20 @@ describe("trench.tokens marks the session wallet's own launches", () => {
     for (const row of rows) expect("isOwnLaunch" in row).toBe(false);
   });
 
-  it("survives the real resolver on the default-source context the suite uses", async () => {
-    // The regression guard for wiring the wallet into a read-only browsing
-    // surface: whatever this machine's wallet state is, discovery must succeed
-    // and must never invent a non-boolean flag.
-    stubTokens([token({ token: "0xA" })]);
+  it("flags a default-source context's primary wallet exactly as a session one", async () => {
+    // The other half of the default-source pair: the test above pins the
+    // degraded shape (nothing resolves), this one pins the resolved shape on
+    // the SAME source: "default" context. Both are stubbed, so neither depends
+    // on which wallets this machine happens to have configured. The real
+    // inventory-backed resolution of a default source is covered end to end by
+    // src/__tests__/integration/wallet/default-wallet-resolution.int.test.ts.
+    stubResolvedWallet(SESSION_EVM);
+    stubTokens([token({ token: "0xMine", creator: SESSION_EVM }), token({ token: "0xTheirs", creator: OTHER_CREATOR })]);
 
-    const res = await listTokens(UNRESOLVED_CTX);
+    const res = await listTokens(DEFAULT_CTX);
 
     expect(res.success).toBe(true);
-    const row = rowsOf(res.output)[0]!;
-    expect(rowsOf(res.output)).toHaveLength(1);
-    if ("isOwnLaunch" in row) expect(typeof row.isOwnLaunch).toBe("boolean");
+    expect(rowsOf(res.output).map((row) => row.isOwnLaunch)).toEqual([true, false]);
   });
 
   it("degrades to no flags when the wallet resolver reports scope drift", async () => {
@@ -203,7 +205,7 @@ describe("trench.search marks the session wallet's own launches", () => {
     stubResolvedWallet(null);
     stubSearch([token({ token: "0xA" })]);
 
-    const res = await searchTokens(UNRESOLVED_CTX);
+    const res = await searchTokens(DEFAULT_CTX);
 
     expect(res.success).toBe(true);
     expect("isOwnLaunch" in rowsOf(res.output)[0]!).toBe(false);

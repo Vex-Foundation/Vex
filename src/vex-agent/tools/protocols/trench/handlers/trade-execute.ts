@@ -37,6 +37,7 @@ import type { ToolResult } from "../../../types.js";
 import { fail } from "../../handler-helpers.js";
 import { resolveTradeInputs } from "./trade/shared.js";
 import { buildTradePlan, type TradeLegPlan } from "./trade/plan.js";
+import { readCurveTokenSymbol } from "./trade/token-symbol.js";
 import { runStagedLoop } from "./trade/staged-loop.js";
 import { preBroadcastFailure } from "./trade/failure-results.js";
 import { planBuyFeeLeg, planSellFeeLeg } from "./trade/fee.js";
@@ -88,7 +89,14 @@ export async function trenchTradeExecuteHandler(
   let feePlan: TrenchFeeLegPlan | null;
   let feeBaseWei: bigint;
   try {
-    tokenDecimals = await readTokenDecimals(publicClient, token);
+    // Decimals and ticker together: both describe the curve token's leg, and the
+    // ticker completes the token reference AgentScan needs to price the trade.
+    // Only the decimals read can fail the trade.
+    let tokenSymbol: string | null;
+    [tokenDecimals, tokenSymbol] = await Promise.all([
+      readTokenDecimals(publicClient, token),
+      readCurveTokenSymbol(publicClient, token),
+    ]);
     const amountInRaw = parseUnits(amountInHuman, side === "buy" ? ETH_DECIMALS : tokenDecimals);
     const feeIdentity = { chainId, nativeAddress, walletAddress, sessionId };
 
@@ -115,7 +123,7 @@ export async function trenchTradeExecuteHandler(
 
     plans = buildTradePlan({
       side, chainId, token, nativeAddress, walletAddress, sessionId,
-      amountInRaw: curveInRaw, amountInHuman: curveInHuman, tokenDecimals,
+      amountInRaw: curveInRaw, amountInHuman: curveInHuman, tokenDecimals, tokenSymbol,
       expectedOutRaw, minOut, deadline,
     });
 

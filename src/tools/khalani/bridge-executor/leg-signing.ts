@@ -155,7 +155,11 @@ async function signStageEvmLeg(
     // number degrades to "no anchor" rather than to a bad one.
     const settledAtBlock = priorLegAnchorFrom(receipt.blockNumber)?.blockNumber ?? null;
     return receipt.status === "success"
-      ? { kind: "confirmed", txHash, settledAtBlock }
+      // The receipt's logs travel with the outcome: they are the deposit's only
+      // evidence of the amount it moved, and re-fetching this immutable receipt
+      // at the confirm site would cost a second RPC round trip for the same
+      // bytes.
+      ? { kind: "confirmed", txHash, settledAtBlock, receiptLogs: receipt.logs }
       : { kind: "reverted", txHash };
   } catch {
     return { kind: "ambiguous", txHash, stage: "confirm" };
@@ -209,7 +213,8 @@ async function signStageSolanaLeg(
     // `value.err`, surfaced as `reverted`) is a revert, never a confirmed deposit.
     return confirmation.status === "reverted"
       ? { kind: "reverted", txHash: signature }
-      : { kind: "confirmed", txHash: signature, settledAtBlock: null };
+      // A Solana leg has no EVM receipt, so it carries no logs to read.
+      : { kind: "confirmed", txHash: signature, settledAtBlock: null, receiptLogs: null };
   } catch {
     return { kind: "ambiguous", txHash: signature, stage: "confirm" };
   }

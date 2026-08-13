@@ -10,8 +10,8 @@
  *   - the diff scan (`enqueueEligibleActivity`) captures exactly the
  *     (activity, status) pairs the ingest contract can express — new rows AND
  *     status transitions — and is idempotent across re-runs;
- *   - ineligible rows (roles/kinds outside the contract, status
- *     `superseded_unproven`) are never enqueued;
+ *   - rows the ingest contract cannot express (the approval roles the server's
+ *     enum lacks) are never enqueued, while `superseded_unproven` is;
  *   - claim-and-stamp: a claimed row is out of the candidate set until its
  *     backoff elapses, and terminal marks (`sent` / `rejected`) remove it
  *     forever.
@@ -244,16 +244,18 @@ describe("agentscan_outbox — diff scan", () => {
     expect(at(claimed, 0).backfill).toBe(true);
   });
 
-  it("never enqueues contract-inexpressible rows: allowance role, wrap kind, superseded_unproven status", async () => {
+  it("never enqueues an approval row or a wrap row, but DOES enqueue superseded_unproven", async () => {
     const agentActivity = await import("@vex-agent/db/repos/agent-activity.js");
     const { execute } = await import("@vex-agent/db/client.js");
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
 
     const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+    // The server's role enum has no approval roles, so these have nowhere to go.
     await agentActivity.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 0, eventRole: "allowance", kind: "swap",
       protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
     });
+    // `wrap` is in the server's vocabulary but has no producer here yet.
     await agentActivity.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 1, eventRole: "wrap", kind: "wrap",
       protocol: "uniswap", chainId: 8453, walletAddress, sessionId,
@@ -269,7 +271,13 @@ describe("agentscan_outbox — diff scan", () => {
       [superseded.id],
     );
 
-    expect(await repo.enqueueEligibleActivity(false)).toBe(0);
+    // Exactly one: the superseded row. A row this install has CLOSED must be
+    // reported, or the server holds its pending row open forever.
+    expect(await repo.enqueueEligibleActivity(false)).toBe(1);
+    const claimed = await repo.claimDueOutbox(10);
+    expect(claimed).toHaveLength(1);
+    expect(at(claimed, 0).activityId).toBe(superseded.id);
+    expect(at(claimed, 0).status).toBe("superseded_unproven");
   });
 });
 

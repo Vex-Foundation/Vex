@@ -30,7 +30,7 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 import logger from "@utils/logger.js";
 
 import { confirmSolanaMainnetGenesis, solanaRpcCall } from "./solana-rpc-safety.js";
-import type { SolanaActivitySweepDeps } from "./solana-activity-repair.js";
+import type { SolanaActivitySweepDeps } from "./solana-activity-repair/sweep-port.js";
 
 export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
   let healthyRpcUrl: Promise<string | null> | null = null;
@@ -94,9 +94,15 @@ export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
       const rpcUrl = await resolveHealthyRpcUrl();
       if (!rpcUrl) return { outcome: "unavailable" };
       try {
+        // `encoding: "json"` is a CONTRACT, not a preference (see the port's own
+        // doc): the sweep's decoders read compiled instructions and resolve
+        // account indexes against `accountKeys` + `meta.loadedAddresses`, and the
+        // repository's fixtures are captured in this same shape. `jsonParsed`
+        // would return a different, program-dependent shape, so a decoder proven
+        // on the fixtures would not be proven on production data.
         const result = await solanaRpcCall(rpcUrl, "getTransaction", [
           signature,
-          { encoding: "jsonParsed", commitment: "finalized", maxSupportedTransactionVersion: 0 },
+          { encoding: "json", commitment: "finalized", maxSupportedTransactionVersion: 0 },
         ]);
         if (result === null || result === undefined) return { outcome: "not_found" };
         return { outcome: "found", value: result };

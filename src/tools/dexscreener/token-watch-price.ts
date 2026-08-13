@@ -41,7 +41,7 @@ export {
   parseBoundedDecimal,
   type BoundedDecimal,
 } from "./token-watch-price/decimal.js";
-export { WATCH_PRICE_OUTLIER_RATIO } from "./token-watch-price/outliers.js";
+export { MEDIAN_OUTLIER_RATIO } from "./token-watch-price/outliers.js";
 export type { TokenWatchPoolSide, TokenWatchPriceCandidate } from "./token-watch-price/normalize.js";
 
 export interface TokenWatchPriceQuery {

@@ -11,7 +11,9 @@
  * Unit-covered by `src/__tests__/khalani/khalani-bridge-executor.test.ts`.
  */
 
-import { decodeFunctionData, getAddress, type Hex } from "viem";
+import { getAddress, type Hex } from "viem";
+
+import { decodeErc20Approve } from "@tools/evm-chains/erc20-approval.js";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { isKhalaniNativeAlias } from "../native-token-identity.js";
@@ -84,19 +86,6 @@ export function isNativeTransferToken(token: string): boolean {
   return isKhalaniNativeAlias(token);
 }
 
-const APPROVE_ABI = [
-  {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-] as const;
-
 /**
  * Classify a NON-deposit EVM approval by decoding its calldata: an
  * `approve(spender, 0)` is an allowance RESET, any other `approve` (or an
@@ -104,16 +93,8 @@ const APPROVE_ABI = [
  * mis-decode fails safe to `allowance`.
  */
 export function classifyEvmApprovalRole(data: string | undefined): KhalaniLegRole {
-  if (!data || !data.startsWith("0x")) return "allowance";
-  try {
-    const decoded = decodeFunctionData({ abi: APPROVE_ABI, data: data as Hex });
-    if (decoded.functionName === "approve" && decoded.args[1] === 0n) {
-      return "allowance_reset";
-    }
-  } catch {
-    // Not a recognizable approve — record it as a generic allowance leg.
-  }
-  return "allowance";
+  // A mis-decode fails safe to `allowance`.
+  return decodeErc20Approve(data)?.amount === 0n ? "allowance_reset" : "allowance";
 }
 
 export function normalizeEvmApproval(approval: EvmApproval, chain: KhalaniChain): NormalizedEvmTx | null {

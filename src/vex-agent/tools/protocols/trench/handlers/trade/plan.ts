@@ -46,6 +46,8 @@ export interface BuildTradePlanInput {
   readonly amountInRaw: bigint;
   readonly amountInHuman: string;
   readonly tokenDecimals: number;
+  /** Normalized curve-token ticker, or null when the token had no readable symbol. */
+  readonly tokenSymbol: string | null;
   readonly expectedOutRaw: bigint;
   readonly minOut: bigint;
   readonly deadline: bigint;
@@ -63,6 +65,25 @@ function baseEvent(
     chainSlug: CHAIN_SLUG,
     walletAddress: input.walletAddress,
     sessionId: input.sessionId,
+  };
+}
+
+/**
+ * A leg denominated in the curve token. The symbol is carried whenever the token
+ * reported one: AgentScan builds a token reference only from a complete
+ * address + symbol + decimals triple, so a leg without the ticker is reported
+ * with a null token ref and can never be priced.
+ */
+function curveTokenLeg(
+  input: BuildTradePlanInput,
+  amounts: { readonly amountHuman: string; readonly amountRaw: bigint },
+) {
+  return {
+    tokenAddress: input.token,
+    ...(input.tokenSymbol === null ? {} : { tokenSymbol: input.tokenSymbol }),
+    tokenDecimals: input.tokenDecimals,
+    amountHuman: amounts.amountHuman,
+    amountRaw: amounts.amountRaw.toString(),
   };
 }
 
@@ -99,7 +120,7 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
         event: {
           ...baseEvent(input, "swap"),
           tokenIn: { tokenAddress: input.nativeAddress, tokenSymbol: NATIVE_LABEL, tokenDecimals: ETH_DECIMALS, amountHuman: input.amountInHuman, amountRaw: input.amountInRaw.toString() },
-          tokenOut: { tokenAddress: input.token, tokenDecimals: input.tokenDecimals, amountHuman: formatUnits(input.expectedOutRaw, input.tokenDecimals), amountRaw: input.expectedOutRaw.toString() },
+          tokenOut: curveTokenLeg(input, { amountHuman: formatUnits(input.expectedOutRaw, input.tokenDecimals), amountRaw: input.expectedOutRaw }),
           // The BUY input is `msg.value`, NOT an on-chain Transfer from the
           // wallet, so the repair sweep cannot reconstruct the input leg from
           // logs alone — persist the planned raw input for the settlement decoder.
@@ -130,7 +151,7 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
       txParams: { to: input.token, data: approveData, value: 0n },
       event: {
         ...baseEvent(input, "allowance"),
-        tokenIn: { tokenAddress: input.token, tokenDecimals: input.tokenDecimals, amountHuman: input.amountInHuman, amountRaw: input.amountInRaw.toString() },
+        tokenIn: curveTokenLeg(input, { amountHuman: input.amountInHuman, amountRaw: input.amountInRaw }),
       },
     },
     {
@@ -138,7 +159,7 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
       txParams: { to: DIAMOND, data: sellData, value: 0n },
       event: {
         ...baseEvent(input, "swap"),
-        tokenIn: { tokenAddress: input.token, tokenDecimals: input.tokenDecimals, amountHuman: input.amountInHuman, amountRaw: input.amountInRaw.toString() },
+        tokenIn: curveTokenLeg(input, { amountHuman: input.amountInHuman, amountRaw: input.amountInRaw }),
         tokenOut: { tokenAddress: input.nativeAddress, tokenSymbol: NATIVE_LABEL, tokenDecimals: ETH_DECIMALS, amountHuman: formatEther(input.expectedOutRaw), amountRaw: input.expectedOutRaw.toString() },
         // Persist the planned raw token input so the repair sweep can supply the
         // Sold cross-check amount (proves the event's ETH-leg positional mapping).

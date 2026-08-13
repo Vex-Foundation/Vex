@@ -24,10 +24,30 @@ import {
   type MissionStatus,
   hyperliquidMissionRiskTransportSchema,
   type HyperliquidMissionRiskTransport,
+  type MissionDeployedCapital,
 } from "@shared/schemas/mission.js";
+import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
+import { formatExecutedAmountHuman } from "./agent-activity-amount.js";
 import { log } from "../logger/index.js";
 
 export const EMPTY_CONSTRAINTS: MissionConstraints = {};
+
+/**
+ * C3 deployed-capital bounds, mirrored from the engine's
+ * `DEPLOYED_CAPITAL_BOUNDS` (`src/vex-agent/engine/types/mission-draft.ts`).
+ * Hand-copied because the process boundary forbids importing it; the values
+ * must never drift from the engine's, since the engine's are what the
+ * acceptance hash was computed under.
+ */
+const DEPLOYED_CAPITAL_AMOUNT_RAW_MAX = 80;
+const DEPLOYED_CAPITAL_DECIMALS_MAX = 36;
+const DEPLOYED_CAPITAL_ADDRESS_MAX = 128;
+
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+const SOLANA_MINT_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const ASSET_SYMBOL_PATTERN = /^[A-Za-z0-9_.$-]{1,32}$/;
+/** Lowercased `NATIVE_TOKEN_ADDRESS` from the engine's KyberSwap constants. */
+const EVM_NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 /**
  * Allowlisted mission risk projection; malformed JSONB never reaches the
@@ -58,6 +78,8 @@ export interface MissionRow {
   readonly title: string | null;
   readonly goal: string | null;
   readonly constraints_json: unknown;
+  /** C3 - JSONB blob holding `{ type?, amount?, deployedCapital? }`. */
+  readonly capital_source_json: unknown;
   readonly success_criteria_json: unknown;
   readonly stop_conditions_json: unknown;
   readonly risk_profile: string | null;
@@ -80,7 +102,7 @@ export interface MissionRow {
 }
 
 export const MISSION_ROW_COLUMNS =
-  "id, root_session_id, status, title, goal, constraints_json, success_criteria_json, stop_conditions_json, risk_profile, allowed_protocols, allowed_chains, allowed_wallets, created_at, updated_at, approved_at, accepted_contract_hash, accepted_contract_at, accepted_contract_by, contract_hash_version, renewed_from_mission_id";
+  "id, root_session_id, status, title, goal, constraints_json, capital_source_json, success_criteria_json, stop_conditions_json, risk_profile, allowed_protocols, allowed_chains, allowed_wallets, created_at, updated_at, approved_at, accepted_contract_hash, accepted_contract_at, accepted_contract_by, contract_hash_version, renewed_from_mission_id";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -171,6 +193,100 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
   if (reparsed.success) return reparsed.data;
   log.warn("[missions-db] constraints_json projection failed Zod parse");
   return EMPTY_CONSTRAINTS;
+}
+
+/**
+ * C3 - project the typed deployed-capital declaration out of `capital_source_json`.
+ *
+ * DELIBERATE BOUNDARY MIRROR of `src/vex-agent/engine/mission/deployed-capital.ts`
+ * (`normalizeDeployedCapital`), which is the reference implementation and the
+ * one the acceptance hash is computed from. This copy exists because `vex-app`
+ * CANNOT import `@vex-agent` - `pnpm --dir vex-app check:boundaries` enforces
+ * that trust separation - so the desktop read path needs its own normalizer.
+ *
+ * The mirror is STRICTLY NO LOOSER than the engine's. Every rule below is the
+ * engine's rule, and the shared regression contract is the rejection table
+ * ported into `__tests__/missions-db.deployed-capital.test.ts` from the engine's
+ * own `mapper.test.ts` / `contract-hash.test.ts` cases. If the engine tightens a
+ * rule, tighten it here in the same change: a looser reader would DISPLAY a
+ * declaration the hash treats as absent, which is the exact blind-acceptance
+ * failure this field was added to close.
+ *
+ * Rules, restated so a future session need not open the engine file:
+ *   - ALL FIVE PARTS OR NULL. A partial declaration is not a usable denominator.
+ *   - `amountRaw` stays a STRING, digits only, and must contain a non-zero
+ *     digit. Zero is not a denominator; an all-zeros amount reads as absent.
+ *   - Asset identity is FAMILY-AWARE: EVM addresses (every chain id except
+ *     Solana's) are 20-byte `0x` hex canonicalized to LOWERCASE, because mixed
+ *     case there is only an EIP-55 checksum; a Solana base58 mint keeps its case
+ *     verbatim, because base58 case IS identity.
+ *   - `assetSymbol` is a bounded ticker charset, rejected rather than sanitized.
+ *
+ * `amountHuman` is the one thing this function ADDS over the engine's output:
+ * the display figure, derived here in MAIN with the repo's audited BigInt-safe
+ * `formatExecutedAmountHuman`. It is null on any failure and never throws, so
+ * the renderer can fall back to the raw pair instead of rescaling anything.
+ */
+export function normaliseDeployedCapital(
+  raw: unknown,
+): MissionDeployedCapital | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const candidate = (raw as Record<string, unknown>)["deployedCapital"];
+  if (
+    typeof candidate !== "object" ||
+    candidate === null ||
+    Array.isArray(candidate)
+  ) {
+    return null;
+  }
+  const { amountRaw, decimals, chainId, assetAddress, assetSymbol } =
+    candidate as Record<string, unknown>;
+
+  if (typeof amountRaw !== "string") return null;
+  const trimmedAmount = amountRaw.trim();
+  if (trimmedAmount.length === 0 || trimmedAmount.length > DEPLOYED_CAPITAL_AMOUNT_RAW_MAX) {
+    return null;
+  }
+  if (!/^\d+$/.test(trimmedAmount)) return null;
+  // Zero is not a denominator - an all-zeros amount reads as absent so it
+  // cannot suppress a measurability warning it does not actually answer.
+  if (!/[1-9]/.test(trimmedAmount)) return null;
+
+  if (typeof decimals !== "number" || !Number.isInteger(decimals)) return null;
+  if (decimals < 0 || decimals > DEPLOYED_CAPITAL_DECIMALS_MAX) return null;
+
+  if (typeof chainId !== "number" || !Number.isSafeInteger(chainId)) return null;
+  if (chainId < 1) return null;
+
+  if (typeof assetAddress !== "string") return null;
+  const trimmedAddress = assetAddress.trim();
+  if (trimmedAddress.length === 0 || trimmedAddress.length > DEPLOYED_CAPITAL_ADDRESS_MAX) {
+    return null;
+  }
+  const canonicalAddress = canonicalAssetAddress(chainId, trimmedAddress);
+  if (canonicalAddress === null) return null;
+
+  if (typeof assetSymbol !== "string") return null;
+  const trimmedSymbol = assetSymbol.trim();
+  if (!ASSET_SYMBOL_PATTERN.test(trimmedSymbol)) return null;
+
+  return {
+    amountRaw: trimmedAmount,
+    decimals,
+    chainId,
+    assetAddress: canonicalAddress,
+    assetSymbol: trimmedSymbol,
+    amountHuman: formatExecutedAmountHuman(trimmedAmount, decimals),
+  };
+}
+
+function canonicalAssetAddress(chainId: number, address: string): string | null {
+  if (chainId === SOLANA_CHAIN_ID) {
+    return SOLANA_MINT_PATTERN.test(address) ? address : null;
+  }
+  const lowered = address.toLowerCase();
+  if (lowered === EVM_NATIVE_SENTINEL) return EVM_NATIVE_SENTINEL;
+  return EVM_ADDRESS_PATTERN.test(address) ? lowered : null;
 }
 
 export function normaliseStringList(raw: unknown, label: string): string[] {

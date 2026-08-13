@@ -22,6 +22,7 @@ import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
 import { projectJupiterSwapRoute } from "../../swap-route-projector.js";
 import { formatRawAmount } from "../../../amount-display.js";
+import { negativePriceImpactNote } from "../../../price-impact-note.js";
 import { humanAmountToAtomic } from "./swap-amount.js";
 import { jupiterSlippageViolation, resolveJupiterSwapKnobs, swapFailureMessage } from "./swap-policy.js";
 import { walletAddress } from "./wallet-scope.js";
@@ -97,11 +98,16 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
   // A decimal FRACTION, rendered as a percent — see `../../swap-route-projector.ts`
   // for why the provider's `priceImpactPct` name is a unit trap. Omitted, never
   // shown as 0, when the provider gave nothing readable: unknown is not zero.
-  const priceImpactPercent = priceImpactFraction !== null ? Number(priceImpactFraction) * 100 : null;
+  // Jupiter is COST-POSITIVE like KyberSwap (sign pinned by the live capture in
+  // `../../swap-route-projector.ts`), so a negative impact carries the SAME
+  // meaning and the same shared explanatory note.
+  const priceImpactNumber = priceImpactFraction !== null ? Number(priceImpactFraction) : null;
+  const priceImpactPercent =
+    priceImpactNumber !== null && Number.isFinite(priceImpactNumber) ? priceImpactNumber * 100 : null;
   const summary =
     `Quote: ${humanIn} ${inputToken.symbol} → ~${humanOut} ${outputToken.symbol} on Solana.`
-    + (priceImpactPercent !== null && Number.isFinite(priceImpactPercent)
-      ? ` Price impact ${priceImpactPercent.toFixed(2)}%.`
+    + (priceImpactPercent !== null
+      ? ` Price impact ${priceImpactPercent.toFixed(2)}%.${negativePriceImpactNote(priceImpactNumber)}`
       : "");
 
   return ok({

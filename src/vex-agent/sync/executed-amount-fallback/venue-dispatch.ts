@@ -36,6 +36,13 @@
  */
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
+import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
+import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
+import { getAddress, type Address } from "viem";
+import {
+  resolveBridgeDepositAmount,
+  type DepositEvidenceDeps,
+} from "./deposit-evidence-resolver.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 import { chainIdToSlug } from "@tools/kyberswap/chains.js";
 import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
@@ -55,6 +62,12 @@ export interface VenueDecodeInput {
   readonly row: AgentActivityEvent;
   readonly logs: readonly VenueDecodeLog[];
   readonly hint: SettlementDecodeHint | null;
+  /**
+   * Chain reads a venue may need beyond the receipt. The bridge branches need
+   * the mined SIGNED TRANSACTION: a receipt names no sender, no call target and
+   * no value, and all three are part of proving what a deposit moved.
+   */
+  readonly deps: DepositEvidenceDeps;
 }
 
 export type VenueDecodeResult =
@@ -64,7 +77,13 @@ export type VenueDecodeResult =
     readonly reason: SettlementDeclineReason;
     /** For OUR logs only — never a user-facing string. */
     readonly detail: string;
-  };
+  }
+  /**
+   * A chain read this decode needed did not answer. NOTHING was decided, so the
+   * caller must neither decline nor stamp the decoder version - the row keeps
+   * its eligibility for the next pass, exactly like an unreadable receipt.
+   */
+  | { readonly kind: "deferred"; readonly detail: string };
 
 /**
  * Route the row to its venue's decoder.
@@ -75,9 +94,13 @@ export type VenueDecodeResult =
  * burn with no Withdrawal, and the router's `spentAmount` would have been wrong
  * for the input because the Vex fee sits inside it.
  */
-export function decodeVenueSettlement(input: VenueDecodeInput): VenueDecodeResult {
+export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const protocol = input.row.protocol?.toLowerCase() ?? "";
   if (protocol === "kyberswap") return decodeKyberRow(input);
+  if (protocol === "trench") return decodeTrenchRow(input);
+  if ((protocol === "relay" || protocol === "khalani") && input.row.eventRole === "bridge_deposit") {
+    return decodeBridgeDepositRow(input);
+  }
   return {
     kind: "declined",
     reason: "amounts_undecodable",
@@ -175,4 +198,139 @@ const NATIVE_SENTINELS = new Set([
 
 function isNativeAddress(address: string): boolean {
   return NATIVE_SENTINELS.has(address.toLowerCase());
+}
+
+/**
+ * A bridge deposit the status sweep confirmed before its handler could prove the
+ * amount (the crash window). The proof is rebuilt from chain and from Vex's own
+ * allowance rows by `./deposit-evidence-resolver.ts`, then judged by the SAME
+ * receipt rule the handler uses - one rule, two callers, no second copy.
+ *
+ * Only the INPUT leg is established here. A bridge's output lands on another
+ * chain in a different transaction, on the fill row, which is why the role
+ * contract does not ask this row for it.
+ */
+async function decodeBridgeDepositRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
+  const resolved = await resolveBridgeDepositAmount({
+    row: input.row,
+    logs: input.logs,
+    deps: input.deps,
+  });
+  if (resolved.kind === "deferred") return { kind: "deferred", detail: resolved.detail };
+  if (resolved.kind === "declined") {
+    return { kind: "declined", reason: "amounts_undecodable", detail: resolved.detail };
+  }
+  return { kind: "decoded", amounts: { executedAmountInRaw: resolved.executedAmountInRaw } };
+}
+
+/**
+ * A Trench curve trade confirmed without amounts. The venue's own decoder owns
+ * what the logs mean; this branch resolves its inputs.
+ *
+ * Both sides first BIND the receipt to this row: the mined transaction must have
+ * been sent by the row's wallet and must have called the expected trench diamond
+ * (the persisted hint's verified target, else this repository's own registered
+ * deployment). Wrong sender or wrong target declines; an unreadable transaction
+ * defers, because nothing was learned.
+ *
+ * The BUY input is then the value that SIGNED TRANSACTION actually carried. The persisted `declaredValueRaw` hint is what the handler intended
+ * to sign and is used only to cross-check it: a hint that disagrees with the
+ * mined transaction is a discrepancy, not a settlement, and declines.
+ */
+async function decodeTrenchRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
+  const { row } = input;
+  const txHash = row.txHash;
+  const tokenInAddress = row.tokenInAddress;
+  const tokenOutAddress = row.tokenOutAddress;
+  if (txHash === null || tokenInAddress === null || tokenOutAddress === null) {
+    return declineTrench("the row is missing a token address or hash the decoder requires");
+  }
+  const hint = input.hint?.decoder === "trench_trade" ? input.hint : null;
+  const diamond = checksum(hint?.routerAddress ?? TRENCH_DIAMOND_ADDRESS);
+  const wallet = checksum(row.walletAddress);
+  if (diamond === null || wallet === null) {
+    return declineTrench("the diamond or wallet address is not a valid EVM address");
+  }
+  const isBuy = isNativeAddress(tokenInAddress);
+  const traded = checksum(isBuy ? tokenOutAddress : tokenInAddress);
+  if (traded === null) return declineTrench("the traded token is not a valid EVM address");
+  const bound = parseRaw(row.amountInRaw);
+  if (bound === null || bound <= 0n) {
+    return declineTrench("the row carries no quoted input amount to bound the decode with");
+  }
+
+  // BIND THE RECEIPT TO THIS ROW BEFORE READING A SINGLE AMOUNT, on BOTH sides.
+  // A receipt and a hash alone do not say the transaction was OURS: without the
+  // sender and the target, a buy would take its input from the value of whatever
+  // transaction that hash names, and a sell would read curve events off a
+  // receipt that never had to be a Vex trade against the diamond at all.
+  const transaction = await input.deps.fetchTransaction({ chainId: row.chainId, txHash });
+  if (transaction === null) {
+    return { kind: "deferred", detail: "the signed transaction could not be read this pass" };
+  }
+  if (!sameAddress(transaction.from, wallet)) {
+    return declineTrench("the mined transaction was not sent by this row's wallet");
+  }
+  if (transaction.to === null || !sameAddress(transaction.to, diamond)) {
+    return declineTrench("the mined transaction did not call this venue's expected trench diamond");
+  }
+
+  if (isBuy) {
+    const signedValue = parseRaw(transaction.valueRaw);
+    if (signedValue === null || signedValue <= 0n || signedValue > bound) {
+      return declineTrench("the mined transaction's value is absent, zero, or above the quoted input");
+    }
+    if (hint?.declaredValueRaw !== undefined && hint.declaredValueRaw !== signedValue.toString()) {
+      return declineTrench("the persisted declared value disagrees with the mined transaction's value");
+    }
+    const decoded = decodeCurveBuy({ logs: input.logs, diamond, wallet, token: traded });
+    if (decoded === null) return declineTrench("the receipt does not prove the tokens this buy acquired");
+    return {
+      kind: "decoded",
+      amounts: {
+        // The native input is stamped LOCALLY; the mapper suppresses a declared
+        // native leg on the way out until the server can verify one.
+        executedAmountInRaw: signedValue.toString(),
+        executedAmountOutRaw: decoded.tokensOutRaw.toString(),
+      },
+    };
+  }
+
+  const decoded = decodeCurveSell({
+    logs: input.logs, diamond, wallet, token: traded, amountInRaw: bound,
+  });
+  if (decoded === null || decoded.tokensInRaw === null || decoded.ethOutRaw === null) {
+    return declineTrench("the receipt does not prove both legs of this sell");
+  }
+  if (decoded.tokensInRaw > bound) {
+    return declineTrench("the receipt's token leg exceeds the quoted input amount");
+  }
+  return {
+    kind: "decoded",
+    amounts: {
+      executedAmountInRaw: decoded.tokensInRaw.toString(),
+      executedAmountOutRaw: decoded.ethOutRaw.toString(),
+    },
+  };
+}
+
+function declineTrench(detail: string): VenueDecodeResult {
+  return { kind: "declined", reason: "amounts_undecodable", detail };
+}
+
+function checksum(address: string): Address | null {
+  try {
+    return getAddress(address.trim());
+  } catch {
+    return null;
+  }
+}
+
+function sameAddress(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+function parseRaw(value: string | null): bigint | null {
+  if (value === null || !/^[0-9]+$/.test(value)) return null;
+  return BigInt(value);
 }

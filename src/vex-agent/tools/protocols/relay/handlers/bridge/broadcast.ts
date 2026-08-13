@@ -16,6 +16,8 @@ import type { Hex } from "viem";
 
 import { planRelayStepTx, type RelayPollResult, type RelayStepClients } from "@tools/relay/execute.js";
 import { relayNativeValueGuidance, relayStepLabel } from "@tools/relay/native-value.js";
+import { RELAY_NATIVE_CURRENCY } from "@tools/relay/chains.js";
+import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc20-approval.js";
 import type { RelaySignableStep } from "@tools/relay/step-policy.js";
 import { signStageBroadcast } from "@tools/kyberswap/evm/staged-broadcast.js";
 import {
@@ -32,6 +34,14 @@ import {
   markActivityBroadcast,
   markBroadcastAccepted,
 } from "@vex-agent/db/repos/agent-activity.js";
+import {
+  authorizedDepositRecipients,
+  confirmDepositWithProvenAmounts,
+  proveErc20DepositAmount,
+  receiptDepositSettlement,
+  type DepositSettlement,
+  type DepositTransferLog,
+} from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import logger from "@utils/logger.js";
@@ -97,6 +107,47 @@ export interface OriginBroadcastInput {
   }) => ToolResult;
 }
 
+/**
+ * What the confirmed DEPOSIT step may declare it moved.
+ *
+ * A native-currency route is proven by the transaction Vex signed: the planner
+ * refuses any `tx.value` beyond the bridged amount, so the value that was signed
+ * IS the principal and no log exists to read. An ERC-20 route travels as
+ * provider calldata, so its amount comes from the receipt and from nothing else:
+ * one `Transfer` of the origin currency, out of the signing wallet, into the
+ * call target or a spender this bridge approved FOR THAT SAME TOKEN, at most the
+ * amount Relay was quoted for and at most that spender's effective allowance.
+ * The token binding is not decoration: a spender approved for another token is
+ * not an authorized destination for this one, and one whose allowance was reset
+ * to zero is not one either.
+ */
+function relayDepositSettlement(args: {
+  readonly legs: RelayLegs;
+  readonly txParams: { readonly to: string; readonly value?: bigint };
+  readonly approvedSpenders: readonly ApprovedSpender[];
+  readonly logs: readonly DepositTransferLog[];
+  readonly senderAddress: string;
+}): DepositSettlement {
+  const { legs, txParams } = args;
+  if (legs.originCurrency.toLowerCase() === RELAY_NATIVE_CURRENCY) {
+    const signedValue = txParams.value ?? 0n;
+    return signedValue > 0n
+      ? { kind: "proven", evidence: { kind: "vex_built_exact", amountRaw: signedValue.toString() } }
+      : { kind: "declined", reason: "unusable_evidence_request", candidateCount: 0 };
+  }
+  return receiptDepositSettlement(proveErc20DepositAmount({
+    logs: args.logs,
+    tokenAddress: legs.originCurrency,
+    senderAddress: args.senderAddress,
+    recipients: authorizedDepositRecipients({
+      inputToken: legs.originCurrency,
+      callTarget: txParams.to,
+      approvals: args.approvedSpenders,
+    }),
+    quotedAmountInRaw: legs.amount,
+  }));
+}
+
 export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<OriginBroadcastRun> {
   const { signable, legRows, executionId, requestId, legs, clients, from, to, feeLegIndex } = input;
   const broadcasts: OriginBroadcast[] = [];
@@ -106,6 +157,11 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
   // depends on, and the estimating node does not always have it yet (live
   // 2026-07-25, deposit `0xc96bfee1…` — `dependent-leg-gas-estimate.ts`).
   let priorLeg: ConfirmedPriorLeg | undefined;
+  // Where the approve steps of THIS bridge let a token be pulled to, each bound
+  // to the token its own approval named. Together with the deposit call's own
+  // target, the ones naming the ORIGIN currency are the only recipients a
+  // deposit transfer may pay for its amount to count as proven.
+  const approvedSpenders: ApprovedSpender[] = [];
   try {
     for (let i = 0; i < signable.length; i++) {
       currentIndex = i;
@@ -122,6 +178,15 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         tradeType: legs.tradeType,
         bridgedAmountRaw: legs.amount,
       });
+      if (stepEntry.role === "allowance") {
+        // The approval transaction's target IS the token contract it approves.
+        // Kept in signing order, amount included: the deposit's confirm site
+        // replays them, so a later `approve(spender, 0)` revokes an earlier grant.
+        const approval = decodeErc20Approve(txParams.data);
+        if (approval !== null) {
+          approvedSpenders.push({ token: txParams.to, spender: approval.spender, amountRaw: approval.amount });
+        }
+      }
       const outcome = await signStageBroadcast(clients.publicClient, clients.walletClient, txParams, {
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(legRow.id, handles);
@@ -204,19 +269,29 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
       let legStatus: OriginBroadcast["status"] = "confirmed";
       priorLeg = priorLegAnchorFrom(outcome.receipt.blockNumber);
       try {
-        // R1 Step 3b, the NO-amount arm, stated rather than left silent.
-        // Confirming this leg proves it was INCLUDED; it does not prove what it
-        // moved. Relay's own native-value module says the principal is provable
-        // only when the origin asset IS the chain's native currency — on an
-        // ERC-20 route it travels as provider calldata and `tx.value` is zero —
-        // and the final gate authorizes exactly such a zero-value deposit "with
-        // no components". Writing the quoted amount here would state a
-        // settlement this repository's authorization layer refuses to state.
-        // The amounts are left to a decode that can prove them.
-        const confirmResult = await confirmActivityEvent(
-          legRow.id,
-          provenLegAmounts(stepEntry.role, { kind: "opaque_provider_payload" }),
-        );
+        // Confirming a leg proves it was INCLUDED; it does not prove what it
+        // moved. An approve leg moves nothing. The deposit leg declares an
+        // amount only when its own receipt proves one: the native value Vex
+        // signed, or the single ERC-20 `Transfer` bound to the wallet, the
+        // authorized recipient and the quoted amount
+        // (`bridge-deposit-evidence.ts`). Anything else declines by name.
+        const confirmResult = stepEntry.role === "bridge_deposit"
+          ? await confirmDepositWithProvenAmounts({
+            eventId: legRow.id,
+            role: stepEntry.role,
+            txHash: outcome.txHash,
+            chainId: legs.originChainId,
+            settlement: relayDepositSettlement({
+              legs, txParams, approvedSpenders,
+              logs: outcome.receipt.logs,
+              senderAddress: input.expectedFrom,
+            }),
+            logScope: "relay.bridge",
+          })
+          : await confirmActivityEvent(
+            legRow.id,
+            provenLegAmounts(stepEntry.role, { kind: "opaque_provider_payload" }),
+          );
         if (!confirmResult.applied && confirmResult.row.status !== "confirmed") {
           legStatus = "confirmed_unrecorded";
           logger.warn("relay.bridge.leg_confirm_cas_miss", { id: legRow.id, rowStatus: confirmResult.row.status });
