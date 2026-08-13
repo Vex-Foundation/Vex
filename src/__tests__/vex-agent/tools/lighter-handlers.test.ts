@@ -747,6 +747,9 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("rhc", { marketId: 0, filter: "all" });
     expect(data.count).toBe(1);
     expect((data.details as Record<string, unknown>[])[0]?.lastTradePrice).toBe(3500);
+    expect(data.responseRules).toEqual(expect.arrayContaining([
+      expect.stringContaining("Never infer or append asset symbols"),
+    ]));
 
     mocks.client.getMarketDetails.mockResolvedValueOnce({
       code: 200,
@@ -1437,6 +1440,11 @@ describe("Lighter agent read handlers", () => {
     expect(projectedAsks[0]?.orderIndexPrecision).toBe("unsafe_provider_number_omitted");
     expect(projectedBids[0]?.orderIndex).toBeNull();
     expect(projectedBids[0]?.orderIndexPrecision).toBe("unsafe_provider_number_omitted");
+    expect(projectedAsks[0]?.orderExpiryIso).toBe("2026-08-09T00:00:00.000Z");
+    expect(projectedAsks[0]?.orderExpiryUnit).toBe("epoch_milliseconds");
+    expect(data.responseRules).toEqual(expect.arrayContaining([
+      expect.stringContaining("Prefer orderExpiryIso"),
+    ]));
   });
 
   it("reads recent trades with bounded rows and next cursor disclosure", async () => {

@@ -76,6 +76,12 @@ function safeIntegerOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
+function epochMillisecondsIsoOrNull(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function marketStatusRank(market: LighterMarket): number {
   return market.status === "active" ? 0 : 1;
 }
@@ -221,6 +227,8 @@ export function projectOrder(order: LighterSimpleOrder): Record<string, unknown>
     initialBaseAmount: order.initial_base_amount,
     remainingBaseAmount: order.remaining_base_amount,
     orderExpiry: order.order_expiry,
+    orderExpiryIso: epochMillisecondsIsoOrNull(order.order_expiry),
+    orderExpiryUnit: "epoch_milliseconds",
     transactionTime: order.transaction_time,
   };
 }

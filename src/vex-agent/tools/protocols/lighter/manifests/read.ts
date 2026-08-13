@@ -259,7 +259,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Get detailed public metadata for one Lighter market on Core or Robinhood Chain by numeric marketId. Use when the user already has a market id and needs last trade price, daily activity, volume, open interest, fees, decimals, funding fields, minimums, and status before inspecting depth, trades, or candles. Returns matching detail rows and fails clearly if the market id is not found. Read-only: no account data, signing, order placement, deposit, or withdrawal support.",
+      "Get detailed public metadata for one Lighter market on Core or Robinhood Chain by numeric marketId. Use when the user already has a market id and needs last trade price, daily activity, volume, open interest, fees, decimals, funding fields, minimums, and status before inspecting depth, trades, or candles. Returns matching detail rows and fails clearly if the market id is not found. Base and quote asset ids are numeric provider identifiers, not symbols; never infer labels for them from the market symbol. Read-only: no account data, signing, order placement, deposit, or withdrawal support.",
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, MARKET_ID_REQUIRED_PARAM, MARKET_FILTER_PARAM],
@@ -379,7 +379,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Read public resting order book orders for one Lighter market on Core or Robinhood Chain. Use when the user asks for current bids, asks, spread context, or visible liquidity around a known market id before making a market decision. Returns bounded ask and bid rows with order id, owner account index, price, initial size, remaining size, expiry, provider totals, and truncation flags. Read-only: this does not place, cancel, sign, fill, deposit, or withdraw.",
+      "Read public resting order book orders for one Lighter market on Core or Robinhood Chain. Use when the user asks for current bids, asks, spread context, or visible liquidity around a known market id before making a market decision. Returns bounded ask and bid rows with order id, owner account index, price, initial size, remaining size, raw epoch-millisecond expiry, ISO expiry, provider totals, and truncation flags. Prefer the ISO expiry for user-facing output. Read-only: this does not place, cancel, sign, fill, deposit, or withdraw.",
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, MARKET_ID_REQUIRED_PARAM, ORDERBOOK_LIMIT_PARAM],

@@ -477,6 +477,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         filter: filter.value ?? null,
         count: exact.length,
         details: exact,
+        responseRules: [
+          "Render baseAssetId and quoteAssetId as numeric provider identifiers only. Never infer or append asset symbols from the market symbol.",
+          "Describe minBaseAmount and minQuoteAmount as live provider minimum metadata. For an actionable Vex preview, calculate an amount that passes both conservative preview thresholds.",
+        ],
       });
     } catch (err) {
       return fail(`Lighter market detail unavailable (${failureDetail("lighter.market.get", err)})`);
@@ -855,6 +859,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         marketId: marketId.value,
         limit: limit.value,
         ...projectOrderBook(response, limit.value),
+        responseRules: [
+          "Prefer orderExpiryIso when displaying an order expiry. If raw orderExpiry is shown, label it explicitly as epoch milliseconds.",
+          "Do not infer asset names from numeric market, owner-account, or order identifiers.",
+        ],
       });
     } catch (err) {
       return fail(`Lighter order book unavailable (${failureDetail("lighter.orderbook", err)})`);
