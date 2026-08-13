@@ -40,6 +40,8 @@ export const apiKeysStateSchema = z
     relayConfigured: z.boolean(),
     lighterCoreReadOnlyConfigured: z.boolean().optional(),
     lighterRhcReadOnlyConfigured: z.boolean().optional(),
+    lighterCoreTradingConfigured: z.boolean().optional(),
+    lighterRhcTradingConfigured: z.boolean().optional(),
   })
   .strict();
 

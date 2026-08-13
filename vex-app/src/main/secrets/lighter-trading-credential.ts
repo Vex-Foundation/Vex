@@ -105,6 +105,28 @@ export function getUnlockedLighterTradingCredentialStatus(
   }
 }
 
+export function hasUnlockedLighterTradingCredential(
+  environment: LighterTradingCredentialVaultReference["environment"],
+): boolean {
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) return false;
+
+  try {
+    const contents = unlockSecretVault(password.data, {
+      filePath: SECRETS_VAULT_FILE,
+    });
+    const extraSecrets = contents.extraSecrets ?? {};
+    const prefix = `lighter/${environment}/account-`;
+    return Object.entries(extraSecrets).some(([key, value]) =>
+      key.startsWith(prefix)
+      && /\/api-key-(?:[4-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-4])$/.test(key)
+      && typeof value === "string"
+      && value.trim().length > 0);
+  } catch {
+    return false;
+  }
+}
+
 export function readUnlockedLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
 ): string | null {

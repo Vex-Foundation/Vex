@@ -51,6 +51,7 @@ import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
 import {
   JupiterCard,
   LighterReadOnlyCard,
+  LighterTradingCard,
   TavilyCard,
   RettiwtCard,
   RelayCard,
@@ -85,6 +86,14 @@ export function ApiKeysStep({
     relay: useRef<HTMLInputElement | null>(null),
     lighterCoreReadOnly: useRef<HTMLInputElement | null>(null),
     lighterRhcReadOnly: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingAccountIndex: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingPrivateKey: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingRemove: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingAccountIndex: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingPrivateKey: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingRemove: useRef<HTMLInputElement | null>(null),
   };
 
   const envState = envQuery.data?.ok === true ? envQuery.data.data : null;
@@ -97,6 +106,10 @@ export function ApiKeysStep({
     apiKeysState?.lighterCoreReadOnlyConfigured ?? false;
   const lighterRhcReadOnlyConfigured =
     apiKeysState?.lighterRhcReadOnlyConfigured ?? false;
+  const lighterCoreTradingConfigured =
+    apiKeysState?.lighterCoreTradingConfigured ?? false;
+  const lighterRhcTradingConfigured =
+    apiKeysState?.lighterRhcTradingConfigured ?? false;
   // Back-edit ALWAYS renders the full form. In setup mode the skip-card
   // stays available whenever Jupiter is already configured (the skip-card
   // copy assumes it).
@@ -234,11 +247,31 @@ export function ApiKeysStep({
           inputRef={refs.lighterRhcReadOnly}
         />
 
+        <LighterTradingCard
+          environment="rhc"
+          status={statusFor(lighterRhcTradingConfigured)}
+          configured={lighterRhcTradingConfigured}
+          accountIndexRef={refs.lighterRhcTradingAccountIndex}
+          apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
+          privateKeyRef={refs.lighterRhcTradingPrivateKey}
+          removeRef={refs.lighterRhcTradingRemove}
+        />
+
         <LighterReadOnlyCard
           environment="core"
           status={statusFor(lighterCoreReadOnlyConfigured)}
           configured={lighterCoreReadOnlyConfigured}
           inputRef={refs.lighterCoreReadOnly}
+        />
+
+        <LighterTradingCard
+          environment="core"
+          status={statusFor(lighterCoreTradingConfigured)}
+          configured={lighterCoreTradingConfigured}
+          accountIndexRef={refs.lighterCoreTradingAccountIndex}
+          apiKeyIndexRef={refs.lighterCoreTradingApiKeyIndex}
+          privateKeyRef={refs.lighterCoreTradingPrivateKey}
+          removeRef={refs.lighterCoreTradingRemove}
         />
 
         {formError ? (

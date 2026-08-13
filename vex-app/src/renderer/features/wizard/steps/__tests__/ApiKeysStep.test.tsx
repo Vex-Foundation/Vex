@@ -86,6 +86,8 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       relayConfigured: false,
       lighterCoreReadOnlyConfigured: false,
       lighterRhcReadOnlyConfigured: false,
+      lighterCoreTradingConfigured: false,
+      lighterRhcTradingConfigured: false,
       ...overrides,
     },
     secrets: {
@@ -221,6 +223,43 @@ describe("ApiKeysStep", () => {
     expect(coreInput.value).toBe("");
   });
 
+  it("submits Lighter trading credentials without keeping them in the form", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetApiKeys.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: ["LIGHTER_RHC_TRADING_API_PRIVATE_KEY"],
+      },
+    } as Result<ApiKeysSetResult>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
+    const { container, getByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const accountInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-account-index",
+    ) as HTMLInputElement;
+    const apiKeyInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-api-key-index",
+    ) as HTMLInputElement;
+    const privateKeyInput = getByLabelText(/Lighter RHC trading API private key/i) as HTMLInputElement;
+    fireEvent.input(accountInput, { target: { value: "1171" } });
+    fireEvent.input(apiKeyInput, { target: { value: "7" } });
+    fireEvent.input(privateKeyInput, { target: { value: `0x${"1".repeat(80)}` } });
+    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(mockSetApiKeys).toHaveBeenCalledWith({
+        lighterRhcTradingAccountIndex: 1171,
+        lighterRhcTradingApiKeyIndex: 7,
+        lighterRhcTradingApiPrivateKey: `0x${"1".repeat(80)}`,
+      });
+    });
+    expect(accountInput.value).toBe("");
+    expect(apiKeyInput.value).toBe("");
+    expect(privateKeyInput.value).toBe("");
+  });
+
   // Optional-connections model: API keys never block advancement. The
   // form shows a non-blocking "Jupiter missing" warning and the user can
   // proceed via "Skip optional" / "Save and continue".
@@ -308,10 +347,19 @@ describe("ApiKeysStep", () => {
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(6);
+    expect(cards).toHaveLength(8);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt", "relay", "lighter-rhc", "lighter-core"]);
+    ).toEqual([
+      "jupiter",
+      "tavily",
+      "rettiwt",
+      "relay",
+      "lighter-rhc",
+      "lighter-rhc-trading",
+      "lighter-core",
+      "lighter-core-trading",
+    ]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {

@@ -20,11 +20,24 @@ export interface FieldRefs {
   readonly relay: RefObject<HTMLInputElement | null>;
   readonly lighterCoreReadOnly: RefObject<HTMLInputElement | null>;
   readonly lighterRhcReadOnly: RefObject<HTMLInputElement | null>;
+  readonly lighterCoreTradingAccountIndex: RefObject<HTMLInputElement | null>;
+  readonly lighterCoreTradingApiKeyIndex: RefObject<HTMLInputElement | null>;
+  readonly lighterCoreTradingPrivateKey: RefObject<HTMLInputElement | null>;
+  readonly lighterCoreTradingRemove: RefObject<HTMLInputElement | null>;
+  readonly lighterRhcTradingAccountIndex: RefObject<HTMLInputElement | null>;
+  readonly lighterRhcTradingApiKeyIndex: RefObject<HTMLInputElement | null>;
+  readonly lighterRhcTradingPrivateKey: RefObject<HTMLInputElement | null>;
+  readonly lighterRhcTradingRemove: RefObject<HTMLInputElement | null>;
 }
 
 export function clearAll(refs: FieldRefs): void {
   for (const ref of Object.values(refs)) {
-    if (ref.current) ref.current.value = "";
+    if (!ref.current) continue;
+    if (ref.current.type === "checkbox") {
+      ref.current.checked = false;
+    } else {
+      ref.current.value = "";
+    }
   }
 }
 
@@ -37,6 +50,22 @@ export function buildPayload(refs: FieldRefs): ApiKeysSetInput {
     refs.lighterCoreReadOnly.current?.value.trim() ?? "";
   const lighterRhcReadOnly =
     refs.lighterRhcReadOnly.current?.value.trim() ?? "";
+  const lighterCoreTradingAccountIndex =
+    refs.lighterCoreTradingAccountIndex.current?.value.trim() ?? "";
+  const lighterCoreTradingApiKeyIndex =
+    refs.lighterCoreTradingApiKeyIndex.current?.value.trim() ?? "";
+  const lighterCoreTradingPrivateKey =
+    refs.lighterCoreTradingPrivateKey.current?.value.trim() ?? "";
+  const lighterCoreTradingRemove =
+    refs.lighterCoreTradingRemove.current?.checked === true;
+  const lighterRhcTradingAccountIndex =
+    refs.lighterRhcTradingAccountIndex.current?.value.trim() ?? "";
+  const lighterRhcTradingApiKeyIndex =
+    refs.lighterRhcTradingApiKeyIndex.current?.value.trim() ?? "";
+  const lighterRhcTradingPrivateKey =
+    refs.lighterRhcTradingPrivateKey.current?.value.trim() ?? "";
+  const lighterRhcTradingRemove =
+    refs.lighterRhcTradingRemove.current?.checked === true;
 
   return {
     ...(jupiter.length > 0 ? { jupiterApiKey: jupiter } : {}),
@@ -49,5 +78,25 @@ export function buildPayload(refs: FieldRefs): ApiKeysSetInput {
     ...(lighterRhcReadOnly.length > 0
       ? { lighterRhcReadOnlyToken: lighterRhcReadOnly }
       : {}),
+    ...(lighterCoreTradingAccountIndex.length > 0
+      ? { lighterCoreTradingAccountIndex: Number(lighterCoreTradingAccountIndex) }
+      : {}),
+    ...(lighterCoreTradingApiKeyIndex.length > 0
+      ? { lighterCoreTradingApiKeyIndex: Number(lighterCoreTradingApiKeyIndex) }
+      : {}),
+    ...(lighterCoreTradingPrivateKey.length > 0
+      ? { lighterCoreTradingApiPrivateKey: lighterCoreTradingPrivateKey }
+      : {}),
+    ...(lighterCoreTradingRemove ? { lighterCoreTradingRemove: true } : {}),
+    ...(lighterRhcTradingAccountIndex.length > 0
+      ? { lighterRhcTradingAccountIndex: Number(lighterRhcTradingAccountIndex) }
+      : {}),
+    ...(lighterRhcTradingApiKeyIndex.length > 0
+      ? { lighterRhcTradingApiKeyIndex: Number(lighterRhcTradingApiKeyIndex) }
+      : {}),
+    ...(lighterRhcTradingPrivateKey.length > 0
+      ? { lighterRhcTradingApiPrivateKey: lighterRhcTradingPrivateKey }
+      : {}),
+    ...(lighterRhcTradingRemove ? { lighterRhcTradingRemove: true } : {}),
   };
 }

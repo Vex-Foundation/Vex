@@ -35,7 +35,9 @@ export type ProviderCardSlug =
   | "rettiwt"
   | "relay"
   | "lighter-core"
-  | "lighter-rhc";
+  | "lighter-core-trading"
+  | "lighter-rhc"
+  | "lighter-rhc-trading";
 
 export type ProviderCardStatusTone = "set" | "partial" | "unset";
 

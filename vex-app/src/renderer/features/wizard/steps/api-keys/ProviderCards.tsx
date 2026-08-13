@@ -287,3 +287,110 @@ export function LighterReadOnlyCard({
     </ProviderCard>
   );
 }
+
+export interface LighterTradingCardProps {
+  readonly environment: "core" | "rhc";
+  readonly status: ProviderCardStatus;
+  readonly configured: boolean;
+  readonly accountIndexRef: RefObject<HTMLInputElement | null>;
+  readonly apiKeyIndexRef: RefObject<HTMLInputElement | null>;
+  readonly privateKeyRef: RefObject<HTMLInputElement | null>;
+  readonly removeRef: RefObject<HTMLInputElement | null>;
+}
+
+export function LighterTradingCard({
+  environment,
+  status,
+  configured,
+  accountIndexRef,
+  apiKeyIndexRef,
+  privateKeyRef,
+  removeRef,
+}: LighterTradingCardProps): JSX.Element {
+  const title =
+    environment === "rhc"
+      ? "Lighter RHC trading"
+      : "Lighter Core trading";
+  const prefix = `vex-apikey-lighter-${environment}-trading`;
+  return (
+    <ProviderCard
+      slug={environment === "rhc" ? "lighter-rhc-trading" : "lighter-core-trading"}
+      iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
+      name={title}
+      status={status}
+      description="Required before a Lighter preview can be prepared for approval."
+      detail={
+        <>
+          Paste the trading API private key for the exact Lighter account and
+          API-key index you will approve from. Vex stores it only in the
+          encrypted local vault and never mirrors it into environment variables.
+        </>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`${prefix}-account-index`}
+            className="text-xs text-[var(--color-text-muted)]"
+          >
+            Account index
+          </Label>
+          <input
+            id={`${prefix}-account-index`}
+            ref={accountIndexRef}
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`${prefix}-api-key-index`}
+            className="text-xs text-[var(--color-text-muted)]"
+          >
+            API-key index
+          </Label>
+          <input
+            id={`${prefix}-api-key-index`}
+            ref={apiKeyIndexRef}
+            type="number"
+            min={4}
+            max={254}
+            step={1}
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      </div>
+      <Label htmlFor={`${prefix}-private-key`} className="sr-only">
+        {title} API private key
+      </Label>
+      <PasswordField
+        id={`${prefix}-private-key`}
+        autoComplete="new-password"
+        ref={privateKeyRef}
+      />
+      <label
+        htmlFor={`${prefix}-remove`}
+        className="flex items-start gap-2 text-xs text-[var(--color-text-muted)]"
+      >
+        <input
+          id={`${prefix}-remove`}
+          ref={removeRef}
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-subtle)] bg-transparent"
+        />
+        Remove the saved trading key for this account/API-key scope.
+      </label>
+      <p className="text-xs text-[var(--color-text-muted)]">
+        {configured
+          ? "Leave blank to keep the saved trading key, paste a replacement, or check remove."
+          : "Needed only when moving from preview to approval preparation."}
+      </p>
+    </ProviderCard>
+  );
+}

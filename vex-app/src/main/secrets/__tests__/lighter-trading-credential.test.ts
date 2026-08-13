@@ -243,6 +243,34 @@ describe("Lighter trading credential vault status and removal", () => {
     });
   });
 
+  it("reports environment-level presence without returning key material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        "lighter/rhc/account-1171/api-key-7": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-3": PRIVATE_KEY,
+        "lighter/core/account-42/api-key-7": "",
+      },
+    });
+    const { hasUnlockedLighterTradingCredential } = await loadModule();
+
+    expect(hasUnlockedLighterTradingCredential("rhc")).toBe(true);
+    expect(hasUnlockedLighterTradingCredential("core")).toBe(false);
+  });
+
+  it("reports environment-level absence while locked", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({
+      ok: false,
+      error: { code: "wallet.keystore_locked", message: "locked" },
+    });
+    const { hasUnlockedLighterTradingCredential } = await loadModule();
+
+    expect(hasUnlockedLighterTradingCredential("rhc")).toBe(false);
+    expect(mockUnlockSecretVault).not.toHaveBeenCalled();
+  });
+
   it("deletes the matching key from vault extraSecrets", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     mockWriteSecretVaultExtraSecrets.mockReturnValue({

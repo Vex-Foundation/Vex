@@ -1,6 +1,6 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-12**
+**Last updated: 2026-08-13**
 
 Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, a live-data-backed order preview gate, and local
@@ -17,7 +17,10 @@ main-process vault reader, reserve a nonce, sign with the packaged helper, mark
 submitted, call `sendTx`, and persist API acceptance only after the explicit
 live-trading release gate opens. The gate remains closed, so Vex still has no
 agent-facing live order submission, order cancel, deposit, withdrawal, transfer,
-or other reachable provider state-changing Lighter path.
+or other reachable provider state-changing Lighter path. Settings/API keys can
+now import or remove Lighter trading API private keys into the encrypted local
+vault by exact `(environment, accountIndex, apiKeyIndex)` scope; those keys are
+stored as non-env extra secrets and are not returned to the renderer.
 
 ## Sources
 
@@ -98,9 +101,10 @@ evidence.
 
 ## Milestone 8 Execution Boundary
 
-The next build slice is the execution architecture, not live trading. The
-preview gate may feed a future exact matching order, but no order can be sent
-until these boundaries are implemented and reviewed:
+The execution architecture boundary is documented and code-guarded, but it is
+still not live trading. The preview gate may feed a future exact matching
+order, but no order can be sent until the explicit live-trading release gate is
+opened after review and live provider proof:
 
 - Lighter order writes classify as external exchange mutations. If the existing
   taxonomy is used, the first create/cancel tools must be `external_post`;
@@ -206,6 +210,12 @@ Signer and credential strategy:
   does not fall back to environment variables, and maps vault failures without
   echoing secret material. These functions are not yet invoked by
   `lighter.order.create`.
+- Settings/API keys calls this main-process boundary directly for one-time
+  import or removal. The renderer submits only the typed account/API-key scope
+  plus the one-time private-key field; after a successful save the form is
+  cleared, and status returns only environment-level configured booleans.
+  Managed environment-vault keys remain separate from these trading extra
+  secrets.
 - `signer-order.ts` maps a ready-for-signer plan into unsigned Lighter
   create-order fields, including official order type and time-in-force enum
   codes, ask/bid side, integer size/price, expiry, and a deterministic uint48
@@ -271,9 +281,11 @@ Signer and credential strategy:
   provider submission. This is intentional until the privileged signer adapter,
   durable post-submit lifecycle, and handler-level `sendTx` wiring are verified.
 
-Milestone 8 is complete only when the signer strategy, nonce model, durable
-activity lifecycle, and failure/repair policy are reviewed. Live order
-submission belongs to the later approval-gated create milestone.
+Milestone 8 S1/S2 are closed for the documented execution boundary and
+code-level guardrails: create remains approval-gated, cancel surfaces are not
+registered, and submit/signing behavior is isolated behind the disabled
+live-trading release gate. Live order submission belongs to the later
+approval-gated create milestone.
 
 Nonce foundation now has durable storage in `lighter_nonce_state` and an
 internal public nonce sync helper:
