@@ -1,0 +1,58 @@
+/**
+ * Projection of validated Morpho reads into agent-facing rows - public entry.
+ *
+ * The implementation lives in the sibling `./projectors/` folder: the money and
+ * percent primitives every lane shares, then one module per lane. This name and
+ * these exports are unchanged, so nothing that imports them moved.
+ */
+
+export {
+  MORPHO_USD_DISCLAIMER,
+  formatRawAmount,
+  projectAmount,
+  projectAsset,
+  projectStandalone,
+  toPercent,
+  type ProjectedAmount,
+  type ProjectedAsset,
+} from "./projectors/_shared.js";
+
+export {
+  MORPHO_APY_DISCLAIMER,
+  projectApyWindow,
+  projectMarketDetail,
+  projectMarketRow,
+  selectMarketFields,
+  type ProjectedApy,
+  type ProjectedMarketRow,
+} from "./projectors/markets.js";
+
+export {
+  MORPHO_VAULT_APY_DISCLAIMER,
+  MORPHO_VAULT_GATING_NOTE,
+  MORPHO_VAULT_CURATOR_NOTE,
+  projectVaultRow,
+  projectVaultDetail,
+  selectVaultFields,
+  type ProjectedVaultRow,
+} from "./projectors/vaults.js";
+
+export {
+  MORPHO_HEALTH_FACTOR_NOTE,
+  MORPHO_POSITION_USD_NOTE,
+  healthFactorBand,
+  projectMarketPosition,
+  projectPortfolioTotals,
+  projectVaultPosition,
+  type ProjectedMarketPositionRow,
+  type ProjectedVaultPositionRow,
+  type ProjectedPortfolioTotals,
+} from "./projectors/positions.js";
+
+export {
+  MORPHO_ACTIVITY_HISTORY_NOTE,
+  MORPHO_ACTIVITY_USD_NOTE,
+  projectActivityRow,
+  summariseActivity,
+  type ProjectedActivityRow,
+} from "./projectors/activity.js";

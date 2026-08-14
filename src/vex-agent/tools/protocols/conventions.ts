@@ -90,6 +90,74 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
     "imageId",
     "opaque id of an image already in the user's locker; the agent can never create one, only name one a read tool listed",
   ],
+
+  // -- Screening vocabulary ---------------------------------------
+  //
+  // The shape every filtered read tool in the tree already has, spelled once
+  // here instead of accumulating per-tool allowlist debt. These are GENERIC:
+  // any screening tool that pages, ranks or projects rows uses these exact
+  // four keys, and a model that learned them on one tool composes them
+  // correctly on the next.
+  ["search", "free-text substring match over a row's name/symbol identifiers"],
+  ["sort", "ranking key; the accepted set is declared as an `enum`, never left in prose"],
+  ["order", "ranking direction, `asc` or `desc`; declared as an `enum`"],
+  ["offset", "row offset for paging; pairs with the reply's `nextOffset`"],
+  ["fields", "comma-separated row field GROUPS to keep, to bound a large result"],
+  ["listedOnly", "keep only rows the protocol itself lists/curates; excludes permissionless dust"],
+
+  // -- Lending-market reads (morpho, batch 1) ----------------------
+  //
+  // Domain range predicates. They are named rather than folded into a generic
+  // `filters` object on purpose: a declared key is type-checked, echoed in
+  // `filtersApplied` and rejected by name, which an opaque bag cannot be.
+  // `*Percent` and `*Usd` suffixes carry the UNIT in the key, per the rule that
+  // prose alone has already failed to prevent a unit hazard.
+  ["marketId", "a lending market's own 32-byte id; NOT a contract address"],
+  ["loanTokenAddress", "the borrowable asset's contract address on a lending-market read"],
+  ["collateralTokenAddress", "the collateral asset's contract address on a lending-market read"],
+  ["minSupplyUsd", "floor on total supplied value, in USD"],
+  ["maxSupplyUsd", "ceiling on total supplied value, in USD"],
+  ["minBorrowUsd", "floor on total borrowed value, in USD"],
+  ["maxBorrowUsd", "ceiling on total borrowed value, in USD"],
+  ["minUtilizationPercent", "floor on borrowed/supplied, as a PERCENT"],
+  ["maxUtilizationPercent", "ceiling on borrowed/supplied, as a PERCENT"],
+  ["minNetSupplyApyPercent", "floor on net (rewards-inclusive) supply APY, as a PERCENT"],
+  ["maxNetBorrowApyPercent", "ceiling on net (rewards-inclusive) borrow APY, as a PERCENT"],
+  ["minLltvPercent", "floor on the liquidation loan-to-value threshold, as a PERCENT"],
+  ["maxLltvPercent", "ceiling on the liquidation loan-to-value threshold, as a PERCENT"],
+  ["includeHistory", "add the averaged historical window to a detail read"],
+  ["lookback", "which averaging window `includeHistory` returns; declared as an `enum`"],
+  ["includeSupplyingVaults", "add the curated vaults that supply this market to a detail read"],
+
+  // -- Curated-vault reads (morpho, batch 2) -----------------------
+  //
+  // A vault is a MANAGED deposit: a curator spreads one asset across many
+  // markets and takes a fee. The keys below name that domain rather than the
+  // lending-market one, so the two lanes stay distinguishable to a model that
+  // learned either first.
+  ["vaultAddress", "a curated vault's contract address; NOT a market id"],
+  ["version", "which generation of a protocol's contracts to read; declared as an `enum`"],
+  ["assetTokenAddress", "contract address of the asset a vault holds and pays out in"],
+  ["assetSymbol", "symbol of the asset a vault holds; the address form is preferred where both exist"],
+  ["curatorAddress", "address of the party that decides where a curated vault's money goes"],
+  ["minTvlUsd", "floor on total deposits held, in USD"],
+  ["maxTvlUsd", "ceiling on total deposits held, in USD"],
+  ["minNetApyPercent", "floor on APY NET of the curator fee, as a PERCENT"],
+  ["maxCuratorCutPercent", "ceiling on the curator's cut of the yield, as a PERCENT"],
+  ["includeAllocations", "add the per-market allocation table to a vault detail read"],
+
+  // -- Position and activity reads (morpho, batch 3) ---------------
+  //
+  // The portfolio vocabulary: what an account already HOLDS, and what already
+  // HAPPENED. Distinct from the screening keys above, which describe a venue a
+  // user has not entered yet.
+  ["scope", "which halves of a compound read to cover; declared as an `enum`"],
+  ["maxHealthFactor", "ceiling on a lending position's collateral-to-liquidation-threshold RATIO, not a percent"],
+  ["includeVaultV2", "sweep for VaultV2 positions, which no per-user list query serves"],
+  ["marketIds", "a LIST of lending-market ids; the singular form is `marketId`"],
+  ["types", "a LIST of event kinds to keep on a history read; the accepted set is declared as an `enum`"],
+  ["since", "window start as a unix timestamp in SECONDS"],
+  ["until", "window end as a unix timestamp in SECONDS"],
 ]);
 
 /**

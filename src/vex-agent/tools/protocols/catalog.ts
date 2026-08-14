@@ -39,6 +39,8 @@ import { VIRTUALS_TOOLS } from "./virtuals/manifest.js";
 import { VIRTUALS_HANDLERS } from "./virtuals/handlers.js";
 import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
+import { MORPHO_TOOLS } from "./morpho/manifest.js";
+import { MORPHO_HANDLERS } from "./morpho/handlers.js";
 import { TRENCH_TOOLS } from "./trench/manifest.js";
 import { TRENCH_HANDLERS } from "./trench/handlers.js";
 
@@ -53,6 +55,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "dexscreener",
   "virtuals",
   "pendle",
+  "morpho",
   "trench",
 ] as const;
 
@@ -87,6 +90,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
+  { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
   { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
 ];
 
@@ -187,6 +191,7 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   kyberswap: "mixed_trading",
   uniswap: "mixed_trading",
   pendle: "mixed_trading",
+  morpho: "mixed_trading",
   khalani: "bridge",
   relay: "bridge",
   dexscreener: "non_portfolio",
