@@ -25,6 +25,15 @@ import {
   LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
   isLighterLiveTradingEnabled,
 } from "./execution-boundary.js";
+import {
+  findMatchingLighterOrder,
+  findMatchingLighterTrade,
+  lighterOrderEvidenceJson,
+  lighterOrderIdFromTrade,
+  lighterTradeEvidenceJson,
+  stateFromActiveLighterOrder,
+  stateFromInactiveLighterOrder,
+} from "./order-evidence.js";
 import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
@@ -170,7 +179,8 @@ export async function executeApprovedLighterCreateOrder(input: {
   });
   if (observedNonce === null) {
     throw blockedBeforeSubmit(
-      "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted.",
+      "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted. "
+      + "Run lighter.order.status to reconcile the stuck reservation from provider evidence before preparing another order.",
     );
   }
   const nonce = await deps.reserveNonce(plan);
@@ -462,12 +472,12 @@ async function assertProviderOutcomeRepairReady(
     );
   }
 
-  const existingOrder = findMatchingOrder(
+  const existingOrder = findMatchingLighterOrder(
     [...activeOrders.orders, ...inactiveOrders.orders],
     plan,
     unsignedOrder.clientOrderIndex,
   );
-  const existingTrade = findMatchingTrade(
+  const existingTrade = findMatchingLighterTrade(
     trades.trades,
     plan,
     unsignedOrder.clientOrderIndex,
@@ -515,7 +525,7 @@ async function reconcileProviderOutcome(input: {
         },
         { token: accountAuthToken, accountIndex: plan.accountIndex },
       );
-      const active = findMatchingOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
+      const active = findMatchingLighterOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
       if (active !== null) {
         return persistProviderOutcomeSafely({
           plan,
@@ -524,10 +534,10 @@ async function reconcileProviderOutcome(input: {
           signerTxHash,
           submittedTxHash,
           source: "active_order",
-          state: stateFromActiveOrder(active),
+          state: stateFromActiveLighterOrder(active),
           providerOrderId: active.order_id,
           providerOrderStatus: active.status ?? null,
-          providerOutcomeJson: orderEvidence("active_order", active, unsignedOrder.clientOrderIndex),
+          providerOutcomeJson: lighterOrderEvidenceJson("active_order", active, unsignedOrder.clientOrderIndex),
           submitCode,
           predictedExecutionTimeMs,
           volumeQuotaRemaining,
@@ -548,7 +558,7 @@ async function reconcileProviderOutcome(input: {
       },
       { token: accountAuthToken, accountIndex: plan.accountIndex },
     );
-    const inactive = findMatchingOrder(inactiveOrders.orders, plan, unsignedOrder.clientOrderIndex);
+    const inactive = findMatchingLighterOrder(inactiveOrders.orders, plan, unsignedOrder.clientOrderIndex);
     if (inactive !== null) {
       return persistProviderOutcomeSafely({
         plan,
@@ -557,10 +567,10 @@ async function reconcileProviderOutcome(input: {
         signerTxHash,
         submittedTxHash,
         source: "inactive_order",
-        state: stateFromInactiveOrder(inactive),
+        state: stateFromInactiveLighterOrder(inactive),
         providerOrderId: inactive.order_id,
         providerOrderStatus: inactive.status ?? null,
-        providerOutcomeJson: orderEvidence("inactive_order", inactive, unsignedOrder.clientOrderIndex),
+        providerOutcomeJson: lighterOrderEvidenceJson("inactive_order", inactive, unsignedOrder.clientOrderIndex),
         submitCode,
         predictedExecutionTimeMs,
         volumeQuotaRemaining,
@@ -576,7 +586,7 @@ async function reconcileProviderOutcome(input: {
       },
       { token: accountAuthToken, accountIndex: plan.accountIndex },
     );
-    const trade = findMatchingTrade(
+    const trade = findMatchingLighterTrade(
       trades.trades,
       plan,
       unsignedOrder.clientOrderIndex,
@@ -591,9 +601,9 @@ async function reconcileProviderOutcome(input: {
         submittedTxHash,
         source: "account_trade",
         state: "partially_filled",
-        providerOrderId: orderIdFromTrade(trade, plan),
+        providerOrderId: lighterOrderIdFromTrade(trade, plan),
         providerOrderStatus: "trade_seen",
-        providerOutcomeJson: tradeEvidence(trade, plan, unsignedOrder.clientOrderIndex),
+        providerOutcomeJson: lighterTradeEvidenceJson(trade, plan, unsignedOrder.clientOrderIndex),
         submitCode,
         predictedExecutionTimeMs,
         volumeQuotaRemaining,
@@ -730,92 +740,13 @@ async function persistProviderOutcomeSafely(
   }
 }
 
-function findMatchingOrder(
-  orders: readonly LighterAccountOrder[],
-  plan: LighterOrderReadyForSignerPlan,
-  clientOrderIndex: string,
-): LighterAccountOrder | null {
-  return orders.find((order) =>
-    order.owner_account_index === plan.accountIndex
-    && order.market_index === plan.marketIndex
-    && order.client_order_id === clientOrderIndex
-  ) ?? null;
-}
 
-function findMatchingTrade(
-  trades: readonly LighterTrade[],
-  plan: LighterOrderReadyForSignerPlan,
-  clientOrderIndex: string,
-  submittedTxHash: string,
-): LighterTrade | null {
-  return trades.find((trade) => {
-    if (trade.market_id !== plan.marketIndex) return false;
-    if (trade.tx_hash === submittedTxHash) return true;
-    if (plan.side === "buy") {
-      return trade.bid_account_id === plan.accountIndex && trade.bid_client_id_str === clientOrderIndex;
-    }
-    return trade.ask_account_id === plan.accountIndex && trade.ask_client_id_str === clientOrderIndex;
-  }) ?? null;
-}
 
-function stateFromActiveOrder(order: LighterAccountOrder): "open" | "partially_filled" {
-  return decimalGreaterThanZero(order.filled_base_amount) ? "partially_filled" : "open";
-}
 
-function stateFromInactiveOrder(
-  order: LighterAccountOrder,
-): "sequencer_pending" | "partially_filled" | "filled" | "canceled" | "rejected" {
-  const status = (order.status ?? "").toLowerCase();
-  if (status.includes("fill")) return "filled";
-  if (status.includes("cancel") || status.includes("expire")) return "canceled";
-  if (status.includes("reject") || status.includes("fail")) return "rejected";
-  if (decimalGreaterThanZero(order.filled_base_amount)) return "partially_filled";
-  return "sequencer_pending";
-}
 
-function decimalGreaterThanZero(value: string | undefined): boolean {
-  if (value === undefined || !/^\d+(?:\.\d+)?$/.test(value)) return false;
-  return Number(value) > 0;
-}
 
-function orderEvidence(
-  source: "active_order" | "inactive_order",
-  order: LighterAccountOrder,
-  clientOrderIndex: string,
-): Record<string, unknown> {
-  return {
-    source,
-    clientOrderIndex,
-    orderId: order.order_id,
-    marketIndex: order.market_index,
-    ownerAccountIndex: order.owner_account_index,
-    status: order.status ?? null,
-    remainingBaseAmount: order.remaining_base_amount ?? null,
-    filledBaseAmount: order.filled_base_amount ?? null,
-    filledQuoteAmount: order.filled_quote_amount ?? null,
-  };
-}
 
-function tradeEvidence(
-  trade: LighterTrade,
-  plan: LighterOrderReadyForSignerPlan,
-  clientOrderIndex: string,
-): Record<string, unknown> {
-  return {
-    source: "account_trade",
-    clientOrderIndex,
-    tradeId: trade.trade_id_str,
-    orderId: orderIdFromTrade(trade, plan),
-    marketIndex: trade.market_id,
-    size: trade.size,
-    price: trade.price,
-    accountSide: plan.side,
-  };
-}
 
-function orderIdFromTrade(trade: LighterTrade, plan: LighterOrderReadyForSignerPlan): string {
-  return plan.side === "buy" ? trade.bid_id_str : trade.ask_id_str;
-}
 
 function ambiguous(
   plan: LighterOrderReadyForSignerPlan,

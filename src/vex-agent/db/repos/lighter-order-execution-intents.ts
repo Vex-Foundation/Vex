@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 
-import { queryOne, queryOneWith } from "../client.js";
+import { query, queryOne, queryOneWith } from "../client.js";
 import { jsonb } from "../params.js";
 import type { LighterOrderPreviewRow } from "./lighter-order-previews.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
@@ -482,6 +482,95 @@ export async function findByIntentId(
   return row ? mapRow(row) : null;
 }
 
+/**
+ * Execution states a signed/submitted order can be stranded in when the app
+ * crashed, the provider response was lost, or the sequencer outcome was never
+ * read. Repair owns moving these to a provider-evidence-backed state.
+ */
+export const LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES = [
+  "signed",
+  "submitted",
+  "api_accepted",
+  "sequencer_pending",
+  "ambiguous",
+] as const;
+
+/**
+ * Deliberately session-independent: unresolved intents from an earlier app run
+ * belong to a session that no longer exists, and repair must still see them.
+ */
+export async function listUnresolved(
+  environment?: LighterEnvironment,
+  limit = 20,
+): Promise<LighterOrderExecutionIntentRow[]> {
+  const bounded = Number.isInteger(limit) && limit > 0 && limit <= 100 ? limit : 20;
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_order_execution_intents
+      WHERE execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+        AND ($1::text IS NULL OR environment = $1)
+      ORDER BY created_at ASC
+      LIMIT ${bounded}`,
+    [environment ?? null],
+  );
+  return rows.map(mapRow);
+}
+
+export async function findByIntentIdAnySession(
+  intentId: string,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_order_execution_intents
+      WHERE intent_id = $1`,
+    [intentId],
+  );
+  return row ? mapRow(row) : null;
+}
+
+export interface MarkLighterOrderRepairResolvedInput {
+  readonly intentId: string;
+  readonly environment: LighterEnvironment;
+  readonly state: LighterProviderOutcomeExecutionState;
+  /** Nonce-inference resolutions use "not_found" with the inference detail in providerOutcomeJson. */
+  readonly source: LighterProviderOutcomeSource;
+  readonly providerOrderId?: string | null;
+  readonly providerOrderStatus?: string | null;
+  readonly providerOutcomeJson: Record<string, unknown>;
+}
+
+const MARK_REPAIR_RESOLVED_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = $3,
+       provider_outcome_source = $4,
+       provider_order_id = $5,
+       provider_order_status = $6,
+       provider_outcome_json = $7::jsonb,
+       provider_outcome_checked_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND environment = $2
+   AND execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+ RETURNING ${SELECT_COLUMNS}`;
+
+/**
+ * Repair-only transition from an unresolved state to an evidence-backed one.
+ * Unlike markProviderOutcome it may start from signed/submitted/ambiguous —
+ * exactly the states a crash or lost response strands an intent in — and it
+ * never touches a terminal or pre-signing row.
+ */
+export async function markRepairResolved(
+  input: MarkLighterOrderRepairResolvedInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(MARK_REPAIR_RESOLVED_SQL, [
+    input.intentId,
+    input.environment,
+    input.state,
+    input.source,
+    input.providerOrderId ?? null,
+    input.providerOrderStatus ?? null,
+    jsonb(input.providerOutcomeJson),
+  ]);
+  return row ? mapRow(row) : null;
+}
+
 export async function findLiveByPreview(
   sessionId: string,
   previewId: string,
@@ -712,7 +801,7 @@ function assertProviderOutcomeJson(value: Record<string, unknown>): Record<strin
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("lighter_order_execution_intents: providerOutcomeJson must be an object");
   }
-  const encoded = JSON.stringify(value);
+  const encoded = jsonb(value);
   if (encoded.length > 2_000 || /\b(?:tx_info|private|secret|signature|payload)\b/i.test(encoded)) {
     throw new Error("lighter_order_execution_intents: providerOutcomeJson must be bounded non-secret evidence");
   }
@@ -725,7 +814,7 @@ function assertPreSubmitRevalidationEvidence(
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("lighter_order_execution_intents: pre-submit revalidation evidence must be an object");
   }
-  const encoded = JSON.stringify(value);
+  const encoded = jsonb(value);
   if (
     encoded.length > 2_000
     || /(?:auth|token|tx_info|private|secret|signature|payload)/i.test(encoded)

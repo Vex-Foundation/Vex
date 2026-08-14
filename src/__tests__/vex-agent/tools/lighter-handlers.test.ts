@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   client: {
     getStatus: vi.fn(),
     getSystemConfig: vi.fn(),
+    getNextNonce: vi.fn(),
     getMarkets: vi.fn(),
     getMarketDetails: vi.fn(),
     getAccount: vi.fn(),
@@ -36,6 +37,14 @@ const mocks = vi.hoisted(() => ({
     createApprovalPendingWith: vi.fn(),
     findByIntentId: vi.fn(),
     markApprovalDecision: vi.fn(),
+    listUnresolved: vi.fn(),
+    findByIntentIdAnySession: vi.fn(),
+    markRepairResolved: vi.fn(),
+  },
+  nonceStateRepo: {
+    find: vi.fn(),
+    releaseReservation: vi.fn(),
+    recordExecutionObserved: vi.fn(),
   },
   approvalsRepo: {
     getByIdForSession: vi.fn(),
@@ -69,6 +78,22 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
   createApprovalPendingWith: mocks.executionIntentsRepo.createApprovalPendingWith,
   findByIntentId: mocks.executionIntentsRepo.findByIntentId,
   markApprovalDecision: mocks.executionIntentsRepo.markApprovalDecision,
+  listUnresolved: mocks.executionIntentsRepo.listUnresolved,
+  findByIntentIdAnySession: mocks.executionIntentsRepo.findByIntentIdAnySession,
+  markRepairResolved: mocks.executionIntentsRepo.markRepairResolved,
+  LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES: [
+    "signed",
+    "submitted",
+    "api_accepted",
+    "sequencer_pending",
+    "ambiguous",
+  ],
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-nonce-state.js", () => ({
+  find: mocks.nonceStateRepo.find,
+  releaseReservation: mocks.nonceStateRepo.releaseReservation,
+  recordExecutionObserved: mocks.nonceStateRepo.recordExecutionObserved,
 }));
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
@@ -640,6 +665,66 @@ describe("Lighter agent read handlers", () => {
 
     expect(result.output).not.toContain("approval record does not match");
     expect(mocks.executionIntentsRepo.markApprovalDecision).toHaveBeenCalled();
+  });
+
+  it("reports no unresolved Lighter order intents through lighter.order.status", async () => {
+    mocks.executionIntentsRepo.listUnresolved.mockResolvedValueOnce([]);
+
+    const data = await callJson("lighter.order.status", { environment: "rhc" });
+
+    expect(mocks.executionIntentsRepo.listUnresolved).toHaveBeenCalledWith("rhc", 10);
+    expect(data).toMatchObject({
+      source: "vex_lighter_local_order_repair",
+      environment: "rhc",
+      checkedIntents: 0,
+      stillUnresolved: 0,
+    });
+  });
+
+  it("unblocks a consumed nonce reservation through lighter.order.status without guessing the outcome", async () => {
+    mocks.executionIntentsRepo.listUnresolved.mockResolvedValueOnce([
+      executionIntentRow({
+        approvalStatus: "approved",
+        executionState: "submitted",
+        nonceReservationId: "lighter-order:lighter-exec-00000000-0000-4000-8000-000000000001",
+        nonceValue: "1200",
+        clientOrderIndex: "123456",
+        signerTxHash: "0xsigner",
+        submittedTxHash: "0xsubmitted",
+        submittedAt: "2026-08-12T00:00:05.000Z",
+        signedAt: "2026-08-12T00:00:04.000Z",
+        ambiguousReason: null,
+      }),
+    ]);
+    mocks.client.getNextNonce.mockResolvedValueOnce({ code: 200, nonce: 1250 });
+    mocks.nonceStateRepo.find.mockResolvedValueOnce({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      providerNonce: "1200",
+      publicKey: "ab".repeat(20),
+      providerTransactionTime: null,
+      status: "reserved",
+      reservedNonce: "1200",
+      reservationId: "lighter-order:lighter-exec-00000000-0000-4000-8000-000000000001",
+      source: "live_lighter_public_api",
+      observedAt: "2026-08-12T00:00:04.000Z",
+      updatedAt: "2026-08-12T00:00:04.000Z",
+    });
+    mocks.nonceStateRepo.recordExecutionObserved.mockResolvedValueOnce({ status: "observed" });
+
+    const data = await callJson("lighter.order.status", { environment: "rhc" });
+
+    expect(data.checkedIntents).toBe(1);
+    const report = (data.reports as Record<string, unknown>[])[0]!;
+    expect(report.resolution).toBe("nonce_reset_consumed");
+    expect(report.nonceBlockedAfter).toBe(false);
+    expect(report.stateAfter).toBe("submitted");
+    expect(mocks.nonceStateRepo.recordExecutionObserved).toHaveBeenCalledWith(
+      expect.objectContaining({ nonce: 1250 }),
+    );
+    expect(mocks.executionIntentsRepo.markRepairResolved).not.toHaveBeenCalled();
+    expect(mocks.nonceStateRepo.releaseReservation).not.toHaveBeenCalled();
   });
 
   it("refuses approved Lighter create when the approval row targets another intent", async () => {

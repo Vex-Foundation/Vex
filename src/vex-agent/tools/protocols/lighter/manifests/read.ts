@@ -371,6 +371,26 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],
   },
   {
+    toolId: "lighter.order.status",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Check and reconcile the true state of Vex-submitted Lighter orders. Use when the user asks what happened to a Lighter order, an order create ended sequencer_pending or ambiguous, or a new order was refused because a nonce reservation is unresolved. Reads live nextNonce and, when a read-only token is configured, account orders and trades, then updates local order records from that evidence only: it can classify an order as open, filled, canceled, or rejected, and it releases a stuck nonce reservation only when the reserved nonce is provably spent, the signed transaction never left Vex, or the order expired unconsumed. Returns per-intent reports with state before/after, evidence source, nonce blockage, and explicit wait-or-resolved guidance. It never signs, submits, retries, or cancels an order and moves no funds.",
+    mutating: false,
+    actionKind: "read",
+    params: [
+      ENVIRONMENT_PARAM,
+      {
+        key: "intentId",
+        type: "string",
+        description:
+          "Optional Lighter order execution intent id to check, from lighter.order.create.prepare or an earlier status report. Omit to check every unresolved local Lighter order intent for the environment.",
+      },
+    ],
+    exampleParams: { environment: "rhc" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.status"],
+  },
+  {
     toolId: "lighter.orderbook",
     namespace: "lighter",
     lifecycle: "active",

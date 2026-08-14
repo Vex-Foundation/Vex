@@ -158,6 +158,19 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.order.status": {
+    embeddingText: embeddingText(
+      `Check and reconcile the true state of Vex-submitted Lighter orders from provider evidence and provable nonce facts. ` +
+      `Use when: an order create ended sequencer_pending or ambiguous, the user asks what happened to a Lighter order, or a new order is blocked by an unresolved nonce reservation. ` +
+      `Returns per-intent repair reports with state before and after, evidence source, nonce blockage, and wait-or-resolved guidance. It never signs, submits, retries, or cancels an order. ` +
+      `Example queries: what happened to my lighter order, is my rhc order stuck, unblock lighter nonce.`,
+    ),
+    aliases: ["lighter order status", "lighter order stuck", "lighter order repair", "lighter nonce blocked"],
+    exampleIntents: ["what happened to my lighter order", "is my rhc order stuck", "unblock the lighter nonce reservation"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.orderbook": {
     embeddingText: embeddingText(
       `Read resting Lighter order book orders for one market on Core or Robinhood Chain, with a strict visible depth cap on each side. ` +
@@ -199,7 +212,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 15;
+const EXPECTED_COUNT = 16;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

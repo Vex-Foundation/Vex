@@ -168,6 +168,44 @@ async function reserveObservedWithQuery(
   return row ? mapRow(row) : null;
 }
 
+export interface ReleaseReservedLighterNonceInput {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  /** Live provider nextNonce read at release time; becomes the observed nonce. */
+  readonly providerNonce: number;
+}
+
+/**
+ * Release a stuck reservation back to `observed`. Callers must first prove the
+ * reserved nonce was never consumed (live nextNonce still equals it) and that
+ * the signed transaction can no longer execute — this method only enforces the
+ * exact reservation identity so an unrelated reservation can never be freed.
+ */
+export async function releaseReservation(
+  input: ReleaseReservedLighterNonceInput,
+): Promise<LighterNonceStateRow | null> {
+  const providerNonce = exactSafeIntegerString(input.providerNonce, "providerNonce");
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_nonce_state
+      SET status = 'observed',
+          provider_nonce = $5,
+          reserved_nonce = NULL,
+          reservation_id = NULL,
+          observed_at = NOW(),
+          updated_at = NOW()
+      WHERE environment = $1
+        AND account_index = $2
+        AND api_key_index = $3
+        AND status = 'reserved'
+        AND reservation_id = $4
+      RETURNING ${SELECT_COLUMNS}`,
+    [input.environment, input.accountIndex, input.apiKeyIndex, input.reservationId, providerNonce],
+  );
+  return row ? mapRow(row) : null;
+}
+
 export async function find(
   environment: LighterEnvironment,
   accountIndex: number,

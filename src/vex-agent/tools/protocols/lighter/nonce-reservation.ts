@@ -21,12 +21,16 @@ export interface ReserveLighterOrderNonceDeps {
   readonly intents: Pick<typeof lighterOrderExecutionIntentsRepo, "attachNonceReservationWith">;
 }
 
+export function lighterOrderNonceReservationId(intentId: string): string {
+  return `lighter-order:${intentId}`;
+}
+
 export async function reserveLighterOrderNonceForSigning(
   plan: LighterOrderReadyForSignerPlan,
   deps: ReserveLighterOrderNonceDeps = defaultDeps(),
 ): Promise<LighterOrderNonceReservation> {
   return deps.transaction(async (client) => {
-    const reservationId = `lighter-order:${plan.intentId}`;
+    const reservationId = lighterOrderNonceReservationId(plan.intentId);
     const reserved = await deps.nonceState.reserveObservedWith(client, {
       environment: plan.nonceScope.environment,
       accountIndex: plan.nonceScope.accountIndex,

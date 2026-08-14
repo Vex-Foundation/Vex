@@ -22,6 +22,11 @@ import { fail, ok } from "../../handler-helpers.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
+  defaultLighterOrderRepairDeps,
+  repairLighterOrderIntent,
+  repairUnresolvedLighterOrders,
+} from "../order-repair.js";
+import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
@@ -948,6 +953,55 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter candles unavailable (${failureDetail("lighter.candles", err)})`);
+    }
+  },
+
+  "lighter.order.status": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const intentIdRaw = params.intentId;
+    const intentId =
+      typeof intentIdRaw === "string" && intentIdRaw.trim().length > 0
+        ? intentIdRaw.trim()
+        : null;
+
+    try {
+      const deps = defaultLighterOrderRepairDeps();
+      let reports;
+      if (intentId !== null) {
+        const intent = await deps.intents.findByIntentIdAnySession(intentId);
+        if (intent === null) {
+          return fail(`No Lighter order execution intent ${intentId} exists locally.`);
+        }
+        reports = [await repairLighterOrderIntent(intent, deps)];
+      } else {
+        reports = await repairUnresolvedLighterOrders(
+          { environment: environment.value, limit: 10 },
+          deps,
+        );
+      }
+
+      const unresolved = reports.filter(
+        (report) =>
+          report.resolution === "awaiting_provider" || report.resolution === "degraded",
+      ).length;
+      return ok({
+        source: "vex_lighter_local_order_repair",
+        environment: environment.value,
+        checkedIntents: reports.length,
+        stillUnresolved: unresolved,
+        reports,
+        riskNotes: [
+          "Repair updates local order records from provider evidence and provable nonce facts only; it never signs, submits, or retries an order.",
+          "Never resubmit an order whose report says awaiting_provider; wait for the stated deadline and run this again.",
+        ],
+        message:
+          reports.length === 0
+            ? `No unresolved Lighter order intents exist for ${environment.value}.`
+            : `Checked ${reports.length} Lighter order intent(s); ${unresolved} still unresolved.`,
+      });
+    } catch (err) {
+      return fail(`Lighter order status unavailable (${failureDetail("lighter.order.status", err)})`);
     }
   },
 };
