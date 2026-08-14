@@ -211,6 +211,14 @@ const entries: [string, MutationContract][] = [
   // the wallet. Not a spot trade (no input/output pair, no principal moved) →
   // audited as a "reward" income event.
   ["pendle.claim",             { kind: "audit", capture: "none", expectedType: "yield", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Lighter approval-gated order create — the handler writes its durable
+  // truth DIRECTLY to `lighter_order_execution_intents` across the
+  // signed/submitted/api_accepted/sequencer_pending/provider-outcome
+  // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
+  // out of it. `kind: "projection"` (order lifecycle, no PnL): an exchange
+  // order resting on Lighter's book is not a settled trade until provider
+  // evidence proves fills, which the intent rows and repair path own.
+  ["lighter.order.create",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────
