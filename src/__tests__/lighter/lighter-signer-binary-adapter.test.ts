@@ -172,6 +172,14 @@ describe("Lighter signer binary adapter", () => {
       platform: "win32",
       arch: "x64",
     })).toBe(join("/repo", "vex-app", "resources", "lighter-signer", "vex-lighter-signer-win32-x64.exe"));
+
+    expect(resolveDefaultLighterSignerBinaryPath({
+      resourcesPath: "/Applications/Electron.app/Contents/Resources",
+      cwd: "/repo/vex-app",
+      platform: "darwin",
+      arch: "arm64",
+      defaultApp: true,
+    })).toBe(join("/repo", "vex-app", "resources", "lighter-signer", "vex-lighter-signer-darwin-arm64"));
   });
 
   it("keeps the helper process argument list empty so secrets travel only over stdin", () => {

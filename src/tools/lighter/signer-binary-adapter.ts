@@ -34,6 +34,7 @@ export interface LighterSignerBinaryPathOptions {
   readonly cwd?: string;
   readonly platform?: NodeJS.Platform;
   readonly arch?: string;
+  readonly defaultApp?: boolean;
 }
 
 interface LighterSignerBinaryBasePayload {
@@ -142,12 +143,21 @@ export function resolveDefaultLighterSignerBinaryPath(
   const binaryName = platform === "win32"
     ? `vex-lighter-signer-${platform}-${arch}.exe`
     : `vex-lighter-signer-${platform}-${arch}`;
-  const resourcesPath =
-    options.resourcesPath
-    ?? (process as NodeJS.Process & { readonly resourcesPath?: string }).resourcesPath;
+  const defaultApp =
+    options.defaultApp ??
+    Boolean((process as NodeJS.Process & { readonly defaultApp?: boolean }).defaultApp);
+  const processResourcesPath =
+    (process as NodeJS.Process & { readonly resourcesPath?: string }).resourcesPath;
+  const resourcesPath = defaultApp
+    ? undefined
+    : (options.resourcesPath ?? processResourcesPath);
+  const cwd = options.cwd ?? process.cwd();
+  const localResourceRoot = path.basename(cwd) === "vex-app"
+    ? cwd
+    : path.join(cwd, "vex-app");
   const baseDir = resourcesPath
     ? path.join(resourcesPath, "lighter-signer")
-    : path.join(options.cwd ?? process.cwd(), "vex-app", "resources", "lighter-signer");
+    : path.join(localResourceRoot, "resources", "lighter-signer");
   return path.join(baseDir, binaryName);
 }
 
