@@ -72,7 +72,7 @@ const ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
   key: "accountIndex",
   type: "number",
   description:
-    "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or l1Address.",
+    "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or walletAddress.",
 };
 
 const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
@@ -90,11 +90,11 @@ const REQUIRED_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
     "Required Lighter account index as a safe non-negative integer. This is public account-index metadata, not a private credential.",
 };
 
-const L1_ADDRESS_PARAM: ProtocolParamDef = {
-  key: "l1Address",
+const WALLET_ADDRESS_PARAM: ProtocolParamDef = {
+  key: "walletAddress",
   type: "string",
   description:
-    "Optional 0x-prefixed L1 EVM wallet address. Provide exactly one of l1Address or accountIndex.",
+    "Optional 0x-prefixed L1 EVM wallet address that owns the Lighter account. Provide exactly one of walletAddress or accountIndex.",
 };
 
 const ACTIVE_ONLY_PARAM: ProtocolParamDef = {
@@ -163,11 +163,11 @@ const ORDER_SIDE_PARAM: ProtocolParamDef = {
 };
 
 const BASE_AMOUNT_PARAM: ProtocolParamDef = {
-  key: "baseAmount",
+  key: "baseAmountIn",
   type: "string",
   required: true,
   description:
-    "Human base amount as a decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+    "Order size in the BASE asset as a human decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
 };
 
 const ORDER_PRICE_PARAM: ProtocolParamDef = {
@@ -222,13 +222,6 @@ const API_KEY_INDEX_PARAM: ProtocolParamDef = {
     "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
 };
 
-const CLIENT_ORDER_INDEX_POLICY_PARAM: ProtocolParamDef = {
-  key: "clientOrderIndexPolicy",
-  type: "string",
-  description:
-    "Optional internal client-order-index policy override. Omit for normal conversational preview requests; Vex defaults this to its local uint48 assignment policy.",
-};
-
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "lighter.system",
@@ -271,10 +264,12 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read public Lighter account state on Core or Robinhood Chain by account index or L1 address. Use when the user asks for public account balances, collateral, account status, assets, or account rows before deeper order/trade reads. Returns at most ${LIGHTER_AGENT_ACCOUNT_ROW_MAX} account rows and ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} inline positions/assets per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read public Lighter account state on Core or Robinhood Chain by account index or the owning L1 walletAddress. Use when the user asks for public account balances, collateral, account status, assets, or account rows before deeper order/trade reads. Returns at most ${LIGHTER_AGENT_ACCOUNT_ROW_MAX} account rows and ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} inline positions/assets per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
-    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, L1_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, WALLET_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    atMostOne: [["accountIndex", "walletAddress"]],
+    atLeastOneOf: [["accountIndex", "walletAddress"]],
     exampleParams: { environment: "rhc", accountIndex: 42 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.account.get"],
   },
@@ -283,10 +278,12 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or L1 address. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} positions per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or the owning L1 walletAddress. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} positions per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
-    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, L1_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, WALLET_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    atMostOne: [["accountIndex", "walletAddress"]],
+    atLeastOneOf: [["accountIndex", "walletAddress"]],
     exampleParams: { environment: "rhc", accountIndex: 42 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.positions"],
   },
@@ -331,7 +328,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read public Lighter API-key metadata for an account on Core or Robinhood Chain, including API key indexes, public keys, and current nonce values needed for future nonce planning. Requires accountIndex and optionally apiKeyIndex. Public read: no credential, API private key, wallet, signer, auth-token minting, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read public Lighter API-key metadata for an account on Core or Robinhood Chain. Use when checking which API-key slots exist on an account, their registered public keys, or current nonce values needed for nonce planning. Requires accountIndex and optionally apiKeyIndex. Returns bounded API-key rows with account index, api key index, public key, nonce, and transaction time. Public read: no credential, API private key, wallet, signer, auth-token minting, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, REQUIRED_ACCOUNT_INDEX_PARAM, API_KEY_INSPECT_INDEX_PARAM, API_KEY_LIMIT_PARAM],
@@ -343,7 +340,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, reduceOnly, and clientOrderIndexPolicy unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. After a successful preview, inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and a Lighter trading API key is needed before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, and reduceOnly unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. Returns previewId, the persisted preview identity, exact integer and display amounts, live market context, risk notes, and approvalReady. Inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and a Lighter trading API key is needed before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -360,14 +357,13 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       REDUCE_ONLY_PARAM,
       ORDER_EXPIRY_PARAM,
       ORDER_EXPIRY_OFFSET_MINUTES_PARAM,
-      CLIENT_ORDER_INDEX_POLICY_PARAM,
     ],
     atMostOne: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     atLeastOneOf: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     exampleParams: {
       marketSymbol: "ETH",
       side: "buy",
-      baseAmount: "0.001",
+      baseAmountIn: "0.001",
       price: "3000",
       orderType: "limit",
       orderExpiryOffsetMinutes: 30,

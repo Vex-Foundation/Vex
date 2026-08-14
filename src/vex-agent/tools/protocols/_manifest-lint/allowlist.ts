@@ -495,7 +495,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "solana.lend.withdraw", rule: "param-key", detail: "asset", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.lend.withdraw", rule: "param-key", detail: "withdrawAll", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.predict.buy", rule: "param-key", detail: "amountUsdc", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "solana.predict.buy", rule: "param-key", detail: "side", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.predict.claim", rule: "param-key", detail: "positionPubkey", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.predict.event", rule: "param-key", detail: "eventId", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.predict.event", rule: "param-key", detail: "includeMarkets", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
@@ -585,7 +584,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "virtuals.list", rule: "param-key", detail: "sortBy", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "virtuals.list", rule: "param-key", detail: "status", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "wallet_balances", rule: "param-key", detail: "response_format", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "wallet_send_confirm", rule: "param-key", detail: "intentId", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "wallet_send_prepare", rule: "param-key", detail: "to", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "wallet_track_token", rule: "param-key", detail: "action", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
 

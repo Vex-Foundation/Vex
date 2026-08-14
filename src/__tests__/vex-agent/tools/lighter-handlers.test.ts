@@ -858,7 +858,7 @@ describe("Lighter agent read handlers", () => {
 
     const data = await callJson("lighter.positions", {
       environment: "core",
-      l1Address: "0x1111111111111111111111111111111111111111",
+      walletAddress: "0x1111111111111111111111111111111111111111",
     });
 
     expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
@@ -875,10 +875,10 @@ describe("Lighter agent read handlers", () => {
     const output = await callFail("lighter.account.get", {
       environment: "core",
       accountIndex: 42,
-      l1Address: "0x1111111111111111111111111111111111111111",
+      walletAddress: "0x1111111111111111111111111111111111111111",
     });
 
-    expect(output).toContain("Provide either accountIndex or l1Address, not both");
+    expect(output).toContain("Provide either accountIndex or walletAddress, not both");
     expect(mocks.client.getAccount).not.toHaveBeenCalled();
   });
 
@@ -1046,7 +1046,7 @@ describe("Lighter agent read handlers", () => {
       apiKeyIndex: 7,
       marketId: 0,
       side: "buy",
-      baseAmount: "0.25",
+      baseAmountIn: "0.25",
       price: "3499.99",
       orderType: "limit",
       timeInForce: "good-till-time",
@@ -1136,7 +1136,7 @@ describe("Lighter agent read handlers", () => {
         apiKeyIndex: 7,
         marketId: 0,
         side: "buy",
-        baseAmount: "0.25",
+        baseAmountIn: "0.25",
         price: "3499.99",
         orderType: "limit",
         timeInForce: "good-till-time",
@@ -1200,7 +1200,7 @@ describe("Lighter agent read handlers", () => {
     const data = await callJson("lighter.order.preview", {
       marketSymbol: "ETH",
       side: "buy",
-      baseAmount: "0.004",
+      baseAmountIn: "0.004",
       price: "3000",
       orderExpiryOffsetMinutes: 30,
     });
@@ -1275,7 +1275,7 @@ describe("Lighter agent read handlers", () => {
     const data = await callJson("lighter.order.preview", {
       marketSymbol: "ETH",
       side: "buy",
-      baseAmount: "0.25",
+      baseAmountIn: "0.25",
       price: "3000",
       orderExpiryOffsetMinutes: 30,
     });
@@ -1332,7 +1332,7 @@ describe("Lighter agent read handlers", () => {
       marketSymbol: "ETH",
       accountIndex: 42,
       side: "buy",
-      baseAmount: "0.25",
+      baseAmountIn: "0.25",
       price: "3000",
       orderExpiryOffsetMinutes: 30,
     });
@@ -1415,7 +1415,7 @@ describe("Lighter agent read handlers", () => {
     await callJson("lighter.order.preview", {
       marketSymbol: "ETH",
       side: "buy",
-      baseAmount: "0.25",
+      baseAmountIn: "0.25",
       price: "3000",
       orderExpiryOffsetMinutes: 30,
     });
@@ -1430,7 +1430,7 @@ describe("Lighter agent read handlers", () => {
   it("asks for a plain buy or sell choice when conversational preview omits direction", async () => {
     const output = await callFail("lighter.order.preview", {
       marketSymbol: "ETH",
-      baseAmount: "0.001",
+      baseAmountIn: "0.001",
       price: "3000",
       orderExpiryOffsetMinutes: 30,
     });
@@ -1447,7 +1447,7 @@ describe("Lighter agent read handlers", () => {
       accountIndex: 42,
       marketId: 0,
       side: "buy",
-      baseAmount: "0.25",
+      baseAmountIn: "0.25",
       price: "3499.99",
       orderType: "limit",
       timeInForce: "good-till-time",

@@ -81,7 +81,18 @@ describe("signer import allowlist", () => {
     // "local_write" is allowed for a tool that changes local state only — no
     // signing, no provider call, no approval. Currently unused by any live
     // manifest; kept as a reviewed, allowed kind for the next tool that needs it.
-    const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post", "local_write"]);
+    // "approval_prepare" is allowed for a tool that persists a durable local
+    // execution intent and enqueues the approval card for its execute twin —
+    // no signing and no provider mutation happen in the prepare itself; the
+    // execute twin stays behind its own approval and actionKind review
+    // (Lighter order-create prepare is the first user).
+    const allowedKinds = new Set([
+      "read",
+      "user_wallet_broadcast",
+      "external_post",
+      "local_write",
+      "approval_prepare",
+    ]);
     const seen = new Set<string>();
     for (const file of walk(join(TOOLS_DIR, "protocols"))) {
       const src = readFileSync(file, "utf-8");

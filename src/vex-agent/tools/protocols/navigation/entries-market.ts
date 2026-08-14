@@ -375,11 +375,11 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "market-research",
     groupLabel: "Market Research",
     summary:
-      "Read-only Lighter market data for Core and Robinhood Chain: public system status, market catalog, one-market detail, order book depth, recent trades, and OHLCV candles.",
+      "Lighter exchange access for Core and Robinhood Chain: public market data (status, market catalog, depth, trades, candles), public and authenticated account reads (accounts, positions, open orders, order history, fills, API-key metadata), and the approval-gated order preview/create flow.",
     whenToUse:
-      "Use when the user asks about Lighter markets, RHC/Core market ids, order book depth, latest fills, candles, or whether the public Lighter environments are reachable. Every tool requires environment: core or rhc.",
+      "Use when the user asks about Lighter markets, RHC/Core market ids, order book depth, latest fills, candles, their Lighter account, positions, open orders, trade history, or wants to preview or place a Lighter order. Order placement is always preview-first and approval-gated. Tools default to environment rhc; pass core explicitly for Lighter Core.",
     preferInstead:
-      "Use `dexscreener` for broad multi-chain DEX pair research and use execution venues only after a separate quote/approval flow; Lighter currently exposes no order placement through Vex.",
+      "Use `dexscreener` for broad multi-chain DEX pair research. Lighter order execution never happens directly from a chat request: it requires a fresh preview, an approval preparation, and the user approving the card in the host UI.",
     exampleQueries: [
       'discover_tools(query="lighter market data", namespace="lighter")',
       'discover_tools(query="rhc order book depth", namespace="lighter")',
@@ -412,6 +412,45 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         summary: "Read OHLCV candle history for one Lighter market using epoch-millisecond windows.",
         toolPrefixes: ["lighter.candles"],
         hints: ["candles", "ohlcv", "price history", "chart", "volatility"],
+      },
+      {
+        label: "Accounts and positions",
+        summary:
+          "Read public Lighter account state, positions, and API-key metadata by account index or owning wallet address.",
+        toolPrefixes: ["lighter.account", "lighter.positions", "lighter.apiKeys"],
+        hints: [
+          "lighter account",
+          "lighter positions",
+          "account collateral",
+          "account by wallet address",
+          "api key metadata",
+        ],
+      },
+      {
+        label: "My orders and fills",
+        summary:
+          "Read authenticated open orders, order history, and account trade fills using the configured read-only token.",
+        toolPrefixes: ["lighter.openOrders", "lighter.orderHistory", "lighter.trades"],
+        hints: [
+          "my open orders",
+          "lighter order history",
+          "my fills",
+          "account trades",
+          "resting orders",
+        ],
+      },
+      {
+        label: "Order preview and approval-gated create",
+        summary:
+          "Preview an exact Lighter order from live data, then prepare and place it only through the user-approved card.",
+        toolPrefixes: ["lighter.order"],
+        hints: [
+          "preview lighter order",
+          "limit buy on lighter",
+          "place lighter order",
+          "prepare trade approval",
+          "approval gated order",
+        ],
       },
     ],
   },

@@ -150,12 +150,12 @@ export function readMarketId(
 
 export function readAccountLookup(params: Record<string, unknown>): ParamRead<LighterAccountLookup> {
   const accountIndex = readNumber(params, "accountIndex");
-  const l1Address = readAddress(params, "l1Address");
+  const l1Address = readAddress(params, "walletAddress");
   if (accountIndex !== undefined && l1Address !== undefined) {
-    return { ok: false, reason: "Provide either accountIndex or l1Address, not both." };
+    return { ok: false, reason: "Provide either accountIndex or walletAddress, not both." };
   }
   if (accountIndex === undefined && l1Address === undefined) {
-    return { ok: false, reason: "Missing required: accountIndex or l1Address." };
+    return { ok: false, reason: "Missing required: accountIndex or walletAddress." };
   }
   if (accountIndex !== undefined) {
     if (!Number.isInteger(accountIndex) || accountIndex < 0 || accountIndex > Number.MAX_SAFE_INTEGER) {
@@ -173,7 +173,7 @@ export function readAccountLookup(params: Record<string, unknown>): ParamRead<Li
     };
   }
   if (l1Address === "__INVALID_ADDRESS__") {
-    return { ok: false, reason: "l1Address must be a 0x-prefixed 20-byte EVM address." };
+    return { ok: false, reason: "walletAddress must be a 0x-prefixed 20-byte EVM address." };
   }
   return {
     ok: true,
@@ -339,7 +339,7 @@ export function readLighterOrderPreviewParams(
   if (!orderType.ok) return orderType;
   const timeInForce = readEnum(params, "timeInForce", LIGHTER_ORDER_TIME_IN_FORCE, false);
   if (!timeInForce.ok) return timeInForce;
-  const baseAmount = readRequiredString(params, "baseAmount");
+  const baseAmount = readRequiredString(params, "baseAmountIn");
   if (!baseAmount.ok) return baseAmount;
   const price = readRequiredString(params, "price");
   if (!price.ok) return price;
