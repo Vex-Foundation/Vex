@@ -237,9 +237,12 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     const intentId = readRequiredString(params, "intentId");
     if (!intentId.ok) return fail(intentId.reason);
     if (!context.approved || !context.approvalId) {
-      return fail(
-        "Lighter order create requires an approved Vex approval card for a prepared execution intent.",
-      );
+      return {
+        success: false,
+        output:
+          "Lighter order create requires an approved Vex approval card for a prepared execution intent.",
+        pendingApproval: true,
+      };
     }
 
     const intent = await lighterOrderExecutionIntentsRepo.findByIntentId(sessionId, intentId.value);

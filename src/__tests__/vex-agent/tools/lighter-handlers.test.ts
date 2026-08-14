@@ -135,6 +135,10 @@ const APPROVED_CTX: ProtocolExecutionContext = {
   approved: true,
   approvalId: "approval-1",
 };
+const FULL_CTX: ProtocolExecutionContext = {
+  ...READ_CTX,
+  sessionPermission: "full",
+};
 
 const UNSAFE_INTEGER = Number.MAX_SAFE_INTEGER + 1;
 const UNSAFE_INTEGER_2 = Number.MAX_SAFE_INTEGER + 3;
@@ -603,6 +607,22 @@ describe("Lighter agent read handlers", () => {
       actionKind: "external_post",
     });
     expect(mocks.executionIntentsRepo.findByIntentId).not.toHaveBeenCalled();
+  });
+
+  it("queues a Lighter create approval in full mode before signer access", async () => {
+    const result = await executeProtocolTool({
+      toolId: "lighter.order.create",
+      params: { intentId: "lighter-exec-00000000-0000-4000-8000-000000000001" },
+    }, FULL_CTX);
+
+    expect(result).toMatchObject({
+      success: false,
+      pendingApproval: true,
+      actionKind: "external_post",
+    });
+    expect(result.output).toContain("approved Vex approval card");
+    expect(mocks.executionIntentsRepo.findByIntentId).not.toHaveBeenCalled();
+    expect(mocks.approvalsRepo.getByIdForSession).not.toHaveBeenCalled();
   });
 
   it("records an approved Lighter create decision but refuses before signer submission", async () => {
