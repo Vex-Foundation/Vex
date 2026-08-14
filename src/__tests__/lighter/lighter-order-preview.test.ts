@@ -223,6 +223,30 @@ describe("Lighter order preview", () => {
     });
   });
 
+  it("refuses integer amounts that exceed Lighter signer wire bounds", () => {
+    expect(() => preview({ price: "50000000.00" })).toThrowError(
+      expect.objectContaining({
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: expect.stringContaining("uint32"),
+      }),
+    );
+    expect(() => preview({ baseAmount: "1000000000000000" })).toThrowError(
+      expect.objectContaining({
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: expect.stringContaining("int64"),
+      }),
+    );
+  });
+
+  it("refuses market ids beyond the signer's int16 market index bound", () => {
+    expect(() => preview({ marketId: 40_000 })).toThrowError(
+      expect.objectContaining({
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: expect.stringContaining("32767"),
+      }),
+    );
+  });
+
   it("fails closed when quote decimals do not match Lighter documented size+price scale", () => {
     expect(() => buildLighterOrderPreview(INPUT, {
       market: { ...MARKET, supported_quote_decimals: 5 },

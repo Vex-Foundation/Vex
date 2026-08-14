@@ -132,6 +132,16 @@ export const LIGHTER_ORDER_PREVIEW_FRESHNESS_MS = 2 * 60 * 1000;
 const MIN_ORDER_EXPIRY_OFFSET_MS = 5 * 60 * 1000;
 const MAX_ORDER_EXPIRY_OFFSET_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Lighter wire limits enforced by the official signer (uint32 price, int64
+ * base amount, int16 market index). Checked at preview time so an unsignable
+ * order fails before approval and nonce reservation instead of inside the
+ * signer helper.
+ */
+const LIGHTER_WIRE_PRICE_MAX = 4_294_967_295n;
+const LIGHTER_WIRE_BASE_AMOUNT_MAX = 9_223_372_036_854_775_807n;
+const LIGHTER_WIRE_MARKET_INDEX_MAX = 32_767;
+
 export function buildLighterOrderPreview(
   input: LighterOrderPreviewInput,
   context: LighterOrderPreviewContext,
@@ -175,6 +185,25 @@ export function buildLighterOrderPreview(
     { allowZero: true },
   );
   const quoteNotionalInteger = baseAmountInteger * priceInteger;
+
+  if (priceInteger > LIGHTER_WIRE_PRICE_MAX) {
+    throw invalidRequest(
+      "Lighter order preview refused: price exceeds Lighter's uint32 wire bound at this market's price decimals.",
+    );
+  }
+  if (
+    triggerPriceInteger !== null
+    && triggerPriceInteger > LIGHTER_WIRE_PRICE_MAX
+  ) {
+    throw invalidRequest(
+      "Lighter order preview refused: triggerPrice exceeds Lighter's uint32 wire bound at this market's price decimals.",
+    );
+  }
+  if (baseAmountInteger > LIGHTER_WIRE_BASE_AMOUNT_MAX) {
+    throw invalidRequest(
+      "Lighter order preview refused: baseAmount exceeds Lighter's int64 wire bound at this market's size decimals.",
+    );
+  }
 
   if (baseAmountInteger < minBaseAmount) {
     throw invalidRequest(
@@ -324,8 +353,14 @@ function validateInputScalars(input: LighterOrderPreviewInput): void {
       throw invalidRequest("apiKeyIndex must be an integer from 0 to 255 when provided.");
     }
   }
-  if (!Number.isInteger(input.marketId) || input.marketId < 0 || input.marketId > 65_535) {
-    throw invalidRequest("marketId must be an integer from 0 to 65535.");
+  if (
+    !Number.isInteger(input.marketId)
+    || input.marketId < 0
+    || input.marketId > LIGHTER_WIRE_MARKET_INDEX_MAX
+  ) {
+    throw invalidRequest(
+      `marketId must be an integer from 0 to ${LIGHTER_WIRE_MARKET_INDEX_MAX} for signable orders.`,
+    );
   }
   if (input.clientOrderIndexPolicy.trim().length === 0) {
     throw invalidRequest("clientOrderIndexPolicy is required.");
@@ -409,6 +444,13 @@ function decimalToInteger(
     throw invalidRequest(`${field} must be greater than zero.`);
   }
   return integer;
+}
+
+export function formatLighterIntegerAmount(value: bigint, decimals: number): string {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw invalidRequest("Lighter display formatting requires decimals from 0 to 18.");
+  }
+  return formatInteger(value, decimals);
 }
 
 function formatInteger(value: bigint, decimals: number): string {
