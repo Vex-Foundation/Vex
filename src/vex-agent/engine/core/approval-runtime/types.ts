@@ -66,7 +66,7 @@ export type ApprovePrepareOutcome =
       readonly kind: "dispatched";
       readonly approvalId: string;
       readonly resolvedAt: string;
-      readonly executionStatus: "succeeded" | "failed";
+      readonly executionStatus: "succeeded" | "failed" | "indeterminate";
       readonly sessionId: string;
       readonly missionRunId: string | null;
       readonly continuation: PreparedContinuation | null;

@@ -16,10 +16,12 @@
  *
  * THE CONTRACT is the ambiguous-broadcast shape the swap handlers already
  * emit: `data.status` is one of a CLOSED allowlist of in-progress literals,
- * alongside the `txHash` that was broadcast. Nothing is normalized and nothing
- * is inferred — `data` is untrusted (provider/model-derived), so only an exact
- * string literal on a plain object counts. Every other shape yields `null`,
- * which reads as "no
+ * alongside the `txHash` that was broadcast. Lighter order creation has a
+ * source-scoped variant because its `ambiguous` / `sequencer_pending` statuses
+ * are order-specific and too broad to admit globally. Nothing is normalized and
+ * nothing is inferred — `data` is untrusted (provider/model-derived), so only
+ * an exact string literal on a plain object counts. Every other shape yields
+ * `null`, which reads as "no
  * display status" and leaves the row rendering off `success` exactly as
  * before. Legacy rows persisted before this key existed therefore keep their
  * current display; there is no backfill.
@@ -60,11 +62,25 @@ const PENDING_EQUIVALENT_STATUSES: ReadonlySet<string> = new Set([
   "in_flight",
 ]);
 
+const LIGHTER_PENDING_SOURCE = "vex_lighter_live_order_create";
+const LIGHTER_PENDING_STATUSES: ReadonlySet<string> = new Set([
+  "ambiguous",
+  "sequencer_pending",
+]);
+
 export function deriveToolDisplayStatus(data: unknown): ToolDisplayStatus | null {
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
     return null;
   }
+  const source = (data as Record<string, unknown>)["source"];
   const status = (data as Record<string, unknown>)["status"];
+  if (
+    source === LIGHTER_PENDING_SOURCE
+    && typeof status === "string"
+    && LIGHTER_PENDING_STATUSES.has(status)
+  ) {
+    return PENDING_STATUS;
+  }
   return typeof status === "string" && PENDING_EQUIVALENT_STATUSES.has(status)
     ? PENDING_STATUS
     : null;

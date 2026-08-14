@@ -32,6 +32,21 @@ describe("deriveToolDisplayStatus", () => {
     expect(deriveToolDisplayStatus({ status: "in_flight" })).toBe("pending");
   });
 
+  it("derives 'pending' from source-scoped unresolved Lighter create results", () => {
+    expect(
+      deriveToolDisplayStatus({
+        source: "vex_lighter_live_order_create",
+        status: "ambiguous",
+      }),
+    ).toBe("pending");
+    expect(
+      deriveToolDisplayStatus({
+        source: "vex_lighter_live_order_create",
+        status: "sequencer_pending",
+      }),
+    ).toBe("pending");
+  });
+
   it("returns null for every status outside the closed allowlist", () => {
     expect(deriveToolDisplayStatus({ status: "confirmed" })).toBeNull();
     expect(deriveToolDisplayStatus({ status: "" })).toBeNull();
@@ -39,6 +54,8 @@ describe("deriveToolDisplayStatus", () => {
     // admitted deliberately, not inferred.
     expect(deriveToolDisplayStatus({ status: "in-flight" })).toBeNull();
     expect(deriveToolDisplayStatus({ status: "unverified" })).toBeNull();
+    expect(deriveToolDisplayStatus({ status: "ambiguous" })).toBeNull();
+    expect(deriveToolDisplayStatus({ status: "sequencer_pending" })).toBeNull();
   });
 
   it("keeps khalani's TERMINAL failures failed — the funds never arrived", () => {

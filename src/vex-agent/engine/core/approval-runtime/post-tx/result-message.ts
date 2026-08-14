@@ -140,7 +140,7 @@ async function settleExecutionOrThrow(
   client: TxClient,
   input: {
     readonly approvalId: string;
-    readonly status: "succeeded" | "failed";
+    readonly status: "succeeded" | "failed" | "indeterminate";
     readonly resultHash: string;
     readonly resultMessageId: number;
   },
@@ -178,6 +178,7 @@ export async function commitApprovedToolResult(input: {
   readonly sessionId: string;
   readonly toolCallId: string;
   readonly dispatchResult: { success: boolean; output: string };
+  readonly executionStatus?: "succeeded" | "failed" | "indeterminate";
   readonly explorerRefs?: readonly ExplorerRef[];
   /**
    * Renderer-facing display status derived by the caller from the dispatch
@@ -193,6 +194,8 @@ export async function commitApprovedToolResult(input: {
   readonly durationMs?: number;
 }): Promise<MessageWithId> {
   const { dispatchResult } = input;
+  const executionStatus =
+    input.executionStatus ?? (dispatchResult.success ? "succeeded" : "failed");
   const refs = input.explorerRefs ?? [];
   const resultHash = shortSha256(
     JSON.stringify({
@@ -221,7 +224,7 @@ export async function commitApprovedToolResult(input: {
     (client, resultMessageId) =>
       settleExecutionOrThrow(client, {
         approvalId: input.approvalId,
-        status: dispatchResult.success ? "succeeded" : "failed",
+        status: executionStatus,
         resultHash,
         resultMessageId,
       }),
