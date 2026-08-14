@@ -328,6 +328,28 @@ export const ErrorCodes = {
   PENDLE_UNSAFE_TX: "PENDLE_UNSAFE_TX",
   PENDLE_MARKET_NOT_FOUND: "PENDLE_MARKET_NOT_FOUND",
 
+  // Morpho (EVM variable-rate lending - keyless GraphQL read client, batch 1)
+  MORPHO_API_ERROR: "MORPHO_API_ERROR",
+  MORPHO_RATE_LIMITED: "MORPHO_RATE_LIMITED",
+  MORPHO_TIMEOUT: "MORPHO_TIMEOUT",
+  MORPHO_INVALID_RESPONSE: "MORPHO_INVALID_RESPONSE",
+  MORPHO_MARKET_NOT_FOUND: "MORPHO_MARKET_NOT_FOUND",
+  /**
+   * Named vault does not exist on the named chain, or exists in the OTHER
+   * generation. Distinct from a schema refusal: Morpho answers both with HTTP
+   * 200 and an `errors[]` array, and an agent that cannot tell "wrong address"
+   * from "our query broke" retries the wrong one.
+   */
+  MORPHO_VAULT_NOT_FOUND: "MORPHO_VAULT_NOT_FOUND",
+  MORPHO_UNSUPPORTED_CHAIN: "MORPHO_UNSUPPORTED_CHAIN",
+  /**
+   * The client's own budget or circuit breaker refused BEFORE any request left
+   * the process. Distinct from `MORPHO_RATE_LIMITED`, which is Morpho's own
+   * verdict: one is our restraint, the other is their refusal, and an agent that
+   * cannot tell them apart cannot report what happened.
+   */
+  MORPHO_BUDGET_EXHAUSTED: "MORPHO_BUDGET_EXHAUSTED",
+
   // Trench Express (RBC 4663 launchpad — read-only client, P1)
   TRENCH_API_ERROR: "TRENCH_API_ERROR",
   TRENCH_TIMEOUT: "TRENCH_TIMEOUT",

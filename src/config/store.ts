@@ -79,6 +79,7 @@ export interface VexConfig {
     trenchExpressTestnetApiUrl: string;
     virtualsApiUrl: string;
     pendleApiUrl: string;
+    morphoApiUrl: string;
     kyberswapAggregatorUrl: string;
     kyberswapTokenApiUrl: string;
     kyberswapCommonServiceUrl: string;
@@ -142,6 +143,10 @@ export function getDefaultConfig(): VexConfig {
       trenchExpressTestnetApiUrl: "https://api-testnet.trench.express",
       virtualsApiUrl: "https://api.virtuals.io",
       pendleApiUrl: "https://api-v2.pendle.finance/core",
+      // Morpho's keyless GraphQL endpoint. No API key exists, so no
+      // `requiresEnv` gates the morpho tools (Relay precedent: an optional key
+      // in requiresEnv hides tools from users who never needed one).
+      morphoApiUrl: "https://api.morpho.org/graphql",
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
