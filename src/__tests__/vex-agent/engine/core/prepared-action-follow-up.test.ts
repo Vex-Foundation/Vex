@@ -108,6 +108,14 @@ function lighterPrepareResult(overrides: Record<string, unknown> = {}) {
         toolName: "order.create",
         namespace: "lighter",
         criticalArgs: {
+          orderSummary:
+            "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
+            + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+          marketSymbol: "ETH",
+          baseAmountDisplay: "1",
+          priceDisplay: "3000",
+          notionalDisplay: "3000",
+          orderExpiryIso: "2030-01-01T00:00:00.000Z",
           toolId: "lighter.order.create",
           intentId: LIGHTER_INTENT_ID,
           environment: "rhc",

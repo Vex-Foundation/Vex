@@ -10,13 +10,19 @@ const REFUSAL =
 const CRITICAL_ARG_KEYS = [
   "accountIndex",
   "apiKeyIndex",
+  "baseAmountDisplay",
   "baseAmountInteger",
   "environment",
   "intentId",
   "marketIndex",
+  "marketSymbol",
   "matchHash",
+  "notionalDisplay",
+  "orderExpiryIso",
+  "orderSummary",
   "orderType",
   "previewId",
+  "priceDisplay",
   "priceInteger",
   "reduceOnly",
   "side",
@@ -73,7 +79,12 @@ function approvalPreviewMatchesIntent(
   previewJson: Record<string, unknown>,
   intent: LighterOrderExecutionIntentRow,
 ): boolean {
-  if (previewJson.toolName !== "execute_tool") return false;
+  // This is the exact preview shape the trusted prepared-action enqueue stores
+  // (`prepared-action-follow-ups.ts` canonicalizes toolName to "order.create"
+  // with namespace "lighter" before `enqueueApprovalIntent` persists it).
+  if (previewJson.toolName !== "order.create" || previewJson.namespace !== "lighter") {
+    return false;
+  }
   const criticalArgs = readRecord(previewJson.criticalArgs);
   if (criticalArgs === null) return false;
   if (Object.keys(criticalArgs).sort().join(",") !== [...CRITICAL_ARG_KEYS].sort().join(",")) {
@@ -95,7 +106,17 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.reduceOnly === intent.reduceOnly
     && criticalArgs.previewId === intent.previewId
     && criticalArgs.matchHash === intent.matchHash
+    && criticalArgs.orderExpiryIso === new Date(intent.orderExpiryMs).toISOString()
+    && isNonEmptyString(criticalArgs.orderSummary)
+    && isNonEmptyString(criticalArgs.marketSymbol)
+    && isNonEmptyString(criticalArgs.baseAmountDisplay)
+    && isNonEmptyString(criticalArgs.priceDisplay)
+    && isNonEmptyString(criticalArgs.notionalDisplay)
   );
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {

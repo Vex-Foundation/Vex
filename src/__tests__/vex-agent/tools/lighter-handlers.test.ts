@@ -93,6 +93,9 @@ const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime
 const { configureLighterTradingCredentialScopeResolver } = await import(
   "@vex-agent/tools/protocols/lighter/trading-credential-scope.js"
 );
+const { validatePreparedActionFollowUp } = await import(
+  "@vex-agent/tools/registry/prepared-action-follow-ups.js"
+);
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -258,7 +261,12 @@ function previewRow() {
     orderExpiryMs: 1893456000000,
     clientOrderIndexPolicy: "vex_assigned_uint48",
     providerVersion: "lighter-preview-v1",
-    previewJson: { symbol: "ETH" },
+    previewJson: {
+      symbol: "ETH",
+      baseAmount: { display: "1", integer: "10000", decimals: 4 },
+      price: { display: "3000", integer: "300000", decimals: 2 },
+      quoteNotional: { display: "3000", integer: "3000000000", decimals: 6 },
+    },
     liveSourceJson: { source: "live_lighter_public_api" },
     createdAt: "2026-08-12T00:00:00.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
@@ -339,8 +347,17 @@ function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
     actionKind: "external_post",
     riskLevel: "high",
     previewJson: {
-      toolName: "execute_tool",
+      toolName: "order.create",
+      namespace: "lighter",
       criticalArgs: {
+        orderSummary:
+          "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
+          + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+        marketSymbol: "ETH",
+        baseAmountDisplay: "1",
+        priceDisplay: "3000",
+        notionalDisplay: "3000",
+        orderExpiryIso: "2030-01-01T00:00:00.000Z",
         toolId: "lighter.order.create",
         intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
         environment: "rhc",
@@ -453,9 +470,24 @@ describe("Lighter agent read handlers", () => {
           accountIndex: 42,
           apiKeyIndex: 7,
           matchHash: "a".repeat(64),
+          marketSymbol: "ETH",
+          baseAmountDisplay: "1",
+          priceDisplay: "3000",
+          notionalDisplay: "3000",
+          orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          orderSummary: expect.stringContaining("Buy 1 ETH at limit price 3000"),
         }),
       },
     });
+    const followUpPreview = (result.preparedActionFollowUp as {
+      approvalPreview: { criticalArgs: Record<string, unknown> };
+    }).approvalPreview;
+    expect(String(followUpPreview.criticalArgs.orderSummary)).toContain(
+      "Robinhood Chain Lighter",
+    );
+    expect(String(followUpPreview.criticalArgs.orderSummary)).toContain(
+      "API acceptance is not final execution.",
+    );
     const data = JSON.parse(result.output) as Record<string, unknown>;
     expect(data).toMatchObject({
       source: "vex_lighter_local_execution_intent",
@@ -576,6 +608,38 @@ describe("Lighter agent read handlers", () => {
     expect(result.output).toContain("live trading is disabled");
     expect(result.output).toContain("No order was signed or submitted.");
     expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
+  });
+
+  it("accepts the exact approval preview the trusted follow-up registry actually stores", async () => {
+    // Regression guard: the binding check must agree with the shape
+    // `validatePreparedActionFollowUp` canonicalizes and `enqueueApprovalIntent`
+    // persists verbatim. Deriving the audit row from the real validator here
+    // keeps the fixture from drifting away from that contract again.
+    mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(previewRow());
+    mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
+    mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(executionIntentRow());
+
+    const prepared = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+      environment: "rhc",
+    }, READ_CTX);
+    const validated = validatePreparedActionFollowUp(
+      "execute_tool",
+      prepared.preparedActionFollowUp!,
+    );
+    expect(validated.ok, JSON.stringify(validated)).toBe(true);
+    if (!validated.ok) return;
+
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
+    mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValueOnce(approvalIntentAuditRow({
+      previewJson: validated.followUp.approvalPreview,
+    }));
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    }, APPROVED_CTX);
+
+    expect(result.output).not.toContain("approval record does not match");
+    expect(mocks.executionIntentsRepo.markApprovalDecision).toHaveBeenCalled();
   });
 
   it("refuses approved Lighter create when the approval row targets another intent", async () => {

@@ -23,6 +23,7 @@ import {
   getConfiguredLighterCreateOrderExecutionDeps,
 } from "../order-create-execution.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
+import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -56,8 +57,16 @@ function scalarApprovalPreview(
 
 function buildCreateApprovalFollowUp(
   intent: LighterOrderExecutionIntentRow,
+  preview: Parameters<typeof buildLighterOrderApprovalDisclosure>[1],
 ): PreparedActionFollowUp {
+  const disclosure = buildLighterOrderApprovalDisclosure(intent, preview);
   const criticalArgs = scalarApprovalPreview({
+    orderSummary: disclosure.orderSummary,
+    marketSymbol: disclosure.marketSymbol,
+    baseAmountDisplay: disclosure.baseAmountDisplay,
+    priceDisplay: disclosure.priceDisplay,
+    notionalDisplay: disclosure.notionalDisplay,
+    orderExpiryIso: disclosure.orderExpiryIso,
     toolId: "lighter.order.create",
     intentId: intent.intentId,
     environment: intent.environment,
@@ -173,13 +182,19 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         && existing.executionState === "approval_pending"
         && Date.parse(existing.expiresAt) > Date.now()
       ) {
+        let existingFollowUp: PreparedActionFollowUp;
+        try {
+          existingFollowUp = buildCreateApprovalFollowUp(existing, preview);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
         return {
           ...ok(approvalPreparedPayload(existing, {
             status: "approval_prepared_existing",
             message:
               "Lighter order create was already prepared; Vex will request approval for the existing pending intent.",
           })),
-          preparedActionFollowUp: buildCreateApprovalFollowUp(existing),
+          preparedActionFollowUp: existingFollowUp,
         };
       }
       return fail(
@@ -201,12 +216,18 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`Lighter order execution intent ${intentId} already exists. Retry preparation.`);
     }
 
+    let followUp: PreparedActionFollowUp;
+    try {
+      followUp = buildCreateApprovalFollowUp(created, preview);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
     return {
       ...ok(approvalPreparedPayload(created, {
         status: "approval_prepared",
         message: "Lighter order create prepared; Vex will request approval before any signer path can run.",
       })),
-      preparedActionFollowUp: buildCreateApprovalFollowUp(created),
+      preparedActionFollowUp: followUp,
     };
   },
 

@@ -51,6 +51,12 @@ const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
 ]);
 const PREVIEW_KEYS = ["network", "chain", "to", "amount", "token"] as const;
 const LIGHTER_PREVIEW_KEYS = [
+  "orderSummary",
+  "marketSymbol",
+  "baseAmountDisplay",
+  "priceDisplay",
+  "notionalDisplay",
+  "orderExpiryIso",
   "toolId",
   "intentId",
   "environment",
@@ -66,6 +72,8 @@ const LIGHTER_PREVIEW_KEYS = [
   "previewId",
   "matchHash",
 ] as const;
+
+const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 
 function isScalar(value: unknown): value is ApprovalPreviewScalar {
   return (
@@ -203,6 +211,20 @@ function validateLighterOrderCreateFollowUp(
     criticalArgs[key] = value;
   }
   if (
+    typeof criticalArgs.orderSummary !== "string" ||
+    criticalArgs.orderSummary.trim().length === 0 ||
+    criticalArgs.orderSummary.length > 600 ||
+    typeof criticalArgs.marketSymbol !== "string" ||
+    criticalArgs.marketSymbol.trim().length === 0 ||
+    criticalArgs.marketSymbol.length > 32 ||
+    typeof criticalArgs.baseAmountDisplay !== "string" ||
+    !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.baseAmountDisplay) ||
+    typeof criticalArgs.priceDisplay !== "string" ||
+    !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.priceDisplay) ||
+    typeof criticalArgs.notionalDisplay !== "string" ||
+    !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.notionalDisplay) ||
+    typeof criticalArgs.orderExpiryIso !== "string" ||
+    !Number.isFinite(Date.parse(criticalArgs.orderExpiryIso)) ||
     criticalArgs.toolId !== "lighter.order.create" ||
     criticalArgs.intentId !== intentId ||
     (criticalArgs.environment !== "core" && criticalArgs.environment !== "rhc") ||

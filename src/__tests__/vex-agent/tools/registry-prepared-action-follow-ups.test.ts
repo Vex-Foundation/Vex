@@ -35,6 +35,14 @@ function lighterCandidate() {
       toolName: "order.create",
       namespace: "lighter",
       criticalArgs: {
+        orderSummary:
+          "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
+          + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+        marketSymbol: "ETH",
+        baseAmountDisplay: "1",
+        priceDisplay: "3000",
+        notionalDisplay: "3000",
+        orderExpiryIso: "2030-01-01T00:00:00.000Z",
         toolId: "lighter.order.create",
         intentId: LIGHTER_INTENT_ID,
         environment: "rhc",
@@ -143,6 +151,36 @@ describe("prepared-action follow-up registry", () => {
             },
           },
         }),
+      ).toEqual({ ok: false, reason: "invalid_contract" });
+    }
+  });
+
+  it("rejects Lighter create follow-ups with a missing or malformed human disclosure", () => {
+    const overrides: Record<string, unknown>[] = [
+      { orderSummary: "" },
+      { orderSummary: null },
+      { orderSummary: "x".repeat(601) },
+      { marketSymbol: "" },
+      { marketSymbol: "x".repeat(33) },
+      { baseAmountDisplay: "not-a-number" },
+      { baseAmountDisplay: "-1" },
+      { priceDisplay: "3,000" },
+      { notionalDisplay: "" },
+      { orderExpiryIso: "whenever" },
+    ];
+    for (const override of overrides) {
+      expect(
+        validatePreparedActionFollowUp("execute_tool", {
+          ...lighterCandidate(),
+          approvalPreview: {
+            ...lighterCandidate().approvalPreview,
+            criticalArgs: {
+              ...lighterCandidate().approvalPreview.criticalArgs,
+              ...override,
+            },
+          },
+        }),
+        `override ${JSON.stringify(override)} must fail closed`,
       ).toEqual({ ok: false, reason: "invalid_contract" });
     }
   });
