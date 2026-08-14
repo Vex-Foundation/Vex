@@ -65,8 +65,14 @@ const SESSION = "describe-tools-suite";
  * most expensive manifests in the catalog with a full displacement warning. The
  * ratchet sits above that with headroom, and its job is to make a future
  * 37-param manifest fail HERE rather than silently blow the context envelope.
+ *
+ * Raised 185,000 -> 200,000 on 2026-08-14 (owner decision, morpho batch 3):
+ * the morpho namespace ships six deliberately thorough lending manifests under
+ * the owner's extensive-descriptions decree, and the old headroom was already
+ * exhausted before the batch (184,583 measured without it, 192,740 with it).
+ * The guard's job is unchanged - a runaway manifest still fails here first.
  */
-const DESCRIBE_RESULT_CHAR_BUDGET = 185_000;
+const DESCRIBE_RESULT_CHAR_BUDGET = 200_000;
 
 /** The env vars this suite pins, restored after every case. */
 const ENV_KEYS = [

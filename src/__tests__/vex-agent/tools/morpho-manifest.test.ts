@@ -1,0 +1,236 @@
+/**
+ * Morpho manifest surface, mirroring `pendle-manifest.test.ts`.
+ *
+ * Three lanes ship: MARKETS (batch 1), VAULTS (batch 2), and PORTFOLIO (batch 3:
+ * one wallet's positions, and the markets' transaction record). The tool-count
+ * assertion is deliberate: a later batch adding a tool must update this list, so
+ * a tool can never reach discovery without someone naming it here.
+ */
+
+import { describe, it, expect } from "vitest";
+import { MORPHO_TOOLS } from "../../../vex-agent/tools/protocols/morpho/manifest.js";
+import { MORPHO_HANDLERS } from "../../../vex-agent/tools/protocols/morpho/handlers.js";
+import { MORPHO_MARKET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/market-reads.js";
+import { MORPHO_VAULT_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/vault-reads.js";
+import { MORPHO_POSITION_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/position-reads.js";
+import {
+  PROTOCOL_NAMESPACE_ALLOWLIST,
+  NAMESPACE_DEFAULTS,
+  getProtocolHandler,
+  getProtocolManifest,
+} from "../../../vex-agent/tools/protocols/catalog.js";
+import { NAMESPACE_LIFECYCLE } from "../../../vex-agent/tools/protocols/lifecycle.js";
+import { MORPHO_CHAINS, MORPHO_SUPPORTED_CHAIN_SLUGS } from "../../../tools/morpho/chains.js";
+import { getKyberChains } from "../../../tools/kyberswap/chains.js";
+import { listLocalChains } from "../../../tools/evm-chains/registry.js";
+
+const EXPECTED_TOOL_IDS = [
+  "morpho.markets.discover",
+  "morpho.market.get",
+  "morpho.vaults.discover",
+  "morpho.vault.get",
+  "morpho.positions.get",
+  "morpho.markets.activity",
+];
+
+/** Every discovery passage in the namespace, whichever lane module owns it. */
+const MORPHO_DISCOVERY = {
+  ...MORPHO_MARKET_READ_DISCOVERY,
+  ...MORPHO_VAULT_READ_DISCOVERY,
+  ...MORPHO_POSITION_READ_DISCOVERY,
+};
+
+describe("morpho manifest", () => {
+  it("declares exactly the markets, vaults and portfolio lanes", () => {
+    expect(MORPHO_TOOLS).toHaveLength(EXPECTED_TOOL_IDS.length);
+    expect(MORPHO_TOOLS.map((t) => t.toolId).sort()).toEqual([...EXPECTED_TOOL_IDS].sort());
+  });
+
+  it("marks every tool active, read-only and non-mutating", () => {
+    for (const tool of MORPHO_TOOLS) {
+      expect(tool.namespace).toBe("morpho");
+      expect(tool.toolId.startsWith("morpho.")).toBe(true);
+      expect(tool.lifecycle).toBe("active");
+      expect(tool.mutating).toBe(false);
+      expect(tool.actionKind).toBe("read");
+    }
+  });
+
+  it("declares no requiresEnv - the API is keyless, so gating would hide the tools", () => {
+    for (const tool of MORPHO_TOOLS) expect(tool.requiresEnv).toBeUndefined();
+  });
+
+  it("has a handler registered for every manifest, and no orphan handler", () => {
+    expect(Object.keys(MORPHO_HANDLERS).sort()).toEqual([...EXPECTED_TOOL_IDS].sort());
+    for (const toolId of EXPECTED_TOOL_IDS) {
+      expect(getProtocolManifest(toolId)).toBeDefined();
+      expect(getProtocolHandler(toolId)).toBeDefined();
+    }
+  });
+
+  it("declares no fee, limit or destination parameter at all", () => {
+    // A read lane cannot take one, and a mutating batch must add them
+    // deliberately rather than inherit a spelling from here.
+    const banned = ["fee", "feeBps", "feeRecipient", "recipient", "destination", "receiver"];
+    for (const tool of MORPHO_TOOLS) {
+      for (const param of tool.params) expect(banned).not.toContain(param.key);
+    }
+  });
+
+  it("declares an enum for every param whose prose lists accepted values", () => {
+    for (const tool of MORPHO_TOOLS) {
+      for (const param of tool.params) {
+        if (/\bone of\b/i.test(param.description) && param.description.includes(",")) {
+          expect(param.enum, `${tool.toolId}.${param.key}`).toBeDefined();
+          expect(param.enum!.length).toBeGreaterThan(1);
+        }
+      }
+    }
+  });
+
+  it("ships an exampleParams containing every required key", () => {
+    for (const tool of MORPHO_TOOLS) {
+      for (const param of tool.params) {
+        if (param.required === true) expect(tool.exampleParams).toHaveProperty(param.key);
+      }
+    }
+  });
+
+  it("carries an extensive description naming the APY basis rule and the listed default", () => {
+    for (const tool of MORPHO_TOOLS) {
+      // Well past the 120-char lint minimum, per the owner's obszerne-opisy decree.
+      expect(tool.description.length).toBeGreaterThan(900);
+      expect(tool.description).toMatch(/Read-only/);
+    }
+    // The APY-basis rule is asserted on the tools that actually RETURN an APY.
+    // `morpho.markets.activity` returns none at all - it is a transaction log -
+    // so requiring the sentence there would only teach the next author to paste
+    // a claim the tool does not support.
+    for (const tool of MORPHO_TOOLS) {
+      if (tool.toolId === "morpho.markets.activity") continue;
+      expect(tool.description, tool.toolId).toMatch(/EXCLUDE/);
+      expect(tool.description, tool.toolId).toMatch(/INCLUDE/);
+    }
+    const discover = MORPHO_TOOLS.find((t) => t.toolId === "morpho.markets.discover");
+    expect(discover?.description).toContain("297,995%");
+    expect(discover?.description).toContain("REJECTED BY NAME");
+  });
+
+  it("states the vault-versus-market APY basis rule on both vault tools", () => {
+    // The single most expensive confusion available in this namespace: a vault
+    // APY has already had the curator fee taken out, a market APY has not.
+    for (const toolId of ["morpho.vaults.discover", "morpho.vault.get"]) {
+      const tool = MORPHO_TOOLS.find((t) => t.toolId === toolId);
+      expect(tool?.description, toolId).toMatch(/NET of the (vault's|curator's) fee/);
+      expect(tool?.description, toolId).toMatch(/GROSS/);
+    }
+  });
+
+  it("surfaces the gated-vault hazard on both vault tools", () => {
+    for (const toolId of ["morpho.vaults.discover", "morpho.vault.get"]) {
+      const tool = MORPHO_TOOLS.find((t) => t.toolId === toolId);
+      expect(tool?.description, toolId).toContain("withdrawalGated");
+    }
+  });
+
+  it("grounds the vault listedOnly default in the observed test vault", () => {
+    const vaults = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vaults.discover");
+    expect(vaults?.description).toContain("tstcntrct");
+  });
+
+  it("declares no `version` param on the vault detail read", () => {
+    // Generation detection is automatic. A caller forced to guess would be told
+    // a real vault does not exist when they guessed wrong.
+    const get = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.get");
+    expect(get?.params.map((p) => p.key)).not.toContain("version");
+  });
+
+  it("states the no-close-factor liquidation rule wherever a health factor is discussed", () => {
+    // The single most expensive misreading available in this namespace: a health
+    // factor just under 1 on Morpho can cost the WHOLE position, because there
+    // is no close factor capping how much a liquidator may repay.
+    const positions = MORPHO_TOOLS.find((t) => t.toolId === "morpho.positions.get");
+    expect(positions?.description).toMatch(/NO CLOSE FACTOR/);
+    expect(positions?.description).toMatch(/liquidatable RIGHT NOW/);
+    expect(positions?.description).toMatch(/NULL HEALTH FACTOR MEANS NO DEBT, NOT SAFETY/);
+  });
+
+  it("states the one-wallet-per-call rule on the positions read", () => {
+    const positions = MORPHO_TOOLS.find((t) => t.toolId === "morpho.positions.get");
+    expect(positions?.description).toMatch(/ONE WALLET PER CALL/);
+    const wallet = positions?.params.find((p) => p.key === "walletAddress");
+    expect(wallet?.required).toBe(true);
+    expect(wallet?.description).toMatch(/rejected by name/);
+  });
+
+  it("names the V2 position coverage gap rather than implying totality", () => {
+    const positions = MORPHO_TOOLS.find((t) => t.toolId === "morpho.positions.get");
+    expect(positions?.description).toMatch(/no per-user list of V2 vault\s+positions/);
+    expect(positions?.description).toContain("vaultV2Coverage");
+  });
+
+  it("states the per-event asset rule and the absence of USD on activity rows", () => {
+    const activity = MORPHO_TOOLS.find((t) => t.toolId === "morpho.markets.activity");
+    expect(activity?.description).toMatch(/no USD figure on any transaction row/);
+    expect(activity?.description).toMatch(/DEPENDS ON THE EVENT/);
+    expect(activity?.description).toContain("badDebtAssets");
+  });
+
+  it("warns that a unix timestamp is seconds, not milliseconds, on both time params", () => {
+    const activity = MORPHO_TOOLS.find((t) => t.toolId === "morpho.markets.activity");
+    for (const key of ["since", "until"]) {
+      const param = activity?.params.find((p) => p.key === key);
+      expect(param?.description, key).toMatch(/SECONDS/);
+      expect(param?.description, key).toMatch(/milliseconds/);
+    }
+  });
+
+  it("uses no em dash anywhere in authored agent-facing text", () => {
+    for (const tool of MORPHO_TOOLS) {
+      expect(tool.description).not.toContain("—");
+      for (const param of tool.params) expect(param.description).not.toContain("—");
+    }
+    for (const entry of Object.values(MORPHO_DISCOVERY)) {
+      expect(entry.embeddingText).not.toContain("—");
+      for (const alias of entry.aliases ?? []) expect(alias).not.toContain("—");
+      for (const intent of entry.exampleIntents ?? []) expect(intent).not.toContain("—");
+    }
+  });
+
+  it("binds each manifest to its own discovery passage", () => {
+    for (const tool of MORPHO_TOOLS) {
+      expect(tool.discovery).toBe(MORPHO_DISCOVERY[tool.toolId as keyof typeof MORPHO_DISCOVERY]);
+      expect(tool.discovery?.embeddingText).toMatch(/Use when/);
+      expect(tool.discovery?.embeddingText).toMatch(/Example queries:/);
+      expect(tool.discovery?.chains).toEqual(MORPHO_SUPPORTED_CHAIN_SLUGS);
+    }
+  });
+});
+
+describe("morpho namespace registration", () => {
+  it("is allowlisted, active, and classified as mixed_trading", () => {
+    expect(PROTOCOL_NAMESPACE_ALLOWLIST).toContain("morpho");
+    expect(NAMESPACE_LIFECYCLE["morpho"]).toBe("active");
+    expect(NAMESPACE_DEFAULTS["morpho"]).toBe("mixed_trading");
+  });
+});
+
+describe("morpho chain registry", () => {
+  it("is exactly the intersection of Morpho's chains and Vex's own registries", () => {
+    const vexChainIds = new Set<number>([
+      ...getKyberChains().map((c) => c.chainId),
+      ...listLocalChains().map((c) => c.id),
+    ]);
+    for (const chain of MORPHO_CHAINS) {
+      expect(vexChainIds.has(chain.chainId), `${chain.slug} must exist in a Vex registry`).toBe(true);
+    }
+    expect(MORPHO_CHAINS).toHaveLength(9);
+  });
+
+  it("spells every slug exactly as the canonical KyberSwap registry does", () => {
+    const kyberSlugs = new Map<number, string>(getKyberChains().map((c) => [c.chainId, c.slug]));
+    for (const chain of MORPHO_CHAINS) {
+      expect(chain.slug).toBe(kyberSlugs.get(chain.chainId));
+    }
+  });
+});
