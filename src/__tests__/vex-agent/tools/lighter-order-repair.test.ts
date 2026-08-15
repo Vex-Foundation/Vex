@@ -163,6 +163,74 @@ describe("Lighter order repair", () => {
     }));
   });
 
+  it("classifies from provider evidence via a trading-key auth token when no read-only token exists", async () => {
+    const privilegedAuth = { token: "derived-account-auth-token", accountIndex: 42 };
+    const resolvePrivilegedAccountAuth = vi.fn(async () => privilegedAuth);
+    const deps = {
+      ...makeDeps({
+        hasReadOnlyCredential: false,
+        nextNonce: 1201,
+        inactiveOrders: [{
+          order_index: null,
+          order_id: "987",
+          client_order_id: "123456",
+          market_index: 0,
+          owner_account_index: 42,
+          status: "filled",
+          filled_base_amount: "1.0",
+          remaining_base_amount: "0",
+        }],
+      }),
+      resolvePrivilegedAccountAuth,
+    };
+
+    const report = await repairLighterOrderIntent(intentRow(), deps);
+
+    // Derived the token from the intent's own credential reference...
+    expect(resolvePrivilegedAccountAuth).toHaveBeenCalledWith(intentRow().credentialRefJson);
+    // ...and used it as the privileged auth on the account reads.
+    expect(deps.client.getAccountInactiveOrders).toHaveBeenCalledWith(
+      "rhc",
+      expect.objectContaining({ accountIndex: 42 }),
+      privilegedAuth,
+    );
+    expect(report.resolution).toBe("provider_evidence");
+    expect(report.stateAfter).toBe("filled");
+    expect(deps.intents.markRepairResolved).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      state: "filled",
+      source: "inactive_order",
+    }));
+  });
+
+  it("skips account reads and defers to nonce facts when no read-only token and no trading-key auth are available", async () => {
+    const deps = {
+      ...makeDeps({
+        hasReadOnlyCredential: false,
+        nextNonce: 1201,
+        inactiveOrders: [{
+          order_index: null,
+          order_id: "987",
+          client_order_id: "123456",
+          market_index: 0,
+          owner_account_index: 42,
+          status: "filled",
+          filled_base_amount: "1.0",
+          remaining_base_amount: "0",
+        }],
+      }),
+      resolvePrivilegedAccountAuth: vi.fn(async () => null),
+    };
+
+    const report = await repairLighterOrderIntent(intentRow(), deps);
+
+    // No auth available: never touch authenticated account endpoints.
+    expect(deps.client.getAccountInactiveOrders).not.toHaveBeenCalled();
+    expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
+    // Falls back to nonce facts: reserved 1200 vs live 1201 => consumed.
+    expect(report.resolution).toBe("nonce_reset_consumed");
+  });
+
   it("resets the nonce without guessing the order outcome when the reserved nonce was consumed", async () => {
     const deps = makeDeps({ nextNonce: 1250 });
 

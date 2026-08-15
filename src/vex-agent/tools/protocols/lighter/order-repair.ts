@@ -1,5 +1,10 @@
-import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import {
+  getLighterClient,
+  type LighterClient,
+  type LighterPrivilegedAccountAuth,
+} from "@tools/lighter/client.js";
 import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
+import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -23,8 +28,12 @@ import {
  * sequencer outcome) with its nonce reservation still held, which blocks every
  * later order on the same (environment, account, apiKey). This module resolves
  * those states from provider evidence and provable nonce facts only. It never
- * reads key material, never signs, and never calls sendTx — the only provider
- * traffic is public nextNonce reads and read-only-token account reads.
+ * signs an order and never calls sendTx. Account reads use a read-only token
+ * when one is configured; otherwise, if a privileged account-auth resolver is
+ * installed (main process only), it derives a short-lived READ-ONLY account
+ * auth token from the saved trading key so one-key setups can still classify a
+ * stranded order from account evidence. That token authorizes account reads
+ * only — it is never used to sign or submit an order.
  *
  * Release rules are deliberately narrow. A reservation is freed only when:
  *  - the live nextNonce moved past the reserved nonce (the nonce is spent, so
@@ -75,6 +84,25 @@ export interface LighterOrderRepairReport {
   readonly guidance: string;
 }
 
+// Derives a short-lived READ-ONLY account auth token from a saved trading key so
+// repair can classify orders when no read-only token exists. Returns null when a
+// token cannot be derived (locked vault, signer unavailable, unknown scope).
+// Installed by the main process only; agent code never sees key material.
+export type LighterRepairPrivilegedAccountAuthResolver = (
+  reference: LighterTradingCredentialVaultReference,
+) => Promise<LighterPrivilegedAccountAuth | null>;
+
+let configuredPrivilegedAuthResolver: LighterRepairPrivilegedAccountAuthResolver | null = null;
+
+export function configureLighterRepairPrivilegedAccountAuthResolver(
+  resolver: LighterRepairPrivilegedAccountAuthResolver | null,
+): () => void {
+  configuredPrivilegedAuthResolver = resolver;
+  return () => {
+    if (configuredPrivilegedAuthResolver === resolver) configuredPrivilegedAuthResolver = null;
+  };
+}
+
 export interface LighterOrderRepairDeps {
   readonly client: Pick<
     LighterClient,
@@ -89,6 +117,9 @@ export interface LighterOrderRepairDeps {
     "find" | "releaseReservation" | "recordExecutionObserved"
   >;
   readonly hasReadOnlyCredential: (environment: LighterEnvironment) => boolean;
+  // Optional: derive a read-only account auth token from the saved trading key
+  // when no read-only token is configured. Absent in pure agent runtime.
+  readonly resolvePrivilegedAccountAuth?: LighterRepairPrivilegedAccountAuthResolver;
   readonly now: () => number;
 }
 
@@ -99,6 +130,7 @@ export function defaultLighterOrderRepairDeps(): LighterOrderRepairDeps {
     nonceState: lighterNonceStateRepo,
     hasReadOnlyCredential: (environment) =>
       getLighterReadOnlyCredentialStatus(environment).configured,
+    resolvePrivilegedAccountAuth: configuredPrivilegedAuthResolver ?? undefined,
     now: Date.now,
   };
 }
@@ -157,7 +189,18 @@ async function resolveFromProviderEvidence(
 ): Promise<LighterOrderRepairReport | null> {
   const base = baseReport(intent, liveNextNonce);
   if (intent.clientOrderIndex === null) return null;
-  if (!deps.hasReadOnlyCredential(intent.environment)) return null;
+
+  // Prefer a configured read-only token. Otherwise derive a short-lived
+  // read-only account auth token from the saved trading key so one-key setups
+  // can still read account evidence. If neither is available, defer to nonce facts.
+  let privilegedAuth: LighterPrivilegedAccountAuth | undefined;
+  if (!deps.hasReadOnlyCredential(intent.environment)) {
+    const derived = deps.resolvePrivilegedAccountAuth
+      ? await deps.resolvePrivilegedAccountAuth(intent.credentialRefJson)
+      : null;
+    if (derived === null) return null;
+    privilegedAuth = derived;
+  }
 
   const scope: LighterOrderEvidenceScope = {
     accountIndex: intent.accountIndex,
@@ -170,18 +213,18 @@ async function resolveFromProviderEvidence(
         accountIndex: intent.accountIndex,
         marketId: intent.marketIndex,
         marketType: "all",
-      }),
+      }, privilegedAuth),
       deps.client.getAccountInactiveOrders(intent.environment, {
         accountIndex: intent.accountIndex,
         marketId: intent.marketIndex,
         marketType: "all",
         limit: 100,
-      }),
+      }, privilegedAuth),
       deps.client.getAccountTrades(intent.environment, {
         accountIndex: intent.accountIndex,
         limit: 100,
         sortBy: "timestamp",
-      }),
+      }, privilegedAuth),
     ]);
 
     const active = findMatchingLighterOrder(activeOrders.orders, scope, intent.clientOrderIndex);

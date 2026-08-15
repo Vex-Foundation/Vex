@@ -64,6 +64,7 @@ import {
   takePage,
 } from "../projectors.js";
 import {
+  listLighterTradingCredentialScopes,
   resolveDefaultLighterTradingCredentialScope,
   resolveSavedLighterTradingCredentialScope,
 } from "../trading-credential-scope.js";
@@ -311,7 +312,16 @@ function resolvePreviewAccountIndex(
   requestedAccountIndex?: number,
 ): number {
   if (requestedAccountIndex !== undefined) return requestedAccountIndex;
-  const savedScope = resolveDefaultLighterTradingCredentialScope(environment);
+  const scopes = listLighterTradingCredentialScopes(environment);
+  if (scopes.length > 1) {
+    const accounts = scopes.map((scope) => scope.accountIndex).join(", ");
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Multiple Lighter ${environment} trading API keys are configured (accounts ${accounts}); Vex will not guess which one to trade with.`,
+      "Pass the accountIndex for the account you want, or remove the extra keys in Settings > API keys so only the intended account remains.",
+    );
+  }
+  const savedScope = scopes[0] ?? resolveDefaultLighterTradingCredentialScope(environment);
   if (!savedScope) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,

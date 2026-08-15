@@ -77,16 +77,35 @@ export function buildLighterAccountAuthSigningInput(input: {
   readonly deadlineUnixSeconds: number;
 }): LighterAccountAuthSigningInput {
   assertUnsignedCreateOrderFitsOfficialSigner(input.order);
+  return buildLighterAccountAuthSigningInputForScope({
+    environment: input.order.environment,
+    accountIndex: input.order.accountIndex,
+    apiKeyIndex: input.order.apiKeyIndex,
+    secret: input.secret,
+    deadlineUnixSeconds: input.deadlineUnixSeconds,
+  });
+}
+
+// Account authentication only needs the credential scope, not a create order.
+// Read-only recovery paths (e.g. lighter.order.status) use this to derive a
+// short-lived account auth token from the trading key without an order in hand.
+export function buildLighterAccountAuthSigningInputForScope(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly secret: LighterTradingSecretMaterial;
+  readonly deadlineUnixSeconds: number;
+}): LighterAccountAuthSigningInput {
   if (!Number.isSafeInteger(input.deadlineUnixSeconds) || input.deadlineUnixSeconds <= 0) {
     throw invalidRequest("deadlineUnixSeconds must be a positive safe integer before Lighter auth signing.");
   }
   return {
     kind: "lighter_account_auth_signing_input",
-    environment: input.order.environment,
-    restBaseUrl: LIGHTER_ENDPOINTS[input.order.environment].restBaseUrl,
-    chainId: LIGHTER_SIGNER_CHAIN_IDS[input.order.environment],
-    accountIndex: input.order.accountIndex,
-    apiKeyIndex: input.order.apiKeyIndex,
+    environment: input.environment,
+    restBaseUrl: LIGHTER_ENDPOINTS[input.environment].restBaseUrl,
+    chainId: LIGHTER_SIGNER_CHAIN_IDS[input.environment],
+    accountIndex: input.accountIndex,
+    apiKeyIndex: input.apiKeyIndex,
     deadlineUnixSeconds: input.deadlineUnixSeconds,
     secret: input.secret,
   };

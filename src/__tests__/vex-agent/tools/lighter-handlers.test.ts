@@ -1342,6 +1342,82 @@ describe("Lighter agent read handlers", () => {
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 
+  it("refuses to guess the account when multiple Lighter trading keys are configured", async () => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "core" ? { environment, accountIndex, apiKeyIndex: 4 } : null,
+      // Two saved Core scopes: the resolver must refuse rather than silently
+      // pick the lowest account index.
+      listScopes: (environment) =>
+        environment === "core"
+          ? [
+              { environment, accountIndex: 736758, apiKeyIndex: 7 },
+              { environment, accountIndex: 736778, apiKeyIndex: 4 },
+            ]
+          : [],
+    });
+
+    const output = await callFail("lighter.order.preview", {
+      environment: "core",
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmountIn: "0.004",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("Multiple Lighter core trading API keys");
+    expect(output).toContain("736758");
+    expect(output).toContain("736778");
+    // It must fail before touching live market data, not pick an account.
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+  });
+
+  it("resolves the account from a single saved scope via listScopes", async () => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "core" && accountIndex === 42
+          ? { environment, accountIndex, apiKeyIndex: 4 }
+          : null,
+      listScopes: (environment) =>
+        environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
+    });
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [{ ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" }],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "core",
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmountIn: "0.004",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
+      by: "index",
+      value: 42,
+      activeOnly: true,
+    });
+    expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
+  });
+
   it("uses the saved Lighter trading credential scope instead of asking the user for an API-key index", async () => {
     configureLighterTradingCredentialScopeResolver({
       findSavedScope: (environment, accountIndex) =>
