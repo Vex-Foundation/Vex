@@ -28,9 +28,12 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "Search DEX pairs across every chain by token name, symbol, or contract address. Start here "
-      + "when you have a name/ticker/address but not a specific pool. Returns concise pairs (price, "
-      + "priceChange h1/h24, liquidity, volume h24, FDV, market cap, txns h24) in relevance order — "
-      + "the order DexScreener returned, which is not a ranking. Optional filters: chainIds (e.g. "
+      + "when you have a name/ticker/address but not a specific pool. Returns pair identity, base "
+      + "price, selected-window change/volume, liquidity, age and labels in provider relevance order; "
+      + "FDV, market cap, reserves and per-window transaction counts are opt-in through fields. "
+      + "raw priceUsd always prices the pair's base token. The order is what DexScreener returned, "
+      + "not a ranking. Returns 5 rows by default; filtersApplied.limit and hasMore expose that "
+      + "window and offset reads the rest. Optional discovery filters: chainIds (e.g. "
       + "ethereum, base, solana, bsc, arbitrum, robinhood), minLiquidityUsd, limit. "
       + PAIR_DESCRIPTION_WINDOW_CLAUSE
       + " Then use dexscreener.tokenPairs to pick the deepest pool.",
@@ -65,10 +68,12 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get concise stats for one specific DEX pool by chain + pair address — price, priceChange "
-      + "(h1/h24), liquidity, volume (h24), txns (h24 buys/sells), FDV, market cap, pair age. Use "
+      "Get concise stats for one specific DEX pool by chain + pair address — identity, base price, "
+      + "selected-window price change/volume, liquidity and pair age. FDV, market cap, reserves and "
+      + "per-window transaction counts are opt-in through fields. Use "
       + "when you already have a pool address (e.g. from dexscreener.tokenPairs) and want its "
-      + "numbers. Direct lookup: returns only the pool(s) you name (a comma-separated address list "
+      + "numbers. Raw priceUsd always prices the pair's base token. Direct lookup returns only the "
+      + "pool(s) you name (a comma-separated address list "
       + "is fetched in one call). Vex applies no filtering here; DexScreener offers no server-side "
       + "filter or sort.",
     mutating: false,
@@ -81,8 +86,8 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
         acceptsStringArray: true,
         required: true,
         description:
-          "DEX pool/pair contract address. Comma-separate several to fetch them in ONE call "
-          + "(verified live: 2 addresses returned 2 pools) — cheaper against the rate limit than "
+          "Up to 60 DEX pool/pair contract addresses. Vex deduplicates them, splits them into "
+          + "provider-safe calls of at most 30, and merges all responses — cheaper than "
           + `one call each. ${STRING_OR_ARRAY_CLAUSE} `
           + "`requestedPairAddresses` and `found` in the reply say what was asked "
           + "for and whether anything came back.",
@@ -97,9 +102,15 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Batch-price up to 30 token addresses on ONE chain in a single call (comma-separated). "
-      + "Returns the same concise pair rows as search. Use for portfolio pricing or comparing "
-      + "several tokens on the same chain. "
+      "Batch-price up to 60 token addresses on ONE chain. Vex deduplicates addresses, splits them "
+      + "into DexScreener's 30-address requests, and merges every completed batch. Returns 15 pair "
+      + "rows by default while keeping complete requested/resolved/unresolved address accounting; "
+      + "filtersApplied.limit, hasMore and offset expose the remaining merged rows. "
+      + "Returns one provider-chosen pair snapshot per resolved address. Raw priceUsd always prices "
+      + "the pair's base token. DexScreener's batch endpoint is reconciled strictly against that "
+      + "baseAddress; use dexscreener.tokenPairs for side-aware normalized requested-token prices. Use this tool for "
+      + "portfolio snapshots or comparing several tokens on the same chain without filters or sorts "
+      + "that could remove holdings. "
       + PAIR_DESCRIPTION_WINDOW_CLAUSE,
     mutating: false,
     actionKind: "read",
@@ -111,9 +122,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
         acceptsStringArray: true,
         required: true,
         description:
-          "Comma-separated token addresses. DexScreener answers at most 30 and SILENTLY DROPS the "
-          + "rest (measured: 40 requested, 30 returned, 10 absent, HTTP 200) — always read "
-          + `unresolvedAddresses and addressCapApplied in the reply. ${STRING_OR_ARRAY_CLAUSE} `
+          "Up to 60 comma-separated token addresses. Vex splits them into calls of at most 30, "
+          + "then reports batchRequestCount and every requested/resolved/unresolved address. "
+          + `Always inspect unresolvedAddresses. ${STRING_OR_ARRAY_CLAUSE} `
           + "Address casing is preserved on both spellings (Solana base58 is case-sensitive). Each "
           + "address yields ONE arbitrary pool, often not the deepest; use dexscreener.tokenPairs "
           + "for depth.",
@@ -128,10 +139,14 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "List the DEX pools for ONE token on a chain, sorted by USD liquidity (deepest first). This "
-      + "is the canonical resolver for 'which pool should I trade / zap into'. Returns concise pair "
-      + "rows including pairAddress — feed that pool address into swap/zap tools or "
-      + "dexscreener.pairs. The provider selects at most 30 pools per token, in unspecified order — "
+      "List and shortlist the DexScreener-indexed pools for ONE exact token on a chain, sorted by "
+      + "USD liquidity within the provider window. This is research, not an executable routing or "
+      + "price decision: obtain a fresh quote from the actual venue before trading. Returns concise pair "
+      + "rows including pairAddress, requestedTokenSide, and requestedTokenPriceUsd. Raw priceUsd "
+      + "always prices the pair's base token; requestedTokenPriceUsd is normalized for the requested "
+      + "token whether it appears on the base or quote side. Use dexscreener.pairs for a known pool's "
+      + "research metrics. Returns 15 sorted rows by default and exposes the rest through hasMore "
+      + "and offset. The provider selects at most 30 pools per token, in unspecified order — "
       + "high-pool-count tokens are truncated to 30 by DexScreener with no way to widen. Vex then "
       + "sorts that bounded window (by USD liquidity by default) and applies every filter and "
       + "window; no server-side filter, sort, limit or pagination exists.",

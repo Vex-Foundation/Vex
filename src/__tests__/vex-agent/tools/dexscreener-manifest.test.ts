@@ -18,6 +18,10 @@ function passageOf(toolId: string): string {
   return passage;
 }
 
+function paramKeys(toolId: string): string[] {
+  return toolById(toolId).params.map((param) => param.key);
+}
+
 describe("dexscreener manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
@@ -133,6 +137,58 @@ describe("dexscreener manifest", () => {
     expect(limit!.required).toBeFalsy();
   });
 
+  it("advertises a compact discovery-oriented search surface", () => {
+    expect(paramKeys("dexscreener.search")).toEqual([
+      "query",
+      "chainIds",
+      "limit",
+      "offset",
+      "fields",
+      "quoteSymbols",
+      "minLiquidityUsd",
+      "minTurnoverRatio",
+      "requirePriceUsd",
+      "explainDrops",
+    ]);
+  });
+
+  it("advertises only non-destructive snapshot shaping on tokens", () => {
+    expect(paramKeys("dexscreener.tokens")).toEqual([
+      "chain",
+      "tokenAddresses",
+      "limit",
+      "offset",
+      "fields",
+      "window",
+      "includeAllWindows",
+    ]);
+  });
+
+  it("keeps advanced screening on tokenPairs and meta without omitFields", () => {
+    for (const toolId of ["dexscreener.tokenPairs", "dexscreener.meta"]) {
+      const keys = paramKeys(toolId);
+      expect(keys).toContain("sortBy");
+      expect(keys).toContain("minLiquidityUsd");
+      expect(keys).toContain("minTurnoverRatio");
+      expect(keys).toContain("explainDrops");
+      expect(keys).not.toContain("omitFields");
+    }
+  });
+
+  it("describes raw and requested-token-normalized prices without ambiguity", () => {
+    for (const toolId of [
+      "dexscreener.search",
+      "dexscreener.pairs",
+      "dexscreener.tokens",
+      "dexscreener.tokenPairs",
+      "dexscreener.meta",
+    ]) {
+      expect(descriptionOf(toolId)).toMatch(/raw priceUsd.*base token/i);
+    }
+    expect(descriptionOf("dexscreener.tokenPairs")).toContain("requestedTokenSide");
+    expect(descriptionOf("dexscreener.tokenPairs")).toContain("requestedTokenPriceUsd");
+  });
+
   it("dexscreener.orders requires chain, tokenAddress", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.orders")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
@@ -241,14 +297,14 @@ describe("dexscreener manifest", () => {
     const pairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.pairs")!;
     const tokens = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokens")!;
     const tokenPairs = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokenPairs")!;
-    expect(search.discovery?.embeddingText).toContain("Search trading pairs");
+    expect(search.discovery?.embeddingText).toContain("Search DexScreener-indexed trading pairs");
     expect(search.discovery?.embeddingText).toContain("contract address");
     expect(pairs.discovery?.embeddingText).toContain("Full analytics");
     expect(pairs.discovery?.embeddingText).toContain("liquidity");
-    expect(tokens.discovery?.embeddingText).toContain("up to 30 token contract addresses");
+    expect(tokens.discovery?.embeddingText).toContain("up to 60 token contract addresses");
     expect(tokens.discovery?.embeddingText?.toLowerCase()).toContain("batch pricing");
-    expect(tokenPairs.discovery?.embeddingText).toContain("every pool");
-    expect(tokenPairs.discovery?.embeddingText).toContain("most liquidity");
+    expect(tokenPairs.discovery?.embeddingText).toContain("pools and trading pairs");
+    expect(tokenPairs.discovery?.embeddingText).toContain("shortlist liquidity");
   });
 
   it("trend embeddings capture boosted, profile, community takeover, attention, and narrative intent", () => {
@@ -260,8 +316,8 @@ describe("dexscreener manifest", () => {
     const attention = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.attention")!;
     const trending = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.trending")!;
     const meta = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.meta")!;
-    expect(profiles.discovery?.embeddingText).toContain("latest token profiles");
-    expect(profiles.discovery?.embeddingText?.toLowerCase()).toContain("newly listed");
+    expect(profiles.discovery?.embeddingText).toContain("latest token PROFILE METADATA");
+    expect(profiles.discovery?.embeddingText?.toLowerCase()).toContain("not a token-creation");
     expect(profilesRecent.discovery?.embeddingText?.toLowerCase()).toContain("recently updated");
     expect(boosts.discovery?.embeddingText).toContain("latest tokens that received paid boosts");
     expect(boosts.discovery?.embeddingText?.toLowerCase()).toContain("promoted");
@@ -415,7 +471,9 @@ describe("dexscreener manifest", () => {
   // semantic claims in `embeddingText` itself.
 
   it("orders passage no longer frames paid promotion as a legitimacy check", () => {
-    expect(passageOf("dexscreener.orders")).not.toMatch(/legitimac|legit/i);
+    const passage = passageOf("dexscreener.orders");
+    expect(passage).toContain("never evidence");
+    expect(passage).toContain("legitimacy");
   });
 
   it("community-takeover passage no longer predicts price action", () => {
@@ -426,14 +484,11 @@ describe("dexscreener manifest", () => {
     expect(passageOf("dexscreener.search")).not.toContain("sorted by liquidity");
   });
 
-  it("both profile passages retrieve chain-generic fresh-token discovery", () => {
-    // "new tokens on <chain>" is the intent these two feeds actually answer —
-    // and DexScreener spans dozens of chains, so neither passage may read as
-    // if a hardcoded handful were the only ones.
+  it("both profile passages refuse to masquerade as fresh-token discovery", () => {
     for (const toolId of ["dexscreener.profiles", "dexscreener.profiles.recent"]) {
       const passage = passageOf(toolId);
-      expect(passage.toLowerCase(), `${toolId} passage`).toContain("new tokens");
-      expect(passage.toLowerCase(), `${toolId} passage`).toContain("any supported chain");
+      expect(passage.toLowerCase(), `${toolId} passage`).not.toContain("find new tokens");
+      expect(passage.toLowerCase(), `${toolId} passage`).toMatch(/metadata|profile/);
     }
   });
 

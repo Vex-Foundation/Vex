@@ -14,8 +14,9 @@ export const PAIR_WINDOW_PARAMS: readonly ProtocolParamDef[] = [
     key: "limit",
     type: "number",
     description:
-      "Max rows to return (1-200). Omit to receive EVERY row DexScreener returned (at most 30 — "
-      + "its hard cap). Set this only to spend fewer tokens; 0 is rejected because it cannot mean "
+      "Max rows to return (1-200). Core tools apply an agent-safe default stated in their tool "
+      + "description and echo it in filtersApplied.limit; use offset to read the rest of the same "
+      + "at-most-30-row provider window. 0 is rejected because it cannot mean "
       + "both 'none' and 'all'.",
   },
   {

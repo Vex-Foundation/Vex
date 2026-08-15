@@ -13,58 +13,64 @@ import { DEXSCREENER_CHAINS } from "../../dexscreener/discovery-text.js";
 export const DEXSCREENER_TRENDING_DISCOVERY = {
   "dexscreener.profiles": {
     embeddingText: embeddingText(
-      `Find new tokens on any supported chain through the latest token profiles on DEX Screener — newly listed projects with descriptions, websites, socials, and the time each listing was last updated. ` +
-      `Use this when the user asks what is new on a chain they name, wants freshly listed projects or newly visible tokens, or wants to browse the newest crypto projects with full descriptions and links. ` +
-      `Example queries: new tokens on this chain, what's new on solana, freshly listed projects, latest token profiles, find new project listings, browse newest crypto projects, fresh memecoin profiles.`,
+      `Read the latest token PROFILE METADATA published on DexScreener — descriptions, websites, socials, and profile update information. This is not a token-creation, launch, or newly listed pair feed. ` +
+      `Use this when the user asks to browse DexScreener profile metadata or project links. Treat every field as a provider label, not verified identity or contract-safety evidence. ` +
+      `Example queries: latest token profile metadata, project websites on dexscreener, browse token descriptions, token profile links, recent profile information.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.profiles.recent": {
     embeddingText: embeddingText(
-      `Find new tokens on any supported chain through RECENTLY UPDATED token profiles on DEX Screener — the freshest listing activity, each row carrying an updatedAt timestamp and a community-takeover flag. ` +
-      `Use this when the user asks what just appeared on a chain they name, wants the freshest project activity, who just refreshed a listing, or a change feed of listing metadata rather than the plain latest-profiles list. Live but undocumented API surface — may change. ` +
-      `Example queries: new tokens on this chain, what just changed on base, recently updated profiles, who just refreshed their listing, latest profile changes, fresh project updates.`,
+      `Read RECENTLY UPDATED DexScreener token-profile metadata, including updatedAt and DexScreener's community-takeover label. It does not show when a token or pair was created. ` +
+      `Use this when the user wants a change feed of profile metadata rather than the plain latest-profiles list. This endpoint is live but undocumented; provider behavior may change, and its labels are not verified identity or safety evidence. ` +
+      `Example queries: recently updated profiles, what profile metadata changed on base, who refreshed their dexscreener profile, latest profile changes, recent project-link updates.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.boosts": {
     embeddingText: embeddingText(
       `Get the latest tokens that received paid boosts on DEX Screener across all chains — Ethereum, Solana, BNB, Base, Arbitrum and others. ` +
-      `Use this when the user wants to see who's spending on visibility, find newly promoted tokens, track marketing activity in crypto, watch for paid attention signals on memecoins, or follow recent boost flow. ` +
+      `Use this when the user wants to see DexScreener paid-visibility labels, newly boosted tokens, or recent boost activity. A boost is promotion, never organic demand, legitimacy, or contract safety. Follow with dexscreener.orders for one exact token. ` +
       `Example queries: latest boosted tokens, what's being promoted, recent paid boosts, new memecoin boosts, who's buying visibility, fresh boost activity, who's paying for promo.`,
     ),
+    aliases: ["latest paid token boosts", "recent boost activity", "newly boosted tokens"],
+    exampleIntents: [
+      "show the latest paid token boosts across dexscreener",
+      "browse tokens that most recently received a paid boost",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.boosts.top": {
     embeddingText: embeddingText(
       `Tokens with the most active boosts on DEX Screener, ranked by total boost amount — heaviest paid attention spend right now. ` +
-      `Use this when the user wants the top-promoted tokens, the highest paid visibility, or the most-boosted projects ordered by spend. ` +
+      `Use this when the user wants the top-promoted tokens or most active paid visibility. Boost totals are provider promotion units, not token demand, money spent, legitimacy, or safety. ` +
       `Example queries: top boosted tokens, most promoted coins, highest paid visibility, biggest boost spenders, top promo tokens by amount.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.communityTakeovers": {
     embeddingText: embeddingText(
-      `Get the latest community takeover (CTO) events on DEX Screener — tokens where the community has reclaimed control. ` +
-      `Use this when the user wants to find CTO opportunities, track community-run memecoins, watch for takeover signals, or browse renewed-attention coins. ` +
-      `Each event carries the date the community claimed the token, so a takeover claimed minutes ago can be told apart from one claimed months ago. ` +
-      `Example queries: latest cto events, community takeover tokens, recent ctos, community-controlled memecoins, takeover signals, community reclaimed coins.`,
+      `Get the latest tokens carrying DexScreener's community-takeover (CTO) LABEL. This is a provider classification, not proof that ownership, admin keys, or contract control changed. ` +
+      `Use this when the user explicitly wants DexScreener CTO-labeled rows or claim dates. Never infer safety, community control, or future price action from the label. ` +
+      `Example queries: latest dexscreener cto labels, community takeover labeled tokens, recent cto claim dates, browse cto provider labels.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.attention": {
     embeddingText: embeddingText(
       `Merged ATTENTION signal — combines token-profiles and paid boosts into one ranked, deduplicated list, sorted by boost spend then profile presence. This is a synthetic "who's buying visibility" view, NOT the official trending narratives feed. ` +
-      `Use this when the user wants to see which specific tokens are getting paid promotion and attention right now across chains. ` +
-      `Example queries: what tokens are getting attention, who's being promoted and profiled, boosted tokens with profiles, paid attention leaders, most-promoted coins right now.`,
+      `Use this when the user explicitly wants Vex's synthetic merge of DexScreener profile presence and paid promotion. It is not an organic, genuine, or provider-ranked attention signal. ` +
+      `Example queries: show Vex synthetic profile plus boost merge, combine profile presence with paid boosts, synthetic dexscreener attention merge.`,
     ),
+    aliases: ["synthetic profile boost merge", "vex synthetic attention merge"],
+    exampleIntents: ["explicitly combine dexscreener profiles and boosts into Vex's synthetic merge"],
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.trending": {
     embeddingText: embeddingText(
-      `Official DEX Screener TRENDING NARRATIVES feed — the trending themes/categories/metas (e.g. AI, dogs, cats, "knockoff legends"), each with aggregate market cap, liquidity, 24h volume, token count, and market-cap change windows. Returns NARRATIVES, not individual tokens; drill into one with dexscreener.meta. Live but undocumented API surface — may change. ` +
-      `Use this when the user asks what themes or narratives are hot in crypto right now, which meta is pumping, or wants the market-wide trending categories. ` +
-      `Example queries: what's trending in crypto, hot narratives right now, trending metas, which theme is pumping, top crypto narratives, what meta is hot.`,
+      `DEX Screener TRENDING NARRATIVES feed — themes/metas with aggregate market cap, liquidity, volume, token count, and change windows. Returns NARRATIVES, not individual tokens; always drill into a selected slug with dexscreener.meta. This endpoint is live but undocumented, and ordering is influenced by engagement and paid promotion such as boosts, alongside verified information and audits, rather than organic demand. ` +
+      `Use this when the user asks which themes or narratives are hot; it is the first hop. Do not call the ordering genuine, organic, complete, or a safety ranking. ` +
+      `Example queries: what's trending in crypto, hot narratives right now, which meta is moving, top crypto narratives.`,
     ),
     // Lexical-scorer metadata (aliases weight 5, exampleIntents weight 6).
     // "trending meme tokens" is deliberately here: it is the canonical generic
@@ -82,8 +88,8 @@ export const DEXSCREENER_TRENDING_DISCOVERY = {
   },
   "dexscreener.meta": {
     embeddingText: embeddingText(
-      `Drill into ONE trending narrative/meta by its slug (from dexscreener.trending, e.g. "knockoff-legends") — returns the narrative's aggregate market cap, liquidity, volume, token count, plus the DEX pairs indexed under it. Live but undocumented API surface — may change. ` +
-      `Use this when the user picks a theme from dexscreener.trending and wants the tokens/pairs inside it. The slug is a NARRATIVE slug, never a chain slug. ` +
+      `Drill into ONE trending narrative/meta by its slug from dexscreener.trending (e.g. "knockoff-legends") — returns aggregate metrics plus DexScreener-indexed pairs assigned to it. This endpoint is live but undocumented, and the category is engagement/promotion-influenced rather than organic or complete. ` +
+      `Use this when the user selects a theme after dexscreener.trending and wants the pairs inside it. The slug is a NARRATIVE slug, never a chain slug. Results are not token identity or contract-safety evidence. ` +
       `Example queries: show tokens in the ai narrative, what's in the dog meta, pairs for this trending theme, drill into knockoff legends, tokens in this narrative.`,
     ),
     chains: DEXSCREENER_CHAINS,

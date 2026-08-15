@@ -80,7 +80,7 @@ export interface FeedListQuery {
   fields: FeedFieldSelection;
   sortBy: FeedSortKey;
   sortDir: FeedSortDirection;
-  /** `null` = every row the provider returned. There is deliberately no default. */
+  /** `null` = every row the provider returned; profile handlers default to 20. */
   limit: number | null;
   offset: number;
   filters: FeedListFilters;
@@ -115,6 +115,8 @@ export interface FeedListQueryDefaults {
   /** Sort keys this feed can actually order by. Must include `relevance`. */
   readonly sortKeys: readonly FeedSortKey[];
   readonly sortBy: FeedSortKey;
+  /** Agent-safe default row window, always echoed in `filtersApplied`. */
+  readonly limit?: number | null;
 }
 
 const FEED_AGE_PARAM_SPEC: NumericParamSpecs = {
@@ -172,6 +174,9 @@ export function parseFeedListQuery(
   if (!limit.ok) return limit;
   const offset = readNumber(params, "offset", FEED_NUMERIC_PARAMS);
   if (!offset.ok) return offset;
+  const effectiveLimit = limit.value ?? defaults.limit ?? null;
+  if (effectiveLimit !== null) filtersApplied.limit = effectiveLimit;
+  if (offset.value !== null) filtersApplied.offset = offset.value;
 
   const chainIds = readStringList(params, "chainIds", { lowercase: true, acceptsArray: true });
   if (!chainIds.ok) return chainIds;
@@ -237,7 +242,7 @@ export function parseFeedListQuery(
       fields: fields.fields,
       sortBy: sortBy.value,
       sortDir: sortDir.value,
-      limit: limit.value,
+      limit: effectiveLimit,
       offset: offset.value ?? 0,
       explainDrops: explainDrops.value,
       fieldsOmitted: omitFields.value,

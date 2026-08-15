@@ -13,10 +13,9 @@
  * `minLiquidityUsd: 0` must be a no-op — enforced in `./pair-filters.ts`, which
  * knows which side of a threshold it is on.
  *
- * `limit` HAS NO DEFAULT. Omitting it returns every row the provider returned.
- * That is affordable only because the lean projection makes 30 rows ~11 KB
- * instead of ~26 KB; a default cap would be the silent-truncation pattern the
- * project rules forbid.
+ * A caller-specific default limit may be supplied by the handler. It is always
+ * echoed in `filtersApplied.limit`, and `hasMore` remains true when rows remain,
+ * so the context budget is bounded without silent truncation.
  */
 
 import {
@@ -92,7 +91,7 @@ export interface PairListQuery {
   fields: PairFieldSelection;
   sortBy: PairSortKey;
   sortDir: PairSortDirection;
-  /** `null` = every row the provider returned. There is deliberately no default. */
+  /** `null` = every row the provider returned. */
   limit: number | null;
   offset: number;
   filters: PairListFilters;
@@ -131,6 +130,8 @@ export interface PairListQueryDefaults {
   readonly sortBy: PairSortKey;
   /** `chainIds` only means something where the provider mixed chains (search). */
   readonly allowChainFilter?: boolean;
+  /** Agent-safe default row window; always reported in `filtersApplied`. */
+  readonly limit?: number | null;
 }
 
 // ── Numeric parameter contracts ──────────────────────────────────
@@ -208,6 +209,9 @@ export function parsePairListQuery(
   if (!limit.ok) return limit;
   const offset = readNumber(params, "offset", NUMERIC_PARAMS);
   if (!offset.ok) return offset;
+  const effectiveLimit = limit.value ?? defaults.limit ?? null;
+  if (effectiveLimit !== null) filtersApplied.limit = effectiveLimit;
+  if (offset.value !== null) filtersApplied.offset = offset.value;
 
   // Identity / venue.
   const chainIdsRead = readStringList(params, "chainIds", { lowercase: true, acceptsArray: true });
@@ -290,7 +294,7 @@ export function parsePairListQuery(
       fields: fields.fields,
       sortBy: sortBy.value,
       sortDir: sortDir.value,
-      limit: limit.value,
+      limit: effectiveLimit,
       offset: offset.value ?? 0,
       explainDrops: explainDrops.value,
       filters: {

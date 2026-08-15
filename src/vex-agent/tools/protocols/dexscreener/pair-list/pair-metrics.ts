@@ -20,9 +20,8 @@
  *   at 0.00013.
  *
  * `priceUsdNumeric` is the single float parse in this module and it is NEVER
- * emitted. It exists only to order pools and to compare one pool's price with
- * the median across a token's pools (see `./price-sanity.ts`). The money value
- * the agent acts on stays the provider's exact-decimal string.
+ * emitted. It exists only for local sorting. Cross-pool comparisons use the
+ * exact-decimal requested-token normalization in `./price-sanity.ts`.
  */
 
 import type { DexPair } from "@tools/dexscreener/types.js";
@@ -80,7 +79,7 @@ export interface PairMetrics {
   pairAgeSeconds: number | null;
   /** Active paid boosts. Absent unless boosted (1 of 489 rows measured). */
   activeBoostCount: number | null;
-  /** Ordering/median input only — never emitted. See module docstring. */
+  /** Ordering input only — never emitted. See module docstring. */
   priceUsdNumeric: number | null;
   /**
    * Tri-state: `null` means the provider sent no `info` block at all (33 % of

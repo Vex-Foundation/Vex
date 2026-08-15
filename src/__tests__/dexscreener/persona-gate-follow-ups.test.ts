@@ -52,7 +52,7 @@ async function run(
   return { ok: result.success, output: result.output };
 }
 
-// ── Item 4: byte-cost honesty on the two surfaces that can exceed the cap ──
+// ── Item 4: byte-cost honesty where `limit` is publicly appropriate ──
 
 describe("`limit` states the measured cost of a bare call, where there is one", () => {
   it("search names its canonical bare-call size", () => {
@@ -62,28 +62,31 @@ describe("`limit` states the measured cost of a bare call, where there is one", 
     expect(limit).toMatch(/16,384|16 KiB|cap/i);
   });
 
-  it("tokens names its canonical bare-call size", () => {
-    // call-records.json: 41 solana addresses → 17,822 B, wouldOverflow: true.
-    const limit = paramOf("dexscreener.tokens", "limit");
-    expect(limit).toContain("17,822");
+  it("tokens advertises visible paging while address reconciliation stays complete", () => {
+    const tokens = toolById("dexscreener.tokens");
+    expect(tokens.params.map((param) => param.key)).toEqual(
+      expect.arrayContaining(["limit", "offset"]),
+    );
+    expect(tokens.description).toContain("requested/resolved/unresolved");
+    expect(tokens.description).toContain("hasMore");
   });
 
-  it("the two measured surfaces are the only ones making a byte claim on `limit`", () => {
+  it("search is the only surface making a measured byte claim on `limit`", () => {
     // A number is a measurement. Copying one onto a tool it was not measured on
     // would be the same class of error as asserting an unobserved provider cap.
     const claiming = DEXSCREENER_TOOLS.filter((tool) => {
       const limit = tool.params.find((param) => param.key === "limit");
       return limit !== undefined && /\d,\d{3} B/.test(limit.description);
     }).map((tool) => tool.toolId);
-    expect(claiming.sort()).toEqual(["dexscreener.search", "dexscreener.tokens"]);
+    expect(claiming).toEqual(["dexscreener.search"]);
   });
 
-  it("keeps the shared no-default rule on every tool that declares `limit`", () => {
+  it("documents whether an omitted limit uses a visible default", () => {
     for (const tool of DEXSCREENER_TOOLS) {
       const limit = tool.params.find((param) => param.key === "limit");
       if (limit === undefined) continue;
       expect(limit.required, tool.toolId).toBeFalsy();
-      expect(limit.description, tool.toolId).toMatch(/omit/i);
+      expect(limit.description, tool.toolId).toMatch(/default|omit/i);
     }
   });
 });
@@ -209,7 +212,7 @@ describe("depth numbers travel with the symbol that reads them", () => {
   });
 });
 
-describe("the quote-token ADDRESS is reachable, and stays out of the lean row", () => {
+describe("the quote-token ADDRESS is present for unambiguous search identity", () => {
   beforeEach(() => {
     vi.spyOn(getDexScreenerClient(), "search").mockResolvedValue(searchUsdc());
   });
@@ -226,11 +229,11 @@ describe("the quote-token ADDRESS is reachable, and stays out of the lean row", 
     expect(rows.some((row) => typeof row.quoteAddress === "string")).toBe(true);
   });
 
-  it("is NOT in the lean row — the byte budget is why it is opt-in", async () => {
+  it("is in the lean row so quote-side search matches cannot be misidentified", async () => {
     const result = await run("dexscreener.search", { query: "USDC" });
     expect(result.ok).toBe(true);
     const rows = (JSON.parse(result.output) as { pairs: Array<Record<string, unknown>> }).pairs;
-    expect(rows.every((row) => !("quoteAddress" in row))).toBe(true);
+    expect(rows.every((row) => "quoteAddress" in row)).toBe(true);
   });
 });
 

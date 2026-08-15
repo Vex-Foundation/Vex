@@ -123,13 +123,14 @@ describe("AgentDexPair naming law", () => {
     expect(LEAN_PAIR_FIELDS.length + RICH_PAIR_FIELDS.length).toBe(ALL_PAIR_FIELDS.length);
   });
 
-  it("the lean set is exactly the 13 documented fields", () => {
+  it("the lean set includes both token addresses for unambiguous identity", () => {
     expect([...LEAN_PAIR_FIELDS]).toEqual([
       "chainId",
       "dexId",
       "pairAddress",
       "baseAddress",
       "baseSymbol",
+      "quoteAddress",
       "quoteSymbol",
       "priceUsd",
       "liquidityUsd",
