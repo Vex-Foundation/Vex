@@ -5,7 +5,11 @@ import {
   LIGHTER_ENDPOINTS,
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
-import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import {
+  getLighterClient,
+  type LighterClient,
+  type LighterPrivilegedAccountAuth,
+} from "@tools/lighter/client.js";
 import {
   buildLighterOrderPreview,
   type LighterOrderPreview,
@@ -68,6 +72,37 @@ import {
   resolveDefaultLighterTradingCredentialScope,
   resolveSavedLighterTradingCredentialScope,
 } from "../trading-credential-scope.js";
+import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
+
+// Resolves the account index and, when one can be derived from the saved trading
+// key, a short-lived read-only auth token for an authenticated account read.
+// When a token is derived, the read must target that exact account (the client
+// rejects a privileged token whose account index does not match), so the
+// resolved index is returned alongside it. When no token is derived, the
+// caller's request — which may be undefined — is preserved unchanged so the
+// client still falls back to a separately configured read-only token exactly as
+// before.
+async function resolveAuthenticatedAccountRead(
+  environment: LighterEnvironment,
+  requestedAccountIndex: number | undefined,
+): Promise<{
+  readonly accountIndex: number | undefined;
+  readonly privilegedAuth: LighterPrivilegedAccountAuth | undefined;
+}> {
+  const targetAccount =
+    requestedAccountIndex
+    ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
+  if (targetAccount === undefined) {
+    return { accountIndex: requestedAccountIndex, privilegedAuth: undefined };
+  }
+  const privilegedAuth =
+    (await resolveLighterReadOnlyAccountAuth(environment, targetAccount)) ?? undefined;
+  return {
+    accountIndex:
+      privilegedAuth === undefined ? requestedAccountIndex : privilegedAuth.accountIndex,
+    privilegedAuth,
+  };
+}
 
 function failureDetail(toolId: string, err: unknown): string {
   logger.warn("lighter.handler.error", {
@@ -596,23 +631,24 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
       const response = await getLighterClient().getAccountActiveOrders(environment.value, {
-        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
         ...(filter.value === undefined ? {} : { marketType: filter.value }),
-      });
+      }, auth.privilegedAuth);
       return ok({
         ...readOnlyAccountProvenance(environment.value, "lighter.openOrders", [
           LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
         ], {
-          accountIndex: accountIndex.value ?? null,
+          accountIndex: auth.accountIndex ?? null,
           accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
           marketId: marketId.value ?? null,
           filter: filter.value ?? null,
           outputLimit: limit.value,
         }),
         environment: environment.value,
-        accountIndex: accountIndex.value ?? null,
+        accountIndex: auth.accountIndex ?? null,
         accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
@@ -637,24 +673,25 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
       const response = await getLighterClient().getAccountInactiveOrders(environment.value, {
-        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
         ...(filter.value === undefined ? {} : { marketType: filter.value }),
         limit: limit.value,
-      });
+      }, auth.privilegedAuth);
       return ok({
         ...readOnlyAccountProvenance(environment.value, "lighter.orderHistory", [
           LIGHTER_ENDPOINT_PATHS.accountInactiveOrders,
         ], {
-          accountIndex: accountIndex.value ?? null,
+          accountIndex: auth.accountIndex ?? null,
           accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
           marketId: marketId.value ?? null,
           filter: filter.value ?? null,
           outputLimit: limit.value,
         }),
         environment: environment.value,
-        accountIndex: accountIndex.value ?? null,
+        accountIndex: auth.accountIndex ?? null,
         accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
@@ -675,21 +712,22 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
       const response = await getLighterClient().getAccountTrades(environment.value, {
-        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         limit: limit.value,
         sortBy: "timestamp",
-      });
+      }, auth.privilegedAuth);
       return ok({
         ...readOnlyAccountProvenance(environment.value, "lighter.trades", [
           LIGHTER_ENDPOINT_PATHS.trades,
         ], {
-          accountIndex: accountIndex.value ?? null,
+          accountIndex: auth.accountIndex ?? null,
           accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
           outputLimit: limit.value,
         }),
         environment: environment.value,
-        accountIndex: accountIndex.value ?? null,
+        accountIndex: auth.accountIndex ?? null,
         accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
         limit: limit.value,
         ...projectRecentTrades(response, limit.value),

@@ -118,6 +118,9 @@ const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime
 const { configureLighterTradingCredentialScopeResolver } = await import(
   "@vex-agent/tools/protocols/lighter/trading-credential-scope.js"
 );
+const { configureLighterReadOnlyAccountAuthResolver } = await import(
+  "@vex-agent/tools/protocols/lighter/read-account-auth.js"
+);
 const { validatePreparedActionFollowUp } = await import(
   "@vex-agent/tools/registry/prepared-action-follow-ups.js"
 );
@@ -440,6 +443,7 @@ beforeEach(() => {
     findSavedScope: () => null,
     findDefaultScope: () => null,
   });
+  configureLighterReadOnlyAccountAuthResolver(null);
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
@@ -1003,7 +1007,7 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccountActiveOrders).toHaveBeenCalledWith("rhc", {
       marketId: 0,
       marketType: "perp",
-    });
+    }, undefined);
     expect(data.source).toBe("live_lighter_read_only_account_api");
     expect((data.provenance as Record<string, unknown>).authenticated).toBe(true);
     expect((data.provenance as Record<string, unknown>).credentialCapability).toBe("read_only_account_data");
@@ -1011,6 +1015,50 @@ describe("Lighter agent read handlers", () => {
     const order = (data.orders as Record<string, unknown>[])[0]!;
     expect(order.orderIndex).toBe(String(UNSAFE_INTEGER));
     expect(order.clientOrderIndex).toBe(String(UNSAFE_INTEGER_2));
+  });
+
+  it("reads open orders with a read-only token derived from the saved trading key", async () => {
+    // Single trading key saved for account 736778, no standalone read-only
+    // token. The derived-auth resolver mints a short-lived read-only token so
+    // the read hits the live account API instead of falling back to inference.
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "core" && accountIndex === 736778
+          ? { environment, accountIndex, apiKeyIndex: 4 }
+          : null,
+      findDefaultScope: (environment) =>
+        environment === "core" ? { environment, accountIndex: 736778, apiKeyIndex: 4 } : null,
+      listScopes: (environment) =>
+        environment === "core" ? [{ environment, accountIndex: 736778, apiKeyIndex: 4 }] : [],
+    });
+    const resolver = vi.fn(async (environment: string, accountIndex: number) =>
+      environment === "core" && accountIndex === 736778
+        ? { token: "derived-read-only-token", accountIndex }
+        : null);
+    configureLighterReadOnlyAccountAuthResolver(resolver);
+    mocks.client.getAccountActiveOrders.mockResolvedValue({
+      code: 200,
+      orders: [accountOrder()],
+    });
+
+    const data = await callJson("lighter.openOrders", {
+      environment: "core",
+      marketId: 0,
+      filter: "perp",
+      limit: 1,
+    });
+
+    // The account is resolved from the saved key and the derived token is passed
+    // through to the client, which targets that exact account.
+    expect(resolver).toHaveBeenCalledWith("core", 736778);
+    expect(mocks.client.getAccountActiveOrders).toHaveBeenCalledWith("core", {
+      accountIndex: 736778,
+      marketId: 0,
+      marketType: "perp",
+    }, { token: "derived-read-only-token", accountIndex: 736778 });
+    expect(data.accountIndex).toBe(736778);
+    expect(data.accountIndexSource).toBe("credential");
+    expect((data.provenance as Record<string, unknown>).authenticated).toBe(true);
   });
 
   it("reads authenticated order history for an explicit account", async () => {
@@ -1029,7 +1077,7 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccountInactiveOrders).toHaveBeenCalledWith("core", {
       accountIndex: 42,
       limit: 1,
-    });
+    }, undefined);
     expect(data.accountIndexSource).toBe("caller");
     expect(data.accountIndex).toBe(42);
     expect(data.truncated).toBe(true);
@@ -1063,7 +1111,7 @@ describe("Lighter agent read handlers", () => {
       accountIndex: 42,
       limit: 1,
       sortBy: "timestamp",
-    });
+    }, undefined);
     expect(data.source).toBe("live_lighter_read_only_account_api");
     const fill = (data.trades as Record<string, unknown>[])[0]!;
     expect(fill.tradeId).toBe(String(UNSAFE_INTEGER));

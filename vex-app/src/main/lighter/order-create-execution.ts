@@ -14,7 +14,16 @@ import {
   defaultLighterCreateOrderExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
+import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
+import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
+import {
+  defaultLighterTradingVaultCredentialId,
+  type LighterTradingCredentialVaultReference,
+} from "@tools/lighter/trading-credentials.js";
+import type { LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
+import type { LighterSignerAdapter } from "@tools/lighter/signer-adapter.js";
+import type { LighterTradingSecretReader } from "@tools/lighter/trading-secret.js";
 import {
   createUnlockedVaultLighterTradingSecretReader,
   listUnlockedLighterTradingCredentialScopes,
@@ -23,6 +32,34 @@ import { readLighterLiveTradingReleaseGateStatus } from "./live-trading-release-
 
 // Short-lived account-auth token lifetime for read-only reconciliation reads.
 const REPAIR_ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
+
+// Derives a short-lived READ-ONLY account auth token from a saved trading key
+// for account reads only (never signing or sendTx). Shared by stuck-order
+// repair and authenticated account reads so a single trading key covers both
+// trading and read access. Returns null when the token cannot be minted (locked
+// vault, signer unavailable, unknown scope).
+async function deriveReadOnlyAccountAuth(
+  reference: LighterTradingCredentialVaultReference,
+  secretReader: LighterTradingSecretReader,
+  signer: LighterSignerAdapter,
+): Promise<LighterPrivilegedAccountAuth | null> {
+  try {
+    const secret = await loadLighterTradingSecretMaterial(reference, secretReader);
+    const auth = await createLighterAccountAuthWithAdapter(
+      buildLighterAccountAuthSigningInputForScope({
+        environment: reference.environment,
+        accountIndex: reference.accountIndex,
+        apiKeyIndex: reference.apiKeyIndex,
+        secret,
+        deadlineUnixSeconds: Math.floor(Date.now() / 1_000) + REPAIR_ACCOUNT_AUTH_TTL_SECONDS,
+      }),
+      signer,
+    );
+    return { token: auth.authToken, accountIndex: reference.accountIndex };
+  } catch {
+    return null;
+  }
+}
 
 export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
@@ -42,23 +79,26 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   // even when only a trading key is saved, by deriving a short-lived read-only
   // account auth token. The token authorizes account reads only.
   const uninstallRepairAuth = configureLighterRepairPrivilegedAccountAuthResolver(
-    async (reference) => {
-      try {
-        const secret = await loadLighterTradingSecretMaterial(reference, secretReader);
-        const auth = await createLighterAccountAuthWithAdapter(
-          buildLighterAccountAuthSigningInputForScope({
-            environment: reference.environment,
-            accountIndex: reference.accountIndex,
-            apiKeyIndex: reference.apiKeyIndex,
-            secret,
-            deadlineUnixSeconds: Math.floor(Date.now() / 1_000) + REPAIR_ACCOUNT_AUTH_TTL_SECONDS,
-          }),
-          signer,
-        );
-        return { token: auth.authToken, accountIndex: reference.accountIndex };
-      } catch {
-        return null;
-      }
+    (reference) => deriveReadOnlyAccountAuth(reference, secretReader, signer),
+  );
+  // Lets the authenticated account reads (open orders, order history, trades)
+  // work on a single-key setup by deriving the same short-lived read-only token
+  // from the saved trading key, instead of failing over to inference. Prefers a
+  // separately configured read-only token when one exists.
+  const uninstallReadAuth = configureLighterReadOnlyAccountAuthResolver(
+    async (environment, accountIndex) => {
+      if (getLighterReadOnlyCredentialStatus(environment).configured) return null;
+      const scope = listUnlockedLighterTradingCredentialScopes(environment)
+        .find((candidate) => candidate.accountIndex === accountIndex);
+      if (scope === undefined) return null;
+      const reference: LighterTradingCredentialVaultReference = {
+        kind: "encrypted_vault_reference",
+        environment: scope.environment,
+        accountIndex: scope.accountIndex,
+        apiKeyIndex: scope.apiKeyIndex,
+        vaultCredentialId: defaultLighterTradingVaultCredentialId(scope),
+      };
+      return deriveReadOnlyAccountAuth(reference, secretReader, signer);
     },
   );
   const uninstallScopeResolver = configureLighterTradingCredentialScopeResolver({
@@ -73,6 +113,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   });
   return () => {
     uninstallRepairAuth();
+    uninstallReadAuth();
     uninstallScopeResolver();
     uninstallExecutionDeps();
     uninstallReleaseGate();
