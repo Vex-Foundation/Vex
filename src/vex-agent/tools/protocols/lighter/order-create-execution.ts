@@ -230,9 +230,10 @@ export async function executeApprovedLighterCreateOrder(input: {
         txType: signed.txType,
         txInfo: signed.txInfo,
       });
-    } catch {
-      await markAmbiguous(deps, plan, SENDTX_AMBIGUOUS_REASON);
-      return ambiguous(plan, SENDTX_AMBIGUOUS_REASON, signed.txHash);
+    } catch (error) {
+      const reason = sendTxAmbiguousReason(error);
+      await markAmbiguous(deps, plan, reason);
+      return ambiguous(plan, reason, signed.txHash);
     }
 
     if (response.code !== 200) {
@@ -763,6 +764,21 @@ function ambiguous(
     message:
       "The Lighter order submission state is ambiguous. Vex must reconcile the nonce and provider order state before any retry.",
   };
+}
+
+// Builds the ambiguous reason for a failed `sendTx`. Only the VexError code and
+// numeric HTTP status are appended — never the error message, which could echo
+// provider-returned signed payload material. Non-VexError throws fall back to the
+// bare reason so nothing untrusted is ever persisted or returned.
+function sendTxAmbiguousReason(error: unknown): string {
+  if (error instanceof VexError) {
+    const parts = [`code=${error.code}`];
+    if (typeof error.httpStatus === "number") {
+      parts.push(`http=${error.httpStatus}`);
+    }
+    return `${SENDTX_AMBIGUOUS_REASON}:${parts.join(",")}`;
+  }
+  return SENDTX_AMBIGUOUS_REASON;
 }
 
 async function markAmbiguous(

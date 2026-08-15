@@ -10,6 +10,7 @@ import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
+import { ErrorCodes, VexError } from "../../../errors.js";
 
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const TX_INFO = "{\"signed\":\"payload\"}";
@@ -740,6 +741,45 @@ describe("Lighter approved create execution pipeline", () => {
     });
     expect(d.intents.markApiAccepted).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
+  });
+
+  it("surfaces the sendTx VexError code and HTTP status in the ambiguous reason", async () => {
+    const submitError = new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `RHC rejected signed transaction submission (HTTP 400). ${TX_INFO}`,
+    );
+    submitError.httpStatus = 400;
+    const d = deps({
+      client: {
+        ...deps().client,
+        sendTx: vi.fn(async () => {
+          throw submitError;
+        }),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    const expectedReason =
+      "sendtx_failed_after_submit_attempt:code=LIGHTER_INVALID_REQUEST,http=400";
+    expect(result).toMatchObject({
+      status: "ambiguous",
+      reason: expectedReason,
+      signerTxHash: TX_HASH,
+    });
+    expect(d.intents.markAmbiguous).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      reason: expectedReason,
+    });
+    // The diagnostic reason must carry the status but never the error message body.
+    expect(JSON.stringify(result)).not.toContain(TX_INFO);
+    expect(JSON.stringify(result)).not.toContain("rejected signed transaction");
   });
 
   it("marks a signer failure after nonce reservation ambiguous and never submits", async () => {
