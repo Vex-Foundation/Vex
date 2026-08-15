@@ -98,6 +98,7 @@ function deps(logs: unknown = KYBER.logs) {
   return {
     fetchReceiptLogs: vi.fn().mockResolvedValue(logs),
     fetchTransaction: vi.fn().mockResolvedValue(null),
+    fetchReceiptStatus: vi.fn().mockResolvedValue("success"),
   };
 }
 
@@ -127,14 +128,35 @@ describe("the legacy amountless-confirmed row — the acceptance case", () => {
     });
   });
 
-  it("does NOT mark the decode version on a successful fill", async () => {
+  it("marks the decode version on a successful fill, so the row cannot be re-decoded forever", async () => {
     mockListCandidates.mockResolvedValue([legacyRow()]);
 
     await repairMissingExecutedAmounts(deps());
 
-    // The row stops being a candidate because its legs are now complete. A
-    // second, redundant reason could outlive the first.
-    expect(mockNoteVersion).not.toHaveBeenCalled();
+    // A successful decode is as FINAL as a refusal. This pin used to assert the
+    // opposite, on the assumption that a filled row always leaves the candidate
+    // set because its legs are complete. A live install disproved it: a lend or
+    // prediction row whose role contract wants BOTH legs stays incomplete when
+    // the chain honestly proves only one, keeps its ordering key, and is
+    // re-decoded from the same immutable receipt on every pass.
+    expect(mockNoteVersion).toHaveBeenCalledWith(7, expect.any(String));
+  });
+
+  it("does not re-serve a partially filled role row on the next pass", async () => {
+    // lend_withdraw wants both legs; the chain proved only the output one.
+    const partial = legacyRow({ eventRole: "lend_withdraw", protocol: "kyberswap" });
+    mockListCandidates.mockResolvedValue([partial]);
+    mockFill.mockResolvedValue({
+      outcome: "applied",
+      row: { ...partial, executedAmountOutRaw: "2149469568496706" },
+    });
+
+    const result = await repairMissingExecutedAmounts(deps());
+
+    expect(result).toMatchObject({ filled: 1 });
+    // The version stamp is what removes it from `listAmountCorrectionCandidates`
+    // (its query excludes rows already marked for the current decoder set).
+    expect(mockNoteVersion).toHaveBeenCalledWith(partial.id, expect.any(String));
   });
 });
 

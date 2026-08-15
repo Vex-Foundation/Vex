@@ -12,7 +12,9 @@
  * from a quote and never from a provider echo:
  *
  *   1. the mined signed transaction, validated as untrusted JSON, gives the
- *      sender and the call target the deposit actually paid;
+ *      sender and the call target the deposit actually paid, and for a NATIVE
+ *      deposit its `value` is the principal - believed only once the receipt
+ *      says the call succeeded;
  *   2. the same execution's earlier allowance rows - Vex's own record that IT
  *      signed those approvals - give the token-bound spenders, each re-read from
  *      its own mined `approve` transaction and replayed in `event_index` order;
@@ -48,7 +50,18 @@ export interface MinedTransaction {
   readonly valueRaw: string;
 }
 
+/** The four states raw JSON-RPC can leave a receipt's status in. */
+export type ReceiptStatus = "success" | "reverted" | "unreadable" | "absent";
+
 export interface DepositEvidenceDeps {
+  /**
+   * The mined receipt's STATUS. `null` when the receipt could not be read at
+   * all, which is a deferral and never a revert.
+   */
+  readonly fetchReceiptStatus: (input: {
+    chainId: number;
+    txHash: string;
+  }) => Promise<ReceiptStatus | null>;
   /**
    * The mined signed transaction, by hash. `null` when it cannot be read right
    * now - a transport failure, never a decline.
@@ -82,11 +95,7 @@ export async function resolveBridgeDepositAmount(input: {
     return { kind: "declined", detail: "the row lacks the hash, input token or quoted amount the proof requires" };
   }
   if (isNativeAddress(tokenInAddress)) {
-    // A native deposit moves value, not an ERC-20 `Transfer`, so the receipt
-    // holds no log to bound. The handler stamps that leg from the transaction it
-    // signed; the lane will not re-derive it from a value it cannot attribute
-    // between principal, provider fee and refund.
-    return { kind: "declined", detail: "a native deposit leg has no ERC-20 transfer to prove it" };
+    return resolveNativeDepositAmount({ row, txHash, amountInRaw, deps });
   }
 
   const transaction = await deps.fetchTransaction({ chainId: row.chainId, txHash });
@@ -121,6 +130,60 @@ export async function resolveBridgeDepositAmount(input: {
       kind: "declined",
       detail: `the receipt did not prove the deposit transfer (${outcome.reason}, candidates=${outcome.candidateCount})`,
     };
+}
+
+/**
+ * A NATIVE bridge deposit: the value the transaction Vex signed IS the
+ * principal, because a plain native transfer emits no log to read.
+ *
+ * The receipt STATUS is checked before that value is believed, and it is the
+ * whole reason this arm cannot be a two-line branch: a payable call that
+ * REVERTED still carries its non-zero `value` in the transaction, so a proof
+ * built from `value` alone would stamp an amount for a deposit that moved
+ * nothing and refunded the sender. Success is required; a revert declines; a
+ * status neither literal defers, because an unreadable receipt is not evidence
+ * of anything and must not burn the row's eligibility.
+ *
+ * The sender must be this row's own wallet. The recipient is deliberately NOT
+ * compared: the only recipient available here is the mined transaction's own
+ * `to`, and comparing a value to itself proves nothing. It becomes a real check
+ * the moment an independently persisted verified recipient exists.
+ */
+async function resolveNativeDepositAmount(args: {
+  readonly row: AgentActivityEvent;
+  readonly txHash: string;
+  readonly amountInRaw: string;
+  readonly deps: DepositEvidenceDeps;
+}): Promise<ResolvedDepositEvidence> {
+  const { row, txHash, deps } = args;
+  const bound = parseRawAmount(args.amountInRaw);
+  if (bound === null || bound <= 0n) {
+    return { kind: "declined", detail: "the row carries no quoted input amount to bound the deposit with" };
+  }
+
+  const status = await deps.fetchReceiptStatus({ chainId: row.chainId, txHash });
+  if (status === null || status === "absent" || status === "unreadable") {
+    return { kind: "deferred", detail: "the receipt status could not be read this pass" };
+  }
+  if (status === "reverted") {
+    return { kind: "declined", detail: "the mined transaction reverted, so its value moved nothing" };
+  }
+
+  const transaction = await deps.fetchTransaction({ chainId: row.chainId, txHash });
+  if (transaction === null) {
+    return { kind: "deferred", detail: "the signed transaction could not be read this pass" };
+  }
+  if (!sameAddress(transaction.from, row.walletAddress)) {
+    return { kind: "declined", detail: "the mined transaction was not sent by this row's wallet" };
+  }
+  const signedValue = parseRawAmount(transaction.valueRaw);
+  if (signedValue === null || signedValue <= 0n) {
+    return { kind: "declined", detail: "the mined transaction carries no native value to attribute" };
+  }
+  if (signedValue > bound) {
+    return { kind: "declined", detail: "the mined transaction's value exceeds the quoted input amount" };
+  }
+  return { kind: "decoded", executedAmountInRaw: signedValue.toString() };
 }
 
 type ResolvedApprovals =
@@ -177,6 +240,11 @@ const NATIVE_SENTINELS = new Set([
 
 function isNativeAddress(address: string): boolean {
   return NATIVE_SENTINELS.has(address.trim().toLowerCase());
+}
+
+/** Atomic units, decimal digits only. Anything else is not an amount. */
+function parseRawAmount(value: string): bigint | null {
+  return /^[0-9]+$/.test(value) ? BigInt(value) : null;
 }
 
 function sameAddress(a: string, b: string): boolean {

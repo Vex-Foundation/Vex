@@ -47,13 +47,19 @@ import {
   noteSettlementDeclined,
   readSettlementDecodeHint,
   roleLegsIncomplete,
+  touchAmountCorrectionChecked,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 
-import { asJsonRpcClient } from "./agent-activity-repair/observation.js";
+import { asJsonRpcClient, readReceiptStatus } from "./agent-activity-repair/observation.js";
 import { resolveReadOnlyReceiptClient } from "./agent-activity-repair.js";
+import {
+  createSolanaRepairLane,
+  type SolanaRepairLane,
+  type SolanaTransactionBodyPort,
+} from "./executed-amount-fallback/solana-lane.js";
 import {
   decodeVenueSettlement,
   type VenueDecodeLog,
@@ -71,7 +77,7 @@ import type {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-12.bridge-deposit-and-trench";
+export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-13.native-deposit-and-rotation";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;
@@ -88,6 +94,13 @@ export interface AmountFallbackDeps extends DepositEvidenceDeps {
     chainId: number;
     txHash: string;
   }) => Promise<readonly VenueDecodeLog[] | null>;
+  /**
+   * The Solana body port, injected by tests only. Production omits it and the
+   * Solana lane builds the same genesis-verified, SSRF-safe port the pending
+   * sweep uses - lazily, so a pass with no Solana candidate costs no health
+   * check at all.
+   */
+  readonly solanaBodyPort?: SolanaTransactionBodyPort;
 }
 
 export interface AmountFallbackResult {
@@ -107,6 +120,13 @@ export async function repairMissingExecutedAmounts(
   limit: number = AMOUNT_CORRECTION_BATCH_LIMIT,
 ): Promise<AmountFallbackResult> {
   const candidates = await listAmountCorrectionCandidates(limit, SETTLEMENT_DECODER_SET_VERSION);
+  // ONE lane per pass: it carries the Solana body-fetch budget and memoizes the
+  // port, and is created eagerly only because it costs nothing until a Solana
+  // candidate actually asks it for a body.
+  const solanaLane = createSolanaRepairLane({
+    decoderSetVersion: SETTLEMENT_DECODER_SET_VERSION,
+    ...(deps.solanaBodyPort ? { port: deps.solanaBodyPort } : {}),
+  });
   let checked = 0;
   let filled = 0;
   let declined = 0;
@@ -114,16 +134,41 @@ export async function repairMissingExecutedAmounts(
   let conflicted = 0;
 
   for (const row of candidates) {
-    // THE AUTHORITATIVE completeness decision, imported — the SQL above is only
+    // THE AUTHORITATIVE completeness decision, imported: the SQL above is only
     // a prefilter, and a `yield_claim` with no input leg is COMPLETE.
-    if (!roleLegsIncomplete(row)) continue;
+    if (!roleLegsIncomplete(row)) {
+      // It still has to ROTATE. The prefilter keeps selecting rows the role
+      // contract calls complete (a bridge deposit legitimately has no output
+      // leg), and a row that is skipped without touching the ordering column
+      // stays at the head of the window for every future pass.
+      await rotateCandidate(row.id);
+      continue;
+    }
     checked++;
 
-    const outcome = await repairOneRow(row, deps);
-    if (outcome === "filled") filled++;
+    const outcome = await repairOneRow(row, deps, solanaLane);
+    if (outcome === "filled") {
+      filled++;
+      // A SUCCESSFUL decode is just as final as a refusal, and it must be
+      // marked as such. A role whose contract wants BOTH legs (lend, prediction)
+      // stays `roleLegsIncomplete` when the chain only proves one of them, so
+      // without this stamp the row remains a candidate, keeps its ordering key,
+      // and is re-decoded from the same immutable receipt on every single pass -
+      // one wasted chain read per row per tick, and on Solana the whole body
+      // budget spent re-proving what is already stored.
+      await noteSettlementDecodeVersion(row.id, SETTLEMENT_DECODER_SET_VERSION);
+    }
     else if (outcome === "declined") declined++;
     else if (outcome === "conflicted") conflicted++;
-    else deferred++;
+    else {
+      deferred++;
+      // A deferral concluded nothing, so it writes no decline and no decoder
+      // version. Without a rotation it would also write NOTHING at all, and the
+      // candidate window is ordered by exactly the column it did not write:
+      // enough permanently deferring rows and the lane re-serves the same batch
+      // forever, never reaching a later candidate.
+      await rotateCandidate(row.id);
+    }
   }
 
   return { checked, filled, declined, deferred, conflicted };
@@ -153,6 +198,25 @@ export function buildProductionAmountFallbackDeps(): AmountFallbackDeps {
   };
 
   return {
+    fetchReceiptStatus: async ({ chainId, txHash }) => {
+      const client = await clientFor(chainId);
+      if (!client) return null;
+      try {
+        const receipt = await client.request({
+          method: "eth_getTransactionReceipt",
+          params: [txHash],
+        });
+        // The ONE reading of that field in this repository, imported rather than
+        // repeated: a status neither `0x1` nor `0x0` is unreadable, never a revert.
+        return readReceiptStatus(receipt);
+      } catch (err) {
+        logger.debug("sync.amount_fallback.receipt_status_unreadable", {
+          chainId,
+          error: summarizeProtocolError(err).message,
+        });
+        return null;
+      }
+    },
     fetchTransaction: async ({ chainId, txHash }) => {
       const client = await clientFor(chainId);
       if (!client) return null;
@@ -227,12 +291,34 @@ function readReceiptLogs(receipt: unknown): readonly VenueDecodeLog[] | null {
   return parsed;
 }
 
+/**
+ * Move a row to the BACK of the candidate window after a pass that concluded
+ * nothing about it. Best effort: failing to rotate must not fail the pass, and
+ * the next tick simply re-serves the row.
+ */
+async function rotateCandidate(id: number): Promise<void> {
+  try {
+    await touchAmountCorrectionChecked(id);
+  } catch (err) {
+    logger.debug("sync.amount_fallback.rotate_failed", {
+      id,
+      error: summarizeProtocolError(err).message,
+    });
+  }
+}
+
 type RowOutcome = "filled" | "declined" | "conflicted" | "deferred";
 
 async function repairOneRow(
   row: AgentActivityEvent,
   deps: AmountFallbackDeps,
+  solanaLane: SolanaRepairLane,
 ): Promise<RowOutcome> {
+  // THE FAMILY SPLIT, before any EVM read: a Solana row is repaired from its
+  // finalized transaction body by its own lane, and no EVM RPC method is ever
+  // issued against a Solana endpoint.
+  if (row.chainFamily === "solana") return solanaLane.repairRow(row);
+
   const txHash = row.txHash;
   if (txHash === null) return "deferred";
 

@@ -103,9 +103,7 @@ export async function resolveSolanaExecutedAmounts(
     : ({ ok: true, body: alreadyFetchedBody } as const);
   if (!fetched.ok) return fetched.deferred;
 
-  const decoded = bounds.kind === "swap"
-    ? decodeJupiterSwapExecutedAmounts(fetched.body, bounds)
-    : decodeDeclaredLegExecutedAmounts(fetched.body, bounds);
+  const decoded = decodeAmountsForBounds(fetched.body, bounds);
   if (decoded.outcome === "declined") {
     // Observable, structured, and free of provider text: the reason is one of
     // this decoder's own named codes, never a raw RPC payload.
@@ -125,12 +123,27 @@ export async function resolveSolanaExecutedAmounts(
 }
 
 /**
+ * The decode these bounds call for: a swap must prove both legs, a declared-leg
+ * row proves each leg it named. EXPORTED alongside `amountBounds` so the
+ * amount-correction lane runs the identical decode on an already-confirmed row.
+ */
+export function decodeAmountsForBounds(
+  body: unknown,
+  bounds: SolanaAmountBounds,
+): { readonly outcome: "proven"; readonly amounts: SolanaExecutedLegAmounts }
+  | { readonly outcome: "declined"; readonly reason: string } {
+  return bounds.kind === "swap"
+    ? decodeJupiterSwapExecutedAmounts(body, bounds)
+    : decodeDeclaredLegExecutedAmounts(body, bounds);
+}
+
+/**
  * `result.blockTime` of a raw `getTransaction` body: Unix seconds, nullable by
  * the RPC contract. Anything that is not a positive finite number is treated
  * as absent - a missing block time only means the report sends no confirmation
  * time, so this never guesses.
  */
-function readBlockTimeIso(body: unknown): string | null {
+export function readBlockTimeIso(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const blockTime = (body as Record<string, unknown>).blockTime;
   if (typeof blockTime !== "number" || !Number.isFinite(blockTime) || blockTime <= 0) return null;
@@ -139,7 +152,7 @@ function readBlockTimeIso(body: unknown): string | null {
 
 const STATUS_ONLY = { outcome: "status_only" } as const;
 
-type SolanaAmountBounds =
+export type SolanaAmountBounds =
   | { readonly kind: "swap"; readonly owner: string; readonly inputMint: string; readonly outputMint: string }
   | {
       readonly kind: "declared_legs";
@@ -161,14 +174,29 @@ type SolanaAmountBounds =
  * `token_in_address`/`token_out_address` at intent time. Still Vex's own record,
  * still never the transaction's account list, and each leg is proven separately
  * because these roles legitimately move one side only.
+ *
+ * A `bridge_deposit` is bounded INPUT-ONLY, whatever its row declares as an
+ * output: the counter-leg of a deposit lands on the destination chain, in a
+ * different transaction, on the fill row - exactly the asymmetry
+ * `roleLegsIncomplete` encodes for that role. Its input is also the only amount
+ * AgentScan prices.
+ *
+ * EXPORTED for the amount-correction lane, which asks the same eligibility
+ * question about an already-confirmed row. One rule, two callers, no copy.
  */
-function amountBounds(event: AgentActivityEvent): SolanaAmountBounds | null {
+export function amountBounds(event: AgentActivityEvent): SolanaAmountBounds | null {
   const owner = event.walletAddress;
   if (event.eventRole === "swap") {
     const profile = readJupiterFeeSwapSettlementProfile(event.routeProvenance);
     return profile
       ? { kind: "swap", owner, inputMint: profile.inputMint, outputMint: profile.outputMint }
       : null;
+  }
+  if (event.eventRole === "bridge_deposit") {
+    const depositMint = solanaMintOrNull(event.tokenInAddress);
+    return depositMint === null
+      ? null
+      : { kind: "declared_legs", owner, inputMint: depositMint, outputMint: null };
   }
   if (event.kind !== "lend" && event.kind !== "prediction") return null;
   const inputMint = solanaMintOrNull(event.tokenInAddress);
