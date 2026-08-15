@@ -119,7 +119,7 @@ describe("DexScreener feed provenance envelope", () => {
     for (const toolId of FEED_TOOLS) {
       const data = await call(toolId);
       expect(
-        data.returned + totalDropped(data.droppedByFilter),
+        data.totalMatched + totalDropped(data.droppedByFilter),
         `${toolId} envelope does not reconcile`,
       ).toBe(data.providerWindow.providerReturned);
     }
@@ -146,13 +146,17 @@ describe("DexScreener feed provenance envelope", () => {
 
   // ── No hidden defaults ─────────────────────────────────────────
 
-  it("every feed tool: omitting limit returns every row the provider returned", async () => {
+  it("profile defaults are bounded and visible; other feeds return their provider window", async () => {
     for (const toolId of FEED_TOOLS) {
       const data = await call(toolId);
-      expect(data.returned, `${toolId} dropped rows without being asked`).toBe(
-        data.providerWindow.providerReturned,
-      );
-      expect(data.hasMore).toBe(false);
+      if (toolId === "dexscreener.profiles" || toolId === "dexscreener.profiles.recent") {
+        expect(data.returned).toBe(20);
+        expect(data.filtersApplied.limit).toBe(20);
+        expect(data.hasMore).toBe(true);
+      } else {
+        expect(data.returned).toBe(data.providerWindow.providerReturned);
+        expect(data.hasMore).toBe(false);
+      }
     }
   });
 
@@ -298,7 +302,8 @@ describe("DexScreener feed provenance envelope", () => {
     const detail = metaCat();
 
     // Distinct fields, and neither is spelled in a way that reads as the total.
-    expect(data.pairsReturned).toBe(detail.pairs.length);
+    expect(data.pairsReturned).toBe(20);
+    expect(data.hasMore).toBe(true);
     expect(data.narrativeSubsetTokenCount).toBe(detail.tokenCount);
     expect(data.subsetMarketCapSumUsd).toBe(detail.marketCap);
     expect(data.marketCap).toBeUndefined();

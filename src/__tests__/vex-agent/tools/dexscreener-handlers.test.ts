@@ -336,7 +336,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     expect(data.pairs.map((x: { dexId: string }) => x.dexId)).toEqual(["b", "c"]);
   });
 
-  it("returns all pairs (no truncation) when limit is omitted", async () => {
+  it("uses the visible 15-row default when limit is omitted", async () => {
     const client = getDexScreenerClient();
     const pairs: DexPair[] = Array.from({ length: 30 }, (_, i) =>
       makePair({ dexId: `dex${i}`, liquidity: { usd: i, base: 1, quote: 1 } }),
@@ -348,8 +348,10 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
       READ_CTX,
     );
     const data = JSON.parse(result.output);
-    expect(data.returned).toBe(30);
-    expect(data.hasMore).toBe(false);
+    expect(data.returned).toBe(15);
+    expect(data.totalMatched).toBe(30);
+    expect(data.filtersApplied.limit).toBe(15);
+    expect(data.hasMore).toBe(true);
   });
 
   it("projects pairs to the AgentDexPair lean row — units in every name, raw noise gone", async () => {
@@ -555,7 +557,7 @@ describe("dexscreener.search filters", () => {
     expect(data.returned + 2).toBe(data.providerWindow.providerReturned);
   });
 
-  it("has NO default limit — every provider row is returned unless the agent asks otherwise", async () => {
+  it("uses a visible 5-row default and accepts an explicit override", async () => {
     const client = getDexScreenerClient();
     const many: DexPair[] = Array.from({ length: 30 }, (_, i) =>
       makePair({ chainId: "base", dexId: `d${i}`, liquidity: { usd: 30 - i, base: 1, quote: 1 } }),
@@ -567,8 +569,10 @@ describe("dexscreener.search filters", () => {
     const def = JSON.parse(
       (await handlerFor("dexscreener.search")({ query: "xx" }, READ_CTX)).output,
     );
-    expect(def.returned).toBe(30);
-    expect(def.hasMore).toBe(false);
+    expect(def.returned).toBe(5);
+    expect(def.totalMatched).toBe(30);
+    expect(def.filtersApplied.limit).toBe(5);
+    expect(def.hasMore).toBe(true);
 
     const capped = JSON.parse(
       (await handlerFor("dexscreener.search")({ query: "xx", limit: 3 }, READ_CTX)).output,

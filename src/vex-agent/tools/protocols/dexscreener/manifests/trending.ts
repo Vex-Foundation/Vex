@@ -93,8 +93,9 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get latest community takeover (CTO) events — a record that a community reclaimed control of "
-      + "a token, each carrying the provider's claimDate (emitted as claimedAt, reported as "
+      "Get the latest rows carrying DexScreener's community-takeover (CTO) label. This provider "
+      + "classification is not proof that ownership, admin keys, or contract control changed. Each "
+      + "row carries the provider's claimDate (emitted as claimedAt, reported as "
       + "eventAgeSeconds); bound recency with claimedWithinSeconds. This is a RECENCY WINDOW, not a "
       + "takeover history: it reports the takeovers this feed is carrying right now, so 'has token X "
       + "ever had a CTO' and 'list this token's past takeovers' are NOT answerable here or anywhere "
@@ -137,7 +138,7 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Official DEX Screener TRENDING NARRATIVES feed — trending themes/metas (AI, dogs, 'knockoff "
+      "Live, undocumented DEX Screener TRENDING NARRATIVES feed — themes/metas (AI, dogs, 'knockoff "
       + "legends', …) with aggregate market cap, liquidity, 24h volume, token count, and one "
       + "market-cap change field, marketCapChangePctSelected, resolved against the `window` param "
       + "(default h24). Returns NARRATIVES, not individual tokens; drill into one with "
@@ -159,7 +160,9 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Drill into ONE trending narrative/meta by slug (from dexscreener.trending, e.g. "
       + "'knockoff-legends') — returns the narrative's aggregate stats plus the DEX pairs inside it. "
-      + "The slug is a NARRATIVE slug, never a chain slug. Every filter, sort and window is applied "
+      + "Each pair's raw priceUsd always prices its base token. The slug is a NARRATIVE slug, never "
+      + "a chain slug. Returns 20 pair rows by default and exposes the rest through hasMore and "
+      + "offset. Every filter, sort and window is applied "
       + "by Vex to the pairs the provider returns for that narrative — the set can exceed 30 rows "
       + "(31 observed). No server-side filter, sort, limit or pagination exists. Live but "
       + "undocumented API surface — may change; if it does the call fails with the real reason (rate "

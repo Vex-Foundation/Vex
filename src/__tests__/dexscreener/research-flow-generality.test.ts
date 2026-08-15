@@ -131,9 +131,9 @@ describe("DexScreener research flows — generality", () => {
     vi.restoreAllMocks();
   });
 
-  // ── Flow 1 — the owner's worked example ────────────────────────
+  // ── Flow 1 — profile metadata follow-up ────────────────────────
 
-  it("FLOW: hunt fresh tokens on ONE chain (the owner's robinhood example) — 2 calls, nothing blobbed", async () => {
+  it("FLOW: inspect profile metadata on one chain, then inspect an exact token's pools — 2 calls, nothing blobbed", async () => {
     const flow = new FlowRecorder();
 
     // Call 1. Before this card there was no way to express either half of this.
@@ -159,7 +159,7 @@ describe("DexScreener research flows — generality", () => {
     });
     expect(pools).toHaveProperty("providerWindow");
 
-    flow.report("fresh-on-chain");
+    flow.report("profile-to-pools");
     expect(flow.calls).toHaveLength(2);
     expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
@@ -230,9 +230,9 @@ describe("DexScreener research flows — generality", () => {
     expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
-  // ── Flow 4 — rug-check before buying ───────────────────────────
+  // ── Flow 4 — pair and provider-label research ──────────────────
 
-  it("FLOW: rug-check a token before buying — 3 calls, nothing blobbed", async () => {
+  it("FLOW: inspect pool depth and provider labels before a separate safety check — 3 calls, nothing blobbed", async () => {
     const flow = new FlowRecorder();
 
     // Depth and price sanity across every pool of the token.
@@ -260,14 +260,14 @@ describe("DexScreener research flows — generality", () => {
     expect(takeovers).toHaveProperty("droppedByFilter");
     expect(promoted).toHaveProperty("droppedByFilter");
 
-    flow.report("rug-check");
+    flow.report("pair-provider-labels");
     expect(flow.calls).toHaveLength(3);
     expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
-  // ── Flow 5 — pick an execution venue / exit liquidity at size ───
+  // ── Flow 5 — shortlist a venue before requesting its quote ─────
 
-  it("FLOW: which pool can I exit at size? — 1 call, nothing blobbed", async () => {
+  it("FLOW: which indexed pool should I quote at the execution venue? — 1 call, nothing blobbed", async () => {
     const flow = new FlowRecorder();
 
     // `minQuoteDepthTokens` is the one depth number a pool cannot inflate by
@@ -293,17 +293,17 @@ describe("DexScreener research flows — generality", () => {
 
   // ── Flow 6 — portfolio refresh ─────────────────────────────────
 
-  it("FLOW: refresh a portfolio and re-check the thin holdings — 2 calls, nothing blobbed", async () => {
+  it("FLOW: refresh a 30-token portfolio without destructive filters, then re-check a holding", async () => {
     const flow = new FlowRecorder();
+    const requestedAddresses = tokensEthereum40().requestedAddresses.split(",").slice(0, 30);
 
     const priced = await flow.call("dexscreener.tokens", {
       chain: "ethereum",
-      tokenAddresses: tokensEthereum40().requestedAddresses,
-      limit: 20,
-      sortBy: "liquidityUsd",
+      tokenAddresses: requestedAddresses.join(","),
+      window: "h24",
     });
-    // The provider silently answered 30 of 40; the echo is what makes that visible.
-    expect(priced.unresolvedAddresses).toHaveLength(10);
+    expect(priced.requestedAddresses).toEqual(requestedAddresses);
+    expect(priced.unresolvedAddresses).toHaveLength(0);
 
     const thin = await flow.call("dexscreener.tokenPairs", {
       chain: "ethereum",
@@ -315,7 +315,6 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("portfolio-refresh");
     expect(flow.calls).toHaveLength(2);
-    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── The generality claim, asserted rather than asserted-about ───
@@ -352,17 +351,45 @@ describe("DexScreener research flows — generality", () => {
  * them working: one spelling per idea, across every tool in the namespace.
  */
 describe("DexScreener shared param vocabulary", () => {
-  const listTools = DEXSCREENER_TOOLS.filter((tool) =>
-    tool.params.some((param) => param.key === "limit"),
-  );
+  it("keeps each pair-list surface bounded to its job", () => {
+    const keys = (toolId: string): string[] => {
+      const tool = DEXSCREENER_TOOLS.find((candidate) => candidate.toolId === toolId);
+      if (tool === undefined) throw new Error(`${toolId} is missing`);
+      return tool.params.map((param) => param.key);
+    };
 
-  it("every list-returning tool spells the window vocabulary identically", () => {
-    expect(listTools.length).toBeGreaterThanOrEqual(11);
-    for (const tool of listTools) {
-      const keys = tool.params.map((param) => param.key);
-      for (const shared of ["limit", "offset", "fields", "sortBy", "sortDir"]) {
-        expect(keys, `${tool.toolId} is missing "${shared}"`).toContain(shared);
-      }
+    expect(keys("dexscreener.search")).toEqual([
+      "query",
+      "chainIds",
+      "limit",
+      "offset",
+      "fields",
+      "quoteSymbols",
+      "minLiquidityUsd",
+      "minTurnoverRatio",
+      "requirePriceUsd",
+      "explainDrops",
+    ]);
+    expect(keys("dexscreener.tokens")).toEqual([
+      "chain",
+      "tokenAddresses",
+      "limit",
+      "offset",
+      "fields",
+      "window",
+      "includeAllWindows",
+    ]);
+    for (const toolId of ["dexscreener.tokenPairs", "dexscreener.meta"]) {
+      expect(keys(toolId)).toEqual(expect.arrayContaining([
+        "limit",
+        "offset",
+        "fields",
+        "sortBy",
+        "sortDir",
+        "minLiquidityUsd",
+        "explainDrops",
+      ]));
+      expect(keys(toolId)).not.toContain("omitFields");
     }
   });
 

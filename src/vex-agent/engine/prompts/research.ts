@@ -86,7 +86,16 @@ function buildTokenResearchMapSection(): string {
   );
   lines.push("");
   lines.push(
-    "- `dexscreener.*` — FIRST STOP for any token that already trades in an AMM pool, on any chain: search by name, symbol or contract address, then read the pair's liquidity, 24h volume, momentum and age, and list every pool for the token so you can pick the deepest. It also separates ORGANIC attention (the official trending narratives and their tokens) from PAID attention (boosted and promoted tokens) — buying visibility is not a quality signal, so never report a boost as demand. Research only; it never executes.",
+    "- `dexscreener.*` — source of truth for AMM pairs DexScreener indexes and for DexScreener's own profile, CTO, boost, ad and order labels. It is NOT contract-safety evidence, canonical token identity from a name/ticker, proof of complete market coverage, or an executable quote. A missing row means DexScreener did not return an indexed row in that provider window, not that no market exists.",
+  );
+  lines.push(
+    "  Route by the identity you already have: exact token address + chain -> `dexscreener.tokenPairs`; name/symbol -> `dexscreener.search`, select an exact chain + contract address from the result, then `dexscreener.tokenPairs`; exact pool address + chain -> `dexscreener.pairs`; multiple token addresses on one chain -> `dexscreener.tokens`. Never identify a token from ticker text alone.",
+  );
+  lines.push(
+    "  For narratives call `dexscreener.trending`, then `dexscreener.meta` with the selected narrative slug. Both endpoints are live but undocumented, and their ordering is influenced by engagement and paid promotion; do not call it organic or genuine. Profiles are metadata-update feeds, not token-creation feeds. A CTO row is only DexScreener's provider label, not proof that control changed. For promotion use `dexscreener.boosts`/`dexscreener.boosts.top`, `dexscreener.ads`, then `dexscreener.orders` for one exact token. Promotion is never demand, legitimacy, or safety.",
+  );
+  lines.push(
+    "  Before any trade, use the chain's dedicated contract-safety surface when available, then request a fresh executable quote from the venue that would execute. DexScreener market data can shortlist a pool; it must never be reused as the execution price.",
   );
 
   // Env-gated: `solana.*` needs JUPITER_API_KEY. Same predicate the registry,

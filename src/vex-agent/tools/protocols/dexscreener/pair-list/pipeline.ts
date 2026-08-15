@@ -48,6 +48,9 @@ export interface PairListRequest {
   readonly providerPairs: readonly DexPair[];
   readonly query: PairListQuery;
   readonly asOfMs: number;
+  /** Override only for an aggregate assembled from several provider calls. */
+  readonly providerCap?: number | null;
+  readonly providerNote?: string;
   /** Only `tokenPairs` supplies this — one token's pools can have a median. */
   readonly priceSanity?: CrossPoolPriceSanity;
 }
@@ -92,17 +95,18 @@ export function buildPairListFromRows(
   // When cross-pool sanity was assessed, EVERY row carries a verdict — a row with
   // no pair address, or one the assessment could not price, is `"unknown"` rather
   // than silently missing the field. An absent verdict would read as "fine".
-  const verdicts = request.priceSanity?.verdictByPairAddress;
+  const verdicts = request.priceSanity?.verdictByRow;
   const verdictFor = (row: PairRow): PriceSanityVerdict | null => {
     if (verdicts === undefined) return null;
-    if (typeof row.pair.pairAddress !== "string") return "unknown";
-    return verdicts.get(row.pair.pairAddress) ?? "unknown";
+    return verdicts.get(row) ?? "unknown";
   };
   const pairs = windowed.map((row) =>
     projectAgentPair(row, {
       fields: query.fields,
       window: query.window,
       priceSanity: verdictFor(row),
+      requestedTokenSide: request.priceSanity?.requestedTokenSideByRow.get(row) ?? null,
+      requestedTokenPriceUsd: request.priceSanity?.requestedTokenPriceUsdByRow.get(row) ?? null,
     }),
   );
 
@@ -110,6 +114,8 @@ export function buildPairListFromRows(
     endpoint: request.endpoint,
     providerOrder: request.providerOrder,
     providerReturned: rows.length,
+    providerCap: request.providerCap,
+    note: request.providerNote,
     asOfMs: request.asOfMs,
     totalMatched: sorted.length,
     returned: pairs.length,

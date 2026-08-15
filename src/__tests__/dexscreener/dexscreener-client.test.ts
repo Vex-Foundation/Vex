@@ -91,9 +91,12 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function mockOk(data: unknown) {
+function mockOk(data: unknown, responseHeaders: Record<string, string> = {}) {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
     ok: true,
+    headers: {
+      get: (name: string) => responseHeaders[name.toLowerCase()] ?? null,
+    },
     json: async () => data,
   });
 }
@@ -126,6 +129,33 @@ describe("search", () => {
     const result = await client.search("SOL");
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].baseToken.symbol).toBe("SOL");
+  });
+
+  it("includes DexScreener edge age in source freshness metadata", async () => {
+    mockOk({ schemaVersion: "1.0.0", pairs: [FIXTURE_PAIR] }, { age: "25" });
+
+    const result = await client.search("SOL");
+    const observation = client.observationFor(result);
+    if (observation === null) throw new Error("missing DexScreener source observation");
+
+    expect(observation).toMatchObject({
+      cacheHit: false,
+      cacheAgeMs: 25_000,
+      upstreamAgeMs: 25_000,
+      upstreamAgeKnown: true,
+    });
+    expect(observation.providerFetchedAtMs).toBeLessThanOrEqual(Date.now() - 24_000);
+  });
+
+  it("marks upstream age unknown when DexScreener omits the header", async () => {
+    mockOk({ schemaVersion: "1.0.0", pairs: [FIXTURE_PAIR] });
+
+    const result = await client.search("SOL");
+
+    expect(client.observationFor(result)).toMatchObject({
+      upstreamAgeMs: null,
+      upstreamAgeKnown: false,
+    });
   });
 });
 

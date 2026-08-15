@@ -14,7 +14,8 @@
  * below subtracts from, orders, or narrows at most 30 rows DexScreener already
  * chose, and an empty result never means "this does not exist".
  *
- * `limit` HAS NO DEFAULT. Omitting it returns every row the provider returned.
+ * Handler defaults are echoed in `filtersApplied.limit`; `hasMore` and `offset`
+ * expose the rest of the same provider window.
  *
  * This file is the public entry point and owns the per-TOOL compositions; the
  * vocabulary itself lives in `./pair-list-params/` (0R.16 facade split,
@@ -26,7 +27,6 @@
 import type { ProtocolParamDef } from "../../types.js";
 import {
   EXPLAIN_DROPS_PARAM,
-  PAIR_OMIT_FIELDS_PARAM,
   PAIR_SORT_PARAMS,
   PAIR_TIMEFRAME_PARAMS,
   PAIR_WINDOW_PARAMS,
@@ -67,7 +67,6 @@ export {
  */
 export const PAIR_LIST_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,
-  PAIR_OMIT_FIELDS_PARAM,
   ...PAIR_SORT_PARAMS,
   ...PAIR_TIMEFRAME_PARAMS,
   ...PAIR_VENUE_FILTER_PARAMS,
@@ -116,9 +115,30 @@ function withBareCallByteCost(
   );
 }
 
-/** `search`, bare: measured 24,139 B — over the 16,384 B tool-output cap. */
+function paramsNamed(...keys: readonly string[]): ProtocolParamDef[] {
+  const wanted = new Set(keys);
+  return PAIR_LIST_PARAMS.filter((param) => wanted.has(param.key));
+}
+
+/**
+ * `dexscreener.search` is a resolver, not the full token-pool screener.
+ *
+ * Keep only output shaping plus the small set of filters that help disambiguate
+ * textual/address search results. The shared parser remains intentionally wider
+ * for backwards compatibility, but unsupported combinations are not taught to
+ * the agent through the public manifest.
+ */
 export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
-  PAIR_LIST_PARAMS,
+  paramsNamed(
+    "limit",
+    "offset",
+    "fields",
+    "quoteSymbols",
+    "minLiquidityUsd",
+    "minTurnoverRatio",
+    "requirePriceUsd",
+    "explainDrops",
+  ),
   "MEASURED: one bare pair-notation query with no limit returned 24,139 B against the 16,384 B "
     + "tool-output cap. The widest queries genuinely overflow, and `limit` is what bounds them.",
 );
@@ -126,25 +146,14 @@ export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteC
 /**
  * `dexscreener.tokens` — one arbitrary pool per requested token address.
  *
- * Venue, label and quote-asset filters are omitted: each row is a DIFFERENT
- * token's single provider-chosen pool, so filtering the set by venue answers a
- * question nobody asked ("which of my holdings happens to have been quoted on
- * raydium"). Paging, sorting, projection and the economic thresholds all still
- * mean what they say across a portfolio.
+ * Each row represents a DIFFERENT requested token's provider-chosen pool.
+ * Economic filters, sorting, paging, and drop diagnostics can remove or reorder
+ * holdings, so this public surface exposes snapshot shaping only. The parser
+ * remains wider for backwards compatibility with existing callers.
  */
 export const PAIR_BATCH_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,
-  PAIR_OMIT_FIELDS_PARAM,
-  ...PAIR_SORT_PARAMS,
   ...PAIR_TIMEFRAME_PARAMS,
-  ...PAIR_THRESHOLD_FILTER_PARAMS,
-  EXPLAIN_DROPS_PARAM,
 ];
 
-/** `tokens`, bare with 41 addresses: measured 17,822 B — over the cap. */
-export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
-  PAIR_BATCH_PARAMS,
-  "MEASURED: 41 addresses with no limit returned 17,822 B against the 16,384 B tool-output cap. "
-    + "The mandatory address reconciliation is part of that cost and is never windowed, so `limit` "
-    + "shortens the ROWS while requestedAddresses/unresolvedAddresses stay complete.",
-);
+export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = PAIR_BATCH_PARAMS;

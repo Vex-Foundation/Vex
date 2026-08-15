@@ -22,7 +22,8 @@
  * chose, and an empty result never means "this does not exist" — read
  * `droppedByFilter`.
  *
- * `limit` HAS NO DEFAULT. Omitting it returns every row the provider returned.
+ * Profile feeds default to 20 because issuer text can exceed the agent output
+ * budget; other feeds return their provider window. Applied defaults are echoed.
  */
 
 import type { ProtocolParamDef } from "../../types.js";
@@ -74,8 +75,10 @@ export const FEED_WINDOW_PARAMS: readonly ProtocolParamDef[] = [
     key: "limit",
     type: "number",
     description:
-      "Max rows to return (1-200). Omit to receive EVERY row DexScreener returned (at most 30 — "
-      + "its hard cap). Set this only to spend fewer tokens; 0 is rejected because it cannot mean "
+      "Max rows to return (1-200). Profile feeds default to 20 to bound issuer-authored text; "
+      + "other feeds return their provider window unless set. Any applied value is echoed in "
+      + "filtersApplied.limit and hasMore tells whether this provider window has additional rows. "
+      + "Use offset to read them. 0 is rejected because it cannot mean "
       + "both 'none' and 'all'.",
   },
   {
