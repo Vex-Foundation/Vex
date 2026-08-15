@@ -21,6 +21,7 @@ import { isLighterLiveTradingEnabled } from "../execution-boundary.js";
 import {
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
+  type ExecuteApprovedLighterCreateOrderResult,
 } from "../order-create-execution.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
@@ -125,6 +126,25 @@ function approvalPreparedPayload(
     userGuidance:
       "An approval card is now available in the app. Tell the user to review the card and click Approve and execute trade only if the exact order details are correct; do not ask them to type another approval command.",
   };
+}
+
+// Tells the assistant how to report an executed create outcome. Without this the
+// model can fall back to the stale "nothing has been placed yet" preparation
+// framing that is still in context, even after a real on-chain fill.
+export function lighterLiveOrderCreateUserGuidance(
+  execution: ExecuteApprovedLighterCreateOrderResult,
+): string {
+  switch (execution.status) {
+    case "provider_confirmed":
+      if (execution.executionState === "canceled" || execution.executionState === "rejected") {
+        return `Lighter ${execution.executionState} the order after submission, so no position was opened and no funds are committed. Tell the user the order was ${execution.executionState} by the provider. Do not describe this as a preview or a preparation step, and do not tell the user to approve again.`;
+      }
+      return `The order is live on Lighter with confirmed state "${execution.executionState}". Tell the user their order was placed and report the resulting position from that state (for example a filled or open position). Do not describe this as a preview or preparation step, and do not say that nothing was placed — the order is on-chain.`;
+    case "sequencer_pending":
+      return "Lighter accepted the signed submission and the final order/fill classification is still settling. Tell the user the order was submitted and accepted, and that its final state is confirming shortly; offer to check it with lighter.order.status. Do not describe this as a preview or say that nothing was placed.";
+    case "ambiguous":
+      return "The order submission outcome could not be confirmed. Tell the user the state is uncertain and that you will reconcile it with lighter.order.status before any retry. Do not say the order succeeded, do not say it failed, and do not ask the user to approve again.";
+  }
 }
 
 export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
@@ -296,6 +316,7 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         return ok({
           source: "vex_lighter_live_order_create",
           ...execution,
+          userGuidance: lighterLiveOrderCreateUserGuidance(execution),
         });
       }
       requireLighterLiveTradingEnabled();
