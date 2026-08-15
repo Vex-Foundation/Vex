@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  assertUnsignedCreateOrderFitsOfficialSigner,
   buildLighterAccountAuthSigningInput,
   buildLighterCreateOrderSigningInput,
   createLighterAccountAuthWithAdapter,
@@ -58,6 +59,29 @@ function signingInput(overrides: Partial<LighterOrderReadyForSignerPlan> = {}) {
 }
 
 describe("Lighter official signer adapter boundary", () => {
+  it("enforces the immediate-or-cancel nil-expiry invariant before signing", () => {
+    const iocOrder = buildLighterUnsignedCreateOrderRequest(plan({
+      orderType: "market",
+      timeInForce: "immediate-or-cancel",
+    }));
+    expect(iocOrder.orderExpiryMs).toBe(0);
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner(iocOrder)).not.toThrow();
+
+    const gttOrder = buildLighterUnsignedCreateOrderRequest(plan());
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner(gttOrder)).not.toThrow();
+
+    // IOC must not carry a positive expiry...
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...iocOrder,
+      orderExpiryMs: 1893456000000,
+    })).toThrow("zero (nil) order expiry");
+    // ...and good-till-time must not carry a zero expiry.
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...gttOrder,
+      orderExpiryMs: 0,
+    })).toThrow("positive order expiry");
+  });
+
   it("creates bounded canonical account auth for the exact credential scope", async () => {
     const order = buildLighterUnsignedCreateOrderRequest(plan());
     const input = buildLighterAccountAuthSigningInput({

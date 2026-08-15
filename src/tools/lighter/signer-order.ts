@@ -41,6 +41,17 @@ export function buildLighterUnsignedCreateOrderRequest(
     throw invalidRequest("Unsupported Lighter client-order-index policy for signing.");
   }
 
+  const timeInForceCode = LIGHTER_SIGNER_TIME_IN_FORCE_CODES[plan.timeInForce];
+  // Lighter requires OrderExpiry to be the nil value (0) exactly for
+  // immediate-or-cancel orders (all market orders and IOC limits) and a positive
+  // timestamp for good-till-time / post-only. Sending a positive expiry on an IOC
+  // order fails the official signer with ErrOrderExpiryInvalid. The plan/intent
+  // keep the original expiry for approval binding; only the signed order is nilled.
+  const orderExpiryMs =
+    timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"]
+      ? 0
+      : plan.orderExpiryMs;
+
   return {
     kind: "lighter_unsigned_create_order",
     environment: plan.environment,
@@ -52,10 +63,10 @@ export function buildLighterUnsignedCreateOrderRequest(
     priceInteger: plan.priceInteger,
     isAsk: plan.side === "sell",
     orderTypeCode: LIGHTER_SIGNER_ORDER_TYPE_CODES[plan.orderType],
-    timeInForceCode: LIGHTER_SIGNER_TIME_IN_FORCE_CODES[plan.timeInForce],
+    timeInForceCode,
     reduceOnly: plan.reduceOnly,
     triggerPriceInteger: "0",
-    orderExpiryMs: plan.orderExpiryMs,
+    orderExpiryMs,
     matchHash: plan.matchHash,
   };
 }

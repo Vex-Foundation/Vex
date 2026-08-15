@@ -49,6 +49,70 @@ func TestSignCreateOrderUsesStringDecimalPayload(t *testing.T) {
 	}
 }
 
+func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
+	request, err := readRequest(strings.NewReader(`{
+		"operation": "signCreateOrder",
+		"privateKey": "11111111111111111111111111111111111111111111111111111111111111111111111111111111",
+		"chainId": 466324,
+		"accountIndex": "42",
+		"apiKeyIndex": 7,
+		"nonce": "0",
+		"order": {
+			"marketIndex": 0,
+			"clientOrderIndex": "281474976710655",
+			"baseAmount": "1000",
+			"price": "300000",
+			"isAsk": 0,
+			"orderType": 1,
+			"timeInForce": 0,
+			"reduceOnly": 0,
+			"triggerPrice": "0",
+			"orderExpiry": "0"
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("readRequest() error = %v", err)
+	}
+
+	response, err := signCreateOrder(request)
+	if err != nil {
+		t.Fatalf("signCreateOrder() market IOC error = %v", err)
+	}
+	if !response.OK || response.TxInfo == "" || response.TxHash == "" {
+		t.Fatalf("market IOC order did not produce a signed transaction")
+	}
+}
+
+func TestSignCreateOrderRejectsMarketOrderWithNonNilExpiry(t *testing.T) {
+	request, err := readRequest(strings.NewReader(`{
+		"operation": "signCreateOrder",
+		"privateKey": "11111111111111111111111111111111111111111111111111111111111111111111111111111111",
+		"chainId": 466324,
+		"accountIndex": "42",
+		"apiKeyIndex": 7,
+		"nonce": "0",
+		"order": {
+			"marketIndex": 0,
+			"clientOrderIndex": "281474976710655",
+			"baseAmount": "1000",
+			"price": "300000",
+			"isAsk": 0,
+			"orderType": 1,
+			"timeInForce": 0,
+			"reduceOnly": 0,
+			"triggerPrice": "0",
+			"orderExpiry": "1893456000000"
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("readRequest() error = %v", err)
+	}
+
+	if _, err := signCreateOrder(request); err == nil {
+		t.Fatalf("expected market order with a non-nil expiry to be rejected by the official signer")
+	}
+}
+
 func TestCreateAccountAuthReturnsCanonicalTokenAndPublicKey(t *testing.T) {
 	request, err := readRequest(strings.NewReader(`{
 		"operation": "createAccountAuth",

@@ -132,7 +132,9 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if _, err := parseNonNegativeUint32(request.Order.TriggerPrice, "trigger price"); err != nil {
 		return request, fmt.Errorf("invalid trigger price")
 	}
-	if _, err := parsePositiveInt64(request.Order.OrderExpiry, "order expiry"); err != nil {
+	// Expiry 0 is Lighter's nil expiry, required for immediate-or-cancel orders.
+	// The per-order-type expiry rule is enforced by lighter-go's Validate().
+	if _, err := parseNonNegativeInt64(request.Order.OrderExpiry, "order expiry"); err != nil {
 		return request, fmt.Errorf("invalid order expiry")
 	}
 	return request, nil
@@ -198,7 +200,7 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 	if err != nil {
 		return signerResponse{}, err
 	}
-	orderExpiry, err := parsePositiveInt64(orderRequest.OrderExpiry, "order expiry")
+	orderExpiry, err := parseNonNegativeInt64(orderRequest.OrderExpiry, "order expiry")
 	if err != nil {
 		return signerResponse{}, err
 	}

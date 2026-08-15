@@ -3,7 +3,10 @@ import {
   LIGHTER_ENDPOINTS,
   type LighterEnvironment,
 } from "./constants.js";
-import type { LighterUnsignedCreateOrderRequest } from "./signer-order.js";
+import {
+  LIGHTER_SIGNER_TIME_IN_FORCE_CODES,
+  type LighterUnsignedCreateOrderRequest,
+} from "./signer-order.js";
 import type { LighterTradingSecretMaterial } from "./trading-secret.js";
 
 export const LIGHTER_SIGNER_CHAIN_IDS: Record<LighterEnvironment, number> = {
@@ -205,7 +208,22 @@ export function assertUnsignedCreateOrderFitsOfficialSigner(
   requireDecimalInteger("triggerPriceInteger", order.triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, {
     allowZero: true,
   });
-  requireDecimalInteger("orderExpiryMs", String(order.orderExpiryMs), LIGHTER_SIGNER_INT64_MAX);
+  // Lighter's nil order expiry is 0, required for immediate-or-cancel orders and
+  // forbidden for good-till-time / post-only. Enforce that invariant here so a
+  // mismatched order is rejected before it reaches the signer.
+  const isImmediateOrCancel =
+    order.timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"];
+  // Bounds only: 0 is Lighter's nil expiry. The expiry-vs-time-in-force invariant
+  // below owns whether 0 is actually allowed for this order.
+  requireDecimalInteger("orderExpiryMs", String(order.orderExpiryMs), LIGHTER_SIGNER_INT64_MAX, {
+    allowZero: true,
+  });
+  if (isImmediateOrCancel && order.orderExpiryMs !== 0) {
+    throw invalidRequest("Immediate-or-cancel Lighter orders must use a zero (nil) order expiry.");
+  }
+  if (!isImmediateOrCancel && order.orderExpiryMs === 0) {
+    throw invalidRequest("Good-till-time and post-only Lighter orders require a positive order expiry.");
+  }
 }
 
 function requireSafeNonNegativeInteger(field: string, value: number): void {

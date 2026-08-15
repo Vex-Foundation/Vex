@@ -77,6 +77,28 @@ describe("Lighter unsigned signer order request", () => {
     expect(request.orderTypeCode).toBe(1);
     expect(request.timeInForceCode).toBe(0);
     expect(request.reduceOnly).toBe(true);
+    // Immediate-or-cancel orders must carry Lighter's nil expiry (0), even though
+    // the plan/preview kept a positive timestamp. A positive expiry here fails the
+    // official signer with ErrOrderExpiryInvalid.
+    expect(request.orderExpiryMs).toBe(0);
+  });
+
+  it("nils the expiry for IOC limit orders but keeps it for good-till-time", () => {
+    const iocLimit = buildLighterUnsignedCreateOrderRequest(plan({
+      orderType: "limit",
+      timeInForce: "immediate-or-cancel",
+      orderExpiryMs: 1893456000000,
+    }));
+    expect(iocLimit.timeInForceCode).toBe(0);
+    expect(iocLimit.orderExpiryMs).toBe(0);
+
+    const gttLimit = buildLighterUnsignedCreateOrderRequest(plan({
+      orderType: "limit",
+      timeInForce: "good-till-time",
+      orderExpiryMs: 1893456000000,
+    }));
+    expect(gttLimit.timeInForceCode).toBe(1);
+    expect(gttLimit.orderExpiryMs).toBe(1893456000000);
   });
 
   it("derives a nonzero uint48 client order index from the match hash", () => {
