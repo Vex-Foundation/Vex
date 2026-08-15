@@ -313,11 +313,16 @@ function resolvePreviewAccountIndex(
 ): number {
   if (requestedAccountIndex !== undefined) return requestedAccountIndex;
   const scopes = listLighterTradingCredentialScopes(environment);
-  if (scopes.length > 1) {
-    const accounts = scopes.map((scope) => scope.accountIndex).join(", ");
+  // Ambiguity is about which *account* to trade, not how many keys are saved.
+  // Several api-key-index entries can be registered to a single L2 account; any
+  // of them signs for that account, so multiple keys on one account is not
+  // ambiguous. Refuse only when the saved keys span more than one account.
+  const distinctAccounts = [...new Set(scopes.map((scope) => scope.accountIndex))];
+  if (distinctAccounts.length > 1) {
+    const accounts = distinctAccounts.join(", ");
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `Multiple Lighter ${environment} trading API keys are configured (accounts ${accounts}); Vex will not guess which one to trade with.`,
+      `Multiple Lighter ${environment} trading accounts are configured (accounts ${accounts}); Vex will not guess which one to trade with.`,
       "Pass the accountIndex for the account you want, or remove the extra keys in Settings > API keys so only the intended account remains.",
     );
   }
