@@ -26,8 +26,34 @@ export const LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS =
 export const LIGHTER_CORE_MAINNET_USDC_ADDRESS =
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
 
-/** deposit(...) function selector on the bridge contract. */
+/**
+ * Deposit function ABI, confirmed by matching the on-chain selector 0x8a857083:
+ * deposit(address _to, uint16 _assetIndex, uint8 _routeType, uint256 _amount).
+ */
 export const LIGHTER_DEPOSIT_SELECTOR = "0x8a857083" as const;
+export const LIGHTER_DEPOSIT_FUNCTION_ABI = [
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_to", type: "address" },
+      { name: "_assetIndex", type: "uint16" },
+      { name: "_routeType", type: "uint8" },
+      { name: "_amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+/**
+ * USDC deposit asset index, from lighter-go `USDCAssetIndex = uint16(3)`
+ * (types/txtypes/constants.go). MinAssetIndex 1, MaxAssetIndex 62, nil 0. A
+ * wrong asset index loses the deposit, so a live run must confirm crediting.
+ */
+export const LIGHTER_USDC_ASSET_INDEX = 3 as const;
+export const LIGHTER_MIN_ASSET_INDEX = 1 as const;
+export const LIGHTER_MAX_ASSET_INDEX = 62 as const;
 
 /** deposit `_routeType` param: 0 credits the perps account, 1 the spot account. */
 export const LIGHTER_DEPOSIT_ROUTE_TYPE = {
