@@ -19,6 +19,13 @@ export const LIGHTER_DEPOSIT_CHAIN_ID = 1 as const;
 export const LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS =
   "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7" as const;
 
+/**
+ * Canonical native USDC on Ethereum L1 mainnet (the Core settlement asset),
+ * cross-checked against the Uniswap chain-1 deployment connector list.
+ */
+export const LIGHTER_CORE_MAINNET_USDC_ADDRESS =
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
+
 /** deposit(...) function selector on the bridge contract. */
 export const LIGHTER_DEPOSIT_SELECTOR = "0x8a857083" as const;
 
@@ -45,13 +52,11 @@ export const LIGHTER_SETTLEMENT_ASSET: Record<LighterEnvironment, string> = {
 export const LIGHTER_SETTLEMENT_ASSET_DECIMALS = 6 as const;
 
 /**
- * Conservative usable API-key index floor for Vex-registered trading keys.
- * The docs disagree on the reserved low set (0-1 vs {0,1,2,3}); the Go SDK
- * validator only enforces 0..254. Vex enforces >= 4 to satisfy both readings
- * and match the live-proven trading key 4. 254 is the SDK maximum.
+ * Usable API-key index bounds for Vex-registered trading keys are the existing
+ * `LIGHTER_TRADING_API_KEY_INDEX_MIN`/`MAX` (4..254) in `trading-credentials.ts`
+ * — the conservative floor that satisfies both doc readings and matches the
+ * live-proven key 4. This module deliberately does not redefine them.
  */
-export const LIGHTER_TRADING_KEY_INDEX_MIN = 4 as const;
-export const LIGHTER_TRADING_KEY_INDEX_MAX = 254 as const;
 
 /**
  * ChangePubKey transaction types (lighter-go types/txtypes/constants.go).

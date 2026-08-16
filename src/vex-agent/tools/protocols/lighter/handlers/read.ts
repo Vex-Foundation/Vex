@@ -23,6 +23,11 @@ import { ErrorCodes, VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
+import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "@tools/lighter/wallet-funding/constants.js";
+import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
+import { buildLighterOnboardingReaders } from "@tools/lighter/wallet-funding/onboarding-readers.js";
+import { resolveLighterOnboardingStatus } from "@tools/lighter/wallet-funding/onboarding-status.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
@@ -422,6 +427,71 @@ async function resolvePreviewApiKeyIndex(
 }
 
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.account.onboarding.status": async (params, context) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    if (environment.value !== "core") {
+      return fail("Lighter wallet-funded onboarding is available on Core only in this release.");
+    }
+
+    // Wallet address: an explicit override, else the session's selected EVM
+    // wallet resolved address-only (never decrypts a key).
+    let walletAddress: string;
+    const provided = params.walletAddress;
+    if (provided !== undefined) {
+      if (typeof provided !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(provided)) {
+        return fail("walletAddress must be a 0x-prefixed 20-byte EVM address.");
+      }
+      walletAddress = provided;
+    } else {
+      try {
+        walletAddress = resolveSelectedAddressForRead(
+          context.walletResolution,
+          context.walletPolicy,
+          "eip155",
+        );
+      } catch (err) {
+        return fail(describeFailureForAgent(err));
+      }
+    }
+
+    // Intended position collateral is optional; without it the plan reports the
+    // account/key state and only a key-registration leg if one is missing.
+    let requiredCollateralUnits = 0n;
+    const requiredCollateral = params.requiredCollateral;
+    if (requiredCollateral !== undefined) {
+      if (typeof requiredCollateral !== "string") {
+        return fail("requiredCollateral must be a decimal USDC string, for example \"11\".");
+      }
+      try {
+        requiredCollateralUnits = decimalToBaseUnits(requiredCollateral, LIGHTER_SETTLEMENT_ASSET_DECIMALS);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    try {
+      const status = await resolveLighterOnboardingStatus(buildLighterOnboardingReaders(), {
+        environment: environment.value,
+        walletAddress,
+        requiredCollateralUnits,
+      });
+      return ok({
+        ...liveProvenance(
+          environment.value,
+          "lighter.account.onboarding.status",
+          [LIGHTER_ENDPOINT_PATHS.account, LIGHTER_ENDPOINT_PATHS.apiKeys],
+          { walletAddress, authenticated: false },
+        ),
+        ...status,
+      });
+    } catch (err) {
+      return fail(
+        `Lighter onboarding status unavailable (${failureDetail("lighter.account.onboarding.status", err)})`,
+      );
+    }
+  },
+
   "lighter.system": async (params) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
