@@ -121,6 +121,36 @@ async function insertAgentActivity(
   );
 }
 
+async function insertLighterOnboardingIntent(
+  sessionId: string,
+  fields: {
+    approvalStatus: "approval_pending" | "approved";
+    executionState: string;
+    expiresInMs?: number;
+  },
+): Promise<string> {
+  const intentId = `lighter-onboard-${randomUUID()}`;
+  await execute(
+    `INSERT INTO lighter_onboarding_intents
+       (intent_id, session_id, environment, capability, wallet_address, chain_id,
+        deposit_contract, deposit_to, asset_index, route_type, amount_units,
+        approval_status, execution_state, decided_at, expires_at)
+     VALUES ($1, $2, 'core', 'deposit', '0x1111111111111111111111111111111111111111', 1,
+             '0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7',
+             '0x1111111111111111111111111111111111111111', 3, 0, '11000000',
+             $3, $4, CASE WHEN $3 = 'approved' THEN NOW() ELSE NULL END,
+             NOW() + ($5::text || ' milliseconds')::interval)`,
+    [
+      intentId,
+      sessionId,
+      fields.approvalStatus,
+      fields.executionState,
+      String(fields.expiresInMs ?? 600_000),
+    ],
+  );
+  return intentId;
+}
+
 describe("getUnresolvedMoneyStateForSession", () => {
   let sessionId: string;
 
@@ -266,7 +296,62 @@ describe("getUnresolvedMoneyStateForSession", () => {
     await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
   });
 
-  // ── 6. agent activity ──────────────────────────────────────────────
+  // ── 6. Lighter onboarding intents ─────────────────────────────────
+
+  it("blocks on an unexpired pending Lighter onboarding approval", async () => {
+    await insertLighterOnboardingIntent(sessionId, {
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+    });
+    expect(await kindsFor(sessionId)).toEqual(["lighter_onboarding_unresolved"]);
+  });
+
+  it("does not block on an expired, never-approved Lighter preparation", async () => {
+    await insertLighterOnboardingIntent(sessionId, {
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+      expiresInMs: -1_000,
+    });
+    await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
+  });
+
+  for (const executionState of [
+    "approved",
+    "allowance_verified",
+    "approve_submitted",
+    "approve_confirmed",
+    "deposit_submitted",
+    "deposit_confirmed",
+    "ambiguous",
+  ]) {
+    it(`blocks on approved Lighter onboarding state '${executionState}'`, async () => {
+      await insertLighterOnboardingIntent(sessionId, {
+        approvalStatus: "approved",
+        executionState,
+      });
+      const state = await readMoneyState(sessionId);
+      expect(state.clear).toBe(false);
+      if (state.clear) return;
+      expect(state.reasons).toEqual([
+        expect.objectContaining({
+          kind: "lighter_onboarding_unresolved",
+          detail: executionState,
+        }),
+      ]);
+    });
+  }
+
+  for (const executionState of ["credited", "failed"]) {
+    it(`is clear for terminal Lighter onboarding state '${executionState}'`, async () => {
+      await insertLighterOnboardingIntent(sessionId, {
+        approvalStatus: "approved",
+        executionState,
+      });
+      await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
+    });
+  }
+
+  // ── 7. agent activity ──────────────────────────────────────────────
 
   it("blocks on a pending agent_activity row", async () => {
     await insertAgentActivity(sessionId, "pending");
@@ -291,12 +376,17 @@ describe("getUnresolvedMoneyStateForSession", () => {
     await insertWalletIntent(sessionId, { status: "consuming" });
     await insertWalletIntent(sessionId, { status: "audit_failed", txHash: "0xabc" });
     await insertProtocolExecution(sessionId, "intent");
+    await insertLighterOnboardingIntent(sessionId, {
+      approvalStatus: "approved",
+      executionState: "deposit_confirmed",
+    });
     await insertAgentActivity(sessionId, "pending");
 
     expect(await kindsFor(sessionId)).toEqual([
       "agent_activity_pending",
       "approval_in_flight",
       "approval_queue_pending",
+      "lighter_onboarding_unresolved",
       "protocol_execution_intent",
       "wallet_confirmation_unknown",
       "wallet_intent_live",
@@ -308,10 +398,14 @@ describe("getUnresolvedMoneyStateForSession", () => {
     await insertQueueRow(otherSession, "pending");
     await insertWalletIntent(otherSession, { status: "consuming" });
     await insertProtocolExecution(otherSession, "intent");
+    await insertLighterOnboardingIntent(otherSession, {
+      approvalStatus: "approved",
+      executionState: "deposit_submitted",
+    });
     await insertAgentActivity(otherSession, "pending");
 
     await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
-    expect((await kindsFor(otherSession)).length).toBe(4);
+    expect((await kindsFor(otherSession)).length).toBe(5);
   });
 
   it("bounds the reason list without changing the verdict", async () => {

@@ -27,8 +27,8 @@
  *   2. the `mission_runs` row;
  *   3. the session's pending `approval_queue` rows;
  *   4. money-state rows (`wallet_intents`, `approval_intents`,
- *      `protocol_executions`, `agent_activity`) — see the compaction gate
- *      section below.
+ *      `protocol_executions`, `lighter_onboarding_intents`, `agent_activity`)
+ *      — see the compaction gate section below.
  *
  * A transaction may take any PREFIX-CONSISTENT subset, never out of order.
  * Because this lock is always taken FIRST, it can never be the second edge of
