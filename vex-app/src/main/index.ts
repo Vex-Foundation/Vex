@@ -49,6 +49,7 @@ import { setupVexMarketService } from "./market/vex-market-service.js";
 import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
 import { installLighterOnboardingReleaseGates } from "./lighter/onboarding-release-gates.js";
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
+import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -161,6 +162,10 @@ async function initializeMainRuntime(): Promise<void> {
     installLighterKeyRegistrationCredentialPreparer();
   globalCleanup.add(() => {
     uninstallLighterKeyRegistrationCredentialPreparer();
+  });
+  const uninstallLighterKeyRegistrationExecutor = installLighterKeyRegistrationExecutor();
+  globalCleanup.add(() => {
+    uninstallLighterKeyRegistrationExecutor();
   });
 
   registerAllIpcHandlers();

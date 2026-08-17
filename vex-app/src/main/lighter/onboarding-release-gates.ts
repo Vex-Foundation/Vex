@@ -7,12 +7,13 @@
  * VEX_LIGHTER_DEPOSIT_RELEASE_GATE holds the exact enable value
  * (wallet-funded-deposit-v1); anything else fails closed.
  *
- * Key registration, swap, and withdrawal gates are intentionally NOT installed
- * yet — their executors are not built, so they stay default-closed and unopenable.
+ * Key registration has its own independently installed exact-value gate. Swap
+ * and withdrawal remain uninstalled, default-closed, and unopenable.
  */
 
 import {
   LIGHTER_DEPOSIT_RELEASE_GATE,
+  LIGHTER_KEY_REGISTRATION_RELEASE_GATE,
   readLighterOnboardingGateStatus,
 } from "@tools/lighter/wallet-funding/release-gates.js";
 
@@ -20,7 +21,11 @@ export function installLighterOnboardingReleaseGates(): () => void {
   const uninstallDeposit = LIGHTER_DEPOSIT_RELEASE_GATE.configure(() =>
     readLighterOnboardingGateStatus("deposit"),
   );
+  const uninstallKeyRegistration = LIGHTER_KEY_REGISTRATION_RELEASE_GATE.configure(() =>
+    readLighterOnboardingGateStatus("key_registration"),
+  );
   return () => {
+    uninstallKeyRegistration();
     uninstallDeposit();
   };
 }

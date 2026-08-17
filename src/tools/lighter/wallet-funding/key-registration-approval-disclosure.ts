@@ -33,10 +33,7 @@ export function buildLighterKeyRegistrationApprovalDisclosure(
   if (!/^0x[0-9a-fA-F]{40}$/.test(intent.walletAddress)) {
     throw unavailable("The key-registration wallet address is invalid.");
   }
-  if (
-    intent.executionState !== "approval_pending"
-    && intent.executionState !== "key_generated_encrypted"
-  ) {
+  if (intent.executionState === "slot_reserved") {
     throw unavailable("The key-registration intent is not ready for approval preparation.");
   }
   if (

@@ -14,6 +14,7 @@ import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../typ
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
 import { assertLighterKeyRegistrationApprovalBinding } from "../key-registration-approval-binding.js";
+import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
 import { getConfiguredLighterKeyRegistrationCredentialPreparer } from "../key-registration-preparation.js";
 import { readEnvironment } from "../params.js";
 
@@ -270,7 +271,10 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         "Lighter was disabled for this wallet before key registration. Nothing was signed or submitted.",
       );
     }
-    if (intent.expiresAt.getTime() <= Date.now()) {
+    if (
+      (intent.executionState === "approval_pending" || intent.executionState === "approved")
+      && intent.expiresAt.getTime() <= Date.now()
+    ) {
       return fail(`Lighter key-registration intent ${intent.intentId} expired before approval resume.`);
     }
     try {
@@ -282,14 +286,16 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
-    const approved = await withSessionControlLock(sessionId, (client) =>
-      keyIntentsRepo.markLighterKeyRegistrationApprovedWith(client, {
-        intentId: intent.intentId,
-        sessionId,
-        approvalId: context.approvalId!,
-      }));
+    const approved = intent.executionState === "approval_pending"
+      ? await withSessionControlLock(sessionId, (client) =>
+        keyIntentsRepo.markLighterKeyRegistrationApprovedWith(client, {
+          intentId: intent.intentId,
+          sessionId,
+          approvalId: context.approvalId!,
+        }))
+      : intent.approvalStatus === "approved" ? intent : null;
     if (approved === null) {
-      return fail(`Lighter key-registration intent ${intent.intentId} has already left approval_pending.`);
+      return fail(`Lighter key-registration intent ${intent.intentId} is not approval-authorized.`);
     }
     if (!LIGHTER_KEY_REGISTRATION_RELEASE_GATE.isEnabled()) {
       return ok({
@@ -301,13 +307,27 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
           "Lighter key-registration approval was recorded, but the independent release gate is closed. Nothing was signed or submitted.",
       });
     }
-    return ok({
-      source: "vex_lighter_key_registration",
-      status: "approval_recorded_execution_closed",
-      intentId: approved.intentId,
-      executionState: approved.executionState,
-      message:
-        "Lighter key-registration approval was recorded, but the signing and submission boundary is not installed in this checkpoint. Nothing was signed or submitted.",
-    });
+    const executor = getConfiguredLighterKeyRegistrationExecutor();
+    if (executor === null) {
+      return ok({
+        source: "vex_lighter_key_registration",
+        status: "approval_recorded_execution_closed",
+        intentId: approved.intentId,
+        executionState: approved.executionState,
+        message:
+          "Lighter key-registration approval was recorded, but the privileged execution boundary is unavailable. Nothing was signed or submitted.",
+      });
+    }
+    try {
+      return ok(await executor.execute({
+        sessionId,
+        intentId: approved.intentId,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        abortSignal: context.abortSignal,
+      }));
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
   },
 };

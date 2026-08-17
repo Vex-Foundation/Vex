@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   prepareCredential: vi.fn(),
   assertApprovalBinding: vi.fn(),
   releaseGateEnabled: vi.fn(),
+  getExecutor: vi.fn(),
+  executeRegistration: vi.fn(),
 }));
 
 vi.mock("@tools/lighter/client.js", () => ({
@@ -73,6 +75,10 @@ vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js
 
 vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
   LIGHTER_KEY_REGISTRATION_RELEASE_GATE: { isEnabled: mocks.releaseGateEnabled },
+}));
+
+vi.mock("@vex-agent/tools/protocols/lighter/key-registration-execution.js", () => ({
+  getConfiguredLighterKeyRegistrationExecutor: mocks.getExecutor,
 }));
 
 const { LIGHTER_KEY_REGISTRATION_HANDLERS } = await import(
@@ -144,6 +150,7 @@ beforeEach(() => {
   mocks.markApproved.mockResolvedValue(row("approved"));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.releaseGateEnabled.mockReturnValue(false);
+  mocks.getExecutor.mockReturnValue(null);
 });
 
 describe("lighter.key.register.prepare", () => {
@@ -280,5 +287,38 @@ describe("lighter.key.register", () => {
     expect(result.success, result.output).toBe(true);
     expect(result.data?.status).toBe("approval_recorded_execution_closed");
     expect(result.output).toContain("Nothing was signed or submitted");
+  });
+
+  it("passes only trusted session wallet scope into the privileged executor", async () => {
+    mocks.findIntent.mockResolvedValue(row("approval_pending"));
+    mocks.releaseGateEnabled.mockReturnValue(true);
+    mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration });
+    mocks.executeRegistration.mockResolvedValue({
+      source: "vex_lighter_key_registration",
+      status: "active",
+      intentId: INTENT_ID,
+      executionState: "active",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      txHash: "a".repeat(80),
+      postRegistrationNonce: "1",
+      message: "Registration verified.",
+    });
+
+    const context = { ...CONTEXT, approved: true, approvalId: "approval-1" };
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
+      { intentId: INTENT_ID },
+      context,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data?.status).toBe("active");
+    expect(mocks.executeRegistration).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      intentId: INTENT_ID,
+      walletResolution: context.walletResolution,
+      walletPolicy: context.walletPolicy,
+      abortSignal: undefined,
+    });
   });
 });
