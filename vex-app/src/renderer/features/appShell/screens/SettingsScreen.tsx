@@ -45,6 +45,10 @@ import { EASE_STANDARD } from "../../../lib/motion.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useWizardState } from "../../../lib/api/wizard.js";
 import {
+  useLighterIntegration,
+  useSetLighterIntegration,
+} from "../../../lib/api/lighter-integration.js";
+import {
   AgentCoreStep,
   ApiKeysStep,
   EmbeddingStep,
@@ -324,7 +328,75 @@ function SettingsRegister({
           );
         })}
       </ul>
+      <LighterIntegrationSetting env={env} />
     </div>
+  );
+}
+
+function LighterIntegrationSetting({
+  env,
+}: {
+  readonly env: EnvState | null;
+}): JSX.Element {
+  const integration = useLighterIntegration("core");
+  const setIntegration = useSetLighterIntegration();
+  const state = integration.data?.ok === true ? integration.data.data : null;
+  const walletAddress = state?.walletAddress ?? env?.walletAddresses?.evm ?? null;
+  const enabled = state?.enabled === true;
+  const unavailable = walletAddress === null || integration.isLoading;
+  const error = integration.data?.ok === false
+    ? integration.data.error.message
+    : setIntegration.data?.ok === false
+      ? setIntegration.data.error.message
+      : null;
+
+  return (
+    <section className="mt-8 border-t border-[var(--vex-line)] pt-6" aria-labelledby="lighter-integration-title">
+      <div className="flex items-start justify-between gap-6 rounded-lg border border-[var(--vex-line)] bg-white/[0.02] px-4 py-4">
+        <div className="min-w-0">
+          <h3 id="lighter-integration-title" className="text-[13.5px] text-foreground">
+            Lighter
+          </h3>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--vex-text-3)]">
+            Use this Vex wallet to onboard and trade on Lighter Core.
+          </p>
+          <p className="mt-2 break-all font-mono text-[10px] text-[var(--vex-text-3)]">
+            {walletAddress ?? "Add an EVM wallet to enable Lighter"}
+          </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-warning)]">
+            Enabling only activates the integration. It does not move funds or approve deposits, keys, or trades.
+          </p>
+          {error !== null ? (
+            <p className="mt-2 text-[11px] text-[var(--color-destructive)]" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-label="Enable Lighter integration"
+          aria-checked={enabled}
+          disabled={unavailable || setIntegration.isPending}
+          onClick={() => {
+            setIntegration.mutate({ environment: "core", enabled: !enabled });
+          }}
+          className={cn(
+            "relative mt-0.5 h-7 w-12 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-45",
+            enabled
+              ? "border-[var(--color-success)] bg-[color-mix(in_oklab,var(--color-success)_35%,transparent)]"
+              : "border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)]",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-1 h-[18px] w-[18px] rounded-full bg-foreground transition-transform",
+              enabled ? "translate-x-[25px]" : "translate-x-1",
+            )}
+          />
+        </button>
+      </div>
+    </section>
   );
 }
 

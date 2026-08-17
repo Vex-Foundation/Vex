@@ -26,7 +26,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
-import { useUiStore } from "../../../../stores/uiStore.js";
+
+// Vitest 4 can expose Node's incomplete localStorage shim when the inherited
+// NODE_OPTIONS contains --localstorage-file without a path. Give Zustand's
+// persisted UI store the Storage contract this focused jsdom suite needs.
+const localStorageState = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageState.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageState.set(key, value),
+    removeItem: (key: string) => localStorageState.delete(key),
+    clear: () => localStorageState.clear(),
+  },
+});
+const { useUiStore } = await import("../../../../stores/uiStore.js");
 
 vi.mock("../../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
@@ -108,6 +122,15 @@ const mockUseWizardState = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/wizard.js", () => ({
   useWizardState: mockUseWizardState,
 }));
+const lighterIntegrationMocks = vi.hoisted(() => ({
+  use: vi.fn(),
+  set: vi.fn(),
+  mutate: vi.fn(),
+}));
+vi.mock("../../../../lib/api/lighter-integration.js", () => ({
+  useLighterIntegration: lighterIntegrationMocks.use,
+  useSetLighterIntegration: lighterIntegrationMocks.set,
+}));
 
 const { ShellScreens } = await import("../ShellScreens.js");
 
@@ -172,6 +195,27 @@ beforeEach(() => {
       },
     },
   });
+  lighterIntegrationMocks.use.mockReturnValue({
+    isLoading: false,
+    data: {
+      ok: true,
+      data: {
+        environment: "core",
+        walletAddress: "0x1111111111111111111111111111111111111111",
+        enabled: false,
+        enabledAt: null,
+        disabledAt: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    },
+  });
+  lighterIntegrationMocks.set.mockReturnValue({
+    isPending: false,
+    data: undefined,
+    mutate: lighterIntegrationMocks.mutate,
+  });
+  lighterIntegrationMocks.mutate.mockReset();
   exportModalSpy.mockClear();
   useUiStore.setState({ shellRoute: { kind: "none" } });
 });
@@ -197,6 +241,25 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("OpenRouter")).not.toBeNull();
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();
+    expect(screen.getByText("Lighter")).not.toBeNull();
+  });
+
+  it("toggles Lighter activation while disclosing that activation is not approval", async () => {
+    render(<ShellScreens />);
+    openSettings();
+
+    const toggle = await screen.findByRole("switch", {
+      name: "Enable Lighter integration",
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(
+      screen.getByText(/It does not move funds or approve deposits, keys, or trades/),
+    ).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(lighterIntegrationMocks.mutate).toHaveBeenCalledWith({
+      environment: "core",
+      enabled: true,
+    });
   });
 
   it("speaks the warning vocabulary when envState is degraded", async () => {
