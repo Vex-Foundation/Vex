@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { closePool, execute } from "@vex-agent/db/client.js";
+import { closePool, execute, getPool } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
+import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { ensureLighterOnboardingWorkflowEnabledWith } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import { raceGateAgainstWriter } from "../integration/engine/money-gate-race-harness.js";
 
 const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
 const d = RUN ? describe : describe.skip;
@@ -168,6 +170,78 @@ d("lighter_onboarding_intents repo", () => {
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]?.intent?.intentId).toBe(created[0]?.intent?.intentId);
   });
+
+  it("proves the compaction race harness detects an unlocked onboarding writer", async () => {
+    const sessionId = await newSession();
+    const intent = await newDepositIntent(sessionId);
+
+    const outcome = await raceGateAgainstWriter(sessionId, async () => {
+      const client = await getPool().connect();
+      try {
+        return await client.query(
+          "UPDATE lighter_onboarding_intents SET execution_state = 'failed' WHERE intent_id = $1",
+          [intent.intentId],
+        );
+      } finally {
+        client.release();
+      }
+    });
+
+    expect(outcome.writerBlockedUntilCommit).toBe(false);
+  });
+
+  it.each([
+    ["prepared", "prepared", "deposit_approval_pending"],
+    ["approval pending", "approval_pending", "deposit_approval_pending"],
+    ["approved", "approved", "deposit_approval_pending"],
+    ["preflight validated", "approved", "deposit_preflight_validated"],
+    ["allowance verified", "allowance_verified", "allowance_verified"],
+    ["approval staged", "approve_submitted", "approve_staged"],
+    ["approval confirmed", "approve_confirmed", "approve_confirmed"],
+    ["deposit staged", "deposit_submitted", "deposit_staged"],
+    ["deposit L1 confirmed", "deposit_submitted", "deposit_l1_confirmed"],
+    ["deposit L2 pending", "deposit_confirmed", "deposit_l2_pending"],
+    ["ambiguous", "ambiguous", "ambiguous"],
+  ])(
+    "serializes compaction against the unresolved %s state",
+    async (_label, executionState, workflowState) => {
+      const sessionId = await newSession();
+      const intent = await newDepositIntent(sessionId);
+      await execute(
+        `UPDATE lighter_onboarding_intents
+            SET approval_status = CASE
+                  WHEN $2 IN ('prepared', 'approval_pending') THEN 'approval_pending'
+                  ELSE 'approved'
+                END,
+                execution_state = $2,
+                decided_at = CASE
+                  WHEN $2 IN ('prepared', 'approval_pending') THEN NULL
+                  ELSE NOW()
+                END
+          WHERE intent_id = $1`,
+        [intent.intentId, executionState],
+      );
+      await execute(
+        `UPDATE lighter_onboarding_workflows
+            SET workflow_state = $3,
+                last_stable_state = CASE WHEN $3 = 'ambiguous' THEN 'deposit_staged' ELSE $3 END
+          WHERE environment = $1 AND wallet_address = LOWER($2)`,
+        [intent.environment, intent.walletAddress, workflowState],
+      );
+
+      const outcome = await raceGateAgainstWriter(sessionId, () =>
+        withSessionControlLock(sessionId, (client) =>
+          repo.markFailedWith(client, intent.intentId, "test terminal state")),
+      );
+
+      expect(outcome.writerBlockedUntilCommit).toBe(true);
+      expect(outcome.gateKinds).toEqual(["lighter_onboarding_unresolved"]);
+      await expect(
+        withSessionControlLock(sessionId, (client) =>
+          getUnresolvedMoneyStateForSession(client, sessionId)),
+      ).resolves.toEqual({ clear: true });
+    },
+  );
 
   it("lists unresolved intents and excludes credited/failed", async () => {
     const sessionId = await newSession();
