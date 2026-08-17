@@ -22,6 +22,7 @@ import { buildLighterDepositApprovalDisclosure } from "@tools/lighter/wallet-fun
 import {
   isLighterDepositFeePreflightComplete,
   readLighterDepositPreflight,
+  type LighterDepositPreflightSnapshot,
 } from "@tools/lighter/wallet-funding/deposit-preflight.js";
 import { assertLighterDepositPreflightWithinApproval } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
@@ -125,6 +126,61 @@ function depositApprovalPreparedPayload(intent: LighterOnboardingIntentRow): Rec
     userGuidance:
       "An approval card is now available in the app. Tell the user to review the deposit details and click Approve and deposit only if they are correct; do not ask them to type another approval command.",
   };
+}
+
+function canReissuePristineDepositApproval(input: {
+  readonly intent: LighterOnboardingIntentRow;
+  readonly sessionId: string;
+  readonly fresh: LighterDepositPreflightSnapshot;
+  readonly now?: Date;
+}): boolean {
+  const { intent, sessionId, fresh } = input;
+  const now = input.now ?? new Date();
+  if (
+    intent.sessionId !== sessionId
+    || intent.capability !== "deposit"
+    || intent.approvalStatus !== "approval_pending"
+    || intent.executionState !== "approval_pending"
+    || intent.approvalId !== null
+    || intent.protocolExecutionId !== null
+    || intent.decisionReason !== null
+    || intent.failureReason !== null
+    || intent.expiresAt.getTime() <= now.getTime()
+    || intent.approveTxHash !== null
+    || intent.approveTxFrom !== null
+    || intent.approveTxNonce !== null
+    || intent.approveReplacementTxHash !== null
+    || intent.approveReplacementReason !== null
+    || intent.approveReplacementObservedAt !== null
+    || intent.depositTxHash !== null
+    || intent.depositTxFrom !== null
+    || intent.depositTxNonce !== null
+    || intent.depositReplacementTxHash !== null
+    || intent.depositReplacementReason !== null
+    || intent.depositReplacementObservedAt !== null
+    || intent.depositL1BlockHash !== null
+    || intent.depositL1BlockNumber !== null
+    || intent.depositEventAccountIndex !== null
+    || intent.lighterTxHash !== null
+    || intent.lighterTxStatus !== null
+    || intent.lighterBlockHeight !== null
+    || intent.lighterExecutedAt !== null
+    || intent.lighterEvidenceObservedAt !== null
+    || intent.resolvedAccountIndex !== null
+  ) {
+    return false;
+  }
+  try {
+    assertLighterDepositPreflightWithinApproval({
+      intent,
+      fresh,
+      stage: "execution",
+      now,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function depositUserGuidance(execution: LighterDepositExecutionResult): string {
@@ -406,6 +462,28 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     );
     if (creation.outcome === "live_conflict") {
       const conflict = creation.intent;
+      if (
+        conflict !== null
+        && canReissuePristineDepositApproval({
+          intent: conflict,
+          sessionId,
+          fresh: preflight,
+        })
+      ) {
+        let followUp: PreparedActionFollowUp;
+        try {
+          followUp = buildDepositApprovalFollowUp(conflict);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
+        return {
+          ...ok({
+            ...depositApprovalPreparedPayload(conflict),
+            approvalReissued: true,
+          }),
+          preparedActionFollowUp: followUp,
+        };
+      }
       return fail(
         conflict === null
           ? "Another Lighter deposit preparation won the concurrency race. No second deposit was prepared; check onboarding status before retrying."

@@ -144,7 +144,25 @@ function intentRow(overrides: Record<string, unknown> = {}) {
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
+    approveTxFrom: null,
+    approveTxNonce: null,
+    approveReplacementTxHash: null,
+    approveReplacementReason: null,
+    approveReplacementObservedAt: null,
     depositTxHash: null,
+    depositTxFrom: null,
+    depositTxNonce: null,
+    depositReplacementTxHash: null,
+    depositReplacementReason: null,
+    depositReplacementObservedAt: null,
+    depositL1BlockHash: null,
+    depositL1BlockNumber: null,
+    depositEventAccountIndex: null,
+    lighterTxHash: null,
+    lighterTxStatus: null,
+    lighterBlockHeight: null,
+    lighterExecutedAt: null,
+    lighterEvidenceObservedAt: null,
     resolvedAccountIndex: null,
     decisionReason: null,
     failureReason: null,
@@ -571,6 +589,52 @@ describe("lighter.deposit.prepare", () => {
     expect(result.output).toContain("does not have enough USDC");
     expect(mocks.createOrFind).not.toHaveBeenCalled();
     expect(mocks.withSessionControlLock).not.toHaveBeenCalled();
+  });
+
+  it("reissues an approval for the same session's exact pristine intent", async () => {
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "live_conflict",
+      intent: intentRow(),
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      intentId: intentRow().intentId,
+      approvalReissued: true,
+    });
+    expect(result.preparedActionFollowUp).toMatchObject({
+      args: {
+        toolId: "lighter.deposit",
+        params: { intentId: intentRow().intentId },
+      },
+    });
+  });
+
+  it.each([
+    { sessionId: "session-2" },
+    { approvalId: "approval-previous" },
+    { approveTxHash: `0x${"a".repeat(64)}` },
+    { expiresAt: new Date("2020-01-01T00:00:00.000Z") },
+  ])("refuses to reissue a non-pristine approval conflict: %o", async (override) => {
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "live_conflict",
+      intent: intentRow(override),
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already unresolved");
+    expect(result.preparedActionFollowUp).toBeUndefined();
   });
 
   it("returns a deterministic conflict and never prepares a second deposit", async () => {
