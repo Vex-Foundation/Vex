@@ -112,6 +112,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const repairResult = await repairPendingActivity(buildProductionRepairDeps());
         result = { ...repairResult };
         rowsAffected = repairResult.confirmed + repairResult.failed;
+      } else if (syncType === "lighter_deposit_repair") {
+        const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+        const repairResult = await repairUnresolvedLighterDeposits();
+        result = { ...repairResult };
+        rowsAffected = repairResult.advanced;
       } else if (syncType === "bridge_activity_repair") {
         const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
         const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -232,6 +237,10 @@ export async function processNextRun(): Promise<boolean> {
       const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
       const repairResult = await repairPendingActivity(buildProductionRepairDeps());
       await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.confirmed + repairResult.failed);
+    } else if (job.syncType === "lighter_deposit_repair") {
+      const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+      const repairResult = await repairUnresolvedLighterDeposits();
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
     } else if (job.syncType === "bridge_activity_repair") {
       const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
       const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());

@@ -41,7 +41,27 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     logger.info("sync.init.backlog_drained", { processed: backlog.processed });
   }
 
-  // 3. Re-arm fast lanes for rows that were in flight when the process died.
+  // 3. Reconcile unresolved Lighter deposits immediately on startup. This is
+  //    evidence-only crash recovery: receipt/account reads plus guarded local
+  //    state updates, with no signer or transaction submission path.
+  try {
+    const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+    const lighterDeposits = await repairUnresolvedLighterDeposits();
+    if (lighterDeposits.examined > 0 || lighterDeposits.errors > 0) {
+      logger.info("sync.init.lighter_deposit_repair", {
+        examined: lighterDeposits.examined,
+        advanced: lighterDeposits.advanced,
+        awaiting: lighterDeposits.awaiting,
+        errors: lighterDeposits.errors,
+      });
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_deposit_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // 4. Re-arm fast lanes for rows that were in flight when the process died.
   //    Before the snapshot: a crash-recovered row is exactly the kind the
   //    snapshot guard must see as still pending.
   try {
@@ -53,7 +73,7 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     });
   }
 
-  // 4. Authoritative startup full sync + snapshot
+  // 5. Authoritative startup full sync + snapshot
   try {
     const result = await fullBalanceSync({ snapshot: "always" });
     logger.info("sync.init.completed", {
@@ -123,6 +143,15 @@ export async function syncTick(): Promise<void> {
           runId,
           { ...repairResult, amounts: { ...amountResult }, periodic: true },
           repairResult.confirmed + repairResult.failed + amountResult.filled,
+        );
+      } else if (job.syncType === "lighter_deposit_repair") {
+        const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+        const repairResult = await repairUnresolvedLighterDeposits();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...repairResult, periodic: true },
+          repairResult.advanced,
         );
       } else if (job.syncType === "bridge_activity_repair") {
         // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)

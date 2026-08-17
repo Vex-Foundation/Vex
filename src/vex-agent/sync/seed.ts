@@ -20,6 +20,11 @@ const SYNC_JOBS = [
   // sync/agent-activity-repair.ts.
   { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Lighter deposit crash-recovery sweep — reads receipts for already-staged
+  // Ethereum hashes and public Lighter account state, then performs guarded
+  // local CAS updates. It never signs, sends, retries, or replaces a tx.
+  { namespace: "_global", syncType: "lighter_deposit_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
+
   // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
   // provider_order_id (Khalani/Relay), independently verifies fills before
   // confirming, never ages pending→failed. Lookup-only; see

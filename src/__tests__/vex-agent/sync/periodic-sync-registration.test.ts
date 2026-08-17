@@ -73,4 +73,8 @@ describe("every seeded periodic sync type is reachable", () => {
   it("includes the Trench launch attribution retry lane", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("launch_attribution");
   });
+
+  it("includes the evidence-only Lighter deposit repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_deposit_repair");
+  });
 });

@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 16 sync jobs (10 global + 6 per-namespace)", async () => {
+  it("inserts 17 sync jobs", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -34,8 +34,9 @@ describe("seedSyncJobs", () => {
     // (`launch_attribution`, periodic 120s) makes 14. The AgentScan reporting
     // lane (`agentscan_report`, periodic 30s) makes 15. The AgentScan
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
+    // Evidence-only Lighter deposit crash recovery makes 17.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(16);
+    expect(mockExecute).toHaveBeenCalledTimes(17);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -135,6 +136,18 @@ describe("seedSyncJobs", () => {
     expect(repairCall).toBeDefined();
     expect((repairCall![1] as unknown[])[0]).toBe("_global");
     expect((repairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
+    expect((repairCall![1] as unknown[])[3]).toBe("periodic");
+    expect((repairCall![1] as unknown[])[4]).toBe(30);
+  });
+
+  it("seeds evidence-only Lighter deposit repair every 30 seconds", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_deposit_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((repairCall![1] as unknown[])[0]).toBe("_global");
+    expect((repairCall![1] as unknown[])[2]).toBeNull();
     expect((repairCall![1] as unknown[])[3]).toBe("periodic");
     expect((repairCall![1] as unknown[])[4]).toBe(30);
   });
