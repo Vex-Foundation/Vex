@@ -27,10 +27,19 @@ function depositIntent(overrides: Partial<LighterOnboardingIntentRow> = {}): Lig
     preflightMinimumTransferUnits: "1000000",
     preflightWalletBalanceUnits: "50000000",
     preflightWalletAllowanceUnits: "0",
-    preflightWalletNativeBalanceWei: "1000000000000000",
+    preflightWalletNativeBalanceWei: "1000000000000000000",
     preflightEthereumBlockNumber: "23456789",
     preflightLighterBlockNumber: "23456780",
     preflightObservedAt: new Date("2030-01-01T00:00:00.000Z"),
+    preflightApproveGasLimit: "100000",
+    preflightDepositGasLimit: "200000",
+    preflightMaxFeePerGasWei: "20000000000",
+    preflightMaxPriorityFeePerGasWei: "2000000000",
+    preflightApproveMaxFeeWei: "2000000000000000",
+    preflightDepositMaxFeeWei: "4000000000000000",
+    preflightTotalMaxFeeWei: "6000000000000000",
+    preflightNativeReserveWei: "4000000000000000",
+    preflightRequiredNativeBalanceWei: "10000000000000000",
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
@@ -59,7 +68,7 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.amountDisplay).toBe("11.52 USDC");
     expect(d.walletBalanceDisplay).toBe("50 USDC");
     expect(d.walletAllowanceDisplay).toBe("0 USDC");
-    expect(d.nativeBalanceDisplay).toBe("0.001 ETH");
+    expect(d.nativeBalanceDisplay).toBe("1 ETH");
     expect(d.approvalRequired).toBe(true);
     expect(d.creditAddress).toBe(WALLET);
     expect(d.depositContract).toBe(CONTRACT);
@@ -67,6 +76,9 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.routeLabel).toBe("perps");
     expect(d.environmentLabel).toBe("Lighter Core");
     expect(d.summary).toContain("Deposit 11.52 USDC");
+    expect(d.maximumNetworkFeeDisplay).toBe("0.006 ETH");
+    expect(d.requiredNativeBalanceDisplay).toBe("0.01 ETH");
+    expect(d.maxFeePerGasDisplay).toBe("20 gwei");
   });
 
   it("states the deposit-only scope (no trade, no withdrawal)", () => {
@@ -80,6 +92,8 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     const d = buildLighterDepositApprovalDisclosure(depositIntent());
     expect(d.createsAccountNote).toMatch(/first Lighter deposit/i);
     expect(d.gasNote).toMatch(/ETH/);
+    expect(d.gasNote).toContain("Maximum Ethereum network-fee exposure");
+    expect(d.gasNote).toContain("approve gas limit 100000");
   });
 
   it("refuses a non-deposit capability", () => {

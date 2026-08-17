@@ -30,7 +30,11 @@ function evidence(
       blockNumber: 23_456_789n,
       settlementBalanceUnits: 50_000_000n,
       settlementAllowanceUnits: 0n,
-      nativeBalanceWei: 1_000_000_000_000_000n,
+      nativeBalanceWei: 1_000_000_000_000_000_000n,
+      approveGasEstimate: 50_000n,
+      depositGasEstimate: 100_000n,
+      maxFeePerGasWei: 20_000_000_000n,
+      maxPriorityFeePerGasWei: 2_000_000_000n,
     },
     lighterLayer1: {
       code: 200,
@@ -66,8 +70,17 @@ describe("Lighter live deposit preflight proof", () => {
       minimumTransferUnits: "1000000",
       walletBalanceUnits: "50000000",
       walletAllowanceUnits: "0",
-      walletNativeBalanceWei: "1000000000000000",
+      walletNativeBalanceWei: "1000000000000000000",
       approvalRequired: true,
+      approveGasLimit: "100000",
+      depositGasLimit: "200000",
+      maxFeePerGasWei: "20000000000",
+      maxPriorityFeePerGasWei: "2000000000",
+      approveMaxFeeWei: "2000000000000000",
+      depositMaxFeeWei: "4000000000000000",
+      totalMaxFeeWei: "6000000000000000",
+      nativeReserveWei: "4000000000000000",
+      requiredNativeBalanceWei: "10000000000000000",
     });
   });
 
@@ -75,9 +88,16 @@ describe("Lighter live deposit preflight proof", () => {
     const base = evidence();
     const snapshot = proveLighterDepositPreflight({
       ...base,
-      ethereum: { ...base.ethereum, settlementAllowanceUnits: 11_000_000n },
+      ethereum: {
+        ...base.ethereum,
+        settlementAllowanceUnits: 11_000_000n,
+        approveGasEstimate: 0n,
+      },
     });
     expect(snapshot.approvalRequired).toBe(false);
+    expect(snapshot.approveGasLimit).toBe("0");
+    expect(snapshot.approveMaxFeeWei).toBe("0");
+    expect(snapshot.totalMaxFeeWei).toBe(snapshot.depositMaxFeeWei);
   });
 
   it.each([
@@ -101,6 +121,16 @@ describe("Lighter live deposit preflight proof", () => {
     ["no ETH", {
       ethereum: { ...evidence().ethereum, nativeBalanceWei: 0n },
     }, /no ETH/],
+    ["insufficient ETH for maximum fees", {
+      ethereum: { ...evidence().ethereum, nativeBalanceWei: 9_999_999_999_999_999n },
+    }, /maximum network fees plus the safety reserve/],
+    ["invalid fee ceiling", {
+      ethereum: {
+        ...evidence().ethereum,
+        maxFeePerGasWei: 1_000_000_000n,
+        maxPriorityFeePerGasWei: 2_000_000_000n,
+      },
+    }, /invalid EIP-1559/],
   ])("refuses %s", (_name, override, message) => {
     expect(() => proveLighterDepositPreflight(evidence(override))).toThrow(message);
   });

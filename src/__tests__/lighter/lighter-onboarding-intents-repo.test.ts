@@ -90,8 +90,17 @@ function preflight(walletAddress: string, amountUnits: string) {
     minimumTransferUnits: "1000000",
     walletBalanceUnits: "50000000",
     walletAllowanceUnits: "0",
-    walletNativeBalanceWei: "1000000000000000",
+    walletNativeBalanceWei: "1000000000000000000",
     approvalRequired: true,
+    approveGasLimit: "100000",
+    depositGasLimit: "200000",
+    maxFeePerGasWei: "20000000000",
+    maxPriorityFeePerGasWei: "2000000000",
+    approveMaxFeeWei: "2000000000000000",
+    depositMaxFeeWei: "4000000000000000",
+    totalMaxFeeWei: "6000000000000000",
+    nativeReserveWei: "4000000000000000",
+    requiredNativeBalanceWei: "10000000000000000",
   };
 }
 

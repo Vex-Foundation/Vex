@@ -28,6 +28,15 @@ export const LIGHTER_DEPOSIT_CRITICAL_ARG_KEYS = [
   "preflightEthereumBlockNumber",
   "preflightLighterBlockNumber",
   "preflightObservedAt",
+  "preflightApproveGasLimit",
+  "preflightDepositGasLimit",
+  "preflightMaxFeePerGasWei",
+  "preflightMaxPriorityFeePerGasWei",
+  "preflightApproveMaxFeeWei",
+  "preflightDepositMaxFeeWei",
+  "preflightTotalMaxFeeWei",
+  "preflightNativeReserveWei",
+  "preflightRequiredNativeBalanceWei",
   "approvalRequired",
   "summary",
   "scopeNote",
@@ -103,6 +112,15 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.preflightEthereumBlockNumber === intent.preflightEthereumBlockNumber
     && criticalArgs.preflightLighterBlockNumber === intent.preflightLighterBlockNumber
     && criticalArgs.preflightObservedAt === intent.preflightObservedAt?.toISOString()
+    && criticalArgs.preflightApproveGasLimit === intent.preflightApproveGasLimit
+    && criticalArgs.preflightDepositGasLimit === intent.preflightDepositGasLimit
+    && criticalArgs.preflightMaxFeePerGasWei === intent.preflightMaxFeePerGasWei
+    && criticalArgs.preflightMaxPriorityFeePerGasWei === intent.preflightMaxPriorityFeePerGasWei
+    && criticalArgs.preflightApproveMaxFeeWei === intent.preflightApproveMaxFeeWei
+    && criticalArgs.preflightDepositMaxFeeWei === intent.preflightDepositMaxFeeWei
+    && criticalArgs.preflightTotalMaxFeeWei === intent.preflightTotalMaxFeeWei
+    && criticalArgs.preflightNativeReserveWei === intent.preflightNativeReserveWei
+    && criticalArgs.preflightRequiredNativeBalanceWei === intent.preflightRequiredNativeBalanceWei
     && criticalArgs.approvalRequired === approvalRequired(intent)
     && isNonEmptyString(criticalArgs.amountDisplay)
     && isNonEmptyString(criticalArgs.summary)

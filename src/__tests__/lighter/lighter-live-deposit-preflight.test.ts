@@ -35,5 +35,15 @@ d("Lighter live read-only deposit preflight", () => {
     expect(BigInt(snapshot.lighterBlockNumber)).toBeGreaterThanOrEqual(0n);
     expect(BigInt(snapshot.walletBalanceUnits)).toBeGreaterThanOrEqual(1_000_000n);
     expect(BigInt(snapshot.walletNativeBalanceWei)).toBeGreaterThan(0n);
+    expect(BigInt(snapshot.depositGasLimit)).toBeGreaterThan(0n);
+    expect(BigInt(snapshot.maxFeePerGasWei)).toBeGreaterThan(0n);
+    expect(BigInt(snapshot.maxPriorityFeePerGasWei)).toBeGreaterThanOrEqual(0n);
+    expect(BigInt(snapshot.totalMaxFeeWei)).toBeGreaterThan(0n);
+    expect(BigInt(snapshot.requiredNativeBalanceWei)).toBeGreaterThan(
+      BigInt(snapshot.totalMaxFeeWei),
+    );
+    expect(BigInt(snapshot.walletNativeBalanceWei)).toBeGreaterThanOrEqual(
+      BigInt(snapshot.requiredNativeBalanceWei),
+    );
   }, 60_000);
 });

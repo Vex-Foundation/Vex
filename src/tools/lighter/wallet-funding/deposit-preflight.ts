@@ -2,23 +2,35 @@
  * Read-only Phase 2 preflight for an Ethereum-mainnet Lighter Core deposit.
  *
  * This module binds the selected wallet and requested amount to live Ethereum
- * balances/allowance and to Lighter's live gateway/asset metadata. It owns no
- * signer and cannot submit a transaction. Gas and fee exposure are deliberately
- * not represented yet: callers must not claim that part of Phase 2 is complete
- * until a fresh executable estimate is also persisted and disclosed.
+ * balances/allowance, exact EIP-1559 fee ceilings, and Lighter's live
+ * gateway/asset metadata. It owns no signer and cannot submit a transaction.
  */
 
-import { getAddress, type Address } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  keccak256,
+  pad,
+  parseAbiParameters,
+  toHex,
+  type Address,
+  type Hex,
+  type PublicClient,
+  type StateOverride,
+} from "viem";
 
 import { ErrorCodes, VexError } from "../../../errors.js";
 import { getUniswapDeployment } from "../../uniswap/deployments.js";
 import { getUniswapPublicClient } from "../../uniswap/evm-client.js";
 import { getLighterClient } from "../client.js";
+import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import type {
   LighterAssetDetailsResponse,
   LighterLayer1BasicInfoResponse,
 } from "../types.js";
 import { decimalToBaseUnits } from "./onboarding-plan.js";
+import { buildLighterDepositCalldata } from "./deposit-calldata.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
@@ -46,11 +58,24 @@ const ERC20_PREFLIGHT_ABI = [
     ],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
 ] as const;
 
+/** FiatTokenV1 allowance mapping slot used by Ethereum mainnet's USDC proxy. */
+const ETHEREUM_USDC_ALLOWANCE_STORAGE_SLOT = 10n;
+
 /**
- * Independent compile-time boundary for the unfinished gas/fee slice. Opening
- * the operator release environment variable cannot bypass this requirement.
+ * Independent compile-time boundary for the unfinished pre-sign enforcement
+ * slice. Opening the operator release environment variable cannot bypass it.
  */
 export const LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE = false;
 
@@ -77,6 +102,15 @@ export interface LighterDepositPreflightSnapshot {
   readonly walletAllowanceUnits: string;
   readonly walletNativeBalanceWei: string;
   readonly approvalRequired: boolean;
+  readonly approveGasLimit: string;
+  readonly depositGasLimit: string;
+  readonly maxFeePerGasWei: string;
+  readonly maxPriorityFeePerGasWei: string;
+  readonly approveMaxFeeWei: string;
+  readonly depositMaxFeeWei: string;
+  readonly totalMaxFeeWei: string;
+  readonly nativeReserveWei: string;
+  readonly requiredNativeBalanceWei: string;
 }
 
 export interface LighterDepositPreflightEvidence {
@@ -90,6 +124,10 @@ export interface LighterDepositPreflightEvidence {
     readonly settlementBalanceUnits: bigint;
     readonly settlementAllowanceUnits: bigint;
     readonly nativeBalanceWei: bigint;
+    readonly approveGasEstimate: bigint;
+    readonly depositGasEstimate: bigint;
+    readonly maxFeePerGasWei: bigint;
+    readonly maxPriorityFeePerGasWei: bigint;
   };
   readonly lighterLayer1: LighterLayer1BasicInfoResponse;
   readonly lighterAssets: LighterAssetDetailsResponse;
@@ -139,6 +177,15 @@ export async function readLighterDepositPreflight(input: {
     lighter.getAssetDetails("core"),
   ]);
 
+  const feeEvidence = await readLighterDepositFeeEvidence({
+    publicClient,
+    walletAddress,
+    gatewayAddress,
+    tokenAddress,
+    amountUnits: input.amountUnits,
+    settlementAllowanceUnits,
+  });
+
   return proveLighterDepositPreflight({
     observedAt: new Date(),
     walletAddress,
@@ -150,6 +197,7 @@ export async function readLighterDepositPreflight(input: {
       settlementBalanceUnits,
       settlementAllowanceUnits,
       nativeBalanceWei,
+      ...feeEvidence,
     },
     lighterLayer1,
     lighterAssets,
@@ -252,6 +300,42 @@ export function proveLighterDepositPreflight(
     throw preflightError("The selected wallet has no ETH for Ethereum network fees.");
   }
 
+  const approvalRequired = evidence.ethereum.settlementAllowanceUnits < evidence.requestedAmountUnits;
+  if (
+    evidence.ethereum.approveGasEstimate < 0n
+    || (approvalRequired && evidence.ethereum.approveGasEstimate === 0n)
+    || (!approvalRequired && evidence.ethereum.approveGasEstimate !== 0n)
+    || evidence.ethereum.depositGasEstimate <= 0n
+  ) {
+    throw preflightError("Ethereum returned invalid gas estimates for the required deposit legs.");
+  }
+  if (
+    evidence.ethereum.maxFeePerGasWei <= 0n
+    || evidence.ethereum.maxPriorityFeePerGasWei < 0n
+    || evidence.ethereum.maxPriorityFeePerGasWei > evidence.ethereum.maxFeePerGasWei
+  ) {
+    throw preflightError("Ethereum returned invalid EIP-1559 fee ceilings.");
+  }
+
+  const approveGasLimit = approvalRequired
+    ? gasLimitWithHeadroom(evidence.ethereum.approveGasEstimate)
+    : 0n;
+  const depositGasLimit = gasLimitWithHeadroom(evidence.ethereum.depositGasEstimate);
+  const approveMaxFeeWei = approveGasLimit * evidence.ethereum.maxFeePerGasWei;
+  const depositMaxFeeWei = depositGasLimit * evidence.ethereum.maxFeePerGasWei;
+  const totalMaxFeeWei = approveMaxFeeWei + depositMaxFeeWei;
+  // Keep enough ETH beyond this plan's maximum for one comparable follow-up
+  // transaction. This reserve is explicit and approval-visible.
+  const nativeReserveWei = approveMaxFeeWei > depositMaxFeeWei
+    ? approveMaxFeeWei
+    : depositMaxFeeWei;
+  const requiredNativeBalanceWei = totalMaxFeeWei + nativeReserveWei;
+  if (evidence.ethereum.nativeBalanceWei < requiredNativeBalanceWei) {
+    throw preflightError(
+      "The selected wallet does not have enough ETH for the maximum network fees plus the safety reserve.",
+    );
+  }
+
   return {
     observedAt: new Date(evidence.observedAt),
     walletAddress,
@@ -269,8 +353,114 @@ export function proveLighterDepositPreflight(
     walletBalanceUnits: evidence.ethereum.settlementBalanceUnits.toString(10),
     walletAllowanceUnits: evidence.ethereum.settlementAllowanceUnits.toString(10),
     walletNativeBalanceWei: evidence.ethereum.nativeBalanceWei.toString(10),
-    approvalRequired: evidence.ethereum.settlementAllowanceUnits < evidence.requestedAmountUnits,
+    approvalRequired,
+    approveGasLimit: approveGasLimit.toString(10),
+    depositGasLimit: depositGasLimit.toString(10),
+    maxFeePerGasWei: evidence.ethereum.maxFeePerGasWei.toString(10),
+    maxPriorityFeePerGasWei: evidence.ethereum.maxPriorityFeePerGasWei.toString(10),
+    approveMaxFeeWei: approveMaxFeeWei.toString(10),
+    depositMaxFeeWei: depositMaxFeeWei.toString(10),
+    totalMaxFeeWei: totalMaxFeeWei.toString(10),
+    nativeReserveWei: nativeReserveWei.toString(10),
+    requiredNativeBalanceWei: requiredNativeBalanceWei.toString(10),
   };
+}
+
+async function readLighterDepositFeeEvidence(input: {
+  readonly publicClient: PublicClient;
+  readonly walletAddress: Address;
+  readonly gatewayAddress: Address;
+  readonly tokenAddress: Address;
+  readonly amountUnits: bigint;
+  readonly settlementAllowanceUnits: bigint;
+}): Promise<Pick<LighterDepositPreflightEvidence["ethereum"],
+  | "approveGasEstimate"
+  | "depositGasEstimate"
+  | "maxFeePerGasWei"
+  | "maxPriorityFeePerGasWei"
+>> {
+  const approvalRequired = input.settlementAllowanceUnits < input.amountUnits;
+  const approveData = encodeFunctionData({
+    abi: ERC20_PREFLIGHT_ABI,
+    functionName: "approve",
+    args: [input.gatewayAddress, input.amountUnits],
+  });
+  const deposit = buildLighterDepositCalldata({
+    to: input.walletAddress,
+    amountUnits: input.amountUnits,
+    route: "perps",
+    assetIndex: LIGHTER_USDC_ASSET_INDEX,
+  });
+  const stateOverride = approvalRequired
+    ? usdcAllowanceStateOverride(
+        input.tokenAddress,
+        input.walletAddress,
+        input.gatewayAddress,
+        input.amountUnits,
+      )
+    : undefined;
+
+  if (stateOverride !== undefined) {
+    const overriddenAllowance = await input.publicClient.readContract({
+      address: input.tokenAddress,
+      abi: ERC20_PREFLIGHT_ABI,
+      functionName: "allowance",
+      args: [input.walletAddress, input.gatewayAddress],
+      stateOverride,
+    });
+    if (overriddenAllowance !== input.amountUnits) {
+      throw preflightError(
+        "Ethereum USDC allowance simulation did not reproduce the exact requested approval.",
+      );
+    }
+  }
+
+  const [fees, approveGasEstimate, depositGasEstimate] = await Promise.all([
+    input.publicClient.estimateFeesPerGas({
+      chain: input.publicClient.chain,
+      type: "eip1559",
+    }),
+    approvalRequired
+      ? input.publicClient.estimateGas({
+          account: input.walletAddress,
+          to: input.tokenAddress,
+          data: approveData,
+          value: 0n,
+        })
+      : Promise.resolve(0n),
+    input.publicClient.estimateGas({
+      account: input.walletAddress,
+      to: deposit.to,
+      data: deposit.data,
+      value: deposit.value,
+      ...(stateOverride === undefined ? {} : { stateOverride }),
+    }),
+  ]);
+
+  return {
+    approveGasEstimate,
+    depositGasEstimate,
+    maxFeePerGasWei: fees.maxFeePerGas,
+    maxPriorityFeePerGasWei: fees.maxPriorityFeePerGas,
+  };
+}
+
+function usdcAllowanceStateOverride(
+  tokenAddress: Address,
+  owner: Address,
+  spender: Address,
+  amountUnits: bigint,
+): StateOverride {
+  const inner = keccak256(encodeAbiParameters(parseAbiParameters("address, uint256"), [
+    owner,
+    ETHEREUM_USDC_ALLOWANCE_STORAGE_SLOT,
+  ]));
+  const slot = keccak256(encodeAbiParameters(parseAbiParameters("address, bytes32"), [
+    spender,
+    inner,
+  ]));
+  const value = pad(toHex(amountUnits), { size: 32 }) as Hex;
+  return [{ address: tokenAddress, stateDiff: [{ slot, value }] }];
 }
 
 function validAddress(value: string, field: string): Address {

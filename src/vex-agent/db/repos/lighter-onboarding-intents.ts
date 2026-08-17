@@ -65,6 +65,15 @@ export interface LighterOnboardingIntentRow {
   readonly preflightEthereumBlockNumber: string | null;
   readonly preflightLighterBlockNumber: string | null;
   readonly preflightObservedAt: Date | null;
+  readonly preflightApproveGasLimit: string | null;
+  readonly preflightDepositGasLimit: string | null;
+  readonly preflightMaxFeePerGasWei: string | null;
+  readonly preflightMaxPriorityFeePerGasWei: string | null;
+  readonly preflightApproveMaxFeeWei: string | null;
+  readonly preflightDepositMaxFeeWei: string | null;
+  readonly preflightTotalMaxFeeWei: string | null;
+  readonly preflightNativeReserveWei: string | null;
+  readonly preflightRequiredNativeBalanceWei: string | null;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
   readonly executionState: LighterOnboardingExecutionState;
   readonly approveTxHash: string | null;
@@ -114,6 +123,11 @@ const RETURNING = `
   preflight_min_transfer_units, preflight_wallet_balance_units,
   preflight_wallet_allowance_units, preflight_wallet_native_balance_wei,
   preflight_ethereum_block_number, preflight_lighter_block_number, preflight_observed_at,
+  preflight_approve_gas_limit, preflight_deposit_gas_limit,
+  preflight_max_fee_per_gas_wei, preflight_max_priority_fee_per_gas_wei,
+  preflight_approve_max_fee_wei, preflight_deposit_max_fee_wei,
+  preflight_total_max_fee_wei, preflight_native_reserve_wei,
+  preflight_required_native_balance_wei,
   approval_status, execution_state, approve_tx_hash, deposit_tx_hash, resolved_account_index,
   deposit_l1_block_hash, deposit_l1_block_number, deposit_event_account_index,
   lighter_tx_hash, lighter_tx_status, lighter_block_height, lighter_executed_at,
@@ -129,11 +143,17 @@ const INSERT_DEPOSIT_SQL = `
     preflight_min_transfer_units, preflight_wallet_balance_units,
     preflight_wallet_allowance_units, preflight_wallet_native_balance_wei,
     preflight_ethereum_block_number, preflight_lighter_block_number, preflight_observed_at,
+    preflight_approve_gas_limit, preflight_deposit_gas_limit,
+    preflight_max_fee_per_gas_wei, preflight_max_priority_fee_per_gas_wei,
+    preflight_approve_max_fee_wei, preflight_deposit_max_fee_wei,
+    preflight_total_max_fee_wei, preflight_native_reserve_wei,
+    preflight_required_native_balance_wei,
     approval_status, execution_state, expires_at
   ) VALUES (
     $1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    'approval_pending', 'approval_pending', $21
+    $21, $22, $23, $24, $25, $26, $27, $28, $29,
+    'approval_pending', 'approval_pending', $30
   )
   ON CONFLICT DO NOTHING
   RETURNING ${RETURNING}
@@ -170,6 +190,15 @@ export async function createOrFindLiveDepositApprovalPendingWith(
     input.preflight.ethereumBlockNumber,
     input.preflight.lighterBlockNumber,
     input.preflight.observedAt,
+    input.preflight.approveGasLimit,
+    input.preflight.depositGasLimit,
+    input.preflight.maxFeePerGasWei,
+    input.preflight.maxPriorityFeePerGasWei,
+    input.preflight.approveMaxFeeWei,
+    input.preflight.depositMaxFeeWei,
+    input.preflight.totalMaxFeeWei,
+    input.preflight.nativeReserveWei,
+    input.preflight.requiredNativeBalanceWei,
     input.expiresAt,
   ]);
   const created = inserted.rows[0];
@@ -735,6 +764,17 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     preflightObservedAt: row.preflight_observed_at === null
       ? null
       : row.preflight_observed_at as Date,
+    preflightApproveGasLimit: nullableString(row.preflight_approve_gas_limit),
+    preflightDepositGasLimit: nullableString(row.preflight_deposit_gas_limit),
+    preflightMaxFeePerGasWei: nullableString(row.preflight_max_fee_per_gas_wei),
+    preflightMaxPriorityFeePerGasWei: nullableString(row.preflight_max_priority_fee_per_gas_wei),
+    preflightApproveMaxFeeWei: nullableString(row.preflight_approve_max_fee_wei),
+    preflightDepositMaxFeeWei: nullableString(row.preflight_deposit_max_fee_wei),
+    preflightTotalMaxFeeWei: nullableString(row.preflight_total_max_fee_wei),
+    preflightNativeReserveWei: nullableString(row.preflight_native_reserve_wei),
+    preflightRequiredNativeBalanceWei: nullableString(
+      row.preflight_required_native_balance_wei,
+    ),
     approvalStatus: row.approval_status as LighterOnboardingApprovalStatus,
     executionState: row.execution_state as LighterOnboardingExecutionState,
     approveTxHash: row.approve_tx_hash === null ? null : String(row.approve_tx_hash),
@@ -772,4 +812,8 @@ function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
   ) {
     throw new Error("Lighter deposit preflight does not match the durable intent fields.");
   }
+}
+
+function nullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
 }

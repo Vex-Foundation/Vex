@@ -395,6 +395,15 @@ function hasValidPersistedPreflight(intent: LighterOnboardingIntentRow): boolean
     || intent.preflightEthereumBlockNumber === null
     || intent.preflightLighterBlockNumber === null
     || intent.preflightObservedAt === null
+    || intent.preflightApproveGasLimit === null
+    || intent.preflightDepositGasLimit === null
+    || intent.preflightMaxFeePerGasWei === null
+    || intent.preflightMaxPriorityFeePerGasWei === null
+    || intent.preflightApproveMaxFeeWei === null
+    || intent.preflightDepositMaxFeeWei === null
+    || intent.preflightTotalMaxFeeWei === null
+    || intent.preflightNativeReserveWei === null
+    || intent.preflightRequiredNativeBalanceWei === null
   ) return false;
   const integerFields = [
     intent.amountUnits,
@@ -404,16 +413,47 @@ function hasValidPersistedPreflight(intent: LighterOnboardingIntentRow): boolean
     intent.preflightWalletNativeBalanceWei,
     intent.preflightEthereumBlockNumber,
     intent.preflightLighterBlockNumber,
+    intent.preflightApproveGasLimit,
+    intent.preflightDepositGasLimit,
+    intent.preflightMaxFeePerGasWei,
+    intent.preflightMaxPriorityFeePerGasWei,
+    intent.preflightApproveMaxFeeWei,
+    intent.preflightDepositMaxFeeWei,
+    intent.preflightTotalMaxFeeWei,
+    intent.preflightNativeReserveWei,
+    intent.preflightRequiredNativeBalanceWei,
   ];
   if (!integerFields.every((value) => /^(?:0|[1-9][0-9]*)$/.test(value))) return false;
   const amount = BigInt(intent.amountUnits);
+  const allowance = BigInt(intent.preflightWalletAllowanceUnits);
+  const nativeBalance = BigInt(intent.preflightWalletNativeBalanceWei);
+  const approveGasLimit = BigInt(intent.preflightApproveGasLimit);
+  const depositGasLimit = BigInt(intent.preflightDepositGasLimit);
+  const maxFeePerGas = BigInt(intent.preflightMaxFeePerGasWei);
+  const maxPriorityFeePerGas = BigInt(intent.preflightMaxPriorityFeePerGasWei);
+  const approveMaxFee = BigInt(intent.preflightApproveMaxFeeWei);
+  const depositMaxFee = BigInt(intent.preflightDepositMaxFeeWei);
+  const totalMaxFee = BigInt(intent.preflightTotalMaxFeeWei);
+  const nativeReserve = BigInt(intent.preflightNativeReserveWei);
+  const requiredNativeBalance = BigInt(intent.preflightRequiredNativeBalanceWei);
   return amount > 0n
     && BigInt(intent.preflightMinimumTransferUnits) > 0n
     && BigInt(intent.preflightMinimumTransferUnits) <= amount
     && BigInt(intent.preflightWalletBalanceUnits) >= amount
-    && BigInt(intent.preflightWalletAllowanceUnits) >= 0n
-    && BigInt(intent.preflightWalletNativeBalanceWei) > 0n
+    && allowance >= 0n
+    && nativeBalance > 0n
     && BigInt(intent.preflightEthereumBlockNumber) > 0n
     && BigInt(intent.preflightLighterBlockNumber) >= 0n
+    && (allowance < amount ? approveGasLimit > 0n : approveGasLimit === 0n)
+    && depositGasLimit > 0n
+    && maxFeePerGas > 0n
+    && maxPriorityFeePerGas >= 0n
+    && maxPriorityFeePerGas <= maxFeePerGas
+    && approveMaxFee === approveGasLimit * maxFeePerGas
+    && depositMaxFee === depositGasLimit * maxFeePerGas
+    && totalMaxFee === approveMaxFee + depositMaxFee
+    && nativeReserve === (approveMaxFee > depositMaxFee ? approveMaxFee : depositMaxFee)
+    && requiredNativeBalance === totalMaxFee + nativeReserve
+    && nativeBalance >= requiredNativeBalance
     && Number.isFinite(intent.preflightObservedAt.getTime());
 }
