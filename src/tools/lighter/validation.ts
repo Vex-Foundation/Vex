@@ -197,7 +197,7 @@ const assetDetailsResponseSchema = z
   .object({
     code: int,
     message,
-    assets: z.array(z.object({
+    asset_details: z.array(z.object({
       asset_id: int,
       symbol: z.string().min(1),
       l1_decimals: int,

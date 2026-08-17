@@ -277,4 +277,21 @@ describe("Lighter onboarding workflow foundation", () => {
     expect(sql).toContain("lighter_onboarding_intents_l2_evidence_complete");
     expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
   });
+
+  it("persists a complete public live deposit preflight without credential material", async () => {
+    const sql = await readFile(
+      new URL(
+        "../../vex-agent/db/migrations/094_lighter_deposit_preflight.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(sql).toContain("preflight_wallet_balance_units");
+    expect(sql).toContain("preflight_wallet_allowance_units");
+    expect(sql).toContain("preflight_ethereum_block_number");
+    expect(sql).toContain("lighter_onboarding_intents_preflight_complete");
+    expect(sql).toContain("lighter_onboarding_intents_preflight_values_valid");
+    expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
+  });
 });

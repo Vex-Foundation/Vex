@@ -19,10 +19,7 @@ const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 const WALLET = "0x1111111111111111111111111111111111111111";
 
 function receipt(overrides: Partial<LighterDepositReceipt> = {}): LighterDepositReceipt {
-  const topics = encodeEventTopics({
-    abi: LIGHTER_DEPOSIT_EVENT_ABI,
-    eventName: "Deposit",
-  });
+  const topics = depositEventTopics();
   const data = encodeAbiParameters(
     [
       { type: "uint48" },
@@ -43,6 +40,17 @@ function receipt(overrides: Partial<LighterDepositReceipt> = {}): LighterDeposit
     logs: [{ address: GATEWAY, topics, data }],
     ...overrides,
   };
+}
+
+function depositEventTopics(): readonly string[] {
+  const [signature, ...unexpected] = encodeEventTopics({
+    abi: LIGHTER_DEPOSIT_EVENT_ABI,
+    eventName: "Deposit",
+  });
+  if (typeof signature !== "string" || unexpected.length !== 0) {
+    throw new Error("unexpected Deposit topic fixture");
+  }
+  return [signature];
 }
 
 function l1(): LighterDepositL1Evidence {

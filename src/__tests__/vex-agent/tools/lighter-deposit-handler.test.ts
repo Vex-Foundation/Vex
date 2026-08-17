@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   buildRepairDeps: vi.fn(),
   repairDepositIntent: vi.fn(),
   getOnboardingWorkflow: vi.fn(),
+  readDepositPreflight: vi.fn(),
+  feePreflightComplete: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
@@ -73,6 +75,11 @@ vi.mock("@tools/lighter/wallet-funding/deposit-execution.js", () => ({
   executeApprovedLighterDeposit: mocks.executeApprovedDeposit,
 }));
 
+vi.mock("@tools/lighter/wallet-funding/deposit-preflight.js", () => ({
+  readLighterDepositPreflight: mocks.readDepositPreflight,
+  isLighterDepositFeePreflightComplete: mocks.feePreflightComplete,
+}));
+
 vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
   LIGHTER_DEPOSIT_RELEASE_GATE: {
     isEnabled: mocks.releaseGateEnabled,
@@ -115,6 +122,16 @@ function intentRow(overrides: Record<string, unknown> = {}) {
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11000000",
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    preflightMinimumTransferUnits: "1000000",
+    preflightWalletBalanceUnits: "50000000",
+    preflightWalletAllowanceUnits: "0",
+    preflightWalletNativeBalanceWei: "1000000000000000",
+    preflightEthereumBlockNumber: "23456789",
+    preflightLighterBlockNumber: "23456780",
+    preflightObservedAt: new Date("2030-01-01T00:00:00.000Z"),
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
@@ -136,6 +153,7 @@ beforeEach(() => {
   mocks.getOnboardingWorkflow.mockResolvedValue(null);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
   mocks.releaseGateEnabled.mockReturnValue(true);
+  mocks.feePreflightComplete.mockReturnValue(true);
   mocks.buildRepairDeps.mockReturnValue({ marker: "repair-deps" });
   mocks.repairDepositIntent.mockImplementation(async (row) => ({
     intentId: row.intentId,
@@ -154,6 +172,25 @@ beforeEach(() => {
   mocks.buildExecutionDeps.mockReturnValue({ marker: "execution-deps" });
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
+  mocks.readDepositPreflight.mockResolvedValue({
+    observedAt: new Date("2030-01-01T00:00:00.000Z"),
+    walletAddress: WALLET,
+    chainId: 1,
+    ethereumBlockNumber: "23456789",
+    lighterBlockNumber: "23456780",
+    gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    assetIndex: 3,
+    routeType: 0,
+    amountUnits: "11000000",
+    minimumTransferUnits: "1000000",
+    walletBalanceUnits: "50000000",
+    walletAllowanceUnits: "0",
+    walletNativeBalanceWei: "1000000000000000",
+    approvalRequired: true,
+  });
 });
 
 describe("lighter.deposit.status", () => {
@@ -316,6 +353,25 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
   });
 
+  it("stops before lease acquisition and key resolution while fee preflight is incomplete", async () => {
+    mocks.feePreflightComplete.mockReturnValue(false);
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_recorded_fee_preflight_closed",
+      executionState: "approved",
+    });
+    expect(JSON.stringify(result.output)).toContain("signing key was not resolved");
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+    expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
+  });
+
   it("holds the lease across execution and always releases it", async () => {
     mocks.acquireExecutionLease.mockResolvedValue({
       acquired: true,
@@ -440,6 +496,11 @@ describe("lighter.deposit.prepare", () => {
         chainId: 1,
         assetIndex: 3,
         routeType: 0,
+        preflight: expect.objectContaining({
+          ethereumBlockNumber: "23456789",
+          walletBalanceUnits: "50000000",
+          approvalRequired: true,
+        }),
       }),
     );
     expect(result.preparedActionFollowUp).toMatchObject({
@@ -458,6 +519,22 @@ describe("lighter.deposit.prepare", () => {
         result.preparedActionFollowUp!,
       ),
     ).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
+  });
+
+  it("does not create an approval when the live deposit preflight fails", async () => {
+    mocks.readDepositPreflight.mockRejectedValueOnce(
+      new Error("The selected wallet does not have enough USDC for this deposit."),
+    );
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("does not have enough USDC");
+    expect(mocks.createOrFind).not.toHaveBeenCalled();
+    expect(mocks.withSessionControlLock).not.toHaveBeenCalled();
   });
 
   it("returns a deterministic conflict and never prepares a second deposit", async () => {

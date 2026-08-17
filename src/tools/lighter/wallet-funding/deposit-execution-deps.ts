@@ -35,6 +35,7 @@ import {
   projectLighterDepositReceipt,
   type LighterDepositReceipt,
 } from "./deposit-evidence.js";
+import { LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE } from "./deposit-preflight.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
   {
@@ -84,6 +85,7 @@ export function buildLighterDepositExecutionDeps(
 
   return {
     depositGateEnabled: () => LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled(),
+    depositFeePreflightComplete: () => LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE,
     assertExecutionLease: input.assertExecutionLease,
 
     async runApproveLegIfNeeded({ walletAddress, spender, amountUnits, onHashStaged }) {

@@ -29,6 +29,9 @@ export const LIGHTER_ONBOARDING_WORKFLOW_STATES = [
 export type LighterOnboardingWorkflowState =
   (typeof LIGHTER_ONBOARDING_WORKFLOW_STATES)[number];
 
+/** Narrow transaction surface used by onboarding repositories and unit fakes. */
+export type LighterOnboardingQueryClient = Pick<PoolClient, "query">;
+
 export interface LighterOnboardingWorkflowRow {
   readonly environment: LighterEnvironment;
   readonly walletAddress: string;
@@ -101,7 +104,7 @@ export async function getLighterOnboardingWorkflow(
 }
 
 export async function ensureLighterOnboardingWorkflowEnabledWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   environment: LighterEnvironment,
   walletAddress: string,
 ): Promise<LighterOnboardingWorkflowRow> {
@@ -121,7 +124,7 @@ export async function ensureLighterOnboardingWorkflowEnabledWith(
 }
 
 export async function transitionLighterOnboardingWorkflowWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   input: {
     readonly environment: LighterEnvironment;
     readonly walletAddress: string;

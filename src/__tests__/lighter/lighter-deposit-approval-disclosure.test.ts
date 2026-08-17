@@ -21,6 +21,16 @@ function depositIntent(overrides: Partial<LighterOnboardingIntentRow> = {}): Lig
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11520000",
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    preflightMinimumTransferUnits: "1000000",
+    preflightWalletBalanceUnits: "50000000",
+    preflightWalletAllowanceUnits: "0",
+    preflightWalletNativeBalanceWei: "1000000000000000",
+    preflightEthereumBlockNumber: "23456789",
+    preflightLighterBlockNumber: "23456780",
+    preflightObservedAt: new Date("2030-01-01T00:00:00.000Z"),
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
@@ -47,6 +57,10 @@ describe("buildLighterDepositApprovalDisclosure", () => {
   it("recomputes the amount and destination from the persisted intent", () => {
     const d = buildLighterDepositApprovalDisclosure(depositIntent());
     expect(d.amountDisplay).toBe("11.52 USDC");
+    expect(d.walletBalanceDisplay).toBe("50 USDC");
+    expect(d.walletAllowanceDisplay).toBe("0 USDC");
+    expect(d.nativeBalanceDisplay).toBe("0.001 ETH");
+    expect(d.approvalRequired).toBe(true);
     expect(d.creditAddress).toBe(WALLET);
     expect(d.depositContract).toBe(CONTRACT);
     expect(d.chainLabel).toBe("Ethereum");

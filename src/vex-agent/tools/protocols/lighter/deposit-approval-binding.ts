@@ -19,6 +19,16 @@ export const LIGHTER_DEPOSIT_CRITICAL_ARG_KEYS = [
   "routeType",
   "amountUnits",
   "amountDisplay",
+  "settlementTokenAddress",
+  "settlementTokenDecimals",
+  "preflightMinimumTransferUnits",
+  "preflightWalletBalanceUnits",
+  "preflightWalletAllowanceUnits",
+  "preflightWalletNativeBalanceWei",
+  "preflightEthereumBlockNumber",
+  "preflightLighterBlockNumber",
+  "preflightObservedAt",
+  "approvalRequired",
   "summary",
   "scopeNote",
 ] as const;
@@ -84,10 +94,29 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.assetIndex === intent.assetIndex
     && criticalArgs.routeType === intent.routeType
     && criticalArgs.amountUnits === intent.amountUnits
+    && criticalArgs.settlementTokenAddress === intent.settlementTokenAddress
+    && criticalArgs.settlementTokenDecimals === intent.settlementTokenDecimals
+    && criticalArgs.preflightMinimumTransferUnits === intent.preflightMinimumTransferUnits
+    && criticalArgs.preflightWalletBalanceUnits === intent.preflightWalletBalanceUnits
+    && criticalArgs.preflightWalletAllowanceUnits === intent.preflightWalletAllowanceUnits
+    && criticalArgs.preflightWalletNativeBalanceWei === intent.preflightWalletNativeBalanceWei
+    && criticalArgs.preflightEthereumBlockNumber === intent.preflightEthereumBlockNumber
+    && criticalArgs.preflightLighterBlockNumber === intent.preflightLighterBlockNumber
+    && criticalArgs.preflightObservedAt === intent.preflightObservedAt?.toISOString()
+    && criticalArgs.approvalRequired === approvalRequired(intent)
     && isNonEmptyString(criticalArgs.amountDisplay)
     && isNonEmptyString(criticalArgs.summary)
     && isNonEmptyString(criticalArgs.scopeNote)
   );
+}
+
+function approvalRequired(intent: LighterOnboardingIntentRow): boolean | null {
+  if (
+    intent.amountUnits === null
+    || intent.preflightWalletAllowanceUnits === null
+    || !/^[0-9]+$/.test(intent.preflightWalletAllowanceUnits)
+  ) return null;
+  return BigInt(intent.preflightWalletAllowanceUnits) < BigInt(intent.amountUnits);
 }
 
 function isNonEmptyString(value: unknown): value is string {

@@ -20,7 +20,9 @@ import {
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
+  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_DEPOSIT_CHAIN_ID,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
   LIGHTER_USDC_ASSET_INDEX,
 } from "./constants.js";
 
@@ -45,6 +47,8 @@ export type LighterDepositExecutionResult =
 export interface LighterDepositExecutionDeps {
   /** The privileged default-closed deposit release gate. */
   readonly depositGateEnabled: () => boolean;
+  /** Independent code boundary: live fee preflight must be implemented first. */
+  readonly depositFeePreflightComplete: () => boolean;
   /** Re-prove the cross-process chain-wallet execution lease before each leg. */
   readonly assertExecutionLease: () => Promise<void>;
   /**
@@ -109,6 +113,14 @@ export async function executeApprovedLighterDeposit(input: {
         "Lighter deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Nothing was signed or submitted.",
     };
   }
+  if (!deps.depositFeePreflightComplete()) {
+    return {
+      status: "failed",
+      stage: "approve",
+      reason:
+        "Lighter deposit fee preflight is not complete. Nothing was signed or submitted even though the operator release gate was open.",
+    };
+  }
 
   if (
     intent.capability !== "deposit"
@@ -123,6 +135,7 @@ export async function executeApprovedLighterDeposit(input: {
     || intent.depositContract.toLowerCase() !== LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS.toLowerCase()
     || intent.assetIndex !== LIGHTER_USDC_ASSET_INDEX
     || intent.routeType !== 0
+    || !hasValidPersistedPreflight(intent)
   ) {
     return { status: "failed", stage: "approve", reason: "Deposit intent is missing required fields." };
   }
@@ -367,4 +380,40 @@ async function ambiguousResult(
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function hasValidPersistedPreflight(intent: LighterOnboardingIntentRow): boolean {
+  if (
+    intent.amountUnits === null
+    || intent.settlementTokenAddress?.toLowerCase() !== LIGHTER_CORE_MAINNET_USDC_ADDRESS.toLowerCase()
+    || intent.settlementTokenSymbol !== "USDC"
+    || intent.settlementTokenDecimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
+    || intent.preflightMinimumTransferUnits === null
+    || intent.preflightWalletBalanceUnits === null
+    || intent.preflightWalletAllowanceUnits === null
+    || intent.preflightWalletNativeBalanceWei === null
+    || intent.preflightEthereumBlockNumber === null
+    || intent.preflightLighterBlockNumber === null
+    || intent.preflightObservedAt === null
+  ) return false;
+  const integerFields = [
+    intent.amountUnits,
+    intent.preflightMinimumTransferUnits,
+    intent.preflightWalletBalanceUnits,
+    intent.preflightWalletAllowanceUnits,
+    intent.preflightWalletNativeBalanceWei,
+    intent.preflightEthereumBlockNumber,
+    intent.preflightLighterBlockNumber,
+  ];
+  if (!integerFields.every((value) => /^(?:0|[1-9][0-9]*)$/.test(value))) return false;
+  const amount = BigInt(intent.amountUnits);
+  return amount > 0n
+    && BigInt(intent.preflightMinimumTransferUnits) > 0n
+    && BigInt(intent.preflightMinimumTransferUnits) <= amount
+    && BigInt(intent.preflightWalletBalanceUnits) >= amount
+    && BigInt(intent.preflightWalletAllowanceUnits) >= 0n
+    && BigInt(intent.preflightWalletNativeBalanceWei) > 0n
+    && BigInt(intent.preflightEthereumBlockNumber) > 0n
+    && BigInt(intent.preflightLighterBlockNumber) >= 0n
+    && Number.isFinite(intent.preflightObservedAt.getTime());
 }

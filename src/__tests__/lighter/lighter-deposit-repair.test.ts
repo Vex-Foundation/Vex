@@ -34,10 +34,7 @@ function depositReceipt(
     to: CONTRACT,
     logs: [{
       address: CONTRACT,
-      topics: encodeEventTopics({
-        abi: LIGHTER_DEPOSIT_EVENT_ABI,
-        eventName: "Deposit",
-      }),
+      topics: depositEventTopics(),
       data: encodeAbiParameters(
         [
           { type: "uint48" },
@@ -51,6 +48,17 @@ function depositReceipt(
     }],
     ...overrides,
   };
+}
+
+function depositEventTopics(): readonly string[] {
+  const [signature, ...unexpected] = encodeEventTopics({
+    abi: LIGHTER_DEPOSIT_EVENT_ABI,
+    eventName: "Deposit",
+  });
+  if (typeof signature !== "string" || unexpected.length !== 0) {
+    throw new Error("unexpected Deposit topic fixture");
+  }
+  return [signature];
 }
 
 function lighterTx(overrides: Partial<LighterTxFromL1Response> = {}): LighterTxFromL1Response {
@@ -113,6 +121,16 @@ function intent(
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11000000",
+    settlementTokenAddress: null,
+    settlementTokenSymbol: null,
+    settlementTokenDecimals: null,
+    preflightMinimumTransferUnits: null,
+    preflightWalletBalanceUnits: null,
+    preflightWalletAllowanceUnits: null,
+    preflightWalletNativeBalanceWei: null,
+    preflightEthereumBlockNumber: null,
+    preflightLighterBlockNumber: null,
+    preflightObservedAt: null,
     approvalStatus: "approved",
     executionState: "ambiguous",
     approveTxHash: null,

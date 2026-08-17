@@ -64,7 +64,7 @@ export interface LighterAssetDetail {
 export interface LighterAssetDetailsResponse {
   code: number;
   message?: string;
-  assets: LighterAssetDetail[];
+  asset_details: LighterAssetDetail[];
   [key: string]: unknown;
 }
 

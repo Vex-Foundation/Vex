@@ -26,6 +26,16 @@ const ROW = {
   asset_index: 3,
   route_type: 0,
   amount_units: "11000000",
+  settlement_token_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  settlement_token_symbol: "USDC",
+  settlement_token_decimals: 6,
+  preflight_min_transfer_units: "1000000",
+  preflight_wallet_balance_units: "50000000",
+  preflight_wallet_allowance_units: "0",
+  preflight_wallet_native_balance_wei: "1000000000000000",
+  preflight_ethereum_block_number: "23456789",
+  preflight_lighter_block_number: "23456780",
+  preflight_observed_at: new Date("2030-01-01T00:00:00.000Z"),
   approval_status: "approval_pending",
   execution_state: "approval_pending",
   approve_tx_hash: null,
@@ -71,6 +81,25 @@ const INPUT: repo.CreateDepositIntentInput = {
   assetIndex: 3,
   routeType: 0,
   amountUnits: "11000000",
+  preflight: {
+    observedAt: ROW.preflight_observed_at,
+    walletAddress: ROW.wallet_address,
+    chainId: 1,
+    ethereumBlockNumber: ROW.preflight_ethereum_block_number,
+    lighterBlockNumber: ROW.preflight_lighter_block_number,
+    gatewayAddress: ROW.deposit_contract,
+    settlementTokenAddress: ROW.settlement_token_address,
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    assetIndex: 3,
+    routeType: 0,
+    amountUnits: ROW.amount_units,
+    minimumTransferUnits: ROW.preflight_min_transfer_units,
+    walletBalanceUnits: ROW.preflight_wallet_balance_units,
+    walletAllowanceUnits: ROW.preflight_wallet_allowance_units,
+    walletNativeBalanceWei: ROW.preflight_wallet_native_balance_wei,
+    approvalRequired: true,
+  },
   expiresAt: ROW.expires_at,
 };
 
@@ -101,16 +130,51 @@ describe("lighter onboarding intent creation SQL", () => {
     };
 
     const result = await repo.createOrFindLiveDepositApprovalPendingWith(
-      client as never,
+      client,
       INPUT,
     );
 
     expect(result).toMatchObject({ outcome: "created", intent: { intentId: ROW.intent_id } });
-    const [sql] = client.query.mock.calls[0]!;
+    const createCall = client.query.mock.calls[0];
+    if (createCall === undefined) throw new Error("expected the intent insert query");
+    const [sql, params] = createCall;
     expect(sql).toContain("ON CONFLICT DO NOTHING");
+    expect(sql).toContain("preflight_wallet_allowance_units");
+    expect(params).toEqual([
+      expect.stringMatching(/^lighter-onboard-/),
+      INPUT.sessionId,
+      "core",
+      ROW.wallet_address,
+      1,
+      ROW.deposit_contract,
+      ROW.deposit_to,
+      3,
+      0,
+      ROW.amount_units,
+      ROW.settlement_token_address,
+      "USDC",
+      6,
+      ROW.preflight_min_transfer_units,
+      ROW.preflight_wallet_balance_units,
+      ROW.preflight_wallet_allowance_units,
+      ROW.preflight_wallet_native_balance_wei,
+      ROW.preflight_ethereum_block_number,
+      ROW.preflight_lighter_block_number,
+      ROW.preflight_observed_at,
+      ROW.expires_at,
+    ]);
     expect(client.query).toHaveBeenCalledTimes(2);
     const [workflowSql] = client.query.mock.calls[1]!;
     expect(workflowSql).toContain("workflow_state = ANY($3)");
+  });
+
+  it("refuses to persist a preflight snapshot that differs from the durable intent", async () => {
+    const client = { query: vi.fn() };
+    await expect(repo.createOrFindLiveDepositApprovalPendingWith(client, {
+      ...INPUT,
+      preflight: { ...INPUT.preflight, gatewayAddress: ROW.wallet_address },
+    })).rejects.toThrow("preflight does not match");
+    expect(client.query).not.toHaveBeenCalled();
   });
 
   it("returns the live conflicting row after losing the unique-index race", async () => {
@@ -121,7 +185,7 @@ describe("lighter onboarding intent creation SQL", () => {
     };
 
     const result = await repo.createOrFindLiveDepositApprovalPendingWith(
-      client as never,
+      client,
       INPUT,
     );
 
@@ -163,7 +227,7 @@ describe("lighter onboarding intent creation SQL", () => {
     };
     const txHash = `0x${"a".repeat(64)}`;
 
-    await repo.reconcileApproveReceiptWith(client as never, {
+    await repo.reconcileApproveReceiptWith(client, {
       intentId: ROW.intent_id,
       txHash,
       outcome: "confirmed",
@@ -187,7 +251,7 @@ describe("lighter onboarding intent creation SQL", () => {
     };
 
     await expect(
-      repo.markAllowanceVerifiedWith(client as never, ROW.intent_id),
+      repo.markAllowanceVerifiedWith(client, ROW.intent_id),
     ).rejects.toThrow("workflow rejected allowance_verified");
     expect(client.query).toHaveBeenCalledTimes(2);
   });
@@ -215,7 +279,7 @@ describe("lighter onboarding intent creation SQL", () => {
     };
 
     await repo.markDepositConfirmedWith(
-      client as Parameters<typeof repo.markDepositConfirmedWith>[0],
+      client,
       ROW.intent_id,
       {
         txHash: confirmedRow.deposit_tx_hash,
@@ -279,7 +343,7 @@ describe("lighter onboarding intent creation SQL", () => {
     };
 
     await repo.markDepositCreditedWith(
-      client as Parameters<typeof repo.markDepositCreditedWith>[0],
+      client,
       ROW.intent_id,
       {
         txHash: creditedRow.deposit_tx_hash,

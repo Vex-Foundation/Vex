@@ -7,16 +7,16 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { PoolClient } from "pg";
-
 import { query, queryOne } from "../client.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import type {
   LighterDepositCreditEvidence,
   LighterDepositL1Evidence,
 } from "@tools/lighter/wallet-funding/deposit-evidence.js";
+import type { LighterDepositPreflightSnapshot } from "@tools/lighter/wallet-funding/deposit-preflight.js";
 import {
   transitionLighterOnboardingWorkflowWith,
+  type LighterOnboardingQueryClient,
   type LighterOnboardingWorkflowState,
 } from "./lighter-onboarding-workflows.js";
 
@@ -55,6 +55,16 @@ export interface LighterOnboardingIntentRow {
   readonly assetIndex: number | null;
   readonly routeType: number | null;
   readonly amountUnits: string | null;
+  readonly settlementTokenAddress: string | null;
+  readonly settlementTokenSymbol: string | null;
+  readonly settlementTokenDecimals: number | null;
+  readonly preflightMinimumTransferUnits: string | null;
+  readonly preflightWalletBalanceUnits: string | null;
+  readonly preflightWalletAllowanceUnits: string | null;
+  readonly preflightWalletNativeBalanceWei: string | null;
+  readonly preflightEthereumBlockNumber: string | null;
+  readonly preflightLighterBlockNumber: string | null;
+  readonly preflightObservedAt: Date | null;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
   readonly executionState: LighterOnboardingExecutionState;
   readonly approveTxHash: string | null;
@@ -85,6 +95,7 @@ export interface CreateDepositIntentInput {
   readonly assetIndex: number;
   readonly routeType: number;
   readonly amountUnits: string;
+  readonly preflight: LighterDepositPreflightSnapshot;
   readonly expiresAt: Date;
 }
 
@@ -99,6 +110,10 @@ export function generateOnboardingIntentId(): string {
 const RETURNING = `
   intent_id, session_id, protocol_execution_id, approval_id, environment, capability,
   wallet_address, chain_id, deposit_contract, deposit_to, asset_index, route_type, amount_units,
+  settlement_token_address, settlement_token_symbol, settlement_token_decimals,
+  preflight_min_transfer_units, preflight_wallet_balance_units,
+  preflight_wallet_allowance_units, preflight_wallet_native_balance_wei,
+  preflight_ethereum_block_number, preflight_lighter_block_number, preflight_observed_at,
   approval_status, execution_state, approve_tx_hash, deposit_tx_hash, resolved_account_index,
   deposit_l1_block_hash, deposit_l1_block_number, deposit_event_account_index,
   lighter_tx_hash, lighter_tx_status, lighter_block_height, lighter_executed_at,
@@ -110,9 +125,15 @@ const INSERT_DEPOSIT_SQL = `
   INSERT INTO lighter_onboarding_intents (
     intent_id, session_id, environment, capability, wallet_address, chain_id,
     deposit_contract, deposit_to, asset_index, route_type, amount_units,
+    settlement_token_address, settlement_token_symbol, settlement_token_decimals,
+    preflight_min_transfer_units, preflight_wallet_balance_units,
+    preflight_wallet_allowance_units, preflight_wallet_native_balance_wei,
+    preflight_ethereum_block_number, preflight_lighter_block_number, preflight_observed_at,
     approval_status, execution_state, expires_at
   ) VALUES (
-    $1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, $10, 'approval_pending', 'approval_pending', $11
+    $1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    'approval_pending', 'approval_pending', $21
   )
   ON CONFLICT DO NOTHING
   RETURNING ${RETURNING}
@@ -124,9 +145,10 @@ const INSERT_DEPOSIT_SQL = `
  * deterministic result; a second statement returns the authoritative live row.
  */
 export async function createOrFindLiveDepositApprovalPendingWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   input: CreateDepositIntentInput,
 ): Promise<CreateDepositIntentOutcome> {
+  assertPreflightMatchesInput(input);
   const inserted = await client.query<Record<string, unknown>>(INSERT_DEPOSIT_SQL, [
     generateOnboardingIntentId(),
     input.sessionId,
@@ -138,6 +160,16 @@ export async function createOrFindLiveDepositApprovalPendingWith(
     input.assetIndex,
     input.routeType,
     input.amountUnits,
+    input.preflight.settlementTokenAddress,
+    input.preflight.settlementTokenSymbol,
+    input.preflight.settlementTokenDecimals,
+    input.preflight.minimumTransferUnits,
+    input.preflight.walletBalanceUnits,
+    input.preflight.walletAllowanceUnits,
+    input.preflight.walletNativeBalanceWei,
+    input.preflight.ethereumBlockNumber,
+    input.preflight.lighterBlockNumber,
+    input.preflight.observedAt,
     input.expiresAt,
   ]);
   const created = inserted.rows[0];
@@ -175,7 +207,7 @@ export async function createOrFindLiveDepositApprovalPendingWith(
 }
 
 export async function markApprovalDecisionWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   input: {
     readonly intentId: string;
     readonly decision: "approved" | "rejected" | "expired";
@@ -214,7 +246,7 @@ export async function markApprovalDecisionWith(
 
 /** Persist an approve tx hash before broadcast; only from the approved state. */
 export async function markApproveSubmittedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   approveTxHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -227,7 +259,7 @@ export async function markApproveSubmittedWith(
 }
 
 export async function markApproveConfirmedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
 ): Promise<LighterOnboardingIntentRow | null> {
   return advanceDepositWith(
@@ -242,7 +274,7 @@ export async function markApproveConfirmedWith(
 
 /** Record that the live on-chain allowance already covered this exact amount. */
 export async function markAllowanceVerifiedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
 ): Promise<LighterOnboardingIntentRow | null> {
   return advanceDepositWith(
@@ -260,7 +292,7 @@ export async function markAllowanceVerifiedWith(
 
 /** Persist a deposit tx hash before broadcast; only after allowance is proven. */
 export async function markDepositSubmittedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   depositTxHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -278,7 +310,7 @@ export async function markDepositSubmittedWith(
 }
 
 export async function markDepositConfirmedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   evidence: LighterDepositL1Evidence,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -325,7 +357,7 @@ export async function markDepositConfirmedWith(
 }
 
 export async function markDepositCreditedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   evidence: LighterDepositCreditEvidence,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -380,7 +412,7 @@ export async function markDepositCreditedWith(
 
 /** Attach exact L1 evidence to a pre-Phase-2 confirmed row without replaying its workflow. */
 export async function recordConfirmedDepositL1EvidenceWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   evidence: LighterDepositL1Evidence,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -418,7 +450,7 @@ export async function recordConfirmedDepositL1EvidenceWith(
 }
 
 export async function markAmbiguousWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   reason: string,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -450,7 +482,7 @@ export async function markAmbiguousWith(
 }
 
 export async function markFailedWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   reason: string,
 ): Promise<LighterOnboardingIntentRow | null> {
@@ -522,7 +554,7 @@ export async function listUnresolvedDepositsForWallet(
 }
 
 export async function reconcileApproveReceiptWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   input: {
     readonly intentId: string;
     readonly txHash: string;
@@ -562,7 +594,7 @@ export async function reconcileApproveReceiptWith(
 }
 
 export async function reconcileDepositReceiptWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   input: {
     readonly intentId: string;
     readonly txHash: string;
@@ -605,7 +637,7 @@ export async function reconcileDepositReceiptWith(
 }
 
 async function advanceDepositWith(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intentId: string,
   next: LighterOnboardingExecutionState,
   from: LighterOnboardingExecutionState[],
@@ -633,7 +665,7 @@ async function advanceDepositWith(
 }
 
 async function requireDepositWorkflowTransition(
-  client: PoolClient,
+  client: LighterOnboardingQueryClient,
   intent: LighterOnboardingIntentRow,
   input: {
     readonly expectedStates: readonly LighterOnboardingWorkflowState[];
@@ -673,6 +705,36 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     assetIndex: row.asset_index === null ? null : Number(row.asset_index),
     routeType: row.route_type === null ? null : Number(row.route_type),
     amountUnits: row.amount_units === null ? null : String(row.amount_units),
+    settlementTokenAddress: row.settlement_token_address === null
+      ? null
+      : String(row.settlement_token_address),
+    settlementTokenSymbol: row.settlement_token_symbol === null
+      ? null
+      : String(row.settlement_token_symbol),
+    settlementTokenDecimals: row.settlement_token_decimals === null
+      ? null
+      : Number(row.settlement_token_decimals),
+    preflightMinimumTransferUnits: row.preflight_min_transfer_units === null
+      ? null
+      : String(row.preflight_min_transfer_units),
+    preflightWalletBalanceUnits: row.preflight_wallet_balance_units === null
+      ? null
+      : String(row.preflight_wallet_balance_units),
+    preflightWalletAllowanceUnits: row.preflight_wallet_allowance_units === null
+      ? null
+      : String(row.preflight_wallet_allowance_units),
+    preflightWalletNativeBalanceWei: row.preflight_wallet_native_balance_wei === null
+      ? null
+      : String(row.preflight_wallet_native_balance_wei),
+    preflightEthereumBlockNumber: row.preflight_ethereum_block_number === null
+      ? null
+      : String(row.preflight_ethereum_block_number),
+    preflightLighterBlockNumber: row.preflight_lighter_block_number === null
+      ? null
+      : String(row.preflight_lighter_block_number),
+    preflightObservedAt: row.preflight_observed_at === null
+      ? null
+      : row.preflight_observed_at as Date,
     approvalStatus: row.approval_status as LighterOnboardingApprovalStatus,
     executionState: row.execution_state as LighterOnboardingExecutionState,
     approveTxHash: row.approve_tx_hash === null ? null : String(row.approve_tx_hash),
@@ -696,4 +758,18 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     updatedAt: row.updated_at as Date,
     expiresAt: row.expires_at as Date,
   };
+}
+
+function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
+  const snapshot = input.preflight;
+  if (
+    snapshot.walletAddress.toLowerCase() !== input.walletAddress.toLowerCase()
+    || snapshot.chainId !== input.chainId
+    || snapshot.gatewayAddress.toLowerCase() !== input.depositContract.toLowerCase()
+    || snapshot.assetIndex !== input.assetIndex
+    || snapshot.routeType !== input.routeType
+    || snapshot.amountUnits !== input.amountUnits
+  ) {
+    throw new Error("Lighter deposit preflight does not match the durable intent fields.");
+  }
 }

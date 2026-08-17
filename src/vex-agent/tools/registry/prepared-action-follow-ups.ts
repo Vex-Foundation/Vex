@@ -4,7 +4,11 @@ import type {
   ApprovalPreviewScalar,
   PreparedActionFollowUp,
 } from "../types.js";
-import { LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS } from "@tools/lighter/wallet-funding/constants.js";
+import {
+  LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
+  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+} from "@tools/lighter/wallet-funding/constants.js";
 
 export interface ValidatedWalletSendFollowUp {
   readonly toolName: "wallet_send_confirm";
@@ -107,6 +111,16 @@ const LIGHTER_DEPOSIT_PREVIEW_KEYS = [
   "routeType",
   "amountUnits",
   "amountDisplay",
+  "settlementTokenAddress",
+  "settlementTokenDecimals",
+  "preflightMinimumTransferUnits",
+  "preflightWalletBalanceUnits",
+  "preflightWalletAllowanceUnits",
+  "preflightWalletNativeBalanceWei",
+  "preflightEthereumBlockNumber",
+  "preflightLighterBlockNumber",
+  "preflightObservedAt",
+  "approvalRequired",
   "summary",
   "scopeNote",
 ] as const;
@@ -280,6 +294,24 @@ function validateLighterDepositFollowUp(
     !/^[1-9][0-9]*$/.test(criticalArgs.amountUnits) ||
     typeof criticalArgs.amountDisplay !== "string" ||
     !LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE.test(criticalArgs.amountDisplay) ||
+    typeof criticalArgs.settlementTokenAddress !== "string" ||
+    criticalArgs.settlementTokenAddress.toLowerCase() !==
+      LIGHTER_CORE_MAINNET_USDC_ADDRESS.toLowerCase() ||
+    criticalArgs.settlementTokenDecimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS ||
+    !isPositiveIntegerString(criticalArgs.preflightMinimumTransferUnits) ||
+    !isNonNegativeIntegerString(criticalArgs.preflightWalletBalanceUnits) ||
+    !isNonNegativeIntegerString(criticalArgs.preflightWalletAllowanceUnits) ||
+    !isPositiveIntegerString(criticalArgs.preflightWalletNativeBalanceWei) ||
+    !isPositiveIntegerString(criticalArgs.preflightEthereumBlockNumber) ||
+    !isNonNegativeIntegerString(criticalArgs.preflightLighterBlockNumber) ||
+    typeof criticalArgs.preflightObservedAt !== "string" ||
+    !Number.isFinite(Date.parse(criticalArgs.preflightObservedAt)) ||
+    typeof criticalArgs.approvalRequired !== "boolean" ||
+    BigInt(criticalArgs.preflightWalletBalanceUnits) < BigInt(criticalArgs.amountUnits) ||
+    BigInt(criticalArgs.preflightMinimumTransferUnits) > BigInt(criticalArgs.amountUnits) ||
+    criticalArgs.approvalRequired !== (
+      BigInt(criticalArgs.preflightWalletAllowanceUnits) < BigInt(criticalArgs.amountUnits)
+    ) ||
     typeof criticalArgs.summary !== "string" ||
     criticalArgs.summary.trim().length === 0 ||
     criticalArgs.summary.length > 600 ||
@@ -306,6 +338,14 @@ function validateLighterDepositFollowUp(
       },
     },
   };
+}
+
+function isPositiveIntegerString(value: unknown): value is string {
+  return typeof value === "string" && /^[1-9][0-9]*$/.test(value);
+}
+
+function isNonNegativeIntegerString(value: unknown): value is string {
+  return typeof value === "string" && /^(?:0|[1-9][0-9]*)$/.test(value);
 }
 
 function validateLighterOrderCreateFollowUp(

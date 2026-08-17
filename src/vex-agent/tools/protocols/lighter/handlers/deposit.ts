@@ -14,14 +14,15 @@ import {
 } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import {
-  LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
-  LIGHTER_DEPOSIT_CHAIN_ID,
   LIGHTER_DEPOSIT_MIN_USDC,
   LIGHTER_DEPOSIT_ROUTE_TYPE,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-  LIGHTER_USDC_ASSET_INDEX,
 } from "@tools/lighter/wallet-funding/constants.js";
 import { buildLighterDepositApprovalDisclosure } from "@tools/lighter/wallet-funding/deposit-approval-disclosure.js";
+import {
+  isLighterDepositFeePreflightComplete,
+  readLighterDepositPreflight,
+} from "@tools/lighter/wallet-funding/deposit-preflight.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { buildLighterDepositExecutionDeps } from "@tools/lighter/wallet-funding/deposit-execution-deps.js";
 import {
@@ -60,6 +61,16 @@ function buildDepositApprovalFollowUp(intent: LighterOnboardingIntentRow): Prepa
     routeType: intent.routeType ?? -1,
     amountUnits: intent.amountUnits ?? "",
     amountDisplay: disclosure.amountDisplay,
+    settlementTokenAddress: disclosure.settlementTokenAddress,
+    settlementTokenDecimals: disclosure.settlementTokenDecimals,
+    preflightMinimumTransferUnits: disclosure.minimumTransferUnits,
+    preflightWalletBalanceUnits: disclosure.walletBalanceUnits,
+    preflightWalletAllowanceUnits: disclosure.walletAllowanceUnits,
+    preflightWalletNativeBalanceWei: disclosure.walletNativeBalanceWei,
+    preflightEthereumBlockNumber: disclosure.ethereumBlockNumber,
+    preflightLighterBlockNumber: disclosure.lighterBlockNumber,
+    preflightObservedAt: disclosure.preflightObservedAt,
+    approvalRequired: disclosure.approvalRequired,
     summary: disclosure.summary,
     scopeNote: disclosure.scopeNote,
   };
@@ -80,6 +91,14 @@ function depositApprovalPreparedPayload(intent: LighterOnboardingIntentRow): Rec
     intentId: intent.intentId,
     environment: intent.environment,
     amountDisplay: disclosure.amountDisplay,
+    walletBalanceDisplay: disclosure.walletBalanceDisplay,
+    walletAllowanceDisplay: disclosure.walletAllowanceDisplay,
+    nativeBalanceDisplay: disclosure.nativeBalanceDisplay,
+    approvalRequired: disclosure.approvalRequired,
+    preflightObservedAt: disclosure.preflightObservedAt,
+    ethereumBlockNumber: disclosure.ethereumBlockNumber,
+    lighterBlockNumber: disclosure.lighterBlockNumber,
+    settlementTokenAddress: disclosure.settlementTokenAddress,
     creditAddress: disclosure.creditAddress,
     summary: disclosure.summary,
     scopeNote: disclosure.scopeNote,
@@ -142,6 +161,16 @@ function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string
     approvalStatus: intent.approvalStatus,
     executionState: intent.executionState,
     amountUnits: intent.amountUnits,
+    settlementTokenAddress: intent.settlementTokenAddress,
+    settlementTokenSymbol: intent.settlementTokenSymbol,
+    settlementTokenDecimals: intent.settlementTokenDecimals,
+    preflightMinimumTransferUnits: intent.preflightMinimumTransferUnits,
+    preflightWalletBalanceUnits: intent.preflightWalletBalanceUnits,
+    preflightWalletAllowanceUnits: intent.preflightWalletAllowanceUnits,
+    preflightWalletNativeBalanceWei: intent.preflightWalletNativeBalanceWei,
+    preflightEthereumBlockNumber: intent.preflightEthereumBlockNumber,
+    preflightLighterBlockNumber: intent.preflightLighterBlockNumber,
+    preflightObservedAt: intent.preflightObservedAt?.toISOString() ?? null,
     approveTxHash: intent.approveTxHash,
     depositTxHash: intent.depositTxHash,
     depositL1BlockHash: intent.depositL1BlockHash,
@@ -311,18 +340,29 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     const routeType = LIGHTER_DEPOSIT_ROUTE_TYPE.perps;
+    let preflight;
+    try {
+      preflight = await readLighterDepositPreflight({
+        walletAddress,
+        amountUnits,
+        routeType,
+      });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
 
     const creation = await withSessionControlLock(sessionId, (client) =>
       onboardingIntentsRepo.createOrFindLiveDepositApprovalPendingWith(client, {
         sessionId,
         environment: "core",
-        walletAddress,
-        chainId: LIGHTER_DEPOSIT_CHAIN_ID,
-        depositContract: getAddress(LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS),
-        depositTo: walletAddress,
-        assetIndex: LIGHTER_USDC_ASSET_INDEX,
-        routeType,
-        amountUnits: amountUnits.toString(),
+        walletAddress: preflight.walletAddress,
+        chainId: preflight.chainId,
+        depositContract: preflight.gatewayAddress,
+        depositTo: preflight.walletAddress,
+        assetIndex: preflight.assetIndex,
+        routeType: preflight.routeType,
+        amountUnits: preflight.amountUnits,
+        preflight,
         expiresAt: new Date(Date.now() + INTENT_TTL_MS),
       }),
     );
@@ -411,6 +451,16 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         status: "approval_recorded_gate_closed",
         message:
           "Lighter deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Nothing was signed or submitted.",
+        intentId: approved.intentId,
+        executionState: approved.executionState,
+      });
+    }
+    if (!isLighterDepositFeePreflightComplete()) {
+      return ok({
+        source: "vex_lighter_deposit",
+        status: "approval_recorded_fee_preflight_closed",
+        message:
+          "Lighter deposit approval was recorded, but live execution remains blocked until exact gas and fee exposure is implemented. Nothing was signed or submitted, and the signing key was not resolved.",
         intentId: approved.intentId,
         executionState: approved.executionState,
       });

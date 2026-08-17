@@ -164,7 +164,7 @@ describe("LighterClient URL selection", () => {
     });
     mockOk({
       code: 200,
-      assets: [{
+      asset_details: [{
         asset_id: 3,
         symbol: "USDC",
         l1_decimals: 6,
@@ -202,7 +202,7 @@ describe("LighterClient URL selection", () => {
 
     const assets = await client.getAssetDetails("core");
     expect(lastUrl().pathname).toBe("/api/v1/assetDetails");
-    expect(assets.assets[0]?.asset_id).toBe(3);
+    expect(assets.asset_details[0]?.asset_id).toBe(3);
 
     const evidence = await client.getTxFromL1("core", { hash: " 0xdeposit " });
     const url = lastUrl();

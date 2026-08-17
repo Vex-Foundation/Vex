@@ -27,10 +27,7 @@ function depositReceipt(): LighterDepositReceipt {
     to: CONTRACT,
     logs: [{
       address: CONTRACT,
-      topics: encodeEventTopics({
-        abi: LIGHTER_DEPOSIT_EVENT_ABI,
-        eventName: "Deposit",
-      }),
+      topics: depositEventTopics(),
       data: encodeAbiParameters(
         [
           { type: "uint48" },
@@ -43,6 +40,17 @@ function depositReceipt(): LighterDepositReceipt {
       ),
     }],
   };
+}
+
+function depositEventTopics(): readonly string[] {
+  const [signature, ...unexpected] = encodeEventTopics({
+    abi: LIGHTER_DEPOSIT_EVENT_ABI,
+    eventName: "Deposit",
+  });
+  if (typeof signature !== "string" || unexpected.length !== 0) {
+    throw new Error("unexpected Deposit topic fixture");
+  }
+  return [signature];
 }
 
 function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnboardingIntentRow {
@@ -60,6 +68,16 @@ function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnb
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11000000",
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    preflightMinimumTransferUnits: "1000000",
+    preflightWalletBalanceUnits: "50000000",
+    preflightWalletAllowanceUnits: "0",
+    preflightWalletNativeBalanceWei: "1000000000000000",
+    preflightEthereumBlockNumber: "23456789",
+    preflightLighterBlockNumber: "23456780",
+    preflightObservedAt: new Date(),
     approvalStatus: "approved",
     executionState: "approved",
     approveTxHash: null,
@@ -97,6 +115,7 @@ function intentsSpy() {
 function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepositExecutionDeps {
   return {
     depositGateEnabled: () => true,
+    depositFeePreflightComplete: () => true,
     assertExecutionLease: vi.fn().mockResolvedValue(undefined),
     runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
       await onHashStaged(APPROVE_HASH);
@@ -120,6 +139,22 @@ describe("executeApprovedLighterDeposit", () => {
     });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result.status).toBe("gate_closed");
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the operator gate opens before fee preflight is complete", async () => {
+    const d = deps({
+      depositFeePreflightComplete: () => false,
+      runApproveLegIfNeeded: vi.fn(),
+      runDepositLeg: vi.fn(),
+    });
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({
+      status: "failed",
+      stage: "approve",
+      reason: expect.stringContaining("fee preflight is not complete"),
+    });
     expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
     expect(d.runDepositLeg).not.toHaveBeenCalled();
   });
@@ -205,6 +240,10 @@ describe("executeApprovedLighterDeposit", () => {
     { depositTo: "0x2222222222222222222222222222222222222222" },
     { assetIndex: 4 },
     { routeType: 1 },
+    { settlementTokenAddress: "0x2222222222222222222222222222222222222222" },
+    { preflightWalletBalanceUnits: "10999999" },
+    { preflightWalletNativeBalanceWei: "0" },
+    { preflightObservedAt: null },
     { approvalStatus: "rejected" as const },
   ])("refuses a persisted deposit whose execution binding was altered: %j", async (override) => {
     const d = deps();

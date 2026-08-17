@@ -62,6 +62,7 @@ async function createDepositOutcome(sessionId: string, wallet: string) {
       assetIndex: 3,
       routeType: 0,
       amountUnits: "11000000",
+      preflight: preflight(wallet, "11000000"),
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
   });
@@ -70,6 +71,28 @@ async function createDepositOutcome(sessionId: string, wallet: string) {
 
 function walletForSession(sessionId: string): string {
   return `0x${createHash("sha256").update(sessionId).digest("hex").slice(0, 40)}`;
+}
+
+function preflight(walletAddress: string, amountUnits: string) {
+  return {
+    observedAt: new Date(),
+    walletAddress,
+    chainId: 1,
+    ethereumBlockNumber: "23456789",
+    lighterBlockNumber: "23456780",
+    gatewayAddress: CONTRACT,
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC" as const,
+    settlementTokenDecimals: 6,
+    assetIndex: 3,
+    routeType: 0,
+    amountUnits,
+    minimumTransferUnits: "1000000",
+    walletBalanceUnits: "50000000",
+    walletAllowanceUnits: "0",
+    walletNativeBalanceWei: "1000000000000000",
+    approvalRequired: true,
+  };
 }
 
 d("lighter_onboarding_intents repo", () => {
@@ -171,6 +194,7 @@ d("lighter_onboarding_intents repo", () => {
         assetIndex: 3,
         routeType: 0,
         amountUnits: "12000000",
+        preflight: preflight(wallet.toUpperCase().replace("0X", "0x"), "12000000"),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       }),
     );
