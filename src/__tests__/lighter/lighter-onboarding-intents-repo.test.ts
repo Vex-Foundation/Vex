@@ -11,6 +11,7 @@ const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
 const d = RUN ? describe : describe.skip;
 
 const SESSION_IDS: string[] = [];
+const WALLET_ADDRESSES = new Set<string>();
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 
 beforeAll(async () => {
@@ -19,6 +20,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  for (const walletAddress of WALLET_ADDRESSES) {
+    await execute(
+      "DELETE FROM lighter_onboarding_workflows WHERE environment = 'core' AND wallet_address = LOWER($1)",
+      [walletAddress],
+    ).catch(() => undefined);
+  }
   for (const id of SESSION_IDS) {
     await execute("DELETE FROM sessions WHERE id = $1", [id]).catch(() => undefined);
   }
@@ -34,6 +41,13 @@ async function newSession(): Promise<string> {
 
 async function newDepositIntent(sessionId: string) {
   const wallet = walletForSession(sessionId);
+  const created = await createDepositOutcome(sessionId, wallet);
+  expect(created.outcome).toBe("created");
+  return created.intent!;
+}
+
+async function createDepositOutcome(sessionId: string, wallet: string) {
+  WALLET_ADDRESSES.add(wallet);
   const created = await withSessionControlLock(sessionId, async (client) => {
     await ensureLighterOnboardingWorkflowEnabledWith(client, "core", wallet);
     return repo.createOrFindLiveDepositApprovalPendingWith(client, {
@@ -49,8 +63,7 @@ async function newDepositIntent(sessionId: string) {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
   });
-  expect(created.outcome).toBe("created");
-  return created.intent!;
+  return created;
 }
 
 function walletForSession(sessionId: string): string {
@@ -137,6 +150,23 @@ d("lighter_onboarding_intents repo", () => {
 
     expect(second.outcome).toBe("live_conflict");
     expect(second.intent?.intentId).toBe(first.intentId);
+  });
+
+  it("allows exactly one live deposit across concurrent sessions sharing a wallet", async () => {
+    const firstSessionId = await newSession();
+    const secondSessionId = await newSession();
+    const sharedWallet = walletForSession(`shared-${randomUUID()}`);
+
+    const results = await Promise.all([
+      createDepositOutcome(firstSessionId, sharedWallet),
+      createDepositOutcome(secondSessionId, sharedWallet),
+    ]);
+
+    const created = results.filter((result) => result.outcome === "created");
+    const conflicts = results.filter((result) => result.outcome === "live_conflict");
+    expect(created).toHaveLength(1);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.intent?.intentId).toBe(created[0]?.intent?.intentId);
   });
 
   it("lists unresolved intents and excludes credited/failed", async () => {
