@@ -14,12 +14,18 @@ import (
 	lighterclient "github.com/elliottech/lighter-go/client"
 	lightersigner "github.com/elliottech/lighter-go/signer"
 	"github.com/elliottech/lighter-go/types"
+	schnorr "github.com/elliottech/poseidon_crypto/signature/schnorr"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 const maxInputBytes = 32 * 1024
+const maxRegistrationNonce = int64(1<<48 - 1)
+const lighterCoreChainID = uint32(304)
 
 var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
+var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
+var l1SignaturePattern = regexp.MustCompile(`^0x[a-fA-F0-9]{130}$`)
 
 type signerRequest struct {
 	Operation           string              `json:"operation"`
@@ -29,6 +35,10 @@ type signerRequest struct {
 	APIKeyIndex         uint8               `json:"apiKeyIndex"`
 	Nonce               string              `json:"nonce"`
 	DeadlineUnixSeconds string              `json:"deadlineUnixSeconds"`
+	ExpiredAt           string              `json:"expiredAt"`
+	PublicKey           string              `json:"publicKey"`
+	L1Signature         string              `json:"l1Signature"`
+	ExpectedL1Address   string              `json:"expectedL1Address"`
 	Order               *createOrderRequest `json:"order"`
 }
 
@@ -46,15 +56,16 @@ type createOrderRequest struct {
 }
 
 type signerResponse struct {
-	OK         bool   `json:"ok"`
-	TxType     uint8  `json:"txType,omitempty"`
-	TxInfo     string `json:"txInfo,omitempty"`
-	TxHash     string `json:"txHash,omitempty"`
-	AuthToken  string `json:"authToken,omitempty"`
-	PublicKey  string `json:"publicKey,omitempty"`
-	PrivateKey string `json:"privateKey,omitempty"`
-	ErrorCode  string `json:"errorCode,omitempty"`
-	Error      string `json:"error,omitempty"`
+	OK            bool   `json:"ok"`
+	TxType        uint8  `json:"txType,omitempty"`
+	TxInfo        string `json:"txInfo,omitempty"`
+	TxHash        string `json:"txHash,omitempty"`
+	AuthToken     string `json:"authToken,omitempty"`
+	PublicKey     string `json:"publicKey,omitempty"`
+	PrivateKey    string `json:"privateKey,omitempty"`
+	MessageToSign string `json:"messageToSign,omitempty"`
+	ErrorCode     string `json:"errorCode,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 func main() {
@@ -80,6 +91,8 @@ func main() {
 		response, err = createAccountAuth(request)
 	case "signCreateOrder":
 		response, err = signCreateOrder(request)
+	case "signChangePubKey":
+		response, err = signChangePubKey(request)
 	default:
 		err = fmt.Errorf("unsupported signer operation")
 	}
@@ -97,7 +110,8 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" && request.Operation != "createAccountAuth" &&
+	if request.Operation != "signCreateOrder" && request.Operation != "signChangePubKey" &&
+		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
 		return request, fmt.Errorf("unsupported signer operation")
 	}
@@ -125,6 +139,32 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if request.Operation == "createAccountAuth" {
 		if _, err := parsePositiveInt64(request.DeadlineUnixSeconds, "auth deadline"); err != nil {
 			return request, fmt.Errorf("invalid auth deadline")
+		}
+		return request, nil
+	}
+	if request.Operation == "signChangePubKey" {
+		nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+		if err != nil || nonce > maxRegistrationNonce {
+			return request, fmt.Errorf("invalid nonce")
+		}
+		if request.ChainID != lighterCoreChainID {
+			return request, fmt.Errorf("invalid core chain id")
+		}
+		if _, err := parsePositiveInt64(request.ExpiredAt, "expiry"); err != nil {
+			return request, fmt.Errorf("invalid expiry")
+		}
+		if !publicKeyPattern.MatchString(request.PublicKey) {
+			return request, fmt.Errorf("invalid public key")
+		}
+		if !l1SignaturePattern.MatchString(request.L1Signature) {
+			return request, fmt.Errorf("invalid l1 signature")
+		}
+		recovery := strings.ToLower(request.L1Signature[len(request.L1Signature)-2:])
+		if recovery != "00" && recovery != "01" && recovery != "1b" && recovery != "1c" {
+			return request, fmt.Errorf("invalid l1 signature recovery value")
+		}
+		if !common.IsHexAddress(request.ExpectedL1Address) {
+			return request, fmt.Errorf("invalid expected l1 address")
 		}
 		return request, nil
 	}
@@ -217,6 +257,85 @@ func createAccountAuth(request signerRequest) (signerResponse, error) {
 		OK:        true,
 		AuthToken: authToken,
 		PublicKey: hex.EncodeToString(publicKey[:]),
+	}, nil
+}
+
+func signChangePubKey(request signerRequest) (signerResponse, error) {
+	accountIndex, err := parsePositiveInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	publicKeyBytes, err := hexutil.Decode("0x" + strings.TrimPrefix(request.PublicKey, "0x"))
+	if err != nil || len(publicKeyBytes) != 40 {
+		return signerResponse{}, fmt.Errorf("invalid public key")
+	}
+	var publicKey [40]byte
+	copy(publicKey[:], publicKeyBytes)
+
+	client, err := lighterclient.NewTxClient(
+		nil,
+		strings.TrimPrefix(request.PrivateKey, "0x"),
+		accountIndex,
+		request.APIKeyIndex,
+		request.ChainID,
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	derivedPublicKey := client.GetKeyManager().PubKeyBytes()
+	if !strings.EqualFold(hex.EncodeToString(derivedPublicKey[:]), hex.EncodeToString(publicKey[:])) {
+		return signerResponse{}, fmt.Errorf("public key does not match signer credential")
+	}
+
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := types.ConstructChangePubKeyTx(
+		client.GetKeyManager(),
+		request.ChainID,
+		&types.ChangePubKeyReq{PubKey: publicKey},
+		&types.TransactOpts{
+			FromAccountIndex: &accountIndex,
+			ApiKeyIndex:      &apiKeyIndex,
+			ExpiredAt:        expiredAt,
+			Nonce:            &nonce,
+			TxAttributes:     &types.L2TxAttributes{},
+		},
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	if tx == nil {
+		return signerResponse{}, fmt.Errorf("empty signer response")
+	}
+	messageHash, err := tx.Hash(request.ChainID)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	if err := schnorr.Validate(derivedPublicKey[:], messageHash, tx.Sig); err != nil {
+		return signerResponse{}, fmt.Errorf("failed to validate l2 signature")
+	}
+	tx.L1Sig = request.L1Signature
+	messageToSign := tx.GetL1SignatureBody()
+	if tx.GetL1AddressBySignature() != common.HexToAddress(request.ExpectedL1Address) {
+		return signerResponse{}, fmt.Errorf("l1 signature does not match expected wallet")
+	}
+	txInfo, err := tx.GetTxInfo()
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return signerResponse{
+		OK:            true,
+		TxType:        tx.GetTxType(),
+		TxInfo:        txInfo,
+		TxHash:        tx.GetTxHash(),
+		MessageToSign: messageToSign,
 	}, nil
 }
 

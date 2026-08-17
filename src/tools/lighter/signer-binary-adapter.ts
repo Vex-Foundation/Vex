@@ -3,6 +3,11 @@ import path from "node:path";
 
 import { ErrorCodes, VexError } from "../../errors.js";
 import type {
+  LighterChangePubKeySignerAdapter,
+  LighterChangePubKeySignerResult,
+  LighterChangePubKeySigningInput,
+} from "./change-pub-key.js";
+import type {
   LighterAccountAuthSignerResult,
   LighterAccountAuthSigningInput,
   LighterCreateOrderSignerResult,
@@ -13,6 +18,7 @@ import {
   materialFromSecret,
   type LighterTradingSecretMaterial,
 } from "./trading-secret.js";
+import { LIGHTER_TX_TYPE_L2_CHANGE_PUB_KEY } from "./wallet-funding/constants.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_STDOUT_BYTES = 256 * 1024;
@@ -79,11 +85,21 @@ interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBaseP
   };
 }
 
+interface LighterSignerBinaryChangePubKeyPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signChangePubKey";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly publicKey: string;
+  readonly l1Signature: string;
+  readonly expectedL1Address: string;
+}
+
 type LighterSignerBinaryPayload =
   | LighterSignerBinaryGenerateApiKeyPayload
   | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
-  | LighterSignerBinaryCreateOrderPayload;
+  | LighterSignerBinaryCreateOrderPayload
+  | LighterSignerBinaryChangePubKeyPayload;
 
 export interface LighterGeneratedApiKeyPair {
   readonly secret: LighterTradingSecretMaterial;
@@ -186,6 +202,42 @@ export function createLighterSignerBinaryAdapter(
   };
 }
 
+export function createLighterChangePubKeySignerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterChangePubKeySignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return {
+    source: "official_lighter_signer",
+    signChangePubKey: async (input) => {
+      const raw = await runner({
+        binaryPath,
+        payload: buildChangePubKeyPayload(input),
+        timeoutMs,
+      });
+      const output = parseChangePubKeyOutput(raw);
+      const result = {
+        kind: "lighter_change_pub_key_signer_result",
+        environment: input.environment,
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        nonce: input.nonce,
+        expiredAt: input.expiredAt,
+        publicKey: input.publicKey,
+        expectedL1Address: input.expectedL1Address,
+        messageToSign: output.messageToSign,
+        txType: output.txType,
+        txHash: output.txHash,
+      } as Omit<LighterChangePubKeySignerResult, "txInfo">;
+      return Object.defineProperty(result, "txInfo", {
+        value: output.txInfo,
+        enumerable: false,
+      }) as LighterChangePubKeySignerResult;
+    },
+  };
+}
+
 function buildAccountAuthPayload(
   input: LighterAccountAuthSigningInput,
 ): LighterSignerBinaryAuthPayload {
@@ -196,6 +248,23 @@ function buildAccountAuthPayload(
     accountIndex: String(input.accountIndex),
     apiKeyIndex: input.apiKeyIndex,
     deadlineUnixSeconds: String(input.deadlineUnixSeconds),
+  };
+}
+
+function buildChangePubKeyPayload(
+  input: LighterChangePubKeySigningInput,
+): LighterSignerBinaryChangePubKeyPayload {
+  return {
+    operation: "signChangePubKey",
+    privateKey: input.secret.privateKey,
+    chainId: input.chainId,
+    accountIndex: String(input.accountIndex),
+    apiKeyIndex: input.apiKeyIndex,
+    nonce: input.nonce,
+    expiredAt: input.expiredAt,
+    publicKey: input.publicKey,
+    l1Signature: input.l1Signature,
+    expectedL1Address: input.expectedL1Address,
   };
 }
 
@@ -338,6 +407,27 @@ function parseSignerOutput(raw: unknown): Pick<
     txType,
     txInfo,
     txHash,
+  };
+}
+
+function parseChangePubKeyOutput(raw: unknown): Pick<
+  LighterChangePubKeySignerResult,
+  "messageToSign" | "txType" | "txInfo" | "txHash"
+> {
+  const signed = parseSignerOutput(raw);
+  if (
+    signed.txType !== LIGHTER_TX_TYPE_L2_CHANGE_PUB_KEY
+    || !isRecord(raw)
+    || typeof raw.messageToSign !== "string"
+    || raw.messageToSign.length === 0
+  ) {
+    throw signerProcessFailed(raw);
+  }
+  return {
+    txType: LIGHTER_TX_TYPE_L2_CHANGE_PUB_KEY,
+    txInfo: signed.txInfo,
+    txHash: signed.txHash,
+    messageToSign: raw.messageToSign,
   };
 }
 

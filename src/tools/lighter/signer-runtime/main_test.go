@@ -1,8 +1,16 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/elliottech/lighter-go/types/txtypes"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestGenerateAPIKeyReturnsMatchingStandardKeyPair(t *testing.T) {
@@ -201,4 +209,106 @@ func TestReadRequestRejectsReservedAPIKeyIndexes(t *testing.T) {
 	if err == nil {
 		t.Fatalf("readRequest() error = nil, want reserved api key rejection")
 	}
+}
+
+func TestSignChangePubKeyBuildsOfficialTxType8AndVerifiesWallet(t *testing.T) {
+	const lighterPrivateKey = "11111111111111111111111111111111111111111111111111111111111111111111111111111111"
+	derived, err := derivePublicKey(signerRequest{PrivateKey: lighterPrivateKey})
+	if err != nil {
+		t.Fatalf("derivePublicKey() error = %v", err)
+	}
+	publicKey := strings.TrimPrefix(derived.PublicKey, "0x")
+	message := fmt.Sprintf(
+		txtypes.TemplateChangePubKey,
+		publicKey,
+		"0x0000000000000000",
+		"0x000000000000002a",
+		"0x0000000000000007",
+	)
+	evmPrivateKey, err := crypto.HexToECDSA(strings.Repeat("2", 64))
+	if err != nil {
+		t.Fatalf("crypto.HexToECDSA() error = %v", err)
+	}
+	l1Signature, err := crypto.Sign(accounts.TextHash([]byte(message)), evmPrivateKey)
+	if err != nil {
+		t.Fatalf("crypto.Sign() error = %v", err)
+	}
+	expectedAddress := crypto.PubkeyToAddress(evmPrivateKey.PublicKey).Hex()
+
+	response, err := signChangePubKey(signerRequest{
+		PrivateKey:        lighterPrivateKey,
+		ChainID:           lighterCoreChainID,
+		AccountIndex:      "42",
+		APIKeyIndex:       7,
+		Nonce:             "0",
+		ExpiredAt:         "1893456000000",
+		PublicKey:         publicKey,
+		L1Signature:       hexutil.Encode(l1Signature),
+		ExpectedL1Address: expectedAddress,
+	})
+	if err != nil {
+		t.Fatalf("signChangePubKey() error = %v", err)
+	}
+	if !response.OK || response.TxType != 8 {
+		t.Fatalf("signChangePubKey() did not return a TxType 8 response")
+	}
+	if response.MessageToSign != message {
+		t.Fatalf("MessageToSign differs from official Lighter template")
+	}
+	if len(response.TxHash) != 80 {
+		t.Fatalf("TxHash length = %d, want 80", len(response.TxHash))
+	}
+	var txInfo map[string]any
+	if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+		t.Fatalf("TxInfo is not JSON: %v", err)
+	}
+	if txInfo["L1Sig"] != hexutil.Encode(l1Signature) {
+		t.Fatalf("TxInfo does not contain the verified wallet signature")
+	}
+	if txInfo["PubKey"] != base64.StdEncoding.EncodeToString(publicKeyBytes(t, publicKey)) {
+		t.Fatalf("TxInfo PubKey has an unexpected representation")
+	}
+}
+
+func TestSignChangePubKeyRejectsAnotherWalletSignature(t *testing.T) {
+	const lighterPrivateKey = "11111111111111111111111111111111111111111111111111111111111111111111111111111111"
+	derived, err := derivePublicKey(signerRequest{PrivateKey: lighterPrivateKey})
+	if err != nil {
+		t.Fatalf("derivePublicKey() error = %v", err)
+	}
+	publicKey := strings.TrimPrefix(derived.PublicKey, "0x")
+	message := fmt.Sprintf(
+		txtypes.TemplateChangePubKey,
+		publicKey,
+		"0x0000000000000000",
+		"0x000000000000002a",
+		"0x0000000000000007",
+	)
+	signerKey, _ := crypto.HexToECDSA(strings.Repeat("2", 64))
+	otherKey, _ := crypto.HexToECDSA(strings.Repeat("3", 64))
+	l1Signature, _ := crypto.Sign(accounts.TextHash([]byte(message)), signerKey)
+
+	_, err = signChangePubKey(signerRequest{
+		PrivateKey:        lighterPrivateKey,
+		ChainID:           lighterCoreChainID,
+		AccountIndex:      "42",
+		APIKeyIndex:       7,
+		Nonce:             "0",
+		ExpiredAt:         "1893456000000",
+		PublicKey:         publicKey,
+		L1Signature:       hexutil.Encode(l1Signature),
+		ExpectedL1Address: crypto.PubkeyToAddress(otherKey.PublicKey).Hex(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected wallet") {
+		t.Fatalf("expected a mismatched wallet signature rejection, got %v", err)
+	}
+}
+
+func publicKeyBytes(t *testing.T, publicKey string) []byte {
+	t.Helper()
+	decoded, err := hexutil.Decode("0x" + publicKey)
+	if err != nil {
+		t.Fatalf("invalid public key fixture: %v", err)
+	}
+	return decoded
 }
