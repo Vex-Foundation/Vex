@@ -13,6 +13,7 @@ import { MORPHO_HANDLERS } from "../../../vex-agent/tools/protocols/morpho/handl
 import { MORPHO_MARKET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/market-reads.js";
 import { MORPHO_VAULT_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/vault-reads.js";
 import { MORPHO_POSITION_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/position-reads.js";
+import { MORPHO_WALLET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/wallet-reads.js";
 import {
   PROTOCOL_NAMESPACE_ALLOWLIST,
   NAMESPACE_DEFAULTS,
@@ -31,6 +32,8 @@ const EXPECTED_TOOL_IDS = [
   "morpho.vault.get",
   "morpho.positions.get",
   "morpho.markets.activity",
+  "morpho.rewards.get",
+  "morpho.wallet.balance",
 ];
 
 /** Every discovery passage in the namespace, whichever lane module owns it. */
@@ -38,6 +41,7 @@ const MORPHO_DISCOVERY = {
   ...MORPHO_MARKET_READ_DISCOVERY,
   ...MORPHO_VAULT_READ_DISCOVERY,
   ...MORPHO_POSITION_READ_DISCOVERY,
+  ...MORPHO_WALLET_READ_DISCOVERY,
 };
 
 describe("morpho manifest", () => {
@@ -103,11 +107,16 @@ describe("morpho manifest", () => {
       expect(tool.description).toMatch(/Read-only/);
     }
     // The APY-basis rule is asserted on the tools that actually RETURN an APY.
-    // `morpho.markets.activity` returns none at all - it is a transaction log -
-    // so requiring the sentence there would only teach the next author to paste
-    // a claim the tool does not support.
+    // Three tools return none at all, so requiring the sentence there would only
+    // teach the next author to paste a claim the tool does not support:
+    // `morpho.markets.activity` is a transaction log; `morpho.rewards.get`
+    // returns claimable token AMOUNTS rather than any rate, and deliberately
+    // says a reward APR is not part of the lending rate instead of quoting one;
+    // `morpho.wallet.balance` is an on-chain balance and allowance read that
+    // touches no rate at all.
+    const NO_APY_TOOL_IDS = ["morpho.markets.activity", "morpho.rewards.get", "morpho.wallet.balance"];
     for (const tool of MORPHO_TOOLS) {
-      if (tool.toolId === "morpho.markets.activity") continue;
+      if (NO_APY_TOOL_IDS.includes(tool.toolId)) continue;
       expect(tool.description, tool.toolId).toMatch(/EXCLUDE/);
       expect(tool.description, tool.toolId).toMatch(/INCLUDE/);
     }
