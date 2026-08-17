@@ -121,6 +121,9 @@ const { configureLighterTradingCredentialScopeResolver } = await import(
 const { configureLighterReadOnlyAccountAuthResolver } = await import(
   "@vex-agent/tools/protocols/lighter/read-account-auth.js"
 );
+const { configureLighterKeyRegistrationExecutor } = await import(
+  "@vex-agent/tools/protocols/lighter/key-registration-execution.js"
+);
 const { validatePreparedActionFollowUp } = await import(
   "@vex-agent/tools/registry/prepared-action-follow-ups.js"
 );
@@ -450,6 +453,40 @@ beforeEach(() => {
 });
 
 describe("Lighter agent read handlers", () => {
+  it("routes key-registration status only through evidence-only reconciliation", async () => {
+    const reconcile = vi.fn(async () => ({
+      source: "vex_lighter_key_registration" as const,
+      status: "active" as const,
+      intentId: "lighter-keyreg-1",
+      executionState: "active",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      txHash: "a".repeat(80),
+      postRegistrationNonce: "1",
+      message: "Registration verified.",
+    }));
+    const uninstall = configureLighterKeyRegistrationExecutor({
+      execute: vi.fn(),
+      reconcile,
+    });
+    try {
+      const data = await callJson("lighter.key.register.status", {
+        intentId: "lighter-keyreg-1",
+      });
+
+      expect(data.status).toBe("active");
+      expect(reconcile).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        intentId: "lighter-keyreg-1",
+        walletResolution: READ_CTX.walletResolution,
+        walletPolicy: READ_CTX.walletPolicy,
+        abortSignal: undefined,
+      });
+    } finally {
+      uninstall();
+    }
+  });
+
   it("prepares an approval-gated Lighter order create without signing or submitting", async () => {
     mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(previewRow());
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);

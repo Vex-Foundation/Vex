@@ -69,6 +69,21 @@ export async function executeApprovedLighterKeyRegistration(
   input: Parameters<LighterKeyRegistrationExecutor["execute"]>[0],
   deps: LighterKeyRegistrationExecutionDeps = defaultDeps(),
 ): Promise<LighterKeyRegistrationExecutionResult> {
+  return runLighterKeyRegistration(input, deps, true);
+}
+
+export async function reconcileLighterKeyRegistration(
+  input: Parameters<LighterKeyRegistrationExecutor["reconcile"]>[0],
+  deps: LighterKeyRegistrationExecutionDeps = defaultDeps(),
+): Promise<LighterKeyRegistrationExecutionResult> {
+  return runLighterKeyRegistration(input, deps, false);
+}
+
+async function runLighterKeyRegistration(
+  input: Parameters<LighterKeyRegistrationExecutor["execute"]>[0],
+  deps: LighterKeyRegistrationExecutionDeps,
+  allowSubmission: boolean,
+): Promise<LighterKeyRegistrationExecutionResult> {
   let intent = await deps.readIntent(input.intentId);
   if (intent === null || intent.sessionId !== input.sessionId) {
     throw executionError("the approved registration intent is unavailable in this session");
@@ -77,11 +92,20 @@ export async function executeApprovedLighterKeyRegistration(
   if (intent.approvalStatus !== "approved") {
     throw executionError("the registration intent does not have durable approval");
   }
-  if (!(await deps.integrationEnabled(intent.environment, intent.walletAddress))) {
-    throw executionError("the Lighter integration was disabled before execution");
-  }
-  if (!deps.releaseGateEnabled()) {
-    throw executionError("the independent key-registration release gate is closed");
+  if (allowSubmission) {
+    if (!(await deps.integrationEnabled(intent.environment, intent.walletAddress))) {
+      throw executionError("the Lighter integration was disabled before execution");
+    }
+    if (!deps.releaseGateEnabled()) {
+      throw executionError("the independent key-registration release gate is closed");
+    }
+  } else if (
+    intent.executionState === "slot_reserved"
+    || intent.executionState === "key_generated_encrypted"
+    || intent.executionState === "approval_pending"
+    || intent.executionState === "approved"
+  ) {
+    throw executionError("the registration has no staged transaction to reconcile");
   }
 
   await assertOwnedMasterAccount(deps.client, intent);
@@ -538,6 +562,7 @@ function defaultDeps(): LighterKeyRegistrationExecutionDeps {
 export function installLighterKeyRegistrationExecutor(): () => void {
   return configureLighterKeyRegistrationExecutor({
     execute: (input) => executeApprovedLighterKeyRegistration(input),
+    reconcile: (input) => reconcileLighterKeyRegistration(input),
   });
 }
 

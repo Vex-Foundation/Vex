@@ -418,6 +418,24 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit.status"],
   },
   {
+    toolId: "lighter.key.register.status",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Check and reconcile one already-staged Lighter Core key registration from exact provider and local vault evidence. Use after the approved registration returns submitted_pending_verification, ambiguity_unresolved, registered_key_conflict, or key_verified_pending_nonce. It reads the exact public API-key slot, verifies that it equals the vault-derived public key, runs the official CheckClient equivalent, and requires the next nonce to equal the approved nonce plus one before promoting the local encrypted credential to active. This evidence-only path structurally refuses intents that have not staged a TxType 8 transaction and never signs, calls sendTx, retries, deposits, trades, transfers, or withdraws.",
+    mutating: false,
+    actionKind: "read",
+    params: [{
+      key: "intentId",
+      type: "string",
+      required: true,
+      description:
+        "Session-scoped Lighter key-registration intent id returned by lighter.key.register.prepare or the approved registration result.",
+    }],
+    exampleParams: { intentId: "lighter-onboard-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.key.register.status"],
+  },
+  {
     toolId: "lighter.order.status",
     namespace: "lighter",
     lifecycle: "active",

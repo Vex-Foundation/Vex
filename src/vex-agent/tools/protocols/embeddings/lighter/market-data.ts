@@ -197,7 +197,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.key.register": {
     embeddingText: embeddingText(
       `Approval-resume target for one exact prepared Lighter key registration. ` +
-      `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused; the release gate and signing/submission boundary remain independently closed in this checkpoint. ` +
+      `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused; the privileged release gate remains independently default-closed. When opened, main signs and submits the exact TxType 8 registration, then requires exact key, CheckClient, and nonce evidence before activation. ` +
       `Example queries: execute approved Lighter key registration, resume Lighter key approval.`,
     ),
     aliases: ["approved lighter key registration", "lighter key register execute"],
@@ -205,6 +205,18 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     ecosystems: ["lighter", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
+  },
+  "lighter.key.register.status": {
+    embeddingText: embeddingText(
+      `Reconcile an already-staged Lighter key registration from exact public provider evidence without signing or resubmitting. ` +
+      `Use when: an approved registration returned submitted_pending_verification, ambiguity_unresolved, registered_key_conflict, or key_verified_pending_nonce. It can verify the exact slot, run official CheckClient, synchronize nonce +1, and activate the encrypted key, but structurally refuses an unstaged approved intent. ` +
+      `Example queries: check my Lighter key registration, reconcile Lighter API key setup, is my Lighter trading key active.`,
+    ),
+    aliases: ["lighter key registration status", "reconcile lighter api key", "lighter trading key active"],
+    exampleIntents: ["check my Lighter key registration", "reconcile Lighter API key setup", "is my Lighter trading key active"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
   },
   "lighter.deposit": {
     embeddingText: embeddingText(
@@ -284,7 +296,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 22;
+const EXPECTED_COUNT = 23;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

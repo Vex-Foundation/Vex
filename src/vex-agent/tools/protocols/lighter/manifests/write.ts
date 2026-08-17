@@ -67,7 +67,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. This checkpoint records the exact approval but remains behind both the independent key-registration release gate and an uninstalled signing/submission boundary, so it cannot yet sign the EIP-191 ownership message or call sendTx.",
+      "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. When the independent privileged key-registration release gate is open, Electron main revalidates exact wallet ownership, slot vacancy, nonce, vault-derived public key, and workflow state; signs Lighter's human-readable EIP-191 ownership message locally; persists TxType 8 structural identity before sendTx; and never returns or stores signatures or the signed payload. It activates the encrypted trading credential only after exact live public-key match, official CheckClient success, and nonce +1 synchronization. Ambiguous outcomes are reconciliation-only and are never blindly resubmitted.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [KEY_REGISTRATION_INTENT_ID_PARAM],

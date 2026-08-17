@@ -5,6 +5,7 @@ import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import {
   executeApprovedLighterKeyRegistration,
+  reconcileLighterKeyRegistration,
   type LighterKeyRegistrationExecutionDeps,
 } from "../key-registration-execution.js";
 
@@ -98,8 +99,10 @@ function makeDeps(options: {
   readonly ownedAccount?: boolean;
   readonly postRegistrationNonce?: number;
   readonly checkerPublicKey?: string;
+  readonly initialExecutionState?: LighterKeyRegistrationReservationRow["executionState"];
 } = {}) {
-  let current = intent();
+  const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
+  let current = intent(options.initialExecutionState);
   let apiKeyReadCount = 0;
   let nonceReadCount = 0;
   const events: string[] = [];
@@ -136,14 +139,18 @@ function makeDeps(options: {
       })),
       getApiKeys: vi.fn(async () => {
         apiKeyReadCount += 1;
-        const publicKey = apiKeyReadCount === 1 ? null : options.reconciliationPublicKey;
+        const publicKey = initiallyApproved && apiKeyReadCount === 1
+          ? null
+          : options.reconciliationPublicKey;
         return { code: 200, api_keys: publicKey === null ? [] : [slot(publicKey ?? PUBLIC_KEY)] };
       }),
       getNextNonce: vi.fn(async () => {
         nonceReadCount += 1;
         return {
           code: 200,
-          nonce: nonceReadCount === 1 ? 0 : (options.postRegistrationNonce ?? 1),
+          nonce: initiallyApproved && nonceReadCount === 1
+            ? 0
+            : (options.postRegistrationNonce ?? 1),
         };
       }),
       sendTx: vi.fn(options.sendTx ?? (async () => {
@@ -318,5 +325,30 @@ describe("Lighter key registration execution", () => {
     expect(result.status).toBe("key_verified_pending_nonce");
     expect(result.executionState).toBe("key_verified");
     expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a submitted transaction without reaching any signing or sendTx path", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+    });
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("active");
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(setup.deps.integrationEnabled).not.toHaveBeenCalled();
+    expect(setup.deps.releaseGateEnabled).not.toHaveBeenCalled();
+  });
+
+  it("refuses evidence-only reconciliation before a transaction is staged", async () => {
+    const setup = makeDeps({ reconciliationPublicKey: PUBLIC_KEY });
+
+    await expect(reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("no staged transaction to reconcile");
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
   });
 });

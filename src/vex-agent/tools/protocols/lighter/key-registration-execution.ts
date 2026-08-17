@@ -28,6 +28,14 @@ export interface LighterKeyRegistrationExecutor {
     readonly walletPolicy: WalletPolicy;
     readonly abortSignal?: AbortSignal;
   }): Promise<LighterKeyRegistrationExecutionResult>;
+  /** Evidence-only recovery; this method is structurally unable to sign or send. */
+  reconcile(input: {
+    readonly sessionId: string;
+    readonly intentId: string;
+    readonly walletResolution: WalletResolution;
+    readonly walletPolicy: WalletPolicy;
+    readonly abortSignal?: AbortSignal;
+  }): Promise<LighterKeyRegistrationExecutionResult>;
 }
 
 let configuredExecutor: LighterKeyRegistrationExecutor | null = null;

@@ -24,6 +24,7 @@ const LIGHTER_TOOL_IDS = [
   "lighter.apiKeys.inspect",
   "lighter.order.preview",
   "lighter.deposit.status",
+  "lighter.key.register.status",
   "lighter.order.status",
   "lighter.orderbook",
   "lighter.recentTrades",
@@ -85,6 +86,10 @@ describe("Lighter agent discovery surface", () => {
     expect(getProtocolManifest("lighter.key.register")).toMatchObject({
       mutating: true,
       actionKind: "user_wallet_broadcast",
+    });
+    expect(getProtocolManifest("lighter.key.register.status")).toMatchObject({
+      mutating: false,
+      actionKind: "read",
     });
   });
 

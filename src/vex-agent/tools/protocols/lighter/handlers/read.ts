@@ -78,6 +78,7 @@ import {
   resolveSavedLighterTradingCredentialScope,
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
+import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
 
 // Resolves the account index and, when one can be derived from the saved trading
 // key, a short-lived read-only auth token for an authenticated account read.
@@ -1076,6 +1077,28 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter candles unavailable (${failureDetail("lighter.candles", err)})`);
+    }
+  },
+
+  "lighter.key.register.status": async (params, context) => {
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail("Lighter key-registration status requires a host session id.");
+    const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
+    if (intentId.length === 0) return fail("Missing required: intentId.");
+    const executor = getConfiguredLighterKeyRegistrationExecutor();
+    if (executor === null) {
+      return fail("The privileged Lighter key-registration reconciliation boundary is unavailable.");
+    }
+    try {
+      return ok(await executor.reconcile({
+        sessionId,
+        intentId,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        abortSignal: context.abortSignal,
+      }));
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
     }
   },
 
