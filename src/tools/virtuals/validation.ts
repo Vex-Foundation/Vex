@@ -149,7 +149,7 @@ export function normalizeAgent(raw: unknown): VirtualsAgent | null {
 // ── Envelope (zod narrows the Strapi wrapper) ──────────────────────
 
 const envelopeSchema = z
-  .object({ data: z.unknown(), meta: z.unknown().optional() })
+  .object({ data: z.unknown().optional(), meta: z.unknown().optional() })
   .passthrough();
 
 function readPagination(meta: unknown): VirtualsPagination | null {

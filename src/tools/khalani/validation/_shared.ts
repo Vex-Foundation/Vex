@@ -57,6 +57,7 @@ export function asNumber(field: string): z.ZodType<number> {
  */
 export const asOptionalString: z.ZodType<string | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "string" && v.length > 0 ? v : undefined));
 
 /**
@@ -65,6 +66,7 @@ export const asOptionalString: z.ZodType<string | undefined> = z
  */
 export const asStringArray: z.ZodType<string[]> = z
   .unknown()
+  .optional()
   .transform((v) =>
     Array.isArray(v) ? v.filter((entry): entry is string => typeof entry === "string") : [],
   );
@@ -75,6 +77,7 @@ export const asStringArray: z.ZodType<string[]> = z
  */
 export const optionalRecord: z.ZodType<Record<string, unknown> | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => (isRecordValue(v) ? v : undefined));
 
 /** Local `isRecord` (non-null, non-array object) used inside transforms. */

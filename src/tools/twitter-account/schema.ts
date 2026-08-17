@@ -204,10 +204,14 @@ const TwitterAccountParamsBaseSchema = z.discriminatedUnion("action", [
     action: z.literal("user_details"),
   }).merge(UserTarget),
   z.object({ action: z.literal("user_search"), query: NonEmptyString }).merge(WithCursor20),
-  z.object({ action: z.literal("user_timeline") }).merge(UserTarget).merge(WithCursor20),
-  z.object({ action: z.literal("user_replies") }).merge(UserTarget).merge(WithCursor20),
-  z.object({ action: z.literal("user_followers") }).merge(UserTarget).merge(WithCursor100),
-  z.object({ action: z.literal("user_following") }).merge(UserTarget).merge(WithCursor100),
+  // `UserTarget` merges LAST on purpose. It carries the "username or userId"
+  // refinement, and `.merge()` refuses a receiver that already holds one, so
+  // merging it first would throw at module load. Order does not affect the
+  // resulting shape: the three sources share no keys.
+  z.object({ action: z.literal("user_timeline") }).merge(WithCursor20).merge(UserTarget),
+  z.object({ action: z.literal("user_replies") }).merge(WithCursor20).merge(UserTarget),
+  z.object({ action: z.literal("user_followers") }).merge(WithCursor100).merge(UserTarget),
+  z.object({ action: z.literal("user_following") }).merge(WithCursor100).merge(UserTarget),
 ]);
 
 const TwitterAccountParamsCheckedSchema = TwitterAccountParamsBaseSchema.superRefine((params, ctx) => {
