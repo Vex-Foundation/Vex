@@ -5,11 +5,11 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.account.onboarding.status": {
     embeddingText: embeddingText(
       `Inspect whether the selected Vex EVM wallet is ready to trade on Lighter Core and compute the minimal onboarding legs still required. ` +
-      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, or before preparing a deposit. It reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
-      `Example queries: can this wallet trade on Lighter, what remains to onboard Lighter, check my Lighter account readiness.`,
+      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, asks Vex to set up Lighter, or expresses an intent to trade perps on Lighter. It resolves the selected wallet automatically and reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
+      `Example queries: set up my Lighter account, get me ready to trade on Lighter, I want to trade perps on Lighter, can this wallet trade on Lighter.`,
     ),
-    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "lighter wallet setup"],
-    exampleIntents: ["can this wallet trade on Lighter", "what remains to onboard Lighter", "check my Lighter account readiness"],
+    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
+    exampleIntents: ["set up my Lighter account", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
     ecosystems: ["lighter", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
@@ -173,11 +173,11 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
-      `Use when: the user wants to fund or create their Lighter account after checking onboarding and deposit status. This step only creates durable intent state and a precise approval card; it does not read a private key, sign, or broadcast. ` +
-      `Example queries: prepare 11 USDC for Lighter, fund my Lighter account, create my Lighter account with a deposit.`,
+      `Use when: managed onboarding has inspected the selected wallet and the user has supplied the USDC amount they want to deposit. It activates the local integration and creates durable intent state plus a precise approval card; it does not read a private key, sign, or broadcast. ` +
+      `Example queries: deposit 11 USDC to set up Lighter, fund my Lighter account with 5 USDC, use 20 USDC to get me ready for Lighter perps.`,
     ),
-    aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet"],
-    exampleIntents: ["prepare 11 USDC for Lighter", "fund my Lighter account", "create my Lighter account with a deposit"],
+    aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet", "deposit for lighter setup"],
+    exampleIntents: ["deposit 11 USDC to set up Lighter", "fund my Lighter account with 5 USDC", "use 20 USDC for Lighter perps"],
     ecosystems: ["lighter", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "low",
@@ -185,11 +185,11 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.key.register.prepare": {
     embeddingText: embeddingText(
       `Prepare a separate approval for registering a locally encrypted Lighter trading credential on the selected Vex-wallet-owned Core account. ` +
-      `Use when: Phase 2 has resolved the account and onboarding status says key registration remains. It reserves a full-read-proven free slot, generates and encrypts the key in the privileged process, and creates an exact approval card without signing or submitting. ` +
-      `Example queries: prepare my Lighter key registration, finish Lighter account setup, register a Vex trading key.`,
+      `Use when: managed onboarding has resolved the selected wallet's funded account and secure trading setup remains. Vex reserves a full-read-proven free slot, generates and encrypts the key in the privileged process, and creates an exact approval card without asking the user for account, slot, nonce, fingerprint, or key material. ` +
+      `Example queries: finish my Lighter setup, complete secure Lighter trading access, get my funded Lighter account ready to trade.`,
     ),
     aliases: ["lighter key registration", "register lighter api key", "lighter trading key setup"],
-    exampleIntents: ["prepare my Lighter key registration", "finish Lighter account setup", "register a Vex trading key"],
+    exampleIntents: ["finish my Lighter setup", "complete secure Lighter trading access", "get my funded Lighter account ready to trade"],
     ecosystems: ["lighter", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "low",

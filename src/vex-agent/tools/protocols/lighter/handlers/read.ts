@@ -24,7 +24,10 @@ import logger from "@utils/logger.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
-import { LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "@tools/lighter/wallet-funding/constants.js";
+import {
+  LIGHTER_DEPOSIT_MIN_USDC,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+} from "@tools/lighter/wallet-funding/constants.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { buildLighterOnboardingReaders } from "@tools/lighter/wallet-funding/onboarding-readers.js";
 import { resolveLighterOnboardingStatus } from "@tools/lighter/wallet-funding/onboarding-status.js";
@@ -364,15 +367,15 @@ function resolvePreviewAccountIndex(
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
       `Multiple Lighter ${environment} trading accounts are configured (accounts ${accounts}); Vex will not guess which one to trade with.`,
-      "Pass the accountIndex for the account you want, or remove the extra keys in Settings > API keys so only the intended account remains.",
+      "Ask the user which Lighter account they intend to trade from only because multiple accounts are configured; do not ask them to choose an API-key index.",
     );
   }
   const savedScope = scopes[0] ?? resolveDefaultLighterTradingCredentialScope(environment);
   if (!savedScope) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `No saved Lighter ${environment} trading API key is configured.`,
-      "Open Settings > API keys and save one Lighter trading API key for this environment, then ask again without an account id.",
+      `Managed Lighter trading access is not ready for ${environment}.`,
+      "Start or continue managed Lighter onboarding for the selected wallet. Vex will generate, register, and store the trading credential locally; do not ask the user to paste a key or choose an index.",
     );
   }
   return savedScope.accountIndex;
@@ -427,6 +430,25 @@ async function resolvePreviewApiKeyIndex(
   }
 }
 
+async function hasActiveManagedTradingCredential(
+  environment: LighterEnvironment,
+  accountIndex: number,
+): Promise<boolean> {
+  const savedScope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
+  if (savedScope === null) return false;
+  const response = await getLighterClient().getApiKeys(environment, {
+    accountIndex,
+    apiKeyIndex: savedScope.apiKeyIndex,
+  });
+  return response.code === 200 && response.api_keys.some((key) => {
+    const publicKey = key.public_key.startsWith("0x") ? key.public_key.slice(2) : key.public_key;
+    return key.account_index === accountIndex
+      && key.api_key_index === savedScope.apiKeyIndex
+      && publicKey.length > 0
+      && /[1-9a-f]/i.test(publicKey);
+  });
+}
+
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.account.onboarding.status": async (params, context) => {
     const environment = readEnvironment(params);
@@ -456,10 +478,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       }
     }
 
-    // Intended position collateral is optional; without it the plan reports the
-    // account/key state and only a key-registration leg if one is missing.
-    let requiredCollateralUnits = 0n;
+    // When no trade size is known, use the venue's activation minimum so a new
+    // or unfunded account still produces a funding leg. The assistant then asks
+    // the user only for their desired deposit amount, never internal indexes.
+    let requiredCollateralUnits = decimalToBaseUnits(
+      LIGHTER_DEPOSIT_MIN_USDC,
+      LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+    );
     const requiredCollateral = params.amountIn;
+    const depositAmountProvided = requiredCollateral !== undefined;
     if (requiredCollateral !== undefined) {
       if (typeof requiredCollateral !== "string") {
         return fail("amountIn must be a decimal USDC string, for example \"11\".");
@@ -477,6 +504,29 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress,
         requiredCollateralUnits,
       });
+      const managedTradingAccessActive = status.accountIndex !== null
+        && status.tradingKeyRegistered
+        && await hasActiveManagedTradingCredential(environment.value, status.accountIndex);
+      const plan = !managedTradingAccessActive
+        && !status.plan.legs.some((leg) => leg.kind === "register_trading_key")
+        ? {
+            ...status.plan,
+            ready: false,
+            legs: [
+              ...status.plan.legs,
+              {
+                kind: "register_trading_key",
+                reason: "Create and register locally encrypted Vex trading access before any order can be signed.",
+              },
+            ],
+          }
+        : status.plan;
+      const needsFunding = BigInt(status.accountCollateralUnits) < requiredCollateralUnits;
+      const userGuidance = plan.ready && managedTradingAccessActive
+        ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
+        : !depositAmountProvided && needsFunding
+          ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Do not ask for a wallet address, account index, API-key index, nonce, fingerprint, or key.`
+          : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
       return ok({
         ...liveProvenance(
           environment.value,
@@ -485,6 +535,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           { walletAddress, authenticated: false },
         ),
         ...status,
+        tradingKeyRegistered: managedTradingAccessActive,
+        managedTradingAccessActive,
+        plan,
+        depositAmountProvided,
+        userGuidance,
       });
     } catch (err) {
       return fail(
@@ -951,11 +1006,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           "Do not say the order can be placed, executed, submitted, or broadcast directly from this preview.",
           approvalReady
             ? "Tell the user they can continue with the Prepare trade approval button in the host UI. Do not mention internal tool names."
-            : "If the user wants to continue, explain that approval preparation requires adding one Lighter trading API key in Settings/API keys. Do not ask for a separate read-only token or ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
+            : "If the user wants to continue, start or continue managed Lighter onboarding for the selected wallet. Vex generates and stores the credential locally; never ask the user to paste a key, visit Settings, or choose an account/API-key index.",
         ],
         userGuidance: approvalReady
           ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. Tell the user they can continue with the Prepare trade approval button in the host UI; do not mention internal tool names."
-          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Preparing it for approval requires one Lighter trading API key stored in Vex's encrypted local vault through Settings/API keys.",
+          : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Tell the user Vex must finish managed Lighter setup first, then continue onboarding without asking them to paste a key or provide technical identifiers.",
         safety:
           "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
       });

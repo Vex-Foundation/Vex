@@ -5,7 +5,10 @@ import {
   getLighterOnboardingWorkflow,
   type LighterOnboardingWorkflowRow,
 } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
-import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
+import {
+  isLighterIntegrationEnabled,
+  setLighterIntegrationEnabled,
+} from "@vex-agent/db/repos/lighter-integration-settings.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   resolveSelectedAddress,
@@ -205,7 +208,7 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
   }
   switch (intent.executionState) {
     case "credited":
-      return "The deposit is credited; no retry is needed.";
+      return "The deposit is credited; no retry is needed. Continue managed onboarding by preparing secure trading access if the account is not already ready.";
     case "failed":
       return "The deposit is terminally failed. Verify the reason before preparing a new deposit.";
     case "approval_pending":
@@ -412,11 +415,18 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(err);
     }
 
-    const integrationEnabled = await isLighterIntegrationEnabled("core", walletAddress);
-    if (!integrationEnabled) {
-      return fail(
-        "Lighter is not enabled for this Vex wallet. Enable the Lighter integration in Settings before preparing a deposit; enabling it does not move funds.",
-      );
+    if (!(await isLighterIntegrationEnabled("core", walletAddress))) {
+      try {
+        await setLighterIntegrationEnabled({
+          environment: "core",
+          walletAddress,
+          enabled: true,
+        });
+      } catch (err) {
+        return fail(
+          `Vex could not start managed Lighter setup for the selected wallet: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     const amountInRaw = params.amountIn;

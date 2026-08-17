@@ -7,7 +7,10 @@ import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constant
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
 import { LIGHTER_KEY_REGISTRATION_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
-import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
+import {
+  isLighterIntegrationEnabled,
+  setLighterIntegrationEnabled,
+} from "@vex-agent/db/repos/lighter-integration-settings.js";
 import {
   getLighterOnboardingWorkflow,
   transitionLighterOnboardingWorkflowWith,
@@ -123,7 +126,7 @@ function approvalPreparedPayload(
       rejectLabel: "Reject",
     },
     userGuidance:
-      "An approval card is available in the app. Tell the user to verify the wallet, account, API-key index, fingerprint, and authority, then click Approve key registration only if they are correct.",
+      "Vex prepared the remaining secure trading setup and an approval card is available in the app. Tell the user to review and approve that setup if they want to continue. Do not ask them for or require them to validate account indexes, API-key indexes, nonces, fingerprints, or key material unless they explicitly request technical details.",
   };
 }
 
@@ -280,9 +283,17 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       return walletScopeErrorToResult(error);
     }
     if (!(await isLighterIntegrationEnabled("core", walletAddress))) {
-      return fail(
-        "Lighter is not enabled for this Vex wallet. Enable the integration before preparing key registration; enabling it does not register a key.",
-      );
+      try {
+        await setLighterIntegrationEnabled({
+          environment: "core",
+          walletAddress,
+          enabled: true,
+        });
+      } catch (error) {
+        return fail(
+          `Vex could not start managed Lighter setup for the selected wallet: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
     let workflow: LighterOnboardingWorkflowRow | null;
     try {

@@ -64,15 +64,31 @@ describe("buildProtocolsPrompt", () => {
     expect(section).toContain("Inspect `approvalReady`");
     expect(section).toContain("Prepare trade approval button");
     expect(section).toContain("Do not print internal tool names");
-    expect(section).toContain("Settings/API keys");
-    expect(section).toContain("Do not ask normal users to add a separate read-only token");
-    expect(section).toContain("Vex should infer the key scope from the saved trading key");
+    expect(section).toContain("finish the managed Lighter setup");
+    expect(section).toContain("never ask the user to paste a trading key");
+    expect(section).not.toContain("Settings/API keys");
     expect(section).toContain("Do not say a preview can be broadcast after only supplying an API-key index");
     expect(section).toContain("render `previewSummary.rows` as a Markdown table");
     expect(section).toContain("Parameter | Value | Notes");
     expect(section).toContain("Do not render raw preview internals");
     expect(section).toContain("Do not ask the user to confirm");
     expect(section).toContain("never emit raw HTML");
+  });
+
+  it("routes plain-language Lighter setup without exposing internal identifiers", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("## Lighter Onboarding Routing")[1]?.split("\n## ")[0] ?? "";
+    expect(section).toContain('"set up my Lighter account"');
+    expect(section).toContain('"I want to trade perps on Lighter"');
+    expect(section).toContain("How much USDC do you want to deposit?");
+    expect(section).toContain("Vex resolves them internally");
+    expect(section).toContain("activates the local integration automatically");
+    expect(section).toContain("Never ask a normal user to visit the Lighter dashboard");
+    expect(section).toContain("separate approval-gated actions");
+    expect(section).toContain("ready to trade only after onboarding status proves");
+    expect(section).not.toContain("ask the user for their account index");
+    expect(section).not.toContain("Ask the user to paste an API key");
   });
 
   // Owner add-on (2026-07-23): the kyberswap entry's chain list must be

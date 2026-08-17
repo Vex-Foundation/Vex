@@ -263,11 +263,23 @@ export function buildProtocolsPrompt(): string {
   lines.push("- Reads on Robinhood Chain go direct-RPC: `wallet_balances` for balances, `chain_read` for tx receipts / ERC-721 mints / a direct `erc20_balance` read (alias `robinhood` / id 4663). `khalani.tokens.balances` does NOT cover it.");
   lines.push("");
 
+  lines.push("## Lighter Onboarding Routing");
+  lines.push("");
+  lines.push("- Treat plain-language requests such as \"set up my Lighter account\", \"get me ready to trade on Lighter\", or \"I want to trade perps on Lighter\" as managed onboarding requests. First inspect the selected Vex EVM wallet's Lighter Core onboarding status. Omit wallet addresses, account indexes, API-key indexes, nonces, fingerprints, and key fields from normal-user questions; Vex resolves them internally.");
+  lines.push(`- If the account needs funding and the user has not stated an amount, ask exactly one setup question: "How much USDC do you want to deposit? Lighter's minimum is 1 USDC." Do not ask for any technical identifier.`);
+  lines.push("- Once the user supplies an amount, prepare the exact deposit approval for the selected wallet. This onboarding intent activates the local integration automatically; never send the user to Settings to enable Lighter.");
+  lines.push("- A first deposit may create the Lighter account. After an approved deposit, reconcile the durable deposit workflow until exact Lighter credit and wallet ownership are proven. Never treat an Ethereum receipt or account existence alone as completed funding, and never blindly retry an ambiguous deposit.");
+  lines.push("- When funding and account ownership are proven, continue the managed setup by preparing the locally generated trading credential registration. Vex chooses the account, unused API-key slot, nonce, and encrypted credential internally. Never ask a normal user to visit the Lighter dashboard, paste an API key, select an index, or validate a fingerprint.");
+  lines.push("- Deposit and trading-credential registration remain separate approval-gated actions. Describe the latter as finishing secure trading setup and point to its approval card; never imply either approval was granted automatically.");
+  lines.push("- Say the user is ready to trade only after onboarding status proves adequate collateral and the locally encrypted Vex credential is registered and active. If provider confirmation is pending, say setup is still completing and continue from durable status; do not expose internal identifiers as retry instructions.");
+  lines.push("- If onboarding is already ready, proceed to the requested market/order preview and ask only for ordinary trade inputs that are genuinely missing, such as market, side, size, price, or order type.");
+  lines.push("");
+
   lines.push("## Lighter Order Preview Routing");
   lines.push("");
   lines.push("- `lighter.order.preview` is a live-data-backed read-only preview and never places, submits, executes, or broadcasts an order. Do not call it a simulation.");
   lines.push("- After a successful Lighter preview, render `previewSummary.rows` as a Markdown table with `Parameter | Value | Notes`. Do not use bullets for the main preview unless the user asks for a shorter summary. Do not render raw preview internals such as `integer`, `decimals`, `display` wrappers, booleans, or JSON object fragments unless the user asks for technical details.");
-  lines.push("- Inspect `approvalReady`. If it is true, say the next step is the Prepare trade approval button in the host UI. Do not print internal tool names to normal users. If `approvalReady` is false, say the preview is read-only and approval preparation requires adding one Lighter trading API key in Settings/API keys. Do not ask normal users to add a separate read-only token or choose an API-key index; Vex should infer the key scope from the saved trading key when possible.");
+  lines.push("- Inspect `approvalReady`. If it is true, say the next step is the Prepare trade approval button in the host UI. Do not print internal tool names to normal users. If `approvalReady` is false, say Vex must finish the managed Lighter setup before preparing the order approval. Continue onboarding for the selected wallet; never ask the user to paste a trading key, visit Settings, or choose an account/API-key index.");
   lines.push("- Do not ask the user to confirm that you should place, execute, submit, or broadcast directly from a preview. Do not say a preview can be broadcast after only supplying an API-key index. Approval preparation is not live submission, and live trading may still be release-gated.");
   lines.push("- Format preview notes with normal Markdown bullets or sentences; never emit raw HTML such as `<br>`.");
   lines.push("");

@@ -171,7 +171,7 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (preview.apiKeyIndex === null) {
       return fail(
-        "Lighter order create preparation needs a saved Lighter trading API key for this account. Open Settings > API keys, add the Lighter trading key, then run a fresh preview.",
+        "Managed Lighter trading access is not active for this account. Continue managed Lighter onboarding for the selected wallet, then run a fresh preview; do not ask the user to paste a key or choose an index.",
       );
     }
 
@@ -189,7 +189,14 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       vaultCredentialId,
     });
     if (!readiness.ready) {
-      return fail(`Lighter trading credential is not ready: ${readiness.reason}`);
+      if (readiness.code === "unsafe_vault_reference") {
+        return fail(
+          "Vex rejected an unsafe credential reference. Trading credentials must use an opaque local vault reference; never paste or expose a private key.",
+        );
+      }
+      return fail(
+        "Managed Lighter trading access is not ready. Continue the secure onboarding flow for the selected wallet; do not ask the user for account, key, or vault identifiers.",
+      );
     }
 
     const existing = await lighterOrderExecutionIntentsRepo.findLiveByPreview(

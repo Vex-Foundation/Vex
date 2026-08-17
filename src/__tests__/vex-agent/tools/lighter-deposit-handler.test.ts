@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createOrFind: vi.fn(),
   listUnresolvedDepositsForWallet: vi.fn(),
   isIntegrationEnabled: vi.fn(),
+  setIntegrationEnabled: vi.fn(),
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
   markAmbiguous: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
   isLighterIntegrationEnabled: mocks.isIntegrationEnabled,
+  setLighterIntegrationEnabled: mocks.setIntegrationEnabled,
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
@@ -179,6 +181,7 @@ beforeEach(() => {
   mocks.listUnresolvedDepositsForWallet.mockResolvedValue([]);
   mocks.getOnboardingWorkflow.mockResolvedValue(null);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
+  mocks.setIntegrationEnabled.mockResolvedValue({ enabled: true });
   mocks.releaseGateEnabled.mockReturnValue(true);
   mocks.feePreflightComplete.mockReturnValue(true);
   mocks.buildRepairDeps.mockReturnValue({ marker: "repair-deps" });
@@ -510,18 +513,25 @@ describe("lighter.deposit execution lease", () => {
 });
 
 describe("lighter.deposit.prepare", () => {
-  it("is default-closed when the wallet has not enabled Lighter", async () => {
+  it("activates managed Lighter setup before preparing a deposit", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "created",
+      intent: intentRow(),
+    });
 
     const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("not enabled for this Vex wallet");
-    expect(result.output).toContain("enabling it does not move funds");
-    expect(mocks.createOrFind).not.toHaveBeenCalled();
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.setIntegrationEnabled).toHaveBeenCalledWith({
+      environment: "core",
+      walletAddress: WALLET,
+      enabled: true,
+    });
+    expect(mocks.createOrFind).toHaveBeenCalled();
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
   });
 

@@ -55,6 +55,10 @@ const mocks = vi.hoisted(() => ({
   sessionLock: {
     withSessionControlLock: vi.fn(),
   },
+  onboarding: {
+    buildReaders: vi.fn(),
+    resolveStatus: vi.fn(),
+  },
   logger: {
     warn: vi.fn(),
     info: vi.fn(),
@@ -106,6 +110,14 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: mocks.sessionLock.withSessionControlLock,
+}));
+
+vi.mock("@tools/lighter/wallet-funding/onboarding-readers.js", () => ({
+  buildLighterOnboardingReaders: mocks.onboarding.buildReaders,
+}));
+
+vi.mock("@tools/lighter/wallet-funding/onboarding-status.js", () => ({
+  resolveLighterOnboardingStatus: mocks.onboarding.resolveStatus,
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -450,9 +462,133 @@ beforeEach(() => {
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
+  mocks.onboarding.buildReaders.mockReturnValue({ marker: "onboarding-readers" });
 });
 
 describe("Lighter agent read handlers", () => {
+  it("asks a new user only for their desired USDC deposit amount", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "5000000",
+      walletCanAcquireSettlement: true,
+      accountExists: false,
+      accountIndex: null,
+      accountCollateralUnits: "0",
+      tradingKeyRegistered: false,
+      requiredCollateralUnits: "1000000",
+      plan: {
+        legs: [
+          { kind: "approve_settlement_asset", reason: "approval" },
+          { kind: "deposit", reason: "first deposit" },
+          { kind: "register_trading_key", reason: "secure setup" },
+        ],
+        ready: false,
+        blocked: null,
+        depositUnits: "1000000",
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(mocks.onboarding.resolveStatus).toHaveBeenCalledWith(
+      { marker: "onboarding-readers" },
+      expect.objectContaining({ requiredCollateralUnits: 1_000_000n }),
+    );
+    expect(data.depositAmountProvided).toBe(false);
+    expect(data.userGuidance).toContain("How much USDC do you want to deposit?");
+    expect(data.userGuidance).not.toContain("provide your account index");
+    expect(data.userGuidance).not.toContain("choose an API-key index");
+  });
+
+  it("does not report ready from a public key without active local trading access", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "0",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "1000000",
+      plan: {
+        legs: [],
+        ready: true,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(data.managedTradingAccessActive).toBe(false);
+    expect(data.tradingKeyRegistered).toBe(false);
+    expect(data.plan).toMatchObject({
+      ready: false,
+      legs: [{ kind: "register_trading_key" }],
+    });
+    expect(data.userGuidance).not.toContain("they are ready to trade");
+  });
+
+  it("reports ready only when the saved local credential occupies its live slot", async () => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "core" && accountIndex === 42
+          ? { environment, accountIndex, apiKeyIndex: 4 }
+          : null,
+    });
+    mocks.client.getApiKeys.mockResolvedValue({
+      code: 200,
+      api_keys: [{
+        account_index: 42,
+        api_key_index: 4,
+        nonce: 1,
+        public_key: "ab".repeat(40),
+        transaction_time: 1,
+      }],
+    });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "0",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "1000000",
+      plan: {
+        legs: [],
+        ready: true,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(mocks.client.getApiKeys).toHaveBeenCalledWith("core", {
+      accountIndex: 42,
+      apiKeyIndex: 4,
+    });
+    expect(data.managedTradingAccessActive).toBe(true);
+    expect(data.plan).toMatchObject({ ready: true, legs: [] });
+    expect(data.userGuidance).toContain("they are ready to trade");
+  });
+
   it("routes key-registration status only through evidence-only reconciliation", async () => {
     const reconcile = vi.fn(async () => ({
       source: "vex_lighter_key_registration" as const,
@@ -1677,8 +1813,8 @@ describe("Lighter agent read handlers", () => {
     expect(data.nextToolId).toBeNull();
     expect(data.userGuidance).toContain("read-only preview only");
     expect(data.userGuidance).toContain("not a simulation");
-    expect(data.userGuidance).toContain("trading API key");
-    expect(data.userGuidance).toContain("encrypted local vault");
+    expect(data.userGuidance).toContain("finish managed Lighter setup");
+    expect(data.userGuidance).not.toContain("Settings/API keys");
     expect(data.userGuidance).not.toContain("<br>");
     expect(data.userGuidance).not.toMatch(/simulation only/i);
     expect(data.responseRules).toContain(
@@ -1694,7 +1830,7 @@ describe("Lighter agent read handlers", () => {
       "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
     );
     expect(data.responseRules).toContain(
-      "If the user wants to continue, explain that approval preparation requires adding one Lighter trading API key in Settings/API keys. Do not ask for a separate read-only token or ask a normal user to choose an API-key index unless Vex cannot infer it from the saved key.",
+      "If the user wants to continue, start or continue managed Lighter onboarding for the selected wallet. Vex generates and stores the credential locally; never ask the user to paste a key, visit Settings, or choose an account/API-key index.",
     );
     expect(data.userGuidance).not.toContain("4 to 254");
     expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("not_found");

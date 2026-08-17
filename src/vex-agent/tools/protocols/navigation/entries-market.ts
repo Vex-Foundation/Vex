@@ -375,15 +375,15 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "market-research",
     groupLabel: "Market Research",
     summary:
-      "Lighter exchange access for Core and Robinhood Chain: public market data (status, market catalog, depth, trades, candles), public and authenticated account reads (accounts, positions, open orders, order history, fills, API-key metadata), and the approval-gated order preview/create flow.",
+      "Managed Lighter onboarding and trading for everyday users, plus Core and Robinhood Chain market data, account reads, and approval-gated order preview/create.",
     whenToUse:
-      "Use when the user asks about Lighter markets, RHC/Core market ids, order book depth, latest fills, candles, their Lighter account, positions, open orders, trade history, or wants to preview or place a Lighter order. Order placement is always preview-first and approval-gated. Tools default to environment rhc; pass core explicitly for Lighter Core.",
+      "Use when the user asks Vex to set up Lighter, says they want to trade Lighter perps, asks about Lighter markets or their account, or wants to preview/place an order. Managed onboarding resolves the selected wallet, account, API-key slot, nonce, and local credential internally; the user supplies only the deposit amount and approvals. Order placement is always preview-first and approval-gated.",
     preferInstead:
       "Use `dexscreener` for broad multi-chain DEX pair research. Lighter order execution never happens directly from a chat request: it requires a fresh preview, an approval preparation, and the user approving the card in the host UI.",
     exampleQueries: [
-      'discover_tools(query="lighter market data", namespace="lighter")',
+      'discover_tools(query="set up my lighter account", namespace="lighter")',
+      'discover_tools(query="I want to trade perps on lighter", namespace="lighter")',
       'discover_tools(query="rhc order book depth", namespace="lighter")',
-      'discover_tools(query="lighter candles for market id", namespace="lighter")',
     ],
     aliases: ["lighter", "rhc lighter", "lighter core", "lighter market data", "lighter order book"],
     discoveryHints: [
@@ -393,8 +393,23 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       "lighter recent trades",
       "lighter candles",
       "lighter system status",
+      "set up my lighter account",
+      "get me ready for lighter perps",
     ],
     facets: [
+      {
+        label: "Get ready to trade",
+        summary:
+          "Inspect the selected wallet, ask only for the desired USDC deposit, then prepare the approval-gated deposit and managed local trading credential setup.",
+        toolPrefixes: ["lighter.account.onboarding", "lighter.deposit", "lighter.key.register"],
+        hints: [
+          "set up my lighter account",
+          "get me ready to trade on lighter",
+          "I want to trade perps on lighter",
+          "fund my lighter account",
+          "finish lighter setup",
+        ],
+      },
       {
         label: "Markets and system",
         summary: "Check Lighter environment status/config and list or inspect public markets.",
@@ -424,32 +439,6 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
           "account collateral",
           "account by wallet address",
           "api key metadata",
-        ],
-      },
-      {
-        label: "Wallet funding",
-        summary:
-          "Check durable deposit state, prepare an exact Lighter Core deposit for approval, and resume it only through the trusted approval card.",
-        toolPrefixes: ["lighter.deposit"],
-        hints: [
-          "fund lighter account",
-          "prepare lighter deposit",
-          "lighter deposit status",
-          "create lighter account",
-          "deposit stuck",
-        ],
-      },
-      {
-        label: "Trading credential setup",
-        summary:
-          "Prepare, execute through trusted approval, or reconcile an exact Lighter trading-key registration without exposing key material.",
-        toolPrefixes: ["lighter.key.register"],
-        hints: [
-          "prepare lighter key registration",
-          "register lighter api key",
-          "lighter key registration status",
-          "reconcile trading key",
-          "finish lighter account setup",
         ],
       },
       {

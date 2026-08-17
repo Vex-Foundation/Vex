@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   markApproved: vi.fn(),
   renewPristineApproved: vi.fn(),
   isIntegrationEnabled: vi.fn(),
+  setIntegrationEnabled: vi.fn(),
   getWorkflow: vi.fn(),
   transitionWorkflow: vi.fn(),
   withSessionControlLock: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
   isLighterIntegrationEnabled: mocks.isIntegrationEnabled,
+  setLighterIntegrationEnabled: mocks.setIntegrationEnabled,
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
@@ -146,6 +148,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
+  mocks.setIntegrationEnabled.mockResolvedValue({ enabled: true });
   mocks.getWorkflow.mockResolvedValue({
     workflowState: "account_resolved",
     resolvedAccountIndex: 42,
@@ -186,6 +189,23 @@ beforeEach(() => {
 });
 
 describe("lighter.key.register.prepare", () => {
+  it("activates managed setup without asking the user to visit Settings", async () => {
+    mocks.isIntegrationEnabled.mockResolvedValue(false);
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.setIntegrationEnabled).toHaveBeenCalledWith({
+      environment: "core",
+      walletAddress: WALLET,
+      enabled: true,
+    });
+    expect(result.data).toMatchObject({ status: "approval_prepared" });
+  });
+
   it("adopts one live wallet-owned master account before reserving a key slot", async () => {
     mocks.getWorkflow.mockResolvedValue({
       workflowState: "integration_enabled",

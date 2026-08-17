@@ -177,6 +177,22 @@ describe("Lighter agent discovery surface", () => {
     );
   });
 
+  it.each([
+    "hey, set up my Lighter account",
+    "I want to trade perps on Lighter",
+    "get me ready to trade on Lighter",
+  ])("recalls managed onboarding from a normal-user request: %s", async (query) => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query,
+      limit: 5,
+    });
+    expect(result.success).toBe(true);
+    expect(result.tools.map((tool) => tool.toolId)).toContain(
+      "lighter.account.onboarding.status",
+    );
+  });
+
   it("pins an exact lighter tool id query to that tool", async () => {
     const result = await discoverProtocolCapabilities({ query: "lighter.orderbook", limit: 5 });
     expect(result.success).toBe(true);
