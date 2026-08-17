@@ -275,6 +275,153 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(params).toEqual([ROW.intent_id, ROW.session_id, expiresAt]);
   });
 
+  it("renews a confirmed allowance only as a fresh deposit-only approval", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const preflight = {
+      ...INPUT.preflight,
+      walletAllowanceUnits: ROW.amount_units,
+      approvalRequired: false,
+      approveGasLimit: "0",
+      approveMaxFeeWei: "0",
+      totalMaxFeeWei: ROW.preflight_deposit_max_fee_wei,
+      requiredNativeBalanceWei: "8000000000000000",
+    };
+    const renewedRow = {
+      ...ROW,
+      approval_status: "approval_pending",
+      execution_state: "approve_confirmed",
+      approval_id: null,
+      approve_tx_hash: `0x${"a".repeat(64)}`,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+      preflight_wallet_allowance_units: preflight.walletAllowanceUnits,
+      preflight_approve_gas_limit: "0",
+      preflight_approve_max_fee_wei: "0",
+      preflight_total_max_fee_wei: preflight.totalMaxFeeWei,
+      preflight_required_native_balance_wei: preflight.requiredNativeBalanceWei,
+      expires_at: expiresAt,
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [renewedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.renewConfirmedApprovalDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: ROW.session_id,
+      preflight,
+      expiresAt,
+    });
+
+    expect(result).toMatchObject({
+      approvalStatus: "approval_pending",
+      executionState: "approve_confirmed",
+      approvalId: null,
+      approveTxHash: renewedRow.approve_tx_hash,
+      preflightWalletAllowanceUnits: ROW.amount_units,
+      preflightApproveGasLimit: "0",
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("approval_id = NULL");
+    expect(sql).toContain("execution_state = 'approve_confirmed'");
+    expect(sql).toContain("approve_tx_hash IS NOT NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("failure_reason IS NULL");
+    expect(params).toEqual([
+      ROW.intent_id,
+      ROW.session_id,
+      preflight.walletAddress,
+      preflight.settlementTokenAddress,
+      preflight.settlementTokenSymbol,
+      preflight.settlementTokenDecimals,
+      preflight.minimumTransferUnits,
+      preflight.walletBalanceUnits,
+      preflight.walletAllowanceUnits,
+      preflight.walletNativeBalanceWei,
+      preflight.ethereumBlockNumber,
+      preflight.lighterBlockNumber,
+      preflight.observedAt,
+      preflight.approveGasLimit,
+      preflight.depositGasLimit,
+      preflight.maxFeePerGasWei,
+      preflight.maxPriorityFeePerGasWei,
+      preflight.approveMaxFeeWei,
+      preflight.depositMaxFeeWei,
+      preflight.totalMaxFeeWei,
+      preflight.nativeReserveWei,
+      preflight.requiredNativeBalanceWei,
+      expiresAt,
+      preflight.chainId,
+      preflight.gatewayAddress,
+      preflight.assetIndex,
+      preflight.routeType,
+      preflight.amountUnits,
+    ]);
+  });
+
+  it("accepts an exact approve-confirmed state already advanced by repair", async () => {
+    const txHash = `0x${"a".repeat(64)}`;
+    const confirmedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approve_confirmed",
+      approve_tx_hash: txHash,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [confirmedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.markApproveConfirmedWith(client, ROW.intent_id, txHash);
+
+    expect(result).toMatchObject({ executionState: "approve_confirmed", approveTxHash: txHash });
+    const [advanceSql, advanceParams] = client.query.mock.calls[0]!;
+    expect(advanceSql).toContain("execution_state = 'approve_submitted'");
+    expect(advanceSql).toContain("COALESCE(approve_replacement_tx_hash, approve_tx_hash)");
+    expect(advanceParams).toEqual([ROW.intent_id, txHash]);
+    const [existingSql, existingParams] = client.query.mock.calls[1]!;
+    expect(existingSql).toContain("i.execution_state = 'approve_confirmed'");
+    expect(existingSql).toContain("w.workflow_state = 'approve_confirmed'");
+    expect(existingSql).toContain("w.active_deposit_intent_id = i.intent_id");
+    expect(existingParams).toEqual([ROW.intent_id, txHash]);
+  });
+
+  it("records a fresh approval decision without replaying the confirmed allowance transition", async () => {
+    const approvedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approve_confirmed",
+      approval_id: "approval-recovery",
+      approve_tx_hash: `0x${"a".repeat(64)}`,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [approvedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.markConfirmedApprovalRecoveryDecisionWith(client, {
+      intentId: ROW.intent_id,
+      decision: "approved",
+      approvalId: "approval-recovery",
+      reason: "fresh deposit-only approval",
+    });
+
+    expect(result).toMatchObject({
+      approvalStatus: "approved",
+      executionState: "approve_confirmed",
+      approvalId: "approval-recovery",
+    });
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql] = client.query.mock.calls[0]!;
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approve_confirmed'");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+  });
+
   it("supersedes only a pristine old-session deposit and preserves its approval audit", async () => {
     const reason =
       "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.";

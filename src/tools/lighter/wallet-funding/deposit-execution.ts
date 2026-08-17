@@ -22,6 +22,7 @@ import type {
   LighterReplacementTransaction,
   LighterStagedEvmTransaction,
 } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { effectiveApproveTxHash } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
 import {
   approvedFeeCeiling,
@@ -111,7 +112,7 @@ export interface LighterDepositExecutionDeps {
       intentId: string,
       transaction: LighterStagedEvmTransaction,
     ): Promise<unknown | null>;
-    markApproveConfirmed(intentId: string): Promise<unknown | null>;
+    markApproveConfirmed(intentId: string, txHash: string): Promise<unknown | null>;
     markDepositSubmitted(
       intentId: string,
       transaction: LighterStagedEvmTransaction,
@@ -138,6 +139,7 @@ export async function executeApprovedLighterDeposit(input: {
   readonly deps: LighterDepositExecutionDeps;
 }): Promise<LighterDepositExecutionResult> {
   const { intent, deps } = input;
+  const resumingAfterConfirmedApproval = intent.executionState === "approve_confirmed";
 
   // Gate first: default-closed, main-process-only. No signing before it opens.
   if (!deps.depositGateEnabled()) {
@@ -161,7 +163,7 @@ export async function executeApprovedLighterDeposit(input: {
     || intent.environment !== "core"
     || intent.chainId !== LIGHTER_DEPOSIT_CHAIN_ID
     || intent.approvalStatus !== "approved"
-    || intent.executionState !== "approved"
+    || (intent.executionState !== "approved" && !resumingAfterConfirmedApproval)
     || intent.amountUnits === null
     || intent.depositTo === null
     || intent.depositContract === null
@@ -170,6 +172,16 @@ export async function executeApprovedLighterDeposit(input: {
     || intent.assetIndex !== LIGHTER_USDC_ASSET_INDEX
     || intent.routeType !== 0
     || !hasValidPersistedPreflight(intent)
+    || (
+      resumingAfterConfirmedApproval
+      && (
+        effectiveApproveTxHash(intent) === null
+        || intent.approveTxFrom === null
+        || intent.approveTxNonce === null
+        || intent.depositTxHash !== null
+        || intent.depositReplacementTxHash !== null
+      )
+    )
   ) {
     return { status: "failed", stage: "approve", reason: "Deposit intent is missing required fields." };
   }
@@ -197,10 +209,12 @@ export async function executeApprovedLighterDeposit(input: {
   }
 
   // Leg 1: approval (only if allowance is short). Hash persists before broadcast.
+  // A freshly re-approved recovery can resume after a previously confirmed
+  // allowance transaction, but it must never sign or broadcast that leg again.
   let approveTxHash: string | null = null;
   let approveStaged: LighterStagedEvmTransaction | null = null;
   let confirmedApprovalBlockNumber: bigint | undefined;
-  try {
+  if (!resumingAfterConfirmedApproval) try {
     await deps.assertExecutionLease();
     await deps.assertFreshPreSignPreflight(intent, "approve");
     const approve = await deps.runApproveLegIfNeeded({
@@ -298,8 +312,18 @@ export async function executeApprovedLighterDeposit(input: {
         const reason = approve.reason ?? "Approval broadcast outcome is unconfirmed.";
         return await ambiguousResult(deps, intent.intentId, "approve", approve.txHash, reason);
       }
+      const confirmedTxHash = approveTxHash;
+      if (confirmedTxHash === null) {
+        return await ambiguousResult(
+          deps,
+          intent.intentId,
+          "approve",
+          approve.txHash,
+          "Approval confirmed without a durable effective transaction hash.",
+        );
+      }
       const confirmed = await tryTransition(() =>
-        deps.intents.markApproveConfirmed(intent.intentId));
+        deps.intents.markApproveConfirmed(intent.intentId, confirmedTxHash));
       if (!confirmed) {
         return await ambiguousResult(
           deps,

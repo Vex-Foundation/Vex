@@ -307,6 +307,69 @@ export async function markApprovalDecisionWith(
 }
 
 /**
+ * Resolve a fresh approval card for a deposit whose allowance transaction was
+ * already confirmed, while leaving that confirmed leg immutable. A rejection
+ * or expiry terminalizes the recovery; only an approval may resume at the
+ * deposit leg.
+ */
+export async function markConfirmedApprovalRecoveryDecisionWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly decision: "approved" | "rejected" | "expired";
+    readonly approvalId?: string | null;
+    readonly protocolExecutionId?: number | null;
+    readonly reason?: string | null;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET approval_status = $2,
+            execution_state = CASE WHEN $2 = 'approved' THEN execution_state ELSE 'failed' END,
+            approval_id = $3,
+            protocol_execution_id = $4,
+            decision_reason = $5,
+            decided_at = NOW(),
+            failure_reason = CASE WHEN $2 = 'approved' THEN NULL ELSE $5 END,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND capability = 'deposit'
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approve_confirmed'
+        AND approve_tx_hash IS NOT NULL
+        AND approve_tx_from IS NOT NULL
+        AND approve_tx_nonce IS NOT NULL
+        AND deposit_tx_hash IS NULL
+        AND deposit_tx_from IS NULL
+        AND deposit_tx_nonce IS NULL
+        AND deposit_replacement_tx_hash IS NULL
+        AND deposit_l1_block_hash IS NULL
+        AND lighter_tx_hash IS NULL
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.decision,
+      input.approvalId ?? null,
+      input.protocolExecutionId ?? null,
+      input.reason ?? null,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  if (input.decision !== "approved") {
+    await requireDepositWorkflowTransition(client, intent, {
+      expectedStates: ["approve_confirmed"],
+      nextState: "failed",
+      failureCode: input.decision === "rejected"
+        ? "deposit_recovery_approval_rejected"
+        : "deposit_recovery_approval_expired",
+    });
+  }
+  return intent;
+}
+
+/**
  * Retire an old-session deposit only when durable state proves that signing,
  * staging, submission, and settlement observation never began. The old row is
  * retained for audit; callers may atomically create a brand-new intent for the
@@ -458,6 +521,126 @@ export async function renewPristineApprovedDepositIntentWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/**
+ * Prepare a new approval card after the allowance leg is durably confirmed but
+ * before any deposit transaction identity exists. The live snapshot replaces
+ * the old approval-era preflight so the new card discloses only the remaining
+ * deposit leg. The confirmed approval hash/sender/nonce are never cleared.
+ */
+export async function renewConfirmedApprovalDepositIntentWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly preflight: LighterDepositPreflightSnapshot;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  if (
+    !Number.isFinite(input.expiresAt.getTime())
+    || input.expiresAt.getTime() <= Date.now()
+  ) {
+    throw new Error("Lighter confirmed-approval recovery expiry must be in the future.");
+  }
+  if (input.preflight.approvalRequired) {
+    throw new Error("Lighter confirmed-approval recovery requires sufficient live allowance.");
+  }
+  const snapshot = input.preflight;
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET approval_status = 'approval_pending',
+            approval_id = NULL,
+            protocol_execution_id = NULL,
+            decision_reason = NULL,
+            decided_at = NULL,
+            settlement_token_address = $4,
+            settlement_token_symbol = $5,
+            settlement_token_decimals = $6,
+            preflight_min_transfer_units = $7,
+            preflight_wallet_balance_units = $8,
+            preflight_wallet_allowance_units = $9,
+            preflight_wallet_native_balance_wei = $10,
+            preflight_ethereum_block_number = $11,
+            preflight_lighter_block_number = $12,
+            preflight_observed_at = $13,
+            preflight_approve_gas_limit = $14,
+            preflight_deposit_gas_limit = $15,
+            preflight_max_fee_per_gas_wei = $16,
+            preflight_max_priority_fee_per_gas_wei = $17,
+            preflight_approve_max_fee_wei = $18,
+            preflight_deposit_max_fee_wei = $19,
+            preflight_total_max_fee_wei = $20,
+            preflight_native_reserve_wei = $21,
+            preflight_required_native_balance_wei = $22,
+            expires_at = $23,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'deposit'
+        AND approval_status = 'approved'
+        AND execution_state = 'approve_confirmed'
+        AND LOWER(wallet_address) = LOWER($3)
+        AND chain_id = $24
+        AND LOWER(deposit_contract) = LOWER($25)
+        AND LOWER(deposit_to) = LOWER($3)
+        AND asset_index = $26
+        AND route_type = $27
+        AND amount_units = $28
+        AND approve_tx_hash IS NOT NULL
+        AND approve_tx_from IS NOT NULL
+        AND approve_tx_nonce IS NOT NULL
+        AND deposit_tx_hash IS NULL
+        AND deposit_tx_from IS NULL
+        AND deposit_tx_nonce IS NULL
+        AND deposit_replacement_tx_hash IS NULL
+        AND deposit_replacement_reason IS NULL
+        AND deposit_replacement_observed_at IS NULL
+        AND deposit_l1_block_hash IS NULL
+        AND deposit_l1_block_number IS NULL
+        AND deposit_event_account_index IS NULL
+        AND lighter_tx_hash IS NULL
+        AND lighter_tx_status IS NULL
+        AND lighter_block_height IS NULL
+        AND lighter_executed_at IS NULL
+        AND lighter_evidence_observed_at IS NULL
+        AND resolved_account_index IS NULL
+        AND failure_reason IS NULL
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      snapshot.walletAddress,
+      snapshot.settlementTokenAddress,
+      snapshot.settlementTokenSymbol,
+      snapshot.settlementTokenDecimals,
+      snapshot.minimumTransferUnits,
+      snapshot.walletBalanceUnits,
+      snapshot.walletAllowanceUnits,
+      snapshot.walletNativeBalanceWei,
+      snapshot.ethereumBlockNumber,
+      snapshot.lighterBlockNumber,
+      snapshot.observedAt,
+      snapshot.approveGasLimit,
+      snapshot.depositGasLimit,
+      snapshot.maxFeePerGasWei,
+      snapshot.maxPriorityFeePerGasWei,
+      snapshot.approveMaxFeeWei,
+      snapshot.depositMaxFeeWei,
+      snapshot.totalMaxFeeWei,
+      snapshot.nativeReserveWei,
+      snapshot.requiredNativeBalanceWei,
+      input.expiresAt,
+      snapshot.chainId,
+      snapshot.gatewayAddress,
+      snapshot.assetIndex,
+      snapshot.routeType,
+      snapshot.amountUnits,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Persist an approve tx hash before broadcast; only from the approved state. */
 export async function markApproveSubmittedWith(
   client: LighterOnboardingQueryClient,
@@ -477,15 +660,53 @@ export async function markApproveSubmittedWith(
 export async function markApproveConfirmedWith(
   client: LighterOnboardingQueryClient,
   intentId: string,
+  txHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceDepositWith(
-    client,
-    intentId,
-    "approve_confirmed",
-    ["approve_submitted"],
-    {},
-    { expectedStates: ["approve_staged", "ambiguous"], nextState: "approve_confirmed" },
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'approve_confirmed', updated_at = NOW()
+      WHERE intent_id = $1
+        AND execution_state = 'approve_submitted'
+        AND LOWER(COALESCE(approve_replacement_tx_hash, approve_tx_hash)) = LOWER($2)
+      RETURNING ${RETURNING}`,
+    [intentId, txHash],
   );
+  const advancedRow = result.rows[0];
+  if (advancedRow !== undefined) {
+    const advanced = mapRow(advancedRow);
+    await requireDepositWorkflowTransition(client, advanced, {
+      expectedStates: ["approve_staged", "ambiguous"],
+      nextState: "approve_confirmed",
+    });
+    return advanced;
+  }
+
+  // The evidence-only repair sweep may win the same confirmation transition
+  // while the live executor is awaiting the receipt. Treat that exact durable
+  // end state as idempotent instead of downgrading it to ambiguity.
+  const existing = await client.query<Record<string, unknown>>(
+    `SELECT ${RETURNING}
+       FROM lighter_onboarding_intents i
+      WHERE i.intent_id = $1
+        AND i.capability = 'deposit'
+        AND i.execution_state = 'approve_confirmed'
+        AND LOWER(COALESCE(i.approve_replacement_tx_hash, i.approve_tx_hash)) = LOWER($2)
+        AND i.approve_tx_from IS NOT NULL
+        AND i.approve_tx_nonce IS NOT NULL
+        AND i.deposit_tx_hash IS NULL
+        AND i.deposit_replacement_tx_hash IS NULL
+        AND EXISTS (
+          SELECT 1
+            FROM lighter_onboarding_workflows w
+           WHERE w.environment = i.environment
+             AND w.wallet_address = LOWER(i.wallet_address)
+             AND w.workflow_state = 'approve_confirmed'
+             AND w.active_deposit_intent_id = i.intent_id
+        )`,
+    [intentId, txHash],
+  );
+  const row = existing.rows[0];
+  return row === undefined ? null : mapRow(row);
 }
 
 /** Record that the live on-chain allowance already covered this exact amount. */

@@ -245,6 +245,67 @@ function canRenewPristineApprovedDepositApproval(input: {
   }
 }
 
+function canRenewConfirmedApprovalDeposit(input: {
+  readonly intent: LighterOnboardingIntentRow;
+  readonly sessionId: string;
+  readonly fresh: LighterDepositPreflightSnapshot;
+}): boolean {
+  const { intent, sessionId, fresh } = input;
+  return intent.sessionId === sessionId
+    && intent.capability === "deposit"
+    && intent.approvalStatus === "approved"
+    && intent.executionState === "approve_confirmed"
+    && intent.approveTxHash !== null
+    && intent.approveTxFrom !== null
+    && intent.approveTxNonce !== null
+    && intent.depositTxHash === null
+    && intent.depositTxFrom === null
+    && intent.depositTxNonce === null
+    && intent.depositReplacementTxHash === null
+    && intent.depositReplacementReason === null
+    && intent.depositReplacementObservedAt === null
+    && intent.depositL1BlockHash === null
+    && intent.depositL1BlockNumber === null
+    && intent.depositEventAccountIndex === null
+    && intent.lighterTxHash === null
+    && intent.lighterTxStatus === null
+    && intent.lighterBlockHeight === null
+    && intent.lighterExecutedAt === null
+    && intent.lighterEvidenceObservedAt === null
+    && intent.resolvedAccountIndex === null
+    && intent.failureReason === null
+    && !fresh.approvalRequired
+    && getAddress(fresh.walletAddress) === getAddress(intent.walletAddress)
+    && fresh.chainId === intent.chainId
+    && intent.depositContract !== null
+    && getAddress(fresh.gatewayAddress) === getAddress(intent.depositContract)
+    && intent.depositTo !== null
+    && getAddress(fresh.walletAddress) === getAddress(intent.depositTo)
+    && fresh.assetIndex === intent.assetIndex
+    && fresh.routeType === intent.routeType
+    && fresh.amountUnits === intent.amountUnits
+    && fresh.settlementTokenAddress.toLowerCase()
+      === intent.settlementTokenAddress?.toLowerCase()
+    && fresh.settlementTokenSymbol === intent.settlementTokenSymbol
+    && fresh.settlementTokenDecimals === intent.settlementTokenDecimals;
+}
+
+function isConfirmedApprovalRecoveryPending(intent: LighterOnboardingIntentRow): boolean {
+  return intent.capability === "deposit"
+    && intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approve_confirmed"
+    && intent.approveTxHash !== null
+    && intent.approveTxFrom !== null
+    && intent.approveTxNonce !== null
+    && intent.depositTxHash === null
+    && intent.depositTxFrom === null
+    && intent.depositTxNonce === null
+    && intent.depositReplacementTxHash === null
+    && intent.depositL1BlockHash === null
+    && intent.lighterTxHash === null
+    && intent.failureReason === null;
+}
+
 function canSupersedePristineDepositFromAnotherSession(input: {
   readonly intent: LighterOnboardingIntentRow;
   readonly sessionId: string;
@@ -307,6 +368,9 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
   if (intent.approvalStatus === "expired") {
     return "The approval expired without execution. Prepare a fresh deposit only if the user asks again.";
   }
+  if (intent.approvalStatus === "approval_pending") {
+    return "Wait for the user to approve or reject the existing approval card.";
+  }
   switch (intent.executionState) {
     case "credited":
       return "The deposit is credited; no retry is needed. Continue managed onboarding by preparing secure trading access if the account is not already ready.";
@@ -314,7 +378,7 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
       return "The deposit is terminally failed. Verify the reason before preparing a new deposit.";
     case "approval_pending":
     case "prepared":
-      return "Wait for the user to approve or reject the existing approval card.";
+      return "The deposit is waiting for approval preparation to complete.";
     case "slot_reserved":
       return "This is a key-registration reservation, not a deposit state. Continue only through the dedicated key-registration flow.";
     case "key_generated_encrypted":
@@ -326,11 +390,12 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
       return "Reconcile the existing intent before any retry. Never rebroadcast either transaction from this status result.";
     case "allowance_verified":
     case "approve_submitted":
-    case "approve_confirmed":
     case "deposit_submitted":
     case "deposit_confirmed":
     case "ambiguous":
       return "Reconcile the existing intent before any retry. Never rebroadcast either transaction from this status result.";
+    case "approve_confirmed":
+      return "The allowance is confirmed and no deposit was broadcast. Prepare the same deposit again to receive a fresh deposit-only approval card.";
   }
 }
 
@@ -683,6 +748,42 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           preparedActionFollowUp: followUp,
         };
       }
+      if (
+        conflict !== null
+        && canRenewConfirmedApprovalDeposit({
+          intent: conflict,
+          sessionId,
+          fresh: preflight,
+        })
+      ) {
+        const renewed = await withSessionControlLock(sessionId, (client) =>
+          onboardingIntentsRepo.renewConfirmedApprovalDepositIntentWith(client, {
+            intentId: conflict.intentId,
+            sessionId,
+            preflight,
+            expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+          }),
+        );
+        if (renewed === null) {
+          return fail(
+            "The confirmed Lighter approval changed before recovery could be prepared. No deposit was signed or submitted; check onboarding status before retrying.",
+          );
+        }
+        let followUp: PreparedActionFollowUp;
+        try {
+          followUp = buildDepositApprovalFollowUp(renewed);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
+        return {
+          ...ok({
+            ...depositApprovalPreparedPayload(renewed),
+            approvalReissued: true,
+            recovery: "confirmed_allowance_deposit_only",
+          }),
+          preparedActionFollowUp: followUp,
+        };
+      }
       return fail(
         conflict === null
           ? "Another Lighter deposit preparation won the concurrency race. No second deposit was prepared; check onboarding status before retrying."
@@ -735,14 +836,22 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
+    const confirmedRecoveryPending = isConfirmedApprovalRecoveryPending(intent);
     if (intent.expiresAt.getTime() <= Date.now()) {
       await withSessionControlLock(sessionId, (client) =>
-        onboardingIntentsRepo.markApprovalDecisionWith(client, {
-          intentId: intent.intentId,
-          decision: "expired",
-          approvalId: context.approvalId,
-          reason: "approval resume observed an expired Lighter deposit intent",
-        }),
+        confirmedRecoveryPending
+          ? onboardingIntentsRepo.markConfirmedApprovalRecoveryDecisionWith(client, {
+              intentId: intent.intentId,
+              decision: "expired",
+              approvalId: context.approvalId,
+              reason: "approval resume observed an expired Lighter deposit recovery",
+            })
+          : onboardingIntentsRepo.markApprovalDecisionWith(client, {
+              intentId: intent.intentId,
+              decision: "expired",
+              approvalId: context.approvalId,
+              reason: "approval resume observed an expired Lighter deposit intent",
+            }),
       );
       return fail(`Lighter deposit intent ${intent.intentId} expired before approval resume.`);
     }
@@ -756,6 +865,15 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           reason: "user approved exact Lighter deposit intent",
         }),
       )
+      : confirmedRecoveryPending
+        ? await withSessionControlLock(sessionId, (client) =>
+          onboardingIntentsRepo.markConfirmedApprovalRecoveryDecisionWith(client, {
+            intentId: intent.intentId,
+            decision: "approved",
+            approvalId: context.approvalId,
+            reason: "user approved exact Lighter deposit-only recovery",
+          }),
+        )
       : isPristineApprovedDepositIntent(intent) ? intent : null;
     if (approved === null) {
       return fail(`Lighter deposit intent ${intent.intentId} is not approval-authorized for execution.`);
@@ -791,10 +909,15 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         amountUnits: BigInt(approved.amountUnits),
         routeType: approved.routeType ?? LIGHTER_DEPOSIT_ROUTE_TYPE.perps,
       });
+      if (approved.executionState === "approve_confirmed" && fresh.approvalRequired) {
+        throw new Error(
+          "The confirmed USDC allowance is no longer sufficient. Nothing was signed or submitted; prepare a new deposit approval.",
+        );
+      }
       assertLighterDepositPreflightWithinApproval({
         intent: approved,
         fresh,
-        stage: "execution",
+        stage: approved.executionState === "approve_confirmed" ? "deposit" : "execution",
       });
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));

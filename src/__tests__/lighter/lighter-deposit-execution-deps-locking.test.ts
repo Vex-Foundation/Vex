@@ -82,7 +82,7 @@ describe("Lighter deposit execution lifecycle locking", () => {
       nonce: 8,
     };
     await deps.intents.markApproveSubmitted("intent-1", approveStaged);
-    await deps.intents.markApproveConfirmed("intent-1");
+    await deps.intents.markApproveConfirmed("intent-1", `0x${"a".repeat(64)}`);
     await deps.intents.markDepositSubmitted("intent-1", depositStaged);
     const replacement = {
       originalTxHash: approveStaged.txHash,

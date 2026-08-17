@@ -157,7 +157,12 @@ function intentsSpy() {
   return {
     markAllowanceVerified: vi.fn().mockResolvedValue({ executionState: "allowance_verified" }),
     markApproveSubmitted: vi.fn().mockResolvedValue({ executionState: "approve_submitted" }),
-    markApproveConfirmed: vi.fn().mockResolvedValue({ executionState: "approve_confirmed" }),
+    markApproveConfirmed: vi.fn().mockResolvedValue(intent({
+      executionState: "approve_confirmed",
+      approveTxHash: APPROVE_HASH,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+    })),
     markDepositSubmitted: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
     recordApproveReplacement: vi.fn().mockResolvedValue({ executionState: "approve_submitted" }),
     recordDepositReplacement: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
@@ -279,6 +284,62 @@ describe("executeApprovedLighterDeposit", () => {
     expect(d.intents.markApproveSubmitted).not.toHaveBeenCalled();
     expect(d.intents.markAllowanceVerified).toHaveBeenCalledWith("lighter-onboard-1");
     expect(d.intents.markApproveConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("accepts the exact confirmation when the repair sweep wins the same transition", async () => {
+    const intentTransitions = intentsSpy();
+    intentTransitions.markApproveConfirmed.mockResolvedValueOnce(intent({
+      executionState: "approve_confirmed",
+      approveTxHash: APPROVE_HASH,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+    }));
+    const d = deps({ intents: intentTransitions });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+
+    expect(result).toMatchObject({ status: "l2_pending", depositTxHash: DEPOSIT_HASH });
+    expect(d.runDepositLeg).toHaveBeenCalledTimes(1);
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalledWith(
+      "lighter-onboard-1",
+      expect.stringContaining("lifecycle transition conflicted"),
+    );
+  });
+
+  it("resumes a freshly approved recovery after the confirmed allowance leg", async () => {
+    const d = deps();
+    const result = await executeApprovedLighterDeposit({
+      intent: intent({
+        executionState: "approve_confirmed",
+        approveTxHash: APPROVE_HASH,
+        approveTxFrom: WALLET,
+        approveTxNonce: "7",
+        preflightWalletAllowanceUnits: "11000000",
+        preflightApproveGasLimit: "0",
+        preflightApproveMaxFeeWei: "0",
+        preflightTotalMaxFeeWei: "4000000000000000",
+        preflightRequiredNativeBalanceWei: "8000000000000000",
+      }),
+      deps: d,
+    });
+
+    expect(result).toMatchObject({ status: "l2_pending", depositTxHash: DEPOSIT_HASH });
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.intents.markApproveSubmitted).not.toHaveBeenCalled();
+    expect(d.intents.markApproveConfirmed).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a confirmed-approval recovery without durable transaction identity", async () => {
+    const d = deps();
+    const result = await executeApprovedLighterDeposit({
+      intent: intent({ executionState: "approve_confirmed" }),
+      deps: d,
+    });
+
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
   });
 
   it("fails on an approve revert without sending the deposit", async () => {

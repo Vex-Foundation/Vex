@@ -134,7 +134,7 @@ d("lighter_onboarding_intents repo", () => {
         nonce: 7,
       })))?.executionState).toBe("approve_submitted");
     expect((await withSessionControlLock(sessionId, (client) =>
-      repo.markApproveConfirmedWith(client, intent.intentId)))?.executionState).toBe("approve_confirmed");
+      repo.markApproveConfirmedWith(client, intent.intentId, `0x${"a".repeat(64)}`)))?.executionState).toBe("approve_confirmed");
     expect((await withSessionControlLock(sessionId, (client) =>
       repo.markDepositSubmittedWith(client, intent.intentId, {
         txHash: "0x" + "b".repeat(64),
@@ -185,6 +185,83 @@ d("lighter_onboarding_intents repo", () => {
       }));
     expect(skipped).toBeNull();
     expect((await repo.findByIntentId(intent.intentId))?.executionState).toBe("approved");
+  });
+
+  it("makes repair-won approval confirmation idempotent and reauthorizes only the deposit leg", async () => {
+    const sessionId = await newSession();
+    const intent = await newDepositIntent(sessionId);
+    const approveTxHash = `0x${"a".repeat(64)}`;
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, {
+        intentId: intent.intentId,
+        decision: "approved",
+      }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApproveSubmittedWith(client, intent.intentId, {
+        txHash: approveTxHash,
+        fromAddress: intent.walletAddress,
+        nonce: 7,
+      }));
+
+    const repaired = await withSessionControlLock(sessionId, (client) =>
+      repo.reconcileApproveReceiptWith(client, {
+        intentId: intent.intentId,
+        txHash: approveTxHash,
+        outcome: "confirmed",
+      }));
+    expect(repaired?.executionState).toBe("approve_confirmed");
+
+    const idempotent = await withSessionControlLock(sessionId, (client) =>
+      repo.markApproveConfirmedWith(client, intent.intentId, approveTxHash));
+    expect(idempotent).toMatchObject({
+      executionState: "approve_confirmed",
+      approveTxHash,
+    });
+
+    const fresh = {
+      ...preflight(intent.walletAddress, "11000000"),
+      walletAllowanceUnits: "11000000",
+      approvalRequired: false,
+      approveGasLimit: "0",
+      approveMaxFeeWei: "0",
+      totalMaxFeeWei: "4000000000000000",
+      requiredNativeBalanceWei: "8000000000000000",
+    };
+    const renewed = await withSessionControlLock(sessionId, (client) =>
+      repo.renewConfirmedApprovalDepositIntentWith(client, {
+        intentId: intent.intentId,
+        sessionId,
+        preflight: fresh,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      }));
+    expect(renewed).toMatchObject({
+      approvalStatus: "approval_pending",
+      executionState: "approve_confirmed",
+      approvalId: null,
+      approveTxHash,
+      preflightWalletAllowanceUnits: "11000000",
+      preflightApproveGasLimit: "0",
+    });
+
+    const reapproved = await withSessionControlLock(sessionId, (client) =>
+      repo.markConfirmedApprovalRecoveryDecisionWith(client, {
+        intentId: intent.intentId,
+        decision: "approved",
+      }));
+    expect(reapproved).toMatchObject({
+      approvalStatus: "approved",
+      executionState: "approve_confirmed",
+      approvalId: null,
+      approveTxHash,
+    });
+
+    const deposit = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: `0x${"b".repeat(64)}`,
+        fromAddress: intent.walletAddress,
+        nonce: 8,
+      }));
+    expect(deposit?.executionState).toBe("deposit_submitted");
   });
 
   it("records a sufficient existing allowance without inventing an approval transaction", async () => {

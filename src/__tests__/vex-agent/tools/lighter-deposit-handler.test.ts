@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   setIntegrationEnabled: vi.fn(),
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
+  markConfirmedRecoveryDecision: vi.fn(),
   renewPristineApproved: vi.fn(),
+  renewConfirmedApproval: vi.fn(),
   supersedePristine: vi.fn(),
   markAmbiguous: vi.fn(),
   withSessionControlLock: vi.fn(),
@@ -39,8 +41,12 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   findByIntentId: mocks.findByIntentId,
   markApprovalDecisionWith: (_client: unknown, input: unknown) =>
     mocks.markApprovalDecision(input),
+  markConfirmedApprovalRecoveryDecisionWith: (_client: unknown, input: unknown) =>
+    mocks.markConfirmedRecoveryDecision(input),
   renewPristineApprovedDepositIntentWith: (_client: unknown, input: unknown) =>
     mocks.renewPristineApproved(input),
+  renewConfirmedApprovalDepositIntentWith: (_client: unknown, input: unknown) =>
+    mocks.renewConfirmedApproval(input),
   supersedePristineDepositIntentWith: (_client: unknown, input: unknown) =>
     mocks.supersedePristine(input),
   markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
@@ -183,6 +189,38 @@ function intentRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function preflightSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    observedAt: new Date(),
+    walletAddress: WALLET,
+    chainId: 1,
+    ethereumBlockNumber: "23456789",
+    lighterBlockNumber: "23456780",
+    gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    assetIndex: 3,
+    routeType: 0,
+    amountUnits: "11000000",
+    minimumTransferUnits: "1000000",
+    walletBalanceUnits: "50000000",
+    walletAllowanceUnits: "0",
+    walletNativeBalanceWei: "1000000000000000000",
+    approvalRequired: true,
+    approveGasLimit: "100000",
+    depositGasLimit: "200000",
+    maxFeePerGasWei: "20000000000",
+    maxPriorityFeePerGasWei: "2000000000",
+    approveMaxFeeWei: "2000000000000000",
+    depositMaxFeeWei: "4000000000000000",
+    totalMaxFeeWei: "6000000000000000",
+    nativeReserveWei: "4000000000000000",
+    requiredNativeBalanceWei: "10000000000000000",
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
@@ -213,6 +251,44 @@ beforeEach(() => {
       decisionReason: "user approved exact Lighter deposit intent",
       expiresAt: input.expiresAt,
     }));
+  mocks.renewConfirmedApproval.mockImplementation(async (input) =>
+    intentRow({
+      approvalId: null,
+      approvalStatus: "approval_pending",
+      executionState: "approve_confirmed",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+      decisionReason: null,
+      preflightWalletAllowanceUnits: input.preflight.walletAllowanceUnits,
+      preflightEthereumBlockNumber: input.preflight.ethereumBlockNumber,
+      preflightLighterBlockNumber: input.preflight.lighterBlockNumber,
+      preflightObservedAt: input.preflight.observedAt,
+      preflightApproveGasLimit: input.preflight.approveGasLimit,
+      preflightDepositGasLimit: input.preflight.depositGasLimit,
+      preflightMaxFeePerGasWei: input.preflight.maxFeePerGasWei,
+      preflightMaxPriorityFeePerGasWei: input.preflight.maxPriorityFeePerGasWei,
+      preflightApproveMaxFeeWei: input.preflight.approveMaxFeeWei,
+      preflightDepositMaxFeeWei: input.preflight.depositMaxFeeWei,
+      preflightTotalMaxFeeWei: input.preflight.totalMaxFeeWei,
+      preflightNativeReserveWei: input.preflight.nativeReserveWei,
+      preflightRequiredNativeBalanceWei: input.preflight.requiredNativeBalanceWei,
+      expiresAt: input.expiresAt,
+    }));
+  mocks.markConfirmedRecoveryDecision.mockImplementation(async (input) =>
+    intentRow({
+      approvalId: input.approvalId ?? null,
+      approvalStatus: input.decision,
+      executionState: input.decision === "approved" ? "approve_confirmed" : "failed",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+      preflightWalletAllowanceUnits: "11000000",
+      preflightApproveGasLimit: "0",
+      preflightApproveMaxFeeWei: "0",
+      preflightTotalMaxFeeWei: "4000000000000000",
+      preflightRequiredNativeBalanceWei: "8000000000000000",
+    }));
   mocks.supersedePristine.mockImplementation(async () =>
     intentRow({
       sessionId: "session-previous",
@@ -228,34 +304,7 @@ beforeEach(() => {
     fn({ marker: "locked-client" }));
   mocks.withSessionControlLocks.mockImplementation(async (_sessionIds, fn) =>
     fn({ marker: "multi-locked-client" }));
-  mocks.readDepositPreflight.mockResolvedValue({
-    observedAt: new Date(),
-    walletAddress: WALLET,
-    chainId: 1,
-    ethereumBlockNumber: "23456789",
-    lighterBlockNumber: "23456780",
-    gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
-    settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    settlementTokenSymbol: "USDC",
-    settlementTokenDecimals: 6,
-    assetIndex: 3,
-    routeType: 0,
-    amountUnits: "11000000",
-    minimumTransferUnits: "1000000",
-    walletBalanceUnits: "50000000",
-    walletAllowanceUnits: "0",
-    walletNativeBalanceWei: "1000000000000000000",
-    approvalRequired: true,
-    approveGasLimit: "100000",
-    depositGasLimit: "200000",
-    maxFeePerGasWei: "20000000000",
-    maxPriorityFeePerGasWei: "2000000000",
-    approveMaxFeeWei: "2000000000000000",
-    depositMaxFeeWei: "4000000000000000",
-    totalMaxFeeWei: "6000000000000000",
-    nativeReserveWei: "4000000000000000",
-    requiredNativeBalanceWei: "10000000000000000",
-  });
+  mocks.readDepositPreflight.mockResolvedValue(preflightSnapshot());
 });
 
 describe("lighter.deposit.status", () => {
@@ -544,6 +593,87 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
 
+  it("executes a confirmed-allowance recovery only from its fresh pending approval", async () => {
+    const recoveryPending = intentRow({
+      approvalStatus: "approval_pending",
+      executionState: "approve_confirmed",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+      preflightWalletAllowanceUnits: "11000000",
+      preflightApproveGasLimit: "0",
+      preflightApproveMaxFeeWei: "0",
+      preflightTotalMaxFeeWei: "4000000000000000",
+      preflightRequiredNativeBalanceWei: "8000000000000000",
+    });
+    mocks.findByIntentId.mockResolvedValueOnce(recoveryPending);
+    mocks.readDepositPreflight.mockResolvedValueOnce(preflightSnapshot({
+      walletAllowanceUnits: "11000000",
+      approvalRequired: false,
+      approveGasLimit: "0",
+      approveMaxFeeWei: "0",
+      totalMaxFeeWei: "4000000000000000",
+      requiredNativeBalanceWei: "8000000000000000",
+    }));
+    mocks.acquireExecutionLease.mockResolvedValue({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValue({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValue({
+      status: "l2_pending",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      depositTxHash: `0x${"b".repeat(64)}`,
+      reason: "exact Lighter evidence pending",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: recoveryPending.intentId },
+      approvedContext,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.markConfirmedRecoveryDecision).toHaveBeenCalledWith({
+      intentId: recoveryPending.intentId,
+      decision: "approved",
+      approvalId: "approval-1",
+      reason: "user approved exact Lighter deposit-only recovery",
+    });
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
+    expect(mocks.executeApprovedDeposit).toHaveBeenCalledWith({
+      intent: expect.objectContaining({ executionState: "approve_confirmed" }),
+      deps: { marker: "execution-deps" },
+    });
+  });
+
+  it("does not reuse an already spent approval for a confirmed allowance", async () => {
+    mocks.findByIntentId.mockResolvedValueOnce(intentRow({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approve_confirmed",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+    }));
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not approval-authorized");
+    expect(mocks.markConfirmedRecoveryDecision).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+  });
+
   it("reports an executor throw as ambiguous so approval runtime cannot claim failure", async () => {
     const depositHash = `0x${"b".repeat(64)}`;
     mocks.acquireExecutionLease.mockResolvedValue({
@@ -730,6 +860,63 @@ describe("lighter.deposit.prepare", () => {
       args: {
         toolId: "lighter.deposit",
         params: { intentId: gateClosedIntent.intentId },
+      },
+    });
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
+  it("prepares a fresh deposit-only approval after the allowance already confirmed", async () => {
+    const confirmed = intentRow({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approve_confirmed",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      approveTxFrom: WALLET,
+      approveTxNonce: "7",
+      decisionReason: "user approved exact Lighter deposit intent",
+    });
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "live_conflict",
+      intent: confirmed,
+    });
+    mocks.readDepositPreflight.mockResolvedValueOnce(preflightSnapshot({
+      walletAllowanceUnits: "11000000",
+      approvalRequired: false,
+      approveGasLimit: "0",
+      approveMaxFeeWei: "0",
+      totalMaxFeeWei: "4000000000000000",
+      requiredNativeBalanceWei: "8000000000000000",
+    }));
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      intentId: confirmed.intentId,
+      approvalRequired: false,
+      approvalReissued: true,
+      recovery: "confirmed_allowance_deposit_only",
+    });
+    expect(mocks.renewConfirmedApproval).toHaveBeenCalledWith({
+      intentId: confirmed.intentId,
+      sessionId: "session-1",
+      preflight: expect.objectContaining({
+        approvalRequired: false,
+        walletAllowanceUnits: "11000000",
+      }),
+      expiresAt: expect.any(Date),
+    });
+    expect(result.preparedActionFollowUp).toMatchObject({
+      approvalPreview: {
+        criticalArgs: {
+          approvalRequired: false,
+          preflightApproveGasLimit: "0",
+        },
       },
     });
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();

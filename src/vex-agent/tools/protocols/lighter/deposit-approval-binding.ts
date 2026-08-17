@@ -51,6 +51,7 @@ export async function assertLighterDepositApprovalBinding(input: {
   if (
     approval === null
     || approval.status !== "approved"
+    || !approvalWasCreatedForCurrentIntentVersion(approval.createdAt, input.intent.updatedAt)
     || !toolCallTargetsIntent(approval.toolCall, input.intent.intentId)
   ) {
     throw refusal();
@@ -67,6 +68,16 @@ export async function assertLighterDepositApprovalBinding(input: {
   ) {
     throw refusal();
   }
+}
+
+function approvalWasCreatedForCurrentIntentVersion(
+  approvalCreatedAt: string,
+  intentUpdatedAt: Date,
+): boolean {
+  const createdAtMs = new Date(approvalCreatedAt).getTime();
+  return Number.isFinite(createdAtMs)
+    && Number.isFinite(intentUpdatedAt.getTime())
+    && createdAtMs >= intentUpdatedAt.getTime();
 }
 
 function toolCallTargetsIntent(toolCall: Record<string, unknown>, intentId: string): boolean {

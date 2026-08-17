@@ -102,6 +102,11 @@ export function buildLighterDepositExecutionDeps(
         amountUnits: BigInt(intent.amountUnits),
         routeType: intent.routeType ?? 0,
       });
+      if (intent.executionState === "approve_confirmed" && fresh.approvalRequired) {
+        throw new Error(
+          "The confirmed USDC allowance is no longer sufficient. Nothing was signed or submitted.",
+        );
+      }
       assertLighterDepositPreflightWithinApproval({ intent, fresh, stage });
     },
 
@@ -178,8 +183,8 @@ export function buildLighterDepositExecutionDeps(
         onboardingIntentsRepo.markAllowanceVerifiedWith(client, intentId)),
       markApproveSubmitted: (intentId, transaction) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markApproveSubmittedWith(client, intentId, transaction)),
-      markApproveConfirmed: (intentId) => writeUnderSessionLock((client) =>
-        onboardingIntentsRepo.markApproveConfirmedWith(client, intentId)),
+      markApproveConfirmed: (intentId, txHash) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markApproveConfirmedWith(client, intentId, txHash)),
       markDepositSubmitted: (intentId, transaction) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, transaction)),
       recordApproveReplacement: (intentId, replacement) => writeUnderSessionLock((client) =>

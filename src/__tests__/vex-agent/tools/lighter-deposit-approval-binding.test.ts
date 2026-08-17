@@ -21,6 +21,7 @@ const { assertLighterDepositApprovalBinding } = await import(
 const INTENT_ID = "lighter-onboard-00000000-0000-4000-8000-000000000001";
 const WALLET = "0x1111111111111111111111111111111111111111";
 const OBSERVED_AT = new Date("2030-01-01T00:00:00.000Z");
+const INTENT_UPDATED_AT = new Date("2030-01-01T00:00:01.000Z");
 
 const INTENT = {
   intentId: INTENT_ID,
@@ -50,6 +51,7 @@ const INTENT = {
   preflightTotalMaxFeeWei: "59816381225212",
   preflightNativeReserveWei: "46271739031624",
   preflightRequiredNativeBalanceWei: "106088120256836",
+  updatedAt: INTENT_UPDATED_AT,
 } as LighterOnboardingIntentRow;
 
 function criticalArgs() {
@@ -93,6 +95,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getApproval.mockResolvedValue({
     status: "approved",
+    createdAt: "2030-01-01T00:00:02.000Z",
     toolCall: {
       command: "execute_tool",
       args: {
@@ -138,6 +141,26 @@ describe("Lighter deposit approval binding", () => {
 
     await expect(assertLighterDepositApprovalBinding({
       approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: INTENT,
+    })).rejects.toThrow("Nothing was signed or submitted");
+  });
+
+  it("rejects a stale approval created before the intent was renewed", async () => {
+    mocks.getApproval.mockResolvedValue({
+      status: "approved",
+      createdAt: "2030-01-01T00:00:00.000Z",
+      toolCall: {
+        command: "execute_tool",
+        args: {
+          toolId: "lighter.deposit",
+          params: { intentId: INTENT_ID },
+        },
+      },
+    });
+
+    await expect(assertLighterDepositApprovalBinding({
+      approvalId: "approval-old",
       sessionId: "session-1",
       intent: INTENT,
     })).rejects.toThrow("Nothing was signed or submitted");
