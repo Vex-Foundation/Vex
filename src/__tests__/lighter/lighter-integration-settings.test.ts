@@ -53,6 +53,8 @@ describe("Lighter integration settings repository", () => {
     expect(sql).toContain("ON CONFLICT (environment, wallet_address) DO UPDATE");
     expect(sql).toContain("enabled_at");
     expect(sql).toContain("disabled_at");
+    expect(sql).toContain("INSERT INTO lighter_onboarding_workflows");
+    expect(sql).toContain("'integration_enabled'");
     expect(sql).not.toMatch(/private|secret|signature|token|credential/i);
     expect(params).toEqual(["core", WALLET.toLowerCase(), true]);
   });

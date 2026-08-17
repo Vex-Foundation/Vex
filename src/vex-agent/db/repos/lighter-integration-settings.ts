@@ -48,25 +48,36 @@ export async function setLighterIntegrationEnabled(input: {
 }): Promise<LighterIntegrationSetting> {
   assertWalletAddress(input.walletAddress);
   const row = await queryOne<SettingRow>(
-    `INSERT INTO lighter_integration_settings
-       (environment, wallet_address, enabled, enabled_at, disabled_at)
-     VALUES (
-       $1, $2, $3,
-       CASE WHEN $3 THEN NOW() ELSE NULL END,
-       CASE WHEN $3 THEN NULL ELSE NOW() END
+    `WITH setting AS (
+       INSERT INTO lighter_integration_settings
+         (environment, wallet_address, enabled, enabled_at, disabled_at)
+       VALUES (
+         $1, $2, $3,
+         CASE WHEN $3 THEN NOW() ELSE NULL END,
+         CASE WHEN $3 THEN NULL ELSE NOW() END
+       )
+       ON CONFLICT (environment, wallet_address) DO UPDATE
+         SET enabled = EXCLUDED.enabled,
+             enabled_at = CASE
+               WHEN EXCLUDED.enabled AND NOT lighter_integration_settings.enabled THEN NOW()
+               ELSE lighter_integration_settings.enabled_at
+             END,
+             disabled_at = CASE
+               WHEN NOT EXCLUDED.enabled AND lighter_integration_settings.enabled THEN NOW()
+               ELSE lighter_integration_settings.disabled_at
+             END,
+             updated_at = NOW()
+       RETURNING ${RETURNING}
+     ), workflow AS (
+       INSERT INTO lighter_onboarding_workflows (
+         environment, wallet_address, workflow_state
+       )
+       SELECT environment, wallet_address, 'integration_enabled'
+         FROM setting
+        WHERE enabled = TRUE
+       ON CONFLICT (environment, wallet_address) DO NOTHING
      )
-     ON CONFLICT (environment, wallet_address) DO UPDATE
-       SET enabled = EXCLUDED.enabled,
-           enabled_at = CASE
-             WHEN EXCLUDED.enabled AND NOT lighter_integration_settings.enabled THEN NOW()
-             ELSE lighter_integration_settings.enabled_at
-           END,
-           disabled_at = CASE
-             WHEN NOT EXCLUDED.enabled AND lighter_integration_settings.enabled THEN NOW()
-             ELSE lighter_integration_settings.disabled_at
-           END,
-           updated_at = NOW()
-     RETURNING ${RETURNING}`,
+     SELECT ${RETURNING} FROM setting`,
     [input.environment, input.walletAddress.toLowerCase(), input.enabled],
   );
   if (row === null) {
