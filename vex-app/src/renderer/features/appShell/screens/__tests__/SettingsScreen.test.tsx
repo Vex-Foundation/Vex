@@ -122,15 +122,6 @@ const mockUseWizardState = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/wizard.js", () => ({
   useWizardState: mockUseWizardState,
 }));
-const lighterIntegrationMocks = vi.hoisted(() => ({
-  use: vi.fn(),
-  set: vi.fn(),
-  mutate: vi.fn(),
-}));
-vi.mock("../../../../lib/api/lighter-integration.js", () => ({
-  useLighterIntegration: lighterIntegrationMocks.use,
-  useSetLighterIntegration: lighterIntegrationMocks.set,
-}));
 
 const { ShellScreens } = await import("../ShellScreens.js");
 
@@ -195,27 +186,6 @@ beforeEach(() => {
       },
     },
   });
-  lighterIntegrationMocks.use.mockReturnValue({
-    isLoading: false,
-    data: {
-      ok: true,
-      data: {
-        environment: "core",
-        walletAddress: "0x1111111111111111111111111111111111111111",
-        enabled: false,
-        enabledAt: null,
-        disabledAt: null,
-        createdAt: null,
-        updatedAt: null,
-      },
-    },
-  });
-  lighterIntegrationMocks.set.mockReturnValue({
-    isPending: false,
-    data: undefined,
-    mutate: lighterIntegrationMocks.mutate,
-  });
-  lighterIntegrationMocks.mutate.mockReset();
   exportModalSpy.mockClear();
   useUiStore.setState({ shellRoute: { kind: "none" } });
 });
@@ -241,25 +211,8 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("OpenRouter")).not.toBeNull();
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();
-    expect(screen.getByText("Lighter")).not.toBeNull();
-  });
-
-  it("toggles Lighter activation while disclosing that activation is not approval", async () => {
-    render(<ShellScreens />);
-    openSettings();
-
-    const toggle = await screen.findByRole("switch", {
-      name: "Enable Lighter integration",
-    });
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(
-      screen.getByText(/It does not move funds or approve deposits, keys, or trades/),
-    ).not.toBeNull();
-    fireEvent.click(toggle);
-    expect(lighterIntegrationMocks.mutate).toHaveBeenCalledWith({
-      environment: "core",
-      enabled: true,
-    });
+    expect(screen.queryByText("Lighter")).toBeNull();
+    expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
   });
 
   it("speaks the warning vocabulary when envState is degraded", async () => {
