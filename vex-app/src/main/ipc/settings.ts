@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { CH } from "@shared/ipc/channels.js";
-import { err, ok, type Result } from "@shared/ipc/result.js";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   preferencesSchema,
   type Preferences,
@@ -13,6 +13,13 @@ import {
   userProfileSchema,
   type UserProfile,
 } from "@shared/schemas/user-profile.js";
+import {
+  getLighterIntegrationInputSchema,
+  lighterIntegrationStateSchema,
+  setLighterIntegrationInputSchema,
+  type LighterIntegrationState,
+} from "@shared/schemas/lighter-integration.js";
+import { getPrimaryEvmAddress } from "@vex-lib/wallet.js";
 import { preferencesStore } from "../preferences/store.js";
 import {
   disableSentry,
@@ -45,6 +52,80 @@ export function registerSettingsHandlers(): Array<() => void> {
         return ok(preferencesSchema.parse(prefs));
       },
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.getLighterIntegration,
+      domain: "settings",
+      inputSchema: getLighterIntegrationInputSchema,
+      outputSchema: lighterIntegrationStateSchema,
+      handle: async ({ environment }, ctx): Promise<Result<LighterIntegrationState>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        const walletAddress = getPrimaryEvmAddress();
+        if (walletAddress === null) return err(lighterWalletRequiredError(ctx.requestId));
+        try {
+          const { getLighterIntegrationSetting } = await import(
+            "@vex-agent/db/repos/lighter-integration-settings.js"
+          );
+          const setting = await getLighterIntegrationSetting(environment, walletAddress);
+          return ok(lighterIntegrationStateSchema.parse(
+            setting === null
+              ? {
+                  environment,
+                  walletAddress,
+                  enabled: false,
+                  enabledAt: null,
+                  disabledAt: null,
+                  createdAt: null,
+                  updatedAt: null,
+                }
+              : mapLighterIntegrationSetting(setting),
+          ));
+        } catch (cause) {
+          log.warn(
+            `[ipc:vex:settings:getLighterIntegration] failed correlationId=${ctx.requestId}`,
+            cause,
+          );
+          return err(controlFailedError(ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setLighterIntegration,
+      domain: "settings",
+      inputSchema: setLighterIntegrationInputSchema,
+      outputSchema: lighterIntegrationStateSchema,
+      handle: async ({ environment, enabled }, ctx): Promise<Result<LighterIntegrationState>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        const walletAddress = getPrimaryEvmAddress();
+        if (walletAddress === null) return err(lighterWalletRequiredError(ctx.requestId));
+        try {
+          const { setLighterIntegrationEnabled } = await import(
+            "@vex-agent/db/repos/lighter-integration-settings.js"
+          );
+          const setting = await setLighterIntegrationEnabled({
+            environment,
+            walletAddress,
+            enabled,
+          });
+          return ok(lighterIntegrationStateSchema.parse(
+            mapLighterIntegrationSetting(setting),
+          ));
+        } catch (cause) {
+          log.warn(
+            `[ipc:vex:settings:setLighterIntegration] failed correlationId=${ctx.requestId}`,
+            cause,
+          );
+          return err(controlFailedError(ctx.requestId));
+        }
+      },
+    }),
   );
 
   handlers.push(
@@ -132,4 +213,36 @@ export function registerSettingsHandlers(): Array<() => void> {
   );
 
   return handlers;
+}
+
+function mapLighterIntegrationSetting(setting: {
+  readonly environment: "core" | "rhc";
+  readonly walletAddress: string;
+  readonly enabled: boolean;
+  readonly enabledAt: Date | null;
+  readonly disabledAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}): LighterIntegrationState {
+  return {
+    environment: setting.environment,
+    walletAddress: setting.walletAddress,
+    enabled: setting.enabled,
+    enabledAt: setting.enabledAt?.toISOString() ?? null,
+    disabledAt: setting.disabledAt?.toISOString() ?? null,
+    createdAt: setting.createdAt.toISOString(),
+    updatedAt: setting.updatedAt.toISOString(),
+  };
+}
+
+function lighterWalletRequiredError(correlationId: string): VexError {
+  return {
+    code: "wallet.keystore_missing",
+    domain: "wallet",
+    message: "Add an EVM wallet before enabling the Lighter integration.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  };
 }

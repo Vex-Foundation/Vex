@@ -5,6 +5,12 @@ import {
   type UserProfile,
 } from "../../shared/schemas/user-profile.js";
 import type { SettingsBridge } from "../../shared/types/bridge/shell/settings.js";
+import {
+  getLighterIntegrationInputSchema,
+  setLighterIntegrationInputSchema,
+  type GetLighterIntegrationInput,
+  type SetLighterIntegrationInput,
+} from "../../shared/schemas/lighter-integration.js";
 import { invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
@@ -20,6 +26,20 @@ export const settings = {
       CH.settings.setTelemetryConsent,
       input,
       setTelemetryConsentInputSchema
+    );
+  },
+  getLighterIntegration(input: GetLighterIntegrationInput) {
+    return invokeWithSchema(
+      CH.settings.getLighterIntegration,
+      input,
+      getLighterIntegrationInputSchema,
+    );
+  },
+  setLighterIntegration(input: SetLighterIntegrationInput) {
+    return invokeWithSchema(
+      CH.settings.setLighterIntegration,
+      input,
+      setLighterIntegrationInputSchema,
     );
   },
   getUserProfile() {

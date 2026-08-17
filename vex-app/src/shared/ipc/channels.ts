@@ -306,6 +306,8 @@ export const CH = {
   settings: {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
+    getLighterIntegration: "vex:settings:getLighterIntegration",
+    setLighterIntegration: "vex:settings:setLighterIntegration",
     // "Vex setup" user profile (display name, instructions, work
     // description) — DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",
