@@ -21,6 +21,7 @@ import {
   readUnlockedLighterTradingApiPrivateKey,
   writeUnlockedPendingLighterTradingApiPrivateKey,
 } from "../secrets/lighter-trading-credential.js";
+import { configureLighterKeyRegistrationCredentialPreparer } from "@vex-agent/tools/protocols/lighter/key-registration-preparation.js";
 
 export interface PreparedLighterRegistrationCredential {
   readonly intentId: string;
@@ -159,6 +160,12 @@ export async function prepareLighterRegistrationCredential(
     throw preparationError("persisted key metadata does not match the prepared credential");
   }
   return resultFromIntent(persisted, outcome);
+}
+
+export function installLighterKeyRegistrationCredentialPreparer(): () => void {
+  return configureLighterKeyRegistrationCredentialPreparer({
+    prepare: (input) => prepareLighterRegistrationCredential(input),
+  });
 }
 
 function defaultDeps(): PrepareLighterRegistrationCredentialDeps {

@@ -182,6 +182,30 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "low",
   },
+  "lighter.key.register.prepare": {
+    embeddingText: embeddingText(
+      `Prepare a separate approval for registering a locally encrypted Lighter trading credential on the selected Vex-wallet-owned Core account. ` +
+      `Use when: Phase 2 has resolved the account and onboarding status says key registration remains. It reserves a full-read-proven free slot, generates and encrypts the key in the privileged process, and creates an exact approval card without signing or submitting. ` +
+      `Example queries: prepare my Lighter key registration, finish Lighter account setup, register a Vex trading key.`,
+    ),
+    aliases: ["lighter key registration", "register lighter api key", "lighter trading key setup"],
+    exampleIntents: ["prepare my Lighter key registration", "finish Lighter account setup", "register a Vex trading key"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.key.register": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact prepared Lighter key registration. ` +
+      `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused; the release gate and signing/submission boundary remain independently closed in this checkpoint. ` +
+      `Example queries: execute approved Lighter key registration, resume Lighter key approval.`,
+    ),
+    aliases: ["approved lighter key registration", "lighter key register execute"],
+    exampleIntents: ["execute approved Lighter key registration", "resume Lighter key approval"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.deposit": {
     embeddingText: embeddingText(
       `Approval-resume target for one exact prepared Lighter Core deposit. ` +
@@ -260,7 +284,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 20;
+const EXPECTED_COUNT = 22;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

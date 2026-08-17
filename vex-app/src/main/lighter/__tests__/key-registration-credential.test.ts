@@ -31,6 +31,8 @@ function intent(
     publicKey: state === "key_generated_encrypted" ? PUBLIC_KEY : null,
     publicKeyFingerprint: state === "key_generated_encrypted" ? "f".repeat(64) : null,
     keyGeneratedAt: state === "key_generated_encrypted" ? NOW : null,
+    registrationNonce: null,
+    registrationNonceObservedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
     expiresAt: new Date("2030-01-01T01:00:00.000Z"),

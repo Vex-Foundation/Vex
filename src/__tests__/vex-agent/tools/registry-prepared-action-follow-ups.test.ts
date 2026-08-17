@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registry/prepared-action-follow-ups.js";
 
@@ -5,6 +6,10 @@ const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const LIGHTER_DEPOSIT_INTENT_ID = "lighter-onboard-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
+const LIGHTER_KEY_PUBLIC_KEY = "ab".repeat(40);
+const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
+  .update(Buffer.from(LIGHTER_KEY_PUBLIC_KEY, "hex"))
+  .digest("hex");
 
 function candidate() {
   return {
@@ -112,6 +117,39 @@ function lighterDepositCandidate() {
   };
 }
 
+function lighterKeyRegistrationCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: {
+      toolId: "lighter.key.register",
+      params: { intentId: LIGHTER_DEPOSIT_INTENT_ID },
+    },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "key.register",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.key.register",
+        intentId: LIGHTER_DEPOSIT_INTENT_ID,
+        environment: "core",
+        walletAddress: "0x1111111111111111111111111111111111111111",
+        ethereumChainId: 1,
+        lighterChainId: 304,
+        accountIndex: 42,
+        apiKeyIndex: 6,
+        registrationNonce: "0",
+        publicKey: LIGHTER_KEY_PUBLIC_KEY,
+        publicKeyFingerprint: LIGHTER_KEY_FINGERPRINT,
+        vaultCredentialId: "lighter/core/account-42/api-key-6",
+        summary: "Register this exact key.",
+        authorityNote: "Registers one local credential; later actions stay separately gated.",
+        signatureNote: "Signs one exact human-readable EIP-191 message locally.",
+        scopeNote: "Does not authorize a deposit, order, transfer, or withdrawal.",
+      },
+    },
+  };
+}
+
 describe("prepared-action follow-up registry", () => {
   it("allows and canonicalizes wallet_send_prepare → wallet_send_confirm", () => {
     const input = candidate();
@@ -148,6 +186,52 @@ describe("prepared-action follow-up registry", () => {
       expect(result).toEqual({ ok: true, followUp: input });
     },
   );
+
+  it.each(["execute_tool", "lighter__key__register__prepare"])(
+    "allows %s to hand off an exact Lighter key-registration intent",
+    (sourceToolName) => {
+      const input = lighterKeyRegistrationCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({
+        ok: true,
+        followUp: input,
+      });
+    },
+  );
+
+  it("rejects any altered Lighter key-registration approval field", () => {
+    const overrides: Record<string, unknown>[] = [
+      { environment: "rhc" },
+      { walletAddress: "not-an-address" },
+      { ethereumChainId: 8453 },
+      { lighterChainId: 466324 },
+      { accountIndex: 43 },
+      { apiKeyIndex: 3 },
+      { apiKeyIndex: 255 },
+      { registrationNonce: "01" },
+      { publicKey: "00".repeat(40) },
+      { publicKeyFingerprint: "f".repeat(64) },
+      { vaultCredentialId: "lighter/core/account-42/api-key-7" },
+      { authorityNote: "" },
+      { signatureNote: "" },
+      { scopeNote: "" },
+    ];
+    for (const override of overrides) {
+      const candidate = lighterKeyRegistrationCandidate();
+      expect(
+        validatePreparedActionFollowUp("execute_tool", {
+          ...candidate,
+          approvalPreview: {
+            ...candidate.approvalPreview,
+            criticalArgs: {
+              ...candidate.approvalPreview.criticalArgs,
+              ...override,
+            },
+          },
+        }),
+        `override ${JSON.stringify(override)} must fail closed`,
+      ).toEqual({ ok: false, reason: "invalid_contract" });
+    }
+  });
 
   it("rejects Lighter deposit previews whose fund-moving fields were altered", () => {
     const overrides: Record<string, unknown>[] = [

@@ -41,7 +41,39 @@ const DEPOSIT_INTENT_ID_PARAM: ProtocolParamDef = {
     "Session-scoped Lighter deposit intent id produced by lighter.deposit.prepare. The approved deposit path refuses ids from other sessions.",
 };
 
+const KEY_REGISTRATION_INTENT_ID_PARAM: ProtocolParamDef = {
+  key: "intentId",
+  type: "string",
+  required: true,
+  description:
+    "Session-scoped Lighter key-registration intent id produced by lighter.key.register.prepare.",
+};
+
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "lighter.key.register.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare a separate security-sensitive approval for registering a locally generated Lighter trading credential on the selected Vex-wallet-owned Core account. Reads every public API-key slot, transactionally reserves an unused index from 4 through 254, generates the key only through the privileged packaged signer helper, encrypts the private key in the local vault before public metadata, reads the exact public next nonce, and binds wallet, account, index, public key, fingerprint, nonce, and granted authority into a trusted approval card. No wallet signature, L2ChangePubKey transaction, sendTx, deposit, order, transfer, or withdrawal runs during preparation.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM],
+    exampleParams: { environment: "core" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.key.register.prepare"],
+  },
+  {
+    toolId: "lighter.key.register",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. This checkpoint records the exact approval but remains behind both the independent key-registration release gate and an uninstalled signing/submission boundary, so it cannot yet sign the EIP-191 ownership message or call sendTx.",
+    mutating: true,
+    actionKind: "user_wallet_broadcast",
+    params: [KEY_REGISTRATION_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-onboard-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.key.register"],
+  },
   {
     toolId: "lighter.deposit.prepare",
     namespace: "lighter",

@@ -157,6 +157,7 @@ describe("capture contract — structural coverage", () => {
     const projection = getToolsByKind("projection");
     expect(projection.map(([id]) => id).sort()).toEqual([
       "lighter.deposit",
+      "lighter.key.register",
       "lighter.order.create",
       "pendle.lp.add",
       "pendle.lp.addKeepYt",

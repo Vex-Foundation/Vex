@@ -7,6 +7,7 @@ import { closePool, execute, query } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import {
+  markLighterKeyRegistrationApprovalPendingWith,
   markLighterKeyGeneratedEncryptedWith,
   reserveLighterApiKeySlotWith,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -153,6 +154,32 @@ d("Lighter Phase 3 API-key slot reservation database boundary", () => {
     expect(workflow[0]).toMatchObject({
       workflow_state: "key_generated_encrypted",
       api_key_index: 5,
+      public_key_fingerprint: generated?.publicKeyFingerprint,
+    });
+
+    const approvalPending = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationApprovalPendingWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        registrationNonce: "0",
+        observedAt: now,
+      }));
+    expect(approvalPending).toMatchObject({
+      executionState: "approval_pending",
+      registrationNonce: "0",
+      registrationNonceObservedAt: now,
+    });
+    const approvalWorkflow = await query<{
+      workflow_state: string;
+      public_key_fingerprint: string;
+    }>(
+      `SELECT workflow_state, public_key_fingerprint
+         FROM lighter_onboarding_workflows
+        WHERE environment = 'core' AND wallet_address = LOWER($1)`,
+      [walletAddress],
+    );
+    expect(approvalWorkflow[0]).toMatchObject({
+      workflow_state: "key_registration_approval_pending",
       public_key_fingerprint: generated?.publicKeyFingerprint,
     });
   });

@@ -116,6 +116,8 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     // create is an external exchange mutation resume target.
     ["lighter.deposit.prepare", "approval_prepare"],
     ["lighter.deposit", "user_wallet_broadcast"],
+    ["lighter.key.register.prepare", "approval_prepare"],
+    ["lighter.key.register", "user_wallet_broadcast"],
     ["lighter.order.create.prepare", "approval_prepare"],
     ["lighter.order.create", "external_post"],
   ];

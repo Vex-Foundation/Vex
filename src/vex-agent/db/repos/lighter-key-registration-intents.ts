@@ -34,11 +34,17 @@ export interface LighterKeyRegistrationReservationRow {
   readonly slotObservedAt: Date;
   readonly slotObservationHash: string;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
-  readonly executionState: "slot_reserved" | "key_generated_encrypted";
+  readonly executionState:
+    | "slot_reserved"
+    | "key_generated_encrypted"
+    | "approval_pending"
+    | "approved";
   readonly vaultCredentialId: string | null;
   readonly publicKey: string | null;
   readonly publicKeyFingerprint: string | null;
   readonly keyGeneratedAt: Date | null;
+  readonly registrationNonce: string | null;
+  readonly registrationNonceObservedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly expiresAt: Date;
@@ -70,6 +76,7 @@ const RETURNING = `
   resolved_account_index, api_key_index, slot_observed_at,
   slot_observation_hash, approval_status, execution_state,
   vault_credential_id, public_key, public_key_fingerprint, key_generated_at,
+  registration_nonce, registration_nonce_observed_at,
   created_at, updated_at, expires_at
 `;
 
@@ -81,6 +88,27 @@ export async function findLighterKeyRegistrationIntent(
        FROM lighter_onboarding_intents
       WHERE intent_id = $1 AND capability = 'key_registration'`,
     [intentId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findLiveLighterKeyRegistrationIntentForAccount(
+  environment: LighterEnvironment,
+  accountIndex: number,
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (!Number.isSafeInteger(accountIndex) || accountIndex <= 0) {
+    throw new Error("Lighter key registration lookup requires a positive safe account index.");
+  }
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${RETURNING}
+       FROM lighter_onboarding_intents
+      WHERE environment = $1
+        AND resolved_account_index = $2
+        AND capability = 'key_registration'
+        AND execution_state <> 'failed'
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [environment, accountIndex],
   );
   return row === null ? null : mapRow(row);
 }
@@ -275,6 +303,88 @@ export async function markLighterKeyGeneratedEncryptedWith(
   return intent;
 }
 
+/**
+ * Bind a freshly observed public nextNonce into the approval contract before
+ * the host creates an approval card. Signing must later re-read and match it.
+ */
+export async function markLighterKeyRegistrationApprovalPendingWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly registrationNonce: string;
+    readonly observedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const registrationNonce = normalizeRegistrationNonce(input.registrationNonce);
+  if (!Number.isFinite(input.observedAt.getTime())) {
+    throw new Error("Lighter key registration nonce observation requires a valid timestamp.");
+  }
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'approval_pending',
+            registration_nonce = $3,
+            registration_nonce_observed_at = $4,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'key_generated_encrypted'
+        AND expires_at > NOW()
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, registrationNonce, input.observedAt],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_generated_encrypted"],
+    nextState: "key_registration_approval_pending",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter onboarding workflow rejected key-registration approval preparation.");
+  }
+  return intent;
+}
+
+/** Record the exact host approval before any release-gate or signer access. */
+export async function markLighterKeyRegistrationApprovedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly approvalId: string;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.approvalId.trim().length === 0) {
+    throw new Error("Lighter key registration approval id is required.");
+  }
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET approval_status = 'approved',
+            approval_id = $3,
+            decided_at = NOW(),
+            decision_reason = 'user approved exact Lighter key registration intent',
+            execution_state = 'approved',
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approval_pending'
+        AND expires_at > NOW()
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.approvalId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 async function findHeldReservationWith(
   client: LighterOnboardingQueryClient,
   environment: LighterEnvironment,
@@ -353,6 +463,8 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
   if (
     row.execution_state !== "slot_reserved"
     && row.execution_state !== "key_generated_encrypted"
+    && row.execution_state !== "approval_pending"
+    && row.execution_state !== "approved"
   ) {
     throw new Error("Lighter key registration row has an unexpected execution state.");
   }
@@ -374,10 +486,27 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
     keyGeneratedAt: row.key_generated_at === null || row.key_generated_at === undefined
       ? null
       : row.key_generated_at as Date,
+    registrationNonce: nullableString(row.registration_nonce),
+    registrationNonceObservedAt:
+      row.registration_nonce_observed_at === null
+        || row.registration_nonce_observed_at === undefined
+        ? null
+        : row.registration_nonce_observed_at as Date,
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     expiresAt: row.expires_at as Date,
   };
+}
+
+function normalizeRegistrationNonce(value: string): string {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) {
+    throw new Error("Lighter key registration nonce must be a canonical non-negative integer.");
+  }
+  const nonce = BigInt(value);
+  if (nonce > (1n << 48n) - 1n) {
+    throw new Error("Lighter key registration nonce exceeds the official signer range.");
+  }
+  return nonce.toString();
 }
 
 function normalizePublicKey(value: string): string {

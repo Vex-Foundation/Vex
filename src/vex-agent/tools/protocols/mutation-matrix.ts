@@ -223,6 +223,7 @@ const entries: [string, MutationContract][] = [
   // lifecycle in `lighter_deposit_intents` and `lighter_wallet_workflows`.
   // It must never also enter the legacy trade/activity projection pipeline.
   ["lighter.deposit",          { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["lighter.key.register",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────

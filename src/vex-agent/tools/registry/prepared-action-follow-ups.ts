@@ -1,5 +1,7 @@
 /** Explicit allow-list for trusted prepare → execute handoffs. */
 
+import { createHash } from "node:crypto";
+
 import type {
   ApprovalPreviewScalar,
   PreparedActionFollowUp,
@@ -56,10 +58,25 @@ export interface ValidatedLighterDepositFollowUp {
   };
 }
 
+export interface ValidatedLighterKeyRegistrationFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.key.register";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "key.register";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export type ValidatedPreparedActionFollowUp =
   | ValidatedWalletSendFollowUp
   | ValidatedLighterOrderCreateFollowUp
-  | ValidatedLighterDepositFollowUp;
+  | ValidatedLighterDepositFollowUp
+  | ValidatedLighterKeyRegistrationFollowUp;
 
 export type PreparedActionFollowUpValidation =
   | { readonly ok: true; readonly followUp: ValidatedPreparedActionFollowUp }
@@ -75,6 +92,10 @@ const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
 const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__deposit__prepare",
+]);
+const LIGHTER_KEY_REGISTRATION_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__key__register__prepare",
 ]);
 const PREVIEW_KEYS = ["network", "chain", "to", "amount", "token"] as const;
 const LIGHTER_PREVIEW_KEYS = [
@@ -133,6 +154,24 @@ const LIGHTER_DEPOSIT_PREVIEW_KEYS = [
   "summary",
   "scopeNote",
 ] as const;
+const LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS = [
+  "toolId",
+  "intentId",
+  "environment",
+  "walletAddress",
+  "ethereumChainId",
+  "lighterChainId",
+  "accountIndex",
+  "apiKeyIndex",
+  "registrationNonce",
+  "publicKey",
+  "publicKeyFingerprint",
+  "vaultCredentialId",
+  "summary",
+  "authorityNote",
+  "signatureNote",
+  "scopeNote",
+] as const;
 
 const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 const LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE =
@@ -177,6 +216,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.deposit"
   ) {
     return validateLighterDepositFollowUp(candidate);
+  }
+  if (
+    LIGHTER_KEY_REGISTRATION_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.key.register"
+  ) {
+    return validateLighterKeyRegistrationFollowUp(candidate);
   }
 
   if (
@@ -244,6 +290,104 @@ export function validatePreparedActionFollowUp(
       },
     },
   };
+}
+
+function validateLighterKeyRegistrationFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  if (
+    Object.keys(candidate.args).sort().join(",") !== "params,toolId"
+    || candidate.args.toolId !== "lighter.key.register"
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const paramsRecord = params as Record<string, unknown>;
+  const intentId = paramsRecord.intentId;
+  if (
+    Object.keys(paramsRecord).join(",") !== "intentId"
+    || typeof intentId !== "string"
+    || !LIGHTER_DEPOSIT_INTENT_ID_RE.test(intentId)
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "key.register" || preview.namespace !== "lighter") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  if (
+    Object.keys(preview.criticalArgs).sort().join(",")
+    !== [...LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS].sort().join(",")
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    criticalArgs[key] = value;
+  }
+  const publicKey = criticalArgs.publicKey;
+  const fingerprint = criticalArgs.publicKeyFingerprint;
+  if (
+    criticalArgs.toolId !== "lighter.key.register"
+    || criticalArgs.intentId !== intentId
+    || criticalArgs.environment !== "core"
+    || typeof criticalArgs.walletAddress !== "string"
+    || !EVM_ADDRESS_RE.test(criticalArgs.walletAddress)
+    || criticalArgs.ethereumChainId !== 1
+    || criticalArgs.lighterChainId !== 304
+    || typeof criticalArgs.accountIndex !== "number"
+    || !Number.isSafeInteger(criticalArgs.accountIndex)
+    || criticalArgs.accountIndex <= 0
+    || typeof criticalArgs.apiKeyIndex !== "number"
+    || !Number.isInteger(criticalArgs.apiKeyIndex)
+    || criticalArgs.apiKeyIndex < 4
+    || criticalArgs.apiKeyIndex > 254
+    || typeof criticalArgs.registrationNonce !== "string"
+    || !/^(?:0|[1-9][0-9]*)$/.test(criticalArgs.registrationNonce)
+    || BigInt(criticalArgs.registrationNonce) > (1n << 48n) - 1n
+    || typeof publicKey !== "string"
+    || !/^[0-9a-f]{80}$/.test(publicKey)
+    || typeof fingerprint !== "string"
+    || !/^[0-9a-f]{64}$/.test(fingerprint)
+    || createHash("sha256").update(Buffer.from(publicKey, "hex")).digest("hex")
+      !== fingerprint
+    || criticalArgs.vaultCredentialId
+      !== `lighter/core/account-${criticalArgs.accountIndex}/api-key-${criticalArgs.apiKeyIndex}`
+    || !isBoundedText(criticalArgs.summary)
+    || !isBoundedText(criticalArgs.authorityNote)
+    || !isBoundedText(criticalArgs.signatureNote)
+    || !isBoundedText(criticalArgs.scopeNote)
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.key.register",
+        params: { intentId },
+      },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: {
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs,
+      },
+    },
+  };
+}
+
+function isBoundedText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 600;
 }
 
 function validateLighterDepositFollowUp(

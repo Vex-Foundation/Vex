@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
+  markLighterKeyRegistrationApprovalPendingWith,
+  markLighterKeyRegistrationApprovedWith,
   markLighterKeyGeneratedEncryptedWith,
   reserveLighterApiKeySlotWith,
   type ReserveLighterApiKeySlotInput,
@@ -52,6 +54,8 @@ function reservationRow(apiKeyIndex = 6) {
     public_key: null,
     public_key_fingerprint: null,
     key_generated_at: null,
+    registration_nonce: null,
+    registration_nonce_observed_at: null,
     created_at: NOW,
     updated_at: NOW,
     expires_at: INPUT.expiresAt,
@@ -175,6 +179,74 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(client.query.mock.calls[1]?.[0]).toContain("workflow_state = ANY($3)");
   });
 
+  it("binds the public registration nonce before approval and records approval separately", async () => {
+    const approvalPendingRow = {
+      ...reservationRow(6),
+      execution_state: "approval_pending",
+      vault_credential_id: "lighter/core/account-42/api-key-6",
+      public_key: "ab".repeat(40),
+      public_key_fingerprint: "f".repeat(64),
+      key_generated_at: NOW,
+      registration_nonce: "0",
+      registration_nonce_observed_at: NOW,
+    };
+    const prepareClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [approvalPendingRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [workflowRow("key_registration_approval_pending")],
+          rowCount: 1,
+        }),
+    };
+    const pending = await markLighterKeyRegistrationApprovalPendingWith(
+      prepareClient as never,
+      {
+        intentId: approvalPendingRow.intent_id,
+        sessionId: INPUT.sessionId,
+        registrationNonce: "0",
+        observedAt: NOW,
+      },
+    );
+    expect(pending).toMatchObject({
+      executionState: "approval_pending",
+      registrationNonce: "0",
+      registrationNonceObservedAt: NOW,
+    });
+    expect(prepareClient.query.mock.calls[0]?.[0]).toContain(
+      "execution_state = 'key_generated_encrypted'",
+    );
+    expect(prepareClient.query.mock.calls[1]?.[1]?.[2]).toEqual([
+      "key_generated_encrypted",
+    ]);
+
+    const approvedClient = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{
+          ...approvalPendingRow,
+          approval_status: "approved",
+          execution_state: "approved",
+        }],
+        rowCount: 1,
+      }),
+    };
+    const approved = await markLighterKeyRegistrationApprovedWith(
+      approvedClient as never,
+      {
+        intentId: approvalPendingRow.intent_id,
+        sessionId: INPUT.sessionId,
+        approvalId: "approval-1",
+      },
+    );
+    expect(approved).toMatchObject({
+      approvalStatus: "approved",
+      executionState: "approved",
+      registrationNonce: "0",
+    });
+    expect(approvedClient.query.mock.calls[0]?.[0]).toContain(
+      "approval_status = 'approval_pending'",
+    );
+  });
+
   it("refuses an unresolved workflow that has not proven the requested account", async () => {
     const client = {
       query: vi.fn().mockResolvedValueOnce({
@@ -215,5 +287,16 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(sql).toContain("vault_credential_id");
     expect(sql).toContain("public_key_fingerprint");
     expect(sql).not.toMatch(/private_key|auth_token|signed_payload/i);
+  });
+
+  it("approval migration persists only the public nonce contract", async () => {
+    const sql = await readFile(new URL(
+      "../../vex-agent/db/migrations/099_lighter_key_registration_approval.sql",
+      import.meta.url,
+    ), "utf8");
+
+    expect(sql).toContain("registration_nonce");
+    expect(sql).toContain("281474976710655");
+    expect(sql).not.toMatch(/private_key|l1_sig|signed_payload|tx_info/i);
   });
 });

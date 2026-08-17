@@ -28,6 +28,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.key.register.prepare",
+  "lighter.key.register",
   "lighter.deposit.prepare",
   "lighter.deposit",
   "lighter.order.create.prepare",
@@ -76,6 +78,14 @@ describe("Lighter agent discovery surface", () => {
       mutating: true,
       actionKind: "external_post",
     });
+    expect(getProtocolManifest("lighter.key.register.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(getProtocolManifest("lighter.key.register")).toMatchObject({
+      mutating: true,
+      actionKind: "user_wallet_broadcast",
+    });
   });
 
   it("accepts core or rhc environment on environment-scoped tools", () => {
@@ -110,9 +120,14 @@ describe("Lighter agent discovery surface", () => {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("user_wallet_broadcast");
         expect(tool.requiredParams).toContain("intentId");
+      } else if (tool.toolId === "lighter.key.register") {
+        expect(tool.mutating).toBe(true);
+        expect(tool.actionKind).toBe("user_wallet_broadcast");
+        expect(tool.requiredParams).toContain("intentId");
       } else if (
         tool.toolId === "lighter.order.create.prepare"
         || tool.toolId === "lighter.deposit.prepare"
+        || tool.toolId === "lighter.key.register.prepare"
       ) {
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("approval_prepare");
@@ -124,22 +139,37 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
-  it("returns full schemas when discovering the lighter namespace", async () => {
-    const result = await discoverProtocolCapabilities({ namespace: "lighter", limit: 20 });
+  it("returns ranked schemas up to the global discovery cap", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "lighter", limit: 22 });
     expect(result.success).toBe(true);
-    expect(result.count).toBe(LIGHTER_TOOL_IDS.length);
-    expect(result.tools.map((tool) => tool.toolId)).toEqual(LIGHTER_TOOL_IDS);
+    expect(result.count).toBe(20);
+    expect(result.tools.map((tool) => tool.toolId)).toEqual(LIGHTER_TOOL_IDS.slice(0, 20));
 
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(true);
       if (!isRankedDiscoveryItem(tool)) continue;
       expect(tool.namespace).toBe("lighter");
-      if (tool.toolId === "lighter.order.create") {
+      if (
+        tool.toolId === "lighter.order.create"
+        || tool.toolId === "lighter.key.register"
+      ) {
         expect(tool.required).toContain("intentId");
       } else {
         expect(tool.required).not.toContain("environment");
       }
     }
+  });
+
+  it("recalls key registration separately from deposit and order execution", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "lighter key registration",
+      limit: 5,
+    });
+    expect(result.success).toBe(true);
+    expect(result.tools.map((tool) => tool.toolId)).toContain(
+      "lighter.key.register.prepare",
+    );
   });
 
   it("pins an exact lighter tool id query to that tool", async () => {
