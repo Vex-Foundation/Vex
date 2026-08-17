@@ -234,7 +234,8 @@ d("lighter_onboarding_intents repo", () => {
       depositReplacementTxHash: replacementTxHash,
       depositReplacementReason: "repriced",
     });
-    expect(repo.effectiveDepositTxHash(replaced!)).toBe(replacementTxHash);
+    if (replaced === null) throw new Error("expected the repriced deposit row");
+    expect(repo.effectiveDepositTxHash(replaced)).toBe(replacementTxHash);
 
     const firstBlockHash = "0x" + "c".repeat(64);
     const confirmed = await withSessionControlLock(sessionId, (client) =>

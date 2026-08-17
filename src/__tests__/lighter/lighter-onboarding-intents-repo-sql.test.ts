@@ -270,7 +270,9 @@ describe("lighter onboarding intent creation SQL", () => {
       outcome: "confirmed",
     });
 
-    const [sql, params] = client.query.mock.calls[0]!;
+    const stagedCall = client.query.mock.calls[0];
+    if (stagedCall === undefined) throw new Error("expected the staged deposit query");
+    const [sql, params] = stagedCall;
     expect(sql).toContain("LOWER(COALESCE(approve_replacement_tx_hash, approve_tx_hash)) = LOWER($2)");
     expect(sql).toContain("deposit_tx_hash IS NULL");
     expect(sql).toContain("execution_state IN ('approve_submitted', 'ambiguous')");
@@ -324,7 +326,9 @@ describe("lighter onboarding intent creation SQL", () => {
       depositTxFrom: staged.fromAddress,
       depositTxNonce: "17",
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const replacementCall = client.query.mock.calls[0];
+    if (replacementCall === undefined) throw new Error("expected the replacement query");
+    const [sql, params] = replacementCall;
     expect(sql).toContain("deposit_tx_hash = $3");
     expect(sql).toContain("deposit_tx_from = $4");
     expect(sql).toContain("deposit_tx_nonce = $5");

@@ -5,6 +5,7 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 import {
   waitForReceiptWithReplacementEvidence,
   waitForSuccessfulReceipt,
+  type ReceiptWaitClient,
 } from "@tools/evm-chains/receipt-guard.js";
 
 const HASH = `0x${"ab".repeat(32)}` as Hex;
@@ -78,7 +79,7 @@ describe("waitForReceiptWithReplacementEvidence", () => {
     };
 
     await expect(
-      waitForReceiptWithReplacementEvidence(client as never, HASH),
+      waitForReceiptWithReplacementEvidence(client as unknown as ReceiptWaitClient, HASH),
     ).resolves.toEqual({
       receipt,
       replacement: {
