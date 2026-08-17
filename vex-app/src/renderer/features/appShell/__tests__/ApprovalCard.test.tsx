@@ -219,6 +219,40 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("labels Lighter deposits explicitly and requires the high-risk two-click guard", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "high",
+        actionKind: "user_wallet_broadcast",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "deposit",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.deposit",
+            intentId: "lighter-onboard-00000000-0000-4000-8000-000000000001",
+            amountDisplay: "11",
+            depositTo: "0x1111111111111111111111111111111111111111",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and deposit$/i }),
+    );
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: /confirm approve/i });
+    expect(confirm.textContent).toContain("Click again to approve and deposit");
+
+    fireEvent.click(confirm);
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
   it("low-risk: single click on Reject fires mutate", () => {
     renderCard(
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),

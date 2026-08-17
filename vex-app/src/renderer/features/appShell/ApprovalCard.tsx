@@ -47,16 +47,27 @@ function isLighterOrderCreateApproval(summary: ApprovalSummaryDto): boolean {
   ) || summary.preview?.criticalArgs.toolId === "lighter.order.create";
 }
 
+function isLighterDepositApproval(summary: ApprovalSummaryDto): boolean {
+  return (
+    summary.preview?.namespace === "lighter" &&
+    summary.preview.toolName === "deposit"
+  ) || summary.preview?.criticalArgs.toolId === "lighter.deposit";
+}
+
 function approveLabelFor(summary: ApprovalSummaryDto): string {
-  return isLighterOrderCreateApproval(summary)
-    ? "Approve and execute trade"
-    : "Approve";
+  if (isLighterOrderCreateApproval(summary)) return "Approve and execute trade";
+  if (isLighterDepositApproval(summary)) return "Approve and deposit";
+  return "Approve";
 }
 
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
-  return isLighterOrderCreateApproval(summary)
-    ? "Click again to approve and execute trade"
-    : "Click again to confirm approve";
+  if (isLighterOrderCreateApproval(summary)) {
+    return "Click again to approve and execute trade";
+  }
+  if (isLighterDepositApproval(summary)) {
+    return "Click again to approve and deposit";
+  }
+  return "Click again to confirm approve";
 }
 
 export interface ApprovalCardProps {
