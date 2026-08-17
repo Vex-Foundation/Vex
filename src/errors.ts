@@ -366,6 +366,24 @@ export const ErrorCodes = {
    * user would ever approve, which is a false safety signal on a money path.
    */
   MORPHO_CONTRACT_UNAVAILABLE: "MORPHO_CONTRACT_UNAVAILABLE",
+  /**
+   * A transaction the Morpho SDK built did not survive Vex's own leg-by-leg
+   * decode: an entry point that is not the pinned Bundler3 or the intent's own
+   * vault, a selector outside the closed allowlist, an inner call to a contract
+   * outside the intent's own role set, a value transfer nobody asked for, an
+   * amount outside the intent's bounds, or a leg that could not be decoded at
+   * all. Rules/90: opaque calldata is decoded and checked against a bound we
+   * computed ourselves before anything is signed, and an undecodable leg is a
+   * refusal rather than a pass-through.
+   */
+  MORPHO_BUNDLE_REJECTED: "MORPHO_BUNDLE_REJECTED",
+  /**
+   * A requirement the SDK returned is outside the owner's approval policy
+   * (2026-08-17: one approval to the CANONICAL Permit2 only, then a per-operation
+   * signature). Any ERC-20 approval naming a different spender, GeneralAdapter1
+   * included, is refused BY NAME rather than quietly presented as a step.
+   */
+  MORPHO_APPROVAL_POLICY_VIOLATION: "MORPHO_APPROVAL_POLICY_VIOLATION",
 
   // Merkl (reward distribution API behind Morpho's campaigns - keyless, batch 4)
   MERKL_API_ERROR: "MERKL_API_ERROR",
