@@ -84,10 +84,22 @@ function previewResult(overrides: Record<string, unknown> = {}): Record<string, 
       slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       note: "share price note",
     },
+    // The owner's FINAL approval policy (2026-08-17): no signature path of any
+    // kind, so the two steps a fresh USDT-shaped wallet faces are the reset to
+    // zero and the EXACT-amount approval to GeneralAdapter1 - never a Permit2
+    // grant and never a typed-data signature.
     requirements: [
-      { kind: "approval", token: "0x8335", spender: "0x0000000000225", spenderRole: "permit2", amountRaw: "1", unbounded: true, explanation: "one-time" },
-      { kind: "signature", scheme: "permit2", spender: "0xadapter", spenderRole: "generalAdapter1", amountRaw: "1000000", deadlineSeconds: "1", expirationSeconds: null, explanation: "per operation" },
+      { kind: "approval_reset", token: "0x8335", spender: "0xadapter", spenderRole: "GeneralAdapter1", amountRaw: "0", explanation: "zeroed first" },
+      { kind: "approval", token: "0x8335", spender: "0xadapter", spenderRole: "GeneralAdapter1", amountRaw: "1000000", explanation: "exact amount" },
     ],
+    allowance: {
+      shape: "reset-then-approve",
+      spender: "0xadapter",
+      spenderRole: "GeneralAdapter1",
+      currentAllowanceRaw: "1",
+      requiredAmountRaw: "1000000",
+      note: "allowance note",
+    },
     bundle: { shape: "bundler3-multicall", to: "0xbundler", toRole: "bundler3", selector: "0x1", functionName: "multicall", valueRaw: "0", legs: [], maxSharePriceRaw: "1040300000000000000000000000", verifiedAmountRaw: "1000000", verifiedRecipient: WALLET },
     bundleAllowlist: ["bundler3.multicall"],
     gas: { nodeEstimate: null, vexGasLimit: null, unavailableReason: "The gas figure is UNKNOWN, not zero.", note: "gas note" },
@@ -333,7 +345,10 @@ describe("morpho.vault.quote reply contract", () => {
 
     expect(payload.summary).toContain("Nothing was signed and nothing was sent");
     expect(payload.notes.preview).toContain("commits nothing");
-    expect(payload.nextStep).toContain("cannot be turned into a transaction");
+    // The quote still commits nothing, but it is no longer a dead end: it
+    // AUTHORIZES the matching execute, and the reply has to say which one.
+    expect(payload.nextStep).toContain("morpho.vault.deposit");
+    expect(payload.nextStep).toContain("spends real funds");
   });
 
   it("lists the requirements and says how many would have to be satisfied first", async () => {
@@ -385,6 +400,8 @@ describe("morpho.vault.quote reply contract", () => {
       direction: "withdraw",
       sharePrice: { ...previewResult().sharePrice as Record<string, unknown>, maxSharePriceRaw: null, vexCeilingRaw: null },
       requirements: [],
+      allowance: null,
+      // A withdrawal pulls nothing, so it has no allowance reading at all.
       bundle: { shape: "direct-vault-call", to: VAULT, toRole: "vault", selector: "0x2", functionName: "withdraw", valueRaw: "0", legs: [], maxSharePriceRaw: null, verifiedAmountRaw: "1000000", verifiedRecipient: WALLET },
     }));
 

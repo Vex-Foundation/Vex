@@ -27,8 +27,8 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
   namespace: "morpho",
   lifecycle: "active",
   description:
-    "Screen Morpho VAULTS across the EVM chains Vex reads Morpho on (discovery ships the exact slugs on this tool's "
-    + "`chains` metadata, and naming an unsupported chain is rejected with the full supported set). "
+    "Screen Morpho VAULTS across the EVM chains Vex reads Morpho on (the exact slugs ship on this tool's `chains` "
+    + "metadata). "
     + "A Morpho vault is a CURATED, MANAGED deposit: the depositor hands one asset to a curator who spreads it across "
     + "many Morpho Blue lending markets and takes a fee from the yield. That is a different product from a lending "
     + "market, and the routing rule is simple - use THIS tool when the user wants somewhere passive to park an asset, "
@@ -38,23 +38,23 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "COVERS BOTH VAULT GENERATIONS. `version` selects v1 (MetaMorpho), v2, or both (the default). At `both` this "
     + "tool queries BOTH generations, takes the top (offset + limit) rows from EACH under your sort key, merges them "
     + "and re-sorts the union, so the returned ordering is the exact global ranking for that window and `matched` is "
-    + "the sum of both totals; paging beyond one window needs `version` set to a single generation, and asking for "
-    + "more is refused by name rather than served as a merge that could miss rows. "
+    + "the sum of both totals; paging beyond one window is refused by name rather than served as a merge that could "
+    + "miss rows. "
     + "Filter by chain, vault asset address, curator address, TVL in USD, minimum net APY percent and maximum curator "
-    + "cut percent (the fee bound is spelled `maxCuratorCutPercent`, because a param key containing the word fee is "
-    + "reserved in this tree for a fee VEX charges, and this one bounds somebody else's); `search` and `assetSymbol` are V1-only predicates and are REJECTED BY NAME when v2 is in scope, "
+    + "cut percent (the fee bound is spelled `maxCuratorCutPercent`: a key containing 'fee' is reserved here for a "
+    + "fee VEX charges); `search` and `assetSymbol` are V1-only predicates and are REJECTED BY NAME when v2 is in scope, "
     + "because applying a filter to half a result set and not the other half is worse than refusing. Sort by tvlUsd "
     + "(default), netApy, apy or name (name is V1-only); page with offset/limit (max "
     + `${MORPHO_MAX_PAGE_LIMIT}). Every filter that ran is echoed in \`filtersApplied\`. `
     + "RETURNS one row per vault: address, version, chain, name, symbol, listed flag, the vault asset with address, "
-    + "symbol and decimals, TVL as {raw, decimals, symbol, human, usd}, share supply in SHARE units, share price, "
+    + "symbol and decimals, TVL as {raw, decimals, symbol, human, usd}, share supply as a SHARE count at an "
+    + "explicitly unknown scale, share price, "
     + "curator address plus any named curator Morpho attributes it to, owner, fees, warnings, and an APY block. "
     + "APY LABELLING IS THE CONTRACT AND IT DIFFERS FROM THE MARKETS LANE: a vault APY is NET of the vault's fee "
     + "while a market APY is GROSS, so the two must never be ranked against each other. `apyPercent` is the yield "
     + "BEFORE the curator's fee, `netApyPercent` is what a depositor actually earns with incentives included, "
-    + "`netApyExcludingRewardsPercent` is after the fee and EXCLUDES incentives while `netApyPercent` INCLUDES them, "
-    + "and each `rewards[]` entry is a "
-    + "separate APR paid in its own token. In a live capture a vault reported 4.12% before a 25% fee and 3.07% after "
+    + "`netApyExcludingRewardsPercent` is after the fee and EXCLUDES incentives while `netApyPercent` INCLUDES them, and each `rewards[]` entry is a separate APR "
+    + "paid in its own token. In a live capture a vault reported 4.12% before a 25% fee and 3.07% after "
     + "it - that gap is larger than the spread between most vaults in the same list. "
     + "GATING IS A HARD WARNING AND ONLY V2 VAULTS HAVE IT. `gating.withdrawalGated` true means a gate contract "
     + "decides whether a depositor may exit at all; `gating.depositGated` blocks entry. Live gated vaults exist, so "
@@ -188,11 +188,12 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     {
       key: "fields",
       type: "string",
-      enum: MORPHO_VAULT_FIELD_GROUPS,
+      acceptsStringArray: true,
       description:
-        `Comma-separated row field groups to keep, one of: ${MORPHO_VAULT_FIELD_GROUPS.join(", ")} - or 'all' `
-        + "(default). Use it to keep a large result small; address, version and chain are always present, and the "
-        + "gated flags are kept even when the gating group is dropped.",
+        `Row field groups to keep: a comma list, an array of the same, or 'all' (default). Groups: `
+        + `${MORPHO_VAULT_FIELD_GROUPS.join(", ")}. Keeps a large result small; address, version and chain are `
+        + "always present, the gated flags survive dropping the gating group, and an unknown group is rejected by "
+        + "name.",
     },
   ],
   exampleParams: { chainIds: "base,ethereum", sort: "netApy", minTvlUsd: 1000000, limit: 10 },

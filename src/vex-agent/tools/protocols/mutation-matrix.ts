@@ -202,6 +202,15 @@ const entries: [string, MutationContract][] = [
   // flip above.
   ["solana.lend.deposit",      { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.lend.withdraw",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho vault supply / redeem (E3b-2). `capture: "none"` for the same reason
+  // as every row above it: the handler's durable truth is the `agent_activity`
+  // row written by `morpho/handlers/signed-broadcast.ts`, so the legacy
+  // projection pipeline must never also run for it. `previewSupport: true`
+  // because BOTH tools take `dryRun`, which returns the full preview (allowance
+  // plan included) and signs nothing, so the runtime skips approval and capture
+  // for it.
+  ["morpho.vault.deposit",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.vault.withdraw",    { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   // Jupiter Lend BORROW `/operate` (Agent Scan Phase 3 Batch 5, card B1) —
   // full lifecycle (create/deposit/withdraw/borrow/repay) on the SAME K2
   // staged `agent_activity` write path as the two Earn tools above —

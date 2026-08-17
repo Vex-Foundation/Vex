@@ -25,6 +25,7 @@ import type { ProtocolExecutionContext } from "../types.js";
 
 import { PREQUOTE_QUOTE_TOOLS } from "./registry.js";
 import { recordBridgePrequote } from "./record/bridge.js";
+import { recordMorphoLendPrequote } from "./record/morpho-lend.js";
 import { recordPendleLpPrequote } from "./record/pendle-lp.js";
 import { recordPendlePrequote } from "./record/pendle-pt.js";
 import { recordPendlePyPrequote } from "./record/pendle-py.js";
@@ -68,6 +69,10 @@ export async function recordPrequoteFromQuote(
   }
   if (registered.kind === "pendle-lp") {
     await recordPendleLpPrequote(toolId, sessionId, registered, params, resultData, context);
+    return;
+  }
+  if (registered.kind === "morpho-lend") {
+    await recordMorphoLendPrequote(toolId, sessionId, registered, params, resultData, context);
     return;
   }
   await recordSwapPrequote(toolId, sessionId, registered, params, resultData, context);

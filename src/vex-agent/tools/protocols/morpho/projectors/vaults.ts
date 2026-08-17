@@ -36,12 +36,15 @@ import type {
   MorphoVaultGating,
 } from "@tools/morpho/types.js";
 import {
+  MORPHO_SHARES_NOTE,
   formatRawAmount,
   projectAmount,
   projectAsset,
+  projectShareQuantity,
   toPercent,
   type ProjectedAmount,
   type ProjectedAsset,
+  type ProjectedShareQuantity,
 } from "./_shared.js";
 
 /** The sentence every vault APY block is qualified by. */
@@ -117,7 +120,8 @@ export interface ProjectedVaultRow {
   vaultType: string | null;
   asset: ProjectedAsset;
   tvl: ProjectedAmount;
-  totalSupplyRaw: string | null;
+  /** Shares outstanding. A SHARE count, not asset units, and Morpho serves no scale. */
+  totalSupplyShares: ProjectedShareQuantity | null;
   liquidity: ProjectedAmount | null;
   sharePrice: number | null;
   apy: ProjectedVaultApy;
@@ -161,7 +165,7 @@ export function projectVaultRow(vault: MorphoVault): ProjectedVaultRow {
       human: formatRawAmount(vault.totalAssets.raw, vault.totalAssets.decimals),
       usd: vault.totalAssets.usd,
     },
-    totalSupplyRaw: vault.totalSupplyRaw,
+    totalSupplyShares: projectShareQuantity(vault.totalSupplyRaw),
     liquidity: projectAmount(vault.liquidity, vault.asset.symbol),
     sharePrice: vault.sharePrice,
     apy: projectApy(vault.apy),
@@ -250,7 +254,7 @@ export function projectVaultDetail(detail: MorphoVaultDetail, includeHistory: bo
     state: {
       sharePrice: detail.sharePrice,
       totalAssets: row.tvl,
-      totalSupplyRaw: detail.totalSupplyRaw,
+      totalSupplyShares: projectShareQuantity(detail.totalSupplyRaw),
       idleAssets: projectAmount(detail.idleAssets, detail.asset.symbol),
       liquidity: row.liquidity,
       forceDeallocatableLiquidity:
@@ -265,9 +269,12 @@ export function projectVaultDetail(detail: MorphoVaultDetail, includeHistory: bo
             },
       maxApyPercent: toPercent(detail.maxApy),
       note:
-        "`totalSupplyRaw` is SHARE units, not asset units - it is not comparable with `totalAssets`. `liquidity` is "
-        + "what could be withdrawn immediately; `forceDeallocatableLiquidity` needs a forced deallocation that costs "
-        + "a penalty, so it is not free exit capacity.",
+        "`totalSupplyShares` is a SHARE count, not asset units, and is not comparable with `totalAssets`. "
+        + MORPHO_SHARES_NOTE
+        + " `liquidity` is what could be withdrawn immediately; `forceDeallocatableLiquidity` needs a forced "
+        + "deallocation that costs a penalty, so it is not free exit capacity. `maxApyPercent` is a V2-only "
+        + "CONFIGURED CEILING on the vault's rate, as a percent, and is null on V1: it is not a yield anyone is "
+        + "earning and it does not share the basis of the `apy` block, so never quote it as this vault's APY.",
     },
     apyHistory: includeHistory
       ? {
@@ -319,7 +326,7 @@ export function selectVaultFields(
       case "size":
         Object.assign(kept, {
           tvl: row.tvl,
-          totalSupplyRaw: row.totalSupplyRaw,
+          totalSupplyShares: row.totalSupplyShares,
           liquidity: row.liquidity,
           sharePrice: row.sharePrice,
         });

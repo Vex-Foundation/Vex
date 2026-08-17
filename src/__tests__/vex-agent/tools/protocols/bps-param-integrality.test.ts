@@ -251,7 +251,7 @@ describe("manifest bps declarations", () => {
     // tolerance becomes the on-chain `maxSharePrice` ceiling of a transaction
     // the agent is about to be told to send, so a fractional value would
     // silently widen the very guard the preview exists to report.
-    expect(declared.length).toBe(32);
+    expect(declared.length).toBe(34);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
       new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
     );

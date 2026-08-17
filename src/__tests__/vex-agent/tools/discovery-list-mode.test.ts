@@ -50,8 +50,14 @@ const SOLANA_LIST_CHAR_BUDGET = 21_000;
  * morpho namespace reached nine deliberately thorough lending manifests under
  * the extensive-descriptions decree and its lean list measured 30,808. The
  * ratchet's job is unchanged - silent prose growth still fails here first.
+ *
+ * Raised 32,000 -> 38,000 on 2026-08-17 (owner decision, morpho E3b-2): the
+ * two vault execute manifests - the namespace's first fund-spending tools -
+ * cost 6,191 chars in the listing after redundancy was trimmed; what remains
+ * is the safety prose (two-transaction consent, non-atomicity remediations,
+ * exact-amount approval policy). Measured 37,017 with them.
  */
-const ANY_LIST_CHAR_BUDGET = 32_000;
+const ANY_LIST_CHAR_BUDGET = 38_000;
 
 describe("discover_tools namespace list mode", () => {
   const ENV_KEYS = [

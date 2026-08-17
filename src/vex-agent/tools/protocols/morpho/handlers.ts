@@ -16,6 +16,7 @@ import { morphoMarketsActivity } from "./handlers/markets-activity.js";
 import { morphoRewardsGet } from "./handlers/rewards-get.js";
 import { morphoWalletBalance } from "./handlers/wallet-balance.js";
 import { morphoVaultQuote } from "./handlers/vault-quote.js";
+import { morphoVaultDeposit, morphoVaultWithdraw } from "./handlers/vault-execute.js";
 
 export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.markets.discover": (params, context) =>
@@ -37,4 +38,9 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.wallet.balance": (params) => morphoWalletBalance(params),
   "morpho.vault.quote": (params, context) =>
     morphoVaultQuote(params, context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+  // The two EXECUTE tools take the full execution context, not just an abort
+  // signal: they need the session, the wallet resolution and the wallet policy,
+  // and none of those may come from model input.
+  "morpho.vault.deposit": morphoVaultDeposit,
+  "morpho.vault.withdraw": morphoVaultWithdraw,
 };

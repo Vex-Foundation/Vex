@@ -57,6 +57,8 @@ import {
 import {
   MORPHO_HEALTH_FACTOR_NOTE,
   MORPHO_POSITION_USD_NOTE,
+  MORPHO_PRICE_DROP_NOTE,
+  MORPHO_SHARES_NOTE,
   MORPHO_VAULT_APY_DISCLAIMER,
   projectMarketPosition,
   projectPortfolioTotals,
@@ -257,7 +259,13 @@ export async function morphoPositionsGet(
   const vaultHasMore = vaults !== null && q.offset + vaults.v1Returned < vaults.matchedV1;
 
   return ok({
-    summary: buildSummary(q, marketRows.length, vaultRows.length, liquidatable.length, atRisk.length),
+    summary: buildSummary(
+      q,
+      markets === null ? null : marketRows.length,
+      vaults === null ? null : vaultRows.length,
+      liquidatable.length,
+      atRisk.length,
+    ),
     asOf: new Date().toISOString(),
     filtersApplied: q.echo,
     walletAddress: q.walletAddress,
@@ -313,6 +321,8 @@ export async function morphoPositionsGet(
     },
     notes: {
       healthFactor: MORPHO_HEALTH_FACTOR_NOTE,
+      priceDropToLiquidation: MORPHO_PRICE_DROP_NOTE,
+      shares: MORPHO_SHARES_NOTE,
       usd: MORPHO_POSITION_USD_NOTE,
       vaultApy: MORPHO_VAULT_APY_DISCLAIMER,
       vaultPaging:
@@ -346,17 +356,34 @@ export async function morphoPositionsGet(
   });
 }
 
+/**
+ * The headline sentence.
+ *
+ * A SECTION THAT WAS NOT READ IS NOT COUNTED. `scope: "markets"` used to report
+ * "0 vault position(s)" for a half nobody looked at, and a checked zero and an
+ * unread section are different answers - the trailing scope qualifier came after
+ * the number, which is not where a reader stops.
+ */
 function buildSummary(
   q: MorphoPositionsQuery,
-  marketRows: number,
-  vaultRows: number,
+  marketRows: number | null,
+  vaultRows: number | null,
   liquidatable: number,
   atRisk: number,
 ): string {
-  const scope = q.scope === "all" ? "markets and vaults" : q.scope;
+  const counted = [
+    ...(marketRows === null ? [] : [`${marketRows} lending-market position(s)`]),
+    ...(vaultRows === null ? [] : [`${vaultRows} vault position(s)`]),
+  ].join(" and ");
+  const unread =
+    marketRows === null
+      ? " Lending-market positions were NOT read on this call."
+      : vaultRows === null
+        ? " Vault positions were NOT read on this call."
+        : "";
   const parts = [
-    `${q.walletAddress} holds ${marketRows} lending-market position(s) and ${vaultRows} vault position(s) `
-    + `in scope ${scope}${q.chainIds ? " on the selected chains" : " across every chain Vex reads Morpho on"}.`,
+    `${q.walletAddress} holds ${counted}`
+    + `${q.chainIds ? " on the selected chains" : " across every chain Vex reads Morpho on"}.${unread}`,
   ];
   if (liquidatable > 0) {
     parts.push(

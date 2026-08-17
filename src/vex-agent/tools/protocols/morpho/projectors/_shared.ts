@@ -72,6 +72,37 @@ export function projectStandalone(raw: string | null, asset: MorphoAsset): Proje
   };
 }
 
+/**
+ * A SHARE quantity, which is NOT money.
+ *
+ * Morpho's read APIs serve share counts as bare integers and serve no scale for
+ * them anywhere in this lane: no vault share-token `decimals`, no market share
+ * offset. So the scale is reported as UNKNOWN rather than assumed. Defaulting to
+ * 18 would render a number that looks readable and is not, which is exactly the
+ * failure rules/90 names - a raw amount beside an assets amount that DOES carry
+ * its decimals, three orders of magnitude apart, with nothing to tell them apart.
+ */
+export interface ProjectedShareQuantity {
+  raw: string;
+  /** Always null here: Morpho serves no scale for a share unit. Never assume 18. */
+  decimals: null;
+  /** Null exactly because `decimals` is - without a scale there is no readable value. */
+  human: null;
+  scale: "unknown";
+}
+
+/** The sentence every share quantity in this namespace is qualified by. */
+export const MORPHO_SHARES_NOTE =
+  "A `shares` quantity is an ACCOUNTING UNIT, not money. Morpho serves no scale for one, so each carries "
+  + "`scale: \"unknown\"` with a null `decimals` and a null `human`, and Vex will not assume 18 decimals to make the "
+  + "number look readable. Never show a share count as an asset amount and never compare one across markets or "
+  + "vaults; read the matching assets figure, which does carry its decimals, for what the position is worth.";
+
+export function projectShareQuantity(raw: string | null): ProjectedShareQuantity | null {
+  if (raw === null) return null;
+  return { raw, decimals: null, human: null, scale: "unknown" };
+}
+
 export interface ProjectedAsset {
   address: string;
   symbol: string | null;

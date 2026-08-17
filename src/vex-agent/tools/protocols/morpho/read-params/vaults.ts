@@ -41,6 +41,7 @@ import {
   MAX_CSV_ENTRIES,
   checkRange,
   readAddressCsv,
+  readCsvOrArray,
   readChains,
   readOptionalBool,
   readOptionalEnum,
@@ -99,12 +100,19 @@ function readSymbolCsv(raw: unknown, param: string): MorphoParams<string[] | und
   return { ok: true, value: out.length > 0 ? out : undefined };
 }
 
+/**
+ * `fields` accepts a comma string, a string array, or `"all"` - all three of the
+ * forms the manifest documents. The manifest declares no `enum` on it precisely
+ * so those forms reach here; the by-name rejection below is what replaces the
+ * runtime's whole-string check and it must stay at least as informative.
+ */
 function readFieldGroups(raw: unknown): MorphoParams<MorphoVaultFieldGroup[] | undefined> {
-  const value = readOptionalString(raw);
-  if (value === undefined) return { ok: true, value: undefined };
-  if (value.toLowerCase() === "all") return { ok: true, value: undefined };
+  const parsed = readCsvOrArray(raw, "fields");
+  if (!parsed.ok) return parsed;
+  if (parsed.value.kind !== "tokens") return { ok: true, value: undefined };
   const out: MorphoVaultFieldGroup[] = [];
-  for (const token of value.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0)) {
+  for (const entry of parsed.value.tokens) {
+    const token = entry.toLowerCase();
     const match = MORPHO_VAULT_FIELD_GROUPS.find((g) => g === token);
     if (match === undefined) {
       return reject(

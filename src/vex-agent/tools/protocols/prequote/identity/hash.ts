@@ -31,6 +31,7 @@ import {
   lpToPtHashMaterial,
   lpTransferHashMaterial,
 } from "./hash/pendle-lp.js";
+import { lendHashMaterial } from "./hash/morpho-lend.js";
 import { redeemHashMaterial, ptRolloverHashMaterial } from "./hash/pendle-pt.js";
 import { mintHashMaterial, redeemPyHashMaterial } from "./hash/pendle-py.js";
 import { syHashMaterial } from "./hash/pendle-sy.js";
@@ -45,6 +46,7 @@ import type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+import type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 import type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 import type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
 import type { SyMintMatchInput, SyRedeemMatchInput } from "./hash/pendle-sy.js";
@@ -59,6 +61,7 @@ export type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+export type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 export type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 export type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
 export type { SyMintMatchInput, SyRedeemMatchInput } from "./hash/pendle-sy.js";
@@ -85,7 +88,9 @@ export type PrequoteMatchInput =
   | LpAddKeepYtMatchInput
   | PtRolloverMatchInput
   | LpTransferMatchInput
-  | LpToPtMatchInput;
+  | LpToPtMatchInput
+  | LendDepositMatchInput
+  | LendWithdrawMatchInput;
 
 /**
  * Deterministic sha256-hex match-hash over the trade identity. Identical at
@@ -165,6 +170,13 @@ export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
       break;
     case "lp_to_pt":
       material = lpToPtHashMaterial(input);
+      break;
+    case "lend_deposit":
+    case "lend_withdraw":
+      // Morpho vault supply / redeem (E3b-2). One material function, two kind
+      // tags: the tag is the ONLY thing separating the mirror operations, which
+      // is why it leads the material.
+      material = lendHashMaterial(input);
       break;
   }
   return createHash("sha256").update(material).digest("hex");

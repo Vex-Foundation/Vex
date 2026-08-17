@@ -35,6 +35,8 @@ export interface ProjectedAllowance {
   spender: string;
   spenderRole: string;
   raw: string;
+  /** The token's own decimals, carried here so an allowance lifted out of its parent keeps its scale. */
+  decimals: number;
   human: string;
   unlimited: boolean;
   effectivelyUnlimited: boolean;
@@ -92,6 +94,7 @@ export function projectWalletSnapshot(
         spender: allowance.spender,
         spenderRole: allowance.spenderRole,
         raw: allowance.raw,
+        decimals: token.decimals,
         human: formatRawAmount(allowance.raw, token.decimals),
         unlimited: allowance.unlimited,
         effectivelyUnlimited: allowance.effectivelyUnlimited,

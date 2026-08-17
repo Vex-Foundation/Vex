@@ -7,14 +7,17 @@
  */
 
 export {
+  MORPHO_SHARES_NOTE,
   MORPHO_USD_DISCLAIMER,
   formatRawAmount,
   projectAmount,
   projectAsset,
+  projectShareQuantity,
   projectStandalone,
   toPercent,
   type ProjectedAmount,
   type ProjectedAsset,
+  type ProjectedShareQuantity,
 } from "./projectors/_shared.js";
 
 export {
@@ -40,10 +43,13 @@ export {
 export {
   MORPHO_HEALTH_FACTOR_NOTE,
   MORPHO_POSITION_USD_NOTE,
+  MORPHO_PRICE_DROP_NOTE,
   healthFactorBand,
+  priceMoveDirection,
   projectMarketPosition,
   projectPortfolioTotals,
   projectVaultPosition,
+  type MorphoPriceMoveDirection,
   type ProjectedMarketPositionRow,
   type ProjectedVaultPositionRow,
   type ProjectedPortfolioTotals,

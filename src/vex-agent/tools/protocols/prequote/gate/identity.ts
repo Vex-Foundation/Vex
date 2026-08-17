@@ -30,6 +30,10 @@ import { buildRelayBridgeIdentity } from "../identity/relay-bridge.js";
 import { buildPendleRedeemIdentity } from "../identity/pendle-redeem.js";
 import { buildPendleMintIdentity, buildPendleRedeemPyIdentity } from "../identity/pendle-py.js";
 import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "../identity/pendle-lp.js";
+import {
+  buildMorphoLendDepositIdentity,
+  buildMorphoLendWithdrawIdentity,
+} from "../identity/morpho-lend.js";
 import { GateIdentityError } from "../gate-errors.js";
 import { canonSlippageBps, readParamSlippageBps } from "../slippage.js";
 
@@ -239,6 +243,17 @@ export async function computeGateMatch(
     // Pendle LP single-token remove — its OWN identity path (P5). Binds the output
     // token (default underlying) so a divergent output blocks.
     const identity = await buildPendleLpRemoveIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  if (gated.kind === "lend_deposit" || gated.kind === "lend_withdraw") {
+    // Morpho vault supply / redeem - their OWN identity path (E3b-2). Both bind
+    // the vault, the raw asset amount and the approved slippage, and the kind
+    // itself carries the direction, so a deposit quote cannot authorize a
+    // withdrawal execute even on the same vault for the same amount.
+    const identity = gated.kind === "lend_deposit"
+      ? buildMorphoLendDepositIdentity(sessionId, params, context)
+      : buildMorphoLendWithdrawIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 

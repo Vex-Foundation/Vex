@@ -31,9 +31,8 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
   namespace: "morpho",
   lifecycle: "active",
   description:
-    "Screen Morpho Blue VARIABLE-RATE lending markets across the nine EVM chains Vex reads Morpho on (discovery ships "
-    + "the exact slugs on this tool's `chains` metadata, and naming an unsupported chain is rejected with the full "
-    + "supported set). "
+    "Screen Morpho Blue VARIABLE-RATE lending markets across the nine EVM chains Vex reads Morpho on (the exact "
+    + "slugs ship on this tool's `chains` metadata). "
     + "A Morpho market is ONE loan asset borrowed against ONE collateral asset at a fixed liquidation threshold; "
     + "rates float with utilization and there is no maturity. Use this when the user asks where to lend or deposit an "
     + "asset, what a deposit would earn, where the cheapest borrow rate is, which markets accept a given collateral, or "
@@ -191,10 +190,11 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
     {
       key: "fields",
       type: "string",
-      enum: MORPHO_MARKET_FIELD_GROUPS,
+      acceptsStringArray: true,
       description:
-        `Comma-separated row field groups to keep, one of: ${MORPHO_MARKET_FIELD_GROUPS.join(", ")} - or 'all' `
-        + "(default). Use it to keep a large result small; marketId, chain and chainId are always present.",
+        `Row field groups to keep: a comma list, an array of the same, or 'all' (default). Groups: `
+        + `${MORPHO_MARKET_FIELD_GROUPS.join(", ")}. Keeps a large result small; marketId, chain and chainId are `
+        + "always present. An unknown group is rejected by name.",
     },
   ],
   exampleParams: { chainIds: "base,ethereum", sort: "netSupplyApy", minSupplyUsd: 1000000, limit: 10 },

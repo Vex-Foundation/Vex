@@ -87,8 +87,8 @@ export async function morphoVaultQuote(
         ? "`requirements` reflect the wallet you named, so a step already satisfied by an existing approval is "
           + "absent from the list rather than repeated."
         : "No `walletAddress` was supplied, so this preview ran against a stand-in address and `requirements` are "
-          + "what a FRESH wallet would face. A wallet that already holds the one-time Permit2 approval would face "
-          + "fewer steps. Re-run with `walletAddress` to see the real ones.",
+          + "what a FRESH wallet would face. A wallet whose existing allowance to GeneralAdapter1 already covers "
+          + "this amount would face fewer steps. Re-run with `walletAddress` to see the real ones.",
       shape: quote.direction === "deposit"
         ? "A deposit is a Bundler3 multicall and its legs are listed in `bundle.legs`, each decoded and checked "
           + "against Vex's allowlist of permitted contracts and selectors."
@@ -98,9 +98,11 @@ export async function morphoVaultQuote(
       simulation: quote.preflight.explanation,
     },
     nextStep:
-      "Vex has no Morpho mutating tools, so this preview cannot be turned into a transaction here. Report the "
-      + "shares, the requirements and any gating plainly, and say the user would have to perform the approval and "
-      + "the deposit themselves.",
+      "This quote AUTHORIZES the matching execute for a limited time: call `morpho.vault.deposit` or "
+      + "`morpho.vault.withdraw` with EXACTLY these params (same vault, same chain, same raw amount, same "
+      + "slippageBps) to perform it. A quote for the other direction does not authorize this one, and the execute is "
+      + "refused without a fresh matching quote. Report the shares, the requirements and any gating plainly first: "
+      + "the execute spends real funds and cannot be undone.",
   });
 }
 

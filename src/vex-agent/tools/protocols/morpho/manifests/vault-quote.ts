@@ -42,13 +42,12 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
     + "derived independently and checked that guard against, rather than trusting the builder's own account of its "
     + "price protection). The last two are in a scaled unit comparable ONLY with each other, never with "
     + "`assetsPerShareRaw`. "
-    + "`requirements` lists what the wallet would have to do FIRST, under Vex's approval policy: at most ONE standing "
-    + "ERC-20 approval and it must be to the canonical Permit2, with each operation then authorised by its own "
-    + "Permit2 signature carrying that operation's amount and deadline. An approval to any other spender is REFUSED "
-    + "BY NAME, whatever amount it names. A signature requirement is described here, never produced. Pass "
-    + "`walletAddress` to have the requirements reflect that wallet's CURRENT allowance and permit state, which is "
-    + "the only way to learn whether the one-time approval already exists; without it they are what a fresh wallet "
-    + "would face. "
+    + "`requirements` lists what the wallet would have to do FIRST, under Vex's approval policy: one plain ERC-20 "
+    + "`approve()` for EXACTLY this operation's amount to the chain's pinned GeneralAdapter1, and nothing else. Vex "
+    + "signs no permit and no permit2 message for Morpho, so any other spender or any other amount is REFUSED BY "
+    + "NAME. An empty list means the wallet's existing allowance already covers this operation. Pass "
+    + "`walletAddress` to have the requirements reflect that wallet's CURRENT allowance; without it they are what a "
+    + "fresh wallet would face. "
     + "`bundle` is the decoded transaction: its shape, its target and that target's role, every leg with its "
     + "selector, signature, native value and a plain reading, and the amount and recipient the decoder PROVED the "
     + "bytes carry. A DEPOSIT IS A BUNDLER3 MULTICALL; A WITHDRAWAL IS NOT: withdrawals are a direct `withdraw` call "
@@ -60,8 +59,8 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
     + "`preflight` is a NAMED THREE-WAY verdict, never a boolean: `ok` returned, `reverted` means the node PROVED a "
     + "revert and carries the reason, `transport-ambiguous` means the node did not answer so Vex does not know. A "
     + "DEPOSIT SIMULATION THAT REVERTS BEFORE THE APPROVAL EXISTS IS NORMAL AND IS NOT A FAULT IN THE VAULT: the "
-    + "bundle pulls the asset through Permit2, so with no approval and no signature there is nothing to pull. Report "
-    + "an absent approval as an absent approval. The gas figures can be null for the same reason, and null is "
+    + "bundle pulls the asset through GeneralAdapter1, so with no approval there is nothing to pull. Report an "
+    + "absent approval as an absent approval. The gas figures can be null for the same reason, and null is "
     + "reported as unavailable with a stated cause rather than guessed. "
     + "`governance` is lifted from Morpho's own vault read and carries the hazards the on-chain preview cannot see: "
     + "whether a gate contract can block a withdrawal or a deposit, the timelock a curator change waits out, how "
@@ -72,8 +71,10 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
     + "LIMITS: every figure is point-in-time and the share price accrues before any real transaction; Morpho "
     + "publishes no service guarantee. "
     + "Read-only. THIS IS A PREVIEW AND IT COMMITS NOTHING: nothing is signed, nothing is sent, no approval is "
-    + "granted and no funds move, and Vex cannot execute a Morpho deposit or withdrawal today. Present the result as "
-    + "what a transaction would do, never as something that has been set up.",
+    + "granted and no funds move. Present the result as what a transaction would do, never as something that has "
+    + "been set up. It DOES authorize the matching execute for a limited time: `morpho.vault.deposit` and "
+    + "`morpho.vault.withdraw` are REFUSED without a fresh quote for exactly the same params, and a quote for one "
+    + "direction never authorizes the other.",
   mutating: false,
   actionKind: "read",
   params: [

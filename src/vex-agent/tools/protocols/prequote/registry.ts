@@ -38,7 +38,11 @@ type PrequoteQuoteRegistration =
   // Pendle's LP quote records EITHER an `lp_add` prequote (direction "add") OR an
   // `lp_remove` prequote (direction "remove"), decided from the echoed
   // `direction` (P5). Each writes its dedicated DB kind + identity.
-  | { readonly kind: "pendle-lp"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "pendle-lp"; readonly family: PrequoteFamily; readonly provider: string }
+  // Morpho's single vault quote records EITHER a `lend_deposit` prequote OR a
+  // `lend_withdraw` one (E3b-2, migration 080), decided at record-time from the
+  // direction the quote itself reports. `family` is always eip155.
+  | { readonly kind: "morpho-lend"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "kyberswap.swap.quote": { kind: "swap", family: "eip155", provider: "kyberswap" },
@@ -60,6 +64,9 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   // LP quote records an `lp_add` or `lp_remove` prequote (P5) — decided from the
   // echoed `direction`.
   "pendle.lp.quote": { kind: "pendle-lp", family: "eip155", provider: "pendle" },
+  // Morpho vault quote records a `lend_deposit` or `lend_withdraw` prequote
+  // (E3b-2) - decided from the direction the quote priced.
+  "morpho.vault.quote": { kind: "morpho-lend", family: "eip155", provider: "morpho" },
 };
 
 /**
@@ -94,7 +101,13 @@ export type ExecuteGateRegistration =
   // Pendle LP single-token add / remove — their OWN kinds, matched against an
   // `lp_add` / `lp_remove` prequote via the dedicated LP identities (P5).
   | { readonly kind: "lp_add"; readonly family: PrequoteFamily; readonly provider: string }
-  | { readonly kind: "lp_remove"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "lp_remove"; readonly family: PrequoteFamily; readonly provider: string }
+  // Morpho vault supply / redeem - their OWN kinds, matched against a
+  // `lend_deposit` / `lend_withdraw` prequote from `morpho.vault.quote` via the
+  // dedicated lend identities (E3b-2). Distinct kinds make the direction
+  // unmixable: a deposit quote cannot authorize a withdrawal execute.
+  | { readonly kind: "lend_deposit"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "lend_withdraw"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // Agent Scan (plan §11.2): the buy/sell lot-direction split is gone (no PnL
@@ -128,4 +141,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // `lp_remove` prequotes (P5).
   "pendle.lp.add": { kind: "lp_add", family: "eip155", provider: "pendle" },
   "pendle.lp.remove": { kind: "lp_remove", family: "eip155", provider: "pendle" },
+  // Morpho vault deposit / withdraw match their dedicated `lend_deposit` /
+  // `lend_withdraw` prequotes from `morpho.vault.quote` (E3b-2).
+  "morpho.vault.deposit": { kind: "lend_deposit", family: "eip155", provider: "morpho" },
+  "morpho.vault.withdraw": { kind: "lend_withdraw", family: "eip155", provider: "morpho" },
 };

@@ -6,9 +6,9 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
   summary:
-    "Morpho variable-rate lending across nine EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain, HyperEVM, Monad, Robinhood Chain), in two shapes: isolated Blue MARKETS screened by rate, size, utilization and liquidation threshold and read in full including bad debt and the oracle liquidations are decided against, and curated VAULTS (V1 MetaMorpho and V2) screened by deposits, net APY and curator fee and read in full including roles, timelocks, per-market allocations and withdrawal gating. Alongside them, two wallet-side reads: the incentive tokens a wallet can claim on top of its rate, and what a wallet holds together with the Morpho contracts it has already approved to move it. Alongside the reads, one PREVIEW: what a specific deposit into or withdrawal from a vault would mint, cost and require, priced without signing or sending anything. Read-only today: Vex cannot move funds on Morpho.",
+    "Morpho variable-rate lending across nine EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain, HyperEVM, Monad, Robinhood Chain), in two shapes: isolated Blue MARKETS screened by rate, size, utilization and liquidation threshold and read in full including bad debt and the oracle liquidations are decided against, and curated VAULTS (V1 MetaMorpho and V2) screened by deposits, net APY and curator fee and read in full including roles, timelocks, per-market allocations and withdrawal gating. Alongside them, two wallet-side reads: the incentive tokens a wallet can claim on top of its rate, and what a wallet holds together with the Morpho contracts it has already approved to move it. Alongside the reads, one PREVIEW: what a specific deposit into or withdrawal from a vault would mint, cost and require, priced without signing or sending anything. And on VAULTS ONLY, two EXECUTING tools that move real funds after a fresh preview: deposit assets for shares, and withdraw assets by burning shares. Everything else stays read-only: Vex cannot borrow, repay, move collateral or claim rewards on Morpho.",
   whenToUse:
-    "Use when the user wants to lend, deposit or earn interest on an asset at a FLOATING rate, wants somewhere passive to park an asset under a professional curator, wants to know where borrowing is cheapest, or wants to inspect a lending market or a vault before entering. Route by who picks the venue: a VAULT is a managed deposit spread across many markets by a curator who takes a fee, a MARKET is one loan asset against one collateral asset that the user chooses themselves. Start with morpho.vaults.discover or morpho.markets.discover to screen, then the matching get tool. When the user asks about what they ALREADY hold, what they owe, or whether they are near liquidation, that is morpho.positions.get, not a screening tool; when they ask what has happened in a market or want an address audited, that is morpho.markets.activity. When they ask about unclaimed rewards or incentive tokens earned on top of the rate, that is morpho.rewards.get; when they ask what a wallet holds or which contracts it has approved to spend a token, that is morpho.wallet.balance, though a plain balance question with no approval angle belongs to wallet_balances instead. When the user names an AMOUNT and wants to know what depositing or withdrawing it would actually do, that is morpho.vault.quote, which prices the operation without performing it. The APY-labelling, health-factor, vault-gating and permissionless-market rules live in the Lending (Morpho) doctrine below.",
+    "Use when the user wants to lend, deposit or earn interest on an asset at a FLOATING rate, wants somewhere passive to park an asset under a professional curator, wants to know where borrowing is cheapest, or wants to inspect a lending market or a vault before entering. Route by who picks the venue: a VAULT is a managed deposit spread across many markets by a curator who takes a fee, a MARKET is one loan asset against one collateral asset that the user chooses themselves. Start with morpho.vaults.discover or morpho.markets.discover to screen, then the matching get tool. When the user asks about what they ALREADY hold, what they owe, or whether they are near liquidation, that is morpho.positions.get, not a screening tool; when they ask what has happened in a market or want an address audited, that is morpho.markets.activity. When they ask about unclaimed rewards or incentive tokens earned on top of the rate, that is morpho.rewards.get; when they ask what a wallet holds or which contracts it has approved to spend a token, that is morpho.wallet.balance, though a plain balance question with no approval angle belongs to wallet_balances instead. When the user names an AMOUNT and wants to know what depositing or withdrawing it would actually do, that is morpho.vault.quote, which prices the operation without performing it. When the user then tells Vex to go ahead, morpho.vault.deposit and morpho.vault.withdraw perform it on a VAULT, and each one requires a fresh morpho.vault.quote of the same operation first. There is no executing tool for a MARKET, for borrowing, for repaying, for collateral or for claiming rewards. The APY-labelling, health-factor, vault-gating and permissionless-market rules live in the Lending (Morpho) doctrine below.",
   preferInstead:
     "Use `pendle` when the user wants a FIXED rate locked to a maturity date - Morpho rates float and never expire. Use `solana.lend` for lending on Solana; Morpho here is EVM-only. Use `kyberswap` for ordinary spot swaps.",
   exampleQueries: [
@@ -16,8 +16,9 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
     'discover_tools(query="cheapest borrow rate", namespace="morpho")',
     'discover_tools(query="is this lending market safe", namespace="morpho")',
     'discover_tools(query="am I close to liquidation", namespace="morpho")',
+    'discover_tools(query="deposit into a morpho vault", namespace="morpho")',
   ],
-  aliases: ["morpho", "lending", "lend", "borrow", "supply apy", "variable rate lending", "money market", "curated vault", "metamorpho", "vault curator", "health factor", "liquidation risk", "my positions", "liquidation history", "claimable rewards", "unclaimed rewards", "token allowance", "unlimited approval"],
+  aliases: ["morpho", "lending", "lend", "borrow", "supply apy", "variable rate lending", "money market", "curated vault", "metamorpho", "vault curator", "health factor", "liquidation risk", "my positions", "liquidation history", "claimable rewards", "unclaimed rewards", "token allowance", "unlimited approval", "deposit into a vault", "withdraw from a vault", "redeem vault shares"],
   discoveryHints: [
     "where to lend usdc",
     "earn interest on stablecoins",
@@ -37,6 +38,10 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
     "do I have unclaimed rewards",
     "check my token balance and approvals",
     "do I have an unlimited allowance",
+    "deposit into this morpho vault",
+    "put my usdc in the vault now",
+    "withdraw from this morpho vault",
+    "take my money out of the vault",
   ],
   facets: [
     {
@@ -72,13 +77,29 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
       summary:
         "Price a SPECIFIC amount into or out of one vault before anything is committed: the shares it would mint or "
         + "burn, the share price the transaction would enforce, what the wallet would have to approve or sign first, "
-        + "the decoded transaction and its gas. A preview only, and Vex cannot execute the result.",
+        + "the decoded transaction and its gas. A preview only, and the mandatory first step before either executing tool.",
       toolPrefixes: ["morpho.vault.quote"],
       hints: [
         "preview a vault deposit",
         "how many shares would I get",
         "what approvals are needed before depositing",
         "simulate a morpho withdrawal",
+      ],
+    },
+    {
+      label: "Deposit into or withdraw from a vault",
+      summary:
+        "MOVE REAL FUNDS on one vault, after a fresh quote of the same operation: deposit assets and receive shares, or "
+        + "withdraw assets by burning shares. A deposit sends two transactions in sequence behind one confirmation, a "
+        + "permission for exactly that amount and then the deposit; a withdrawal is one direct call with no permission. "
+        + "Both support a rehearsal that signs nothing, and both record the result in the activity ledger.",
+      toolPrefixes: ["morpho.vault.deposit", "morpho.vault.withdraw"],
+      hints: [
+        "deposit into this morpho vault",
+        "put my usdc in the vault now",
+        "withdraw from this morpho vault",
+        "take my money out of the vault",
+        "redeem my vault shares",
       ],
     },
     {

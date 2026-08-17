@@ -29,7 +29,15 @@ import type {
   MorphoSignedAmount,
   MorphoVaultPosition,
 } from "@tools/morpho/types.js";
-import { formatRawAmount, projectAmount, projectAsset, toPercent, type ProjectedAmount } from "./_shared.js";
+import {
+  formatRawAmount,
+  projectAmount,
+  projectAsset,
+  projectShareQuantity,
+  toPercent,
+  type ProjectedAmount,
+  type ProjectedShareQuantity,
+} from "./_shared.js";
 
 /** The sentence every health factor in this namespace is qualified by. */
 export const MORPHO_HEALTH_FACTOR_NOTE =
@@ -37,6 +45,23 @@ export const MORPHO_HEALTH_FACTOR_NOTE =
   + "liquidation can repay the entire debt and seize collateral worth up to the liquidation incentive on top of it: "
   + "there is no partial-liquidation cushion. A value near 1 is an emergency, not a warning. A null health factor "
   + "means the position has NO DEBT and therefore nothing to liquidate; it never means the position was not checked.";
+
+/**
+ * The sign convention of `priceDropToLiquidationPercent`, stated where the field
+ * is built.
+ *
+ * Live values are NEGATIVE (-40.69, -15.17, -99.99 on the 2026-08-17 read) and
+ * the name alone reads as an event that already happened. This is the one risk
+ * number in the namespace a model can invert, so the convention is spelled out
+ * here and repeated per row in words by `priceDropToLiquidationDirection`.
+ */
+export const MORPHO_PRICE_DROP_NOTE =
+  "`priceDropToLiquidationPercent` is a SIGNED DISTANCE STILL TO GO, not a move that already happened. NEGATIVE "
+  + "means the collateral price must FALL by that much from today's oracle mark to reach the liquidation threshold, "
+  + "so -40.7 means liquidation is a 40.7% drop away. POSITIVE means the mark would have to RISE to reach the "
+  + "threshold, which is a position already at or past the line. Null means no debt and so no liquidation price at "
+  + "all. Each row's `priceDropToLiquidationDirection` says which case it is in words - quote that rather than "
+  + "re-deriving the sign, and never report the number as a drop the collateral has already suffered.";
 
 export const MORPHO_POSITION_USD_NOTE =
   "Every USD figure on a position is Morpho's own oracle mark for that market, not a traded price, and the totals "
@@ -79,6 +104,19 @@ export function healthFactorBand(healthFactor: number | null): string {
   return "comfortable";
 }
 
+export type MorphoPriceMoveDirection =
+  | "collateral_price_must_fall"
+  | "collateral_price_must_rise"
+  | "at_liquidation_price";
+
+/** The signed distance's direction, named so no reader has to interpret a minus sign. */
+export function priceMoveDirection(percent: number | null): MorphoPriceMoveDirection | null {
+  if (percent === null) return null;
+  if (percent < 0) return "collateral_price_must_fall";
+  if (percent > 0) return "collateral_price_must_rise";
+  return "at_liquidation_price";
+}
+
 export interface ProjectedMarketPositionRow {
   positionId: string;
   market: {
@@ -95,13 +133,15 @@ export interface ProjectedMarketPositionRow {
   collateral: ProjectedAmount | null;
   supply: ProjectedAmount | null;
   borrow: ProjectedAmount | null;
-  supplyShares: string | null;
-  borrowShares: string | null;
+  supplyShares: ProjectedShareQuantity | null;
+  borrowShares: ProjectedShareQuantity | null;
   /** Decimal string, verbatim from Morpho. Null means NO DEBT. */
   healthFactor: string | null;
   healthFactorBand: string;
-  /** Fraction the collateral price may move before liquidation, as a percent. */
+  /** SIGNED distance still to go, per {@link MORPHO_PRICE_DROP_NOTE}. */
   priceDropToLiquidationPercent: number | null;
+  /** The same distance's direction in words, so the sign cannot be inverted. */
+  priceDropToLiquidationDirection: MorphoPriceMoveDirection | null;
   margin: ProjectedSignedAmount | null;
   borrowPnl: ProjectedSignedAmount | null;
   borrowRoePercent: number | null;
@@ -127,15 +167,16 @@ export function projectMarketPosition(position: MorphoMarketPosition): Projected
     collateral: projectAmount(position.collateral, collateralSymbol),
     supply: projectAmount(position.supply, loanSymbol),
     borrow: projectAmount(position.borrow, loanSymbol),
-    supplyShares: position.supplyShares,
-    borrowShares: position.borrowShares,
+    supplyShares: projectShareQuantity(position.supplyShares),
+    borrowShares: projectShareQuantity(position.borrowShares),
     healthFactor: position.healthFactor === null ? null : String(position.healthFactor),
     healthFactorBand: healthFactorBand(position.healthFactor),
-    // Morpho reports this as a SIGNED fraction: negative means the price must
-    // fall, positive means it must rise (a position already past the line). It
-    // is passed through as a percent with the sign intact rather than made
-    // absolute, because the direction is what tells the two cases apart.
+    // Passed through as a percent with the SIGN INTACT rather than made
+    // absolute, because the direction is what tells the two cases apart - and
+    // the direction is then also emitted in words, because a bare minus sign on
+    // a liquidation distance is the one number here a model can invert.
     priceDropToLiquidationPercent: toPercent(position.priceVariationToLiquidationPrice),
+    priceDropToLiquidationDirection: priceMoveDirection(toPercent(position.priceVariationToLiquidationPrice)),
     margin: projectSigned(position.margin, loanSymbol),
     borrowPnl: projectSigned(position.borrowPnl, loanSymbol),
     borrowRoePercent: toPercent(position.borrowRoe),
@@ -156,8 +197,8 @@ export interface ProjectedVaultPositionRow {
   };
   asset: ReturnType<typeof projectAsset>;
   assets: ProjectedAmount | null;
-  /** Share balance in SHARE units, which are NOT the asset's units. */
-  shares: string | null;
+  /** Share balance in SHARE units, which are NOT the asset's units and carry no scale. */
+  shares: ProjectedShareQuantity | null;
   pnl: ProjectedSignedAmount | null;
   roePercent: number | null;
   /** NET of the curator's fee. Never comparable with a market supply APY. */
@@ -180,7 +221,7 @@ export function projectVaultPosition(position: MorphoVaultPosition): ProjectedVa
     },
     asset: projectAsset(position.asset),
     assets: projectAmount(position.assets, position.asset.symbol),
-    shares: position.shares,
+    shares: projectShareQuantity(position.shares),
     pnl: projectSigned(position.pnl, position.asset.symbol),
     roePercent: toPercent(position.roe),
     netApyPercent: toPercent(position.netApy),
@@ -206,8 +247,15 @@ export interface ProjectedPortfolioTotals {
  * A missing mark is COUNTED, not treated as zero. Silently summing over an
  * unpriced row understates a portfolio by exactly the amount nobody could see,
  * and a total that is quietly incomplete is worse than one that says how many
- * rows it could not price. When nothing at all could be priced the total is
- * null rather than 0, because those are different answers.
+ * rows it could not price. When a row existed and could NOT be priced the total
+ * is null rather than 0, because those are different answers.
+ *
+ * NOTHING TO PRICE IS NOT THE SAME AS COULD NOT PRICE. A wallet with no
+ * positions holds exactly zero, and reporting that as null beside
+ * `rowsWithoutUsd: 0` reads as "the total could not be computed" - which sent a
+ * live agent looking for a failure that never happened. So the null answer is
+ * reserved for the case that earns it: at least one row existed and none of them
+ * carried a mark.
  */
 export function projectPortfolioTotals(
   marketPositions: readonly MorphoMarketPosition[],
@@ -244,7 +292,7 @@ export function projectPortfolioTotals(
     }
   }
 
-  if (priced === 0) {
+  if (priced === 0 && unpriced > 0) {
     return {
       collateralUsd: null,
       suppliedUsd: null,

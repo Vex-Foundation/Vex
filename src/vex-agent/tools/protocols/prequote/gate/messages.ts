@@ -162,20 +162,76 @@ const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Remove liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };
 
+/**
+ * Morpho vault DEPOSIT (E3b-2). These exist because the selector below falls
+ * back to the SWAP map: without them, the first blocked Morpho deposit would
+ * tell the agent to re-run a SWAP quote, which is not a tool that can authorize
+ * this operation, and the agent would loop on advice that cannot work.
+ *
+ * Every message names `morpho.vault.quote` with the direction, because that is
+ * the ONLY tool whose prequote this execute matches.
+ */
+const LEND_DEPOSIT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Vault deposit blocked: could not verify a fresh vault quote. Re-run morpho.vault.quote (direction deposit) for this vault and retry.",
+  no_session:
+    "Vault deposit blocked: could not verify a fresh vault quote (no session). Re-run morpho.vault.quote and retry.",
+  unresolved_token:
+    "Vault deposit blocked: the vault address could not be resolved on this chain. Re-check the vault address and the chain, then retry.",
+  no_quote:
+    "Vault deposit blocked: no fresh quote for these exact params. The deposit must use EXACTLY the params the quote used, including the vault, the chain, depositAmountRaw and slippageBps (same value, or omitted on both sides). Call morpho.vault.quote (direction deposit) with those params first, then retry.",
+  safety_fail:
+    "Vault deposit blocked: the quoted vault was flagged unsafe by the pre-quote check. Do not retry; report it and pick a different vault.",
+  wallet_setup:
+    "Vault deposit blocked: the mission is still in setup (no active run), so deposits cannot broadcast yet. Accept and start the mission run, then deposit; do NOT re-quote.",
+  wallet_scope:
+    "Vault deposit blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Vault deposit blocked: no wallet is selected (or configured) for this vault's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param:
+    "Vault deposit blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/** Morpho vault WITHDRAW (E3b-2). The mirror map; see the deposit map above. */
+const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Vault withdrawal blocked: could not verify a fresh vault quote. Re-run morpho.vault.quote (direction withdraw) for this vault and retry.",
+  no_session:
+    "Vault withdrawal blocked: could not verify a fresh vault quote (no session). Re-run morpho.vault.quote and retry.",
+  unresolved_token:
+    "Vault withdrawal blocked: the vault address could not be resolved on this chain. Re-check the vault address and the chain, then retry.",
+  no_quote:
+    "Vault withdrawal blocked: no fresh quote for these exact params. The withdrawal must use EXACTLY the params the quote used, including the vault, the chain, withdrawAmountRaw and slippageBps (same value, or omitted on both sides). A DEPOSIT quote does not authorize a withdrawal. Call morpho.vault.quote (direction withdraw) with those params first, then retry.",
+  safety_fail:
+    "Vault withdrawal blocked: the quoted vault was flagged unsafe by the pre-quote check. This block is not protecting a wallet that is trying to EXIT: report it and stop rather than retrying.",
+  wallet_setup:
+    "Vault withdrawal blocked: the mission is still in setup (no active run), so withdrawals cannot broadcast yet. Accept and start the mission run, then withdraw; do NOT re-quote.",
+  wallet_scope:
+    "Vault withdrawal blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Vault withdrawal blocked: no wallet is selected (or configured) for this vault's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param:
+    "Vault withdrawal blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/**
+ * The map for a gated kind. Written as a lookup rather than another if/else
+ * limb: the chain had grown to seven levels, and its SWAP fallback is exactly
+ * how a Morpho block would have been worded as a swap. A kind with no entry
+ * still falls back to SWAP, which is the historical caller's wording.
+ */
+const BLOCK_MESSAGES_BY_KIND: Partial<Record<PrequoteKind, Record<GateBlockReason, string>>> = {
+  bridge: BRIDGE_BLOCK_MESSAGES,
+  redeem: REDEEM_BLOCK_MESSAGES,
+  mint: MINT_BLOCK_MESSAGES,
+  redeem_py: REDEEM_PY_BLOCK_MESSAGES,
+  lp_add: LP_ADD_BLOCK_MESSAGES,
+  lp_remove: LP_REMOVE_BLOCK_MESSAGES,
+  lend_deposit: LEND_DEPOSIT_BLOCK_MESSAGES,
+  lend_withdraw: LEND_WITHDRAW_BLOCK_MESSAGES,
+};
+
 export function block(reason: GateBlockReason, kind: PrequoteKind): GateDecision {
-  const messages =
-    kind === "bridge"
-      ? BRIDGE_BLOCK_MESSAGES
-      : kind === "redeem"
-        ? REDEEM_BLOCK_MESSAGES
-        : kind === "mint"
-          ? MINT_BLOCK_MESSAGES
-          : kind === "redeem_py"
-            ? REDEEM_PY_BLOCK_MESSAGES
-            : kind === "lp_add"
-              ? LP_ADD_BLOCK_MESSAGES
-              : kind === "lp_remove"
-                ? LP_REMOVE_BLOCK_MESSAGES
-                : SWAP_BLOCK_MESSAGES;
+  const messages = BLOCK_MESSAGES_BY_KIND[kind] ?? SWAP_BLOCK_MESSAGES;
   return { kind: "block", reason, message: messages[reason] };
 }

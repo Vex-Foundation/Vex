@@ -45,14 +45,21 @@ export async function morphoRewardsGet(
 
   const client = getMerklClient();
   const chains: ProjectedRewardChain[] = [];
+  let droppedByMorphoOnly = 0;
 
   for (const chainId of q.chainIds) {
     const slug = morphoChainSlug(chainId) ?? String(chainId);
     try {
       const page = await client.getUserRewards(q.walletAddress, chainId, context?.abortSignal);
       const attributed = await attributeMerklRewards(client, page, context?.abortSignal);
-      const rewards = attributed.rewards
-        .filter((reward) => (q.morphoOnly ? reward.hasMorphoSource : true))
+      const inScope = attributed.rewards.filter((reward) => (q.morphoOnly ? reward.hasMorphoSource : true));
+      // `morphoOnly` NARROWS THE TOTALS, so what it removed is counted rather
+      // than left to be inferred from `filtersApplied`. A live read dropped a
+      // 0.19 USD non-Morpho row, and the wallet's real claim was 1.51 USD while
+      // the narrowed answer said 1.32 - one claim takes the whole token row
+      // whatever produced it, so the dropped rows are still claimable money.
+      droppedByMorphoOnly += attributed.rewards.length - inScope.length;
+      const rewards = inScope
         .map((reward) => projectReward(reward, slug))
         // A fully claimed row is history, not an answer to "what can I claim".
         .filter((reward) => reward.claimable.raw !== "0" || reward.pending.raw !== "0");
@@ -96,8 +103,18 @@ export async function morphoRewardsGet(
     filtersApplied: q.echo,
     chains,
     totals,
+    droppedRows: droppedByMorphoOnly,
     notes: {
       claim: MORPHO_REWARDS_CLAIM_NOTE,
+      ...(droppedByMorphoOnly > 0
+        ? {
+          morphoOnly:
+            `\`morphoOnly\` REMOVED ${droppedByMorphoOnly} reward token row(s) from this answer and from `
+            + "`totals`, so the totals here are LOWER than what a claim would actually deliver. Merkl pays one leaf "
+            + "per token and a claim takes the whole leaf whatever campaign produced it, so the removed rows are "
+            + "still claimable money. Re-read without `morphoOnly` before telling the user what they can claim.",
+        }
+        : {}),
       usd: MORPHO_REWARDS_USD_NOTE,
       attribution:
         "Merkl distributes for many protocols. A reward row names a campaign, not a protocol, so Vex resolves each "

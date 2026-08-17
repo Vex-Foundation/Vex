@@ -149,6 +149,42 @@ export function readChains(raw: unknown, param: string): MorphoParams<number[] |
   return { ok: true, value: out.length > 0 ? out : undefined };
 }
 
+/**
+ * The tokens of a list param declared `acceptsStringArray`: a comma string, a
+ * string array, or the sentinel `all`.
+ *
+ * WHY THIS EXISTS. The protocol runtime's `enum` check is a WHOLE-STRING exact
+ * match, so a param whose documented form is a comma list cannot also declare
+ * `enum` - `"identity,apy"` is refused at the boundary before the handler's own
+ * splitting reader ever runs, and `"all"` with it. The fix is at the DECLARATION:
+ * such a param declares `acceptsStringArray` and no `enum`, and validates its
+ * members BY NAME here, where a rejection can say which token was wrong and what
+ * the accepted set is. That rejection must never get weaker than the runtime's.
+ */
+export type CsvOrArray =
+  | { kind: "absent" }
+  | { kind: "all" }
+  | { kind: "tokens"; tokens: string[] };
+
+export function readCsvOrArray(raw: unknown, param: string): MorphoParams<CsvOrArray> {
+  const tokens: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (typeof entry !== "string") return reject(param, `\`${param}\` array entries must be strings.`);
+      tokens.push(entry);
+    }
+  } else {
+    const value = readOptionalString(raw);
+    if (value === undefined) return { ok: true, value: { kind: "absent" } };
+    tokens.push(...value.split(","));
+  }
+
+  const trimmed = tokens.map((s) => s.trim()).filter((s) => s.length > 0);
+  if (trimmed.some((token) => token.toLowerCase() === "all")) return { ok: true, value: { kind: "all" } };
+  if (trimmed.length === 0) return { ok: true, value: { kind: "absent" } };
+  return { ok: true, value: { kind: "tokens", tokens: trimmed } };
+}
+
 /** Ordered min/max sanity: a floor above its ceiling matches nothing, silently. */
 export function checkRange(
   minParam: string,

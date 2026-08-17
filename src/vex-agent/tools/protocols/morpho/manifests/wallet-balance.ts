@@ -46,7 +46,7 @@ export const MORPHO_WALLET_BALANCE_TOOL: ProtocolToolManifest = {
     + "spender, and a wallet holding tokens with no native balance cannot send any transaction on that chain at "
     + "all, whatever its approvals say. "
     + "RETURNS: `wallet` with the chain, the address, the native balance as {raw, decimals, symbol, human}, and per "
-    + "token the balance in the same shape plus its allowances, each with spender, role, raw, human and unlimited. "
+    + "token the balance in the same shape plus its allowances, each with spender, role, raw, decimals, human and unlimited. "
     + "Plus the unavailable lists described above. "
     + "LIMITS: no USD is returned, because this reads a node rather than a price feed and a mark nothing on-chain "
     + "backs would be the one invented number in the answer. Balances and allowances are POINT-IN-TIME at the "

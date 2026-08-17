@@ -23,7 +23,12 @@
 
 import { MORPHO_ACTIVITY_TYPES } from "@tools/morpho/request.js";
 import type { MorphoActivityAmount, MorphoMarketTransaction } from "@tools/morpho/types.js";
-import { formatRawAmount, projectAsset } from "./_shared.js";
+import {
+  formatRawAmount,
+  projectAsset,
+  projectShareQuantity,
+  type ProjectedShareQuantity,
+} from "./_shared.js";
 
 /** The sentence every activity reply is qualified by. */
 export const MORPHO_ACTIVITY_USD_NOTE =
@@ -84,12 +89,18 @@ export interface ProjectedActivityRow {
   loanAsset: ReturnType<typeof projectAsset>;
   collateralAsset: ReturnType<typeof projectAsset>;
   amounts: Record<string, ProjectedActivityAmount>;
-  shares: Record<string, string>;
+  /** Share legs, each carrying its scale explicitly - which here is UNKNOWN. */
+  shares: Record<string, ProjectedShareQuantity>;
 }
 
 export function projectActivityRow(tx: MorphoMarketTransaction): ProjectedActivityRow {
   const amounts: Record<string, ProjectedActivityAmount> = {};
   for (const [key, amount] of Object.entries(tx.amounts)) amounts[key] = projectActivityAmount(amount);
+  const shares: Record<string, ProjectedShareQuantity> = {};
+  for (const [key, raw] of Object.entries(tx.shares)) {
+    const quantity = projectShareQuantity(raw);
+    if (quantity !== null) shares[key] = quantity;
+  }
   return {
     type: MORPHO_TYPE_TO_CANONICAL.get(tx.type) ?? tx.type,
     dataShape: tx.dataShape,
@@ -111,7 +122,7 @@ export function projectActivityRow(tx: MorphoMarketTransaction): ProjectedActivi
     loanAsset: projectAsset(tx.loanAsset),
     collateralAsset: projectAsset(tx.collateralAsset),
     amounts,
-    shares: tx.shares,
+    shares,
   };
 }
 

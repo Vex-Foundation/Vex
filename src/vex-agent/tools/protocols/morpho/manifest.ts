@@ -9,8 +9,10 @@
  * than inside it - the reward campaigns a wallet can claim, and what it holds
  * and has already approved before it acts. PREVIEW: one tool that prices a
  * specific deposit into or withdrawal from a vault, building and decoding the
- * exact transaction without signing or sending it. All nine are read-only;
- * nothing in this namespace signs or spends today.
+ * exact transaction without signing or sending it. EXECUTE: the two tools that
+ * actually move money, supplying assets to a vault and redeeming them back out.
+ * Nine of the eleven are read-only; the two execute tools sign and broadcast
+ * real transactions from the user's wallet, and both are gated on a fresh quote.
  *
  * One module per tool under `./manifests/`, composed here, so a tool's contract
  * and its long description live in a file named after the tool.
@@ -26,6 +28,8 @@ import { MORPHO_MARKETS_ACTIVITY_TOOL } from "./manifests/markets-activity.js";
 import { MORPHO_REWARDS_GET_TOOL } from "./manifests/rewards-get.js";
 import { MORPHO_WALLET_BALANCE_TOOL } from "./manifests/wallet-balance.js";
 import { MORPHO_VAULT_QUOTE_TOOL } from "./manifests/vault-quote.js";
+import { MORPHO_VAULT_DEPOSIT_TOOL } from "./manifests/vault-deposit.js";
+import { MORPHO_VAULT_WITHDRAW_TOOL } from "./manifests/vault-withdraw.js";
 
 export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_MARKETS_DISCOVER_TOOL,
@@ -37,4 +41,6 @@ export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_REWARDS_GET_TOOL,
   MORPHO_WALLET_BALANCE_TOOL,
   MORPHO_VAULT_QUOTE_TOOL,
+  MORPHO_VAULT_DEPOSIT_TOOL,
+  MORPHO_VAULT_WITHDRAW_TOOL,
 ];

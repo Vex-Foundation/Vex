@@ -204,6 +204,13 @@ const TOOL_ID_PRESENTATION: Readonly<Record<string, ToolIdPresentation>> = {
   "relay.bridge": { action: "Bridge", category: "bridge" },
   "khalani.quote.get": { action: "Bridge quote", category: "bridge" },
   "khalani.bridge": { action: "Bridge", category: "bridge" },
+
+  // Morpho's two executing acts. The humanizer would spell the second one
+  // "Vault withdraw"; a lending exit is a withdrawal. Their category stays
+  // `tool` on purpose: neither is a swap or a bridge, and borrowing either of
+  // those categories would hand a lending act the leg-line styling of a trade.
+  "morpho.vault.deposit": { action: "Vault deposit", category: "tool" },
+  "morpho.vault.withdraw": { action: "Vault withdrawal", category: "tool" },
 };
 
 /**

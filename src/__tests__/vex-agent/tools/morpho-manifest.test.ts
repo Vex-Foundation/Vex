@@ -16,6 +16,11 @@ import { MORPHO_VAULT_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/
 import { MORPHO_POSITION_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/position-reads.js";
 import { MORPHO_WALLET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/wallet-reads.js";
 import { MORPHO_QUOTE_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/quote-reads.js";
+import { MORPHO_EXECUTE_WRITE_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/execute-writes.js";
+import {
+  EXECUTE_GATE_TOOLS,
+  PREQUOTE_QUOTE_TOOLS,
+} from "../../../vex-agent/tools/protocols/prequote/registry.js";
 import {
   PROTOCOL_NAMESPACE_ALLOWLIST,
   NAMESPACE_DEFAULTS,
@@ -41,7 +46,16 @@ const EXPECTED_TOOL_IDS = [
   "morpho.rewards.get",
   "morpho.wallet.balance",
   "morpho.vault.quote",
+  "morpho.vault.deposit",
+  "morpho.vault.withdraw",
 ];
+
+/**
+ * The two tools that SPEND. Every read-lane assertion below excludes them by
+ * name rather than by a softened predicate: a check that quietly accepts a
+ * mutating tool is a check that would accept the next one by accident.
+ */
+const MORPHO_EXECUTE_TOOL_IDS = ["morpho.vault.deposit", "morpho.vault.withdraw"];
 
 /** Every discovery passage in the namespace, whichever lane module owns it. */
 const MORPHO_DISCOVERY = {
@@ -50,22 +64,50 @@ const MORPHO_DISCOVERY = {
   ...MORPHO_POSITION_READ_DISCOVERY,
   ...MORPHO_WALLET_READ_DISCOVERY,
   ...MORPHO_QUOTE_READ_DISCOVERY,
+  ...MORPHO_EXECUTE_WRITE_DISCOVERY,
 };
 
 describe("morpho manifest", () => {
-  it("declares exactly the markets, vaults, portfolio and preview lanes", () => {
+  it("declares exactly the markets, vaults, portfolio, preview and execute lanes", () => {
     expect(MORPHO_TOOLS).toHaveLength(EXPECTED_TOOL_IDS.length);
     expect(MORPHO_TOOLS.map((t) => t.toolId).sort()).toEqual([...EXPECTED_TOOL_IDS].sort());
   });
 
-  it("marks every tool active, read-only and non-mutating", () => {
+  it("marks every tool active, and every READ tool read-only and non-mutating", () => {
     for (const tool of MORPHO_TOOLS) {
       expect(tool.namespace).toBe("morpho");
       expect(tool.toolId.startsWith("morpho.")).toBe(true);
       expect(tool.lifecycle).toBe("active");
+      if (MORPHO_EXECUTE_TOOL_IDS.includes(tool.toolId)) continue;
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
+  });
+
+  it("marks the two EXECUTE tools mutating and as wallet broadcasts, which is what gates them", () => {
+    // `mutating` is what routes a tool through the approval gate and
+    // `user_wallet_broadcast` is what the taxonomy and the approval card read.
+    // A spending tool that declared neither would broadcast unattended.
+    for (const toolId of MORPHO_EXECUTE_TOOL_IDS) {
+      const tool = MORPHO_TOOLS.find((t) => t.toolId === toolId);
+      expect(tool, toolId).toBeDefined();
+      expect(tool!.mutating).toBe(true);
+      expect(tool!.actionKind).toBe("user_wallet_broadcast");
+    }
+  });
+
+  it("gates BOTH execute tools on a quote, one prequote kind per direction", () => {
+    // The direction split is the money-safety property: a shared kind would let
+    // a deposit quote authorize a withdrawal execute on the same vault.
+    expect(EXECUTE_GATE_TOOLS["morpho.vault.deposit"]).toEqual({
+      kind: "lend_deposit", family: "eip155", provider: "morpho",
+    });
+    expect(EXECUTE_GATE_TOOLS["morpho.vault.withdraw"]).toEqual({
+      kind: "lend_withdraw", family: "eip155", provider: "morpho",
+    });
+    expect(PREQUOTE_QUOTE_TOOLS["morpho.vault.quote"]).toEqual({
+      kind: "morpho-lend", family: "eip155", provider: "morpho",
+    });
   });
 
   it("declares no requiresEnv - the API is keyless, so gating would hide the tools", () => {
@@ -112,7 +154,12 @@ describe("morpho manifest", () => {
     for (const tool of MORPHO_TOOLS) {
       // Well past the 120-char lint minimum, per the owner's obszerne-opisy decree.
       expect(tool.description.length).toBeGreaterThan(900);
-      expect(tool.description).toMatch(/Read-only/);
+      // The two execute tools cannot claim to be read-only; they must instead
+      // say plainly that they spend, which is what the manifest lint's own
+      // mutating anchor requires.
+      expect(tool.description).toMatch(
+        MORPHO_EXECUTE_TOOL_IDS.includes(tool.toolId) ? /SPENDS/ : /Read-only/,
+      );
     }
     // The APY-basis rule is asserted on the tools that actually RETURN an APY.
     // Three tools return none at all, so requiring the sentence there would only
@@ -126,6 +173,11 @@ describe("morpho manifest", () => {
       "morpho.markets.activity",
       "morpho.rewards.get",
       "morpho.wallet.balance",
+      // The two EXECUTE tools return a settlement - amounts, shares and a hash
+      // - and no rate of any kind. An APY-basis sentence here would be a claim
+      // about a number the reply does not contain.
+      "morpho.vault.deposit",
+      "morpho.vault.withdraw",
       // The preview prices ONE operation at a point in time and returns no rate
       // of any kind, so an APY-basis sentence here would be a claim the reply
       // cannot support.
