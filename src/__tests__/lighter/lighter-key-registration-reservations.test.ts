@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
+  markLighterKeyGeneratedEncryptedWith,
   reserveLighterApiKeySlotWith,
   type ReserveLighterApiKeySlotInput,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -47,9 +48,30 @@ function reservationRow(apiKeyIndex = 6) {
     slot_observation_hash: INPUT.observation.observationHash,
     approval_status: "approval_pending",
     execution_state: "slot_reserved",
+    vault_credential_id: null,
+    public_key: null,
+    public_key_fingerprint: null,
+    key_generated_at: null,
     created_at: NOW,
     updated_at: NOW,
     expires_at: INPUT.expiresAt,
+  };
+}
+
+function workflowRow(state: string) {
+  return {
+    environment: "core",
+    wallet_address: WALLET.toLowerCase(),
+    workflow_state: state,
+    last_stable_state: state,
+    active_deposit_intent_id: null,
+    resolved_account_index: 42,
+    api_key_index: 6,
+    public_key_fingerprint: "a".repeat(64),
+    failure_code: null,
+    revision: 2,
+    created_at: NOW,
+    updated_at: NOW,
   };
 }
 
@@ -113,6 +135,46 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(client.query).not.toHaveBeenCalled();
   });
 
+  it("persists public metadata only after the encrypted-vault step", async () => {
+    const generatedRow = {
+      ...reservationRow(6),
+      execution_state: "key_generated_encrypted",
+      vault_credential_id: "lighter/core/account-42/api-key-6",
+      public_key: "ab".repeat(40),
+      public_key_fingerprint: "a".repeat(64),
+      key_generated_at: NOW,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [generatedRow], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [workflowRow("key_generated_encrypted")], rowCount: 1 }),
+    };
+
+    const result = await markLighterKeyGeneratedEncryptedWith(client as never, {
+      intentId: generatedRow.intent_id,
+      reference: {
+        kind: "encrypted_vault_reference",
+        environment: "core",
+        accountIndex: 42,
+        apiKeyIndex: 6,
+        vaultCredentialId: "lighter/core/account-42/api-key-6",
+      },
+      publicKey: `0x${"ab".repeat(40)}`,
+      generatedAt: NOW,
+    });
+
+    expect(result).toMatchObject({
+      executionState: "key_generated_encrypted",
+      publicKey: "ab".repeat(40),
+      vaultCredentialId: "lighter/core/account-42/api-key-6",
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("execution_state = 'slot_reserved'");
+    expect(sql).not.toMatch(/private_key/i);
+    expect(JSON.stringify(params)).not.toContain("privateKey");
+    expect(client.query.mock.calls[1]?.[0]).toContain("workflow_state = ANY($3)");
+  });
+
   it("refuses an unresolved workflow that has not proven the requested account", async () => {
     const client = {
       query: vi.fn().mockResolvedValueOnce({
@@ -140,6 +202,18 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(sql).toContain("api_key_index BETWEEN 4 AND 254");
     expect(sql).toContain("uq_lighter_key_registration_live_account");
     expect(sql).toContain("uq_lighter_key_registration_held_slot");
+    expect(sql).not.toMatch(/private_key|auth_token|signed_payload/i);
+  });
+
+  it("metadata migration excludes private credential material", async () => {
+    const sql = await readFile(new URL(
+      "../../vex-agent/db/migrations/098_lighter_key_registration_metadata.sql",
+      import.meta.url,
+    ), "utf8");
+
+    expect(sql).toContain("'key_generated_encrypted'");
+    expect(sql).toContain("vault_credential_id");
+    expect(sql).toContain("public_key_fingerprint");
     expect(sql).not.toMatch(/private_key|auth_token|signed_payload/i);
   });
 });

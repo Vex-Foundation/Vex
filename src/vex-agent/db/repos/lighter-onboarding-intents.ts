@@ -31,6 +31,7 @@ export type LighterOnboardingApprovalStatus =
 export type LighterOnboardingExecutionState =
   | "prepared"
   | "slot_reserved"
+  | "key_generated_encrypted"
   | "approval_pending"
   | "approved"
   | "allowance_verified"

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	lighterclient "github.com/elliottech/lighter-go/client"
+	lightersigner "github.com/elliottech/lighter-go/signer"
 	"github.com/elliottech/lighter-go/types"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 const maxInputBytes = 32 * 1024
@@ -44,14 +46,15 @@ type createOrderRequest struct {
 }
 
 type signerResponse struct {
-	OK        bool   `json:"ok"`
-	TxType    uint8  `json:"txType,omitempty"`
-	TxInfo    string `json:"txInfo,omitempty"`
-	TxHash    string `json:"txHash,omitempty"`
-	AuthToken string `json:"authToken,omitempty"`
-	PublicKey string `json:"publicKey,omitempty"`
-	ErrorCode string `json:"errorCode,omitempty"`
-	Error     string `json:"error,omitempty"`
+	OK         bool   `json:"ok"`
+	TxType     uint8  `json:"txType,omitempty"`
+	TxInfo     string `json:"txInfo,omitempty"`
+	TxHash     string `json:"txHash,omitempty"`
+	AuthToken  string `json:"authToken,omitempty"`
+	PublicKey  string `json:"publicKey,omitempty"`
+	PrivateKey string `json:"privateKey,omitempty"`
+	ErrorCode  string `json:"errorCode,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func main() {
@@ -69,6 +72,10 @@ func main() {
 
 	var response signerResponse
 	switch request.Operation {
+	case "generateApiKey":
+		response, err = generateAPIKey()
+	case "derivePublicKey":
+		response, err = derivePublicKey(request)
 	case "createAccountAuth":
 		response, err = createAccountAuth(request)
 	case "signCreateOrder":
@@ -90,11 +97,21 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" && request.Operation != "createAccountAuth" {
+	if request.Operation != "signCreateOrder" && request.Operation != "createAccountAuth" &&
+		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
 		return request, fmt.Errorf("unsupported signer operation")
+	}
+	if request.Operation == "generateApiKey" {
+		if request.PrivateKey != "" {
+			return request, fmt.Errorf("generate api key does not accept credential material")
+		}
+		return request, nil
 	}
 	if !privateKeyPattern.MatchString(request.PrivateKey) {
 		return request, fmt.Errorf("invalid signer credential material")
+	}
+	if request.Operation == "derivePublicKey" {
+		return request, nil
 	}
 	if request.ChainID == 0 {
 		return request, fmt.Errorf("invalid chain id")
@@ -138,6 +155,38 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, fmt.Errorf("invalid order expiry")
 	}
 	return request, nil
+}
+
+func generateAPIKey() (signerResponse, error) {
+	privateKey, publicKey, err := lighterclient.GenerateAPIKey()
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return signerResponse{
+		OK:         true,
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
+	}, nil
+}
+
+func derivePublicKey(request signerRequest) (signerResponse, error) {
+	privateKey := request.PrivateKey
+	if !strings.HasPrefix(privateKey, "0x") {
+		privateKey = "0x" + privateKey
+	}
+	privateKeyBytes, err := hexutil.Decode(privateKey)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	keyManager, err := lightersigner.NewKeyManager(privateKeyBytes)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	publicKey := keyManager.PubKeyBytes()
+	return signerResponse{
+		OK:        true,
+		PublicKey: hexutil.Encode(publicKey[:]),
+	}, nil
 }
 
 func createAccountAuth(request signerRequest) (signerResponse, error) {

@@ -5,6 +5,42 @@ import (
 	"testing"
 )
 
+func TestGenerateAPIKeyReturnsMatchingStandardKeyPair(t *testing.T) {
+	response, err := generateAPIKey()
+	if err != nil {
+		t.Fatalf("generateAPIKey() error = %v", err)
+	}
+	if !response.OK {
+		t.Fatalf("generateAPIKey() returned OK=false")
+	}
+	if len(response.PrivateKey) != 82 || !strings.HasPrefix(response.PrivateKey, "0x") {
+		t.Fatalf("generated private key has unexpected encoding")
+	}
+	if len(response.PublicKey) != 82 || !strings.HasPrefix(response.PublicKey, "0x") {
+		t.Fatalf("generated public key has unexpected encoding")
+	}
+
+	derived, err := derivePublicKey(signerRequest{PrivateKey: response.PrivateKey})
+	if err != nil {
+		t.Fatalf("derivePublicKey() error = %v", err)
+	}
+	if derived.PublicKey != response.PublicKey {
+		t.Fatalf("derived public key does not match generated public key")
+	}
+}
+
+func TestReadRequestAcceptsSecretlessGenerationOnly(t *testing.T) {
+	if _, err := readRequest(strings.NewReader(`{"operation":"generateApiKey"}`)); err != nil {
+		t.Fatalf("readRequest() generation error = %v", err)
+	}
+	if _, err := readRequest(strings.NewReader(`{
+		"operation":"generateApiKey",
+		"privateKey":"11111111111111111111111111111111111111111111111111111111111111111111111111111111"
+	}`)); err == nil {
+		t.Fatalf("expected generation request with credential material to be rejected")
+	}
+}
+
 func TestSignCreateOrderUsesStringDecimalPayload(t *testing.T) {
 	request, err := readRequest(strings.NewReader(`{
 		"operation": "signCreateOrder",

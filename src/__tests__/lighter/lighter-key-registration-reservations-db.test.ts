@@ -2,10 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
+import { defaultLighterTradingVaultCredentialId } from "@tools/lighter/trading-credentials.js";
 import { closePool, execute, query } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
-import { reserveLighterApiKeySlotWith } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
+import {
+  markLighterKeyGeneratedEncryptedWith,
+  reserveLighterApiKeySlotWith,
+} from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
@@ -110,6 +114,46 @@ d("Lighter Phase 3 API-key slot reservation database boundary", () => {
         kind: "lighter_onboarding_unresolved",
         detail: "slot_reserved",
       })],
+    });
+
+    const createdReservation = outcomes.find((item) => item.outcome === "created")?.reservation;
+    if (createdReservation === undefined) throw new Error("expected a created reservation");
+    const scope = {
+      environment: createdReservation.environment,
+      accountIndex: createdReservation.accountIndex,
+      apiKeyIndex: createdReservation.apiKeyIndex,
+    };
+    const generated = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyGeneratedEncryptedWith(client, {
+        intentId: createdReservation.intentId,
+        reference: {
+          kind: "encrypted_vault_reference",
+          ...scope,
+          vaultCredentialId: defaultLighterTradingVaultCredentialId(scope),
+        },
+        publicKey: "ab".repeat(40),
+        generatedAt: now,
+      }));
+    expect(generated).toMatchObject({
+      executionState: "key_generated_encrypted",
+      vaultCredentialId: "lighter/core/account-" + accountIndex + "/api-key-5",
+      publicKey: "ab".repeat(40),
+      publicKeyFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    const workflow = await query<{
+      workflow_state: string;
+      api_key_index: number;
+      public_key_fingerprint: string;
+    }>(
+      `SELECT workflow_state, api_key_index, public_key_fingerprint
+         FROM lighter_onboarding_workflows
+        WHERE environment = 'core' AND wallet_address = LOWER($1)`,
+      [walletAddress],
+    );
+    expect(workflow[0]).toMatchObject({
+      workflow_state: "key_generated_encrypted",
+      api_key_index: 5,
+      public_key_fingerprint: generated?.publicKeyFingerprint,
     });
   });
 });

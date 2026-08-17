@@ -19,6 +19,17 @@ export interface UnlockedLighterTradingCredentialStatus {
   readonly reference: LighterTradingCredentialVaultReference;
 }
 
+export const LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE =
+  "key_generated_pending_registration" as const;
+
+export type LighterTradingCredentialRegistrationState =
+  typeof LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE;
+
+export interface UnlockedPendingLighterTradingCredentialStatus
+  extends UnlockedLighterTradingCredentialStatus {
+  readonly registrationState: LighterTradingCredentialRegistrationState;
+}
+
 export interface UnlockedLighterTradingCredentialScope {
   readonly environment: LighterTradingCredentialVaultReference["environment"];
   readonly accountIndex: number;
@@ -57,6 +68,91 @@ export function writeUnlockedLighterTradingApiPrivateKey(
       "Unlock Vex and retry importing the Lighter trading credential.",
     );
   }
+}
+
+/**
+ * Encrypt a newly generated key and its pending-registration marker in one
+ * atomic vault rewrite. Existing material is never overwritten silently.
+ */
+export function writeUnlockedPendingLighterTradingApiPrivateKey(
+  reference: LighterTradingCredentialVaultReference,
+  privateKey: string,
+): UnlockedPendingLighterTradingCredentialStatus {
+  assertReference(reference);
+  const material = materialFromSecret(privateKey);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) {
+    throw lockedCredentialError("saved");
+  }
+
+  let existingPrivateKey: string | undefined;
+  let existingState: string | undefined;
+  try {
+    const contents = unlockSecretVault(password.data, {
+      filePath: SECRETS_VAULT_FILE,
+    });
+    existingPrivateKey = contents.extraSecrets?.[reference.vaultCredentialId];
+    existingState = contents.extraSecrets?.[registrationStateVaultId(reference)];
+  } catch {
+    throw pendingCredentialError("could not inspect the encrypted local vault");
+  }
+
+  if (existingPrivateKey !== undefined || existingState !== undefined) {
+    if (
+      typeof existingPrivateKey !== "string"
+      || canonicalPrivateKey(existingPrivateKey) !== canonicalPrivateKey(material.privateKey)
+      || existingState !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE
+    ) {
+      throw pendingCredentialError("conflicts with existing local vault state");
+    }
+    return {
+      present: true,
+      reference,
+      registrationState: LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
+    };
+  }
+
+  try {
+    writeSecretVaultExtraSecrets(
+      password.data,
+      {
+        [reference.vaultCredentialId]: material.privateKey,
+        [registrationStateVaultId(reference)]:
+          LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
+      },
+      { filePath: SECRETS_VAULT_FILE },
+    );
+    return {
+      present: true,
+      reference,
+      registrationState: LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
+    };
+  } catch {
+    throw pendingCredentialError("could not be saved through the privileged vault boundary");
+  }
+}
+
+export function getUnlockedLighterTradingCredentialRegistrationState(
+  reference: LighterTradingCredentialVaultReference,
+): LighterTradingCredentialRegistrationState | null {
+  assertReference(reference);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) throw lockedCredentialError("checked");
+
+  let state: string | undefined;
+  try {
+    const contents = unlockSecretVault(password.data, {
+      filePath: SECRETS_VAULT_FILE,
+    });
+    state = contents.extraSecrets?.[registrationStateVaultId(reference)];
+  } catch {
+    throw pendingCredentialError("registration state is not readable");
+  }
+  if (state === undefined) return null;
+  if (state !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) {
+    throw pendingCredentialError("registration state is invalid");
+  }
+  return state;
 }
 
 export function deleteUnlockedLighterTradingApiPrivateKey(
@@ -195,6 +291,25 @@ function lockedCredentialError(action: "saved" | "removed" | "checked"): VexErro
     `Lighter trading credential cannot be ${action} because the local vault is locked.`,
     "Unlock Vex before changing Lighter trading credentials.",
   );
+}
+
+function pendingCredentialError(reason: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `Pending Lighter trading credential ${reason}.`,
+    "Do not generate or register another key until the local credential state is reconciled.",
+  );
+}
+
+function registrationStateVaultId(
+  reference: LighterTradingCredentialVaultReference,
+): string {
+  return `${reference.vaultCredentialId}/registration-state`;
+}
+
+function canonicalPrivateKey(value: string): string {
+  const material = materialFromSecret(value);
+  return material.privateKey.toLowerCase().replace(/^0x/, "");
 }
 
 function assertReference(reference: LighterTradingCredentialVaultReference): void {

@@ -1,14 +1,24 @@
-/** Durable public slot reservations for Phase 3 key registration. */
+/** Durable public lifecycle for Phase 3 key registration. */
+
+import { createHash } from "node:crypto";
 
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import type { LighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import { selectAvailableLighterApiKeyIndex } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
 import {
+  defaultLighterTradingVaultCredentialId,
+  type LighterTradingCredentialVaultReference,
+} from "@tools/lighter/trading-credentials.js";
+import { queryOne } from "../client.js";
+import {
   generateOnboardingIntentId,
   type LighterOnboardingApprovalStatus,
 } from "./lighter-onboarding-intents.js";
-import type { LighterOnboardingQueryClient } from "./lighter-onboarding-workflows.js";
+import {
+  transitionLighterOnboardingWorkflowWith,
+  type LighterOnboardingQueryClient,
+} from "./lighter-onboarding-workflows.js";
 
 export const LIGHTER_KEY_SLOT_OBSERVATION_MAX_AGE_MS = 60_000;
 const LIGHTER_KEY_SLOT_OBSERVATION_FUTURE_TOLERANCE_MS = 5_000;
@@ -24,7 +34,11 @@ export interface LighterKeyRegistrationReservationRow {
   readonly slotObservedAt: Date;
   readonly slotObservationHash: string;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
-  readonly executionState: "slot_reserved";
+  readonly executionState: "slot_reserved" | "key_generated_encrypted";
+  readonly vaultCredentialId: string | null;
+  readonly publicKey: string | null;
+  readonly publicKeyFingerprint: string | null;
+  readonly keyGeneratedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly expiresAt: Date;
@@ -55,8 +69,21 @@ const RETURNING = `
   intent_id, session_id, environment, wallet_address, chain_id,
   resolved_account_index, api_key_index, slot_observed_at,
   slot_observation_hash, approval_status, execution_state,
+  vault_credential_id, public_key, public_key_fingerprint, key_generated_at,
   created_at, updated_at, expires_at
 `;
+
+export async function findLighterKeyRegistrationIntent(
+  intentId: string,
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${RETURNING}
+       FROM lighter_onboarding_intents
+      WHERE intent_id = $1 AND capability = 'key_registration'`,
+    [intentId],
+  );
+  return row === null ? null : mapRow(row);
+}
 
 /**
  * Reserve under a caller-owned transaction. The workflow row lock serializes
@@ -177,6 +204,77 @@ export async function reserveLighterApiKeySlotWith(
   return { outcome: "created", reservation };
 }
 
+/**
+ * Persist only after the private key is encrypted in the local vault. A failed
+ * DB write leaves a recoverable pending key at the deterministic reference.
+ */
+export async function markLighterKeyGeneratedEncryptedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly reference: LighterTradingCredentialVaultReference;
+    readonly publicKey: string;
+    readonly generatedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const expectedReference = defaultLighterTradingVaultCredentialId(input.reference);
+  if (
+    input.reference.kind !== "encrypted_vault_reference"
+    || input.reference.vaultCredentialId !== expectedReference
+  ) {
+    throw new Error("Lighter key registration vault reference does not match its account scope.");
+  }
+  const publicKey = normalizePublicKey(input.publicKey);
+  if (!Number.isFinite(input.generatedAt.getTime())) {
+    throw new Error("Lighter key registration requires a valid key-generation timestamp.");
+  }
+  const publicKeyFingerprint = createHash("sha256")
+    .update(Buffer.from(publicKey, "hex"))
+    .digest("hex");
+
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'key_generated_encrypted',
+            vault_credential_id = $2,
+            public_key = $3,
+            public_key_fingerprint = $4,
+            key_generated_at = $5,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND capability = 'key_registration'
+        AND execution_state = 'slot_reserved'
+        AND environment = $6
+        AND resolved_account_index = $7
+        AND api_key_index = $8
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.reference.vaultCredentialId,
+      publicKey,
+      publicKeyFingerprint,
+      input.generatedAt,
+      input.reference.environment,
+      input.reference.accountIndex,
+      input.reference.apiKeyIndex,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["account_resolved"],
+    nextState: "key_generated_encrypted",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter onboarding workflow rejected encrypted key metadata.");
+  }
+  return intent;
+}
+
 async function findHeldReservationWith(
   client: LighterOnboardingQueryClient,
   environment: LighterEnvironment,
@@ -252,8 +350,11 @@ function assertReservationInput(input: ReserveLighterApiKeySlotInput, now: Date)
 }
 
 function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservationRow {
-  if (row.execution_state !== "slot_reserved") {
-    throw new Error("Lighter key reservation row has an unexpected execution state.");
+  if (
+    row.execution_state !== "slot_reserved"
+    && row.execution_state !== "key_generated_encrypted"
+  ) {
+    throw new Error("Lighter key registration row has an unexpected execution state.");
   }
   return {
     intentId: String(row.intent_id),
@@ -266,9 +367,27 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
     slotObservedAt: row.slot_observed_at as Date,
     slotObservationHash: String(row.slot_observation_hash),
     approvalStatus: row.approval_status as LighterOnboardingApprovalStatus,
-    executionState: "slot_reserved",
+    executionState: row.execution_state,
+    vaultCredentialId: nullableString(row.vault_credential_id),
+    publicKey: nullableString(row.public_key),
+    publicKeyFingerprint: nullableString(row.public_key_fingerprint),
+    keyGeneratedAt: row.key_generated_at === null || row.key_generated_at === undefined
+      ? null
+      : row.key_generated_at as Date,
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     expiresAt: row.expires_at as Date,
   };
+}
+
+function normalizePublicKey(value: string): string {
+  const publicKey = value.trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{80}$/.test(publicKey)) {
+    throw new Error("Lighter key registration requires a canonical 40-byte public key.");
+  }
+  return publicKey;
+}
+
+function nullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
 }

@@ -9,6 +9,10 @@ import type {
   LighterCreateOrderSigningInput,
   LighterSignerAdapter,
 } from "./signer-adapter.js";
+import {
+  materialFromSecret,
+  type LighterTradingSecretMaterial,
+} from "./trading-secret.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_STDOUT_BYTES = 256 * 1024;
@@ -44,6 +48,15 @@ interface LighterSignerBinaryBasePayload {
   readonly apiKeyIndex: number;
 }
 
+interface LighterSignerBinaryGenerateApiKeyPayload {
+  readonly operation: "generateApiKey";
+}
+
+interface LighterSignerBinaryDerivePublicKeyPayload {
+  readonly operation: "derivePublicKey";
+  readonly privateKey: string;
+}
+
 interface LighterSignerBinaryAuthPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "createAccountAuth";
   readonly deadlineUnixSeconds: string;
@@ -67,8 +80,62 @@ interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBaseP
 }
 
 type LighterSignerBinaryPayload =
+  | LighterSignerBinaryGenerateApiKeyPayload
+  | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
   | LighterSignerBinaryCreateOrderPayload;
+
+export interface LighterGeneratedApiKeyPair {
+  readonly secret: LighterTradingSecretMaterial;
+  /** Canonical lowercase 40-byte public key without a 0x prefix. */
+  readonly publicKey: string;
+}
+
+export interface LighterApiKeyGenerator {
+  readonly source: "official_lighter_signer";
+  readonly generate: () => Promise<LighterGeneratedApiKeyPair>;
+  readonly derivePublicKey: (secret: LighterTradingSecretMaterial) => Promise<string>;
+}
+
+/**
+ * Privileged key-generation surface. It is intentionally separate from the
+ * order signer adapter so renderer/agent-facing dependencies never receive a
+ * generation method accidentally.
+ */
+export function createLighterApiKeyGeneratorBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterApiKeyGenerator {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  const derivePublicKey = async (secret: LighterTradingSecretMaterial): Promise<string> => {
+    const raw = await runner({
+      binaryPath,
+      payload: { operation: "derivePublicKey", privateKey: secret.privateKey },
+      timeoutMs,
+    });
+    return parsePublicKeyOutput(raw);
+  };
+
+  return {
+    source: "official_lighter_signer",
+    derivePublicKey,
+    generate: async () => {
+      const raw = await runner({
+        binaryPath,
+        payload: { operation: "generateApiKey" },
+        timeoutMs,
+      });
+      const generated = parseGeneratedApiKeyOutput(raw);
+      const derivedPublicKey = await derivePublicKey(generated.secret);
+      if (derivedPublicKey !== generated.publicKey) {
+        throw signerProcessFailed({ ok: false, errorCode: "keypair_mismatch" });
+      }
+      return generated;
+    },
+  };
+}
 
 export function createLighterSignerBinaryAdapter(
   options: LighterSignerBinaryAdapterOptions = {},
@@ -289,6 +356,24 @@ function parseAccountAuthOutput(raw: unknown): Pick<
     authToken: raw.authToken,
     publicKey: raw.publicKey,
   };
+}
+
+function parseGeneratedApiKeyOutput(raw: unknown): LighterGeneratedApiKeyPair {
+  if (!isRecord(raw) || raw.ok !== true) throw signerProcessFailed(raw);
+  if (typeof raw.privateKey !== "string") throw signerProcessFailed(raw);
+  const secret = materialFromSecret(raw.privateKey);
+  return {
+    secret,
+    publicKey: parsePublicKeyOutput(raw),
+  };
+}
+
+function parsePublicKeyOutput(raw: unknown): string {
+  if (!isRecord(raw) || raw.ok !== true) throw signerProcessFailed(raw);
+  if (typeof raw.publicKey !== "string" || !/^(?:0x)?[a-fA-F0-9]{80}$/.test(raw.publicKey)) {
+    throw signerProcessFailed(raw);
+  }
+  return raw.publicKey.toLowerCase().replace(/^0x/, "");
 }
 
 function parseHelperJson(stdout: string): unknown {

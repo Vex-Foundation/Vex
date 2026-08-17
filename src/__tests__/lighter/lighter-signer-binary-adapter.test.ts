@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createLighterApiKeyGeneratorBinary,
   createLighterSignerBinaryAdapter,
   resolveDefaultLighterSignerBinaryPath,
   type LighterSignerBinaryRunRequest,
@@ -64,6 +65,52 @@ function signingInput() {
 }
 
 describe("Lighter signer binary adapter", () => {
+  it("generates and independently re-derives an ecgfp5 keypair", async () => {
+    const calls: LighterSignerBinaryRunRequest[] = [];
+    const generator = createLighterApiKeyGeneratorBinary({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: async (request) => {
+        calls.push(request);
+        if (request.payload.operation === "generateApiKey") {
+          return {
+            ok: true,
+            privateKey: PRIVATE_KEY,
+            publicKey: `0x${"b".repeat(80)}`,
+          };
+        }
+        return { ok: true, publicKey: "b".repeat(80) };
+      },
+    });
+
+    const generated = await generator.generate();
+
+    expect(generated.publicKey).toBe("b".repeat(80));
+    expect(generated.secret.privateKey).toBe(PRIVATE_KEY);
+    expect(JSON.stringify(generated)).not.toContain(PRIVATE_KEY);
+    expect(calls.map((call) => call.payload.operation)).toEqual([
+      "generateApiKey",
+      "derivePublicKey",
+    ]);
+    expect(calls[0]?.payload).toEqual({ operation: "generateApiKey" });
+    expect(calls[1]?.payload).toEqual({
+      operation: "derivePublicKey",
+      privateKey: PRIVATE_KEY,
+    });
+  });
+
+  it("refuses a generated keypair whose derived public key differs", async () => {
+    const generator = createLighterApiKeyGeneratorBinary({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: async (request) => request.payload.operation === "generateApiKey"
+        ? { ok: true, privateKey: PRIVATE_KEY, publicKey: "b".repeat(80) }
+        : { ok: true, publicKey: "c".repeat(80) },
+    });
+
+    await expect(generator.generate()).rejects.toThrow(
+      "Lighter signer helper failed (keypair_mismatch)",
+    );
+  });
+
   it("creates canonical account auth without putting the key in process arguments", async () => {
     const calls: LighterSignerBinaryRunRequest[] = [];
     const input = buildLighterAccountAuthSigningInput({

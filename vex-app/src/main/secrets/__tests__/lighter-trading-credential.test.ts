@@ -122,6 +122,69 @@ describe("Lighter trading credential vault reader", () => {
 });
 
 describe("Lighter trading credential vault import", () => {
+  it("atomically stores a generated key with its pending-registration marker", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {}, extraSecrets: {} });
+    mockWriteSecretVaultExtraSecrets.mockReturnValue({ version: 1, secrets: {} });
+    const {
+      LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
+      writeUnlockedPendingLighterTradingApiPrivateKey,
+    } = await loadModule();
+
+    const status = writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+
+    expect(status).toEqual({
+      present: true,
+      reference: REFERENCE,
+      registrationState: LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
+    });
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
+      "correct-password",
+      {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+      { filePath: "/tmp/vex-test-vault" },
+    );
+  });
+
+  it("resumes an identical pending credential without rewriting the vault", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { writeUnlockedPendingLighterTradingApiPrivateKey } = await loadModule();
+
+    expect(writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
+      .toMatchObject({ present: true, registrationState: "key_generated_pending_registration" });
+    expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+  });
+
+  it("never overwrites conflicting pending vault material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: `0x${"2".repeat(80)}`,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { writeUnlockedPendingLighterTradingApiPrivateKey } = await loadModule();
+
+    expect(() => writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
+      .toThrow("conflicts with existing local vault state");
+    expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+  });
+
   it("writes a validated key into vault extraSecrets only", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     mockWriteSecretVaultExtraSecrets.mockReturnValue({
@@ -211,6 +274,24 @@ describe("Lighter trading credential vault import", () => {
 });
 
 describe("Lighter trading credential vault status and removal", () => {
+  it("reads the pending-registration marker without returning key material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { getUnlockedLighterTradingCredentialRegistrationState } = await loadModule();
+
+    const state = getUnlockedLighterTradingCredentialRegistrationState(REFERENCE);
+    expect(state).toBe("key_generated_pending_registration");
+    expect(JSON.stringify(state)).not.toContain(PRIVATE_KEY);
+  });
+
   it("reports presence without returning key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     mockUnlockSecretVault.mockReturnValue({
