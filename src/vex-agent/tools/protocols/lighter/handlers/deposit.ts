@@ -25,6 +25,7 @@ import {
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
 import { LIGHTER_DEPOSIT_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -133,21 +134,29 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
 
     const routeType = LIGHTER_DEPOSIT_ROUTE_TYPE.perps;
 
-    const created = await onboardingIntentsRepo.createDepositApprovalPending({
-      sessionId,
-      environment: "core",
-      walletAddress,
-      chainId: LIGHTER_DEPOSIT_CHAIN_ID,
-      depositContract: getAddress(LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS),
-      depositTo: walletAddress,
-      assetIndex: LIGHTER_USDC_ASSET_INDEX,
-      routeType,
-      amountUnits: amountUnits.toString(),
-      expiresAt: new Date(Date.now() + INTENT_TTL_MS),
-    });
-    if (created === null) {
-      return fail("Could not create the Lighter deposit intent. Try again.");
+    const creation = await withSessionControlLock(sessionId, (client) =>
+      onboardingIntentsRepo.createOrFindLiveDepositApprovalPendingWith(client, {
+        sessionId,
+        environment: "core",
+        walletAddress,
+        chainId: LIGHTER_DEPOSIT_CHAIN_ID,
+        depositContract: getAddress(LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS),
+        depositTo: walletAddress,
+        assetIndex: LIGHTER_USDC_ASSET_INDEX,
+        routeType,
+        amountUnits: amountUnits.toString(),
+        expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+      }),
+    );
+    if (creation.outcome === "live_conflict") {
+      const conflict = creation.intent;
+      return fail(
+        conflict === null
+          ? "Another Lighter deposit preparation won the concurrency race. No second deposit was prepared; check onboarding status before retrying."
+          : `Lighter deposit intent ${conflict.intentId} is already unresolved in state ${conflict.executionState}. No second deposit was prepared; resolve or reconcile it before creating another.`,
+      );
     }
+    const created = creation.intent;
 
     let followUp: PreparedActionFollowUp;
     try {

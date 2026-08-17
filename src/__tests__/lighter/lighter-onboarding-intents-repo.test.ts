@@ -1,15 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { closePool, execute } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
 const d = RUN ? describe : describe.skip;
 
 const SESSION_IDS: string[] = [];
-const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 
 beforeAll(async () => {
@@ -32,20 +32,27 @@ async function newSession(): Promise<string> {
 }
 
 async function newDepositIntent(sessionId: string) {
-  const row = await repo.createDepositApprovalPending({
-    sessionId,
-    environment: "core",
-    walletAddress: WALLET,
-    chainId: 1,
-    depositContract: CONTRACT,
-    depositTo: WALLET,
-    assetIndex: 3,
-    routeType: 0,
-    amountUnits: "11000000",
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-  });
-  expect(row).not.toBeNull();
-  return row!;
+  const wallet = walletForSession(sessionId);
+  const created = await withSessionControlLock(sessionId, (client) =>
+    repo.createOrFindLiveDepositApprovalPendingWith(client, {
+      sessionId,
+      environment: "core",
+      walletAddress: wallet,
+      chainId: 1,
+      depositContract: CONTRACT,
+      depositTo: wallet,
+      assetIndex: 3,
+      routeType: 0,
+      amountUnits: "11000000",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    }),
+  );
+  expect(created.outcome).toBe("created");
+  return created.intent!;
+}
+
+function walletForSession(sessionId: string): string {
+  return `0x${createHash("sha256").update(sessionId).digest("hex").slice(0, 40)}`;
 }
 
 d("lighter_onboarding_intents repo", () => {
@@ -97,6 +104,29 @@ d("lighter_onboarding_intents repo", () => {
     expect(
       (await repo.markDepositSubmitted(intent.intentId, "0x" + "d".repeat(64)))?.executionState,
     ).toBe("deposit_submitted");
+  });
+
+  it("returns the authoritative live intent instead of creating a duplicate deposit", async () => {
+    const sessionId = await newSession();
+    const first = await newDepositIntent(sessionId);
+    const wallet = walletForSession(sessionId);
+    const second = await withSessionControlLock(sessionId, (client) =>
+      repo.createOrFindLiveDepositApprovalPendingWith(client, {
+        sessionId,
+        environment: "core",
+        walletAddress: wallet.toUpperCase().replace("0X", "0x"),
+        chainId: 1,
+        depositContract: CONTRACT,
+        depositTo: wallet,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "12000000",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      }),
+    );
+
+    expect(second.outcome).toBe("live_conflict");
+    expect(second.intent?.intentId).toBe(first.intentId);
   });
 
   it("lists unresolved intents and excludes credited/failed", async () => {

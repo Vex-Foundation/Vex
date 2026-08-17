@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 
 import { query, queryOne } from "../client.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
@@ -71,6 +72,10 @@ export interface CreateDepositIntentInput {
   readonly expiresAt: Date;
 }
 
+export type CreateDepositIntentOutcome =
+  | { readonly outcome: "created"; readonly intent: LighterOnboardingIntentRow }
+  | { readonly outcome: "live_conflict"; readonly intent: LighterOnboardingIntentRow | null };
+
 export function generateOnboardingIntentId(): string {
   return `lighter-onboard-${randomUUID()}`;
 }
@@ -90,13 +95,20 @@ const INSERT_DEPOSIT_SQL = `
   ) VALUES (
     $1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, $10, 'approval_pending', 'approval_pending', $11
   )
+  ON CONFLICT DO NOTHING
   RETURNING ${RETURNING}
 `;
 
-export async function createDepositApprovalPending(
+/**
+ * Create the row under the caller's session-control-locked transaction.
+ * `ON CONFLICT DO NOTHING` converts the partial unique-index race into a
+ * deterministic result; a second statement returns the authoritative live row.
+ */
+export async function createOrFindLiveDepositApprovalPendingWith(
+  client: PoolClient,
   input: CreateDepositIntentInput,
-): Promise<LighterOnboardingIntentRow | null> {
-  const row = await queryOne<Record<string, unknown>>(INSERT_DEPOSIT_SQL, [
+): Promise<CreateDepositIntentOutcome> {
+  const inserted = await client.query<Record<string, unknown>>(INSERT_DEPOSIT_SQL, [
     generateOnboardingIntentId(),
     input.sessionId,
     input.environment,
@@ -109,7 +121,28 @@ export async function createDepositApprovalPending(
     input.amountUnits,
     input.expiresAt,
   ]);
-  return row ? mapRow(row) : null;
+  const created = inserted.rows[0];
+  if (created !== undefined) {
+    return { outcome: "created", intent: mapRow(created) };
+  }
+
+  const existing = await client.query<Record<string, unknown>>(
+    `SELECT ${RETURNING}
+       FROM lighter_onboarding_intents
+      WHERE environment = $1
+        AND LOWER(wallet_address) = LOWER($2)
+        AND capability = 'deposit'
+        AND approval_status IN ('approval_pending', 'approved')
+        AND execution_state NOT IN ('credited', 'failed')
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [input.environment, input.walletAddress],
+  );
+  const conflict = existing.rows[0];
+  return {
+    outcome: "live_conflict",
+    intent: conflict === undefined ? null : mapRow(conflict),
+  };
 }
 
 export async function markApprovalDecision(input: {
