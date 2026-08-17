@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createLighterApiKeyGeneratorBinary,
+  createLighterRegisteredKeyCheckerBinary,
   createLighterSignerBinaryAdapter,
   resolveDefaultLighterSignerBinaryPath,
   type LighterSignerBinaryRunRequest,
@@ -141,6 +142,31 @@ describe("Lighter signer binary adapter", () => {
       accountIndex: "42",
       apiKeyIndex: 7,
       deadlineUnixSeconds: "1893456600",
+    });
+  });
+
+  it("runs official CheckClient through a separate privileged surface", async () => {
+    const calls: LighterSignerBinaryRunRequest[] = [];
+    const checker = createLighterRegisteredKeyCheckerBinary({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: async (request) => {
+        calls.push(request);
+        return { ok: true, publicKey: `0x${"b".repeat(80)}` };
+      },
+    });
+
+    await expect(checker.check({
+      environment: "core",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      secret: materialFromSecret(PRIVATE_KEY),
+    })).resolves.toEqual({ publicKey: "b".repeat(80) });
+    expect(calls[0]?.payload).toEqual({
+      operation: "checkClient",
+      privateKey: PRIVATE_KEY,
+      chainId: 304,
+      accountIndex: "42",
+      apiKeyIndex: 7,
     });
   });
 

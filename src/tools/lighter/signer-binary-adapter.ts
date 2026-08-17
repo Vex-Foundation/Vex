@@ -14,6 +14,7 @@ import type {
   LighterCreateOrderSigningInput,
   LighterSignerAdapter,
 } from "./signer-adapter.js";
+import { LIGHTER_SIGNER_CHAIN_IDS } from "./signer-adapter.js";
 import {
   materialFromSecret,
   type LighterTradingSecretMaterial,
@@ -94,12 +95,17 @@ interface LighterSignerBinaryChangePubKeyPayload extends LighterSignerBinaryBase
   readonly expectedL1Address: string;
 }
 
+interface LighterSignerBinaryCheckClientPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "checkClient";
+}
+
 type LighterSignerBinaryPayload =
   | LighterSignerBinaryGenerateApiKeyPayload
   | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
   | LighterSignerBinaryCreateOrderPayload
-  | LighterSignerBinaryChangePubKeyPayload;
+  | LighterSignerBinaryChangePubKeyPayload
+  | LighterSignerBinaryCheckClientPayload;
 
 export interface LighterGeneratedApiKeyPair {
   readonly secret: LighterTradingSecretMaterial;
@@ -111,6 +117,25 @@ export interface LighterApiKeyGenerator {
   readonly source: "official_lighter_signer";
   readonly generate: () => Promise<LighterGeneratedApiKeyPair>;
   readonly derivePublicKey: (secret: LighterTradingSecretMaterial) => Promise<string>;
+}
+
+export interface LighterRegisteredKeyCheckInput {
+  readonly environment: "core";
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly secret: LighterTradingSecretMaterial;
+}
+
+export interface LighterRegisteredKeyCheckResult {
+  /** Canonical lowercase 40-byte public key without a 0x prefix. */
+  readonly publicKey: string;
+}
+
+export interface LighterRegisteredKeyChecker {
+  readonly source: "official_lighter_signer";
+  readonly check: (
+    input: LighterRegisteredKeyCheckInput,
+  ) => Promise<LighterRegisteredKeyCheckResult>;
 }
 
 /**
@@ -234,6 +259,32 @@ export function createLighterChangePubKeySignerBinary(
         value: output.txInfo,
         enumerable: false,
       }) as LighterChangePubKeySignerResult;
+    },
+  };
+}
+
+/** Official SDK CheckClient seam, kept separate from order signing surfaces. */
+export function createLighterRegisteredKeyCheckerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterRegisteredKeyChecker {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return {
+    source: "official_lighter_signer",
+    check: async (input) => {
+      const raw = await runner({
+        binaryPath,
+        payload: {
+          operation: "checkClient",
+          privateKey: input.secret.privateKey,
+          chainId: LIGHTER_SIGNER_CHAIN_IDS.core,
+          accountIndex: String(input.accountIndex),
+          apiKeyIndex: input.apiKeyIndex,
+        },
+        timeoutMs,
+      });
+      return { publicKey: parsePublicKeyOutput(raw) };
     },
   };
 }

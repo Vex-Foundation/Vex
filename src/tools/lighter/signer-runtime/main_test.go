@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -182,6 +184,53 @@ func TestCreateAccountAuthReturnsCanonicalTokenAndPublicKey(t *testing.T) {
 	}
 	if len(response.PublicKey) != 80 {
 		t.Fatalf("PublicKey length = %d, want 80", len(response.PublicKey))
+	}
+}
+
+func TestCheckClientMatchesRegisteredPublicKey(t *testing.T) {
+	const lighterPrivateKey = "11111111111111111111111111111111111111111111111111111111111111111111111111111111"
+	derived, err := derivePublicKey(signerRequest{PrivateKey: lighterPrivateKey})
+	if err != nil {
+		t.Fatalf("derivePublicKey() error = %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/apikeys" || request.URL.Query().Get("account_index") != "42" {
+			t.Fatalf("unexpected CheckClient request: %s", request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(writer, `{"code":200,"api_keys":[{"account_index":42,"api_key_index":7,"nonce":1,"public_key":%q}]}`, strings.TrimPrefix(derived.PublicKey, "0x"))
+	}))
+	defer server.Close()
+
+	response, err := checkClientAtBaseURL(signerRequest{
+		PrivateKey:   lighterPrivateKey,
+		ChainID:      lighterCoreChainID,
+		AccountIndex: "42",
+		APIKeyIndex:  7,
+	}, server.URL)
+	if err != nil {
+		t.Fatalf("checkClientAtBaseURL() error = %v", err)
+	}
+	if !response.OK || response.PublicKey != strings.TrimPrefix(derived.PublicKey, "0x") {
+		t.Fatalf("CheckClient did not return the matching public key")
+	}
+}
+
+func TestCheckClientRejectsMismatchedRegisteredPublicKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(writer, `{"code":200,"api_keys":[{"account_index":43,"api_key_index":7,"nonce":1,"public_key":%q}]}`, strings.Repeat("2", 80))
+	}))
+	defer server.Close()
+
+	_, err := checkClientAtBaseURL(signerRequest{
+		PrivateKey:   strings.Repeat("1", 80),
+		ChainID:      lighterCoreChainID,
+		AccountIndex: "43",
+		APIKeyIndex:  7,
+	}, server.URL)
+	if err == nil {
+		t.Fatalf("expected CheckClient mismatch to fail")
 	}
 }
 

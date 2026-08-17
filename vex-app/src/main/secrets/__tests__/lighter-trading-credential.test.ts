@@ -81,6 +81,24 @@ describe("Lighter trading credential vault reader", () => {
     expect(readUnlockedLighterTradingApiPrivateKey(REFERENCE)).toBeNull();
   });
 
+  it("does not expose a pending generated key to the order-signing reader", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { createUnlockedVaultLighterTradingSecretReader } = await loadModule();
+
+    await expect(
+      createUnlockedVaultLighterTradingSecretReader().readTradingApiPrivateKey(REFERENCE),
+    ).resolves.toBeNull();
+  });
+
   it("rejects references that do not match the approved Lighter scope", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { readUnlockedLighterTradingApiPrivateKey } = await loadModule();
@@ -309,6 +327,32 @@ describe("Lighter trading credential vault status and removal", () => {
     expect(JSON.stringify(status)).not.toContain(PRIVATE_KEY);
   });
 
+  it("promotes a pending key marker to active without rewriting key material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { activateUnlockedLighterTradingCredential } = await loadModule();
+
+    expect(activateUnlockedLighterTradingCredential(REFERENCE)).toEqual({
+      present: true,
+      reference: REFERENCE,
+      registrationState: "key_registered_active",
+    });
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
+      "correct-password",
+      { [`${REFERENCE.vaultCredentialId}/registration-state`]: "key_registered_active" },
+      { filePath: "/tmp/vex-test-vault" },
+    );
+    expect(JSON.stringify(mockWriteSecretVaultExtraSecrets.mock.calls)).not.toContain(PRIVATE_KEY);
+  });
+
   it("reports absence when the matching extra secret is missing", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     mockUnlockSecretVault.mockReturnValue({
@@ -348,6 +392,10 @@ describe("Lighter trading credential vault status and removal", () => {
       secrets: {},
       extraSecrets: {
         "lighter/rhc/account-1171/api-key-9": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-9/registration-state":
+          "key_generated_pending_registration",
+        "lighter/rhc/account-1171/api-key-10": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-10/registration-state": "key_registered_active",
         "lighter/rhc/account-1171/api-key-3": PRIVATE_KEY,
         "lighter/rhc/account-1171/api-key-255": PRIVATE_KEY,
         "lighter/core/account-42/api-key-7": PRIVATE_KEY,
@@ -358,7 +406,7 @@ describe("Lighter trading credential vault status and removal", () => {
     const { listUnlockedLighterTradingCredentialScopes } = await loadModule();
 
     expect(listUnlockedLighterTradingCredentialScopes("rhc")).toEqual([
-      { environment: "rhc", accountIndex: 1171, apiKeyIndex: 9 },
+      { environment: "rhc", accountIndex: 1171, apiKeyIndex: 10 },
     ]);
     expect(JSON.stringify(listUnlockedLighterTradingCredentialScopes())).not.toContain(PRIVATE_KEY);
   });
@@ -387,7 +435,10 @@ describe("Lighter trading credential vault status and removal", () => {
     expect(status).toEqual({ present: false, reference: REFERENCE });
     expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
       "correct-password",
-      { [REFERENCE.vaultCredentialId]: null },
+      {
+        [REFERENCE.vaultCredentialId]: null,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]: null,
+      },
       { filePath: "/tmp/vex-test-vault" },
     );
   });

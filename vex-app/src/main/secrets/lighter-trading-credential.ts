@@ -21,9 +21,12 @@ export interface UnlockedLighterTradingCredentialStatus {
 
 export const LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE =
   "key_generated_pending_registration" as const;
+export const LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE =
+  "key_registered_active" as const;
 
 export type LighterTradingCredentialRegistrationState =
-  typeof LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE;
+  | typeof LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE
+  | typeof LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE;
 
 export interface UnlockedPendingLighterTradingCredentialStatus
   extends UnlockedLighterTradingCredentialStatus {
@@ -38,8 +41,11 @@ export interface UnlockedLighterTradingCredentialScope {
 
 export function createUnlockedVaultLighterTradingSecretReader(): LighterTradingSecretReader {
   return {
-    readTradingApiPrivateKey: async (reference) =>
-      readUnlockedLighterTradingApiPrivateKey(reference),
+    readTradingApiPrivateKey: async (reference) => {
+      const state = getUnlockedLighterTradingCredentialRegistrationState(reference);
+      if (state === LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) return null;
+      return readUnlockedLighterTradingApiPrivateKey(reference);
+    },
   };
 }
 
@@ -149,10 +155,60 @@ export function getUnlockedLighterTradingCredentialRegistrationState(
     throw pendingCredentialError("registration state is not readable");
   }
   if (state === undefined) return null;
-  if (state !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) {
+  if (
+    state !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE
+    && state !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
+  ) {
     throw pendingCredentialError("registration state is invalid");
   }
   return state;
+}
+
+/** Promote only an existing pending credential after live provider verification. */
+export function activateUnlockedLighterTradingCredential(
+  reference: LighterTradingCredentialVaultReference,
+): UnlockedPendingLighterTradingCredentialStatus {
+  assertReference(reference);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) throw lockedCredentialError("saved");
+
+  let privateKey: string | undefined;
+  let state: string | undefined;
+  try {
+    const contents = unlockSecretVault(password.data, { filePath: SECRETS_VAULT_FILE });
+    privateKey = contents.extraSecrets?.[reference.vaultCredentialId];
+    state = contents.extraSecrets?.[registrationStateVaultId(reference)];
+  } catch {
+    throw pendingCredentialError("could not be inspected before activation");
+  }
+  if (typeof privateKey !== "string" || privateKey.trim().length === 0) {
+    throw pendingCredentialError("cannot be activated without encrypted key material");
+  }
+  try {
+    materialFromSecret(privateKey);
+  } catch {
+    throw pendingCredentialError("cannot be activated because key material is invalid");
+  }
+  if (state === LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE) {
+    return { present: true, reference, registrationState: state };
+  }
+  if (state !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) {
+    throw pendingCredentialError("cannot be activated from its current state");
+  }
+  try {
+    writeSecretVaultExtraSecrets(
+      password.data,
+      { [registrationStateVaultId(reference)]: LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE },
+      { filePath: SECRETS_VAULT_FILE },
+    );
+    return {
+      present: true,
+      reference,
+      registrationState: LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
+    };
+  } catch {
+    throw pendingCredentialError("could not be activated through the privileged vault boundary");
+  }
 }
 
 export function deleteUnlockedLighterTradingApiPrivateKey(
@@ -167,7 +223,10 @@ export function deleteUnlockedLighterTradingApiPrivateKey(
   try {
     writeSecretVaultExtraSecrets(
       password.data,
-      { [reference.vaultCredentialId]: null },
+      {
+        [reference.vaultCredentialId]: null,
+        [registrationStateVaultId(reference)]: null,
+      },
       { filePath: SECRETS_VAULT_FILE },
     );
     return { present: false, reference };
@@ -229,6 +288,14 @@ export function listUnlockedLighterTradingCredentialScopes(
       if (typeof value !== "string" || value.trim().length === 0) continue;
       const match = /^lighter\/(core|rhc)\/account-(\d+)\/api-key-(\d+)$/.exec(key);
       if (!match) continue;
+      const registrationState = extraSecrets[`${key}/registration-state`];
+      if (registrationState === LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) continue;
+      if (
+        registrationState !== undefined
+        && registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
+      ) {
+        continue;
+      }
       const [, env, accountIndexRaw, apiKeyIndexRaw] = match;
       if (environment !== undefined && env !== environment) continue;
       const accountIndex = Number(accountIndexRaw);

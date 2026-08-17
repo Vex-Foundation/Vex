@@ -12,6 +12,7 @@ import (
 	"time"
 
 	lighterclient "github.com/elliottech/lighter-go/client"
+	lighterhttp "github.com/elliottech/lighter-go/client/http"
 	lightersigner "github.com/elliottech/lighter-go/signer"
 	"github.com/elliottech/lighter-go/types"
 	schnorr "github.com/elliottech/poseidon_crypto/signature/schnorr"
@@ -22,6 +23,7 @@ import (
 const maxInputBytes = 32 * 1024
 const maxRegistrationNonce = int64(1<<48 - 1)
 const lighterCoreChainID = uint32(304)
+const lighterCoreBaseURL = "https://mainnet.zklighter.elliot.ai"
 
 var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
@@ -93,6 +95,8 @@ func main() {
 		response, err = signCreateOrder(request)
 	case "signChangePubKey":
 		response, err = signChangePubKey(request)
+	case "checkClient":
+		response, err = checkClient(request)
 	default:
 		err = fmt.Errorf("unsupported signer operation")
 	}
@@ -111,6 +115,7 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, fmt.Errorf("invalid signer request")
 	}
 	if request.Operation != "signCreateOrder" && request.Operation != "signChangePubKey" &&
+		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
 		return request, fmt.Errorf("unsupported signer operation")
@@ -139,6 +144,12 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if request.Operation == "createAccountAuth" {
 		if _, err := parsePositiveInt64(request.DeadlineUnixSeconds, "auth deadline"); err != nil {
 			return request, fmt.Errorf("invalid auth deadline")
+		}
+		return request, nil
+	}
+	if request.Operation == "checkClient" {
+		if request.ChainID != lighterCoreChainID {
+			return request, fmt.Errorf("invalid core chain id")
 		}
 		return request, nil
 	}
@@ -195,6 +206,35 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, fmt.Errorf("invalid order expiry")
 	}
 	return request, nil
+}
+
+func checkClient(request signerRequest) (signerResponse, error) {
+	return checkClientAtBaseURL(request, lighterCoreBaseURL)
+}
+
+func checkClientAtBaseURL(request signerRequest, baseURL string) (signerResponse, error) {
+	accountIndex, err := parsePositiveInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	client, err := lighterclient.NewTxClient(
+		lighterhttp.NewClient(baseURL),
+		strings.TrimPrefix(request.PrivateKey, "0x"),
+		accountIndex,
+		request.APIKeyIndex,
+		request.ChainID,
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	if err := client.Check(); err != nil {
+		return signerResponse{}, err
+	}
+	publicKey := client.GetKeyManager().PubKeyBytes()
+	return signerResponse{
+		OK:        true,
+		PublicKey: hex.EncodeToString(publicKey[:]),
+	}, nil
 }
 
 func generateAPIKey() (signerResponse, error) {
