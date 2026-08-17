@@ -21,6 +21,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  fallback,
   http,
   type Account,
   type Chain,
@@ -36,7 +37,9 @@ import {
   MORPHO_DEFAULT_RPC,
   MORPHO_MULTICALL3,
   MORPHO_NATIVE_SYMBOL,
+  MORPHO_RPC_FALLBACKS,
 } from "./constants.js";
+import { getLocalChain, getLocalChainRpcUrl } from "../evm-chains/registry.js";
 import { MORPHO_CHAINS, describeUnsupportedChain } from "./chains.js";
 
 const RPC_TIMEOUT_MS = 30_000;
@@ -44,9 +47,17 @@ const RPC_RETRY_COUNT = 2;
 
 const BY_ID = new Map(MORPHO_CHAINS.map((chain) => [chain.chainId, chain]));
 
+function resolveMorphoRpcUrl(chainId: number): string | undefined {
+  // Robinhood defers to the shared evm-chains registry, which honours the
+  // user's RPC override - the same resolution KyberSwap documents for 4663.
+  const local = getLocalChain(chainId);
+  if (local !== undefined) return getLocalChainRpcUrl(local);
+  return MORPHO_DEFAULT_RPC[chainId];
+}
+
 function buildViemChain(chainId: number): Chain {
   const chain = BY_ID.get(chainId);
-  const rpcUrl = MORPHO_DEFAULT_RPC[chainId];
+  const rpcUrl = resolveMorphoRpcUrl(chainId);
   if (chain === undefined || rpcUrl === undefined) {
     throw new VexError(
       ErrorCodes.MORPHO_UNSUPPORTED_CHAIN,
@@ -64,15 +75,31 @@ function buildViemChain(chainId: number): Chain {
   };
 }
 
+/**
+ * The transport for a supported Morpho chain: plain HTTP when one verified
+ * endpoint exists, a viem `fallback` chain when `MORPHO_RPC_FALLBACKS` lists
+ * alternates. Every free Base endpoint meters something (funded probe reruns,
+ * 2026-08-17: one refuses receipts, one exhausts a compute budget, one 429s),
+ * so a provider that starts refusing hands the call to the next verified one
+ * instead of turning a money-path read into an ambiguity. `rank: false` keeps
+ * the measured order deliberate.
+ */
+function buildMorphoTransport(chainId: number, primaryUrl: string): Transport {
+  const httpOptions = { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT };
+  const alternates = MORPHO_RPC_FALLBACKS[chainId];
+  if (alternates === undefined || alternates.length === 0) return http(primaryUrl, httpOptions);
+  return fallback(
+    [primaryUrl, ...alternates].map((url) => http(url, httpOptions)),
+    { rank: false },
+  );
+}
+
 /** A budgeted, Multicall3-wired public client for a supported Morpho chain. */
 export function getMorphoPublicClient(chainId: number): PublicClient<Transport, Chain> {
   const chain = buildViemChain(chainId);
   return createPublicClient({
     chain,
-    transport: http(chain.rpcUrls.default.http[0], {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: RPC_RETRY_COUNT,
-    }),
+    transport: buildMorphoTransport(chainId, chain.rpcUrls.default.http[0]),
   }) as PublicClient<Transport, Chain>;
 }
 
@@ -97,10 +124,7 @@ export interface MorphoEvmClients {
  */
 export function getMorphoEvmClients(chainId: number, privateKey: Hex): MorphoEvmClients {
   const chain = buildViemChain(chainId);
-  const transport = http(chain.rpcUrls.default.http[0], {
-    timeout: RPC_TIMEOUT_MS,
-    retryCount: RPC_RETRY_COUNT,
-  });
+  const transport = buildMorphoTransport(chainId, chain.rpcUrls.default.http[0]);
   return {
     publicClient: createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>,
     walletClient: createWalletClient({

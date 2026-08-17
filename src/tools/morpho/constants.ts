@@ -45,6 +45,8 @@
 
 import type { Address } from "viem";
 
+import { DEFAULT_RPC as KYBERSWAP_DEFAULT_RPC } from "../kyberswap/evm/config.js";
+
 /** The Morpho contracts whose allowance a wallet read reports, in role order. */
 export const MORPHO_SPENDER_ROLES = ["morphoBlue", "bundler3", "generalAdapter1", "permit2"] as const;
 
@@ -159,10 +161,16 @@ export const UINT256_MAX = (2n ** 256n - 1n).toString();
 export const EFFECTIVELY_UNLIMITED_THRESHOLD = 2n ** 255n;
 
 /**
- * Keyless default RPC per Morpho chain, aligned with the endpoints already
- * shipped in `src/tools/kyberswap/evm/config.ts` and
- * `src/tools/evm-chains/registry.ts` so a Morpho read and a swap quote reach the
- * same node for the same chain.
+ * Keyless default RPC per Morpho chain, DERIVED from the shared per-slug table
+ * in `src/tools/kyberswap/evm/config.ts` (owner ruling 2026-08-17: reuse the
+ * shared table, never fork a copy - an endpoint fixed there is fixed for every
+ * venue at once). Robinhood (4663) is deliberately absent here: the client
+ * resolves it through `src/tools/evm-chains/registry.ts` at build time, which
+ * honours the user's RPC override exactly as KyberSwap does. Khalani was
+ * considered and measured as a source too: its registry serves the official
+ * `mainnet.base.org` for Base, which 429s after ~5 requests under our heavy
+ * simulation load, and its metadata is fetched per run from a remote service -
+ * neither property suits a confirm-critical money path.
  *
  * BASE AND ARBITRUM ARE NOT PUBLICNODE, AND THAT IS THE POINT (funded live
  * probe, 2026-08-17). `base-rpc.publicnode.com` and
@@ -175,26 +183,55 @@ export const EFFECTIVELY_UNLIMITED_THRESHOLD = 2n ** 255n;
  * for Ethereum, Optimism and Polygon answered normally on the same day and are
  * left alone.
  *
- * WHY BASE IS drpc AND NOT THE OFFICIAL `mainnet.base.org`. The official
- * endpoint DOES serve receipts, and it was the obvious replacement, but it rate
- * limits at about five requests: a 12-request burst measured 5x 200 then 7x 429,
- * and it failed one of this repository's own live-RPC tests on the first run.
- * One Morpho execution makes many more reads than that, and a 429 in the middle
- * of one is the same ambiguity this whole change exists to remove.
- * `base.drpc.org` served a receipt for a transaction from its own latest block
- * and took 30 consecutive requests with no throttling. `arb1.arbitrum.io/rpc`
- * was measured the same way and passed both checks, so Arbitrum stays official.
+ * WHY BASE IS A FALLBACK CHAIN AND NOT ONE PINNED URL. The funded probe reruns
+ * (2026-08-17) proved that every keyless Base endpoint meters SOMETHING and
+ * each meters it differently: `mainnet.base.org` serves receipts but 429s after
+ * ~5 requests; `base.drpc.org` serves receipts and took 30 consecutive light
+ * requests, then refused the deposit bundle's HEAVY `eth_call` simulation
+ * ("Request timeout on the free plan") after 5 in a row - a COMPUTE budget,
+ * not a request count, and once spent even a trivial `allowance()` read was
+ * refused. The same-day battery with the real 804-byte deposit bundle measured:
+ * `base-mainnet.public.blastapi.io` 8/8 heavy + receipt OK,
+ * `1rpc.io/base` 8/8 heavy + receipt OK, drpc 0/8 (budget spent by earlier
+ * runs), official 5/8 then 429. No single free endpoint deserves the money
+ * path's trust alone, so Base rides a viem `fallback` transport across the
+ * verified set (see `MORPHO_RPC_FALLBACKS`); a provider that starts refusing
+ * hands the call to the next instead of turning it into an ambiguity.
+ * `arb1.arbitrum.io/rpc` was measured serving receipts and sustained load, so
+ * Arbitrum stays official and single.
  */
+function sharedRpc(slug: string): string {
+  const url = KYBERSWAP_DEFAULT_RPC[slug];
+  if (url === undefined) {
+    throw new Error(
+      `Morpho chain table expects slug "${slug}" in the shared kyberswap DEFAULT_RPC table; `
+      + "it was removed or renamed there. Fix the shared table, do not fork a copy here.",
+    );
+  }
+  return url;
+}
+
 export const MORPHO_DEFAULT_RPC: Readonly<Record<number, string>> = {
-  1: "https://ethereum-rpc.publicnode.com",
-  10: "https://optimism-rpc.publicnode.com",
-  130: "https://mainnet.unichain.org",
-  137: "https://polygon-bor-rpc.publicnode.com",
-  143: "https://rpc.monad.xyz",
-  999: "https://rpc.hyperliquid.xyz/evm",
-  4663: "https://rpc.mainnet.chain.robinhood.com",
-  8453: "https://base.drpc.org",
-  42161: "https://arb1.arbitrum.io/rpc",
+  1: sharedRpc("ethereum"),
+  10: sharedRpc("optimism"),
+  130: sharedRpc("unichain"),
+  137: sharedRpc("polygon"),
+  143: sharedRpc("monad"),
+  999: sharedRpc("hyperevm"),
+  8453: sharedRpc("base"),
+  42161: sharedRpc("arbitrum"),
+};
+
+/**
+ * Additional receipt-verified endpoints the transport may fall back to, in
+ * order, after `MORPHO_DEFAULT_RPC`. Every entry here was measured on
+ * 2026-08-17 with the real deposit bundle's `eth_call` and the probe's real
+ * transaction receipt (see the header above for the numbers). The official
+ * `mainnet.base.org` is deliberately LAST: it throttles hardest but is the
+ * endpoint most likely to still exist unchanged in a year.
+ */
+export const MORPHO_RPC_FALLBACKS: Readonly<Record<number, readonly string[]>> = {
+  8453: ["https://1rpc.io/base", "https://base.drpc.org", "https://mainnet.base.org"],
 };
 
 /**

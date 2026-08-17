@@ -92,6 +92,17 @@ export const ERC20_ABI = [
 // one rate limits at about five requests (5x 200 then 7x 429 in a 12-request
 // burst) while `base.drpc.org` took 30 with no throttling. The other publicnode
 // endpoints answered normally on the same day.
+//
+// SECOND CORRECTION, SAME DAY: the funded probe's rerun proved drpc meters a
+// COMPUTE budget, not a request count - five consecutive heavy eth_call
+// simulations (~460k gas each) exhausted the free plan, after which even a
+// trivial read was refused. A battery with the real 804-byte Morpho deposit
+// bundle measured `base-mainnet.public.blastapi.io` and `1rpc.io/base` at 8/8
+// heavy calls plus a served receipt, drpc at 0/8 once spent, the official
+// endpoint at 5/8 then 429. Base therefore moves to blastapi. This table is
+// the SHARED per-slug default for EVM venues (morpho derives its own table
+// from it; pendle aligns its chains to these slugs) - fix an endpoint here,
+// not in a per-venue copy.
 export const DEFAULT_RPC: Record<string, string> = {
   ethereum: "https://ethereum-rpc.publicnode.com",
   bsc: "https://bsc-rpc.publicnode.com",
@@ -99,7 +110,7 @@ export const DEFAULT_RPC: Record<string, string> = {
   polygon: "https://polygon-bor-rpc.publicnode.com",
   optimism: "https://optimism-rpc.publicnode.com",
   avalanche: "https://avalanche-c-chain-rpc.publicnode.com",
-  base: "https://base.drpc.org",
+  base: "https://base-mainnet.public.blastapi.io",
   linea: "https://rpc.linea.build",
   mantle: "https://rpc.mantle.xyz",
   sonic: "https://rpc.soniclabs.com",
