@@ -226,7 +226,7 @@ const txFromL1ResponseSchema = z
   .object({
     code: int,
     message,
-    hash: z.string().min(1),
+    hash: z.string().min(1).max(256),
     type: int,
     info: z.string().min(1),
     event_info: z.string().min(1),

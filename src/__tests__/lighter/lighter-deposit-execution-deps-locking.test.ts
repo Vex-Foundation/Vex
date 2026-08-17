@@ -68,7 +68,16 @@ describe("Lighter deposit execution lifecycle locking", () => {
     await deps.intents.markApproveSubmitted("intent-1", `0x${"a".repeat(64)}`);
     await deps.intents.markApproveConfirmed("intent-1");
     await deps.intents.markDepositSubmitted("intent-1", `0x${"b".repeat(64)}`);
-    await deps.intents.markDepositConfirmed("intent-1");
+    await deps.intents.markDepositConfirmed("intent-1", {
+      txHash: `0x${"b".repeat(64)}`,
+      blockHash: `0x${"c".repeat(64)}`,
+      blockNumber: "123",
+      accountIndex: 42,
+      walletAddress: "0x1111111111111111111111111111111111111111",
+      assetIndex: 3,
+      routeType: 0,
+      amountUnits: "11000000",
+    });
     await deps.intents.markAmbiguous("intent-1", "uncertain");
     await deps.intents.markFailed("intent-1", "reverted");
 

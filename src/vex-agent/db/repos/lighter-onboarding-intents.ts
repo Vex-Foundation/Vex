@@ -11,6 +11,10 @@ import type { PoolClient } from "pg";
 
 import { query, queryOne } from "../client.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
+import type {
+  LighterDepositCreditEvidence,
+  LighterDepositL1Evidence,
+} from "@tools/lighter/wallet-funding/deposit-evidence.js";
 import {
   transitionLighterOnboardingWorkflowWith,
   type LighterOnboardingWorkflowState,
@@ -55,6 +59,14 @@ export interface LighterOnboardingIntentRow {
   readonly executionState: LighterOnboardingExecutionState;
   readonly approveTxHash: string | null;
   readonly depositTxHash: string | null;
+  readonly depositL1BlockHash: string | null;
+  readonly depositL1BlockNumber: string | null;
+  readonly depositEventAccountIndex: number | null;
+  readonly lighterTxHash: string | null;
+  readonly lighterTxStatus: number | null;
+  readonly lighterBlockHeight: number | null;
+  readonly lighterExecutedAt: number | null;
+  readonly lighterEvidenceObservedAt: Date | null;
   readonly resolvedAccountIndex: number | null;
   readonly decisionReason: string | null;
   readonly failureReason: string | null;
@@ -88,6 +100,9 @@ const RETURNING = `
   intent_id, session_id, protocol_execution_id, approval_id, environment, capability,
   wallet_address, chain_id, deposit_contract, deposit_to, asset_index, route_type, amount_units,
   approval_status, execution_state, approve_tx_hash, deposit_tx_hash, resolved_account_index,
+  deposit_l1_block_hash, deposit_l1_block_number, deposit_event_account_index,
+  lighter_tx_hash, lighter_tx_status, lighter_block_height, lighter_executed_at,
+  lighter_evidence_observed_at,
   decision_reason, failure_reason, created_at, updated_at, expires_at
 `;
 
@@ -265,18 +280,141 @@ export async function markDepositSubmittedWith(
 export async function markDepositConfirmedWith(
   client: PoolClient,
   intentId: string,
+  evidence: LighterDepositL1Evidence,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceDepositWith(
-    client,
-    intentId,
-    "deposit_confirmed",
-    ["deposit_submitted"],
-    {},
-    {
-      expectedStates: ["deposit_staged", "ambiguous"],
-      nextState: "deposit_l2_pending",
-    },
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'deposit_confirmed',
+            deposit_l1_block_hash = $3,
+            deposit_l1_block_number = $4,
+            deposit_event_account_index = $5,
+            failure_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(wallet_address) = LOWER($6)
+        AND asset_index = $7
+        AND route_type = $8
+        AND amount_units = $9
+        AND execution_state IN ('deposit_submitted', 'ambiguous')
+      RETURNING ${RETURNING}`,
+    [
+      intentId,
+      evidence.txHash,
+      evidence.blockHash,
+      evidence.blockNumber,
+      evidence.accountIndex,
+      evidence.walletAddress,
+      evidence.assetIndex,
+      evidence.routeType,
+      evidence.amountUnits,
+    ],
   );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_staged", "ambiguous"],
+    nextState: "deposit_l1_confirmed",
+  });
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_l1_confirmed"],
+    nextState: "deposit_l2_pending",
+  });
+  return intent;
+}
+
+export async function markDepositCreditedWith(
+  client: PoolClient,
+  intentId: string,
+  evidence: LighterDepositCreditEvidence,
+): Promise<LighterOnboardingIntentRow | null> {
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'credited',
+            resolved_account_index = $3,
+            lighter_tx_hash = $4,
+            lighter_tx_status = $5,
+            lighter_block_height = $6,
+            lighter_executed_at = $7,
+            lighter_evidence_observed_at = NOW(),
+            failure_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND execution_state = 'deposit_confirmed'
+        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(deposit_l1_block_hash) = LOWER($8)
+        AND deposit_l1_block_number = $9
+        AND deposit_event_account_index = $3
+        AND LOWER(wallet_address) = LOWER($10)
+        AND asset_index = $11
+        AND route_type = $12
+        AND amount_units = $13
+      RETURNING ${RETURNING}`,
+    [
+      intentId,
+      evidence.txHash,
+      evidence.accountIndex,
+      evidence.lighterTxHash,
+      evidence.lighterStatus,
+      evidence.lighterBlockHeight,
+      evidence.lighterExecutedAt,
+      evidence.blockHash,
+      evidence.blockNumber,
+      evidence.walletAddress,
+      evidence.assetIndex,
+      evidence.routeType,
+      evidence.amountUnits,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_l2_pending"],
+    nextState: "account_resolved",
+    resolvedAccountIndex: evidence.accountIndex,
+  });
+  return intent;
+}
+
+/** Attach exact L1 evidence to a pre-Phase-2 confirmed row without replaying its workflow. */
+export async function recordConfirmedDepositL1EvidenceWith(
+  client: PoolClient,
+  intentId: string,
+  evidence: LighterDepositL1Evidence,
+): Promise<LighterOnboardingIntentRow | null> {
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET deposit_l1_block_hash = $3,
+            deposit_l1_block_number = $4,
+            deposit_event_account_index = $5,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND execution_state = 'deposit_confirmed'
+        AND deposit_l1_block_hash IS NULL
+        AND deposit_l1_block_number IS NULL
+        AND deposit_event_account_index IS NULL
+        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(wallet_address) = LOWER($6)
+        AND asset_index = $7
+        AND route_type = $8
+        AND amount_units = $9
+      RETURNING ${RETURNING}`,
+    [
+      intentId,
+      evidence.txHash,
+      evidence.blockHash,
+      evidence.blockNumber,
+      evidence.accountIndex,
+      evidence.walletAddress,
+      evidence.assetIndex,
+      evidence.routeType,
+      evidence.amountUnits,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
 }
 
 export async function markAmbiguousWith(
@@ -429,12 +567,21 @@ export async function reconcileDepositReceiptWith(
     readonly intentId: string;
     readonly txHash: string;
     readonly outcome: "confirmed" | "reverted";
+    readonly evidence?: LighterDepositL1Evidence;
   },
 ): Promise<LighterOnboardingIntentRow | null> {
-  const next = input.outcome === "confirmed" ? "deposit_confirmed" : "failed";
-  const reason = input.outcome === "reverted"
-    ? "Ethereum receipt proves the Lighter deposit transaction reverted."
-    : null;
+  if (input.outcome === "confirmed") {
+    if (input.evidence === undefined) {
+      throw new Error("Confirmed Lighter deposit reconciliation requires exact L1 event evidence.");
+    }
+    if (input.evidence.txHash.toLowerCase() !== input.txHash.toLowerCase()) {
+      throw new Error("Lighter deposit reconciliation evidence hash does not match the staged hash.");
+    }
+    return markDepositConfirmedWith(client, input.intentId, input.evidence);
+  }
+
+  const next = "failed";
+  const reason = "Ethereum receipt proves the Lighter deposit transaction reverted.";
   const result = await client.query<Record<string, unknown>>(
     `UPDATE lighter_onboarding_intents
         SET execution_state = $3,
@@ -449,16 +596,11 @@ export async function reconcileDepositReceiptWith(
   const row = result.rows[0];
   if (row === undefined) return null;
   const intent = mapRow(row);
-  await requireDepositWorkflowTransition(client, intent, input.outcome === "confirmed"
-    ? {
-        expectedStates: ["deposit_staged", "ambiguous"],
-        nextState: "deposit_l2_pending",
-      }
-    : {
-        expectedStates: ["deposit_staged", "ambiguous"],
-        nextState: "failed",
-        failureCode: "deposit_transaction_reverted",
-      });
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_staged", "ambiguous"],
+    nextState: "failed",
+    failureCode: "deposit_transaction_reverted",
+  });
   return intent;
 }
 
@@ -535,6 +677,18 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     executionState: row.execution_state as LighterOnboardingExecutionState,
     approveTxHash: row.approve_tx_hash === null ? null : String(row.approve_tx_hash),
     depositTxHash: row.deposit_tx_hash === null ? null : String(row.deposit_tx_hash),
+    depositL1BlockHash: row.deposit_l1_block_hash === null ? null : String(row.deposit_l1_block_hash),
+    depositL1BlockNumber: row.deposit_l1_block_number === null ? null : String(row.deposit_l1_block_number),
+    depositEventAccountIndex: row.deposit_event_account_index === null
+      ? null
+      : Number(row.deposit_event_account_index),
+    lighterTxHash: row.lighter_tx_hash === null ? null : String(row.lighter_tx_hash),
+    lighterTxStatus: row.lighter_tx_status === null ? null : Number(row.lighter_tx_status),
+    lighterBlockHeight: row.lighter_block_height === null ? null : Number(row.lighter_block_height),
+    lighterExecutedAt: row.lighter_executed_at === null ? null : Number(row.lighter_executed_at),
+    lighterEvidenceObservedAt: row.lighter_evidence_observed_at === null
+      ? null
+      : row.lighter_evidence_observed_at as Date,
     resolvedAccountIndex: row.resolved_account_index === null ? null : Number(row.resolved_account_index),
     decisionReason: row.decision_reason === null ? null : String(row.decision_reason),
     failureReason: row.failure_reason === null ? null : String(row.failure_reason),

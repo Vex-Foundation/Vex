@@ -144,6 +144,14 @@ function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string
     amountUnits: intent.amountUnits,
     approveTxHash: intent.approveTxHash,
     depositTxHash: intent.depositTxHash,
+    depositL1BlockHash: intent.depositL1BlockHash,
+    depositL1BlockNumber: intent.depositL1BlockNumber,
+    depositEventAccountIndex: intent.depositEventAccountIndex,
+    lighterTxHash: intent.lighterTxHash,
+    lighterTxStatus: intent.lighterTxStatus,
+    lighterBlockHeight: intent.lighterBlockHeight,
+    lighterExecutedAt: intent.lighterExecutedAt,
+    lighterEvidenceObservedAt: intent.lighterEvidenceObservedAt?.toISOString() ?? null,
     resolvedAccountIndex: intent.resolvedAccountIndex,
     failureReason: intent.failureReason,
     createdAt: intent.createdAt.toISOString(),
@@ -199,11 +207,6 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       : [await onboardingIntentsRepo.findByIntentId(intentId)].filter(
           (intent): intent is LighterOnboardingIntentRow => intent !== null,
         );
-    const workflow = await getLighterOnboardingWorkflow(
-      environment.value,
-      walletAddress,
-    );
-
     if (intentId !== null && intents.length === 0) {
       return fail(`No Lighter deposit intent ${intentId} exists locally.`);
     }
@@ -239,6 +242,10 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         refreshedIntents.push(...intents);
       }
     }
+    const workflow = await getLighterOnboardingWorkflow(
+      environment.value,
+      walletAddress,
+    );
 
     return ok({
       source: "vex_lighter_local_deposit_status",
@@ -250,8 +257,8 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       reconciliationReports: repairReports,
       intents: refreshedIntents.map(projectDepositStatus),
       riskNotes: [
-        "Phase 1 reconciliation reads already-staged Ethereum receipts only; it never treats generic account existence as proof that this deposit was credited.",
-        "Exact Lighter-side evidence for the staged L1 transaction is required before the workflow can advance beyond L2 pending.",
+        "Phase 2 reconciliation is evidence-only: it never signs, broadcasts, retries, or replaces a deposit transaction.",
+        "Credited requires the exact staged L1 hash, matching Ethereum Deposit event, executed Lighter transaction, and ownership of the event-selected master account.",
         "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
       ],
       message:

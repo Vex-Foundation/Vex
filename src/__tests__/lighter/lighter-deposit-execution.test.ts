@@ -1,15 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
+import { encodeAbiParameters, encodeEventTopics } from "viem";
 
 import {
   executeApprovedLighterDeposit,
   type LighterDepositExecutionDeps,
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import {
+  LIGHTER_DEPOSIT_EVENT_ABI,
+  type LighterDepositReceipt,
+} from "@tools/lighter/wallet-funding/deposit-evidence.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 const APPROVE_HASH = "0x" + "a".repeat(64);
 const DEPOSIT_HASH = "0x" + "b".repeat(64);
+const BLOCK_HASH = "0x" + "c".repeat(64);
+
+function depositReceipt(): LighterDepositReceipt {
+  return {
+    status: "success",
+    transactionHash: DEPOSIT_HASH,
+    blockHash: BLOCK_HASH,
+    blockNumber: 123n,
+    from: WALLET,
+    to: CONTRACT,
+    logs: [{
+      address: CONTRACT,
+      topics: encodeEventTopics({
+        abi: LIGHTER_DEPOSIT_EVENT_ABI,
+        eventName: "Deposit",
+      }),
+      data: encodeAbiParameters(
+        [
+          { type: "uint48" },
+          { type: "address" },
+          { type: "uint16" },
+          { type: "uint8" },
+          { type: "uint128" },
+        ],
+        [42, WALLET, 3, 0, 11_000_000n],
+      ),
+    }],
+  };
+}
 
 function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnboardingIntentRow {
   return {
@@ -30,6 +64,14 @@ function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnb
     executionState: "approved",
     approveTxHash: null,
     depositTxHash: null,
+    depositL1BlockHash: null,
+    depositL1BlockNumber: null,
+    depositEventAccountIndex: null,
+    lighterTxHash: null,
+    lighterTxStatus: null,
+    lighterBlockHeight: null,
+    lighterExecutedAt: null,
+    lighterEvidenceObservedAt: null,
     resolvedAccountIndex: null,
     decisionReason: null,
     failureReason: null,
@@ -62,7 +104,7 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
     }),
     runDepositLeg: vi.fn(async ({ onHashStaged }) => {
       await onHashStaged(DEPOSIT_HASH);
-      return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const };
+      return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const, receipt: depositReceipt() };
     }),
     intents: intentsSpy(),
     ...overrides,
@@ -226,7 +268,7 @@ describe("executeApprovedLighterDeposit", () => {
       runDepositLeg: vi.fn(async ({ onHashStaged }) => {
         await onHashStaged(DEPOSIT_HASH);
         broadcastReached = true;
-        return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const };
+        return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const, receipt: depositReceipt() };
       }),
     });
 

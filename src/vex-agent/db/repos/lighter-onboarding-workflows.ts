@@ -82,7 +82,7 @@ const ALLOWED_NEXT: Readonly<Record<LighterOnboardingWorkflowState, readonly Lig
   key_verified: ["nonce_synchronized", "failed"],
   nonce_synchronized: ["ready_to_trade", "failed"],
   ready_to_trade: ["deposit_approval_pending", "failed"],
-  ambiguous: ["approve_confirmed", "deposit_l2_pending", "account_resolved", "key_verified", "failed"],
+  ambiguous: ["approve_confirmed", "deposit_l1_confirmed", "deposit_l2_pending", "account_resolved", "key_verified", "failed"],
   failed: ["deposit_approval_pending", "key_generated_encrypted"],
 };
 

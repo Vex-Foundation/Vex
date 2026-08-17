@@ -52,6 +52,7 @@ const VALID_TRANSITIONS: Readonly<
   ready_to_trade: ["deposit_approval_pending", "failed"],
   ambiguous: [
     "approve_confirmed",
+    "deposit_l1_confirmed",
     "deposit_l2_pending",
     "account_resolved",
     "key_verified",
@@ -257,6 +258,23 @@ describe("Lighter onboarding workflow foundation", () => {
     expect(sql).toContain("deposit.execution_state = 'ambiguous'");
     expect(sql).toContain("active_deposit_intent_id = deposit.intent_id");
     expect(sql).toContain("resolved_account_index = deposit.resolved_account_index");
+    expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
+  });
+
+  it("persists complete public L1 and L2 evidence without credential material", async () => {
+    const sql = await readFile(
+      new URL(
+        "../../vex-agent/db/migrations/093_lighter_deposit_evidence.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(sql).toContain("deposit_l1_block_hash");
+    expect(sql).toContain("deposit_event_account_index");
+    expect(sql).toContain("lighter_evidence_observed_at");
+    expect(sql).toContain("lighter_onboarding_intents_l1_evidence_complete");
+    expect(sql).toContain("lighter_onboarding_intents_l2_evidence_complete");
     expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
   });
 });

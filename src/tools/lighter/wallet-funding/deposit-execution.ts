@@ -12,6 +12,11 @@
  */
 
 import { buildLighterDepositCalldata } from "./deposit-calldata.js";
+import {
+  proveLighterDepositL1,
+  type LighterDepositL1Evidence,
+  type LighterDepositReceipt,
+} from "./deposit-evidence.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
@@ -55,21 +60,36 @@ export interface LighterDepositExecutionDeps {
     readonly onHashStaged: (txHash: string) => Promise<void>;
   }) => Promise<
     | { readonly skipped: true }
-    | { readonly skipped: false; readonly txHash: string; readonly outcome: LegOutcome; readonly reason?: string }
+    | {
+        readonly skipped: false;
+        readonly txHash: string;
+        readonly outcome: LegOutcome;
+        readonly confirmedBlockNumber?: bigint;
+        readonly reason?: string;
+      }
   >;
   /** Sign, stage (onHashStaged before broadcast), broadcast, and confirm the deposit. */
   readonly runDepositLeg: (input: {
     readonly walletAddress: string;
     readonly to: string;
     readonly data: string;
+    readonly confirmedApprovalBlockNumber?: bigint;
     readonly onHashStaged: (txHash: string) => Promise<void>;
-  }) => Promise<{ readonly txHash: string; readonly outcome: LegOutcome; readonly reason?: string }>;
+  }) => Promise<{
+    readonly txHash: string;
+    readonly outcome: LegOutcome;
+    readonly receipt?: LighterDepositReceipt;
+    readonly reason?: string;
+  }>;
   readonly intents: {
     markAllowanceVerified(intentId: string): Promise<unknown | null>;
     markApproveSubmitted(intentId: string, hash: string): Promise<unknown | null>;
     markApproveConfirmed(intentId: string): Promise<unknown | null>;
     markDepositSubmitted(intentId: string, hash: string): Promise<unknown | null>;
-    markDepositConfirmed(intentId: string): Promise<unknown | null>;
+    markDepositConfirmed(
+      intentId: string,
+      evidence: LighterDepositL1Evidence,
+    ): Promise<unknown | null>;
     markAmbiguous(intentId: string, reason: string): Promise<unknown | null>;
     markFailed(intentId: string, reason: string): Promise<unknown | null>;
   };
@@ -127,6 +147,7 @@ export async function executeApprovedLighterDeposit(input: {
 
   // Leg 1: approval (only if allowance is short). Hash persists before broadcast.
   let approveTxHash: string | null = null;
+  let confirmedApprovalBlockNumber: bigint | undefined;
   try {
     await deps.assertExecutionLease();
     const approve = await deps.runApproveLegIfNeeded({
@@ -188,6 +209,7 @@ export async function executeApprovedLighterDeposit(input: {
           "Approval confirmed on chain, but the durable lifecycle transition conflicted. Deposit was not started.",
         );
       }
+      confirmedApprovalBlockNumber = approve.confirmedBlockNumber;
     }
   } catch (err) {
     const reason = errText(err);
@@ -214,12 +236,14 @@ export async function executeApprovedLighterDeposit(input: {
 
   // Leg 2: deposit. Hash persists before broadcast.
   let depositTxHash: string | null = null;
+  let depositEvidence: LighterDepositL1Evidence | null = null;
   try {
     await deps.assertExecutionLease();
     const deposit = await deps.runDepositLeg({
       walletAddress: intent.walletAddress,
       to: calldata.to,
       data: calldata.data,
+      confirmedApprovalBlockNumber,
       onHashStaged: async (hash) => {
         depositTxHash = hash;
         const staged = await tryTransition(() =>
@@ -253,6 +277,24 @@ export async function executeApprovedLighterDeposit(input: {
       const reason = deposit.reason ?? "Deposit broadcast outcome is unconfirmed.";
       return await ambiguousResult(deps, intent.intentId, "deposit", deposit.txHash, reason);
     }
+    if (deposit.receipt === undefined) {
+      return await ambiguousResult(
+        deps,
+        intent.intentId,
+        "deposit",
+        deposit.txHash,
+        "Deposit runner reported confirmation without an Ethereum receipt.",
+      );
+    }
+    depositEvidence = proveLighterDepositL1(deposit.receipt, {
+      txHash: deposit.txHash,
+      gatewayAddress: intent.depositContract,
+      walletAddress: intent.walletAddress,
+      recipientAddress: intent.depositTo,
+      assetIndex: intent.assetIndex,
+      routeType: intent.routeType,
+      amountUnits,
+    });
   } catch (err) {
     const reason = errText(err);
     if (err instanceof PreBroadcastPersistenceError) {
@@ -277,7 +319,7 @@ export async function executeApprovedLighterDeposit(input: {
   }
 
   const depositConfirmed = await tryTransition(() =>
-    deps.intents.markDepositConfirmed(intent.intentId));
+    deps.intents.markDepositConfirmed(intent.intentId, depositEvidence!));
   if (!depositConfirmed) {
     return await ambiguousResult(
       deps,

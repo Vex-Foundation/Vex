@@ -17,6 +17,7 @@
     "test:lighter:live:auth": "VEX_LIGHTER_AUTH_LIVE=1 vitest run src/__tests__/lighter/lighter-live-auth.test.ts",
     "test:lighter:live:apikeys": "VEX_LIGHTER_API_KEYS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-api-keys.test.ts",
     "test:lighter:live:preview": "VEX_LIGHTER_PREVIEW_LIVE=1 vitest run src/__tests__/lighter/lighter-live-order-preview.test.ts",
+    "test:lighter:live:deposit-evidence": "VEX_LIGHTER_DEPOSIT_EVIDENCE_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-evidence.test.ts",
     "test:lighter:live:auth:prompt": "tsx src/tools/lighter/scripts/run-live-auth-with-prompts.ts",
     "lighter:probe:auth": "tsx src/tools/lighter/scripts/probe-account-endpoint-auth.ts --full",
     "lighter:probe:auth:public": "tsx src/tools/lighter/scripts/probe-account-endpoint-auth.ts --public-only",

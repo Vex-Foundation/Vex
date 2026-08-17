@@ -30,6 +30,14 @@ const ROW = {
   execution_state: "approval_pending",
   approve_tx_hash: null,
   deposit_tx_hash: null,
+  deposit_l1_block_hash: null,
+  deposit_l1_block_number: null,
+  deposit_event_account_index: null,
+  lighter_tx_hash: null,
+  lighter_tx_status: null,
+  lighter_block_height: null,
+  lighter_executed_at: null,
+  lighter_evidence_observed_at: null,
   resolved_account_index: null,
   decision_reason: null,
   failure_reason: null,
@@ -182,5 +190,123 @@ describe("lighter onboarding intent creation SQL", () => {
       repo.markAllowanceVerifiedWith(client as never, ROW.intent_id),
     ).rejects.toThrow("workflow rejected allowance_verified");
     expect(client.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("binds L1 confirmation to the staged hash and every approved deposit field", async () => {
+    const confirmedRow = {
+      ...ROW,
+      execution_state: "deposit_confirmed",
+      deposit_tx_hash: `0x${"b".repeat(64)}`,
+      deposit_l1_block_hash: `0x${"c".repeat(64)}`,
+      deposit_l1_block_number: "23456789",
+      deposit_event_account_index: 42,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [confirmedRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_l1_confirmed" }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_l2_pending" }],
+          rowCount: 1,
+        }),
+    };
+
+    await repo.markDepositConfirmedWith(
+      client as Parameters<typeof repo.markDepositConfirmedWith>[0],
+      ROW.intent_id,
+      {
+        txHash: confirmedRow.deposit_tx_hash,
+        blockHash: confirmedRow.deposit_l1_block_hash,
+        blockNumber: confirmedRow.deposit_l1_block_number,
+        accountIndex: 42,
+        walletAddress: ROW.wallet_address,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: ROW.amount_units,
+      },
+    );
+
+    const firstCall = client.query.mock.calls[0];
+    if (firstCall === undefined) throw new Error("expected the intent update query");
+    const [sql, params] = firstCall;
+    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
+    expect(sql).toContain("LOWER(wallet_address) = LOWER($6)");
+    expect(sql).toContain("asset_index = $7");
+    expect(sql).toContain("amount_units = $9");
+    expect(params).toEqual([
+      ROW.intent_id,
+      confirmedRow.deposit_tx_hash,
+      confirmedRow.deposit_l1_block_hash,
+      confirmedRow.deposit_l1_block_number,
+      42,
+      ROW.wallet_address,
+      3,
+      0,
+      ROW.amount_units,
+    ]);
+    expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  it("credits only against the persisted L1 proof and advances the exact account", async () => {
+    const creditedRow = {
+      ...ROW,
+      execution_state: "credited",
+      deposit_tx_hash: `0x${"b".repeat(64)}`,
+      deposit_l1_block_hash: `0x${"c".repeat(64)}`,
+      deposit_l1_block_number: "23456789",
+      deposit_event_account_index: 42,
+      resolved_account_index: 42,
+      lighter_tx_hash: "lighter-tx-hash",
+      lighter_tx_status: 3,
+      lighter_block_height: 313485202,
+      lighter_executed_at: 1786949159112,
+      lighter_evidence_observed_at: new Date(),
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [creditedRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...WORKFLOW_ROW,
+            workflow_state: "account_resolved",
+            resolved_account_index: 42,
+          }],
+          rowCount: 1,
+        }),
+    };
+
+    await repo.markDepositCreditedWith(
+      client as Parameters<typeof repo.markDepositCreditedWith>[0],
+      ROW.intent_id,
+      {
+        txHash: creditedRow.deposit_tx_hash,
+        blockHash: creditedRow.deposit_l1_block_hash,
+        blockNumber: creditedRow.deposit_l1_block_number,
+        accountIndex: 42,
+        walletAddress: ROW.wallet_address,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: ROW.amount_units,
+        lighterTxHash: "lighter-tx-hash",
+        lighterStatus: 3,
+        lighterBlockHeight: 313485202,
+        lighterExecutedAt: 1786949159112,
+      },
+    );
+
+    const intentCall = client.query.mock.calls[0];
+    if (intentCall === undefined) throw new Error("expected the intent credit query");
+    const [sql] = intentCall;
+    expect(sql).toContain("execution_state = 'deposit_confirmed'");
+    expect(sql).toContain("LOWER(deposit_l1_block_hash) = LOWER($8)");
+    expect(sql).toContain("deposit_event_account_index = $3");
+    const workflowCall = client.query.mock.calls[1];
+    if (workflowCall === undefined) throw new Error("expected the workflow credit query");
+    const [, workflowParams] = workflowCall;
+    expect(workflowParams[3]).toBe("account_resolved");
+    expect(workflowParams[5]).toBe(42);
   });
 });

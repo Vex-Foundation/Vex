@@ -15,10 +15,12 @@ import {
   getAddress,
   type Address,
   type Hex,
+  type TransactionReceipt,
 } from "viem";
 import type { PoolClient } from "pg";
 
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
+import { priorLegAnchorFrom } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
@@ -29,6 +31,10 @@ import {
   LIGHTER_DEPOSIT_CHAIN_ID,
 } from "./constants.js";
 import type { LegOutcome, LighterDepositExecutionDeps } from "./deposit-execution.js";
+import {
+  projectLighterDepositReceipt,
+  type LighterDepositReceipt,
+} from "./deposit-evidence.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
   {
@@ -100,17 +106,31 @@ export function buildLighterDepositExecutionDeps(
         args: [spenderAddr, amountUnits],
       });
       const outcome = await runStaged(clients, { to: usdc, data, value: 0n }, onHashStaged);
-      return { skipped: false, txHash: outcome.txHash, outcome: outcome.outcome, reason: outcome.reason };
+      return {
+        skipped: false,
+        txHash: outcome.txHash,
+        outcome: outcome.outcome,
+        confirmedBlockNumber: outcome.receipt?.blockNumber,
+        reason: outcome.reason,
+      };
     },
 
-    async runDepositLeg({ to, data, onHashStaged }) {
+    async runDepositLeg({ to, data, confirmedApprovalBlockNumber, onHashStaged }) {
       await input.assertExecutionLease();
       const outcome = await runStaged(
         clients,
         { to: getAddress(to), data: data as Hex, value: 0n },
         onHashStaged,
+        confirmedApprovalBlockNumber,
       );
-      return { txHash: outcome.txHash, outcome: outcome.outcome, reason: outcome.reason };
+      return {
+        txHash: outcome.txHash,
+        outcome: outcome.outcome,
+        receipt: outcome.receipt === undefined
+          ? undefined
+          : projectLighterDepositReceipt(outcome.receipt),
+        reason: outcome.reason,
+      };
     },
 
     intents: {
@@ -122,8 +142,8 @@ export function buildLighterDepositExecutionDeps(
         onboardingIntentsRepo.markApproveConfirmedWith(client, intentId)),
       markDepositSubmitted: (intentId, hash) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, hash)),
-      markDepositConfirmed: (intentId) => writeUnderSessionLock((client) =>
-        onboardingIntentsRepo.markDepositConfirmedWith(client, intentId)),
+      markDepositConfirmed: (intentId, evidence) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markDepositConfirmedWith(client, intentId, evidence)),
       markAmbiguous: (intentId, reason) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markAmbiguousWith(client, intentId, reason)),
       markFailed: (intentId, reason) => writeUnderSessionLock((client) =>
@@ -136,7 +156,13 @@ async function runStaged(
   clients: ReturnType<typeof getUniswapEvmClients>,
   tx: { readonly to: Address; readonly data: Hex; readonly value: bigint },
   onHashStaged: (txHash: string) => Promise<void>,
-): Promise<{ readonly txHash: string; readonly outcome: LegOutcome; readonly reason?: string }> {
+  confirmedPriorBlockNumber?: bigint,
+): Promise<{
+  readonly txHash: string;
+  readonly outcome: LegOutcome;
+  readonly receipt?: TransactionReceipt;
+  readonly reason?: string;
+}> {
   const result = await signStageBroadcast(
     clients.publicClient,
     clients.walletClient,
@@ -147,8 +173,13 @@ async function runStaged(
       },
       onAccepted: async () => {},
     },
+    priorLegAnchorFrom(confirmedPriorBlockNumber),
   );
-  if (result.kind === "confirmed") return { txHash: result.txHash, outcome: "confirmed" };
-  if (result.kind === "reverted") return { txHash: result.txHash, outcome: "reverted" };
+  if (result.kind === "confirmed") {
+    return { txHash: result.txHash, outcome: "confirmed", receipt: result.receipt };
+  }
+  if (result.kind === "reverted") {
+    return { txHash: result.txHash, outcome: "reverted", receipt: result.receipt };
+  }
   return { txHash: result.txHash, outcome: "ambiguous", reason: result.reason };
 }

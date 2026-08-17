@@ -99,8 +99,33 @@ d("lighter_onboarding_intents repo", () => {
     expect((await withSessionControlLock(sessionId, (client) =>
       repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "b".repeat(64))))?.executionState).toBe("deposit_submitted");
     expect((await withSessionControlLock(sessionId, (client) =>
-      repo.markDepositConfirmedWith(client, intent.intentId)))?.executionState).toBe("deposit_confirmed");
-    expect((await repo.findByIntentId(intent.intentId))?.resolvedAccountIndex).toBeNull();
+      repo.markDepositConfirmedWith(client, intent.intentId, {
+        txHash: "0x" + "b".repeat(64),
+        blockHash: "0x" + "c".repeat(64),
+        blockNumber: "23456789",
+        accountIndex: 42,
+        walletAddress: intent.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+      })))?.executionState).toBe("deposit_confirmed");
+    const credited = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositCreditedWith(client, intent.intentId, {
+        txHash: "0x" + "b".repeat(64),
+        blockHash: "0x" + "c".repeat(64),
+        blockNumber: "23456789",
+        accountIndex: 42,
+        walletAddress: intent.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+        lighterTxHash: "lighter-tx-hash",
+        lighterStatus: 3,
+        lighterBlockHeight: 313485202,
+        lighterExecutedAt: 1786949159112,
+      }));
+    expect(credited?.executionState).toBe("credited");
+    expect((await repo.findByIntentId(intent.intentId))?.resolvedAccountIndex).toBe(42);
   });
 
   it("refuses an out-of-order transition (no deposit before approve confirmed)", async () => {

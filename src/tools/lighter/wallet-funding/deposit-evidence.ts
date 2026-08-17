@@ -13,6 +13,7 @@ import {
   getAddress,
   type Address,
   type Hex,
+  type TransactionReceipt,
 } from "viem";
 
 import type {
@@ -76,6 +77,25 @@ export interface LighterDepositCreditEvidence extends LighterDepositL1Evidence {
   readonly lighterStatus: number;
   readonly lighterBlockHeight: number;
   readonly lighterExecutedAt: number;
+}
+
+/** Reduce a viem receipt to the public fields needed for deposit evidence. */
+export function projectLighterDepositReceipt(
+  receipt: TransactionReceipt,
+): LighterDepositReceipt {
+  return {
+    status: receipt.status,
+    transactionHash: receipt.transactionHash,
+    blockHash: receipt.blockHash,
+    blockNumber: receipt.blockNumber,
+    from: receipt.from,
+    to: receipt.to,
+    logs: receipt.logs.map((log) => ({
+      address: log.address,
+      data: log.data,
+      topics: log.topics,
+    })),
+  };
 }
 
 /** Decode and bind the single gateway Deposit event to the persisted intent. */
@@ -292,4 +312,3 @@ function sameAddress(left: string, right: string): boolean {
 function sameHex(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
-

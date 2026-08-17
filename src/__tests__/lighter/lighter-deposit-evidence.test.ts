@@ -19,7 +19,10 @@ const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 const WALLET = "0x1111111111111111111111111111111111111111";
 
 function receipt(overrides: Partial<LighterDepositReceipt> = {}): LighterDepositReceipt {
-  const topics = encodeEventTopics({ abi: LIGHTER_DEPOSIT_EVENT_ABI, eventName: "Deposit" });
+  const topics = encodeEventTopics({
+    abi: LIGHTER_DEPOSIT_EVENT_ABI,
+    eventName: "Deposit",
+  });
   const data = encodeAbiParameters(
     [
       { type: "uint48" },
@@ -136,9 +139,11 @@ describe("Lighter exact deposit evidence", () => {
 
   it("rejects receipts with more than one gateway Deposit event", () => {
     const original = receipt();
+    const firstLog = original.logs[0];
+    if (firstLog === undefined) throw new Error("fixture is missing its Deposit event");
     expect(() => proveLighterDepositL1({
       ...original,
-      logs: [...original.logs, original.logs[0]!],
+      logs: [...original.logs, firstLog],
     }, {
       txHash: TX_HASH,
       gatewayAddress: GATEWAY,
@@ -193,4 +198,3 @@ describe("Lighter exact deposit evidence", () => {
     })).toThrow("master account is not uniquely owned");
   });
 });
-

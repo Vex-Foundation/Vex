@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { encodeAbiParameters, encodeEventTopics } from "viem";
 
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
@@ -6,9 +7,94 @@ import {
   repairUnresolvedLighterDeposits,
   type LighterDepositRepairDeps,
 } from "@vex-agent/sync/lighter-deposit-repair.js";
+import {
+  LIGHTER_DEPOSIT_EVENT_ABI,
+  type LighterDepositReceipt,
+} from "@tools/lighter/wallet-funding/deposit-evidence.js";
+import type {
+  LighterAccountsByL1AddressResponse,
+  LighterTxFromL1Response,
+} from "@tools/lighter/types.js";
 
 const APPROVE_HASH = `0x${"a".repeat(64)}`;
 const DEPOSIT_HASH = `0x${"b".repeat(64)}`;
+const BLOCK_HASH = `0x${"c".repeat(64)}`;
+const WALLET = "0x1111111111111111111111111111111111111111";
+const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+
+function depositReceipt(
+  overrides: Partial<LighterDepositReceipt> = {},
+): LighterDepositReceipt {
+  return {
+    status: "success",
+    transactionHash: DEPOSIT_HASH,
+    blockHash: BLOCK_HASH,
+    blockNumber: 23_456_789n,
+    from: WALLET,
+    to: CONTRACT,
+    logs: [{
+      address: CONTRACT,
+      topics: encodeEventTopics({
+        abi: LIGHTER_DEPOSIT_EVENT_ABI,
+        eventName: "Deposit",
+      }),
+      data: encodeAbiParameters(
+        [
+          { type: "uint48" },
+          { type: "address" },
+          { type: "uint16" },
+          { type: "uint8" },
+          { type: "uint128" },
+        ],
+        [42, WALLET, 3, 0, 11_000_000n],
+      ),
+    }],
+    ...overrides,
+  };
+}
+
+function lighterTx(overrides: Partial<LighterTxFromL1Response> = {}): LighterTxFromL1Response {
+  return {
+    code: 200,
+    hash: "lighter-tx-hash",
+    type: 1,
+    info: JSON.stringify({
+      AccountIndex: 42,
+      L1Address: WALLET,
+      AssetIndex: 3,
+      RouteType: 0,
+      Amount: 11_000_000,
+    }),
+    event_info: JSON.stringify({ a: 42, l: WALLET, ai: 3, rt: 0, c: 11_000_000 }),
+    status: 3,
+    transaction_index: 1,
+    l1_address: WALLET,
+    account_index: 42,
+    nonce: -1,
+    expire_at: 9_223_372_036_854_775_807,
+    block_height: 313_485_202,
+    queued_at: 1,
+    executed_at: 1_786_949_159_112,
+    sequence_index: 1,
+    parent_hash: "",
+    api_key_index: 0,
+    transaction_time: 1,
+    committed_at: 0,
+    verified_at: 0,
+    ...overrides,
+  };
+}
+
+function ownedAccounts(
+  overrides: Partial<LighterAccountsByL1AddressResponse> = {},
+): LighterAccountsByL1AddressResponse {
+  return {
+    code: 200,
+    l1_address: WALLET,
+    sub_accounts: [{ account_type: 0, index: 42, l1_address: WALLET }],
+    ...overrides,
+  };
+}
 
 function intent(
   overrides: Partial<LighterOnboardingIntentRow> = {},
@@ -20,10 +106,10 @@ function intent(
     approvalId: "approval-1",
     environment: "core",
     capability: "deposit",
-    walletAddress: "0x1111111111111111111111111111111111111111",
+    walletAddress: WALLET,
     chainId: 1,
-    depositContract: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
-    depositTo: "0x1111111111111111111111111111111111111111",
+    depositContract: CONTRACT,
+    depositTo: WALLET,
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11000000",
@@ -31,6 +117,14 @@ function intent(
     executionState: "ambiguous",
     approveTxHash: null,
     depositTxHash: null,
+    depositL1BlockHash: null,
+    depositL1BlockNumber: null,
+    depositEventAccountIndex: null,
+    lighterTxHash: null,
+    lighterTxStatus: null,
+    lighterBlockHeight: null,
+    lighterExecutedAt: null,
+    lighterEvidenceObservedAt: null,
     resolvedAccountIndex: null,
     decisionReason: null,
     failureReason: "receipt unavailable",
@@ -47,9 +141,24 @@ function deps(): LighterDepositRepairDeps & {
   return {
     listUnresolved: vi.fn().mockResolvedValue([]),
     readReceipt: vi.fn(),
+    readLighterTx: vi.fn().mockResolvedValue(null),
+    readOwnedAccounts: vi.fn().mockResolvedValue(ownedAccounts()),
     reconcileApproveReceipt: vi.fn(),
     reconcileDepositReceipt: vi.fn(),
+    recordConfirmedDepositL1Evidence: vi.fn(),
+    markCredited: vi.fn(),
   } as never;
+}
+
+function confirmedIntent(): LighterOnboardingIntentRow {
+  return intent({
+    executionState: "deposit_confirmed",
+    depositTxHash: DEPOSIT_HASH,
+    depositL1BlockHash: BLOCK_HASH,
+    depositL1BlockNumber: "23456789",
+    depositEventAccountIndex: 42,
+    failureReason: null,
+  });
 }
 
 describe("Lighter deposit evidence-only repair", () => {
@@ -78,7 +187,7 @@ describe("Lighter deposit evidence-only repair", () => {
       executionState: "approve_submitted",
       approveTxHash: APPROVE_HASH,
     });
-    d.readReceipt.mockResolvedValueOnce("reverted");
+    d.readReceipt.mockResolvedValueOnce(depositReceipt({ status: "reverted", logs: [] }));
     d.reconcileApproveReceipt.mockResolvedValueOnce(intent({
       executionState: "failed",
       approveTxHash: APPROVE_HASH,
@@ -96,15 +205,11 @@ describe("Lighter deposit evidence-only repair", () => {
     );
   });
 
-  it("advances an Ethereum-confirmed deposit only to Lighter credit pending", async () => {
+  it("advances an exact Ethereum-confirmed deposit only to Lighter credit pending", async () => {
     const d = deps();
     const row = intent({ depositTxHash: DEPOSIT_HASH });
-    const confirmed = intent({
-      executionState: "deposit_confirmed",
-      depositTxHash: DEPOSIT_HASH,
-      failureReason: null,
-    });
-    d.readReceipt.mockResolvedValueOnce("success");
+    const confirmed = confirmedIntent();
+    d.readReceipt.mockResolvedValueOnce(depositReceipt());
     d.reconcileDepositReceipt.mockResolvedValueOnce(confirmed);
 
     const result = await repairLighterDepositIntent(row, d);
@@ -113,26 +218,98 @@ describe("Lighter deposit evidence-only repair", () => {
       resolution: "deposit_confirmed",
       stateBefore: "ambiguous",
       stateAfter: "deposit_confirmed",
-      accountIndex: null,
+      accountIndex: 42,
     });
     expect(d.reconcileDepositReceipt).toHaveBeenCalledWith(
       row,
       DEPOSIT_HASH,
       "confirmed",
+      expect.objectContaining({ accountIndex: 42, blockHash: BLOCK_HASH }),
     );
-    expect(result.guidance).toContain("exact Lighter-side evidence");
+    expect(result.guidance).toContain("exact executed transaction");
   });
 
-  it("keeps an Ethereum-confirmed deposit pending until Lighter exposes the account", async () => {
+  it("keeps a proven Ethereum deposit pending until Lighter exposes the transaction", async () => {
     const d = deps();
-    const row = intent({
-      executionState: "deposit_confirmed",
-      depositTxHash: DEPOSIT_HASH,
-    });
+    const row = confirmedIntent();
+
     const result = await repairLighterDepositIntent(row, d);
 
     expect(result.resolution).toBe("awaiting_lighter");
     expect(d.readReceipt).not.toHaveBeenCalled();
+    expect(d.readLighterTx).toHaveBeenCalledWith(DEPOSIT_HASH);
+  });
+
+  it("credits only after the exact Lighter transaction and owned account both match", async () => {
+    const d = deps();
+    const row = confirmedIntent();
+    d.readLighterTx.mockResolvedValueOnce(lighterTx());
+    d.markCredited.mockResolvedValueOnce(intent({
+      ...row,
+      executionState: "credited",
+      resolvedAccountIndex: 42,
+      lighterTxHash: "lighter-tx-hash",
+      lighterTxStatus: 3,
+      lighterBlockHeight: 313_485_202,
+      lighterExecutedAt: 1_786_949_159_112,
+      lighterEvidenceObservedAt: new Date(),
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "credited",
+      evidence: "lighter_account",
+      accountIndex: 42,
+      stateAfter: "credited",
+    });
+    expect(d.markCredited).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        txHash: DEPOSIT_HASH,
+        accountIndex: 42,
+        lighterTxHash: "lighter-tx-hash",
+      }),
+    );
+  });
+
+  it("keeps an executed deposit pending while account ownership is still propagating", async () => {
+    const d = deps();
+    const row = confirmedIntent();
+    d.readLighterTx.mockResolvedValueOnce(lighterTx());
+    d.readOwnedAccounts.mockResolvedValueOnce(ownedAccounts({ sub_accounts: [] }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "awaiting_lighter",
+      evidence: "lighter_transaction",
+      accountIndex: 42,
+    });
+    expect(d.markCredited).not.toHaveBeenCalled();
+  });
+
+  it("requires manual review when Lighter's exact transaction disagrees with Ethereum", async () => {
+    const d = deps();
+    const row = confirmedIntent();
+    d.readLighterTx.mockResolvedValueOnce(lighterTx({
+      info: JSON.stringify({
+        AccountIndex: 42,
+        L1Address: WALLET,
+        AssetIndex: 3,
+        RouteType: 0,
+        Amount: 12_000_000,
+      }),
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "manual_review",
+      evidence: "lighter_transaction",
+    });
+    expect(result.guidance).toContain("did not match the approved intent");
+    expect(d.markCredited).not.toHaveBeenCalled();
   });
 
   it("never invents a transaction when an approved intent has no staged hash", async () => {
