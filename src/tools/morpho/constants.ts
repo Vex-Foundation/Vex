@@ -163,6 +163,27 @@ export const EFFECTIVELY_UNLIMITED_THRESHOLD = 2n ** 255n;
  * shipped in `src/tools/kyberswap/evm/config.ts` and
  * `src/tools/evm-chains/registry.ts` so a Morpho read and a swap quote reach the
  * same node for the same chain.
+ *
+ * BASE AND ARBITRUM ARE NOT PUBLICNODE, AND THAT IS THE POINT (funded live
+ * probe, 2026-08-17). `base-rpc.publicnode.com` and
+ * `arbitrum-one-rpc.publicnode.com` REFUSE `eth_getTransactionReceipt` at the
+ * METHOD level with -32602 "Archive requests require a personal token", for a
+ * transaction in the CURRENT HEAD BLOCK, while answering `eth_call`,
+ * `eth_estimateGas` and `eth_getTransactionByHash` normally. A money path pinned
+ * to such a node can broadcast but can never CONFIRM: the probe's real approval
+ * landed in block 50090123 and still ended `unproven`. The publicnode endpoints
+ * for Ethereum, Optimism and Polygon answered normally on the same day and are
+ * left alone.
+ *
+ * WHY BASE IS drpc AND NOT THE OFFICIAL `mainnet.base.org`. The official
+ * endpoint DOES serve receipts, and it was the obvious replacement, but it rate
+ * limits at about five requests: a 12-request burst measured 5x 200 then 7x 429,
+ * and it failed one of this repository's own live-RPC tests on the first run.
+ * One Morpho execution makes many more reads than that, and a 429 in the middle
+ * of one is the same ambiguity this whole change exists to remove.
+ * `base.drpc.org` served a receipt for a transaction from its own latest block
+ * and took 30 consecutive requests with no throttling. `arb1.arbitrum.io/rpc`
+ * was measured the same way and passed both checks, so Arbitrum stays official.
  */
 export const MORPHO_DEFAULT_RPC: Readonly<Record<number, string>> = {
   1: "https://ethereum-rpc.publicnode.com",
@@ -172,8 +193,8 @@ export const MORPHO_DEFAULT_RPC: Readonly<Record<number, string>> = {
   143: "https://rpc.monad.xyz",
   999: "https://rpc.hyperliquid.xyz/evm",
   4663: "https://rpc.mainnet.chain.robinhood.com",
-  8453: "https://base-rpc.publicnode.com",
-  42161: "https://arbitrum-one-rpc.publicnode.com",
+  8453: "https://base.drpc.org",
+  42161: "https://arb1.arbitrum.io/rpc",
 };
 
 /**

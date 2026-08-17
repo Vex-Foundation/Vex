@@ -3,7 +3,7 @@
  *
  * THE READS ARE DRIVEN BY A STUB CLIENT, deliberately, and the numbers in it are
  * not invented. They are the LIVE CAPTURE of 2026-08-14 against Base
- * (`https://base-rpc.publicnode.com`, Multicall3 at the canonical address) for
+ * (Multicall3 at the canonical address) for
  * wallet 0x245f...f02e, reproduced here so the suite is deterministic and
  * offline. The regeneration path is
  * `readMorphoWalletSnapshot(8453, "0x245fcfd93908A7a52F584AAc67B7F47657ADf02e",

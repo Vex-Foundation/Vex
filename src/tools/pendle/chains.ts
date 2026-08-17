@@ -126,7 +126,16 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Base",
     nativeSymbol: "ETH",
     aliases: [],
-    defaultRpcUrl: "https://base-rpc.publicnode.com",
+    // NOT publicnode: `base-rpc.publicnode.com` refuses `eth_getTransactionReceipt`
+    // at the method level (-32602 "Archive requests require a personal token")
+    // even for a head-block transaction, so a write sent through it can never be
+    // confirmed. Funded live probe, 2026-08-17. drpc rather than the official
+    // `mainnet.base.org`, which serves receipts but rate limits at about five
+    // requests; `base.drpc.org` served a receipt from its own latest block and
+    // took 30 consecutive requests with no throttling. This is the LAST RESORT
+    // behind the `evm-client.ts` env override, and it is what a user without an
+    // override actually gets.
+    defaultRpcUrl: "https://base.drpc.org",
     multicall3: PENDLE_MULTICALL3,
     // Canonical OP-Stack WETH9 predeploy.
     wrappedNative: { symbol: "WETH", address: getAddress("0x4200000000000000000000000000000000000006") },
@@ -146,7 +155,10 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Arbitrum One",
     nativeSymbol: "ETH",
     aliases: ["arb", "arbitrum-one"],
-    defaultRpcUrl: "https://arbitrum-one-rpc.publicnode.com",
+    // NOT publicnode, for the same reason as Base above: on 2026-08-17
+    // `arbitrum-one-rpc.publicnode.com` refused `eth_getTransactionReceipt` with
+    // the same -32602 method-level refusal. Live-verified to serve a receipt.
+    defaultRpcUrl: "https://arb1.arbitrum.io/rpc",
     multicall3: PENDLE_MULTICALL3,
     wrappedNative: { symbol: "WETH", address: getAddress("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1") },
   },

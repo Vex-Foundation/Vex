@@ -72,7 +72,13 @@ import {
   planMorphoAllowance,
   type MorphoAllowancePlan,
 } from "./allowance-plan.js";
-import { boundMorphoGas, preflightMorphoTransaction, type MorphoGasBound, type MorphoPreflight } from "./preflight.js";
+import {
+  boundMorphoGas,
+  preflightMorphoTransaction,
+  probeMorphoReceiptCapability,
+  type MorphoGasBound,
+  type MorphoPreflight,
+} from "./preflight.js";
 import type { MorphoBundleReport, MorphoVaultDirection } from "./types.js";
 
 export interface MorphoExecutionRequest {
@@ -119,11 +125,17 @@ export interface MorphoOperationLeg {
  * PHASE 1. Read the vault fresh, build and decode the operation, and resolve the
  * allowance work it needs.
  *
+ * It also runs the ONE check that is about the node rather than the operation:
+ * {@link requireMorphoReceiptCapability}. See its own comment for why a node
+ * that will not serve receipts must stop an execution here, where the cost of
+ * stopping is zero, rather than after a leg has been signed and mined.
+ *
  * @throws {VexError} `MORPHO_VAULT_NOT_FOUND` when neither vault reader
  * answered, `MORPHO_BUNDLE_REJECTED` when the built transaction does not survive
  * the decode, `MORPHO_APPROVAL_POLICY_VIOLATION` when the allowance plan and the
  * SDK disagree or the SDK asks for something outside the policy,
- * `MORPHO_RPC_ERROR` when the allowance itself could not be read.
+ * `MORPHO_RPC_ERROR` when the allowance itself could not be read or when the
+ * node refuses `eth_getTransactionReceipt`.
  */
 export async function prepareMorphoVaultExecution(
   request: MorphoExecutionRequest,
@@ -132,6 +144,7 @@ export async function prepareMorphoVaultExecution(
   requirePositiveAmount(request);
 
   const client = options.client ?? getMorphoActionClient(request.chainId);
+  await requireMorphoReceiptCapability(client);
   const state = await readMorphoVaultState(client, request.chainId, request.vaultAddress);
   const built = await buildMorphoVaultOperation(client, state, {
     chainId: request.chainId,
@@ -220,6 +233,51 @@ export async function prepareMorphoOperationLeg(
   }
 
   return { to, data, value, bundle: built.bundle, gas, preflight };
+}
+
+/**
+ * Refuse the whole execution when the node will not serve
+ * `eth_getTransactionReceipt`.
+ *
+ * ── WHY THIS IS A HARD STOP AND NOT A WARNING (funded live probe, 2026-08-17) ─
+ *
+ * The pinned Base endpoint refused that one method, method-level, for a
+ * head-block transaction. Everything upstream worked: the build, the decode, the
+ * gas bound, the staging and the broadcast all behaved correctly against real
+ * Base state, and a real ERC-20 approval for 0.2 USDC MINED. It still ended
+ * `unproven`, because the confirm read could not be answered, and the deposit it
+ * existed to enable was abandoned. The user paid gas for a leg no part of the
+ * system could prove, and was left with a standing allowance.
+ *
+ * Against such a node EVERY write has that ending, so there is no amount of
+ * retrying, waiting or care that reaches a confirmed outcome. Continuing would
+ * be spending the user's funds on a result Vex already knows it cannot read.
+ * Stopping here costs exactly nothing: no signature exists yet, no durable row
+ * exists yet, and no gas has been touched.
+ *
+ * ONLY A STATED REFUSAL STOPS US. `probeMorphoReceiptCapability` returns
+ * `unproven` for an empty block or a transport that did not answer, and those
+ * pass through: a check that could not run is a gap, never a verdict, and
+ * blocking a healthy deposit on a momentary transport failure would be its own
+ * defect.
+ *
+ * @throws {VexError} `MORPHO_RPC_ERROR` when the node stated the refusal.
+ */
+async function requireMorphoReceiptCapability(client: MorphoActionClient): Promise<void> {
+  const capability = await probeMorphoReceiptCapability(client);
+  if (capability.verdict !== "refuses") return;
+
+  throw new VexError(
+    ErrorCodes.MORPHO_RPC_ERROR,
+    "Refusing to start this Morpho vault operation: the configured RPC for this chain will not answer "
+    + `eth_getTransactionReceipt. Asked about a transaction from the chain's own latest block${
+      capability.probedTxHash === null ? "" : ` (${capability.probedTxHash})`
+    }, it refused the method: ${capability.detail ?? "no reason given"}.`,
+    "This RPC cannot confirm transactions; NO FUNDS WERE SPENT and nothing was signed, staged or sent. Vex stops "
+    + "before the first broadcast because against this node every transaction it sends would mine and still end "
+    + "unproven, leaving real gas spent on a result nothing could read. Point this chain at an RPC that serves "
+    + "receipts and run the operation again.",
+  );
 }
 
 /**
@@ -365,6 +423,43 @@ export function describeResidualAllowance(
     + "from this wallet. It is capped at exactly this one operation's amount, not an open-ended grant. Retrying the "
     + "same deposit consumes it and grants nothing further; leaving it standing is also safe, and it can be revoked "
     + "by approving zero to that same spender."
+  );
+}
+
+/**
+ * The sentence a failure output owes the user when an approval was BROADCAST and
+ * its fate could not be established.
+ *
+ * ── WHY THIS EXISTS SEPARATELY FROM `describeResidualAllowance` (funded live
+ * probe, 2026-08-17) ────────────────────────────────────────────────────────
+ *
+ * `context.residual` is only set once an allowance leg CONFIRMS, which is the
+ * right rule for a confirmed one and leaves exactly one hole: an approval that
+ * lands and then goes ambiguous at the confirm stage. That is not hypothetical.
+ * It is what the funded probe hit, and the wallet was left with 0.2 USDC of real
+ * spending authority standing to GeneralAdapter1 while the agent-facing output
+ * said only that the vault operation was not attempted. This module's own header
+ * already names the standard being missed there: a residual the user is not told
+ * about is the same fact with the remediation removed.
+ *
+ * WHY IT IS HEDGED AND NOT ASSERTED. Vex does not know. Claiming the approval
+ * landed would be the invented-certainty failure in the other direction, so the
+ * wording says MAY, says why it cannot say more, and gives both remediations
+ * anyway, since both are correct whether or not it landed. The amount travels
+ * with its own units for the same reason the confirmed sentence carries them.
+ */
+export function describePossibleResidualAllowance(
+  amountHuman: string,
+  assetSymbol: string | null,
+  spender: string,
+): string {
+  const asset = assetSymbol ?? "the vault asset";
+  return (
+    `An approval transaction for exactly ${amountHuman} ${asset} to GeneralAdapter1 (${spender}) was signed and `
+    + "broadcast before this went unproven, so that allowance MAY now be standing. Vex could not read the receipt, so "
+    + "it does not claim either way. If it did land it is capped at exactly this one operation's amount and grants "
+    + `nothing further: retrying the same deposit later consumes it, and approving zero ${asset} to that same spender `
+    + "clears it. Neither of those is a reason to re-broadcast THIS transaction, which must not be sent again."
   );
 }
 

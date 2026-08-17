@@ -68,6 +68,7 @@ export {
   compareMorphoShares,
   morphoShareBoundRaw,
   describeResidualAllowance,
+  describePossibleResidualAllowance,
   type MorphoExecutionRequest,
   type MorphoOperationLeg,
   type MorphoPreparedExecution,
@@ -77,9 +78,12 @@ export {
 export {
   boundMorphoGas,
   preflightMorphoTransaction,
+  probeMorphoReceiptCapability,
   type MorphoGasBound,
   type MorphoPreflight,
   type MorphoPreflightVerdict,
+  type MorphoReceiptCapability,
+  type MorphoReceiptCapabilityVerdict,
 } from "./mutations/preflight.js";
 
 export {

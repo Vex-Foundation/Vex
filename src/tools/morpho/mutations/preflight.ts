@@ -31,9 +31,28 @@
  * wallet's exact-amount approval to that adapter exists there is nothing for it
  * to pull. The verdict is reported as what it is, with that reading attached,
  * rather than presented as a fault in the vault.
+ *
+ * ── AND A THIRD CHECK, ON THE NODE ITSELF ───────────────────────────────────
+ *
+ * `probeMorphoReceiptCapability` asks a question about the RPC rather than about
+ * a transaction: will it answer `eth_getTransactionReceipt` at all. The funded
+ * live probe of 2026-08-17 found the pinned Base endpoint refusing that ONE
+ * method with -32602 "Archive requests require a personal token" while serving
+ * every other call, including `eth_getTransactionByHash` for the very same hash.
+ * The consequence is specific and expensive: a leg can be signed, broadcast and
+ * MINED, and the engine still cannot prove it, so a real approval that landed in
+ * the head block ended `unproven` and the deposit behind it was abandoned. The
+ * gas was spent for nothing that could be confirmed.
+ *
+ * A node that cannot confirm is therefore a reason to spend NOTHING, and the
+ * cheapest moment to find that out is before the first signature. The probe uses
+ * a REAL transaction from the chain's own latest block, because the refusal is
+ * method-level and a made-up hash would come back as an ordinary not-found from
+ * a healthy node and as a refusal from a broken one, which is the one thing this
+ * check must not blur.
  */
 
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 
 import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import { sanitizeMorphoCause } from "../errors.js";
@@ -80,6 +99,66 @@ function sanitize(err: unknown): string {
 function looksLikeRevert(message: string): boolean {
   return /revert|execution reverted|ContractFunctionRevertedError|CallExecutionError|insufficient (funds|allowance|balance)/i
     .test(message);
+}
+
+/**
+ * The refusals that mean "this node will not serve receipts", as opposed to "it
+ * did not answer this time".
+ *
+ * A JSON-RPC error CODE is the honest discriminator: -32601 is method not found
+ * and -32602 is invalid params, and since the probe sends one well-formed hash,
+ * both are the node declining the method rather than judging the request. The
+ * word patterns are the observed texts (allnodes/publicnode's archive-token
+ * message) plus the ordinary method-gating phrasings other providers use.
+ */
+const RECEIPT_REFUSAL_PATTERN =
+  /-3260[12]|archive request|personal token|method not (found|supported|allowed|available)|unsupported method|invalid param/i;
+
+export type MorphoReceiptCapabilityVerdict = "serves" | "refuses" | "unproven";
+
+export interface MorphoReceiptCapability {
+  readonly verdict: MorphoReceiptCapabilityVerdict;
+  /** The transaction the probe asked about, when it found one. Sanitised out of nothing. */
+  readonly probedTxHash: Hex | null;
+  /** The sanitised refusal text on `refuses`, or why the probe was inconclusive. */
+  readonly detail: string | null;
+}
+
+/**
+ * Ask the node whether it will serve `eth_getTransactionReceipt`, using a real
+ * transaction taken from its own latest block. Reads only; spends nothing.
+ *
+ * THREE-WAY, like every other verdict in this file, and for the same reason.
+ * `unproven` is NOT a failure: an empty latest block or a transport that did not
+ * answer proves nothing about the method, and converting either into a refusal
+ * would block healthy executions on a chain with idle blocks. Only a refusal the
+ * node actually stated is reported as one.
+ */
+export async function probeMorphoReceiptCapability(
+  client: MorphoActionClient,
+): Promise<MorphoReceiptCapability> {
+  let probedTxHash: Hex;
+  try {
+    const block = await client.getBlock({ blockTag: "latest", includeTransactions: false });
+    const hash = block.transactions[0];
+    if (hash === undefined) {
+      return { verdict: "unproven", probedTxHash: null, detail: "the chain's latest block contained no transaction to probe with" };
+    }
+    probedTxHash = hash;
+  } catch (err) {
+    return { verdict: "unproven", probedTxHash: null, detail: `the latest block could not be read (${sanitize(err)})` };
+  }
+
+  try {
+    await client.getTransactionReceipt({ hash: probedTxHash });
+    return { verdict: "serves", probedTxHash, detail: null };
+  } catch (err) {
+    const message = sanitize(err);
+    if (RECEIPT_REFUSAL_PATTERN.test(message)) {
+      return { verdict: "refuses", probedTxHash, detail: message };
+    }
+    return { verdict: "unproven", probedTxHash, detail: message };
+  }
 }
 
 /**

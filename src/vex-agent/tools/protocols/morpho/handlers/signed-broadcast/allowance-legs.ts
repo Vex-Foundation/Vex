@@ -15,13 +15,24 @@
  * acceptable, and re-broadcasting the approval is worse than both. The row keeps
  * its staged hash and stays `pending` forever if need be.
  *
+ * WHAT THE AMBIGUOUS ENDING MUST SAY OUT LOUD (funded live probe, 2026-08-17).
+ * `context.residual` is set only after a leg CONFIRMS, so an approval that LANDS
+ * and then goes ambiguous at the confirm stage used to end with the user told
+ * that the vault operation was not attempted and NOT told that real spending
+ * authority might now be standing. That is what happened on mainnet: 0.2 USDC of
+ * allowance to GeneralAdapter1, unmentioned. A staged hash exists in exactly
+ * that case, which is precisely the evidence that the allowance MAY exist, so
+ * the ambiguous branch below states the possibility rather than staying silent.
+ * A pre-signature refusal has no hash, nothing was ever sent, and it says
+ * nothing of the kind.
+ *
  * A WITHDRAWAL NEVER REACHES THIS FILE with work to do: it pulls nothing, so its
  * plan has no approval legs and the loop below runs zero times.
  */
 
 import { formatUnits } from "viem";
 
-import { describeResidualAllowance } from "@tools/morpho/mutations.js";
+import { describePossibleResidualAllowance, describeResidualAllowance } from "@tools/morpho/mutations.js";
 import { priorLegAnchorFrom } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { abortPlannedEvents, confirmActivityEvent, failActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
@@ -30,7 +41,26 @@ import logger from "@utils/logger.js";
 import { morphoFailureDetail } from "../shared.js";
 import { broadcastMorphoLeg, finalizeMorphoFailSoft, noteMorphoSettledBlockTime } from "./leg-broadcast.js";
 import { MORPHO_AMBIGUOUS_BROADCAST_MESSAGE, withResidual, type MorphoExecutionOutcome } from "./outcome.js";
+import type { MorphoActivityRole } from "./protocol.js";
 import type { MorphoExecutionContext } from "./run.js";
+
+/**
+ * The hedged residual sentence an AMBIGUOUS approval owes, or `null` when there
+ * is nothing that could be standing.
+ *
+ * Only the `allowance` role grants spending authority. An ambiguous
+ * `allowance_reset` is an approve of ZERO whose fate is unknown, which can leave
+ * the previous allowance in place but cannot create one, so claiming a residual
+ * for it would name a grant this execution never made.
+ */
+function possibleResidualFor(context: MorphoExecutionContext, role: MorphoActivityRole): string | null {
+  if (role !== "allowance") return null;
+  return describePossibleResidualAllowance(
+    formatUnits(context.request.amountRaw, context.state.assetDecimals),
+    context.state.assetSymbol,
+    context.allowancePlan?.spender.toLowerCase() ?? "the Morpho adapter",
+  );
+}
 
 /**
  * Send every approval leg, in order, awaiting a definitive receipt for each.
@@ -93,7 +123,7 @@ export async function runAllowanceLegs(context: MorphoExecutionContext): Promise
           `${toolId}: the ${leg.eventRole} step's broadcast could not be confirmed. `
           + MORPHO_AMBIGUOUS_BROADCAST_MESSAGE
           + " The vault operation itself was NOT attempted.",
-          context.residual,
+          context.residual ?? possibleResidualFor(context, leg.eventRole),
         ),
       };
     }

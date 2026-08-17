@@ -414,6 +414,40 @@ describe("ambiguity never terminalizes and never re-broadcasts", () => {
     expect(outcome.message).toContain("Do not retry");
   });
 
+  // The funded live probe of 2026-08-17 hit exactly this: the approval MINED, the
+  // receipt could not be read, and the agent was told only that the vault
+  // operation was not attempted while 0.2 USDC of real spending authority stood
+  // unmentioned. A staged hash is the evidence that it MAY be standing.
+  it("names the allowance that MAY be standing when an approval's broadcast went ambiguous", async () => {
+    mockSignStageBroadcast.mockResolvedValue({
+      kind: "ambiguous", txHash: "0xapproval", stage: "confirm", reason: "receipt wait failed",
+    });
+
+    const outcome = await executeMorphoVaultDeposit(clients, request());
+
+    expect(outcome.message).toContain("1 USDC");
+    expect(outcome.message).toContain(ADAPTER);
+    // Hedged, never asserted: Vex does not know whether it landed.
+    expect(outcome.message).toContain("MAY now be standing");
+    // Both ways out, and the do-not-retry instruction for the SEND survives.
+    expect(outcome.message).toContain("retrying the same deposit later consumes it");
+    expect(outcome.message).toContain("approving zero");
+    expect(outcome.message).toContain("Do not retry");
+    expect(outcome.message).toContain("must not be sent again");
+  });
+
+  it("says nothing about a standing allowance when the approval was refused BEFORE anything was signed", async () => {
+    mockSignStageBroadcast.mockRejectedValue(new Error("gas estimate refused"));
+
+    const outcome = await executeMorphoVaultDeposit(clients, request());
+
+    expect(outcome.kind).toBe("refused");
+    expect(outcome.message).toContain("No transaction was sent and no gas was spent");
+    // No hash exists, so there is no allowance that could be standing to hedge about.
+    expect(outcome.message).not.toContain("MAY now be standing");
+    expect(outcome.message).not.toContain(ADAPTER);
+  });
+
   it("leaves an ambiguous DEPOSIT pending too, and tells the agent not to retry", async () => {
     mockSignStageBroadcast
       .mockResolvedValueOnce(confirmedOutcome([], "0xapproval"))
