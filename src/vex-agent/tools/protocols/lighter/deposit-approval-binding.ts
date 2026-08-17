@@ -61,7 +61,7 @@ export async function assertLighterDepositApprovalBinding(input: {
     auditIntent === null
     || auditIntent.sessionId !== input.sessionId
     || auditIntent.decision !== "approved"
-    || auditIntent.actionKind !== "external_post"
+    || auditIntent.actionKind !== "user_wallet_broadcast"
     || auditIntent.executionStatus !== "dispatching"
     || !approvalPreviewMatchesIntent(auditIntent.previewJson, input.intent)
   ) {

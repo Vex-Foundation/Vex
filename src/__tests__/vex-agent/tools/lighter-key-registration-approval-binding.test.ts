@@ -86,7 +86,7 @@ beforeEach(() => {
   mocks.getAuditIntent.mockResolvedValue({
     sessionId: "session-1",
     decision: "approved",
-    actionKind: "external_post",
+    actionKind: "user_wallet_broadcast",
     executionStatus: "dispatching",
     previewJson: {
       toolName: "key.register",
@@ -119,7 +119,7 @@ describe("Lighter key-registration approval binding", () => {
     mocks.getAuditIntent.mockResolvedValue({
       sessionId: "session-1",
       decision: "approved",
-      actionKind: "external_post",
+      actionKind: "user_wallet_broadcast",
       executionStatus: "dispatching",
       previewJson: {
         toolName: "key.register",
@@ -146,6 +146,26 @@ describe("Lighter key-registration approval binding", () => {
             intentId: "lighter-onboard-00000000-0000-4000-8000-000000000002",
           },
         },
+      },
+    });
+
+    await expect(assertLighterKeyRegistrationApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: INTENT,
+    })).rejects.toThrow("Nothing was signed or submitted");
+  });
+
+  it("rejects an approval intent with the wrong action taxonomy", async () => {
+    mocks.getAuditIntent.mockResolvedValue({
+      sessionId: "session-1",
+      decision: "approved",
+      actionKind: "external_post",
+      executionStatus: "dispatching",
+      previewJson: {
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs: criticalArgs(),
       },
     });
 
