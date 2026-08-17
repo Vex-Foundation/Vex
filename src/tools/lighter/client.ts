@@ -28,6 +28,8 @@ import {
 import { LighterThrottle, parseRetryAfterMs } from "./throttle.js";
 import type {
   LighterAccountActiveOrdersParams,
+  LighterAccountsByL1AddressParams,
+  LighterAccountsByL1AddressResponse,
   LighterAccountInactiveOrdersParams,
   LighterAccountOrdersResponse,
   LighterAccountQuery,
@@ -36,6 +38,7 @@ import type {
   LighterAccountTradesResponse,
   LighterApiKeysParams,
   LighterApiKeysResponse,
+  LighterAssetDetailsResponse,
   LighterCandlesParams,
   LighterCandlesResponse,
   LighterMarketDetailQuery,
@@ -54,12 +57,17 @@ import type {
   LighterSendTxResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
+  LighterLayer1BasicInfoResponse,
+  LighterTxFromL1Params,
+  LighterTxFromL1Response,
 } from "./types.js";
 import {
   validateLighterAccount,
+  validateLighterAccountsByL1Address,
   validateLighterAccountOrders,
   validateLighterAccountTrades,
   validateLighterApiKeys,
+  validateLighterAssetDetails,
   validateLighterCandles,
   validateLighterMarketDetails,
   validateLighterMarkets,
@@ -70,6 +78,8 @@ import {
   validateLighterSendTx,
   validateLighterStatus,
   validateLighterSystemConfig,
+  validateLighterLayer1BasicInfo,
+  validateLighterTxFromL1,
 } from "./validation.js";
 import {
   authorizeLighterReadOnlyAuthTokenForAccount,
@@ -261,6 +271,50 @@ export class LighterClient {
       environment,
       LIGHTER_ENDPOINT_PATHS.systemConfig,
       validateLighterSystemConfig,
+    );
+  }
+
+  getLayer1BasicInfo(environment: LighterEnvironment): Promise<LighterLayer1BasicInfoResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.layer1BasicInfo,
+      validateLighterLayer1BasicInfo,
+    );
+  }
+
+  getAssetDetails(environment: LighterEnvironment): Promise<LighterAssetDetailsResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.assetDetails,
+      validateLighterAssetDetails,
+    );
+  }
+
+  async getAccountsByL1Address(
+    environment: LighterEnvironment,
+    params: LighterAccountsByL1AddressParams,
+  ): Promise<LighterAccountsByL1AddressResponse> {
+    const l1Address = readNonEmptyString(params.l1Address, "l1Address");
+    const cursor = params.cursor === undefined
+      ? undefined
+      : readNonEmptyString(params.cursor, "cursor");
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.accountsByL1Address,
+      validateLighterAccountsByL1Address,
+      { l1_address: l1Address, cursor },
+    );
+  }
+
+  async getTxFromL1(
+    environment: LighterEnvironment,
+    params: LighterTxFromL1Params,
+  ): Promise<LighterTxFromL1Response> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.txFromL1TxHash,
+      validateLighterTxFromL1,
+      { hash: readNonEmptyString(params.hash, "hash") },
     );
   }
 
@@ -527,6 +581,17 @@ export class LighterClient {
 
 function readUint16(value: number, field: string): number {
   return readBoundedInt(value, field, 0, 65_535);
+}
+
+function readNonEmptyString(value: string, field: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Invalid Lighter ${field}: expected a non-empty string`,
+    );
+  }
+  return normalized;
 }
 
 function readAccountIndex(value: number): number {

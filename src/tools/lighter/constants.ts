@@ -31,6 +31,10 @@ export const LIGHTER_ENDPOINTS: Record<LighterEnvironment, LighterEndpointConfig
 export const LIGHTER_ENDPOINT_PATHS = {
   status: "/",
   systemConfig: "/api/v1/systemConfig",
+  layer1BasicInfo: "/api/v1/layer1BasicInfo",
+  assetDetails: "/api/v1/assetDetails",
+  accountsByL1Address: "/api/v1/accountsByL1Address",
+  txFromL1TxHash: "/api/v1/txFromL1TxHash",
   account: "/api/v1/account",
   accountActiveOrders: "/api/v1/accountActiveOrders",
   accountInactiveOrders: "/api/v1/accountInactiveOrders",

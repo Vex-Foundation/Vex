@@ -29,6 +29,86 @@ export interface LighterSystemConfigResponse {
   [key: string]: unknown;
 }
 
+export interface LighterContractAddress {
+  name: string;
+  address: string;
+  [key: string]: unknown;
+}
+
+export interface LighterLayer1Provider {
+  chainId: number;
+  networkId: number;
+  latestBlockNumber: number;
+  [key: string]: unknown;
+}
+
+export interface LighterLayer1BasicInfoResponse {
+  code: number;
+  message?: string;
+  l1_providers: LighterLayer1Provider[];
+  l1_providers_health: boolean;
+  contract_addresses: LighterContractAddress[];
+  [key: string]: unknown;
+}
+
+export interface LighterAssetDetail {
+  asset_id: number;
+  symbol: string;
+  l1_decimals: number;
+  decimals: number;
+  min_transfer_amount: string;
+  l1_address: string;
+  [key: string]: unknown;
+}
+
+export interface LighterAssetDetailsResponse {
+  code: number;
+  message?: string;
+  assets: LighterAssetDetail[];
+  [key: string]: unknown;
+}
+
+export interface LighterSubAccount {
+  account_type: number;
+  index: number;
+  l1_address: string;
+  [key: string]: unknown;
+}
+
+export interface LighterAccountsByL1AddressResponse {
+  code: number;
+  message?: string;
+  l1_address: string;
+  sub_accounts: LighterSubAccount[];
+  next_cursor?: string;
+  [key: string]: unknown;
+}
+
+export interface LighterTxFromL1Response {
+  code: number;
+  message?: string;
+  hash: string;
+  type: number;
+  info: string;
+  event_info: string;
+  status: number;
+  transaction_index: number;
+  l1_address: string;
+  account_index: number;
+  nonce: number;
+  expire_at: number;
+  block_height: number;
+  queued_at: number;
+  executed_at: number;
+  sequence_index: number;
+  parent_hash: string;
+  api_key_index: number;
+  transaction_time: number;
+  committed_at: number;
+  verified_at: number;
+  [key: string]: unknown;
+}
+
 export interface LighterAccount {
   index?: number;
   account_index?: number;
@@ -300,6 +380,15 @@ export interface LighterAccountQuery {
   by: "index" | "l1_address";
   value: number | string;
   activeOnly?: boolean;
+}
+
+export interface LighterAccountsByL1AddressParams {
+  l1Address: string;
+  cursor?: string;
+}
+
+export interface LighterTxFromL1Params {
+  hash: string;
 }
 
 export interface LighterReadOnlyTokensParams {

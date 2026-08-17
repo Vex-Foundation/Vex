@@ -155,6 +155,95 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("filter")).toBe("perp");
   });
 
+  it("reads public L1 deposit metadata and exact transaction evidence", async () => {
+    mockOk({
+      code: 200,
+      l1_providers: [{ chainId: 1, networkId: 1, latestBlockNumber: 23456789 }],
+      l1_providers_health: true,
+      contract_addresses: [{ name: "ZkLighterContract", address: "0x1111111111111111111111111111111111111111" }],
+    });
+    mockOk({
+      code: 200,
+      assets: [{
+        asset_id: 3,
+        symbol: "USDC",
+        l1_decimals: 6,
+        decimals: 6,
+        min_transfer_amount: "1.000000",
+        l1_address: "0x2222222222222222222222222222222222222222",
+      }],
+    });
+    mockOk({
+      code: 200,
+      hash: "0xlighter",
+      type: 1,
+      info: "{\"AccountIndex\":42}",
+      event_info: "{\"a\":42}",
+      status: 3,
+      transaction_index: 1,
+      l1_address: "0x3333333333333333333333333333333333333333",
+      account_index: 42,
+      nonce: -1,
+      expire_at: 9223372036854775807,
+      block_height: 99,
+      queued_at: 1786949159112,
+      executed_at: 1786949159112,
+      sequence_index: 114939818073,
+      parent_hash: "",
+      api_key_index: 0,
+      transaction_time: 1786949159275021,
+      committed_at: 0,
+      verified_at: 0,
+    });
+
+    const l1 = await client.getLayer1BasicInfo("core");
+    expect(lastUrl().pathname).toBe("/api/v1/layer1BasicInfo");
+    expect(l1.contract_addresses[0]?.name).toBe("ZkLighterContract");
+
+    const assets = await client.getAssetDetails("core");
+    expect(lastUrl().pathname).toBe("/api/v1/assetDetails");
+    expect(assets.assets[0]?.asset_id).toBe(3);
+
+    const evidence = await client.getTxFromL1("core", { hash: " 0xdeposit " });
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/txFromL1TxHash");
+    expect(url.searchParams.get("hash")).toBe("0xdeposit");
+    expect(evidence.account_index).toBe(42);
+  });
+
+  it("reads every wallet-owned Lighter subaccount without guessing the first row", async () => {
+    mockOk({
+      code: 200,
+      l1_address: "0x3333333333333333333333333333333333333333",
+      sub_accounts: [
+        { account_type: 0, index: 42, l1_address: "0x3333333333333333333333333333333333333333" },
+        { account_type: 1, index: 43, l1_address: "0x3333333333333333333333333333333333333333" },
+      ],
+      next_cursor: "page-2",
+    });
+
+    const response = await client.getAccountsByL1Address("core", {
+      l1Address: " 0x3333333333333333333333333333333333333333 ",
+      cursor: " page-1 ",
+    });
+
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/accountsByL1Address");
+    expect(url.searchParams.get("l1_address")).toBe("0x3333333333333333333333333333333333333333");
+    expect(url.searchParams.get("cursor")).toBe("page-1");
+    expect(response.sub_accounts.map((account) => account.index)).toEqual([42, 43]);
+  });
+
+  it("rejects empty deposit evidence query values before sending", async () => {
+    await expect(client.getTxFromL1("core", { hash: "  " })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+    });
+    await expect(client.getAccountsByL1Address("core", { l1Address: "" })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("does not attach Authorization to public reads", async () => {
     mockOk({ status: 1, network_id: 304, timestamp: 1717777777 });
     await client.getStatus("core");

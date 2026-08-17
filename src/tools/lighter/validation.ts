@@ -7,8 +7,10 @@ import {
 import type {
   LighterAccountOrdersResponse,
   LighterAccountResponse,
+  LighterAccountsByL1AddressResponse,
   LighterAccountTradesResponse,
   LighterApiKeysResponse,
+  LighterAssetDetailsResponse,
   LighterCandlesResponse,
   LighterMarketDetailsResponse,
   LighterMarketsResponse,
@@ -19,6 +21,8 @@ import type {
   LighterSendTxResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
+  LighterLayer1BasicInfoResponse,
+  LighterTxFromL1Response,
 } from "./types.js";
 
 const int = z.number().int().finite();
@@ -169,6 +173,78 @@ const systemConfigSchema = z
     max_integrator_perps_taker_fee: int,
     max_integrator_spot_maker_fee: int,
     max_integrator_spot_taker_fee: int,
+  })
+  .passthrough();
+
+const layer1BasicInfoResponseSchema = z
+  .object({
+    code: int,
+    message,
+    l1_providers: z.array(z.object({
+      chainId: int,
+      networkId: int,
+      latestBlockNumber: providerInteger,
+    }).passthrough()),
+    l1_providers_health: z.boolean(),
+    contract_addresses: z.array(z.object({
+      name: z.string().min(1),
+      address: z.string().min(1),
+    }).passthrough()),
+  })
+  .passthrough();
+
+const assetDetailsResponseSchema = z
+  .object({
+    code: int,
+    message,
+    assets: z.array(z.object({
+      asset_id: int,
+      symbol: z.string().min(1),
+      l1_decimals: int,
+      decimals: int,
+      min_transfer_amount: numericString,
+      l1_address: z.string().min(1),
+    }).passthrough()),
+  })
+  .passthrough();
+
+const accountsByL1AddressResponseSchema = z
+  .object({
+    code: int,
+    message,
+    l1_address: z.string().min(1),
+    sub_accounts: z.array(z.object({
+      account_type: int,
+      index: int,
+      l1_address: z.string().min(1),
+    }).passthrough()),
+    next_cursor: z.string().optional(),
+  })
+  .passthrough();
+
+const txFromL1ResponseSchema = z
+  .object({
+    code: int,
+    message,
+    hash: z.string().min(1),
+    type: int,
+    info: z.string().min(1),
+    event_info: z.string().min(1),
+    status: int,
+    transaction_index: providerInteger,
+    l1_address: z.string().min(1),
+    account_index: int,
+    nonce: providerInteger,
+    expire_at: providerInteger,
+    block_height: providerInteger,
+    queued_at: providerInteger,
+    executed_at: providerInteger,
+    sequence_index: providerInteger,
+    parent_hash: z.string(),
+    api_key_index: int,
+    transaction_time: providerInteger,
+    committed_at: providerInteger,
+    verified_at: providerInteger,
   })
   .passthrough();
 
@@ -363,6 +439,24 @@ export function validateLighterStatus(raw: unknown): LighterStatusResponse {
 
 export function validateLighterSystemConfig(raw: unknown): LighterSystemConfigResponse {
   return parseOrThrow(systemConfigSchema, raw, "system config");
+}
+
+export function validateLighterLayer1BasicInfo(raw: unknown): LighterLayer1BasicInfoResponse {
+  return parseOrThrow(layer1BasicInfoResponseSchema, raw, "layer 1 basic info");
+}
+
+export function validateLighterAssetDetails(raw: unknown): LighterAssetDetailsResponse {
+  return parseOrThrow(assetDetailsResponseSchema, raw, "asset details");
+}
+
+export function validateLighterAccountsByL1Address(
+  raw: unknown,
+): LighterAccountsByL1AddressResponse {
+  return parseOrThrow(accountsByL1AddressResponseSchema, raw, "accounts by L1 address");
+}
+
+export function validateLighterTxFromL1(raw: unknown): LighterTxFromL1Response {
+  return parseOrThrow(txFromL1ResponseSchema, raw, "transaction from L1");
 }
 
 export function validateLighterMarkets(raw: unknown): LighterMarketsResponse {
