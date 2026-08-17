@@ -3,9 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
+  markLighterKeyRegistrationActiveWith,
+  markLighterKeyRegistrationAmbiguousWith,
   markLighterKeyRegistrationApprovalPendingWith,
   markLighterKeyRegistrationApprovedWith,
   markLighterKeyGeneratedEncryptedWith,
+  markLighterKeyRegistrationKeyVerifiedWith,
+  markLighterKeyRegistrationNonceSynchronizedWith,
+  markLighterKeyRegistrationSubmittedWith,
+  markLighterKeyRegistrationTxStagedWith,
   reserveLighterApiKeySlotWith,
   type ReserveLighterApiKeySlotInput,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -76,6 +82,35 @@ function workflowRow(state: string) {
     revision: 2,
     created_at: NOW,
     updated_at: NOW,
+  };
+}
+
+function lifecycleRow(state: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...reservationRow(6),
+    approval_status: "approved",
+    execution_state: state,
+    vault_credential_id: "lighter/core/account-42/api-key-6",
+    public_key: "ab".repeat(40),
+    public_key_fingerprint: "f".repeat(64),
+    key_generated_at: NOW,
+    registration_nonce: "0",
+    registration_nonce_observed_at: NOW,
+    registration_tx_type: 8,
+    registration_tx_hash: "cd".repeat(40),
+    registration_tx_expired_at: "1893456000000",
+    registration_tx_staged_at: NOW,
+    registration_submitted_tx_hash: null,
+    registration_submit_code: null,
+    registration_predicted_execution_time_ms: null,
+    registration_submit_accepted_at: null,
+    registration_ambiguity_reason: null,
+    registration_key_verified_at: null,
+    registration_client_checked_at: null,
+    post_registration_nonce: null,
+    registration_nonce_synchronized_at: null,
+    registration_activated_at: null,
+    ...overrides,
   };
 }
 
@@ -264,6 +299,156 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     );
   });
 
+  it("stages only structural TxType 8 identity before recording sendTx acceptance", async () => {
+    const stagedClient = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [lifecycleRow("key_registration_tx_staged")],
+        rowCount: 1,
+      }),
+    };
+    const staged = await markLighterKeyRegistrationTxStagedWith(stagedClient as never, {
+      intentId: String(lifecycleRow("approved").intent_id),
+      sessionId: INPUT.sessionId,
+      txType: 8,
+      txHash: "cd".repeat(40),
+      expiredAt: "1893456000000",
+      stagedAt: NOW,
+    });
+    expect(staged).toMatchObject({
+      executionState: "key_registration_tx_staged",
+      registrationTxType: 8,
+      registrationTxHash: "cd".repeat(40),
+    });
+    const [stageSql, stageParams] = stagedClient.query.mock.calls[0]!;
+    expect(stageSql).not.toMatch(/tx_info|l1_sig|signed_payload/i);
+    expect(JSON.stringify(stageParams)).not.toMatch(/L1Sig|Sig|privateKey/);
+
+    const submittedClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [lifecycleRow("change_pub_key_submitted", {
+            registration_submitted_tx_hash: "cd".repeat(40),
+            registration_submit_code: 200,
+            registration_predicted_execution_time_ms: "50",
+            registration_submit_accepted_at: NOW,
+          })],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [workflowRow("change_pub_key_submitted")],
+          rowCount: 1,
+        }),
+    };
+    const submitted = await markLighterKeyRegistrationSubmittedWith(
+      submittedClient as never,
+      {
+        intentId: String(lifecycleRow("approved").intent_id),
+        sessionId: INPUT.sessionId,
+        txHash: "cd".repeat(40),
+        submittedTxHash: "cd".repeat(40),
+        submitCode: 200,
+        predictedExecutionTimeMs: 50,
+        acceptedAt: NOW,
+      },
+    );
+    expect(submitted).toMatchObject({
+      executionState: "change_pub_key_submitted",
+      registrationSubmitCode: 200,
+      registrationPredictedExecutionTimeMs: "50",
+    });
+    expect(submittedClient.query.mock.calls[1]?.[1]?.[2]).toEqual([
+      "key_registration_approval_pending",
+    ]);
+  });
+
+  it("moves ambiguity through exact verification, nonce synchronization, and activation", async () => {
+    const intentId = String(lifecycleRow("approved").intent_id);
+    const ambiguousClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [lifecycleRow("ambiguous", {
+            registration_ambiguity_reason: "send_tx_transport",
+          })],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [workflowRow("ambiguous")], rowCount: 1 }),
+    };
+    await expect(markLighterKeyRegistrationAmbiguousWith(ambiguousClient as never, {
+      intentId,
+      sessionId: INPUT.sessionId,
+      txHash: "cd".repeat(40),
+      reason: "send_tx_transport",
+    })).resolves.toMatchObject({
+      executionState: "ambiguous",
+      registrationAmbiguityReason: "send_tx_transport",
+    });
+
+    const verifiedClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [lifecycleRow("key_verified", {
+            registration_key_verified_at: NOW,
+            registration_client_checked_at: NOW,
+          })],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [workflowRow("key_verified")], rowCount: 1 }),
+    };
+    await expect(markLighterKeyRegistrationKeyVerifiedWith(verifiedClient as never, {
+      intentId,
+      sessionId: INPUT.sessionId,
+      publicKey: "ab".repeat(40),
+      verifiedAt: NOW,
+      clientCheckedAt: NOW,
+    })).resolves.toMatchObject({ executionState: "key_verified" });
+
+    const nonceClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [lifecycleRow("nonce_synchronized", {
+            registration_key_verified_at: NOW,
+            registration_client_checked_at: NOW,
+            post_registration_nonce: "1",
+            registration_nonce_synchronized_at: NOW,
+          })],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [workflowRow("nonce_synchronized")], rowCount: 1 }),
+    };
+    await expect(markLighterKeyRegistrationNonceSynchronizedWith(nonceClient as never, {
+      intentId,
+      sessionId: INPUT.sessionId,
+      nextNonce: "1",
+      synchronizedAt: NOW,
+    })).resolves.toMatchObject({
+      executionState: "nonce_synchronized",
+      postRegistrationNonce: "1",
+    });
+
+    const activeClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [lifecycleRow("active", {
+            registration_key_verified_at: NOW,
+            registration_client_checked_at: NOW,
+            post_registration_nonce: "1",
+            registration_nonce_synchronized_at: NOW,
+            registration_activated_at: NOW,
+          })],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [workflowRow("ready_to_trade")], rowCount: 1 }),
+    };
+    await expect(markLighterKeyRegistrationActiveWith(activeClient as never, {
+      intentId,
+      sessionId: INPUT.sessionId,
+      activatedAt: NOW,
+    })).resolves.toMatchObject({
+      executionState: "active",
+      registrationActivatedAt: NOW,
+    });
+  });
+
   it("migration adds only structural key-registration evidence and uniqueness guards", async () => {
     const sql = await readFile(new URL(
       "../../vex-agent/db/migrations/097_lighter_key_registration_slots.sql",
@@ -297,6 +482,18 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
 
     expect(sql).toContain("registration_nonce");
     expect(sql).toContain("281474976710655");
+    expect(sql).not.toMatch(/private_key|l1_sig|signed_payload|tx_info/i);
+  });
+
+  it("transaction-identity migration forbids storing any signature or signed payload", async () => {
+    const sql = await readFile(new URL(
+      "../../vex-agent/db/migrations/100_lighter_key_registration_transaction_identity.sql",
+      import.meta.url,
+    ), "utf8");
+
+    expect(sql).toContain("registration_tx_type = 8");
+    expect(sql).toContain("registration_tx_hash ~ '^[0-9a-f]{80}$'");
+    expect(sql).toContain("post_registration_nonce = registration_nonce + 1");
     expect(sql).not.toMatch(/private_key|l1_sig|signed_payload|tx_info/i);
   });
 });

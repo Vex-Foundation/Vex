@@ -7,8 +7,14 @@ import { closePool, execute, query } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import {
+  markLighterKeyRegistrationActiveWith,
   markLighterKeyRegistrationApprovalPendingWith,
+  markLighterKeyRegistrationApprovedWith,
   markLighterKeyGeneratedEncryptedWith,
+  markLighterKeyRegistrationKeyVerifiedWith,
+  markLighterKeyRegistrationNonceSynchronizedWith,
+  markLighterKeyRegistrationSubmittedWith,
+  markLighterKeyRegistrationTxStagedWith,
   reserveLighterApiKeySlotWith,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
@@ -182,5 +188,90 @@ d("Lighter Phase 3 API-key slot reservation database boundary", () => {
       workflow_state: "key_registration_approval_pending",
       public_key_fingerprint: generated?.publicKeyFingerprint,
     });
+
+    const approvalId = `approval-${randomUUID()}`;
+    await execute(
+      `INSERT INTO approval_queue (
+         id, tool_call, reasoning, status, session_id, permission_at_enqueue
+       ) VALUES ($1, $2::JSONB, 'phase 3 database lifecycle test', 'approved', $3, 'restricted')`,
+      [approvalId, JSON.stringify({ command: "execute_tool" }), ownerSessionId],
+    );
+    const approved = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationApprovedWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        approvalId,
+      }));
+    expect(approved?.executionState).toBe("approved");
+
+    const txHash = createHash("sha256")
+      .update(`first-${createdReservation.intentId}`)
+      .digest("hex")
+      + createHash("sha256")
+        .update(`second-${createdReservation.intentId}`)
+        .digest("hex")
+        .slice(0, 16);
+    const staged = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationTxStagedWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        txType: 8,
+        txHash,
+        expiredAt: "1893456000000",
+        stagedAt: now,
+      }));
+    expect(staged).toMatchObject({
+      executionState: "key_registration_tx_staged",
+      registrationTxHash: txHash,
+    });
+
+    const submitted = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationSubmittedWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        txHash,
+        submittedTxHash: txHash,
+        submitCode: 200,
+        predictedExecutionTimeMs: 50,
+        acceptedAt: now,
+      }));
+    expect(submitted?.executionState).toBe("change_pub_key_submitted");
+
+    const verified = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationKeyVerifiedWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        publicKey: "ab".repeat(40),
+        verifiedAt: now,
+        clientCheckedAt: now,
+      }));
+    expect(verified?.executionState).toBe("key_verified");
+
+    const synchronized = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationNonceSynchronizedWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        nextNonce: "1",
+        synchronizedAt: now,
+      }));
+    expect(synchronized).toMatchObject({
+      executionState: "nonce_synchronized",
+      postRegistrationNonce: "1",
+    });
+
+    const active = await withSessionControlLock(ownerSessionId, (client) =>
+      markLighterKeyRegistrationActiveWith(client, {
+        intentId: createdReservation.intentId,
+        sessionId: ownerSessionId,
+        activatedAt: now,
+      }));
+    expect(active?.executionState).toBe("active");
+    const finalWorkflow = await query<{ workflow_state: string }>(
+      `SELECT workflow_state
+         FROM lighter_onboarding_workflows
+        WHERE environment = 'core' AND wallet_address = LOWER($1)`,
+      [walletAddress],
+    );
+    expect(finalWorkflow[0]?.workflow_state).toBe("ready_to_trade");
   });
 });

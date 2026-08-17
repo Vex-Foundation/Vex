@@ -38,13 +38,33 @@ export interface LighterKeyRegistrationReservationRow {
     | "slot_reserved"
     | "key_generated_encrypted"
     | "approval_pending"
-    | "approved";
+    | "approved"
+    | "key_registration_tx_staged"
+    | "change_pub_key_submitted"
+    | "ambiguous"
+    | "key_verified"
+    | "nonce_synchronized"
+    | "active";
   readonly vaultCredentialId: string | null;
   readonly publicKey: string | null;
   readonly publicKeyFingerprint: string | null;
   readonly keyGeneratedAt: Date | null;
   readonly registrationNonce: string | null;
   readonly registrationNonceObservedAt: Date | null;
+  readonly registrationTxType: number | null;
+  readonly registrationTxHash: string | null;
+  readonly registrationTxExpiredAt: string | null;
+  readonly registrationTxStagedAt: Date | null;
+  readonly registrationSubmittedTxHash: string | null;
+  readonly registrationSubmitCode: number | null;
+  readonly registrationPredictedExecutionTimeMs: string | null;
+  readonly registrationSubmitAcceptedAt: Date | null;
+  readonly registrationAmbiguityReason: string | null;
+  readonly registrationKeyVerifiedAt: Date | null;
+  readonly registrationClientCheckedAt: Date | null;
+  readonly postRegistrationNonce: string | null;
+  readonly registrationNonceSynchronizedAt: Date | null;
+  readonly registrationActivatedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly expiresAt: Date;
@@ -77,6 +97,13 @@ const RETURNING = `
   slot_observation_hash, approval_status, execution_state,
   vault_credential_id, public_key, public_key_fingerprint, key_generated_at,
   registration_nonce, registration_nonce_observed_at,
+  registration_tx_type, registration_tx_hash, registration_tx_expired_at,
+  registration_tx_staged_at, registration_submitted_tx_hash,
+  registration_submit_code, registration_predicted_execution_time_ms,
+  registration_submit_accepted_at, registration_ambiguity_reason,
+  registration_key_verified_at, registration_client_checked_at,
+  post_registration_nonce, registration_nonce_synchronized_at,
+  registration_activated_at,
   created_at, updated_at, expires_at
 `;
 
@@ -385,6 +412,278 @@ export async function markLighterKeyRegistrationApprovedWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/** Persist public TxType/hash/expiry identity before sendTx can be called. */
+export async function markLighterKeyRegistrationTxStagedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly txType: number;
+    readonly txHash: string;
+    readonly expiredAt: string;
+    readonly stagedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.txType !== 8) throw new Error("Lighter key registration requires TxType 8.");
+  const txHash = normalizeRegistrationTxHash(input.txHash);
+  const expiredAt = normalizePositiveInt64(input.expiredAt, "transaction expiry");
+  assertTimestamp(input.stagedAt, "transaction staging");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'key_registration_tx_staged',
+            registration_tx_type = $3,
+            registration_tx_hash = $4,
+            registration_tx_expired_at = $5,
+            registration_tx_staged_at = $6,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state = 'approved'
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.txType, txHash, expiredAt, input.stagedAt],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+/** Record only the public sendTx acknowledgement after the network call. */
+export async function markLighterKeyRegistrationSubmittedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly txHash: string;
+    readonly submittedTxHash: string;
+    readonly submitCode: number;
+    readonly predictedExecutionTimeMs: number;
+    readonly acceptedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const txHash = normalizeRegistrationTxHash(input.txHash);
+  const submittedTxHash = normalizeRegistrationTxHash(input.submittedTxHash);
+  if (submittedTxHash !== txHash || input.submitCode !== 200) {
+    throw new Error("Lighter key registration sendTx response does not match staged identity.");
+  }
+  if (!Number.isSafeInteger(input.predictedExecutionTimeMs) || input.predictedExecutionTimeMs < 0) {
+    throw new Error("Lighter key registration predicted execution time is invalid.");
+  }
+  assertTimestamp(input.acceptedAt, "sendTx acceptance");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'change_pub_key_submitted',
+            registration_submitted_tx_hash = $4,
+            registration_submit_code = $5,
+            registration_predicted_execution_time_ms = $6,
+            registration_submit_accepted_at = $7,
+            registration_ambiguity_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state = 'key_registration_tx_staged'
+        AND registration_tx_hash = $3
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      txHash,
+      submittedTxHash,
+      input.submitCode,
+      input.predictedExecutionTimeMs,
+      input.acceptedAt,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_registration_approval_pending"],
+    nextState: "change_pub_key_submitted",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected submitted key-registration identity.");
+  }
+  return intent;
+}
+
+export async function markLighterKeyRegistrationAmbiguousWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly txHash: string;
+    readonly reason: string;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const txHash = normalizeRegistrationTxHash(input.txHash);
+  const reason = normalizeAmbiguityReason(input.reason);
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'ambiguous',
+            registration_ambiguity_reason = $4,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state IN ('key_registration_tx_staged', 'change_pub_key_submitted')
+        AND registration_tx_hash = $3
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, txHash, reason],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_registration_approval_pending", "change_pub_key_submitted"],
+    nextState: "ambiguous",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+    failureCode: reason,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected ambiguous key-registration state.");
+  }
+  return intent;
+}
+
+export async function markLighterKeyRegistrationKeyVerifiedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly publicKey: string;
+    readonly verifiedAt: Date;
+    readonly clientCheckedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const publicKey = normalizePublicKey(input.publicKey);
+  assertTimestamp(input.verifiedAt, "public-key verification");
+  assertTimestamp(input.clientCheckedAt, "official client check");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'key_verified',
+            registration_key_verified_at = $4,
+            registration_client_checked_at = $5,
+            registration_ambiguity_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state IN ('change_pub_key_submitted', 'ambiguous')
+        AND public_key = $3
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, publicKey, input.verifiedAt, input.clientCheckedAt],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["change_pub_key_submitted", "ambiguous"],
+    nextState: "key_verified",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected verified key-registration state.");
+  }
+  return intent;
+}
+
+export async function markLighterKeyRegistrationNonceSynchronizedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly nextNonce: string;
+    readonly synchronizedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  const nextNonce = normalizeRegistrationNonce(input.nextNonce);
+  assertTimestamp(input.synchronizedAt, "nonce synchronization");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'nonce_synchronized',
+            post_registration_nonce = $3,
+            registration_nonce_synchronized_at = $4,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state = 'key_verified'
+        AND $3::BIGINT = registration_nonce + 1
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, nextNonce, input.synchronizedAt],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_verified"],
+    nextState: "nonce_synchronized",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected synchronized key-registration nonce.");
+  }
+  return intent;
+}
+
+export async function markLighterKeyRegistrationActiveWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly activatedAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  assertTimestamp(input.activatedAt, "key activation");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'active',
+            registration_activated_at = $3,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state = 'nonce_synchronized'
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.activatedAt],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["nonce_synchronized"],
+    nextState: "ready_to_trade",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected active key-registration state.");
+  }
+  return intent;
+}
+
 async function findHeldReservationWith(
   client: LighterOnboardingQueryClient,
   environment: LighterEnvironment,
@@ -465,6 +764,12 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
     && row.execution_state !== "key_generated_encrypted"
     && row.execution_state !== "approval_pending"
     && row.execution_state !== "approved"
+    && row.execution_state !== "key_registration_tx_staged"
+    && row.execution_state !== "change_pub_key_submitted"
+    && row.execution_state !== "ambiguous"
+    && row.execution_state !== "key_verified"
+    && row.execution_state !== "nonce_synchronized"
+    && row.execution_state !== "active"
   ) {
     throw new Error("Lighter key registration row has an unexpected execution state.");
   }
@@ -492,6 +797,22 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
         || row.registration_nonce_observed_at === undefined
         ? null
         : row.registration_nonce_observed_at as Date,
+    registrationTxType: nullableNumber(row.registration_tx_type),
+    registrationTxHash: nullableString(row.registration_tx_hash),
+    registrationTxExpiredAt: nullableString(row.registration_tx_expired_at),
+    registrationTxStagedAt: nullableDate(row.registration_tx_staged_at),
+    registrationSubmittedTxHash: nullableString(row.registration_submitted_tx_hash),
+    registrationSubmitCode: nullableNumber(row.registration_submit_code),
+    registrationPredictedExecutionTimeMs: nullableString(
+      row.registration_predicted_execution_time_ms,
+    ),
+    registrationSubmitAcceptedAt: nullableDate(row.registration_submit_accepted_at),
+    registrationAmbiguityReason: nullableString(row.registration_ambiguity_reason),
+    registrationKeyVerifiedAt: nullableDate(row.registration_key_verified_at),
+    registrationClientCheckedAt: nullableDate(row.registration_client_checked_at),
+    postRegistrationNonce: nullableString(row.post_registration_nonce),
+    registrationNonceSynchronizedAt: nullableDate(row.registration_nonce_synchronized_at),
+    registrationActivatedAt: nullableDate(row.registration_activated_at),
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     expiresAt: row.expires_at as Date,
@@ -517,6 +838,47 @@ function normalizePublicKey(value: string): string {
   return publicKey;
 }
 
+function normalizeRegistrationTxHash(value: string): string {
+  const txHash = value.trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{80}$/.test(txHash)) {
+    throw new Error("Lighter key registration requires a canonical 40-byte transaction hash.");
+  }
+  return txHash;
+}
+
+function normalizePositiveInt64(value: string, field: string): string {
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error(`Lighter key registration ${field} must be a positive canonical integer.`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > (1n << 63n) - 1n) {
+    throw new Error(`Lighter key registration ${field} exceeds the int64 range.`);
+  }
+  return parsed.toString();
+}
+
+function normalizeAmbiguityReason(value: string): string {
+  const reason = value.trim().toLowerCase();
+  if (!/^[a-z0-9_.-]{1,80}$/.test(reason)) {
+    throw new Error("Lighter key registration ambiguity reason is invalid.");
+  }
+  return reason;
+}
+
+function assertTimestamp(value: Date, field: string): void {
+  if (!Number.isFinite(value.getTime())) {
+    throw new Error(`Lighter key registration ${field} timestamp is invalid.`);
+  }
+}
+
 function nullableString(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
+}
+
+function nullableNumber(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+function nullableDate(value: unknown): Date | null {
+  return value === null || value === undefined ? null : value as Date;
 }
