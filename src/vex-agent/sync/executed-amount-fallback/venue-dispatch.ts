@@ -37,6 +37,7 @@
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
 import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
+import { decodeMorphoSettlement } from "../morpho-settlement-decoder.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
 import { getAddress, type Address } from "viem";
 import {
@@ -98,6 +99,7 @@ export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<Ve
   const protocol = input.row.protocol?.toLowerCase() ?? "";
   if (protocol === "kyberswap") return decodeKyberRow(input);
   if (protocol === "trench") return decodeTrenchRow(input);
+  if (protocol === "morpho") return decodeMorphoRow(input);
   if ((protocol === "relay" || protocol === "khalani") && input.row.eventRole === "bridge_deposit") {
     return decodeBridgeDepositRow(input);
   }
@@ -310,6 +312,53 @@ async function decodeTrenchRow(input: VenueDecodeInput): Promise<VenueDecodeResu
     amounts: {
       executedAmountInRaw: decoded.tokensInRaw.toString(),
       executedAmountOutRaw: decoded.ethOutRaw.toString(),
+    },
+  };
+}
+
+/**
+ * A Morpho vault lend confirmed without amounts. The venue's own decoder owns
+ * what the logs mean (`sync/morpho-settlement-decoder.ts`); this branch only
+ * resolves its inputs from the row's validated columns.
+ *
+ * No chain read is needed and none is taken, so this branch never DEFERS. A
+ * Morpho settlement is provable from the receipt's own Transfer logs alone: both
+ * legs are ERC-20 movements of the wallet itself, neither operation carries
+ * native value, and the row already records the tokens and the amounts that
+ * bound them. The persisted `routerAddress` hint is deliberately not consulted
+ * either - the decode is wallet-relative rather than router-relative, so binding
+ * it to the target would add a condition without adding proof.
+ *
+ * The `allowance` and `allowance_reset` rows a Morpho execution also writes
+ * reach here too, and the decoder declines them by role: an approval moves
+ * nothing, so no net delta could confirm one.
+ */
+function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
+  const { row } = input;
+  if (!row.walletAddress) {
+    return { kind: "declined", reason: "amounts_undecodable", detail: "the row carries no wallet address" };
+  }
+  const decoded = decodeMorphoSettlement({
+    logs: input.logs,
+    walletAddress: row.walletAddress,
+    eventRole: row.eventRole,
+    tokenInAddress: row.tokenInAddress,
+    tokenOutAddress: row.tokenOutAddress,
+    amountInRaw: row.amountInRaw,
+    amountOutRaw: row.amountOutRaw,
+  });
+  if (decoded === null) {
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: `the receipt does not prove both legs of this morpho ${row.eventRole} within its recorded bounds`,
+    };
+  }
+  return {
+    kind: "decoded",
+    amounts: {
+      executedAmountInRaw: decoded.executedAmountInRaw,
+      executedAmountOutRaw: decoded.executedAmountOutRaw,
     },
   };
 }
