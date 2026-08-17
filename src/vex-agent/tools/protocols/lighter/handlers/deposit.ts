@@ -155,6 +155,8 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
     case "approval_pending":
     case "prepared":
       return "Wait for the user to approve or reject the existing approval card.";
+    case "slot_reserved":
+      return "This is a key-registration reservation, not a deposit state. Continue only through the dedicated key-registration flow.";
     case "approved":
     case "allowance_verified":
     case "approve_submitted":
