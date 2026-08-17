@@ -53,7 +53,8 @@ interface WorkflowRow {
   readonly workflow_state: LighterOnboardingWorkflowState;
   readonly last_stable_state: LighterOnboardingWorkflowState | null;
   readonly active_deposit_intent_id: string | null;
-  readonly resolved_account_index: number | null;
+  /** PostgreSQL BIGINT values are returned as strings by node-postgres. */
+  readonly resolved_account_index: string | number | null;
   readonly api_key_index: number | null;
   readonly public_key_fingerprint: string | null;
   readonly failure_code: string | null;
@@ -190,12 +191,42 @@ function mapRow(row: WorkflowRow): LighterOnboardingWorkflowRow {
     workflowState: row.workflow_state,
     lastStableState: row.last_stable_state,
     activeDepositIntentId: row.active_deposit_intent_id,
-    resolvedAccountIndex: row.resolved_account_index,
-    apiKeyIndex: row.api_key_index,
+    resolvedAccountIndex: readNullableSafeInteger(
+      row.resolved_account_index,
+      "resolved_account_index",
+      0,
+    ),
+    apiKeyIndex: readNullableSafeInteger(row.api_key_index, "api_key_index", 4, 254),
     publicKeyFingerprint: row.public_key_fingerprint,
     failureCode: row.failure_code,
-    revision: Number(row.revision),
+    revision: readSafeInteger(row.revision, "revision", 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function readNullableSafeInteger(
+  value: string | number | null,
+  field: string,
+  minimum: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number | null {
+  return value === null ? null : readSafeInteger(value, field, minimum, maximum);
+}
+
+function readSafeInteger(
+  value: string | number,
+  field: string,
+  minimum: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number {
+  const parsed = typeof value === "number"
+    ? value
+    : /^(?:0|[1-9][0-9]*)$/.test(value)
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`Lighter onboarding workflow ${field} is not a safe integer.`);
+  }
+  return parsed;
 }

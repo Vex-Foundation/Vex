@@ -152,6 +152,54 @@ describe("Lighter onboarding workflow foundation", () => {
     ]);
   });
 
+  it("maps PostgreSQL BIGINT account indices into validated JavaScript integers", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{
+          ...row("ready_to_trade"),
+          resolved_account_index: "737810",
+          api_key_index: 4,
+          revision: "7",
+        }],
+        rowCount: 1,
+      }),
+    };
+
+    const result = await transitionLighterOnboardingWorkflowWith(client as never, {
+      environment: "core",
+      walletAddress: WALLET,
+      expectedStates: ["nonce_synchronized"],
+      nextState: "ready_to_trade",
+    });
+
+    expect(result).toMatchObject({
+      resolvedAccountIndex: 737810,
+      apiKeyIndex: 4,
+      revision: 7,
+    });
+  });
+
+  it("rejects an unsafe PostgreSQL BIGINT account index", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{
+          ...row("account_resolved"),
+          resolved_account_index: "9007199254740992",
+        }],
+        rowCount: 1,
+      }),
+    };
+
+    await expect(
+      transitionLighterOnboardingWorkflowWith(client as never, {
+        environment: "core",
+        walletAddress: WALLET,
+        expectedStates: ["deposit_l2_pending"],
+        nextState: "account_resolved",
+      }),
+    ).rejects.toThrow("resolved_account_index is not a safe integer");
+  });
+
   it("returns null when another writer already changed the expected state", async () => {
     const client = {
       query: vi.fn().mockResolvedValueOnce({ rows: [], rowCount: 0 }),
