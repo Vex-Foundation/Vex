@@ -182,7 +182,7 @@ beforeEach(() => {
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
   mocks.readDepositPreflight.mockResolvedValue({
-    observedAt: new Date("2030-01-01T00:00:00.000Z"),
+    observedAt: new Date(),
     walletAddress: WALLET,
     chainId: 1,
     ethereumBlockNumber: "23456789",
@@ -388,6 +388,24 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
     expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
+  });
+
+  it("revalidates live fee exposure before lease acquisition and key resolution", async () => {
+    mocks.readDepositPreflight.mockResolvedValueOnce({
+      ...(await mocks.readDepositPreflight()),
+      observedAt: new Date(),
+      maxFeePerGasWei: "20000000001",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("exceeds the user's approved ceiling");
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
   it("holds the lease across execution and always releases it", async () => {

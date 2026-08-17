@@ -34,6 +34,9 @@ function makeClients(opts: {
   /** Per-attempt estimate script (a bigint resolves, an Error rejects) — overrides the options above. */
   estimateScript?: Array<bigint | Error>;
   preparedGasOverride?: bigint;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  preparedMaxFeePerGasOverride?: bigint;
   headBlock?: bigint;
 } = {}) {
   const calls: string[] = [];
@@ -59,6 +62,10 @@ function makeClients(opts: {
       if (opts.estimateThrows) throw new Error("execution reverted: Call failed");
       return opts.gasEstimate ?? 100_000n;
     }),
+    estimateFeesPerGas: vi.fn(async () => ({
+      maxFeePerGas: opts.maxFeePerGas ?? 20_000_000_000n,
+      maxPriorityFeePerGas: opts.maxPriorityFeePerGas ?? 2_000_000_000n,
+    })),
     sendRawTransaction: vi.fn(async () => {
       calls.push("sendRawTransaction");
       if (opts.sendThrows) throw new Error("network down");
@@ -90,6 +97,12 @@ function makeClients(opts: {
         // `undefined` unless a test simulates viem's `wallet_fillTransaction`
         // path replacing the requested gas with the node's own figure.
         ...(opts.preparedGasOverride === undefined ? {} : { gas: opts.preparedGasOverride }),
+        ...(request.maxFeePerGas === undefined
+          ? {}
+          : { maxFeePerGas: opts.preparedMaxFeePerGasOverride ?? request.maxFeePerGas }),
+        ...(request.maxPriorityFeePerGas === undefined
+          ? {}
+          : { maxPriorityFeePerGas: request.maxPriorityFeePerGas }),
       };
     }),
     signTransaction: vi.fn(async (request: Record<string, unknown>) => {
@@ -301,6 +314,77 @@ describe("signStageBroadcast gas limit", () => {
     // No confirmed prior leg was supplied, so there is no stale-state
     // hypothesis: one attempt, the node's error, done.
     expect(calls.filter((c) => c === "estimateGas")).toHaveLength(1);
+  });
+});
+
+describe("signStageBroadcast approval-bound fee exposure", () => {
+  const ceiling = {
+    gasLimit: 200_000n,
+    maxFeePerGas: 20_000_000_000n,
+    maxPriorityFeePerGas: 2_000_000_000n,
+    maxNetworkFeeWei: 4_000_000_000_000_000n,
+  };
+
+  it("serializes only the live EIP-1559 fees proven within the approved ceiling", async () => {
+    const { publicClient, walletClient, signedRequests } = makeClients();
+
+    await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(signedRequests[0]).toMatchObject({
+      gas: 200_000n,
+      maxFeePerGas: 20_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+    });
+  });
+
+  it.each([
+    ["gas", { gasEstimate: 100_001n }],
+    ["max fee", { maxFeePerGas: 20_000_000_001n }],
+    ["priority fee", { maxPriorityFeePerGas: 2_000_000_001n }],
+  ])("refuses increased %s before signing, staging, or broadcasting", async (_name, options) => {
+    const { publicClient, walletClient, calls } = makeClients(options);
+    const h = hooks();
+
+    await expect(signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      h,
+      undefined,
+      undefined,
+      ceiling,
+    )).rejects.toThrow(/approved transaction ceiling/);
+
+    expect(h.onHashStaged).not.toHaveBeenCalled();
+    expect(calls).not.toContain("signTransaction");
+    expect(calls).not.toContain("sendRawTransaction");
+  });
+
+  it("refuses a preparation result that raises the approved maximum fee", async () => {
+    const { publicClient, walletClient, calls } = makeClients({
+      preparedMaxFeePerGasOverride: 20_000_000_001n,
+    });
+
+    await expect(signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    )).rejects.toThrow(/prepared EIP-1559 fees/);
+
+    expect(calls).not.toContain("signTransaction");
+    expect(calls).not.toContain("sendRawTransaction");
   });
 });
 

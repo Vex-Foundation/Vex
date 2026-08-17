@@ -23,6 +23,7 @@ import {
   isLighterDepositFeePreflightComplete,
   readLighterDepositPreflight,
 } from "@tools/lighter/wallet-funding/deposit-preflight.js";
+import { assertLighterDepositPreflightWithinApproval } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { buildLighterDepositExecutionDeps } from "@tools/lighter/wallet-funding/deposit-execution-deps.js";
 import {
@@ -485,6 +486,23 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         intentId: approved.intentId,
         executionState: approved.executionState,
       });
+    }
+    try {
+      if (approved.amountUnits === null || !/^[1-9][0-9]*$/.test(approved.amountUnits)) {
+        throw new Error("The approved deposit amount is missing or invalid.");
+      }
+      const fresh = await readLighterDepositPreflight({
+        walletAddress: approved.walletAddress,
+        amountUnits: BigInt(approved.amountUnits),
+        routeType: approved.routeType ?? LIGHTER_DEPOSIT_ROUTE_TYPE.perps,
+      });
+      assertLighterDepositPreflightWithinApproval({
+        intent: approved,
+        fresh,
+        stage: "execution",
+      });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
     }
 
     const lease = await acquireLighterDepositExecutionLease({

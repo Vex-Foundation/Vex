@@ -19,6 +19,11 @@ import {
 } from "./deposit-evidence.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
+  approvedFeeCeiling,
+  type LighterDepositPreSignStage,
+  type LighterDepositSignedFeeCeiling,
+} from "./deposit-pre-sign.js";
+import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_DEPOSIT_CHAIN_ID,
@@ -51,6 +56,11 @@ export interface LighterDepositExecutionDeps {
   readonly depositFeePreflightComplete: () => boolean;
   /** Re-prove the cross-process chain-wallet execution lease before each leg. */
   readonly assertExecutionLease: () => Promise<void>;
+  /** Fresh public-only revalidation at the signer-adjacent boundary. */
+  readonly assertFreshPreSignPreflight: (
+    intent: LighterOnboardingIntentRow,
+    stage: LighterDepositPreSignStage,
+  ) => Promise<void>;
   /**
    * Run the ERC-20 approval leg if the deposit contract's allowance is short.
    * `onHashStaged` is called with the tx hash BEFORE broadcast so the caller
@@ -61,6 +71,7 @@ export interface LighterDepositExecutionDeps {
     readonly walletAddress: string;
     readonly spender: string;
     readonly amountUnits: bigint;
+    readonly feeCeiling: LighterDepositSignedFeeCeiling;
     readonly onHashStaged: (txHash: string) => Promise<void>;
   }) => Promise<
     | { readonly skipped: true }
@@ -78,6 +89,7 @@ export interface LighterDepositExecutionDeps {
     readonly to: string;
     readonly data: string;
     readonly confirmedApprovalBlockNumber?: bigint;
+    readonly feeCeiling: LighterDepositSignedFeeCeiling;
     readonly onHashStaged: (txHash: string) => Promise<void>;
   }) => Promise<{
     readonly txHash: string;
@@ -142,6 +154,8 @@ export async function executeApprovedLighterDeposit(input: {
 
   let amountUnits: bigint;
   let calldata: ReturnType<typeof buildLighterDepositCalldata>;
+  let approveFeeCeiling: LighterDepositSignedFeeCeiling;
+  let depositFeeCeiling: LighterDepositSignedFeeCeiling;
   try {
     if (!/^[1-9][0-9]*$/.test(intent.amountUnits)) {
       throw new Error("Deposit amount is not a positive integer.");
@@ -154,6 +168,8 @@ export async function executeApprovedLighterDeposit(input: {
       route: "perps",
       assetIndex: intent.assetIndex,
     });
+    approveFeeCeiling = approvedFeeCeiling(intent, "approve");
+    depositFeeCeiling = approvedFeeCeiling(intent, "deposit");
   } catch (err) {
     return { status: "failed", stage: "approve", reason: errText(err) };
   }
@@ -163,10 +179,12 @@ export async function executeApprovedLighterDeposit(input: {
   let confirmedApprovalBlockNumber: bigint | undefined;
   try {
     await deps.assertExecutionLease();
+    await deps.assertFreshPreSignPreflight(intent, "approve");
     const approve = await deps.runApproveLegIfNeeded({
       walletAddress: intent.walletAddress,
       spender: intent.depositContract,
       amountUnits,
+      feeCeiling: approveFeeCeiling,
       onHashStaged: async (hash) => {
         approveTxHash = hash;
         const staged = await tryTransition(() =>
@@ -252,11 +270,13 @@ export async function executeApprovedLighterDeposit(input: {
   let depositEvidence: LighterDepositL1Evidence | null = null;
   try {
     await deps.assertExecutionLease();
+    await deps.assertFreshPreSignPreflight(intent, "deposit");
     const deposit = await deps.runDepositLeg({
       walletAddress: intent.walletAddress,
       to: calldata.to,
       data: calldata.data,
       confirmedApprovalBlockNumber,
+      feeCeiling: depositFeeCeiling,
       onHashStaged: async (hash) => {
         depositTxHash = hash;
         const staged = await tryTransition(() =>

@@ -55,6 +55,14 @@ export interface StagedTxParams {
   readonly value?: bigint;
 }
 
+/** Approval-visible hard ceilings enforced on the transaction being signed. */
+export interface StagedFeeExposureLimit {
+  readonly gasLimit: bigint;
+  readonly maxFeePerGas: bigint;
+  readonly maxPriorityFeePerGas: bigint;
+  readonly maxNetworkFeeWei: bigint;
+}
+
 /** Persisted BEFORE the signed payload is broadcast. */
 export interface StagedSendHandles {
   readonly txHash: Hex;
@@ -120,6 +128,7 @@ export async function signStageBroadcast(
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
+  feeExposureLimit?: StagedFeeExposureLimit,
 ): Promise<StagedBroadcastOutcome> {
   const account = walletClient.account;
   const value = txParams.value ?? 0n;
@@ -137,6 +146,25 @@ export async function signStageBroadcast(
 
   const gasLimit = gasLimitWithHeadroom(gasEstimate);
 
+  let signedFees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | undefined;
+  if (feeExposureLimit !== undefined) {
+    const estimatedFees = await publicClient.estimateFeesPerGas({
+      chain: publicClient.chain,
+      type: "eip1559",
+    });
+    if (
+      gasLimit > feeExposureLimit.gasLimit
+      || estimatedFees.maxFeePerGas > feeExposureLimit.maxFeePerGas
+      || estimatedFees.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+      || gasLimit * estimatedFees.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
+    ) {
+      throw new Error(
+        "Refusing to sign: live gas or EIP-1559 fees exceed the approved transaction ceiling.",
+      );
+    }
+    signedFees = estimatedFees;
+  }
+
   const request = await walletClient.prepareTransactionRequest({
     account,
     chain: walletClient.chain,
@@ -144,18 +172,45 @@ export async function signStageBroadcast(
     data: txParams.data,
     value,
     gas: gasLimit,
+    ...signedFees,
   });
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
-  const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
-  const txHash = keccak256(serializedTransaction);
+  if (
+    feeExposureLimit !== undefined
+    && (
+      request.maxFeePerGas === undefined
+      || request.maxPriorityFeePerGas === undefined
+      || request.maxFeePerGas > feeExposureLimit.maxFeePerGas
+      || request.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+      || gasLimit * request.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
+    )
+  ) {
+    throw new Error(
+      "Refusing to sign: prepared EIP-1559 fees exceed the approved transaction ceiling.",
+    );
+  }
   const nonce = request.nonce;
   if (nonce === undefined) {
     throw new Error("signStageBroadcast: prepared transaction request has no nonce");
   }
+  const serializedTransaction = signedFees === undefined
+    ? await walletClient.signTransaction({ ...request, gas: gasLimit })
+    : await walletClient.signTransaction({
+        account,
+        chain: walletClient.chain,
+        type: "eip1559",
+        nonce,
+        to: txParams.to,
+        data: txParams.data,
+        value,
+        gas: gasLimit,
+        ...signedFees,
+      });
+  const txHash = keccak256(serializedTransaction);
 
   await hooks.onHashStaged({
     txHash,

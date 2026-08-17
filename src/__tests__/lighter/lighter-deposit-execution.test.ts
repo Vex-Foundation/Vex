@@ -126,6 +126,7 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
     depositGateEnabled: () => true,
     depositFeePreflightComplete: () => true,
     assertExecutionLease: vi.fn().mockResolvedValue(undefined),
+    assertFreshPreSignPreflight: vi.fn().mockResolvedValue(undefined),
     runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
       await onHashStaged(APPROVE_HASH);
       return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
@@ -178,6 +179,20 @@ describe("executeApprovedLighterDeposit", () => {
     expect(d.runDepositLeg).not.toHaveBeenCalled();
   });
 
+  it("does not start the approval leg when signer-adjacent revalidation fails", async () => {
+    const d = deps({
+      assertFreshPreSignPreflight: vi.fn().mockRejectedValue(
+        new Error("live fee exceeds approved ceiling"),
+      ),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
   it("stages each tx hash before broadcast and stops at Lighter credit pending", async () => {
     const d = deps();
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
@@ -185,6 +200,24 @@ describe("executeApprovedLighterDeposit", () => {
     // Hash persisted (markApproveSubmitted/markDepositSubmitted) via onHashStaged.
     expect(d.intents.markApproveSubmitted).toHaveBeenCalledWith("lighter-onboard-1", APPROVE_HASH);
     expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith("lighter-onboard-1", DEPOSIT_HASH);
+    expect(d.runApproveLegIfNeeded).toHaveBeenCalledWith(expect.objectContaining({
+      feeCeiling: {
+        gasLimit: 100000n,
+        maxFeePerGas: 20000000000n,
+        maxPriorityFeePerGas: 2000000000n,
+        maxNetworkFeeWei: 2000000000000000n,
+      },
+    }));
+    expect(d.runDepositLeg).toHaveBeenCalledWith(expect.objectContaining({
+      feeCeiling: {
+        gasLimit: 200000n,
+        maxFeePerGas: 20000000000n,
+        maxPriorityFeePerGas: 2000000000n,
+        maxNetworkFeeWei: 4000000000000000n,
+      },
+    }));
+    expect(d.assertFreshPreSignPreflight).toHaveBeenNthCalledWith(1, expect.anything(), "approve");
+    expect(d.assertFreshPreSignPreflight).toHaveBeenNthCalledWith(2, expect.anything(), "deposit");
   });
 
   it("skips the approve broadcast when allowance already suffices", async () => {

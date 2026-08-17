@@ -35,7 +35,12 @@ import {
   projectLighterDepositReceipt,
   type LighterDepositReceipt,
 } from "./deposit-evidence.js";
-import { LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE } from "./deposit-preflight.js";
+import {
+  LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE,
+  readLighterDepositPreflight,
+} from "./deposit-preflight.js";
+import { assertLighterDepositPreflightWithinApproval } from "./deposit-pre-sign.js";
+import type { LighterDepositSignedFeeCeiling } from "./deposit-pre-sign.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
   {
@@ -87,8 +92,25 @@ export function buildLighterDepositExecutionDeps(
     depositGateEnabled: () => LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled(),
     depositFeePreflightComplete: () => LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE,
     assertExecutionLease: input.assertExecutionLease,
+    async assertFreshPreSignPreflight(intent, stage) {
+      if (intent.amountUnits === null || !/^[1-9][0-9]*$/.test(intent.amountUnits)) {
+        throw new Error("The approved Lighter deposit amount is missing or invalid.");
+      }
+      const fresh = await readLighterDepositPreflight({
+        walletAddress: intent.walletAddress,
+        amountUnits: BigInt(intent.amountUnits),
+        routeType: intent.routeType ?? 0,
+      });
+      assertLighterDepositPreflightWithinApproval({ intent, fresh, stage });
+    },
 
-    async runApproveLegIfNeeded({ walletAddress, spender, amountUnits, onHashStaged }) {
+    async runApproveLegIfNeeded({
+      walletAddress,
+      spender,
+      amountUnits,
+      feeCeiling,
+      onHashStaged,
+    }) {
       await input.assertExecutionLease();
       const owner = getAddress(walletAddress);
       const spenderAddr = getAddress(spender);
@@ -107,7 +129,13 @@ export function buildLighterDepositExecutionDeps(
         functionName: "approve",
         args: [spenderAddr, amountUnits],
       });
-      const outcome = await runStaged(clients, { to: usdc, data, value: 0n }, onHashStaged);
+      const outcome = await runStaged(
+        clients,
+        { to: usdc, data, value: 0n },
+        onHashStaged,
+        undefined,
+        feeCeiling,
+      );
       return {
         skipped: false,
         txHash: outcome.txHash,
@@ -117,13 +145,20 @@ export function buildLighterDepositExecutionDeps(
       };
     },
 
-    async runDepositLeg({ to, data, confirmedApprovalBlockNumber, onHashStaged }) {
+    async runDepositLeg({
+      to,
+      data,
+      confirmedApprovalBlockNumber,
+      feeCeiling,
+      onHashStaged,
+    }) {
       await input.assertExecutionLease();
       const outcome = await runStaged(
         clients,
         { to: getAddress(to), data: data as Hex, value: 0n },
         onHashStaged,
         confirmedApprovalBlockNumber,
+        feeCeiling,
       );
       return {
         txHash: outcome.txHash,
@@ -159,6 +194,7 @@ async function runStaged(
   tx: { readonly to: Address; readonly data: Hex; readonly value: bigint },
   onHashStaged: (txHash: string) => Promise<void>,
   confirmedPriorBlockNumber?: bigint,
+  feeCeiling?: LighterDepositSignedFeeCeiling,
 ): Promise<{
   readonly txHash: string;
   readonly outcome: LegOutcome;
@@ -176,6 +212,8 @@ async function runStaged(
       onAccepted: async () => {},
     },
     priorLegAnchorFrom(confirmedPriorBlockNumber),
+    undefined,
+    feeCeiling,
   );
   if (result.kind === "confirmed") {
     return { txHash: result.txHash, outcome: "confirmed", receipt: result.receipt };

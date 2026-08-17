@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readLighterDepositPreflight } from "@tools/lighter/wallet-funding/deposit-preflight.js";
+import { assertLighterDepositPreflightWithinApproval } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
@@ -45,5 +46,29 @@ d("Lighter live read-only deposit preflight", () => {
     expect(BigInt(snapshot.walletNativeBalanceWei)).toBeGreaterThanOrEqual(
       BigInt(snapshot.requiredNativeBalanceWei),
     );
+    const approved = {
+      walletAddress: snapshot.walletAddress,
+      chainId: snapshot.chainId,
+      depositContract: snapshot.gatewayAddress,
+      depositTo: snapshot.walletAddress,
+      assetIndex: snapshot.assetIndex,
+      routeType: snapshot.routeType,
+      amountUnits: snapshot.amountUnits,
+      settlementTokenAddress: snapshot.settlementTokenAddress,
+      settlementTokenSymbol: snapshot.settlementTokenSymbol,
+      settlementTokenDecimals: snapshot.settlementTokenDecimals,
+      preflightEthereumBlockNumber: snapshot.ethereumBlockNumber,
+      preflightApproveGasLimit: snapshot.approveGasLimit,
+      preflightDepositGasLimit: snapshot.depositGasLimit,
+      preflightMaxFeePerGasWei: snapshot.maxFeePerGasWei,
+      preflightMaxPriorityFeePerGasWei: snapshot.maxPriorityFeePerGasWei,
+      preflightApproveMaxFeeWei: snapshot.approveMaxFeeWei,
+      preflightDepositMaxFeeWei: snapshot.depositMaxFeeWei,
+    };
+    expect(() => assertLighterDepositPreflightWithinApproval({
+      intent: approved,
+      fresh: snapshot,
+      stage: "execution",
+    })).not.toThrow();
   }, 60_000);
 });
