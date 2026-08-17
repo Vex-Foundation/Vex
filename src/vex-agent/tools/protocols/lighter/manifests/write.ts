@@ -52,6 +52,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, DEPOSIT_AMOUNT_PARAM],
     exampleParams: { environment: "core", amountIn: "11" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit.prepare"],
   },
   {
     toolId: "lighter.deposit",
@@ -63,6 +64,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "user_wallet_broadcast",
     params: [DEPOSIT_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-onboard-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit"],
   },
   {
     toolId: "lighter.order.create.prepare",

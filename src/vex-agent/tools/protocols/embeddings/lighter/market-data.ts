@@ -2,6 +2,18 @@ import type { ToolDiscoveryMetadata } from "../../types.js";
 import { embeddingText } from "../../_embedding-text.js";
 
 export const LIGHTER_MARKET_DATA_DISCOVERY = {
+  "lighter.account.onboarding.status": {
+    embeddingText: embeddingText(
+      `Inspect whether the selected Vex EVM wallet is ready to trade on Lighter Core and compute the minimal onboarding legs still required. ` +
+      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, or before preparing a deposit. It reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
+      `Example queries: can this wallet trade on Lighter, what remains to onboard Lighter, check my Lighter account readiness.`,
+    ),
+    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "lighter wallet setup"],
+    exampleIntents: ["can this wallet trade on Lighter", "what remains to onboard Lighter", "check my Lighter account readiness"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.system": {
     embeddingText: embeddingText(
       `Read public Lighter system status and exchange configuration for Core or Robinhood Chain, including network id, status timestamp, public pool indexes, cooldown periods, and integrator fee ceilings. ` +
@@ -158,6 +170,42 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.deposit.prepare": {
+    embeddingText: embeddingText(
+      `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
+      `Use when: the user wants to fund or create their Lighter account after checking onboarding and deposit status. This step only creates durable intent state and a precise approval card; it does not read a private key, sign, or broadcast. ` +
+      `Example queries: prepare 11 USDC for Lighter, fund my Lighter account, create my Lighter account with a deposit.`,
+    ),
+    aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet"],
+    exampleIntents: ["prepare 11 USDC for Lighter", "fund my Lighter account", "create my Lighter account with a deposit"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.deposit": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact prepared Lighter Core deposit. ` +
+      `Only the trusted approval runtime may invoke it after the user approves the deposit card. When the privileged release gate is open it can sign and broadcast Ethereum approval and deposit transactions, so it must never be called directly or used as a status check. ` +
+      `Example queries: execute approved Lighter deposit intent, resume Lighter deposit approval.`,
+    ),
+    aliases: ["approved lighter deposit", "lighter deposit execute", "resume lighter funding approval"],
+    exampleIntents: ["execute approved Lighter deposit intent", "resume Lighter deposit approval"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
+  "lighter.deposit.status": {
+    embeddingText: embeddingText(
+      `Inspect this Vex wallet's durable Lighter deposit intent state without signing or broadcasting. ` +
+      `Use when: a deposit is pending or ambiguous, the user asks what happened, or a new deposit is blocked by an unresolved intent. Returns staged transaction hashes, execution state, credited account index when known, and safe next-action guidance. It never retries or replaces a transaction. ` +
+      `Example queries: what happened to my Lighter deposit, check Lighter funding status, is my Lighter deposit stuck.`,
+    ),
+    aliases: ["lighter deposit status", "lighter funding status", "lighter deposit stuck", "check lighter deposit"],
+    exampleIntents: ["what happened to my Lighter deposit", "check Lighter funding status", "is my Lighter deposit stuck"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.order.status": {
     embeddingText: embeddingText(
       `Check and reconcile the true state of Vex-submitted Lighter orders from provider evidence and provable nonce facts. ` +
@@ -212,7 +260,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 16;
+const EXPECTED_COUNT = 20;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

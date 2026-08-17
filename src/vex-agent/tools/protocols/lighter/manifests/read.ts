@@ -246,7 +246,9 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, ONBOARDING_WALLET_ADDRESS_PARAM, ONBOARDING_REQUIRED_COLLATERAL_PARAM],
-    exampleParams: { environment: "core", requiredCollateral: "11" },
+    exampleParams: { environment: "core", amountIn: "11" },
+    discovery:
+      LIGHTER_MARKET_DATA_DISCOVERY["lighter.account.onboarding.status"],
   },
   {
     toolId: "lighter.system",
@@ -413,6 +415,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       },
     ],
     exampleParams: { environment: "core" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit.status"],
   },
   {
     toolId: "lighter.order.status",

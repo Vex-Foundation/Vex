@@ -12,6 +12,7 @@ import { LIGHTER_HANDLERS } from "@vex-agent/tools/protocols/lighter/handlers.js
 import { LIGHTER_TOOLS } from "@vex-agent/tools/protocols/lighter/manifest.js";
 
 const LIGHTER_TOOL_IDS = [
+  "lighter.account.onboarding.status",
   "lighter.system",
   "lighter.markets",
   "lighter.market.get",
@@ -22,10 +23,13 @@ const LIGHTER_TOOL_IDS = [
   "lighter.trades",
   "lighter.apiKeys.inspect",
   "lighter.order.preview",
+  "lighter.deposit.status",
   "lighter.order.status",
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.deposit.prepare",
+  "lighter.deposit",
   "lighter.order.create.prepare",
   "lighter.order.create",
 ] as const;
@@ -102,7 +106,14 @@ describe("Lighter agent discovery surface", () => {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("external_post");
         expect(tool.requiredParams).toContain("intentId");
-      } else if (tool.toolId === "lighter.order.create.prepare") {
+      } else if (tool.toolId === "lighter.deposit") {
+        expect(tool.mutating).toBe(true);
+        expect(tool.actionKind).toBe("user_wallet_broadcast");
+        expect(tool.requiredParams).toContain("intentId");
+      } else if (
+        tool.toolId === "lighter.order.create.prepare"
+        || tool.toolId === "lighter.deposit.prepare"
+      ) {
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("approval_prepare");
       } else {
@@ -157,6 +168,28 @@ describe("Lighter agent discovery surface", () => {
 
     expect(result.success).toBe(true);
     expect(result.tools.map((tool) => tool.toolId)).toContain("lighter.order.create.prepare");
+  });
+
+  it("recalls deposit preparation and status as separate capabilities", async () => {
+    const prepare = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "prepare a lighter deposit to fund and onboard my wallet",
+      limit: 5,
+    });
+    expect(prepare.success).toBe(true);
+    expect(prepare.tools.map((tool) => tool.toolId)).toContain(
+      "lighter.deposit.prepare",
+    );
+
+    const status = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "my lighter deposit is stuck or ambiguous check funding status",
+      limit: 5,
+    });
+    expect(status.success).toBe(true);
+    expect(status.tools.map((tool) => tool.toolId)).toContain(
+      "lighter.deposit.status",
+    );
   });
 
   it("recalls Lighter tools from natural market-data queries", async () => {
