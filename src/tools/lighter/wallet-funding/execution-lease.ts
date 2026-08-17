@@ -11,7 +11,7 @@ export interface LighterDepositExecutionLeaseHandle {
   /** Re-prove ownership and extend the lease before a privileged leg. */
   assertOwned(): Promise<void>;
   /** Idempotent owner-guarded release. */
-  release(): Promise<void>;
+  releaseExecutionLease(): Promise<void>;
 }
 
 export type AcquireLighterDepositExecutionLeaseResult =
@@ -79,7 +79,7 @@ export async function acquireLighterDepositExecutionLease(input: {
           );
         }
       },
-      async release(): Promise<void> {
+      async releaseExecutionLease(): Promise<void> {
         if (closed) return;
         closed = true;
         clearInterval(timer);

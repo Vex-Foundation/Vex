@@ -55,8 +55,8 @@ describe("Lighter deposit execution lease handle", () => {
     if (!result.acquired) return;
 
     await result.handle.assertOwned();
-    await result.handle.release();
-    await result.handle.release();
+    await result.handle.releaseExecutionLease();
+    await result.handle.releaseExecutionLease();
 
     const acquireInput = mocks.acquire.mock.calls[0]![0];
     expect(acquireInput.ownerId).toMatch(/^lighter-deposit:/);
@@ -94,7 +94,7 @@ describe("Lighter deposit execution lease handle", () => {
     if (!result.acquired) return;
 
     await expect(result.handle.assertOwned()).rejects.toThrow("execution lease was lost");
-    await result.handle.release();
+    await result.handle.releaseExecutionLease();
   });
 
   it("heartbeats the lease while confirmation is in progress", async () => {
@@ -108,6 +108,6 @@ describe("Lighter deposit execution lease handle", () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mocks.renew).toHaveBeenCalledTimes(1);
-    await result.handle.release();
+    await result.handle.releaseExecutionLease();
   });
 });

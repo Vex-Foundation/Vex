@@ -321,7 +321,7 @@ describe("lighter.deposit execution lease", () => {
       acquired: true,
       handle: {
         assertOwned: mocks.leaseAssertOwned,
-        release: mocks.leaseRelease,
+        releaseExecutionLease: mocks.leaseRelease,
       },
     });
     mocks.resolveSigningWallet.mockReturnValue({
@@ -365,7 +365,7 @@ describe("lighter.deposit execution lease", () => {
       acquired: true,
       handle: {
         assertOwned: mocks.leaseAssertOwned,
-        release: mocks.leaseRelease,
+        releaseExecutionLease: mocks.leaseRelease,
       },
     });
     mocks.resolveSigningWallet.mockReturnValue({

@@ -483,7 +483,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           "The deposit execution outcome is uncertain. Tell the user it must be reconciled before any retry; do not say it succeeded or failed.",
       });
     } finally {
-      await leaseHandle.release().catch((err) => {
+      await leaseHandle.releaseExecutionLease().catch((err) => {
         logger.warn("lighter.deposit.execution_lease_release_failed", {
           intentId: approved.intentId,
           error: err instanceof Error ? err.message : String(err),
