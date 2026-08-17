@@ -108,6 +108,7 @@ export function buildLighterDepositExecutionDeps(
     },
 
     intents: {
+      markAllowanceVerified: (intentId) => onboardingIntentsRepo.markAllowanceVerified(intentId),
       markApproveSubmitted: (intentId, hash) => onboardingIntentsRepo.markApproveSubmitted(intentId, hash),
       markApproveConfirmed: (intentId) => onboardingIntentsRepo.markApproveConfirmed(intentId),
       markDepositSubmitted: (intentId, hash) => onboardingIntentsRepo.markDepositSubmitted(intentId, hash),

@@ -42,13 +42,14 @@ function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnb
 
 function intentsSpy() {
   return {
-    markApproveSubmitted: vi.fn().mockResolvedValue(null),
-    markApproveConfirmed: vi.fn().mockResolvedValue(null),
-    markDepositSubmitted: vi.fn().mockResolvedValue(null),
-    markDepositConfirmed: vi.fn().mockResolvedValue(null),
-    markCredited: vi.fn().mockResolvedValue(null),
-    markAmbiguous: vi.fn().mockResolvedValue(null),
-    markFailed: vi.fn().mockResolvedValue(null),
+    markAllowanceVerified: vi.fn().mockResolvedValue({ executionState: "allowance_verified" }),
+    markApproveSubmitted: vi.fn().mockResolvedValue({ executionState: "approve_submitted" }),
+    markApproveConfirmed: vi.fn().mockResolvedValue({ executionState: "approve_confirmed" }),
+    markDepositSubmitted: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
+    markDepositConfirmed: vi.fn().mockResolvedValue({ executionState: "deposit_confirmed" }),
+    markCredited: vi.fn().mockResolvedValue({ executionState: "credited" }),
+    markAmbiguous: vi.fn().mockResolvedValue({ executionState: "ambiguous" }),
+    markFailed: vi.fn().mockResolvedValue({ executionState: "failed" }),
   };
 }
 
@@ -97,7 +98,8 @@ describe("executeApprovedLighterDeposit", () => {
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result.status).toBe("credited");
     expect(d.intents.markApproveSubmitted).not.toHaveBeenCalled();
-    expect(d.intents.markApproveConfirmed).toHaveBeenCalled();
+    expect(d.intents.markAllowanceVerified).toHaveBeenCalledWith("lighter-onboard-1");
+    expect(d.intents.markApproveConfirmed).not.toHaveBeenCalled();
   });
 
   it("fails on an approve revert without sending the deposit", async () => {
@@ -132,5 +134,115 @@ describe("executeApprovedLighterDeposit", () => {
     expect(result).toMatchObject({ status: "credited", resolvedAccountIndex: null });
     expect(d.intents.markCredited).not.toHaveBeenCalled();
     expect(d.intents.markDepositConfirmed).toHaveBeenCalled();
+  });
+
+  it("refuses to start unless the exact approved lifecycle state is supplied", async () => {
+    const d = deps();
+    const result = await executeApprovedLighterDeposit({
+      intent: intent({ executionState: "approve_submitted" }),
+      deps: d,
+    });
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { environment: "rhc" as const },
+    { chainId: 8453 },
+    { depositContract: "0x2222222222222222222222222222222222222222" },
+    { depositTo: "0x2222222222222222222222222222222222222222" },
+    { assetIndex: 4 },
+    { routeType: 1 },
+    { approvalStatus: "rejected" as const },
+  ])("refuses a persisted deposit whose execution binding was altered: %j", async (override) => {
+    const d = deps();
+    const result = await executeApprovedLighterDeposit({
+      intent: intent(override),
+      deps: d,
+    });
+    expect(result).toMatchObject({ status: "failed" });
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("aborts the approval broadcast when its staged hash cannot advance by CAS", async () => {
+    let broadcastReached = false;
+    const intentTransitions = intentsSpy();
+    intentTransitions.markApproveSubmitted.mockResolvedValueOnce(null);
+    const d = deps({
+      intents: intentTransitions,
+      runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(APPROVE_HASH);
+        broadcastReached = true;
+        return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
+      }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
+    expect(broadcastReached).toBe(false);
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("does not sign the deposit when the sufficient-allowance transition conflicts", async () => {
+    const intentTransitions = intentsSpy();
+    intentTransitions.markAllowanceVerified.mockResolvedValueOnce(null);
+    const d = deps({
+      intents: intentTransitions,
+      runApproveLegIfNeeded: vi.fn().mockResolvedValue({ skipped: true }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("does not sign the deposit when approval confirmation cannot advance by CAS", async () => {
+    const intentTransitions = intentsSpy();
+    intentTransitions.markApproveConfirmed.mockResolvedValueOnce(null);
+    const d = deps({ intents: intentTransitions });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "ambiguous", stage: "approve", txHash: APPROVE_HASH });
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("aborts the deposit broadcast when its staged hash cannot advance by CAS", async () => {
+    let broadcastReached = false;
+    const intentTransitions = intentsSpy();
+    intentTransitions.markDepositSubmitted.mockResolvedValueOnce(null);
+    const d = deps({
+      intents: intentTransitions,
+      runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(DEPOSIT_HASH);
+        broadcastReached = true;
+        return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const };
+      }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "failed", stage: "deposit" });
+    expect(broadcastReached).toBe(false);
+    expect(d.intents.markDepositConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("never reports credited when a post-broadcast lifecycle transition conflicts", async () => {
+    const intentTransitions = intentsSpy();
+    intentTransitions.markDepositConfirmed.mockResolvedValueOnce(null);
+    const d = deps({ intents: intentTransitions });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "ambiguous", stage: "deposit", txHash: DEPOSIT_HASH });
+    expect(d.intents.markCredited).not.toHaveBeenCalled();
+  });
+
+  it("never reports credited when the final credited CAS conflicts", async () => {
+    const intentTransitions = intentsSpy();
+    intentTransitions.markCredited.mockResolvedValueOnce(null);
+    const d = deps({ intents: intentTransitions });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "ambiguous", stage: "deposit", txHash: DEPOSIT_HASH });
   });
 });
