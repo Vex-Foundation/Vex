@@ -112,8 +112,10 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["dexscreener.tokens", "read"],
     ["dexscreener.trending", "read"],
 
-    // Lighter — create.prepare records local approval intent state; create is
-    // the external exchange mutation resume target.
+    // Lighter — deposit signs and broadcasts Ethereum transactions; order
+    // create is an external exchange mutation resume target.
+    ["lighter.deposit.prepare", "approval_prepare"],
+    ["lighter.deposit", "user_wallet_broadcast"],
     ["lighter.order.create.prepare", "approval_prepare"],
     ["lighter.order.create", "external_post"],
   ];

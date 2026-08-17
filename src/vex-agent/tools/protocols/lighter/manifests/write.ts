@@ -60,7 +60,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Approval-gated Lighter Core deposit resume target for a prepared deposit intent. Call this only through the approval card that lighter.deposit.prepare enqueues; never call it directly without a prepared intent and approval-resume context. When the privileged deposit release gate is open, an approved call signs an ERC-20 approval and the deposit with the Vex wallet key and submits them on Ethereum mainnet, so real funds move into the user's Lighter account (the first deposit creates the account). Returns the recorded approval decision plus the execution outcome: credited, an ambiguous outcome that must be reconciled before any retry, a failed leg, or gate-closed when the release gate is shut.",
     mutating: true,
-    actionKind: "external_post",
+    actionKind: "user_wallet_broadcast",
     params: [DEPOSIT_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-onboard-example" },
   },

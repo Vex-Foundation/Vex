@@ -3,6 +3,7 @@ import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registr
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
+const LIGHTER_DEPOSIT_INTENT_ID = "lighter-onboard-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 
 function candidate() {
@@ -62,6 +63,36 @@ function lighterCandidate() {
   };
 }
 
+function lighterDepositCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: {
+      toolId: "lighter.deposit",
+      params: { intentId: LIGHTER_DEPOSIT_INTENT_ID },
+    },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "deposit",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.deposit",
+        intentId: LIGHTER_DEPOSIT_INTENT_ID,
+        environment: "core",
+        walletAddress: "0x1111111111111111111111111111111111111111",
+        depositTo: "0x1111111111111111111111111111111111111111",
+        depositContract: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+        chainId: 1,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+        amountDisplay: "11",
+        summary: "Deposit 11 USDC from this Vex wallet into its own Lighter account.",
+        scopeNote: "This approval authorizes only this deposit, not a trade or withdrawal.",
+      },
+    },
+  };
+}
+
 describe("prepared-action follow-up registry", () => {
   it("allows and canonicalizes wallet_send_prepare → wallet_send_confirm", () => {
     const input = candidate();
@@ -88,6 +119,68 @@ describe("prepared-action follow-up registry", () => {
       ok: true,
       followUp: input,
     });
+  });
+
+  it.each(["execute_tool", "lighter__deposit__prepare"])(
+    "allows %s to hand off an exact Lighter deposit intent",
+    (sourceToolName) => {
+      const input = lighterDepositCandidate();
+      const result = validatePreparedActionFollowUp(sourceToolName, input);
+      expect(result).toEqual({ ok: true, followUp: input });
+    },
+  );
+
+  it("rejects Lighter deposit previews whose fund-moving fields were altered", () => {
+    const overrides: Record<string, unknown>[] = [
+      { intentId: "lighter-onboard-00000000-0000-4000-8000-000000000002" },
+      { environment: "rhc" },
+      { depositTo: "0x2222222222222222222222222222222222222222" },
+      { depositContract: "0x2222222222222222222222222222222222222222" },
+      { chainId: 8453 },
+      { assetIndex: 4 },
+      { routeType: 2 },
+      { amountUnits: "0" },
+      { amountDisplay: "11 USDC" },
+    ];
+    for (const override of overrides) {
+      expect(
+        validatePreparedActionFollowUp("execute_tool", {
+          ...lighterDepositCandidate(),
+          approvalPreview: {
+            ...lighterDepositCandidate().approvalPreview,
+            criticalArgs: {
+              ...lighterDepositCandidate().approvalPreview.criticalArgs,
+              ...override,
+            },
+          },
+        }),
+        `override ${JSON.stringify(override)} must fail closed`,
+      ).toEqual({ ok: false, reason: "invalid_contract" });
+    }
+  });
+
+  it("rejects extra Lighter deposit execution args and preview fields", () => {
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterDepositCandidate(),
+        args: {
+          ...lighterDepositCandidate().args,
+          amountIn: "1000000",
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterDepositCandidate(),
+        approvalPreview: {
+          ...lighterDepositCandidate().approvalPreview,
+          criticalArgs: {
+            ...lighterDepositCandidate().approvalPreview.criticalArgs,
+            recipient: "0x2222222222222222222222222222222222222222",
+          },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
   });
 
   it("rejects unknown source→target pairs", () => {
