@@ -427,6 +427,19 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         ],
       },
       {
+        label: "Wallet funding",
+        summary:
+          "Check durable deposit state, prepare an exact Lighter Core deposit for approval, and resume it only through the trusted approval card.",
+        toolPrefixes: ["lighter.deposit"],
+        hints: [
+          "fund lighter account",
+          "prepare lighter deposit",
+          "lighter deposit status",
+          "create lighter account",
+          "deposit stuck",
+        ],
+      },
+      {
         label: "My orders and fills",
         summary:
           "Read authenticated open orders, order history, and account trade fills using the configured read-only token.",

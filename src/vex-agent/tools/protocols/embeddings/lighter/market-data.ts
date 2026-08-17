@@ -185,7 +185,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit": {
     embeddingText: embeddingText(
       `Approval-resume target for one exact prepared Lighter Core deposit. ` +
-      `Only the trusted approval runtime may invoke it after the user approves the deposit card. When the privileged release gate is open it can sign and broadcast Ethereum approval and deposit transactions, so it must never be called directly or used as a status check. ` +
+      `Use when: only the trusted approval runtime is resuming the exact deposit card the user approved. When the privileged release gate is open it can sign and broadcast Ethereum approval and deposit transactions, so it must never be called directly or used as a status check. ` +
       `Example queries: execute approved Lighter deposit intent, resume Lighter deposit approval.`,
     ),
     aliases: ["approved lighter deposit", "lighter deposit execute", "resume lighter funding approval"],

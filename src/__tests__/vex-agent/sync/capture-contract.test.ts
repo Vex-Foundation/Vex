@@ -151,11 +151,12 @@ describe("capture contract — structural coverage", () => {
     // The dual-leg pair joined at card E5 on the same terms as lp.add/lp.remove:
     // an LP lifecycle row, no LP economics, and never a second quote-derived
     // truth beside the handler's own agent_activity write.
-    // lighter.order.create joined on the same terms: an exchange-order
-    // lifecycle row whose durable truth lives in
-    // lighter_order_execution_intents, written directly by the handler.
+    // The Lighter writes join on the same terms: their durable lifecycle
+    // truth lives in protocol-specific intent/workflow tables written
+    // directly by their handlers.
     const projection = getToolsByKind("projection");
     expect(projection.map(([id]) => id).sort()).toEqual([
+      "lighter.deposit",
       "lighter.order.create",
       "pendle.lp.add",
       "pendle.lp.addKeepYt",

@@ -219,6 +219,10 @@ const entries: [string, MutationContract][] = [
   // order resting on Lighter's book is not a settled trade until provider
   // evidence proves fills, which the intent rows and repair path own.
   ["lighter.order.create",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Lighter approval-gated wallet deposit — the handler owns its durable
+  // lifecycle in `lighter_deposit_intents` and `lighter_wallet_workflows`.
+  // It must never also enter the legacy trade/activity projection pipeline.
+  ["lighter.deposit",          { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────
