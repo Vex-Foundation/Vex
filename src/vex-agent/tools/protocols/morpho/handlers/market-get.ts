@@ -73,6 +73,9 @@ export async function morphoMarketGet(
     },
     nextStep:
       "Compare against siblings with morpho.markets.discover on the same loan asset before committing. "
-      + "Vex has no Morpho mutating tools yet - this namespace is read-only.",
+      + "To act on this market, quote first with morpho.market.quote (its `operation` selects borrow, repay, "
+      + "supplyCollateral or withdrawCollateral), then execute that quote with the matching morpho.market.borrow, "
+      + ".repay, .supplyCollateral or .withdrawCollateral - those sign and broadcast, and the quote is what the "
+      + "approval is given against.",
   });
 }

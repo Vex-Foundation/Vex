@@ -30,6 +30,7 @@ import type {
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const DIGITS_PATTERN = /^\d+$/;
+const HASH32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 /** Tolerant string: a non-empty string, or `null`. */
 function readDisplayString(v: unknown): string | null {
@@ -114,12 +115,43 @@ function readBreakdown(raw: unknown): MerklRewardBreakdown | null {
   };
 }
 
+/** Strict 32-byte hash, lowercased. A root or one proof node. */
+function requireHash32(v: unknown): string | null {
+  return typeof v === "string" && HASH32_PATTERN.test(v) ? v.toLowerCase() : null;
+}
+
+/**
+ * Strict proof. The array must be PRESENT and every node must be a 32-byte hash;
+ * one malformed node is refused for the whole row, because a proof is checked as
+ * a unit and a partially-read one authorizes nothing.
+ *
+ * An empty array is legitimate (a single-leaf tree needs no siblings) and is
+ * distinguished from an absent key, which is not.
+ */
+function requireProofs(v: unknown): readonly string[] | null {
+  if (!Array.isArray(v)) return null;
+  const nodes: string[] = [];
+  for (const node of v) {
+    const hash = requireHash32(node);
+    if (hash === null) return null;
+    nodes.push(hash);
+  }
+  return nodes;
+}
+
 function readReward(raw: unknown, chainId: number): MerklReward | null {
   if (!isRecord(raw)) return null;
   const token = readToken(raw["token"]);
   const amountRaw = requireRawAmount(raw["amount"]);
   const claimedRaw = requireRawAmount(raw["claimed"]);
   const pendingRaw = requireRawAmount(raw["pending"]);
+  // NULLABLE HERE, STRICT AT THE CLAIM. These two are financially consumed only
+  // by the claim lane, so that is where a missing one refuses BY NAME
+  // (`./claim.ts`). Dropping the row here instead would make a reward the read
+  // tool can otherwise describe vanish from "what can I claim" entirely, which
+  // is the failure the tolerant reader exists to prevent.
+  const root = requireHash32(raw["root"]);
+  const proofs = requireProofs(raw["proofs"]);
   if (token === null || amountRaw === null || claimedRaw === null || pendingRaw === null) return null;
 
   const rawBreakdowns = Array.isArray(raw["breakdowns"]) ? raw["breakdowns"] : [];
@@ -129,7 +161,7 @@ function readReward(raw: unknown, chainId: number): MerklReward | null {
     if (parsed !== null) breakdowns.push(parsed);
   }
 
-  return { chainId, token, amountRaw, claimedRaw, pendingRaw, breakdowns };
+  return { chainId, token, amountRaw, claimedRaw, pendingRaw, root, proofs, breakdowns };
 }
 
 /**

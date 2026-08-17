@@ -39,6 +39,39 @@ export const MORPHO_ACTIVITY_PROTOCOL = "morpho";
 export const MORPHO_ACTIVITY_KIND = "lend" as const;
 
 /**
+ * ONE VENUE, TWO KINDS - and that is the ledger being right, not a compromise.
+ *
+ * A reward claim files as `yield` / `yield_claim`, while every vault and market
+ * operation files as `lend`. The reason is that `kind` describes THE OPERATION,
+ * not the protocol: sweeping an incentive campaign's accrued tokens is income,
+ * and it is the same act whether the position that earned it sat in a Morpho
+ * vault, a Pendle market, or anywhere else. `pendle.claim` already files exactly
+ * this way, so filing a Morpho sweep as `lend_something` would make the ledger
+ * answer "show me every claim" differently depending on which venue earned it.
+ * One word, one meaning, across venues.
+ *
+ * It is also the shape the DATABASE already admits, with no migration and no new
+ * vocabulary: `agent_activity_kind_family_binding` does not restrict `yield` on
+ * `eip155`, and `agent_activity_yield_confirmed_legs` scopes `yield_claim` to
+ * "an OUTPUT credit and NOTHING more" - which is precisely a claim, because a
+ * claim spends nothing but gas. Minting a `lend_claim` role would have meant a
+ * stored-data-contract change pushed permanently to AgentScan to describe an act
+ * the vocabulary could already describe.
+ *
+ * The rewards themselves are NOT Morpho's own token and are not paid by Morpho:
+ * they come from Merkl campaigns that a Morpho position happened to qualify for.
+ * `protocol` stays `"morpho"` because that is the venue the agent acted through
+ * and the namespace that owns the tool.
+ */
+export const MORPHO_CLAIM_ACTIVITY_KIND = "yield" as const;
+
+/**
+ * The one role a reward claim is filed under. Out-only by database contract, and
+ * the reason this lane never records a `tokenIn`.
+ */
+export const MORPHO_CLAIM_ROLE = "yield_claim" as const;
+
+/**
  * The chain family stored on every row this module writes. See the header: the
  * database stopped catching an omission here when 079 landed.
  */

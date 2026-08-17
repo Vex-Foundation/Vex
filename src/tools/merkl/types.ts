@@ -53,6 +53,31 @@ export interface MerklReward {
   amountRaw: string;
   claimedRaw: string;
   pendingRaw: string;
+  /**
+   * The Merkle root `proofs` authorizes `amountRaw` against, and the reason
+   * `amountRaw` is the exact number a claim passes on-chain.
+   *
+   * LIVE PROBE 2026-08-17, Base: this row's `root` was
+   * `0x9ba8e44a...dc68f8` and the distributor's own `getMerkleRoot()` returned
+   * the SAME value, while `tree()` held a different, newer root still inside its
+   * dispute period. So Merkl publishes proofs against the root that is
+   * CURRENTLY CLAIMABLE, and `amountRaw` is that root's leaf value - not a
+   * figure some arithmetic on `pendingRaw` has to recover. The same probe read
+   * `claimed(wallet, token)` off the distributor and got `claimedRaw` back
+   * exactly, which is what makes `amountRaw - claimedRaw` the delivered amount.
+   */
+  root: string | null;
+  /**
+   * The Merkle proof for this wallet's leaf. FINANCIALLY CONSUMED BY THE CLAIM
+   * LANE, which refuses a row without one by name; the read lane still reports
+   * the reward, because a reward Vex cannot yet claim is still a reward.
+   *
+   * An EMPTY array is not an error and not a missing field - a tree with a
+   * single leaf legitimately needs no sibling hashes. `null` means Merkl sent no
+   * readable proof, which the CLAIM lane refuses by name while the read lane
+   * still reports the reward.
+   */
+  proofs: readonly string[] | null;
   breakdowns: readonly MerklRewardBreakdown[];
 }
 

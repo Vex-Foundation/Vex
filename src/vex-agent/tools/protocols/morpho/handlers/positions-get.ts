@@ -349,10 +349,12 @@ export async function morphoPositionsGet(
     nextStep:
       liquidatable.length > 0
         ? "At least one position is liquidatable NOW. Read the market with morpho.market.get to see the oracle and "
-          + "the liquidity, and check morpho.markets.activity for liquidations already happening there. Vex has no "
-          + "Morpho mutating tools yet, so it cannot repay or add collateral: say so plainly."
+          + "the liquidity, and check morpho.markets.activity for liquidations already happening there. Vex CAN "
+          + "act: quote a repay or a supplyCollateral with morpho.market.quote, then execute that quote with "
+          + "morpho.market.repay or morpho.market.supplyCollateral."
         : "Read any market that concerns you with morpho.market.get, and its recent liquidations with "
-          + "morpho.markets.activity. This namespace is read-only; Vex cannot change a position on Morpho today.",
+          + "morpho.markets.activity. To change a position, quote it first with morpho.market.quote or "
+          + "morpho.vault.quote, then execute that quote with the matching execute tool.",
   });
 }
 

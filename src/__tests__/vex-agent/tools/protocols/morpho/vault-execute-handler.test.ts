@@ -392,6 +392,26 @@ describe("all four execution endings are reported as themselves", () => {
     expect(notes.accrualDrift).toContain("normal");
   });
 
+  it("hands the runtime its own intent row on EVERY ending, so capture cannot record a second one", async () => {
+    // Without `_executionId` on the result, `captureExecution` writes a fresh
+    // protocol_executions row and this lane's intent row is stranded at
+    // execution_status 'intent' - unresolved money state for the compaction
+    // safe-moment gate. Measured on every Morpho execution, 2026-08-17.
+    const endings = [
+      { ...confirmed(), executionId: 21 },
+      { kind: "refused", executionId: 21, role: "allowance", message: "refused" },
+      { kind: "reverted", executionId: 21, role: "lend_deposit", txHash: "0xr", message: "reverted" },
+      { kind: "unproven", executionId: 21, role: "lend_deposit", reason: "ambiguous", txHash: "0xu", message: "unproven" },
+    ];
+
+    for (const ending of endings) {
+      executeDeposit.mockResolvedValue(ending);
+      const data = (await morphoVaultDeposit(depositParams(), context())).data as Record<string, unknown>;
+      expect(data["_executionId"], String(ending.kind)).toBe(21);
+      expect(data["executionId"], String(ending.kind)).toBe(21);
+    }
+  });
+
   it("reports a refusal as a failure carrying the execution layer's own words", async () => {
     executeDeposit.mockResolvedValue({
       kind: "refused",

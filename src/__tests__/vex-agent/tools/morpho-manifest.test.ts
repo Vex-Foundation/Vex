@@ -55,10 +55,11 @@ const EXPECTED_TOOL_IDS = [
   "morpho.market.withdrawCollateral",
   "morpho.market.borrow",
   "morpho.market.repay",
+  "morpho.rewards.claim",
 ];
 
 /**
- * The two tools that SPEND. Every read-lane assertion below excludes them by
+ * The tools that SPEND. Every read-lane assertion below excludes them by
  * name rather than by a softened predicate: a check that quietly accepts a
  * mutating tool is a check that would accept the next one by accident.
  */
@@ -69,6 +70,7 @@ const MORPHO_EXECUTE_TOOL_IDS = [
   "morpho.market.withdrawCollateral",
   "morpho.market.borrow",
   "morpho.market.repay",
+  "morpho.rewards.claim",
 ];
 
 /** Every discovery passage in the namespace, whichever lane module owns it. */
@@ -198,6 +200,10 @@ describe("morpho manifest", () => {
       // of any kind, so an APY-basis sentence here would be a claim the reply
       // cannot support.
       "morpho.vault.quote",
+      // The CLAIM returns proven per-token credits and a hash. It names no rate
+      // at all - the rewards it sweeps are balances, not an APY - so an
+      // APY-basis sentence would describe a number the reply does not contain.
+      "morpho.rewards.claim",
       // The BLUE MARKET lane returns a health factor, a liquidity figure and a
       // settlement - no rate at all. Its preview is a point-in-time price of one
       // operation, exactly like the vault preview above, and the four executes

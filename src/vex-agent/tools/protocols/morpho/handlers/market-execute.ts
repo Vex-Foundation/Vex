@@ -318,6 +318,10 @@ function renderOutcome(
     chain: query.chainSlug,
     marketId: query.marketId,
     executionId: outcome.executionId,
+    // The adoption key `captureExecution` needs to settle THIS lane's intent row
+    // instead of recording a second one. See `./vault-execute.ts` for the
+    // measurement that found every Morpho execution writing two rows.
+    _executionId: outcome.executionId,
     plan: MORPHO_MARKET_PLAN_NOTE[query.operation] ?? "",
   };
 

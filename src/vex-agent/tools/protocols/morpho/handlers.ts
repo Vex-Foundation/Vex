@@ -14,6 +14,7 @@ import { morphoVaultGet } from "./handlers/vault-get.js";
 import { morphoPositionsGet } from "./handlers/positions-get.js";
 import { morphoMarketsActivity } from "./handlers/markets-activity.js";
 import { morphoRewardsGet } from "./handlers/rewards-get.js";
+import { morphoRewardsClaim } from "./handlers/rewards-claim.js";
 import { morphoWalletBalance } from "./handlers/wallet-balance.js";
 import { morphoVaultQuote } from "./handlers/vault-quote.js";
 import { morphoVaultDeposit, morphoVaultWithdraw } from "./handlers/vault-execute.js";
@@ -58,4 +59,8 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.market.withdrawCollateral": morphoMarketWithdrawCollateral,
   "morpho.market.borrow": morphoMarketBorrow,
   "morpho.market.repay": morphoMarketRepay,
+  // The CLAIM lane. Full context like the other writes: it resolves the
+  // session's signing wallet, and it takes no wallet parameter precisely so the
+  // model cannot name one.
+  "morpho.rewards.claim": morphoRewardsClaim,
 };

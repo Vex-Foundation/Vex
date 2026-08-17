@@ -23,8 +23,8 @@ import type { MerklAttributedChainRewards, MerklAttributedReward, MerklRewardSou
 export const MORPHO_REWARDS_CLAIM_NOTE =
   "`claimable` is what a claim would deliver right now (Merkl's lifetime `accrued` minus what has already been "
   + "claimed). `pending` is accrual Merkl has computed but not yet published into a claimable root, so it is NOT "
-  + "part of `claimable` and may still change. Claiming is an on-chain transaction that costs gas, and Vex cannot "
-  + "perform it yet - this tool only reads.";
+  + "part of `claimable` and may still change. Claiming is an on-chain transaction that costs gas; Vex CAN perform "
+  + "it with `morpho.rewards.claim`, which sweeps a whole chain's claimable rows in one transaction.";
 
 export const MORPHO_REWARDS_USD_NOTE =
   "USD here is Merkl's own price for the reward token, not a measured trade price. Incentive tokens are frequently "

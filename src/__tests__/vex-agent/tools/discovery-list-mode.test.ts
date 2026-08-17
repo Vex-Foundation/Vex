@@ -62,8 +62,15 @@ const SOLANA_LIST_CHAR_BUDGET = 21_000;
  * measured 50,343 after a 7,898-char trim relocated the facts shared by all
  * five into the namespace doctrine. Baseline headroom was 983 chars, i.e.
  * 197 per tool - structurally unreachable for fund-spending manifests.
+ *
+ * Raised 52,000 -> 56,000 on 2026-08-17, same rationale, for the seventeenth
+ * and final morpho tool: measured 53,198 with morpho.rewards.claim, whose
+ * 2,694-char description is entirely safety prose (the pinned distributor and
+ * for-this-wallet assertion, a revert costing nothing but gas, morphoOnly
+ * narrowing rows and not the slices inside one, and the differing decimals of
+ * several reward tokens in one transaction).
  */
-const ANY_LIST_CHAR_BUDGET = 52_000;
+const ANY_LIST_CHAR_BUDGET = 56_000;
 
 describe("discover_tools namespace list mode", () => {
   const ENV_KEYS = [

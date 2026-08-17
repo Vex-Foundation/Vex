@@ -173,5 +173,9 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "morpho.market.supplyCollateral": { kind: "lend_supply_collateral", family: "eip155", provider: "morpho" },
   "morpho.market.withdrawCollateral": { kind: "lend_withdraw_collateral", family: "eip155", provider: "morpho" },
   "morpho.market.borrow": { kind: "lend_borrow", family: "eip155", provider: "morpho" },
+  // `morpho.rewards.claim` has NO entry here, exactly like `pendle.claim` above
+  // and for the same reason: it is an income sweep with NOTHING quoted. A claim
+  // has no price, no slippage, no counterparty and no size, so there is no
+  // figure a prequote could bind an approval to. It remains approval-gated.
   "morpho.market.repay": { kind: "lend_repay", family: "eip155", provider: "morpho" },
 };

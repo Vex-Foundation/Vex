@@ -4,13 +4,14 @@
  * share bound that decides the verdict.
  */
 
-import { beforeEach, it, expect } from "vitest";
+import { beforeEach, it, expect, vi } from "vitest";
 
 import {
   ADAPTER,
   ASSET,
   DEPOSIT_ASSETS,
   MINTED_SHARES,
+  SEALED_BLOCK_HASH,
   VAULT,
   WALLET,
   ZERO,
@@ -44,10 +45,54 @@ export function registerSettlementCases(ctx: SignedBroadcastContext): void {
     });
   });
 
-  it("falls back to getBlock for the settling block's time when the receipt carries none", async () => {
+  it("falls back to getBlock BY BLOCK HASH for the settling block's time when the receipt carries none", async () => {
+    // Measured 2026-08-17: none of the pinned endpoints returns
+    // `blockTimestamp` on a receipt, so this fallback is the production path,
+    // not an exotic one. It asks by hash so a fallback transport on another
+    // node cannot answer with a reorged sibling of the same number.
     await ctx.module.executeMorphoVaultDeposit(clients, request());
 
+    expect(getBlockMock).toHaveBeenCalledWith({ blockHash: SEALED_BLOCK_HASH });
     expect(ctx.noteBlockTime).toHaveBeenCalledWith(101, new Date(1_760_000_000 * 1000).toISOString());
+  });
+
+  it("retries the block lookup when a fallback transport has not imported the block yet", async () => {
+    // The funded borrow run left settled_block_time NULL on all eight rows: the
+    // lookup raced the seal (and the fallback transport) and threw
+    // BlockNotFoundError once, with nothing behind it. Three bounded attempts
+    // cover that window.
+    vi.useFakeTimers();
+    try {
+      getBlockMock
+        .mockRejectedValueOnce(new Error("BlockNotFoundError"))
+        .mockRejectedValueOnce(new Error("BlockNotFoundError"));
+
+      const settled = ctx.module.executeMorphoVaultDeposit(clients, request());
+      await vi.runAllTimersAsync();
+      await settled;
+
+      // Three attempts for the approval leg, then one that succeeds first try
+      // for the deposit leg: the retry budget is per leg and does not leak.
+      expect(getBlockMock).toHaveBeenCalledTimes(4);
+      expect(ctx.noteBlockTime).toHaveBeenCalledWith(101, new Date(1_760_000_000 * 1000).toISOString());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the time NULL rather than disturbing the money row when every attempt fails", async () => {
+    vi.useFakeTimers();
+    try {
+      getBlockMock.mockRejectedValue(new Error("BlockNotFoundError"));
+
+      const settled = ctx.module.executeMorphoVaultDeposit(clients, request());
+      await vi.runAllTimersAsync();
+
+      expect((await settled).kind).toBe("confirmed");
+      expect(ctx.noteBlockTime).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("takes the time from a FLASHBLOCK receipt's own blockTimestamp, without a racing getBlock", async () => {

@@ -126,15 +126,56 @@ function receiptBlockTimestampSeconds(receipt: TransactionReceipt): number | nul
  * running. Entirely fail-soft: a report-precision fact must not be able to
  * disturb a confirmed money row.
  *
- * THE RECEIPT'S OWN `blockTimestamp` FIRST, `getBlock` only as the fallback.
+ * THE RECEIPT'S OWN `blockTimestamp` FIRST, a `getBlock` LOOKUP as the fallback.
  * Base serves FLASHBLOCK PRECONFIRMATION receipts: the block they name is not
  * sealed yet, so the follow-up `getBlock` raced the seal and threw
  * `BlockNotFoundError`, leaving `settled_block_time` NULL on confirmed rows -
- * and AgentScan's rule is "no block time, no confirmation time". The funded run
- * of 2026-08-17 proved the field was present on those very receipts and carried
- * the correct sealed time, so it is the primary source and the lookup remains
- * for nodes that omit it.
+ * and AgentScan's rule is "no block time, no confirmation time".
+ *
+ * The fallback is NOT optional, and 2026-08-17 measured why: NONE of the pinned
+ * endpoints returns `blockTimestamp` on a receipt (the field was a drPC
+ * extension), so the primary source is absent in production and every borrow row
+ * settled with a NULL time. The lookup therefore has to survive the race it lost
+ * before. Two changes make it:
+ *
+ *   - IT ASKS BY `blockHash`, NOT BY NUMBER. A hash names one specific block, so
+ *     a fallback transport on a different node cannot answer with a reorged
+ *     sibling; a number can. A zero hash means the receipt named no sealed
+ *     block at all, and there is nothing to look up.
+ *   - IT RETRIES, BOUNDED. A preconfirmation receipt precedes the seal by
+ *     seconds, and a fallback transport may reach a node that has not yet
+ *     imported the block. Three attempts two seconds apart cover that window
+ *     without turning a report-precision field into a long block.
+ *
+ * Still entirely fail-soft: after the last attempt the time stays NULL rather
+ * than disturbing a confirmed money row.
  */
+const BLOCK_TIME_LOOKUP_ATTEMPTS = 3;
+const BLOCK_TIME_LOOKUP_DELAY_MS = 2_000;
+const ZERO_BLOCK_HASH = `0x${"0".repeat(64)}`;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function blockTimestampSecondsByHash(
+  publicClient: PublicClient<Transport, Chain>,
+  blockHash: Hex | undefined,
+): Promise<number | null> {
+  if (typeof blockHash !== "string" || blockHash.toLowerCase() === ZERO_BLOCK_HASH) return null;
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= BLOCK_TIME_LOOKUP_ATTEMPTS; attempt += 1) {
+    try {
+      return Number((await publicClient.getBlock({ blockHash })).timestamp);
+    } catch (err) {
+      lastError = err;
+      if (attempt < BLOCK_TIME_LOOKUP_ATTEMPTS) await sleep(BLOCK_TIME_LOOKUP_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
 export async function noteMorphoSettledBlockTime(
   publicClient: PublicClient<Transport, Chain>,
   eventId: number,
@@ -143,7 +184,11 @@ export async function noteMorphoSettledBlockTime(
   try {
     const seconds =
       receiptBlockTimestampSeconds(receipt)
-      ?? Number((await publicClient.getBlock({ blockNumber: receipt.blockNumber })).timestamp);
+      ?? (await blockTimestampSecondsByHash(publicClient, receipt.blockHash));
+    if (seconds === null) {
+      logger.warn("morpho.activity.block_time_unavailable", { id: eventId });
+      return;
+    }
     await noteSettledBlockTime(eventId, new Date(seconds * 1000).toISOString());
   } catch (err) {
     logger.warn("morpho.activity.block_time_failed", {

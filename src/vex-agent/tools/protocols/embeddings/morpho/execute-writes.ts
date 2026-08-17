@@ -2,8 +2,16 @@
  * Retrieval metadata for the Morpho EXECUTE lane - actually moving the user's
  * money into or out of a vault.
  *
- * The manifests at `morpho/manifests/{vault-deposit,vault-withdraw}.ts`
- * reference these entries by `toolId`.
+ * The manifests at `morpho/manifests/{vault-deposit,vault-withdraw,
+ * rewards-claim}.ts` reference these entries by `toolId`.
+ *
+ * THE CLAIM PASSAGE SITS APART FROM BOTH SIDES OF THAT COLLISION, and needs no
+ * verb-and-tense separation to do it: nothing else in the namespace is about
+ * collecting an already-earned balance, so "claim", "harvest" and "sweep" are
+ * unshared vocabulary. What it must NOT drift toward is the rewards READ
+ * (`wallet-reads.ts`), which owns the question "what can I claim". This passage
+ * is imperative and never asks that question; it answers the instruction to go
+ * and do it.
  *
  * THE VOCABULARY IS DISJOINT FROM ALL FIVE EXISTING MORPHO LANES, and the
  * collision this file manages is the most expensive one in the namespace: the
@@ -102,9 +110,39 @@ export const MORPHO_EXECUTE_WRITE_DISCOVERY = {
     ],
     chains: MORPHO_CHAINS_FOR_DISCOVERY,
   },
+
+  "morpho.rewards.claim": {
+    embeddingText: embeddingText(
+      `Claim the reward tokens the wallet already earned on Morpho, sweeping them into the wallet, for real and on chain. ` +
+      `Use when the user says to collect what they earned: claim my rewards, harvest the incentives, sweep the tokens. ` +
+      `No quote is needed, because a claim has no price and no size to choose. One transaction can deliver SEVERAL ` +
+      `reward tokens at different scales, and they are other projects' tokens, not the lending rate. ` +
+      `Returns each token actually credited with its own scale, the hash and a ledger row. ` +
+      `A rehearsal mode walks the run and signs nothing. ` +
+      `Example queries: claim my morpho rewards, harvest my incentive tokens.`,
+    ),
+    aliases: [
+      "claim my morpho rewards",
+      "harvest reward tokens",
+      "sweep my incentives",
+      "collect what I earned",
+      "claim the incentive tokens",
+      "take my rewards now",
+      "cash in my reward campaign",
+      "execute the rewards claim",
+    ],
+    exampleIntents: [
+      "claim my morpho rewards on base",
+      "harvest the incentive tokens I earned",
+      "collect my unclaimed rewards now",
+      "sweep my merkl rewards",
+      "claim only the morpho reward tokens",
+    ],
+    chains: MORPHO_CHAINS_FOR_DISCOVERY,
+  },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 2;
+const EXPECTED_COUNT = 3;
 if (Object.keys(MORPHO_EXECUTE_WRITE_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `MORPHO_EXECUTE_WRITE_DISCOVERY has ${Object.keys(MORPHO_EXECUTE_WRITE_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

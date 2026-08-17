@@ -160,6 +160,7 @@ export async function morphoVaultsDiscover(
     nextStep:
       "Read one vault in full with morpho.vault.get (it needs both `vaultAddress` and `chain`) before depositing - "
       + "that call adds the role and timelock configuration, the per-market allocations with their caps, and the "
-      + "queued governance changes. Vex has no Morpho mutating tools yet; this namespace is read-only.",
+      + "queued governance changes. Depositing goes through morpho.vault.quote and then morpho.vault.deposit, "
+      + "never straight from a discover row.",
   });
 }

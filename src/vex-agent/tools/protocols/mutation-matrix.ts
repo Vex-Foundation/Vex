@@ -222,6 +222,12 @@ const entries: [string, MutationContract][] = [
   ["morpho.market.withdrawCollateral", { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.market.borrow",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.market.repay",              { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho reward claim. `expectedType: "yield"` and NOT "lend", matching the
+  // `yield` / `yield_claim` row the lane writes and matching `pendle.claim`
+  // below: the type describes the OPERATION, and sweeping an already-earned
+  // incentive balance is income wherever it was earned. Same `capture: "none"`
+  // and `previewSupport: true` as its siblings.
+  ["morpho.rewards.claim",             { kind: "audit", capture: "none", expectedType: "yield",  previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   // Jupiter Lend BORROW `/operate` (Agent Scan Phase 3 Batch 5, card B1) —
   // full lifecycle (create/deposit/withdraw/borrow/repay) on the SAME K2
   // staged `agent_activity` write path as the two Earn tools above —

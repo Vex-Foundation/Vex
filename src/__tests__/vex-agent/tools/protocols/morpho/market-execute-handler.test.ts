@@ -468,6 +468,11 @@ describe("all four execution endings are reported as themselves", () => {
       expect(data["marketId"], String(ending.kind)).toBe(MARKET_ID);
       expect(data["chain"], String(ending.kind)).toBe("base");
       expect(data["executionId"], String(ending.kind)).toBe(41);
+      // The runtime's adoption key. Without it `captureExecution` records a
+      // SECOND protocol_executions row and this lane's intent row is stranded
+      // at execution_status 'intent' - unresolved money state for the
+      // compaction gate. Measured on every Morpho execution, 2026-08-17.
+      expect(data["_executionId"], String(ending.kind)).toBe(41);
       expect(String(data["plan"]), String(ending.kind)).toContain("ONE transaction");
     }
   });

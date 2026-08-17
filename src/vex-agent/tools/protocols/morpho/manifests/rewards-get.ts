@@ -44,8 +44,8 @@ export const MORPHO_REWARDS_GET_TOOL: ProtocolToolManifest = {
     + "LIMITS: USD is the distributor's own price for the reward token, not a traded price, and incentive tokens "
     + "are frequently thin, so treat every dollar figure as an estimate. A reward token is a SEPARATE asset whose "
     + "price moves independently of whatever was supplied to earn it, so an unclaimed reward is not guaranteed "
-    + "income: it can lose its value before it is claimed and a campaign can end. CLAIMING IS NOT AVAILABLE IN "
-    + "VEX. A claim is an on-chain transaction that costs gas, and this namespace has no mutating tools. "
+    + "income: it can lose its value before it is claimed and a campaign can end. TO ACTUALLY CLAIM, use "
+    + "morpho.rewards.claim, which sweeps one chain's claimable rows in a single transaction and needs no quote. "
     + "Read-only - it signs nothing and spends nothing.",
   mutating: false,
   actionKind: "read",

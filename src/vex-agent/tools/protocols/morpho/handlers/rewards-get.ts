@@ -129,7 +129,9 @@ export async function morphoRewardsGet(
         + "campaign can end.",
     },
     nextStep:
-      "Vex cannot claim yet - this namespace is read-only, and claiming is an on-chain transaction that costs gas. "
-      + "To see where the rewards came from, read the vault or market with morpho.vault.get or morpho.market.get.",
+      "To claim what is listed above, call morpho.rewards.claim with that chain - it sweeps every claimable row on "
+      + "one chain in a single transaction and needs no quote. It costs gas, so claiming a dust balance can cost "
+      + "more than it delivers: check the figures first. To see where the rewards came from, read the vault or "
+      + "market with morpho.vault.get or morpho.market.get.",
   });
 }

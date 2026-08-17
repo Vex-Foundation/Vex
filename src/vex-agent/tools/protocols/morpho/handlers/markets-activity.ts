@@ -103,6 +103,6 @@ export async function morphoMarketsActivity(
     nextStep:
       "Read a market in full with morpho.market.get (it needs `marketId` and `chain`) to see whether the bad debt "
       + "and the oracle explain what happened here, or morpho.positions.get to check whether a wallet still holds a "
-      + "position in it. This namespace is read-only.",
+      + "position in it.",
   });
 }

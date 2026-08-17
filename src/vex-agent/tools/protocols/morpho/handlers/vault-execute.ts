@@ -350,6 +350,16 @@ function renderOutcome(
     chain: query.chainSlug,
     vaultAddress: query.vaultAddress,
     executionId: outcome.executionId,
+    // THE ADOPTION KEY, and it is not decoration. `captureExecution` reuses an
+    // existing `protocol_executions` row ONLY when the result carries
+    // `_executionId`; without it the runtime records a SECOND, fresh row for
+    // the same attempt. Measured 2026-08-17: every Morpho execution wrote two
+    // rows - the intent row this lane created (stuck at execution_status
+    // 'intent', owning all the agent_activity legs) plus a succeeded row owning
+    // none. The stranded intent row is worse than untidy: it is unresolved
+    // money state for the compaction safe-moment gate. Kyber, Uniswap and
+    // pendle.claim all return this key; this lane simply never did.
+    _executionId: outcome.executionId,
     governance,
     plan: PLAN_NOTE[direction],
   };

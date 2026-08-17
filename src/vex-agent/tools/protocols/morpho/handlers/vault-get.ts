@@ -97,6 +97,7 @@ export async function morphoVaultGet(
     },
     nextStep:
       "Compare against siblings with morpho.vaults.discover on the same asset, and read any allocation that concerns "
-      + "you with morpho.market.get. Vex has no Morpho mutating tools yet - this namespace is read-only.",
+      + "you with morpho.market.get. To act on this vault, quote first with morpho.vault.quote, then execute that "
+      + "quote with morpho.vault.deposit or morpho.vault.withdraw.",
   });
 }

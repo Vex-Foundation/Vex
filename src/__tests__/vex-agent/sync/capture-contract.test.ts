@@ -136,13 +136,16 @@ describe("capture contract — structural coverage", () => {
     // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
     // staged Solana seam (migration 049); morpho.vault.deposit/withdraw (E3b-2)
     // and the four morpho.market.* borrow-lane operations (E3c) do the same
-    // through morpho/handlers/signed-broadcast.ts — capture is intentionally
+    // through morpho/handlers/signed-broadcast.ts; morpho.rewards.claim does the
+    // same through signed-broadcast/claim-broadcast.ts, writing the one
+    // `yield_claim` row a claim transaction can back — capture is intentionally
     // off for exactly these.
     const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
     expect(captureNone).toEqual([
       "khalani.bridge",
       "morpho.market.borrow", "morpho.market.repay",
       "morpho.market.supplyCollateral", "morpho.market.withdrawCollateral",
+      "morpho.rewards.claim",
       "morpho.vault.deposit", "morpho.vault.withdraw", "pendle.claim",
       "relay.bridge",
       "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",

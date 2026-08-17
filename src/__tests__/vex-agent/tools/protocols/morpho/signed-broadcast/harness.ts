@@ -97,6 +97,9 @@ export function rowsFor(events: readonly Record<string, unknown>[]) {
   }));
 }
 
+/** The sealed block a confirmed receipt names, looked up BY HASH for its time. */
+export const SEALED_BLOCK_HASH = `0x${"1".repeat(64)}` as const;
+
 export const getBlockMock = vi.fn(async () => ({ timestamp: 1_760_000_000n }));
 
 /**
@@ -137,7 +140,7 @@ export function confirmedOutcome(logs: unknown[], txHash = "0xdep") {
   return {
     kind: "confirmed",
     txHash,
-    receipt: { blockNumber: 42n, logs, status: "success" },
+    receipt: { blockNumber: 42n, blockHash: SEALED_BLOCK_HASH, logs, status: "success" },
   };
 }
 

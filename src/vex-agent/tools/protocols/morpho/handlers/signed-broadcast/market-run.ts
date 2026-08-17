@@ -119,7 +119,7 @@ export async function executeMorphoMarketOperation(
       allowancePlan,
       blueAddress,
       verifiedTarget,
-    }) as unknown as Record<string, unknown>,
+    }),
     legs,
   );
 
