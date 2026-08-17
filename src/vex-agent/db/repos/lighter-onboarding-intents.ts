@@ -23,6 +23,7 @@ export type LighterOnboardingExecutionState =
   | "prepared"
   | "approval_pending"
   | "approved"
+  | "allowance_verified"
   | "approve_submitted"
   | "approve_confirmed"
   | "deposit_submitted"
@@ -146,12 +147,21 @@ export async function markApproveConfirmed(intentId: string): Promise<LighterOnb
   return advance(intentId, "approve_confirmed", ["approve_submitted"]);
 }
 
-/** Persist a deposit tx hash before broadcast; only after approval confirmed. */
+/** Record that the live on-chain allowance already covered this exact amount. */
+export async function markAllowanceVerified(
+  intentId: string,
+): Promise<LighterOnboardingIntentRow | null> {
+  return advance(intentId, "allowance_verified", ["approved"]);
+}
+
+/** Persist a deposit tx hash before broadcast; only after allowance is proven. */
 export async function markDepositSubmitted(
   intentId: string,
   depositTxHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advance(intentId, "deposit_submitted", ["approve_confirmed"], { deposit_tx_hash: depositTxHash });
+  return advance(intentId, "deposit_submitted", ["approve_confirmed", "allowance_verified"], {
+    deposit_tx_hash: depositTxHash,
+  });
 }
 
 export async function markDepositConfirmed(intentId: string): Promise<LighterOnboardingIntentRow | null> {

@@ -86,6 +86,19 @@ d("lighter_onboarding_intents repo", () => {
     expect((await repo.findByIntentId(intent.intentId))?.executionState).toBe("approved");
   });
 
+  it("records a sufficient existing allowance without inventing an approval transaction", async () => {
+    const sessionId = await newSession();
+    const intent = await newDepositIntent(sessionId);
+    await repo.markApprovalDecision({ intentId: intent.intentId, decision: "approved" });
+
+    const verified = await repo.markAllowanceVerified(intent.intentId);
+    expect(verified?.executionState).toBe("allowance_verified");
+    expect(verified?.approveTxHash).toBeNull();
+    expect(
+      (await repo.markDepositSubmitted(intent.intentId, "0x" + "d".repeat(64)))?.executionState,
+    ).toBe("deposit_submitted");
+  });
+
   it("lists unresolved intents and excludes credited/failed", async () => {
     const sessionId = await newSession();
     const live = await newDepositIntent(sessionId);
