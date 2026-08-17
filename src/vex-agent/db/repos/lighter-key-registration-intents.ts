@@ -412,6 +412,46 @@ export async function markLighterKeyRegistrationApprovedWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/** Renew only an approved intent that has never reached signing or submission. */
+export async function renewPristineApprovedLighterKeyRegistrationIntentWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  assertTimestamp(input.expiresAt, "approval retry expiry");
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET expires_at = $3,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state = 'approved'
+        AND registration_tx_type IS NULL
+        AND registration_tx_hash IS NULL
+        AND registration_tx_expired_at IS NULL
+        AND registration_tx_staged_at IS NULL
+        AND registration_submitted_tx_hash IS NULL
+        AND registration_submit_code IS NULL
+        AND registration_predicted_execution_time_ms IS NULL
+        AND registration_submit_accepted_at IS NULL
+        AND registration_ambiguity_reason IS NULL
+        AND registration_key_verified_at IS NULL
+        AND registration_client_checked_at IS NULL
+        AND post_registration_nonce IS NULL
+        AND registration_nonce_synchronized_at IS NULL
+        AND registration_activated_at IS NULL
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.expiresAt],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Persist public TxType/hash/expiry identity before sendTx can be called. */
 export async function markLighterKeyRegistrationTxStagedWith(
   client: LighterOnboardingQueryClient,

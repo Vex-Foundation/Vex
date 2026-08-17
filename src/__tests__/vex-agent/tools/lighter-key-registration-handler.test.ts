@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   findIntent: vi.fn(),
   markApprovalPending: vi.fn(),
   markApproved: vi.fn(),
+  renewPristineApproved: vi.fn(),
   isIntegrationEnabled: vi.fn(),
   getWorkflow: vi.fn(),
   transitionWorkflow: vi.fn(),
@@ -49,6 +50,8 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
     mocks.markApprovalPending(input),
   markLighterKeyRegistrationApprovedWith: (_client: unknown, input: unknown) =>
     mocks.markApproved(input),
+  renewPristineApprovedLighterKeyRegistrationIntentWith: (_client: unknown, input: unknown) =>
+    mocks.renewPristineApproved(input),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
@@ -119,6 +122,20 @@ function row(executionState: "slot_reserved" | "key_generated_encrypted" | "appr
     keyGeneratedAt: hasKey ? new Date("2030-01-01T00:00:00.000Z") : null,
     registrationNonce: hasNonce ? "0" : null,
     registrationNonceObservedAt: hasNonce ? new Date("2030-01-01T00:01:00.000Z") : null,
+    registrationTxType: null,
+    registrationTxHash: null,
+    registrationTxExpiredAt: null,
+    registrationTxStagedAt: null,
+    registrationSubmittedTxHash: null,
+    registrationSubmitCode: null,
+    registrationPredictedExecutionTimeMs: null,
+    registrationSubmitAcceptedAt: null,
+    registrationAmbiguityReason: null,
+    registrationKeyVerifiedAt: null,
+    registrationClientCheckedAt: null,
+    postRegistrationNonce: null,
+    registrationNonceSynchronizedAt: null,
+    registrationActivatedAt: null,
     createdAt: new Date("2030-01-01T00:00:00.000Z"),
     updatedAt: new Date("2030-01-01T00:01:00.000Z"),
     expiresAt: new Date("2030-01-01T00:15:00.000Z"),
@@ -162,6 +179,7 @@ beforeEach(() => {
   mocks.findIntent.mockResolvedValue(row("key_generated_encrypted"));
   mocks.markApprovalPending.mockResolvedValue(row("approval_pending"));
   mocks.markApproved.mockResolvedValue(row("approved"));
+  mocks.renewPristineApproved.mockResolvedValue(row("approved"));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.releaseGateEnabled.mockReturnValue(false);
   mocks.getExecutor.mockReturnValue(null);
@@ -277,6 +295,61 @@ describe("lighter.key.register.prepare", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("valid public next nonce");
     expect(mocks.markApprovalPending).not.toHaveBeenCalled();
+    expect(result.preparedActionFollowUp).toBeUndefined();
+  });
+
+  it("reissues a fresh approval for the same pristine approved intent", async () => {
+    mocks.findLive.mockResolvedValue(row("approved"));
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_reissued",
+      intentId: INTENT_ID,
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      registrationNonce: "0",
+    });
+    expect(result.preparedActionFollowUp).toBeDefined();
+    expect(mocks.getApiKeys).not.toHaveBeenCalled();
+    expect(mocks.prepareCredential).not.toHaveBeenCalled();
+    expect(mocks.getNextNonce).not.toHaveBeenCalled();
+    expect(mocks.markApprovalPending).not.toHaveBeenCalled();
+    expect(mocks.renewPristineApproved).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      sessionId: "session-1",
+      expiresAt: expect.any(Date),
+    }));
+  });
+
+  it("refuses approval reissue once any signing evidence exists", async () => {
+    mocks.findLive.mockResolvedValue({
+      ...row("approved"),
+      registrationTxType: 8,
+      registrationTxHash: "a".repeat(80),
+      registrationTxExpiredAt: "1893456000000",
+      registrationTxStagedAt: new Date("2030-01-01T00:02:00.000Z"),
+    });
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already in approved");
     expect(result.preparedActionFollowUp).toBeUndefined();
   });
 });

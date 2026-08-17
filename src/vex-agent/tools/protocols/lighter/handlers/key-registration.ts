@@ -95,13 +95,15 @@ function buildKeyRegistrationApprovalFollowUp(
 
 function approvalPreparedPayload(
   intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
+  reissued = false,
 ): Record<string, unknown> {
   const disclosure = buildLighterKeyRegistrationApprovalDisclosure(intent);
   return {
     source: "vex_lighter_key_registration_intent",
-    status: "approval_prepared",
-    message:
-      "Lighter key registration prepared; Vex will request approval for this exact account, slot, public key, and nonce.",
+    status: reissued ? "approval_reissued" : "approval_prepared",
+    message: reissued
+      ? "The unchanged Lighter key registration is safe to retry; Vex will request a fresh approval for the exact same account, slot, public key, and nonce."
+      : "Lighter key registration prepared; Vex will request approval for this exact account, slot, public key, and nonce.",
     intentId: intent.intentId,
     environment: intent.environment,
     walletAddress: disclosure.walletAddress,
@@ -214,12 +216,50 @@ async function prepareApprovalPendingIntent(
     }
     current = approvalPending;
   }
-  if (current.executionState !== "approval_pending") {
+  if (isPristineApprovedIntent(current)) {
+    const renewed = await withSessionControlLock(sessionId, (client) =>
+      keyIntentsRepo.renewPristineApprovedLighterKeyRegistrationIntentWith(client, {
+        intentId: current.intentId,
+        sessionId,
+        expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+      }));
+    if (renewed === null) {
+      throw new Error(
+        "Lighter key registration could not renew the pristine approved intent for retry.",
+      );
+    }
+    current = renewed;
+  }
+  if (
+    current.executionState !== "approval_pending"
+    && !isPristineApprovedIntent(current)
+  ) {
     throw new Error(
       `Lighter key-registration intent ${current.intentId} is already in ${current.executionState}.`,
     );
   }
   return current;
+}
+
+function isPristineApprovedIntent(
+  intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
+): boolean {
+  return intent.executionState === "approved"
+    && intent.approvalStatus === "approved"
+    && intent.registrationTxType === null
+    && intent.registrationTxHash === null
+    && intent.registrationTxExpiredAt === null
+    && intent.registrationTxStagedAt === null
+    && intent.registrationSubmittedTxHash === null
+    && intent.registrationSubmitCode === null
+    && intent.registrationPredictedExecutionTimeMs === null
+    && intent.registrationSubmitAcceptedAt === null
+    && intent.registrationAmbiguityReason === null
+    && intent.registrationKeyVerifiedAt === null
+    && intent.registrationClientCheckedAt === null
+    && intent.postRegistrationNonce === null
+    && intent.registrationNonceSynchronizedAt === null
+    && intent.registrationActivatedAt === null;
 }
 
 export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> = {
@@ -278,9 +318,10 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       if (reserved.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
         return fail("The durable key-registration reservation belongs to a different wallet.");
       }
+      const reissuingApproval = isPristineApprovedIntent(reserved);
       const approvalPending = await prepareApprovalPendingIntent(reserved, sessionId);
       return {
-        ...ok(approvalPreparedPayload(approvalPending)),
+        ...ok(approvalPreparedPayload(approvalPending, reissuingApproval)),
         preparedActionFollowUp: buildKeyRegistrationApprovalFollowUp(approvalPending),
       };
     } catch (error) {

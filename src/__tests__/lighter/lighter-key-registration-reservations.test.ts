@@ -13,6 +13,7 @@ import {
   markLighterKeyRegistrationSubmittedWith,
   markLighterKeyRegistrationTxStagedWith,
   reserveLighterApiKeySlotWith,
+  renewPristineApprovedLighterKeyRegistrationIntentWith,
   type ReserveLighterApiKeySlotInput,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 
@@ -280,6 +281,36 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(approvedClient.query.mock.calls[0]?.[0]).toContain(
       "approval_status = 'approval_pending'",
     );
+  });
+
+  it("renews only an approved intent with no signing or submission evidence", async () => {
+    const expiresAt = new Date("2030-01-01T02:00:00.000Z");
+    const pristine = lifecycleRow("approved", {
+      registration_tx_type: null,
+      registration_tx_hash: null,
+      registration_tx_expired_at: null,
+      registration_tx_staged_at: null,
+      expires_at: expiresAt,
+    });
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [pristine], rowCount: 1 }),
+    };
+
+    await expect(renewPristineApprovedLighterKeyRegistrationIntentWith(client as never, {
+      intentId: String(pristine.intent_id),
+      sessionId: INPUT.sessionId,
+      expiresAt,
+    })).resolves.toMatchObject({
+      executionState: "approved",
+      expiresAt,
+    });
+
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("approval_status = 'approved'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("registration_tx_hash IS NULL");
+    expect(sql).toContain("registration_submitted_tx_hash IS NULL");
+    expect(params).toEqual([pristine.intent_id, INPUT.sessionId, expiresAt]);
   });
 
   it("refuses an unresolved workflow that has not proven the requested account", async () => {
