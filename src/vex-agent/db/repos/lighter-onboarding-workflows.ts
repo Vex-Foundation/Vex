@@ -69,7 +69,7 @@ const RETURNING = `
 `;
 
 const ALLOWED_NEXT: Readonly<Record<LighterOnboardingWorkflowState, readonly LighterOnboardingWorkflowState[]>> = {
-  integration_enabled: ["deposit_approval_pending", "failed"],
+  integration_enabled: ["deposit_approval_pending", "account_resolved", "failed"],
   deposit_approval_pending: ["deposit_preflight_validated", "allowance_verified", "approve_staged", "ambiguous", "failed"],
   deposit_preflight_validated: ["allowance_verified", "approve_staged", "ambiguous", "failed"],
   allowance_verified: ["deposit_staged", "ambiguous", "failed"],

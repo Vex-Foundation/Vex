@@ -2,12 +2,17 @@ import { getAddress } from "viem";
 
 import { getLighterClient } from "@tools/lighter/client.js";
 import { readLighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/api-key-slots.js";
+import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
 import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
 import { LIGHTER_KEY_REGISTRATION_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
-import { getLighterOnboardingWorkflow } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
+import {
+  getLighterOnboardingWorkflow,
+  transitionLighterOnboardingWorkflowWith,
+  type LighterOnboardingWorkflowRow,
+} from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
@@ -19,6 +24,37 @@ import { getConfiguredLighterKeyRegistrationCredentialPreparer } from "../key-re
 import { readEnvironment } from "../params.js";
 
 const INTENT_TTL_MS = 15 * 60 * 1_000;
+
+async function resolveOrAdoptExistingAccount(
+  sessionId: string,
+  walletAddress: string,
+): Promise<LighterOnboardingWorkflowRow | null> {
+  let workflow = await getLighterOnboardingWorkflow("core", walletAddress);
+  if (workflow?.workflowState !== "integration_enabled") return workflow;
+
+  const accountIndex = await readUniqueLighterCoreMasterAccount(
+    getLighterClient(),
+    walletAddress,
+  );
+  const adopted = await withSessionControlLock(sessionId, (client) =>
+    transitionLighterOnboardingWorkflowWith(client, {
+      environment: "core",
+      walletAddress,
+      expectedStates: ["integration_enabled"],
+      nextState: "account_resolved",
+      resolvedAccountIndex: accountIndex,
+    }));
+  if (adopted !== null) return adopted;
+
+  workflow = await getLighterOnboardingWorkflow("core", walletAddress);
+  if (
+    workflow?.workflowState === "account_resolved"
+    && workflow.resolvedAccountIndex === accountIndex
+  ) {
+    return workflow;
+  }
+  throw new Error("The Lighter onboarding workflow changed while adopting the owned account.");
+}
 
 function buildKeyRegistrationApprovalFollowUp(
   intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
@@ -208,7 +244,12 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         "Lighter is not enabled for this Vex wallet. Enable the integration before preparing key registration; enabling it does not register a key.",
       );
     }
-    const workflow = await getLighterOnboardingWorkflow("core", walletAddress);
+    let workflow: LighterOnboardingWorkflowRow | null;
+    try {
+      workflow = await resolveOrAdoptExistingAccount(sessionId, walletAddress);
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
     if (workflow?.resolvedAccountIndex === null || workflow === null) {
       return fail(
         "Lighter key registration requires a Phase 2-resolved account owned by the selected wallet.",

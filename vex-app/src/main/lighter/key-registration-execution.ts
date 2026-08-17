@@ -2,6 +2,7 @@ import { getAddress } from "viem";
 
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import { LIGHTER_API_KEY_INDEX_ALL } from "@tools/lighter/constants.js";
+import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
 import {
   createLighterApiKeyGeneratorBinary,
   createLighterRegisteredKeyCheckerBinary,
@@ -13,7 +14,7 @@ import {
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
-import type { LighterApiKey, LighterSubAccount } from "@tools/lighter/types.js";
+import type { LighterApiKey } from "@tools/lighter/types.js";
 import { LIGHTER_KEY_REGISTRATION_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
@@ -295,31 +296,13 @@ async function assertOwnedMasterAccount(
   client: LighterKeyRegistrationExecutionDeps["client"],
   intent: RegistrationIntent,
 ): Promise<void> {
-  const accounts: LighterSubAccount[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  for (let page = 0; page < 50; page += 1) {
-    const response = await client.getAccountsByL1Address("core", {
-      l1Address: intent.walletAddress,
-      cursor,
-    });
-    if (response.code !== 200 || getAddress(response.l1_address) !== getAddress(intent.walletAddress)) {
-      throw executionError("the live Lighter account lookup is not bound to the approved wallet");
-    }
-    accounts.push(...response.sub_accounts);
-    const next = response.next_cursor?.trim();
-    if (!next) break;
-    if (seenCursors.has(next)) throw executionError("the Lighter account lookup cursor repeated");
-    seenCursors.add(next);
-    cursor = next;
-    if (page === 49) throw executionError("the Lighter account lookup exceeded its page limit");
+  let accountIndex: number;
+  try {
+    accountIndex = await readUniqueLighterCoreMasterAccount(client, intent.walletAddress);
+  } catch {
+    throw executionError("the approved Lighter master account is not uniquely owned by the wallet");
   }
-  const exact = accounts.filter((account) => account.index === intent.accountIndex);
-  if (
-    exact.length !== 1
-    || exact[0]!.account_type !== 0
-    || getAddress(exact[0]!.l1_address) !== getAddress(intent.walletAddress)
-  ) {
+  if (accountIndex !== intent.accountIndex) {
     throw executionError("the approved Lighter master account is not uniquely owned by the wallet");
   }
 }

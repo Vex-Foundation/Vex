@@ -13,6 +13,7 @@ const FINGERPRINT = createHash("sha256")
 
 const mocks = vi.hoisted(() => ({
   getApiKeys: vi.fn(),
+  getAccountsByL1Address: vi.fn(),
   getNextNonce: vi.fn(),
   findLive: vi.fn(),
   reserve: vi.fn(),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   markApproved: vi.fn(),
   isIntegrationEnabled: vi.fn(),
   getWorkflow: vi.fn(),
+  transitionWorkflow: vi.fn(),
   withSessionControlLock: vi.fn(),
   resolveSelectedAddress: vi.fn(),
   getPreparer: vi.fn(),
@@ -34,6 +36,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tools/lighter/client.js", () => ({
   getLighterClient: () => ({
     getApiKeys: mocks.getApiKeys,
+    getAccountsByL1Address: mocks.getAccountsByL1Address,
     getNextNonce: mocks.getNextNonce,
   }),
 }));
@@ -54,6 +57,8 @@ vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
   getLighterOnboardingWorkflow: mocks.getWorkflow,
+  transitionLighterOnboardingWorkflowWith: (_client: unknown, input: unknown) =>
+    mocks.transitionWorkflow(input),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -128,6 +133,15 @@ beforeEach(() => {
     workflowState: "account_resolved",
     resolvedAccountIndex: 42,
   });
+  mocks.getAccountsByL1Address.mockResolvedValue({
+    code: 200,
+    l1_address: WALLET,
+    sub_accounts: [{ account_type: 0, index: 42, l1_address: WALLET }],
+  });
+  mocks.transitionWorkflow.mockResolvedValue({
+    workflowState: "account_resolved",
+    resolvedAccountIndex: 42,
+  });
   mocks.getPreparer.mockReturnValue({ prepare: mocks.prepareCredential });
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
@@ -154,6 +168,34 @@ beforeEach(() => {
 });
 
 describe("lighter.key.register.prepare", () => {
+  it("adopts one live wallet-owned master account before reserving a key slot", async () => {
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "integration_enabled",
+      resolvedAccountIndex: null,
+    });
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.getAccountsByL1Address).toHaveBeenCalledWith("core", {
+      l1Address: WALLET,
+      cursor: undefined,
+    });
+    expect(mocks.transitionWorkflow).toHaveBeenCalledWith({
+      environment: "core",
+      walletAddress: WALLET,
+      expectedStates: ["integration_enabled"],
+      nextState: "account_resolved",
+      resolvedAccountIndex: 42,
+    });
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      accountIndex: 42,
+    }));
+  });
+
   it("reserves from a full-slot read, encrypts through the privileged preparer, and binds nextNonce", async () => {
     const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
       { environment: "core" },

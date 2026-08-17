@@ -14,7 +14,7 @@ const NOW = new Date("2030-01-01T00:00:00.000Z");
 const VALID_TRANSITIONS: Readonly<
   Record<LighterOnboardingWorkflowState, readonly LighterOnboardingWorkflowState[]>
 > = {
-  integration_enabled: ["deposit_approval_pending", "failed"],
+  integration_enabled: ["deposit_approval_pending", "account_resolved", "failed"],
   deposit_approval_pending: [
     "deposit_preflight_validated",
     "allowance_verified",
