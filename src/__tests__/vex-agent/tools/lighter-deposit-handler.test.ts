@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { validatePreparedActionFollowUp } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 
@@ -267,7 +268,16 @@ describe("lighter.deposit.prepare", () => {
         toolId: "lighter.deposit",
         params: { intentId: intentRow().intentId },
       },
+      approvalPreview: {
+        criticalArgs: { amountDisplay: "11 USDC" },
+      },
     });
+    expect(
+      validatePreparedActionFollowUp(
+        "lighter__deposit__prepare",
+        result.preparedActionFollowUp!,
+      ),
+    ).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
   });
 
   it("returns a deterministic conflict and never prepares a second deposit", async () => {

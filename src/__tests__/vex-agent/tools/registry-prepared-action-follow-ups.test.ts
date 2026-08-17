@@ -85,7 +85,7 @@ function lighterDepositCandidate() {
         assetIndex: 3,
         routeType: 0,
         amountUnits: "11000000",
-        amountDisplay: "11",
+        amountDisplay: "11 USDC",
         summary: "Deposit 11 USDC from this Vex wallet into its own Lighter account.",
         scopeNote: "This approval authorizes only this deposit, not a trade or withdrawal.",
       },
@@ -140,7 +140,9 @@ describe("prepared-action follow-up registry", () => {
       { assetIndex: 4 },
       { routeType: 2 },
       { amountUnits: "0" },
-      { amountDisplay: "11 USDC" },
+      { amountDisplay: "11" },
+      { amountDisplay: "11 DAI" },
+      { amountDisplay: "011 USDC" },
     ];
     for (const override of overrides) {
       expect(

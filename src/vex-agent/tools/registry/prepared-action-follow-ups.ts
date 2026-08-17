@@ -112,6 +112,8 @@ const LIGHTER_DEPOSIT_PREVIEW_KEYS = [
 ] as const;
 
 const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+const LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE =
+  /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? USDC$/;
 const EVM_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
 
 function isScalar(value: unknown): value is ApprovalPreviewScalar {
@@ -277,7 +279,7 @@ function validateLighterDepositFollowUp(
     typeof criticalArgs.amountUnits !== "string" ||
     !/^[1-9][0-9]*$/.test(criticalArgs.amountUnits) ||
     typeof criticalArgs.amountDisplay !== "string" ||
-    !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.amountDisplay) ||
+    !LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE.test(criticalArgs.amountDisplay) ||
     typeof criticalArgs.summary !== "string" ||
     criticalArgs.summary.trim().length === 0 ||
     criticalArgs.summary.length > 600 ||
