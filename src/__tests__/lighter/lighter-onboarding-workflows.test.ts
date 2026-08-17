@@ -5,10 +5,60 @@ import {
   LIGHTER_ONBOARDING_WORKFLOW_STATES,
   ensureLighterOnboardingWorkflowEnabledWith,
   transitionLighterOnboardingWorkflowWith,
+  type LighterOnboardingWorkflowState,
 } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const NOW = new Date("2030-01-01T00:00:00.000Z");
+
+const VALID_TRANSITIONS: Readonly<
+  Record<LighterOnboardingWorkflowState, readonly LighterOnboardingWorkflowState[]>
+> = {
+  integration_enabled: ["deposit_approval_pending", "failed"],
+  deposit_approval_pending: [
+    "deposit_preflight_validated",
+    "allowance_verified",
+    "approve_staged",
+    "ambiguous",
+    "failed",
+  ],
+  deposit_preflight_validated: [
+    "allowance_verified",
+    "approve_staged",
+    "ambiguous",
+    "failed",
+  ],
+  allowance_verified: ["deposit_staged", "ambiguous", "failed"],
+  approve_staged: ["approve_confirmed", "ambiguous", "failed"],
+  approve_confirmed: ["deposit_staged", "ambiguous", "failed"],
+  deposit_staged: [
+    "deposit_l1_confirmed",
+    "deposit_l2_pending",
+    "ambiguous",
+    "failed",
+  ],
+  deposit_l1_confirmed: ["deposit_l2_pending", "ambiguous", "failed"],
+  deposit_l2_pending: ["account_resolved", "ambiguous", "failed"],
+  account_resolved: ["deposit_approval_pending", "key_generated_encrypted", "failed"],
+  key_generated_encrypted: ["key_registration_approval_pending", "failed"],
+  key_registration_approval_pending: [
+    "change_pub_key_submitted",
+    "ambiguous",
+    "failed",
+  ],
+  change_pub_key_submitted: ["key_verified", "ambiguous", "failed"],
+  key_verified: ["nonce_synchronized", "failed"],
+  nonce_synchronized: ["ready_to_trade", "failed"],
+  ready_to_trade: ["deposit_approval_pending", "failed"],
+  ambiguous: [
+    "approve_confirmed",
+    "deposit_l2_pending",
+    "account_resolved",
+    "key_verified",
+    "failed",
+  ],
+  failed: ["deposit_approval_pending", "key_generated_encrypted"],
+};
 
 function row(state = "integration_enabled") {
   return {
@@ -128,6 +178,52 @@ describe("Lighter onboarding workflow foundation", () => {
       }),
     ).rejects.toThrow("Invalid Lighter onboarding workflow transition");
     expect(client.query).not.toHaveBeenCalled();
+  });
+
+  it("accepts every declared workflow transition", async () => {
+    for (const current of LIGHTER_ONBOARDING_WORKFLOW_STATES) {
+      for (const nextState of VALID_TRANSITIONS[current]) {
+        const client = {
+          query: vi.fn().mockResolvedValueOnce({
+            rows: [row(nextState)],
+            rowCount: 1,
+          }),
+        };
+
+        const result = await transitionLighterOnboardingWorkflowWith(
+          client as never,
+          {
+            environment: "core",
+            walletAddress: WALLET,
+            expectedStates: [current],
+            nextState,
+          },
+        );
+
+        expect(result?.workflowState, `${current} -> ${nextState}`).toBe(nextState);
+        expect(client.query, `${current} -> ${nextState}`).toHaveBeenCalledOnce();
+      }
+    }
+  });
+
+  it("rejects every undeclared workflow state pair before querying", async () => {
+    for (const current of LIGHTER_ONBOARDING_WORKFLOW_STATES) {
+      for (const nextState of LIGHTER_ONBOARDING_WORKFLOW_STATES) {
+        if (VALID_TRANSITIONS[current].includes(nextState)) continue;
+        const client = { query: vi.fn() };
+
+        await expect(
+          transitionLighterOnboardingWorkflowWith(client as never, {
+            environment: "core",
+            walletAddress: WALLET,
+            expectedStates: [current],
+            nextState,
+          }),
+          `${current} -> ${nextState}`,
+        ).rejects.toThrow("Invalid Lighter onboarding workflow transition");
+        expect(client.query, `${current} -> ${nextState}`).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it("migration keys one public workflow by environment and wallet", async () => {
