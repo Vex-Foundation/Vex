@@ -41,3 +41,15 @@ export {
   type MorphoActivityQueryParams,
   parseMorphoActivityParams,
 } from "./read-params/activity.js";
+
+export {
+  MORPHO_REWARDS_MAX_CHAINS,
+  type MorphoRewardsQuery,
+  parseMorphoRewardsParams,
+} from "./read-params/rewards.js";
+
+export {
+  MORPHO_WALLET_MAX_TOKENS,
+  type MorphoWalletBalanceQuery,
+  parseMorphoWalletBalanceParams,
+} from "./read-params/wallet.js";

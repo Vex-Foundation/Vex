@@ -172,9 +172,44 @@ against a single per-IP ceiling.
 - `marketPositions` filters match an address case-insensitively; the responses
   return it checksum-cased.
 
+## The on-chain half (batch 4)
+
+Everything above is the keyless GraphQL API. `wallet-reads.ts`, `evm-client.ts`
+and the address table in `constants.ts` are a SECOND transport: a direct
+Multicall3 read over a keyless public RPC, used by `morpho.wallet.balance` to
+report token balances and the allowances granted to Morpho's own contracts.
+
+- **Addresses are pinned, dated and cross-checked.** `MORPHO_CONTRACTS` was
+  extracted on 2026-08-14 from `@morpho-org/morpho-ts@2.9.0`
+  (`lib/cjs/addresses.js`), and the Ethereum and Base values were cross-checked
+  against the ones recorded independently in `morpho-integration.plan.md` before
+  use. Vex does not depend on that package at runtime: a registry that changed
+  under a transitive upgrade would move a security-relevant spender set with no
+  review. Re-extraction is a deliberate, dated edit.
+- **Permit2 is genuinely absent on Monad (143) and HyperEVM (999).** That is
+  carried as `null` and refused BY NAME. Never fill it in with the canonical
+  address: an allowance read against a contract that is not deployed answers
+  zero, and "no Permit2 approval" for a contract nobody could have approved is a
+  lie that reads as safety.
+- **Multicall3 is live at the canonical address on all nine chains**, verified by
+  `eth_getCode` on 2026-08-14 including Monad and HyperEVM, which the repository
+  had never proven it on.
+- **Two unlimited flags, not one.** `unlimited` is an EXACT match with
+  `type(uint256).max`. `effectivelyUnlimited` is at or above 2^255 and also
+  catches a max approval that has been partly drawn. A live Base wallet held
+  exactly that case: an approval ending `911329639935` against a maximum ending
+  `913129639935`, 1,800 USDC already taken, remainder still around 1e71. Exact
+  matching alone reported it as bounded, which under-warns.
+
 ## Do-nots
 
 - Do not import `src/vex-agent/**` from this module.
+- Do not report a failed on-chain read as a zero balance or a zero allowance.
+  `multicall({allowFailure: true})` answers per contract, so unknowns are kept in
+  their own fields. An unknown approval rendered as zero reads as safety.
+- Do not guess a contract address for a chain the pinned registry does not
+  cover, and do not read an allowance for the native coin: it is moved as
+  `msg.value` and is never pulled by a spender.
 - Do not construct a second `MorphoClient`; use `getMorphoClient()`.
 - Do not bypass the budget or shorten the breaker to make a call succeed.
 - Do not parse a money value through `parseFloat` or `Number`. Amounts are
@@ -198,5 +233,10 @@ against a single per-IP ceiling.
 Verbatim captures: `src/__tests__/vex-agent/tools/protocols/morpho/fixtures.ts`
 (markets), `vault-fixtures.ts` (vaults) and `position-fixtures.ts` (positions and
 activity), each with probe date, regeneration commands and shape facts inline. Raw probe artifacts: `agents_dm/morpho-probe/`.
-Provider-layer tests: `src/__tests__/morpho/`.
+Batch 4 adds `rewards-fixtures.ts` (the live Merkl bodies behind
+`morpho.rewards.get`) and `wallet-balance.test.ts`, whose stub reads are the
+verbatim live Base capture of 2026-08-14.
+Provider-layer tests: `src/__tests__/morpho/` and `src/__tests__/merkl/`.
+The reward distributor itself is a separate module: `src/tools/merkl/`
+([Merkl.md](../merkl/Merkl.md)).
 Agent-layer tests: `src/__tests__/vex-agent/tools/protocols/morpho/`.

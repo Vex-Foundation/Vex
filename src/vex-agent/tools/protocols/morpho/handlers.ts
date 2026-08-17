@@ -1,5 +1,5 @@
 /**
- * Morpho protocol handlers - the markets, vaults and portfolio lanes.
+ * Morpho protocol handlers - the markets, vaults, portfolio and wallet lanes.
  *
  * Every handler takes the execution context's `abortSignal` and pass it into the
  * client, so an operator Stop reaches the in-flight HTTP read rather than
@@ -13,6 +13,8 @@ import { morphoVaultsDiscover } from "./handlers/vaults-discover.js";
 import { morphoVaultGet } from "./handlers/vault-get.js";
 import { morphoPositionsGet } from "./handlers/positions-get.js";
 import { morphoMarketsActivity } from "./handlers/markets-activity.js";
+import { morphoRewardsGet } from "./handlers/rewards-get.js";
+import { morphoWalletBalance } from "./handlers/wallet-balance.js";
 
 export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.markets.discover": (params, context) =>
@@ -27,4 +29,9 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
     morphoPositionsGet(params, context.abortSignal ? { abortSignal: context.abortSignal } : {}),
   "morpho.markets.activity": (params, context) =>
     morphoMarketsActivity(params, context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+  "morpho.rewards.get": (params, context) =>
+    morphoRewardsGet(params, context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+  // No abortSignal: the wallet read is an RPC batch through viem's own transport,
+  // which owns its timeout and takes no signal from us.
+  "morpho.wallet.balance": (params) => morphoWalletBalance(params),
 };

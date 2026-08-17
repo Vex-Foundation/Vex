@@ -158,6 +158,17 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["types", "a LIST of event kinds to keep on a history read; the accepted set is declared as an `enum`"],
   ["since", "window start as a unix timestamp in SECONDS"],
   ["until", "window end as a unix timestamp in SECONDS"],
+
+  // -- Reward and wallet reads (morpho, batch 4) -------------------
+  //
+  // One key, added deliberately. `morphoOnly` narrows a REWARD read to the
+  // campaigns proven to belong to Morpho. It is not a generic `filter` or an
+  // `onlyX` pattern invited for reuse: the distributor behind that read serves
+  // many protocols, a single claim takes a whole reward token row whatever
+  // produced it, and this key is the caller's explicit statement that it wants
+  // the narrower view and accepts the incompleteness. Naming the protocol in
+  // the key is what stops it being read as a generic switch.
+  ["morphoOnly", "narrow a multi-protocol reward read to campaigns attributed to Morpho alone"],
 ]);
 
 /**

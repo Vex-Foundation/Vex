@@ -50,6 +50,23 @@ export {
 } from "./projectors/positions.js";
 
 export {
+  MORPHO_REWARDS_CLAIM_NOTE,
+  MORPHO_REWARDS_USD_NOTE,
+  projectReward,
+  summariseClaimableUsd,
+  type ProjectedReward,
+  type ProjectedRewardChain,
+} from "./projectors/rewards.js";
+
+export {
+  MORPHO_ALLOWANCE_NOTE,
+  MORPHO_BALANCE_FRESHNESS_NOTE,
+  countUnlimitedApprovals,
+  projectWalletSnapshot,
+  type ProjectedWalletBalance,
+} from "./projectors/wallet.js";
+
+export {
   MORPHO_ACTIVITY_HISTORY_NOTE,
   MORPHO_ACTIVITY_USD_NOTE,
   projectActivityRow,

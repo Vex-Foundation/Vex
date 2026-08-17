@@ -349,6 +349,35 @@ export const ErrorCodes = {
    * cannot tell them apart cannot report what happened.
    */
   MORPHO_BUDGET_EXHAUSTED: "MORPHO_BUDGET_EXHAUSTED",
+  /**
+   * An on-chain read (batch 4 wallet balances and allowances) failed at the RPC
+   * rather than at Morpho's API. Distinct from `MORPHO_API_ERROR` because the
+   * remediation differs completely: an RPC fault is a transport the caller can
+   * retry or point elsewhere, while an API refusal is Morpho's verdict on the
+   * query. A single code for both would tell the agent to retry a query that
+   * can never succeed, or to give up on a node that is merely busy.
+   */
+  MORPHO_RPC_ERROR: "MORPHO_RPC_ERROR",
+  /**
+   * The pinned Morpho contract registry has no address for the named contract on
+   * the named chain (live gap on 2026-08-14: Permit2 is absent for Monad and
+   * HyperEVM). Refused BY NAME rather than guessed - an allowance read against a
+   * wrong spender reports "no approval" for a contract that is not the one the
+   * user would ever approve, which is a false safety signal on a money path.
+   */
+  MORPHO_CONTRACT_UNAVAILABLE: "MORPHO_CONTRACT_UNAVAILABLE",
+
+  // Merkl (reward distribution API behind Morpho's campaigns - keyless, batch 4)
+  MERKL_API_ERROR: "MERKL_API_ERROR",
+  MERKL_RATE_LIMITED: "MERKL_RATE_LIMITED",
+  MERKL_TIMEOUT: "MERKL_TIMEOUT",
+  MERKL_INVALID_RESPONSE: "MERKL_INVALID_RESPONSE",
+  MERKL_UNSUPPORTED_CHAIN: "MERKL_UNSUPPORTED_CHAIN",
+  /**
+   * Vex's own budget or breaker refused before a request left the process. Same
+   * distinction as `MORPHO_BUDGET_EXHAUSTED`: our restraint, not Merkl's verdict.
+   */
+  MERKL_BUDGET_EXHAUSTED: "MERKL_BUDGET_EXHAUSTED",
 
   // Trench Express (RBC 4663 launchpad — read-only client, P1)
   TRENCH_API_ERROR: "TRENCH_API_ERROR",
