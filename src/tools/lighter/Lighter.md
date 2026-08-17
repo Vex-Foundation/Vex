@@ -16,9 +16,9 @@ Deposit, key registration, and order create each retain independent
 default-closed privileged release gates in addition to exact user approval.
 Signatures, signed payloads, private keys, and auth tokens are never persisted
 in PostgreSQL or returned through the agent tool surface. Approval-gated order
-create and market/IOC signing have real Core proofs; the Phase 3 registration
-path does not yet have its controlled live proof and must not be described as
-on-chain complete.
+create, market/IOC signing, and Phase 3 registration have real Core proofs. No
+manual dashboard API-key entry or credential copy/paste is required for the
+wallet-funded onboarding flow.
 
 ## Sources
 
@@ -140,6 +140,11 @@ The exact operator gate value is
 It is installed only by Electron main and cannot be supplied by a tool or
 renderer argument. Pending keys use `key_generated_pending_registration` and
 are excluded from trading credential listing and order-signing reads.
+
+Lighter Core reports a missing exact API-key slot as HTTP `400` with the exact
+provider message `api key not found`, rather than as an empty successful list.
+Only the key-registration exact-slot preflight interprets that precise response
+as vacancy; unrelated `400` responses still fail closed before wallet access.
 
 ## Milestone 8 Execution Boundary
 
@@ -627,3 +632,13 @@ and registered-key preflight. It does not prove signing, authenticated reads
 with the user's encrypted trading key, `sendTx`, sequencer acceptance, or an
 order outcome; those require the user's exact preview and approval through the
 default-closed live create path.
+
+2026-08-17 local time: the controlled wallet-funded Phase 3 registration exit
+gate passed on Lighter Core account `737810`, API-key index `4`. Vex generated
+and encrypted the key locally, obtained a separate user approval, and submitted
+TxType 8 hash
+`c6ee84c955a5876901a30679d0074dbfcf13fed4121b79b5169d329a26af99f0cfe8eaabced45e19`.
+The exact public slot matched the vault-derived key, official `CheckClient`
+passed, public and durable next nonce synchronized to `1`, the vault marker
+became active, and the workflow reached `ready_to_trade`. The Lighter dashboard
+was not used to create, copy, or manually enter an API private key.
