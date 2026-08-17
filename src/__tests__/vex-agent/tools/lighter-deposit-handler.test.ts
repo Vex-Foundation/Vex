@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   buildExecutionDeps: vi.fn(),
   executeApprovedDeposit: vi.fn(),
   releaseGateEnabled: vi.fn(),
+  buildRepairDeps: vi.fn(),
+  repairDepositIntent: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
@@ -68,6 +70,11 @@ vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
   LIGHTER_DEPOSIT_RELEASE_GATE: {
     isEnabled: mocks.releaseGateEnabled,
   },
+}));
+
+vi.mock("@vex-agent/sync/lighter-deposit-repair.js", () => ({
+  buildProductionLighterDepositRepairDeps: mocks.buildRepairDeps,
+  repairLighterDepositIntent: mocks.repairDepositIntent,
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -121,6 +128,17 @@ beforeEach(() => {
   mocks.listUnresolvedDepositsForWallet.mockResolvedValue([]);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
   mocks.releaseGateEnabled.mockReturnValue(true);
+  mocks.buildRepairDeps.mockReturnValue({ marker: "repair-deps" });
+  mocks.repairDepositIntent.mockImplementation(async (row) => ({
+    intentId: row.intentId,
+    stateBefore: row.executionState,
+    stateAfter: row.executionState,
+    resolution: "awaiting_chain",
+    evidence: "none",
+    txHash: row.depositTxHash ?? row.approveTxHash,
+    accountIndex: null,
+    guidance: "wait",
+  }));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.markAmbiguous.mockResolvedValue(intentRow({ executionState: "ambiguous" }));
   mocks.leaseAssertOwned.mockResolvedValue(undefined);
@@ -140,6 +158,12 @@ describe("lighter.deposit.status", () => {
         failureReason: "receipt unavailable",
       }),
     ]);
+    mocks.findByIntentId.mockResolvedValueOnce(intentRow({
+      executionState: "ambiguous",
+      approvalStatus: "approved",
+      depositTxHash: `0x${"b".repeat(64)}`,
+      failureReason: "receipt unavailable",
+    }));
 
     const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
       { environment: "core" },
@@ -154,6 +178,7 @@ describe("lighter.deposit.status", () => {
     expect(result.data).toMatchObject({
       source: "vex_lighter_local_deposit_status",
       checkedIntents: 1,
+      reconciliationErrors: 0,
       intents: [
         {
           intentId: intentRow().intentId,
@@ -162,6 +187,10 @@ describe("lighter.deposit.status", () => {
         },
       ],
     });
+    expect(mocks.repairDepositIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ intentId: intentRow().intentId }),
+      { marker: "repair-deps" },
+    );
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
@@ -178,6 +207,33 @@ describe("lighter.deposit.status", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("does not belong to this wallet and environment");
+  });
+
+  it("returns durable local status when reconciliation infrastructure is unavailable", async () => {
+    mocks.listUnresolvedDepositsForWallet.mockResolvedValueOnce([
+      intentRow({
+        executionState: "deposit_submitted",
+        approvalStatus: "approved",
+        depositTxHash: `0x${"b".repeat(64)}`,
+      }),
+    ]);
+    mocks.buildRepairDeps.mockImplementationOnce(() => {
+      throw new Error("RPC config unavailable");
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      checkedIntents: 1,
+      reconciliationErrors: 1,
+      intents: [{ executionState: "deposit_submitted" }],
+    });
+    expect(mocks.repairDepositIntent).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 });
 

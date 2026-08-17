@@ -402,7 +402,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Inspect the durable state of this Vex wallet's Lighter deposit intents. Use after an approval, a pending or ambiguous Ethereum outcome, or when a second deposit is refused because an earlier intent is unresolved. Returns approval state, execution state, staged transaction hashes, credited account index when known, and explicit next-action guidance. An optional intent id checks one local intent; omitting it lists this wallet's unresolved deposit intents. This tool never signs, broadcasts, retries, or replaces a transaction and moves no funds.",
+      "Check and reconcile the durable state of this Vex wallet's Lighter deposit intents. Use after an approval, a pending or ambiguous Ethereum outcome, or when a second deposit is refused because an earlier intent is unresolved. It reads only already-staged Ethereum transaction receipts and public Lighter account state, then may advance local state through guarded evidence-bound updates. Returns approval state, execution state, staged transaction hashes, credited account index when known, repair reports, and explicit next-action guidance. An optional intent id checks one local intent; omitting it checks this wallet's unresolved deposit intents. This tool never signs, broadcasts, retries, or replaces a transaction and moves no funds.",
     mutating: false,
     actionKind: "read",
     params: [

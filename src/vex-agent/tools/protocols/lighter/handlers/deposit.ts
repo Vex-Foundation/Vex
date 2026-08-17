@@ -28,6 +28,11 @@ import { LIGHTER_DEPOSIT_RELEASE_GATE } from "@tools/lighter/wallet-funding/rele
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  buildProductionLighterDepositRepairDeps,
+  repairLighterDepositIntent,
+  type LighterDepositRepairReport,
+} from "@vex-agent/sync/lighter-deposit-repair.js";
 import logger from "@utils/logger.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
@@ -188,20 +193,46 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail("The requested Lighter deposit intent does not belong to this wallet and environment.");
     }
 
+    const repairReports: LighterDepositRepairReport[] = [];
+    const refreshedIntents: LighterOnboardingIntentRow[] = [];
+    let reconciliationErrors = 0;
+    if (intents.length > 0) {
+      try {
+        const repairDeps = buildProductionLighterDepositRepairDeps();
+        for (const intent of intents) {
+          try {
+            repairReports.push(await repairLighterDepositIntent(intent, repairDeps));
+          } catch {
+            reconciliationErrors += 1;
+          }
+          refreshedIntents.push(
+            (await onboardingIntentsRepo.findByIntentId(intent.intentId)) ?? intent,
+          );
+        }
+      } catch {
+        reconciliationErrors = intents.length;
+        refreshedIntents.push(...intents);
+      }
+    }
+
     return ok({
       source: "vex_lighter_local_deposit_status",
       environment: environment.value,
       walletAddress,
-      checkedIntents: intents.length,
-      intents: intents.map(projectDepositStatus),
+      checkedIntents: refreshedIntents.length,
+      reconciliationErrors,
+      reconciliationReports: repairReports,
+      intents: refreshedIntents.map(projectDepositStatus),
       riskNotes: [
-        "This status read never signs, broadcasts, retries, or replaces an Ethereum transaction.",
+        "Reconciliation reads already-staged Ethereum receipts and public Lighter account state only; it never signs, broadcasts, retries, or replaces a transaction.",
         "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
       ],
       message:
         intents.length === 0
           ? `No unresolved Lighter deposit intents exist for this ${environment.value} wallet.`
-          : `Found ${intents.length} Lighter deposit intent(s) for this wallet.`,
+          : reconciliationErrors === 0
+            ? `Checked and reconciled ${intents.length} Lighter deposit intent(s) for this wallet.`
+            : `Checked ${intents.length} Lighter deposit intent(s); ${reconciliationErrors} could not be reconciled from provider evidence and remain unresolved.`,
     });
   },
 
