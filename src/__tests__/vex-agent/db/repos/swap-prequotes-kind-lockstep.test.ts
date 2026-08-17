@@ -104,6 +104,40 @@ describe("swap_prequotes kind — SQL CHECK <-> TS union lockstep", () => {
     }
   });
 
+  it("the Morpho vault lend kinds are present on BOTH sides (migration 080)", () => {
+    // One kind per DIRECTION, mirroring 'lp_add' / 'lp_remove': a shared kind
+    // would let a deposit quote authorize a withdraw execute.
+    const sql = parseKindCheck();
+    const ts = parseKindUnion();
+    for (const kind of ["lend_deposit", "lend_withdraw"]) {
+      expect(sql, `${kind} missing from the SQL CHECK`).toContain(kind);
+      expect(ts, `${kind} missing from PrequoteKind`).toContain(kind);
+    }
+  });
+
+  it("neither lend direction collapsed into 'swap' (054's rationale, restated by 080)", () => {
+    // The bug 054 fixed was a protocol write filed under 'swap', where an
+    // ordinary DEX quote can authorize it. 'swap' must stay exactly one kind.
+    expect(parseKindCheck().filter((kind) => kind === "swap")).toHaveLength(1);
+    expect(parseKindUnion().filter((kind) => kind === "swap")).toHaveLength(1);
+  });
+
+  it("the pre-080 vocabulary is preserved - 080 is expand-only", () => {
+    // A kind dropped from the CHECK would make every live row of that kind
+    // unwritable; this pins that 080 only widened.
+    for (const kind of [
+      "sy_mint",
+      "sy_redeem",
+      "lp_remove_dual",
+      "lp_add_keep_yt",
+      "pt_rollover",
+      "lp_transfer",
+      "lp_to_pt",
+    ]) {
+      expect(parseKindCheck(), `${kind} was dropped from the CHECK`).toContain(kind);
+    }
+  });
+
   it("the pre-R5d vocabulary is preserved — 054 is expand-only", () => {
     // A kind dropped from the CHECK would make every live row of that kind
     // unwritable; this pins that 054 only widened.

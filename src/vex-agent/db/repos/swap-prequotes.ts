@@ -45,6 +45,17 @@ export type PrequoteFamily = "eip155" | "solana";
 //   - 'pt_rollover'             : PT(marketA) → PT(marketB).
 //   - 'lp_transfer'             : LP(marketA) → LP(marketB).
 //   - 'lp_to_pt'                : LP → PT.
+//
+// E3b-2 adds the two Morpho vault lend directions (DB CHECK widened by migration
+// 080). Same rule: `swap` is not reusable (an ordinary DEX quote would authorize
+// a protocol write), and the two DIRECTIONS get one kind each, exactly as
+// 'lp_add' / 'lp_remove' do, so a deposit quote can never authorize a withdraw
+// execute when the rest of the material agrees.
+//   - 'lend_deposit'  : Morpho vault supply   (asset -> vault shares).
+//   - 'lend_withdraw' : Morpho vault withdraw (vault shares -> asset).
+// The names match the `event_role` vocabulary migration 079 uses on the
+// `agent_activity` `lend` arm.
+//
 // The TS union and the SQL CHECK are held in lockstep by
 // `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
 export type PrequoteKind =
@@ -61,7 +72,9 @@ export type PrequoteKind =
   | "lp_add_keep_yt"
   | "pt_rollover"
   | "lp_transfer"
-  | "lp_to_pt";
+  | "lp_to_pt"
+  | "lend_deposit"
+  | "lend_withdraw";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
 export interface SwapPrequote {
