@@ -311,10 +311,16 @@ async function readExactApiKeySlot(
   client: LighterKeyRegistrationExecutionDeps["client"],
   intent: RegistrationIntent,
 ): Promise<LighterApiKey | null> {
-  const response = await client.getApiKeys("core", {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  let response: Awaited<ReturnType<LighterClient["getApiKeys"]>>;
+  try {
+    response = await client.getApiKeys("core", {
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+    });
+  } catch (error) {
+    if (isMissingExactApiKeySlot(error)) return null;
+    throw error;
+  }
   if (response.code !== 200) throw executionError("the live API-key slot could not be verified");
   if (response.api_keys.some((row) => row.account_index !== intent.accountIndex)) {
     throw executionError("the live API-key slot response included another account");
@@ -326,6 +332,14 @@ async function readExactApiKeySlot(
   if (exact.length === 0) return null;
   normalizePublicKey(exact[0]!.public_key);
   return exact[0]!;
+}
+
+function isMissingExactApiKeySlot(error: unknown): boolean {
+  return error instanceof VexError
+    && error.code === ErrorCodes.LIGHTER_INVALID_REQUEST
+    && error.httpStatus === 400
+    && /^Lighter Core rejected the request \(HTTP 400\)\. Upstream said: api key not found$/i
+      .test(error.message);
 }
 
 async function waitForExactApiKeySlot(

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { mapLighterError } from "@tools/lighter/errors.js";
 import type { LighterChangePubKeySignerResult } from "@tools/lighter/change-pub-key.js";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -100,6 +101,7 @@ function makeDeps(options: {
   readonly postRegistrationNonce?: number;
   readonly checkerPublicKey?: string;
   readonly initialExecutionState?: LighterKeyRegistrationReservationRow["executionState"];
+  readonly missingSlotResponse?: "empty" | "not_found" | "other_error";
 } = {}) {
   const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
   let current = intent(options.initialExecutionState);
@@ -139,6 +141,14 @@ function makeDeps(options: {
       })),
       getApiKeys: vi.fn(async () => {
         apiKeyReadCount += 1;
+        if (initiallyApproved && apiKeyReadCount === 1) {
+          if (options.missingSlotResponse === "not_found") {
+            throw mapLighterError("core", 400, { message: "api key not found" });
+          }
+          if (options.missingSlotResponse === "other_error") {
+            throw mapLighterError("core", 400, { message: "invalid account index" });
+          }
+        }
         const publicKey = initiallyApproved && apiKeyReadCount === 1
           ? null
           : options.reconciliationPublicKey;
@@ -231,7 +241,10 @@ const EXECUTION_INPUT = {
 
 describe("Lighter key registration execution", () => {
   it("stages before sendTx and activates only after exact key, CheckClient, and nonce +1", async () => {
-    const setup = makeDeps({ reconciliationPublicKey: PUBLIC_KEY });
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "not_found",
+    });
 
     const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
 
@@ -254,6 +267,19 @@ describe("Lighter key registration execution", () => {
     expect(setup.activateVaultCredential).toHaveBeenCalledOnce();
     expect(JSON.stringify(result)).not.toContain(LIGHTER_PRIVATE_KEY);
     expect(JSON.stringify(result)).not.toContain("signed");
+  });
+
+  it("does not treat unrelated exact-slot 400 responses as vacancy", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "other_error",
+    });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("invalid account index");
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
   });
 
   it("records an uncertain send once and never resubmits while the slot is absent", async () => {
