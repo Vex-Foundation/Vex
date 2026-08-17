@@ -1,6 +1,7 @@
 import { getAddress, type Hex } from "viem";
 
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   resolveSelectedAddress,
@@ -120,6 +121,13 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(err);
     }
 
+    const integrationEnabled = await isLighterIntegrationEnabled("core", walletAddress);
+    if (!integrationEnabled) {
+      return fail(
+        "Lighter is not enabled for this Vex wallet. Enable the Lighter integration in Settings before preparing a deposit; enabling it does not move funds.",
+      );
+    }
+
     const amountInRaw = params.amountIn;
     if (typeof amountInRaw !== "string") {
       return fail('amountIn must be a decimal USDC string, for example "11".');
@@ -193,6 +201,11 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (intent.capability !== "deposit") {
       return fail(`Intent ${intent.intentId} is not a Lighter deposit intent.`);
+    }
+    if (!(await isLighterIntegrationEnabled(intent.environment, intent.walletAddress))) {
+      return fail(
+        "Lighter was disabled for this Vex wallet before execution. Nothing was signed or submitted; enable it again and prepare a fresh approval.",
+      );
     }
     try {
       await assertLighterDepositApprovalBinding({ approvalId: context.approvalId, sessionId, intent });

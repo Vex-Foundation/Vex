@@ -6,6 +6,7 @@ const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 
 const mocks = vi.hoisted(() => ({
   createOrFind: vi.fn(),
+  isIntegrationEnabled: vi.fn(),
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
   markAmbiguous: vi.fn(),
@@ -26,6 +27,10 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   findByIntentId: mocks.findByIntentId,
   markApprovalDecision: mocks.markApprovalDecision,
   markAmbiguous: mocks.markAmbiguous,
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
+  isLighterIntegrationEnabled: mocks.isIntegrationEnabled,
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -110,6 +115,7 @@ function intentRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
+  mocks.isIntegrationEnabled.mockResolvedValue(true);
   mocks.releaseGateEnabled.mockReturnValue(true);
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.markAmbiguous.mockResolvedValue(intentRow({ executionState: "ambiguous" }));
@@ -134,6 +140,22 @@ describe("lighter.deposit execution lease", () => {
       approvalStatus: "approved",
       executionState: "approved",
     }));
+  });
+
+  it("honors a disable that lands before approved execution", async () => {
+    mocks.isIntegrationEnabled.mockResolvedValue(false);
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("disabled for this Vex wallet before execution");
+    expect(result.output).toContain("Nothing was signed or submitted");
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
   it("refuses a busy wallet lease before resolving the private key", async () => {
@@ -197,6 +219,21 @@ describe("lighter.deposit execution lease", () => {
 });
 
 describe("lighter.deposit.prepare", () => {
+  it("is default-closed when the wallet has not enabled Lighter", async () => {
+    mocks.isIntegrationEnabled.mockResolvedValue(false);
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not enabled for this Vex wallet");
+    expect(result.output).toContain("enabling it does not move funds");
+    expect(mocks.createOrFind).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+  });
+
   it("creates the money-state row inside the session control lock", async () => {
     mocks.createOrFind.mockResolvedValue({
       outcome: "created",
