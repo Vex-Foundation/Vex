@@ -275,6 +275,85 @@ export async function listUnresolvedDepositsForWallet(
   return rows.map(mapRow);
 }
 
+export async function reconcileApproveReceiptWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly txHash: string;
+    readonly outcome: "confirmed" | "reverted";
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const next = input.outcome === "confirmed" ? "approve_confirmed" : "failed";
+  const reason = input.outcome === "reverted"
+    ? "Ethereum receipt proves the Lighter USDC approval transaction reverted."
+    : null;
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = $3,
+            failure_reason = $4,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND LOWER(approve_tx_hash) = LOWER($2)
+        AND deposit_tx_hash IS NULL
+        AND execution_state IN ('approve_submitted', 'ambiguous')
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.txHash, next, reason],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+export async function reconcileDepositReceiptWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly txHash: string;
+    readonly outcome: "confirmed" | "reverted";
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const next = input.outcome === "confirmed" ? "deposit_confirmed" : "failed";
+  const reason = input.outcome === "reverted"
+    ? "Ethereum receipt proves the Lighter deposit transaction reverted."
+    : null;
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = $3,
+            failure_reason = $4,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND execution_state IN ('deposit_submitted', 'ambiguous')
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.txHash, next, reason],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+export async function reconcileCreditedWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly txHash: string;
+    readonly accountIndex: number;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'credited',
+            resolved_account_index = $3,
+            failure_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND execution_state = 'deposit_confirmed'
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.txHash, input.accountIndex],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Guarded CAS advance: only from an allowed prior state. */
 async function advance(
   intentId: string,

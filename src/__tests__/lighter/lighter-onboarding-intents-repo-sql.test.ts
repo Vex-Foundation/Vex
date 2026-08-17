@@ -110,4 +110,41 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("execution_state NOT IN ('credited','failed')");
     expect(params).toEqual(["core", ROW.wallet_address]);
   });
+
+  it("reconciles an approval receipt only against its staged hash and pre-deposit states", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+    };
+    const txHash = `0x${"a".repeat(64)}`;
+
+    await repo.reconcileApproveReceiptWith(client as never, {
+      intentId: ROW.intent_id,
+      txHash,
+      outcome: "confirmed",
+    });
+
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("LOWER(approve_tx_hash) = LOWER($2)");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("execution_state IN ('approve_submitted', 'ambiguous')");
+    expect(params).toEqual([ROW.intent_id, txHash, "approve_confirmed", null]);
+  });
+
+  it("reconciles deposit credit only after the hash-bound confirmed state", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+    };
+    const txHash = `0x${"b".repeat(64)}`;
+
+    await repo.reconcileCreditedWith(client as never, {
+      intentId: ROW.intent_id,
+      txHash,
+      accountIndex: 800123,
+    });
+
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
+    expect(sql).toContain("execution_state = 'deposit_confirmed'");
+    expect(params).toEqual([ROW.intent_id, txHash, 800123]);
+  });
 });
