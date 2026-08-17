@@ -7,6 +7,7 @@ const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 
 const mocks = vi.hoisted(() => ({
   createOrFind: vi.fn(),
+  listUnresolvedDepositsForWallet: vi.fn(),
   isIntegrationEnabled: vi.fn(),
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   createOrFindLiveDepositApprovalPendingWith: mocks.createOrFind,
+  listUnresolvedDepositsForWallet: mocks.listUnresolvedDepositsForWallet,
   findByIntentId: mocks.findByIntentId,
   markApprovalDecision: mocks.markApprovalDecision,
   markAmbiguous: mocks.markAmbiguous,
@@ -116,6 +118,7 @@ function intentRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
+  mocks.listUnresolvedDepositsForWallet.mockResolvedValue([]);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
   mocks.releaseGateEnabled.mockReturnValue(true);
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
@@ -125,6 +128,57 @@ beforeEach(() => {
   mocks.buildExecutionDeps.mockReturnValue({ marker: "execution-deps" });
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
+});
+
+describe("lighter.deposit.status", () => {
+  it("lists only unresolved deposits for the selected wallet without executing", async () => {
+    mocks.listUnresolvedDepositsForWallet.mockResolvedValueOnce([
+      intentRow({
+        executionState: "ambiguous",
+        approvalStatus: "approved",
+        depositTxHash: `0x${"b".repeat(64)}`,
+        failureReason: "receipt unavailable",
+      }),
+    ]);
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mocks.listUnresolvedDepositsForWallet).toHaveBeenCalledWith(
+      "core",
+      WALLET,
+    );
+    expect(result.data).toMatchObject({
+      source: "vex_lighter_local_deposit_status",
+      checkedIntents: 1,
+      intents: [
+        {
+          intentId: intentRow().intentId,
+          executionState: "ambiguous",
+          nextAction: expect.stringContaining("Never rebroadcast"),
+        },
+      ],
+    });
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
+  it("refuses an exact intent owned by a different wallet", async () => {
+    mocks.findByIntentId.mockResolvedValueOnce(intentRow({
+      walletAddress: "0x2222222222222222222222222222222222222222",
+    }));
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+      { environment: "core", intentId: intentRow().intentId },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("does not belong to this wallet and environment");
+  });
 });
 
 describe("lighter.deposit execution lease", () => {

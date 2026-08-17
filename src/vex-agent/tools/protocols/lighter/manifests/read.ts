@@ -396,6 +396,25 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],
   },
   {
+    toolId: "lighter.deposit.status",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Inspect the durable state of this Vex wallet's Lighter deposit intents. Use after an approval, a pending or ambiguous Ethereum outcome, or when a second deposit is refused because an earlier intent is unresolved. Returns approval state, execution state, staged transaction hashes, credited account index when known, and explicit next-action guidance. An optional intent id checks one local intent; omitting it lists this wallet's unresolved deposit intents. This tool never signs, broadcasts, retries, or replaces a transaction and moves no funds.",
+    mutating: false,
+    actionKind: "read",
+    params: [
+      ENVIRONMENT_PARAM,
+      {
+        key: "intentId",
+        type: "string",
+        description:
+          "Optional Lighter deposit intent id returned by lighter.deposit.prepare. Omit to list every unresolved deposit intent for the selected Vex wallet and environment.",
+      },
+    ],
+    exampleParams: { environment: "core" },
+  },
+  {
     toolId: "lighter.order.status",
     namespace: "lighter",
     lifecycle: "active",

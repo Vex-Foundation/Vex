@@ -101,7 +101,110 @@ function depositUserGuidance(execution: LighterDepositExecutionResult): string {
   }
 }
 
+function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
+  if (intent.approvalStatus === "rejected") {
+    return "The deposit was rejected. Prepare a new deposit only if the user asks again.";
+  }
+  if (intent.approvalStatus === "expired") {
+    return "The approval expired without execution. Prepare a fresh deposit only if the user asks again.";
+  }
+  switch (intent.executionState) {
+    case "credited":
+      return "The deposit is credited; no retry is needed.";
+    case "failed":
+      return "The deposit is terminally failed. Verify the reason before preparing a new deposit.";
+    case "approval_pending":
+    case "prepared":
+      return "Wait for the user to approve or reject the existing approval card.";
+    case "approved":
+    case "allowance_verified":
+    case "approve_submitted":
+    case "approve_confirmed":
+    case "deposit_submitted":
+    case "deposit_confirmed":
+    case "ambiguous":
+      return "Reconcile the existing intent before any retry. Never rebroadcast either transaction from this status result.";
+  }
+}
+
+function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string, unknown> {
+  return {
+    intentId: intent.intentId,
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    approvalStatus: intent.approvalStatus,
+    executionState: intent.executionState,
+    amountUnits: intent.amountUnits,
+    approveTxHash: intent.approveTxHash,
+    depositTxHash: intent.depositTxHash,
+    resolvedAccountIndex: intent.resolvedAccountIndex,
+    failureReason: intent.failureReason,
+    createdAt: intent.createdAt.toISOString(),
+    updatedAt: intent.updatedAt.toISOString(),
+    expiresAt: intent.expiresAt.toISOString(),
+    nextAction: depositStatusNextAction(intent),
+  };
+}
+
 export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.deposit.status": async (params, context) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+
+    let walletAddress: string;
+    try {
+      walletAddress = getAddress(
+        resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+      );
+    } catch (err) {
+      return walletScopeErrorToResult(err);
+    }
+
+    const intentIdRaw = params.intentId;
+    const intentId =
+      typeof intentIdRaw === "string" && intentIdRaw.trim().length > 0
+        ? intentIdRaw.trim()
+        : null;
+    const intents = intentId === null
+      ? await onboardingIntentsRepo.listUnresolvedDepositsForWallet(
+          environment.value,
+          walletAddress,
+        )
+      : [await onboardingIntentsRepo.findByIntentId(intentId)].filter(
+          (intent): intent is LighterOnboardingIntentRow => intent !== null,
+        );
+
+    if (intentId !== null && intents.length === 0) {
+      return fail(`No Lighter deposit intent ${intentId} exists locally.`);
+    }
+    if (
+      intents.some(
+        (intent) =>
+          intent.capability !== "deposit"
+          || intent.environment !== environment.value
+          || intent.walletAddress.toLowerCase() !== walletAddress.toLowerCase(),
+      )
+    ) {
+      return fail("The requested Lighter deposit intent does not belong to this wallet and environment.");
+    }
+
+    return ok({
+      source: "vex_lighter_local_deposit_status",
+      environment: environment.value,
+      walletAddress,
+      checkedIntents: intents.length,
+      intents: intents.map(projectDepositStatus),
+      riskNotes: [
+        "This status read never signs, broadcasts, retries, or replaces an Ethereum transaction.",
+        "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
+      ],
+      message:
+        intents.length === 0
+          ? `No unresolved Lighter deposit intents exist for this ${environment.value} wallet.`
+          : `Found ${intents.length} Lighter deposit intent(s) for this wallet.`,
+    });
+  },
+
   "lighter.deposit.prepare": async (params, context) => {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Lighter deposit preparation requires a host session id.");

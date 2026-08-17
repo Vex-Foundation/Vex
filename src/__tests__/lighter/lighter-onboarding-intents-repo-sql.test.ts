@@ -1,4 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const dbMocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+}));
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  query: (...args: unknown[]) => dbMocks.query(...args),
+  queryOne: (...args: unknown[]) => dbMocks.queryOne(...args),
+}));
 
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 
@@ -41,6 +51,10 @@ const INPUT: repo.CreateDepositIntentInput = {
   expiresAt: ROW.expires_at,
 };
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("lighter onboarding intent creation SQL", () => {
   it("creates through a caller-bound client with conflict-safe insertion", async () => {
     const client = {
@@ -78,6 +92,22 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(lookupSql).toContain("LOWER(wallet_address) = LOWER($2)");
     expect(lookupSql).toContain("approval_status IN ('approval_pending', 'approved')");
     expect(lookupSql).toContain("execution_state NOT IN ('credited', 'failed')");
+    expect(params).toEqual(["core", ROW.wallet_address]);
+  });
+
+  it("scopes unresolved deposit status reads to capability and wallet", async () => {
+    dbMocks.query.mockResolvedValueOnce([ROW]);
+
+    const rows = await repo.listUnresolvedDepositsForWallet(
+      "core",
+      ROW.wallet_address,
+    );
+
+    expect(rows).toHaveLength(1);
+    const [sql, params] = dbMocks.query.mock.calls[0]!;
+    expect(sql).toContain("capability = 'deposit'");
+    expect(sql).toContain("LOWER(wallet_address) = LOWER($2)");
+    expect(sql).toContain("execution_state NOT IN ('credited','failed')");
     expect(params).toEqual(["core", ROW.wallet_address]);
   });
 });

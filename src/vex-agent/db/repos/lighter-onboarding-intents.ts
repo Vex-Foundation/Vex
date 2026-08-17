@@ -258,6 +258,23 @@ export async function listUnresolved(
   return rows.map(mapRow);
 }
 
+export async function listUnresolvedDepositsForWallet(
+  environment: LighterEnvironment,
+  walletAddress: string,
+): Promise<LighterOnboardingIntentRow[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${RETURNING} FROM lighter_onboarding_intents
+      WHERE environment = $1
+        AND capability = 'deposit'
+        AND LOWER(wallet_address) = LOWER($2)
+        AND execution_state NOT IN ('credited','failed')
+        AND approval_status <> 'rejected'
+      ORDER BY updated_at DESC`,
+    [environment, walletAddress],
+  );
+  return rows.map(mapRow);
+}
+
 /** Guarded CAS advance: only from an allowed prior state. */
 async function advance(
   intentId: string,
