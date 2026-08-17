@@ -42,8 +42,14 @@ import {
 } from "./constants.js";
 import { getMorphoPublicClient } from "./evm-client.js";
 
-/** `allowance(owner, spender)`, the one fragment the shared read ABI lacks. */
-const ERC20_ALLOWANCE_ABI = [
+/**
+ * `allowance(owner, spender)`, the one fragment the shared read ABI lacks.
+ *
+ * Exported so `./mutations/allowance-plan.ts` reads the allowance through the
+ * SAME fragment this snapshot does. One ABI, two readers: a second local copy is
+ * how the wallet surface and the money path start answering differently.
+ */
+export const ERC20_ALLOWANCE_ABI = [
   {
     type: "function",
     name: "allowance",

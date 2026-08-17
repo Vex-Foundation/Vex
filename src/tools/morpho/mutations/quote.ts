@@ -10,19 +10,17 @@
  * simulation is an `eth_call`. No key material is needed and none is used - the
  * client here is a public client with no account at all.
  *
- * HOW THE PRICE GUARD IS BOUNDED, which is the one piece of arithmetic worth
- * reading carefully. The SDK's `maxSharePrice` is expressed in a scaled unit
- * that is NOT documented as a plain assets-per-share ratio, and guessing that
- * scale in order to compute a ceiling would be exactly the kind of assumption a
- * money path must not carry. So the scale is DERIVED from the SDK's own output
- * instead of assumed: the operation is built once at ZERO slippage, whose
- * `maxSharePrice` is by definition the current share price in the SDK's own
- * units, and the ceiling is that number raised by the requested basis points in
- * integer arithmetic. The real build is then required to sit at or below it.
+ * THE BUILD AND ITS PRICE-GUARD CEILING LIVE IN `./build.ts`, shared verbatim
+ * with the executor. A preview that bounded a transaction the executor built
+ * slightly differently would be a preview of something else.
  *
- * The one raw unit of slack added to that ceiling is for integer rounding in the
- * SDK's own multiplication, and it is ABSOLUTE - one unit, not a fraction of
- * anything - so it cannot grow with the size of the trade (rules/90).
+ * WHERE THE `requirements` COME FROM, since the owner's option-B ruling of
+ * 2026-08-17. They are the ALLOWANCE PLAN's own steps, read from the chain by
+ * `./allowance-plan.ts`, which is the single owner of that fact for both this
+ * preview and the executor. The SDK's own requirement list is still fetched and
+ * still policed by `./requirements.ts`, but only as a CROSS-CHECK: if it and the
+ * chain read disagree about whether the adapter can already move these funds,
+ * the preview refuses instead of choosing a side.
  */
 
 import type { Address } from "viem";
@@ -30,21 +28,17 @@ import type { Address } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { getMorphoActionClient, type MorphoActionClient } from "./client.js";
 import { readMorphoVaultState, type MorphoVaultState } from "./vault-state.js";
-import { classifyMorphoRequirements, type MorphoRequirement } from "./requirements.js";
+import type { MorphoRequirement } from "./requirements.js";
 import {
-  describeMorphoBundleAllowlist,
-  verifyMorphoVaultTransaction,
-  type MorphoBuiltTransaction,
-} from "./bundle-decoder.js";
+  crossCheckMorphoAllowancePlan,
+  describeMorphoAllowancePlan,
+  planMorphoAllowance,
+  type MorphoAllowancePlan,
+} from "./allowance-plan.js";
+import { buildMorphoVaultOperation } from "./build.js";
+import { describeMorphoBundleAllowlist } from "./bundle-decoder.js";
 import { boundMorphoGas, preflightMorphoTransaction, type MorphoGasBound, type MorphoPreflight } from "./preflight.js";
-import type { MorphoBundleReport, MorphoVaultDirection, MorphoVaultIntent } from "./types.js";
-
-/** One raw unit, to absorb integer rounding inside the SDK's own multiplication. */
-const SHARE_PRICE_ROUNDING_SLACK = 1n;
-
-const BPS_DENOMINATOR = 10_000n;
-/** viem/Morpho express a fractional tolerance in WAD, so 1 bps is 1e14. */
-const WAD_PER_BPS = 10n ** 14n;
+import type { MorphoBundleReport, MorphoVaultDirection } from "./types.js";
 
 export interface MorphoVaultQuoteRequest {
   readonly chainId: number;
@@ -92,7 +86,27 @@ export interface MorphoVaultQuote {
     readonly slippageBps: number;
     readonly note: string;
   };
+  /**
+   * The steps the wallet must send before the operation, PROJECTED FROM THE
+   * ALLOWANCE PLAN and not from the SDK's requirement list. One owner of the
+   * allowance fact (owner ruling, option B, 2026-08-17), so the quote and the
+   * execution can never describe different work. Empty on a withdrawal, which
+   * pulls nothing and therefore needs no authorisation.
+   */
   readonly requirements: readonly MorphoRequirement[];
+  /**
+   * The allowance reading the requirements were derived from: what the adapter
+   * may take today, what this operation needs, and which shape closes the gap.
+   * Present on a deposit, `null` on a withdrawal.
+   */
+  readonly allowance: {
+    readonly shape: MorphoAllowancePlan["shape"];
+    readonly spender: string;
+    readonly spenderRole: string;
+    readonly currentAllowanceRaw: string;
+    readonly requiredAmountRaw: string;
+    readonly note: string;
+  } | null;
   readonly bundle: MorphoBundleReport;
   readonly bundleAllowlist: readonly string[];
   readonly gas: MorphoGasBound;
@@ -124,40 +138,6 @@ function amount(raw: bigint, decimals: number, symbol: string | null): MorphoAmo
   return { raw: raw.toString(), decimals, human: humanize(raw, decimals), symbol };
 }
 
-function buildDepositAt(
-  client: MorphoActionClient,
-  state: MorphoVaultState,
-  chainId: number,
-  user: Address,
-  amountRaw: bigint,
-  vaultData: unknown,
-  slippageWad: bigint,
-) {
-  const handle = state.generation === "v2"
-    ? client.morpho.vaultV2(state.address, chainId)
-    : client.morpho.vaultV1(state.address, chainId);
-  return handle.deposit({
-    amount: amountRaw,
-    userAddress: user,
-    vaultData: vaultData as never,
-    slippageTolerance: slippageWad,
-  });
-}
-
-/** Read the `maxSharePrice` the SDK put in a built deposit, or refuse. */
-function readBuiltMaxSharePrice(tx: { action?: { args?: Record<string, unknown> } }): bigint {
-  const value = tx.action?.args?.["maxSharePrice"];
-  if (typeof value !== "bigint") {
-    throw new VexError(
-      ErrorCodes.MORPHO_BUNDLE_REJECTED,
-      "Refusing a Morpho deposit preview: the built transaction carries no readable `maxSharePrice`, so its "
-      + "on-chain price protection cannot be bounded.",
-      "Nothing was signed or sent. Re-read the vault and rebuild.",
-    );
-  }
-  return value;
-}
-
 /**
  * Preview one Morpho vault operation end to end.
  *
@@ -182,65 +162,35 @@ export async function previewMorphoVaultOperation(
   const state = await readMorphoVaultState(client, request.chainId, request.vaultAddress);
   const user = request.walletAddress ?? PREVIEW_PLACEHOLDER_ADDRESS;
 
-  const intent: MorphoVaultIntent = {
+  const built = await buildMorphoVaultOperation(client, state, {
     chainId: request.chainId,
     direction: request.direction,
-    vaultAddress: state.address,
-    assetAddress: state.assetAddress,
-    assetDecimals: state.assetDecimals,
-    shareDecimals: state.shareDecimals,
     amountRaw: request.amountRaw,
+    slippageBps: request.slippageBps,
     userAddress: user,
-    recipient: user,
-  };
+  });
 
-  const vaultData = state.generation === "v2"
-    ? await client.morpho.vaultV2(state.address, request.chainId).getData()
-    : await client.morpho.vaultV1(state.address, request.chainId).getData();
-
-  let tx: MorphoBuiltTransaction;
   let requirements: readonly MorphoRequirement[] = [];
-  let vexCeilingRaw: bigint | null = null;
+  let allowancePlan: MorphoAllowancePlan | null = null;
 
   if (request.direction === "deposit") {
-    // The zero-slippage build exists ONLY to learn the SDK's own units for the
-    // share price. It is never sent, and it is never the transaction reported.
-    const atZero = buildDepositAt(client, state, request.chainId, user, request.amountRaw, vaultData, 0n);
-    const basePrice = readBuiltMaxSharePrice(atZero.buildTx());
-    vexCeilingRaw =
-      (basePrice * (BPS_DENOMINATOR + BigInt(request.slippageBps))) / BPS_DENOMINATOR + SHARE_PRICE_ROUNDING_SLACK;
-
-    const built = buildDepositAt(
-      client,
-      state,
-      request.chainId,
-      user,
-      request.amountRaw,
-      vaultData,
-      BigInt(request.slippageBps) * WAD_PER_BPS,
-    );
-    tx = built.buildTx() as MorphoBuiltTransaction;
-    requirements = classifyMorphoRequirements(
-      await built.getRequirements(),
-      request.chainId,
-      state.assetAddress,
-    );
-  } else {
-    const handle = state.generation === "v2"
-      ? client.morpho.vaultV2(state.address, request.chainId)
-      : client.morpho.vaultV1(state.address, request.chainId);
-    tx = handle.withdraw({ amount: request.amountRaw, userAddress: user }).buildTx() as MorphoBuiltTransaction;
+    // The allowance fact is read ONCE, here, from the chain - and the SDK's own
+    // requirement list is then held against it. The preview must describe the
+    // same work the executor will do, so both call this same planner rather than
+    // asking two different oracles what the wallet still owes.
+    allowancePlan = await planMorphoAllowance(client, {
+      chainId: request.chainId,
+      assetAddress: state.assetAddress,
+      walletAddress: user,
+      requiredAmountRaw: request.amountRaw,
+    });
+    crossCheckMorphoAllowancePlan(allowancePlan, built.sdkRequirements);
+    requirements = describeMorphoAllowancePlan(allowancePlan);
   }
 
-  const bundle = verifyMorphoVaultTransaction(
-    tx,
-    intent,
-    vexCeilingRaw === null ? {} : { maxSharePriceCeilingRaw: vexCeilingRaw },
-  );
-
   const [gas, preflight] = await Promise.all([
-    boundMorphoGas(client, tx, user),
-    preflightMorphoTransaction(client, tx, user),
+    boundMorphoGas(client, built.tx, user),
+    preflightMorphoTransaction(client, built.tx, user),
   ]);
 
   const shares = state.toShares(request.amountRaw);
@@ -262,8 +212,8 @@ export async function previewMorphoVaultOperation(
     sharePrice: {
       assetsPerShareRaw: state.assetsPerShareRaw.toString(),
       assetDecimals: state.assetDecimals,
-      maxSharePriceRaw: bundle.maxSharePriceRaw,
-      vexCeilingRaw: vexCeilingRaw === null ? null : vexCeilingRaw.toString(),
+      maxSharePriceRaw: built.bundle.maxSharePriceRaw,
+      vexCeilingRaw: built.vexCeilingRaw === null ? null : built.vexCeilingRaw.toString(),
       slippageBps: request.slippageBps,
       note:
         "`assetsPerShareRaw` is what ONE whole share is worth right now, in the asset's raw units, from vault state "
@@ -272,16 +222,29 @@ export async function previewMorphoVaultOperation(
         + "such guard because it is a direct vault call with no share-price leg.",
     },
     requirements,
-    bundle,
+    allowance: allowancePlan === null ? null : {
+      shape: allowancePlan.shape,
+      spender: allowancePlan.spender.toLowerCase(),
+      spenderRole: allowancePlan.spenderRole,
+      currentAllowanceRaw: allowancePlan.currentAllowanceRaw.toString(),
+      requiredAmountRaw: allowancePlan.requiredAmountRaw.toString(),
+      note:
+        "`currentAllowanceRaw` is what GeneralAdapter1 may move of this wallet's asset RIGHT NOW, read on-chain, in "
+        + "the asset's raw units. `shape` says how the gap is closed: `none-needed` when the standing allowance "
+        + "already covers the operation, `approve` for one exact-amount approval, and `reset-then-approve` when a "
+        + "non-zero allowance must be zeroed first because some tokens refuse a non-zero to non-zero change.",
+    },
+    bundle: built.bundle,
     bundleAllowlist: describeMorphoBundleAllowlist(),
     gas,
     preflight,
     walletAddressUsed: user.toLowerCase(),
     walletAddressWasSupplied: request.walletAddress !== undefined,
     disclaimer:
-      "THIS IS A PREVIEW. Nothing was signed and nothing was sent. No approval was granted, no permit was signed, "
-      + "and no funds moved. Every number is point-in-time: the share price, the requirements and the simulation all "
-      + "reflect chain state as of this read and can change before any real transaction. Vex cannot execute a Morpho "
-      + "deposit or withdrawal today.",
+      "THIS IS A PREVIEW. Nothing was signed and nothing was sent. No approval was granted and no funds moved. "
+      + "Every number is point-in-time: the share price, the requirements and the simulation all reflect chain state "
+      + "as of this read and can change before any real transaction. A `requirements` entry is either an ERC-20 "
+      + "approval for EXACTLY this operation's amount to GeneralAdapter1, or the reset to zero that some tokens "
+      + "demand before one; Vex signs no permit and no permit2 message here.",
   };
 }

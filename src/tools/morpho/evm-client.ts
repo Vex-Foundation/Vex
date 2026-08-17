@@ -18,7 +18,18 @@
  * `src/tools/evm-chains/evm-client.ts`.
  */
 
-import { createPublicClient, http, type Chain, type PublicClient, type Transport } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Account,
+  type Chain,
+  type Hex,
+  type PublicClient,
+  type Transport,
+  type WalletClient,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import { VexError, ErrorCodes } from "../../errors.js";
 import {
@@ -63,4 +74,39 @@ export function getMorphoPublicClient(chainId: number): PublicClient<Transport, 
       retryCount: RPC_RETRY_COUNT,
     }),
   }) as PublicClient<Transport, Chain>;
+}
+
+/** The pair one Morpho execution signs and reads through. Same chain, by construction. */
+export interface MorphoEvmClients {
+  publicClient: PublicClient<Transport, Chain>;
+  walletClient: WalletClient<Transport, Chain, Account>;
+}
+
+/**
+ * The account-bound pair a Morpho EXECUTION runs against, built from the SAME
+ * chain definition as the public client above.
+ *
+ * ONE CHAIN, TWO CLIENTS, DELIBERATELY BUILT TOGETHER: the estimate and the
+ * simulation must be read from the chain the transaction is actually sent to,
+ * and handing the caller two independently-constructed clients is how that stops
+ * being guaranteed. The signing module takes them injected for the same reason
+ * (see `morpho/handlers/signed-broadcast.ts`), so no key material lives there.
+ *
+ * The private key is supplied by the caller's wallet resolution and is never
+ * read, cached or logged here.
+ */
+export function getMorphoEvmClients(chainId: number, privateKey: Hex): MorphoEvmClients {
+  const chain = buildViemChain(chainId);
+  const transport = http(chain.rpcUrls.default.http[0], {
+    timeout: RPC_TIMEOUT_MS,
+    retryCount: RPC_RETRY_COUNT,
+  });
+  return {
+    publicClient: createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>,
+    walletClient: createWalletClient({
+      account: privateKeyToAccount(privateKey),
+      chain,
+      transport,
+    }),
+  };
 }

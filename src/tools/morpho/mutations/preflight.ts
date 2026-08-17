@@ -26,16 +26,17 @@
  * and collapsing it into "ok" is worse. Rules/90: a decoder that cannot prove
  * what happened must decline rather than claim.
  *
- * A DEPOSIT SIMULATION USUALLY REVERTS, AND THAT IS NOT A BUG. The bundle pulls
- * the asset through Permit2, so before the approval and the per-operation
- * signature exist there is nothing for it to pull. The verdict is reported as
- * what it is, with that reading attached, rather than presented as a fault in
- * the vault.
+ * A DEPOSIT SIMULATION USUALLY REVERTS BEFORE THE APPROVAL LANDS, AND THAT IS
+ * NOT A BUG. The bundle pulls the asset through GeneralAdapter1, so until the
+ * wallet's exact-amount approval to that adapter exists there is nothing for it
+ * to pull. The verdict is reported as what it is, with that reading attached,
+ * rather than presented as a fault in the vault.
  */
 
 import type { Address } from "viem";
 
 import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
+import { sanitizeMorphoCause } from "../errors.js";
 import type { MorphoActionClient } from "./client.js";
 import type { MorphoBuiltTransaction } from "./bundle-decoder.js";
 
@@ -59,15 +60,16 @@ export interface MorphoPreflight {
   readonly explanation: string;
 }
 
-/** A bounded, secret-free reading of an RPC throw. Same shape as `../wallet-reads.ts`. */
+/**
+ * A bounded, secret-free reading of an RPC throw.
+ *
+ * ONE OWNER (rules/04): the scrubbing itself is `sanitizeMorphoCause` in
+ * `../errors.ts`. This wrapper only turns a throw into the string it takes. A
+ * local copy of the patterns is how the viem-version leak (defect D8, live test
+ * 2026-08-17) survived in two places after being fixed in one.
+ */
 function sanitize(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  return message
-    .replace(/https?:\/\/\S+/g, "[url]")
-    .replace(/0x[0-9a-fA-F]{16,}/g, "[hex]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 300);
+  return sanitizeMorphoCause(err instanceof Error ? err.message : String(err));
 }
 
 /**
@@ -111,7 +113,7 @@ export async function boundMorphoGas(
       vexGasLimit: null,
       unavailableReason:
         `The node could not estimate gas for this transaction as it stands: ${sanitize(err)}. For a deposit this is `
-        + "usually the missing approval or per-operation signature rather than a problem with the vault. The gas "
+        + "usually the missing approval to GeneralAdapter1 rather than a problem with the vault. The gas "
         + "figure is UNKNOWN, not zero.",
       note,
     };
@@ -141,8 +143,8 @@ export async function preflightMorphoTransaction(
         revertReason: message,
         explanation:
           "The node proved this call reverts against latest state. For a deposit the ordinary cause is that the "
-          + "approval to Permit2 or the per-operation signature does not exist yet, so there is nothing for the "
-          + "bundle to pull. Nothing was signed or sent.",
+          + "exact-amount approval to GeneralAdapter1 does not exist yet, so there is nothing for the bundle to "
+          + "pull. Nothing was signed or sent.",
       };
     }
     return {

@@ -378,12 +378,33 @@ export const ErrorCodes = {
    */
   MORPHO_BUNDLE_REJECTED: "MORPHO_BUNDLE_REJECTED",
   /**
-   * A requirement the SDK returned is outside the owner's approval policy
-   * (2026-08-17: one approval to the CANONICAL Permit2 only, then a per-operation
-   * signature). Any ERC-20 approval naming a different spender, GeneralAdapter1
-   * included, is refused BY NAME rather than quietly presented as a step.
+   * The approval a Morpho operation would perform is outside the owner's FINAL
+   * approval policy (2026-08-17, which replaced the earlier Permit2 one): ONE
+   * plain ERC-20 `approve()` for EXACTLY the operation's amount, to the chain's
+   * pinned GeneralAdapter1, and no signature path of any kind. An approval
+   * naming another spender (Permit2 included), another token or another amount
+   * is refused BY NAME rather than quietly presented as a step.
+   *
+   * Also raised when Vex's own on-chain allowance read and the SDK's requirement
+   * list DISAGREE about whether the adapter can already move these funds. One
+   * owner of that fact, and a disagreement is refused rather than resolved by
+   * picking a side.
    */
   MORPHO_APPROVAL_POLICY_VIOLATION: "MORPHO_APPROVAL_POLICY_VIOLATION",
+  /**
+   * The node PROVED that the operation reverts against current state, before
+   * anything was signed. A definitive provider refusal, distinct from the
+   * ambiguous one below: retrying this one immediately produces the same answer.
+   */
+  MORPHO_PREFLIGHT_REVERTED: "MORPHO_PREFLIGHT_REVERTED",
+  /**
+   * The pre-broadcast simulation could not be completed, so whether the
+   * operation would succeed is UNKNOWN. Deliberately NOT collapsed into
+   * `MORPHO_PREFLIGHT_REVERTED`: inventing a provider refusal that never
+   * happened is the failure rules/90 names, and a money path that cannot prove
+   * a transaction would land declines to spend the gas finding out.
+   */
+  MORPHO_PREFLIGHT_UNPROVEN: "MORPHO_PREFLIGHT_UNPROVEN",
 
   // Merkl (reward distribution API behind Morpho's campaigns - keyless, batch 4)
   MERKL_API_ERROR: "MERKL_API_ERROR",

@@ -32,6 +32,15 @@ export interface MorphoVaultState {
   readonly assetDecimals: number;
   readonly assetSymbol: string | null;
   readonly shareDecimals: number;
+  /**
+   * The vault TOKEN's own ERC-20 symbol, read from the vault contract. Distinct
+   * from `name`, which is the vault's long human title: a durable activity row
+   * records a symbol beside every raw amount, and a 40-character vault title in
+   * that field is not one. `null` when the vault did not answer `symbol()`,
+   * which is honest - the amount still travels with its decimals, which is the
+   * part that makes it readable at all.
+   */
+  readonly shareSymbol: string | null;
   readonly name: string | null;
   /** Assets one whole share is worth, in raw ASSET units. */
   readonly assetsPerShareRaw: bigint;
@@ -128,11 +137,15 @@ export async function readMorphoVaultState(
   const accrued = accrueToNow(raw);
   const assetAddress = accrued.asset;
 
-  const [decimalsRead, symbolRead] = await client.multicall({
+  const [decimalsRead, symbolRead, shareSymbolRead] = await client.multicall({
     allowFailure: true,
     contracts: [
       { address: assetAddress, abi: ERC20_READ_ABI, functionName: "decimals" },
       { address: assetAddress, abi: ERC20_READ_ABI, functionName: "symbol" },
+      // The vault token's own symbol. `allowFailure` keeps this display-only
+      // read from ever failing the operation: a vault that does not answer it is
+      // reported without a share symbol, not refused.
+      { address: accrued.address, abi: ERC20_READ_ABI, functionName: "symbol" },
     ],
   });
 
@@ -156,6 +169,9 @@ export async function readMorphoVaultState(
     assetDecimals: decimalsRead.result,
     assetSymbol: symbolRead?.status === "success" && typeof symbolRead.result === "string" ? symbolRead.result : null,
     shareDecimals,
+    shareSymbol: shareSymbolRead?.status === "success" && typeof shareSymbolRead.result === "string"
+      ? shareSymbolRead.result
+      : null,
     name: typeof accrued.name === "string" ? accrued.name : null,
     assetsPerShareRaw: accrued.toAssets(oneShare),
     toShares: (assets: bigint) => accrued.toShares(assets, "Down"),

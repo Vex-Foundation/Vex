@@ -9,14 +9,16 @@
  * `../evm-client.ts`, which already made those decisions once for the whole
  * Morpho lane.
  *
- * WHY `supportSignature: true`. It is the owner's approval policy expressed at
- * the one place the SDK reads it (decision 2026-08-17): a single approval to the
- * CANONICAL Permit2, then a per-operation signature carrying its own amount and
- * deadline. The alternative, `supportSignature: false`, makes the SDK ask for an
- * exact-amount ERC-20 approval to GeneralAdapter1 instead - fine in isolation,
- * but it puts a standing allowance on the contract that actually pulls tokens,
- * and it needs a new approval for every single operation. The policy chose
- * Permit2, and `../requirements.ts` refuses any approval that names anything else.
+ * WHY `supportSignature: false`. It is the owner's FINAL approval policy
+ * expressed at the one place the SDK reads it (decision 2026-08-17, replacing
+ * the earlier Permit2 one): Vex signs no permit and no permit2 message for
+ * Morpho at all, so every operation is a plain ERC-20 `approve()` for EXACTLY
+ * that operation's amount to the chain's pinned GeneralAdapter1, followed by the
+ * operation. The flag is a CLIENT option, not a per-call one: the vault entities
+ * read `client.options.supportSignature` when they resolve requirements, so
+ * setting it anywhere else would leave a signature path reachable. With it
+ * false, `getGeneralAdapterRequirements` returns a classic approval or nothing,
+ * and `../requirements.ts` refuses anything else that arrives.
  *
  * NOTHING HERE SIGNS. A public client has no account at all; the spike proved
  * `getRequirements` and `buildTx` both work without one, so a preview never
@@ -39,7 +41,7 @@ import { getMorphoPublicClient } from "../evm-client.js";
  * the same code path work on all nine chains in `../chains.ts`.
  */
 export function morphoActionsExtension() {
-  return morphoViemExtension({ supportSignature: true, supportDeployless: true });
+  return morphoViemExtension({ supportSignature: false, supportDeployless: true });
 }
 
 /** A read-only Morpho-extended client for a supported chain. Holds no account. */

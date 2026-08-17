@@ -6,14 +6,20 @@
  * file per responsibility in the sibling folder; callers import only from here,
  * so the split can change without moving anybody's import (rules/04).
  *
- * WHAT THIS LAYER DOES NOT DO, deliberately and for now:
- *   - it does not sign. `requirement.sign()` is where the SDK binds an operation
- *     to an account (spike finding, 2026-08-14), which makes it the
- *     authorisation gate, and a gate does not belong under a preview.
- *   - it does not broadcast. There is no send path in this folder at all.
+ * WHAT THIS LAYER STILL DOES NOT DO, deliberately, now that E3b-2 has added the
+ * execution orchestration:
+ *   - it does not sign. No key material reaches this folder.
+ *   - it does not broadcast. There is no send path here at all: `./execute.ts`
+ *     prepares and PROVES a leg, and the one owner of sign+broadcast+record is
+ *     `@vex-agent/tools/protocols/morpho/handlers/signed-broadcast.ts`.
+ *   - it does not record. Nothing here writes an `agent_activity` row.
  *   - it does not know about `src/vex-agent`. Nothing here imports the agent
  *     runtime, holds a slippage default, or decides product policy: the handler
  *     that owns the call resolves those and passes explicit values down.
+ *
+ * There is also no signature path of any kind, on either side of that line: the
+ * client is built with `supportSignature: false` and `./mutations/requirements.ts`
+ * refuses a signature requirement by name if one ever arrives.
  */
 
 export {
@@ -32,10 +38,41 @@ export {
 
 export {
   classifyMorphoRequirements,
+  requireGeneralAdapter1,
   type MorphoApprovalRequirement,
+  type MorphoApprovalResetRequirement,
   type MorphoRequirement,
-  type MorphoSignatureRequirement,
 } from "./mutations/requirements.js";
+
+export {
+  planMorphoAllowance,
+  crossCheckMorphoAllowancePlan,
+  describeMorphoAllowancePlan,
+  buildMorphoApproveCalldata,
+  type MorphoAllowancePlan,
+  type MorphoAllowancePlanRequest,
+  type MorphoAllowancePlanShape,
+  type MorphoAllowanceStep,
+  type MorphoAllowanceStepKind,
+} from "./mutations/allowance-plan.js";
+
+export {
+  buildMorphoVaultOperation,
+  type MorphoBuildRequest,
+  type MorphoBuiltOperation,
+} from "./mutations/build.js";
+
+export {
+  prepareMorphoVaultExecution,
+  prepareMorphoOperationLeg,
+  compareMorphoShares,
+  morphoShareBoundRaw,
+  describeResidualAllowance,
+  type MorphoExecutionRequest,
+  type MorphoOperationLeg,
+  type MorphoPreparedExecution,
+  type MorphoSharesVerdict,
+} from "./mutations/execute.js";
 
 export {
   boundMorphoGas,

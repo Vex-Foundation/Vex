@@ -34,18 +34,29 @@ const MAX_CAUSE_LENGTH = 400;
 const LONG_HEX = /0x[0-9a-fA-F]{16,}/g;
 const URL_PATTERN = /https?:\/\/\S+/g;
 const BEARER_PATTERN = /\b(?:bearer|token|api[_-]?key)\s*[:=]\s*\S+/gi;
+/**
+ * viem stamps its own version into every error it raises ("Version:
+ * viem@2.54.3"). The live read-only test of 2026-08-17 caught it reaching the
+ * agent (defect D8). It is an internal dependency version: it tells the model
+ * nothing it can act on, it dates the build for anyone reading a transcript,
+ * and it is the kind of detail rules/04 keeps server-side while the REAL cause
+ * beside it survives.
+ */
+const VIEM_VERSION_PATTERN = /\b(?:Version:\s*)?viem@[0-9][^\s)]*/gi;
 
 /**
  * Sanitize an upstream string for an agent-facing message.
  *
- * Sanitize, do NOT hide (rules/04). URLs, long hex blobs and auth-shaped
- * fragments are removed because they are noise or hazard; every other word the
- * provider wrote survives, because those words are the reason the call failed.
+ * Sanitize, do NOT hide (rules/04). URLs, long hex blobs, auth-shaped fragments
+ * and our own library version are removed because they are noise or hazard;
+ * every other word the provider wrote survives, because those words are the
+ * reason the call failed.
  */
 export function sanitizeMorphoCause(text: string): string {
   const scrubbed = text
     .replace(URL_PATTERN, "[url]")
     .replace(BEARER_PATTERN, "[redacted]")
+    .replace(VIEM_VERSION_PATTERN, "")
     .replace(LONG_HEX, "[hex]")
     .replace(/\s+/g, " ")
     .trim();
