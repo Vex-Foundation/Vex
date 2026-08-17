@@ -55,6 +55,8 @@ const ERC20_ALLOWANCE_APPROVE_ABI = [
 export interface LighterDepositSignerInput {
   /** The Vex wallet L1 private key, resolved by the privileged handler. */
   readonly privateKey: Hex;
+  /** Re-prove the cross-process chain-wallet lease at signing boundaries. */
+  readonly assertExecutionLease: () => Promise<void>;
 }
 
 /** Build the live deposit execution deps behind the (already-checked) gate. */
@@ -71,8 +73,10 @@ export function buildLighterDepositExecutionDeps(
 
   return {
     depositGateEnabled: () => LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled(),
+    assertExecutionLease: input.assertExecutionLease,
 
     async runApproveLegIfNeeded({ walletAddress, spender, amountUnits, onHashStaged }) {
+      await input.assertExecutionLease();
       const owner = getAddress(walletAddress);
       const spenderAddr = getAddress(spender);
       const current = (await clients.publicClient.readContract({
@@ -84,6 +88,7 @@ export function buildLighterDepositExecutionDeps(
       if (current >= amountUnits) {
         return { skipped: true };
       }
+      await input.assertExecutionLease();
       const data = encodeFunctionData({
         abi: ERC20_ALLOWANCE_APPROVE_ABI,
         functionName: "approve",
@@ -94,6 +99,7 @@ export function buildLighterDepositExecutionDeps(
     },
 
     async runDepositLeg({ to, data, onHashStaged }) {
+      await input.assertExecutionLease();
       const outcome = await runStaged(
         clients,
         { to: getAddress(to), data: data as Hex, value: 0n },

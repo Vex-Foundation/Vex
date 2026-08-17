@@ -56,6 +56,7 @@ function intentsSpy() {
 function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepositExecutionDeps {
   return {
     depositGateEnabled: () => true,
+    assertExecutionLease: vi.fn().mockResolvedValue(undefined),
     runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
       await onHashStaged(APPROVE_HASH);
       return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
@@ -79,6 +80,16 @@ describe("executeApprovedLighterDeposit", () => {
     });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result.status).toBe("gate_closed");
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
+  });
+
+  it("does not start a transaction leg after the cross-process lease is lost", async () => {
+    const d = deps({
+      assertExecutionLease: vi.fn().mockRejectedValue(new Error("lease lost")),
+    });
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+    expect(result).toMatchObject({ status: "failed", stage: "approve" });
     expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
     expect(d.runDepositLeg).not.toHaveBeenCalled();
   });

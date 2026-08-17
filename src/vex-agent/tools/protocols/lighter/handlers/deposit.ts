@@ -24,8 +24,10 @@ import {
   type LighterDepositExecutionResult,
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
 import { LIGHTER_DEPOSIT_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
+import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import logger from "@utils/logger.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -229,21 +231,46 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       });
     }
 
-    let signer: ChainWallet;
-    try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
-    } catch (err) {
-      return walletScopeErrorToResult(err);
+    const lease = await acquireLighterDepositExecutionLease({
+      chainId: approved.chainId,
+      walletAddress: approved.walletAddress,
+      intentId: approved.intentId,
+    }).catch(() => null);
+    if (lease === null) {
+      return fail(
+        "Could not acquire the Lighter wallet execution lease. Nothing was signed; check onboarding status before retrying.",
+      );
     }
-    if (signer.family !== "eip155") {
-      return fail("Resolved wallet family mismatch for Lighter deposit.");
-    }
-    if (getAddress(signer.address) !== getAddress(approved.walletAddress)) {
-      return fail("The resolved signing wallet does not match the prepared deposit wallet. Nothing was signed.");
+    if (!lease.acquired) {
+      const retryNote = lease.retryAfter === null
+        ? "after the active wallet operation is reconciled"
+        : `after ${lease.retryAfter.toISOString()}`;
+      return fail(
+        `Another Lighter operation owns this Ethereum wallet execution slot. Nothing was signed; retry ${retryNote}.`,
+      );
     }
 
+    const leaseHandle = lease.handle;
     try {
-      const deps = buildLighterDepositExecutionDeps({ privateKey: signer.privateKey as Hex });
+      await leaseHandle.assertOwned();
+
+      let signer: ChainWallet;
+      try {
+        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      } catch (err) {
+        return walletScopeErrorToResult(err);
+      }
+      if (signer.family !== "eip155") {
+        return fail("Resolved wallet family mismatch for Lighter deposit.");
+      }
+      if (getAddress(signer.address) !== getAddress(approved.walletAddress)) {
+        return fail("The resolved signing wallet does not match the prepared deposit wallet. Nothing was signed.");
+      }
+
+      const deps = buildLighterDepositExecutionDeps({
+        privateKey: signer.privateKey as Hex,
+        assertExecutionLease: () => leaseHandle.assertOwned(),
+      });
       const execution = await executeApprovedLighterDeposit({ intent: approved, deps });
       return ok({
         source: "vex_lighter_live_deposit",
@@ -257,6 +284,13 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         `Deposit executor error: ${err instanceof Error ? err.message : String(err)}`,
       );
       return fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      await leaseHandle.release().catch((err) => {
+        logger.warn("lighter.deposit.execution_lease_release_failed", {
+          intentId: approved.intentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
   },
 };

@@ -40,6 +40,8 @@ export type LighterDepositExecutionResult =
 export interface LighterDepositExecutionDeps {
   /** The privileged default-closed deposit release gate. */
   readonly depositGateEnabled: () => boolean;
+  /** Re-prove the cross-process chain-wallet execution lease before each leg. */
+  readonly assertExecutionLease: () => Promise<void>;
   /**
    * Run the ERC-20 approval leg if the deposit contract's allowance is short.
    * `onHashStaged` is called with the tx hash BEFORE broadcast so the caller
@@ -129,6 +131,7 @@ export async function executeApprovedLighterDeposit(input: {
   // Leg 1: approval (only if allowance is short). Hash persists before broadcast.
   let approveTxHash: string | null = null;
   try {
+    await deps.assertExecutionLease();
     const approve = await deps.runApproveLegIfNeeded({
       walletAddress: intent.walletAddress,
       spender: intent.depositContract,
@@ -215,6 +218,7 @@ export async function executeApprovedLighterDeposit(input: {
   // Leg 2: deposit. Hash persists before broadcast.
   let depositTxHash: string | null = null;
   try {
+    await deps.assertExecutionLease();
     const deposit = await deps.runDepositLeg({
       walletAddress: intent.walletAddress,
       to: calldata.to,
