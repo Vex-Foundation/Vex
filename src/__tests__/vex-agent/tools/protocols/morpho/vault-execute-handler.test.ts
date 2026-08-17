@@ -24,6 +24,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { MORPHO_VAULT_NOT_FOUND, MORPHO_VAULT_V1_DETAIL, MORPHO_VAULT_V2_DETAIL_GATED } from "./vault-fixtures.js";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const preview = vi.hoisted(() => vi.fn());
 const executeDeposit = vi.hoisted(() => vi.fn());
@@ -77,8 +78,16 @@ function nextVaultAddress(): string {
   return `0x${(vaultSeq + 0x5000).toString(16).padStart(40, "0")}`;
 }
 
+/**
+ * A REAL `Response`: the Morpho client reads `ok`, `status`,
+ * `headers.get("retry-after")` and `json()`, and a hand-shaped double that
+ * answers exactly those keeps passing if the client starts reading a fifth.
+ */
 function jsonResponse(body: unknown): Response {
-  return { ok: true, status: 200, headers: { get: () => null }, json: async () => body } as unknown as Response;
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** Answer each outbound query by OPERATION NAME; the V2 probe runs before V1. */
@@ -147,7 +156,7 @@ function previewResult(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 /** A context whose wallet resolution yields one usable EVM signer. */
-function context(overrides: Record<string, unknown> = {}) {
+function context(overrides: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
     sessionPermission: "full",
     approved: true,
@@ -155,7 +164,7 @@ function context(overrides: Record<string, unknown> = {}) {
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
     ...overrides,
-  } as never;
+  };
 }
 
 function depositParams(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -303,6 +312,16 @@ describe("the disclosure travels with the operation", () => {
       executionId: 7,
       txHash: "0xabc",
       executed: { amountInRaw: "1000000", amountInHuman: "1", amountOutRaw: "97", amountOutHuman: "0.97" },
+      // Every confirmed outcome names WHICH tokens its two amounts are in;
+      // without them the app draws no leg line at all (live defect 2026-08-17).
+      tokens: {
+        inSymbol: "USDC",
+        inAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        inDecimals: 6,
+        outSymbol: "mwUSDC",
+        outAddress: "0xbeef0e0834849acc03f0089f01f4f1eeb06873c9",
+        outDecimals: 18,
+      },
       shares: { withinApprovedBound: true, accrualDriftRaw: "0" },
       message: "Deposited 1 USDC.",
     });
@@ -336,6 +355,16 @@ describe("all four execution endings are reported as themselves", () => {
       executionId: 11,
       txHash: "0xdeadbeef",
       executed: { amountInRaw: "1000000", amountInHuman: "1", amountOutRaw: "970000000000000000", amountOutHuman: "0.97" },
+      // Every confirmed outcome names WHICH tokens its two amounts are in;
+      // without them the app draws no leg line at all (live defect 2026-08-17).
+      tokens: {
+        inSymbol: "USDC",
+        inAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        inDecimals: 6,
+        outSymbol: "mwUSDC",
+        outAddress: "0xbeef0e0834849acc03f0089f01f4f1eeb06873c9",
+        outDecimals: 18,
+      },
       shares: { withinApprovedBound: true, accrualDriftRaw: "42", approvedBoundRaw: "9", boundSide: "minimum_shares_received" },
       message: "morpho.vault.deposit: Deposited 1 USDC and received 0.97 shares. Tx: 0xdeadbeef.",
     };

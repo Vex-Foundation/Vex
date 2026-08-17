@@ -77,6 +77,14 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["withdrawAmountRaw", "multi-leg lend withdrawal, raw base units"],
   ["borrowAmountRaw", "multi-leg lend borrow, raw base units"],
   ["repayAmountRaw", "multi-leg lend repayment, raw base units"],
+  // A Blue market pairs two tokens at two scales, so the collateral legs cannot
+  // share the loan legs' keys: one `amountRaw` across four operations would let
+  // a collateral-scaled number fund a borrow.
+  ["supplyCollateralAmountRaw", "Blue market collateral supply, raw base units of the COLLATERAL token"],
+  ["withdrawCollateralAmountRaw", "Blue market collateral withdrawal, raw base units of the COLLATERAL token"],
+  // Not an amount: it routes a repayment to the SHARES path, the only
+  // denomination that can close an accruing debt at zero.
+  ["repayFullDebt", "Blue market repayment: close the debt completely by burning its exact borrow shares"],
   ["slippageBps", "price protection in basis points; type number, unit bps"],
   [
     "minSellPriceSlippageBps",

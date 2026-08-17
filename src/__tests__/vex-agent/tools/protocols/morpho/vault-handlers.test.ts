@@ -25,8 +25,16 @@ import {
   MORPHO_VAULT_NOT_FOUND,
 } from "./vault-fixtures.js";
 
+/**
+ * A REAL `Response`: the Morpho client reads `ok`, `status`,
+ * `headers.get("retry-after")` and `json()`, and a hand-shaped double that
+ * answers exactly those keeps passing if the client starts reading a fifth.
+ */
 function jsonResponse(body: unknown): Response {
-  return { ok: true, status: 200, headers: { get: () => null }, json: async () => body } as unknown as Response;
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 interface SentCall {
@@ -93,7 +101,7 @@ describe("morpho.vaults.discover param contract", () => {
   it("converts percent to the scale EACH generation's filter actually takes", async () => {
     const v1 = stubMorphoByOperation({ VexMorphoVaultsV1: MORPHO_VAULTS_V1_PAGE });
     await morphoVaultsDiscover({ version: "v1", maxCuratorCutPercent: 25, minNetApyPercent: 4, limit: 4 });
-    const v1Where = v1.calls[0]!.variables["where"] as Record<string, unknown>;
+    const v1Where = v1.calls[0].variables["where"] as Record<string, unknown>;
     // V1 takes a FRACTION.
     expect(v1Where["fee_lte"]).toBe(0.25);
     expect(v1Where["netApy_gte"]).toBe(0.04);
@@ -101,7 +109,7 @@ describe("morpho.vaults.discover param contract", () => {
     vi.unstubAllGlobals();
     const v2 = stubMorphoByOperation({ VexMorphoVaultsV2: MORPHO_VAULTS_V2_PAGE });
     await morphoVaultsDiscover({ version: "v2", maxCuratorCutPercent: 25, minNetApyPercent: 4, limit: 5 });
-    const v2Where = v2.calls[0]!.variables["where"] as Record<string, unknown>;
+    const v2Where = v2.calls[0].variables["where"] as Record<string, unknown>;
     // V2 takes a WAD STRING for the same agent-facing percent.
     expect(v2Where["performanceFee_lte"]).toBe("250000000000000000");
     expect(v2Where["netApy_gte"]).toBe(0.04);
@@ -123,7 +131,7 @@ describe("morpho.vaults.discover param contract", () => {
     const { calls } = stubMorphoByOperation({ VexMorphoVaultsV1: MORPHO_VAULTS_V1_PAGE });
     const result = await morphoVaultsDiscover({ version: "v1", search: "steakhouse", limit: 6 });
     expect(result.success).toBe(true);
-    expect((calls[0]!.variables["where"] as Record<string, unknown>)["search"]).toBe("steakhouse");
+    expect((calls[0].variables["where"] as Record<string, unknown>)["search"]).toBe("steakhouse");
   });
 
   it("rejects a sort a generation cannot serve BY NAME rather than reordering by something else", async () => {
@@ -199,8 +207,8 @@ describe("morpho.vaults.discover version merge", () => {
     vi.unstubAllGlobals();
     const single = stubMorphoByOperation({ VexMorphoVaultsV1: MORPHO_VAULTS_V1_PAGE });
     await morphoVaultsDiscover({ version: "v1", offset: 5, limit: 10, minTvlUsd: 8 });
-    expect(single.calls[0]!.variables["first"]).toBe(10);
-    expect(single.calls[0]!.variables["skip"]).toBe(5);
+    expect(single.calls[0].variables["first"]).toBe(10);
+    expect(single.calls[0].variables["skip"]).toBe(5);
   });
 
   it("reports a single-generation call as server-side ranked, not merged", async () => {
@@ -230,7 +238,7 @@ describe("morpho.vaults.discover output contract", () => {
 
     for (const [index, vault] of (body["vaults"] as Array<Record<string, unknown>>).entries()) {
       const apy = vault["apy"] as Record<string, unknown>;
-      const state = MORPHO_VAULTS_V1_PAGE.data.vaults.items[index]!.state;
+      const state = MORPHO_VAULTS_V1_PAGE.data.vaults.items[index].state;
       expect(String(apy["basis"])).toMatch(/unlike a market APY which is gross/);
       // Fraction in, percent out, exactly once, and under the right basis key.
       expect(apy["apyPercent"]).toBeCloseTo(state.apy * 100, 10);

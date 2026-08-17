@@ -215,6 +215,109 @@ const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 };
 
 /**
+ * Morpho Blue BORROW lane (E3c, migration 081). Four maps, one per operation,
+ * for the same reason there are four kinds: the operations run against one
+ * market and one wallet, so an agent told the wrong one would re-quote the
+ * wrong side of its own position.
+ *
+ * They exist in the SAME batch as the kinds deliberately. A kind registered
+ * without a map falls through to the SWAP map below, and the first blocked
+ * borrow execute would then tell the agent to re-run a SWAP quote, which is not
+ * a tool that can authorize this operation. The agent would loop on advice that
+ * cannot work.
+ *
+ * Each message names `morpho.market.quote` AND the `direction` to pass it, which
+ * is the pair the agent has to get right: the toolId alone would send it back
+ * with whichever direction it used last, and that is the quote that does not
+ * authorize this execute.
+ */
+const LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Collateral supply blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction supplyCollateral) for this market, then retry.",
+  no_session:
+    "Collateral supply blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction supplyCollateral) and retry.",
+  unresolved_token:
+    "Collateral supply blocked: the market or its collateral token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
+  no_quote:
+    "Collateral supply blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho.market.quote (direction supplyCollateral) with those params first, then retry. A borrow or repay quote does NOT authorize a collateral supply.",
+  safety_fail:
+    "Collateral supply blocked: the market failed the pre-quote check (it is outside the allowed oracle/IRM set, or its collateral was flagged). Do not retry; pick a different market and report it.",
+  wallet_setup:
+    "Collateral supply blocked: the mission is still in setup (no active run), so market writes cannot broadcast yet. Accept and start the mission run, then retry; do NOT re-quote.",
+  wallet_scope:
+    "Collateral supply blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Collateral supply blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param:
+    "Collateral supply blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/** Morpho Blue collateral WITHDRAW. Reduces the wallet's safety margin. */
+const LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Collateral withdrawal blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction withdrawCollateral) for this market, then retry.",
+  no_session:
+    "Collateral withdrawal blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction withdrawCollateral) and retry.",
+  unresolved_token:
+    "Collateral withdrawal blocked: the market or its collateral token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
+  no_quote:
+    "Collateral withdrawal blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho.market.quote (direction withdrawCollateral) with those params first, then retry. A supplyCollateral quote does NOT authorize a withdrawal, and withdrawing collateral LOWERS the health factor while a supply raises it.",
+  safety_fail:
+    "Collateral withdrawal blocked: the market failed the pre-quote check. This block is not protecting a wallet that is trying to REDUCE its position: report it and stop rather than retrying.",
+  wallet_setup:
+    "Collateral withdrawal blocked: the mission is still in setup (no active run), so market writes cannot broadcast yet. Accept and start the mission run, then retry; do NOT re-quote.",
+  wallet_scope:
+    "Collateral withdrawal blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Collateral withdrawal blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param:
+    "Collateral withdrawal blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/** Morpho Blue BORROW: the operation that takes on debt. */
+const LEND_BORROW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Borrow blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction borrow) for this market, then retry.",
+  no_session:
+    "Borrow blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction borrow) and retry.",
+  unresolved_token:
+    "Borrow blocked: the market or its loan token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
+  no_quote:
+    "Borrow blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw loan-token amount and slippageBps. Call morpho.market.quote (direction borrow) with those params first, then retry. A collateral quote does NOT authorize a borrow: putting collateral in and drawing debt out are different operations, and only the borrow quote checks the resulting health factor.",
+  safety_fail:
+    "Borrow blocked: the market failed the pre-quote check (outside the allowed oracle/IRM set, insufficient liquidity, or the resulting health factor is below the policy floor). Do not retry the same size; borrow less or add collateral first.",
+  wallet_setup:
+    "Borrow blocked: the mission is still in setup (no active run), so market writes cannot broadcast yet. Accept and start the mission run, then retry; do NOT re-quote.",
+  wallet_scope:
+    "Borrow blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Borrow blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param:
+    "Borrow blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/** Morpho Blue REPAY: the operation that reduces debt. */
+const LEND_REPAY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
+  gate_error:
+    "Repay blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction repay) for this market, then retry.",
+  no_session:
+    "Repay blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction repay) and retry.",
+  unresolved_token:
+    "Repay blocked: the market or its loan token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
+  no_quote:
+    "Repay blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw amount (or repayFullDebt) and slippageBps. Call morpho.market.quote (direction repay) with those params first, then retry. A borrow quote does NOT authorize a repay, and repaying the wrong amount leaves dust debt behind.",
+  safety_fail:
+    "Repay blocked: the market failed the pre-quote check. A repay REDUCES risk, so this block is not protecting the wallet: report it and stop rather than retrying.",
+  wallet_setup:
+    "Repay blocked: the mission is still in setup (no active run), so market writes cannot broadcast yet. Accept and start the mission run, then retry; do NOT re-quote.",
+  wallet_scope:
+    "Repay blocked: the selected wallet can't be used. It may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry; do NOT re-quote.",
+  wallet_not_selected:
+    "Repay blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
+  unbindable_param: "Repay blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+};
+
+/**
  * The map for a gated kind. Written as a lookup rather than another if/else
  * limb: the chain had grown to seven levels, and its SWAP fallback is exactly
  * how a Morpho block would have been worded as a swap. A kind with no entry
@@ -229,6 +332,10 @@ const BLOCK_MESSAGES_BY_KIND: Partial<Record<PrequoteKind, Record<GateBlockReaso
   lp_remove: LP_REMOVE_BLOCK_MESSAGES,
   lend_deposit: LEND_DEPOSIT_BLOCK_MESSAGES,
   lend_withdraw: LEND_WITHDRAW_BLOCK_MESSAGES,
+  lend_supply_collateral: LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES,
+  lend_withdraw_collateral: LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES,
+  lend_borrow: LEND_BORROW_BLOCK_MESSAGES,
+  lend_repay: LEND_REPAY_BLOCK_MESSAGES,
 };
 
 export function block(reason: GateBlockReason, kind: PrequoteKind): GateDecision {

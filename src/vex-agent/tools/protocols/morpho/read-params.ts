@@ -58,3 +58,16 @@ export {
   type MorphoVaultQuoteQuery,
   parseMorphoVaultQuoteParams,
 } from "./read-params/quote.js";
+
+export {
+  MORPHO_MARKET_DIRECTIONS,
+  morphoAmountKey,
+  morphoAmountToken,
+  morphoEngineOperation,
+  parseMorphoMarketExecuteParams,
+  parseMorphoMarketQuoteParams,
+  type MorphoMarketDirection,
+  type MorphoMarketExecuteQuery,
+  type MorphoMarketOperationQuery,
+  type MorphoMarketQuoteQuery,
+} from "./read-params/market-operations.js";

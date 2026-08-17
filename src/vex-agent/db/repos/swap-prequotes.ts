@@ -56,6 +56,21 @@ export type PrequoteFamily = "eip155" | "solana";
 // The names match the `event_role` vocabulary migration 079 uses on the
 // `agent_activity` `lend` arm.
 //
+// E3c adds the four Morpho Blue BORROW-lane operations (DB CHECK widened by
+// migration 081). ONE KIND PER OPERATION, not one shared borrow kind: the four
+// run against the same market id and the same wallet, and two of them can carry
+// the same raw amount, so a shared kind would let a collateral-supply quote
+// authorize a BORROW execute. Same reasoning as 054's lp_add/lp_remove split
+// and 080's lend_deposit/lend_withdraw split.
+//   - 'lend_supply_collateral'   : collateral token -> market position.
+//   - 'lend_withdraw_collateral' : market position -> collateral token.
+//   - 'lend_borrow'              : loan token drawn as debt.
+//   - 'lend_repay'               : loan token returned against debt.
+// There is NO authorization kind: the borrow leg calls Morpho Blue directly
+// with `msg.sender == onBehalf`, so no `setAuthorization` is ever granted. All
+// four report under the EXISTING 'lend_borrow_operate' `event_role`; the gate
+// needs per-operation resolution, the ledger reads the lane as one activity.
+//
 // The TS union and the SQL CHECK are held in lockstep by
 // `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
 export type PrequoteKind =
@@ -74,7 +89,11 @@ export type PrequoteKind =
   | "lp_transfer"
   | "lp_to_pt"
   | "lend_deposit"
-  | "lend_withdraw";
+  | "lend_withdraw"
+  | "lend_supply_collateral"
+  | "lend_withdraw_collateral"
+  | "lend_borrow"
+  | "lend_repay";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
 export interface SwapPrequote {

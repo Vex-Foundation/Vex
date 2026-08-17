@@ -31,8 +31,16 @@ import {
 
 const WALLET = "0x2a315c59a6a95aeeec085c73badac801c2f4209f";
 
+/**
+ * A REAL `Response`, not a hand-shaped stand-in: the Morpho client reads `ok`,
+ * `status`, `headers.get("retry-after")` and `json()`, and a fake that answers
+ * those four by hand would keep passing if the client started reading a fifth.
+ */
 function jsonResponse(body: unknown): Response {
-  return { ok: true, status: 200, headers: { get: () => null }, json: async () => body } as unknown as Response;
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 interface SentCall {
@@ -172,10 +180,10 @@ describe("morpho.positions.get market half", () => {
     await morphoPositionsGet({ walletAddress: WALLET, scope: "markets", maxHealthFactor: 1.2, limit: 7 });
     const positionCalls = calls.filter((c) => c.query.includes("VexMorphoMarketPositions"));
     expect(positionCalls).toHaveLength(1);
-    const where = positionCalls[0]!.variables["where"] as Record<string, unknown>;
+    const where = positionCalls[0].variables["where"] as Record<string, unknown>;
     expect(where["healthFactor_lte"]).toBe(1.2);
-    expect(positionCalls[0]!.variables["orderBy"]).toBe("HealthFactor");
-    expect(positionCalls[0]!.variables["orderDirection"]).toBe("Asc");
+    expect(positionCalls[0].variables["orderBy"]).toBe("HealthFactor");
+    expect(positionCalls[0].variables["orderDirection"]).toBe("Asc");
   });
 
   it("says that a health-factor filter excludes supply-only positions by construction", async () => {
@@ -208,7 +216,7 @@ describe("morpho.positions.get projection", () => {
     stubFullPortfolio();
     const result = await morphoPositionsGet({ walletAddress: WALLET, scope: "markets", limit: 10 });
     const section = data(result)["marketPositions"] as { rows: Record<string, unknown>[] };
-    const worst = section.rows[0]!;
+    const worst = section.rows[0];
     expect(worst["healthFactor"]).toBe("0.3053054108729547");
     expect(worst["healthFactorBand"]).toBe("liquidatable_now");
   });
@@ -317,7 +325,7 @@ describe("morpho.markets.activity", () => {
     expect(echo["types"]).toEqual(["liquidation", "supplyCollateral"]);
     expect(echo["since"]).toBe(1_700_000_000);
     expect(echo["sort"]).toBe("timestamp");
-    const where = calls[0]!.variables["where"] as Record<string, unknown>;
+    const where = calls[0].variables["where"] as Record<string, unknown>;
     expect(where["type_in"]).toEqual(["Liquidation", "SupplyCollateral"]);
     expect(where["timestamp_gte"]).toBe(1_700_000_000);
   });
@@ -353,15 +361,15 @@ describe("morpho.markets.activity", () => {
     stubMorphoByOperation({ VexMorphoMarketTransactions: MORPHO_ACTIVITY_LIQUIDATION_PAGE });
     const result = await morphoMarketsActivity({ types: "liquidation", limit: 3, offset: 0 });
     const payload = data(result);
-    const row = (payload["transactions"] as Record<string, unknown>[])[0]!;
+    const row = (payload["transactions"] as Record<string, unknown>[])[0];
     expect(row["type"]).toBe("liquidation");
     expect(row["liquidatorAddress"]).toBe("0x6cf59693571329db4a613f9a398205e6de04d05f");
     const repaid = row["amounts"] as Record<string, { raw: string; decimals: number; human: string; asset: string }>;
-    expect(repaid["repaidAssets"]!.asset).toBe("loan");
-    expect(repaid["repaidAssets"]!.decimals).toBe(6);
-    expect(repaid["repaidAssets"]!.human).toBe(formatRawAmount("12004", 6));
-    expect(repaid["seizedAssets"]!.asset).toBe("collateral");
-    expect(repaid["seizedAssets"]!.decimals).toBe(18);
+    expect(repaid["repaidAssets"].asset).toBe("loan");
+    expect(repaid["repaidAssets"].decimals).toBe(6);
+    expect(repaid["repaidAssets"].human).toBe(formatRawAmount("12004", 6));
+    expect(repaid["seizedAssets"].asset).toBe("collateral");
+    expect(repaid["seizedAssets"].decimals).toBe(18);
     expect(repaid["badDebtAssets"]).toBeDefined();
     // No USD anywhere on a transaction row, ever.
     expect(JSON.stringify(row["amounts"])).not.toContain("usd");

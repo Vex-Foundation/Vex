@@ -42,7 +42,13 @@ type PrequoteQuoteRegistration =
   // Morpho's single vault quote records EITHER a `lend_deposit` prequote OR a
   // `lend_withdraw` one (E3b-2, migration 080), decided at record-time from the
   // direction the quote itself reports. `family` is always eip155.
-  | { readonly kind: "morpho-lend"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "morpho-lend"; readonly family: PrequoteFamily; readonly provider: string }
+  // Morpho's single MARKET quote records ONE of the four borrow-lane prequotes
+  // (E3c, migration 081), decided at record-time from the `direction` the quote
+  // priced: supplyCollateral / withdrawCollateral / borrow / repay map one-to-one
+  // onto lend_supply_collateral / lend_withdraw_collateral / lend_borrow /
+  // lend_repay. `family` is always eip155.
+  | { readonly kind: "morpho-borrow"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "kyberswap.swap.quote": { kind: "swap", family: "eip155", provider: "kyberswap" },
@@ -67,6 +73,11 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   // Morpho vault quote records a `lend_deposit` or `lend_withdraw` prequote
   // (E3b-2) - decided from the direction the quote priced.
   "morpho.vault.quote": { kind: "morpho-lend", family: "eip155", provider: "morpho" },
+  // Morpho market quote records ONE of the four borrow-lane prequotes (E3c) -
+  // decided from the direction the quote priced. It is the ONLY recorder for all
+  // four kinds, which is why a collateral quote can never reach a borrow gate:
+  // the direction it priced is the kind it writes.
+  "morpho.market.quote": { kind: "morpho-borrow", family: "eip155", provider: "morpho" },
 };
 
 /**
@@ -107,7 +118,16 @@ export type ExecuteGateRegistration =
   // dedicated lend identities (E3b-2). Distinct kinds make the direction
   // unmixable: a deposit quote cannot authorize a withdrawal execute.
   | { readonly kind: "lend_deposit"; readonly family: PrequoteFamily; readonly provider: string }
-  | { readonly kind: "lend_withdraw"; readonly family: PrequoteFamily; readonly provider: string };
+  | { readonly kind: "lend_withdraw"; readonly family: PrequoteFamily; readonly provider: string }
+  // Morpho Blue market operations - their OWN kinds, one per operation, matched
+  // against a `morpho.market.quote` of the SAME direction via the dedicated
+  // borrow-lane identities (E3c, migration 081). Distinct kinds make the
+  // operation unmixable: a collateral-supply quote cannot authorize a BORROW
+  // execute, which would turn "put money in" into "take debt out".
+  | { readonly kind: "lend_supply_collateral"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "lend_withdraw_collateral"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "lend_borrow"; readonly family: PrequoteFamily; readonly provider: string }
+  | { readonly kind: "lend_repay"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // Agent Scan (plan §11.2): the buy/sell lot-direction split is gone (no PnL
@@ -145,4 +165,13 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // `lend_withdraw` prequotes from `morpho.vault.quote` (E3b-2).
   "morpho.vault.deposit": { kind: "lend_deposit", family: "eip155", provider: "morpho" },
   "morpho.vault.withdraw": { kind: "lend_withdraw", family: "eip155", provider: "morpho" },
+  // Morpho Blue market operations match their dedicated borrow-lane prequotes
+  // from `morpho.market.quote` (E3c). ONE kind each, and the mapping is the
+  // whole safety property: the gate reads its row under the kind as a predicate,
+  // so a quote of another direction is not merely a hash mismatch, it is not
+  // even looked at.
+  "morpho.market.supplyCollateral": { kind: "lend_supply_collateral", family: "eip155", provider: "morpho" },
+  "morpho.market.withdrawCollateral": { kind: "lend_withdraw_collateral", family: "eip155", provider: "morpho" },
+  "morpho.market.borrow": { kind: "lend_borrow", family: "eip155", provider: "morpho" },
+  "morpho.market.repay": { kind: "lend_repay", family: "eip155", provider: "morpho" },
 };

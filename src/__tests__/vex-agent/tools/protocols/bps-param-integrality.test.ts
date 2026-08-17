@@ -251,7 +251,12 @@ describe("manifest bps declarations", () => {
     // tolerance becomes the on-chain `maxSharePrice` ceiling of a transaction
     // the agent is about to be told to send, so a fractional value would
     // silently widen the very guard the preview exists to report.
-    expect(declared.length).toBe(34);
+    // +5 since E3c: the five Morpho BLUE MARKET tools. Same reason as the vault
+    // preview above - the value is what matters, not the side effect. On a
+    // full-debt repayment this tolerance becomes the on-chain share-price
+    // ceiling AND the size of the approval the wallet grants, so a fractional
+    // value would widen real spending authority.
+    expect(declared.length).toBe(39);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
       new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
     );

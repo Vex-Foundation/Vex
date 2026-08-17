@@ -127,8 +127,8 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
     // unrelated contract with its arguments untouched, which is exactly the
     // attack the target check exists for.
     const tampered = reencodeDepositBundle((legs) => [
-      legs[0]!,
-      { ...legs[1]!, to: "0x00000000000000000000000000000000000000ff" as Address },
+      legs[0],
+      { ...legs[1], to: "0x00000000000000000000000000000000000000ff" as Address },
     ]);
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
@@ -138,7 +138,7 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
   });
 
   it("refuses a leg marked skipRevert, which Bundler3 would let fail silently", () => {
-    const tampered = reencodeDepositBundle((legs) => [legs[0]!, { ...legs[1]!, skipRevert: true }]);
+    const tampered = reencodeDepositBundle((legs) => [legs[0], { ...legs[1], skipRevert: true }]);
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
       "MORPHO_BUNDLE_REJECTED",
@@ -147,7 +147,7 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
   });
 
   it("refuses a leg that would move native value even when the outer call does not", () => {
-    const tampered = reencodeDepositBundle((legs) => [{ ...legs[0]!, value: 1n }, legs[1]!]);
+    const tampered = reencodeDepositBundle((legs) => [{ ...legs[0], value: 1n }, legs[1]]);
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
       "MORPHO_BUNDLE_REJECTED",
@@ -156,7 +156,7 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
   });
 
   it("refuses a bundle with no leg that actually deposits into the vault", () => {
-    const tampered = reencodeDepositBundle((legs) => [legs[0]!]);
+    const tampered = reencodeDepositBundle((legs) => [legs[0]]);
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
       "MORPHO_BUNDLE_REJECTED",

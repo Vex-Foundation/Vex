@@ -22,6 +22,7 @@ import { VexError } from "../../../errors.js";
 import { classifyMorphoRequirements } from "@tools/morpho/mutations.js";
 import { MORPHO_CONTRACTS, UINT256_MAX } from "@tools/morpho/constants.js";
 import { BASE_CHAIN_ID, BASE_GENERAL_ADAPTER_1, BASE_PERMIT2, BASE_USDC } from "./bundle-fixtures.js";
+import { definedValue } from "../../_test-value-guards.js";
 
 /** The operation every requirement below is classified against: 1 USDC, 6 decimals. */
 const OPERATION_AMOUNT = 1_000_000n;
@@ -93,9 +94,9 @@ describe("classifyMorphoRequirements - the exact-amount approval policy", () => 
   });
 
   it("refuses an approval to Morpho Blue itself, however legitimate that contract is", () => {
-    const morphoBlue = MORPHO_CONTRACTS[BASE_CHAIN_ID]?.morphoBlue;
+    const morphoBlue = definedValue(MORPHO_CONTRACTS[BASE_CHAIN_ID]?.morphoBlue, "Base Morpho Blue address");
     expect(morphoBlue).toBeTruthy();
-    expectPolicyRefusal(() => classify([approvalRequirement(morphoBlue!)]), "generaladapter1");
+    expectPolicyRefusal(() => classify([approvalRequirement(morphoBlue)]), "generaladapter1");
   });
 
   it("refuses an UNBOUNDED approval even when the spender is the right one", () => {

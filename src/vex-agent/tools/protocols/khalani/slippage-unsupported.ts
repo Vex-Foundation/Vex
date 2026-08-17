@@ -36,14 +36,18 @@ export const KHALANI_SLIPPAGE_UNSUPPORTED_REASON =
  * `subject` is the agent-facing entry point being called (e.g. `bridge_quote`),
  * so the message names the call the agent actually made.
  */
-export function khalaniSlippageRejection(
+export async function khalaniSlippageRejection(
   subject: string,
   params: Record<string, unknown>,
-): string | null {
+): Promise<string | null> {
   const value = params.slippageBps;
   if (value === undefined || value === null || value === "") return null;
   const fromChain = typeof params.fromChain === "string" ? params.fromChain : "";
   const toChain = typeof params.toChain === "string" ? params.toChain : "";
-  if (resolveBridgeVenue(fromChain, toChain) !== "khalani") return null;
+  // A decision that names no venue is NOT answered here: the router owns that
+  // refusal and states the real cause. Claiming "Khalani rejects slippageBps"
+  // when we do not know the route even goes to Khalani would be a false reason.
+  const decision = await resolveBridgeVenue(fromChain, toChain);
+  if (decision.venue !== "khalani") return null;
   return `${subject}: ${KHALANI_SLIPPAGE_UNSUPPORTED_REASON}`;
 }

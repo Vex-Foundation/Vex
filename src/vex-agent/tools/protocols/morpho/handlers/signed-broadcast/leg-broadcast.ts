@@ -22,7 +22,7 @@
  * problem; passing the anchor is how this lane opts in.
  */
 
-import type { Account, Chain, PublicClient, Transport, WalletClient } from "viem";
+import type { Account, Chain, PublicClient, TransactionReceipt, Transport, WalletClient } from "viem";
 import type { Address, Hex } from "viem";
 
 import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
@@ -102,21 +102,49 @@ export async function finalizeMorphoFailSoft(toolId: string, write: () => Promis
 }
 
 /**
+ * The seconds-since-epoch the RECEIPT itself carries, when the node sends one.
+ *
+ * Base's OP-stack nodes put `blockTimestamp` on the receipt; it is not part of
+ * viem's `TransactionReceipt` type, so it is read as an unknown extra field and
+ * accepted only when it parses to a finite positive number (hex or decimal).
+ */
+function receiptBlockTimestampSeconds(receipt: TransactionReceipt): number | null {
+  const raw: unknown = Reflect.get(receipt, "blockTimestamp");
+  const seconds =
+    typeof raw === "bigint" ? Number(raw)
+    : typeof raw === "number" ? raw
+    : typeof raw === "string" ? Number(raw)
+    : Number.NaN;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/**
  * Record the SETTLING BLOCK's own time (migration 078), read from the chain.
  *
  * Never `NOW()` and never derived from `confirmedAt`, which is when Vex OBSERVED
  * the settlement and can trail the block by however long the app was not
  * running. Entirely fail-soft: a report-precision fact must not be able to
  * disturb a confirmed money row.
+ *
+ * THE RECEIPT'S OWN `blockTimestamp` FIRST, `getBlock` only as the fallback.
+ * Base serves FLASHBLOCK PRECONFIRMATION receipts: the block they name is not
+ * sealed yet, so the follow-up `getBlock` raced the seal and threw
+ * `BlockNotFoundError`, leaving `settled_block_time` NULL on confirmed rows -
+ * and AgentScan's rule is "no block time, no confirmation time". The funded run
+ * of 2026-08-17 proved the field was present on those very receipts and carried
+ * the correct sealed time, so it is the primary source and the lookup remains
+ * for nodes that omit it.
  */
 export async function noteMorphoSettledBlockTime(
   publicClient: PublicClient<Transport, Chain>,
   eventId: number,
-  blockNumber: bigint,
+  receipt: TransactionReceipt,
 ): Promise<void> {
   try {
-    const block = await publicClient.getBlock({ blockNumber });
-    await noteSettledBlockTime(eventId, new Date(Number(block.timestamp) * 1000).toISOString());
+    const seconds =
+      receiptBlockTimestampSeconds(receipt)
+      ?? Number((await publicClient.getBlock({ blockNumber: receipt.blockNumber })).timestamp);
+    await noteSettledBlockTime(eventId, new Date(seconds * 1000).toISOString());
   } catch (err) {
     logger.warn("morpho.activity.block_time_failed", {
       id: eventId,

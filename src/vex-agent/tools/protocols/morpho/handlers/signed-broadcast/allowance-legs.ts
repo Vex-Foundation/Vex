@@ -27,7 +27,12 @@
  * nothing of the kind.
  *
  * A WITHDRAWAL NEVER REACHES THIS FILE with work to do: it pulls nothing, so its
- * plan has no approval legs and the loop below runs zero times.
+ * plan has no approval legs and the loop below runs zero times. The same is true
+ * of a borrow and a collateral withdrawal in the market lane.
+ *
+ * THE LOOP IS SHARED BY BOTH LANES, which is why it is written against the narrow
+ * `MorphoAllowanceContext` rather than either lane's own context. See that file
+ * for the two assumptions this used to make implicitly and now states.
  */
 
 import { formatUnits } from "viem";
@@ -42,7 +47,7 @@ import { morphoFailureDetail } from "../shared.js";
 import { broadcastMorphoLeg, finalizeMorphoFailSoft, noteMorphoSettledBlockTime } from "./leg-broadcast.js";
 import { MORPHO_AMBIGUOUS_BROADCAST_MESSAGE, withResidual, type MorphoExecutionOutcome } from "./outcome.js";
 import type { MorphoActivityRole } from "./protocol.js";
-import type { MorphoExecutionContext } from "./run.js";
+import type { MorphoAllowanceContext } from "./allowance-context.js";
 
 /**
  * The hedged residual sentence an AMBIGUOUS approval owes, or `null` when there
@@ -53,11 +58,11 @@ import type { MorphoExecutionContext } from "./run.js";
  * the previous allowance in place but cannot create one, so claiming a residual
  * for it would name a grant this execution never made.
  */
-function possibleResidualFor(context: MorphoExecutionContext, role: MorphoActivityRole): string | null {
+function possibleResidualFor(context: MorphoAllowanceContext, role: MorphoActivityRole): string | null {
   if (role !== "allowance") return null;
   return describePossibleResidualAllowance(
-    formatUnits(context.request.amountRaw, context.state.assetDecimals),
-    context.state.assetSymbol,
+    formatUnits(context.approvalAmountRaw, context.approvalDecimals),
+    context.approvalSymbol,
     context.allowancePlan?.spender.toLowerCase() ?? "the Morpho adapter",
   );
 }
@@ -67,11 +72,11 @@ function possibleResidualFor(context: MorphoExecutionContext, role: MorphoActivi
  * Returns a terminal outcome when one of them did not land, `null` when they all
  * did (or when there were none).
  */
-export async function runAllowanceLegs(context: MorphoExecutionContext): Promise<MorphoExecutionOutcome | null> {
+export async function runAllowanceLegs(context: MorphoAllowanceContext): Promise<MorphoExecutionOutcome | null> {
   const { toolId } = context.request;
-  const lastIndex = context.legs.length - 1;
+  const { operationLegIndex } = context;
 
-  for (let index = 0; index < lastIndex; index += 1) {
+  for (let index = 0; index < operationLegIndex; index += 1) {
     const leg = context.legs[index]!;
     const row = context.events[index]!;
     const txParams = leg.txParams;
@@ -122,7 +127,7 @@ export async function runAllowanceLegs(context: MorphoExecutionContext): Promise
         message: withResidual(
           `${toolId}: the ${leg.eventRole} step's broadcast could not be confirmed. `
           + MORPHO_AMBIGUOUS_BROADCAST_MESSAGE
-          + " The vault operation itself was NOT attempted.",
+          + ` The ${context.operationLabel} itself was NOT attempted.`,
           context.residual ?? possibleResidualFor(context, leg.eventRole),
         ),
       };
@@ -142,8 +147,8 @@ export async function runAllowanceLegs(context: MorphoExecutionContext): Promise
         role: leg.eventRole,
         txHash: outcome.txHash,
         message: withResidual(
-          `${toolId}: the ${leg.eventRole} transaction (${outcome.txHash}) reverted on-chain, so the vault operation `
-          + "was not attempted. No funds moved beyond the gas spent.",
+          `${toolId}: the ${leg.eventRole} transaction (${outcome.txHash}) reverted on-chain, so the `
+          + `${context.operationLabel} was not attempted. No funds moved beyond the gas spent.`,
           context.residual,
         ),
       };
@@ -153,13 +158,13 @@ export async function runAllowanceLegs(context: MorphoExecutionContext): Promise
     // been applied by the estimating node.
     context.priorLeg = priorLegAnchorFrom(outcome.receipt.blockNumber);
     await finalizeMorphoFailSoft(toolId, () => confirmActivityEvent(row.id, {}));
-    await noteMorphoSettledBlockTime(context.clients.publicClient, row.id, outcome.receipt.blockNumber);
+    await noteMorphoSettledBlockTime(context.clients.publicClient, row.id, outcome.receipt);
 
     if (leg.eventRole === "allowance") {
       // From here on, every non-confirmed ending owes the user this sentence.
       context.residual = describeResidualAllowance(
-        formatUnits(context.request.amountRaw, context.state.assetDecimals),
-        context.state.assetSymbol,
+        formatUnits(context.approvalAmountRaw, context.approvalDecimals),
+        context.approvalSymbol,
         context.allowancePlan?.spender.toLowerCase() ?? "the Morpho adapter",
       );
     }

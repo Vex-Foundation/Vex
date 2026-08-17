@@ -40,13 +40,16 @@ function testBudget(): { budget: MorphoBudget; advance: (ms: number) => void } {
   return { budget, advance: (ms) => { now += ms; } };
 }
 
+/**
+ * A REAL `Response`. The client reads `ok`, `status`, `headers.get(...)` and
+ * `json()`; a hand-shaped four-key double would keep passing if it started
+ * reading a fifth, and could only be typed through an escape.
+ */
 function response(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-  return {
-    ok: status >= 200 && status < 300,
+  return new Response(JSON.stringify(body), {
     status,
-    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
-    json: async () => body,
-  } as unknown as Response;
+    headers: { "content-type": "application/json", ...headers },
+  });
 }
 
 afterEach(() => {

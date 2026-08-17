@@ -45,19 +45,29 @@ export const MORPHO_ACTIVITY_KIND = "lend" as const;
 export const MORPHO_ACTIVITY_CHAIN_FAMILY: BridgeChainFamily = "eip155";
 
 /**
- * The four roles a Morpho vault execution writes. Narrowed from the full role
- * union so a Morpho caller cannot accidentally file a `swap`, `bridge` or
- * `yield` row through this path - `agent_activity_kind_role_binding` would
- * reject it, but failing at the type boundary beats failing at the database.
+ * The five roles a Morpho execution writes. Narrowed from the full role union so
+ * a Morpho caller cannot accidentally file a `swap`, `bridge` or `yield` row
+ * through this path - `agent_activity_kind_role_binding` would reject it, but
+ * failing at the type boundary beats failing at the database.
  *
- * `lend_borrow_operate` is deliberately absent: it belongs to the borrow path
- * (E3c), which this module does not implement, and admitting a role no code here
- * can write would make the type lie about what this lane does.
+ * ── ONE ROLE FOR ALL FOUR BLUE MARKET OPERATIONS ────────────────────────────
+ *
+ * `lend_borrow_operate` covers supply_collateral, withdraw_collateral, borrow
+ * and repay, and the operation itself is a DELTA IN `intent_params` rather than
+ * a role of its own. That is the Jupiter precedent verbatim
+ * (`../../solana-jupiter/borrow-operate-params.ts`): one role, many shapes, and
+ * the durable audit-facing description of what a specific call did lives in a
+ * versioned, normalized effects payload - see `./borrow-operate-params.ts`.
+ * Migration 079 already admits this role on the `eip155` lend arm, so no
+ * vocabulary change was needed for the borrow lane and none was made.
  */
 export type MorphoActivityRole = Extract<
   AgentActivityEventRole,
-  "allowance" | "allowance_reset" | "lend_deposit" | "lend_withdraw"
+  "allowance" | "allowance_reset" | "lend_deposit" | "lend_withdraw" | "lend_borrow_operate"
 >;
+
+/** The one role every Blue market operation is filed under. There is no second. */
+export const MORPHO_BORROW_OPERATE_ROLE = "lend_borrow_operate" as const;
 
 /**
  * The agent-facing slug for a chain id, resolved from Vex's own Morpho registry.

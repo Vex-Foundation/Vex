@@ -17,7 +17,7 @@ import {
 } from "./rewards-fixtures.js";
 import { validateMerklOpportunity, validateMerklUserRewards } from "@tools/merkl/validation.js";
 import { attributeMerklRewards } from "@tools/merkl/rewards.js";
-import type { MerklClient } from "@tools/merkl/client.js";
+import { MerklClient } from "@tools/merkl/client.js";
 import { morphoRewardsGet } from "@vex-agent/tools/protocols/morpho/handlers/rewards-get.js";
 import { parseMorphoRewardsParams } from "@vex-agent/tools/protocols/morpho/read-params.js";
 
@@ -31,9 +31,17 @@ vi.mock("@tools/merkl/client.js", async () => {
 const MORPHO_OPPORTUNITY_ID = "9836065204209028807";
 const MOONWELL_OPPORTUNITY_ID = "7346841169498192596";
 
-/** A client that answers only from the captured bodies. No network, ever. */
+/**
+ * A REAL `MerklClient` with only its two read methods answered from the
+ * captured bodies. No network, ever: both overridden methods return locally,
+ * and nothing else on the client is reached.
+ *
+ * `MerklClient` is a class with private state, so an object literal is not one;
+ * overriding a genuine instance keeps the double's type the contract's own
+ * instead of forcing a stand-in into position with a type escape.
+ */
 function fixtureClient(overrides: { failOpportunities?: boolean } = {}): MerklClient {
-  return {
+  return Object.assign(new MerklClient(), {
     getUserRewards: async (_wallet: string, chainId: number) =>
       validateMerklUserRewards(MERKL_USER_REWARDS_BASE, chainId),
     getOpportunity: async (id: string) => {
@@ -42,7 +50,7 @@ function fixtureClient(overrides: { failOpportunities?: boolean } = {}): MerklCl
       if (id === MOONWELL_OPPORTUNITY_ID) return validateMerklOpportunity(MERKL_OPPORTUNITY_MOONWELL);
       throw new Error(`unexpected opportunity ${id}`);
     },
-  } as unknown as MerklClient;
+  });
 }
 
 describe("merkl reward validation", () => {

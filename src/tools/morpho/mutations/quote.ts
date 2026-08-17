@@ -189,8 +189,8 @@ export async function previewMorphoVaultOperation(
   }
 
   const [gas, preflight] = await Promise.all([
-    boundMorphoGas(client, built.tx, user),
-    preflightMorphoTransaction(client, built.tx, user),
+    boundMorphoGas(client, built.tx, user, request.direction),
+    preflightMorphoTransaction(client, built.tx, user, request.direction),
   ]);
 
   const shares = state.toShares(request.amountRaw);

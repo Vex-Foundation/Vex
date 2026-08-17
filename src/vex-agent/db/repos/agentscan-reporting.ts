@@ -104,7 +104,7 @@ const CONFIRMED_AMOUNT_GRACE_MINUTES = 15;
 const BOTH_LEGS_ROLES_SQL = `(
   'swap','wrap','unwrap','token_launch',
   'yield_pt','yield_yt','yield_sy',
-  'lend_deposit','lend_withdraw','lend_borrow_operate',
+  'lend_deposit','lend_withdraw',
   'predict_buy','predict_sell','predict_claim','predict_close')`;
 
 /**
@@ -115,13 +115,17 @@ const BOTH_LEGS_ROLES_SQL = `(
  * query over the whole table and cannot call a row predicate. It must be kept
  * arm for arm with that function: `yield_claim` is output-only,
  * `bridge_deposit` is input-only, the second legs are required only where the
- * row populated their tokens, and a role that bears no amounts is never
- * incomplete.
+ * row populated their tokens, `lend_borrow_operate` requires each FIRST leg on
+ * those same terms because every Blue/Jupiter operation moves exactly ONE
+ * token, and a role that bears no amounts is never incomplete.
  */
 const ROLE_LEGS_COMPLETE_SQL = `
   CASE
     WHEN a.event_role = 'yield_claim' THEN a.executed_amount_out_raw IS NOT NULL
     WHEN a.event_role = 'bridge_deposit' THEN a.executed_amount_in_raw IS NOT NULL
+    WHEN a.event_role = 'lend_borrow_operate' THEN
+      (a.token_in_address IS NULL OR a.executed_amount_in_raw IS NOT NULL)
+      AND (a.token_out_address IS NULL OR a.executed_amount_out_raw IS NOT NULL)
     WHEN a.event_role IN ('yield_py','yield_lp') THEN
       a.executed_amount_in_raw IS NOT NULL
       AND a.executed_amount_out_raw IS NOT NULL

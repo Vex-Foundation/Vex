@@ -19,9 +19,11 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { encodeAbiParameters } from "viem";
 
 import { decodeVenueSettlement } from "@vex-agent/sync/executed-amount-fallback/venue-dispatch.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
+import type { DepositEvidenceDeps } from "@vex-agent/sync/executed-amount-fallback/deposit-evidence-resolver.js";
 
 const WALLET = "0xaaaabbbbccccddddeeeeffff0000111122223333";
 const ASSET = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
@@ -43,6 +45,34 @@ function transfer(token: string, from: string, to: string, amount: bigint) {
   return { address: token, topics: [TRANSFER_TOPIC, pad(from), pad(to)], data: word(amount) };
 }
 
+const BLUE = "0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb";
+const MARKET = `0x${"a1".repeat(32)}`;
+const REPAID_ASSETS = 500_000_001n;
+const BORROWED_ASSETS = 500_000_000n;
+const REPAY_TOPIC = "0x52acb05cebbd3cd39715469f22afbf5a17496295ef3bc9bb5944056c63ccaa09";
+const BORROW_TOPIC = "0x570954540bed6b1304a87dfe815a5eda4a648f7097a16240dcd85c9b5fd42a43";
+
+/** `Repay(id indexed, caller indexed, onBehalf indexed, assets, shares)`. */
+function repayLog(assets: bigint) {
+  return {
+    address: BLUE,
+    topics: [REPAY_TOPIC, MARKET, pad(WALLET), pad(WALLET)],
+    data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [assets, 1n]),
+  };
+}
+
+/** `Borrow(id indexed, caller, onBehalf indexed, receiver indexed, assets, shares)`. */
+function borrowLog(assets: bigint) {
+  return {
+    address: BLUE,
+    topics: [BORROW_TOPIC, MARKET, pad(WALLET), pad(WALLET)],
+    data: encodeAbiParameters(
+      [{ type: "address" }, { type: "uint256" }, { type: "uint256" }],
+      [WALLET as `0x${string}`, assets, 1n],
+    ),
+  };
+}
+
 function morphoRow(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
   return {
     protocol: "morpho",
@@ -59,11 +89,14 @@ function morphoRow(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEv
 }
 
 /** The bridge branches need chain reads; the Morpho branch takes none, so these throw if used. */
-const deps = {
+const deps: DepositEvidenceDeps = {
+  fetchReceiptStatus: async () => {
+    throw new Error("the morpho branch must not read the chain");
+  },
   fetchTransaction: async () => {
     throw new Error("the morpho branch must not read the chain");
   },
-} as never;
+};
 
 describe("venue dispatch: morpho", () => {
   it("decodes a deposit through the venue's own decoder", async () => {
@@ -139,6 +172,85 @@ describe("venue dispatch: morpho", () => {
       const result = await decodeVenueSettlement({ row: morphoRow(), logs, hint: null, deps });
       expect(result.kind).not.toBe("deferred");
     }
+  });
+
+  it("routes a lend_borrow_operate row to the BLUE MARKET decoder, not the vault rule", async () => {
+    // The proof this branch handles the new shape at all. A repay-by-shares row
+    // carries NO recorded amount, so the net-delta vault rule would have had
+    // nothing to bound with; Blue's own Repay event is what proves the amount,
+    // and the row's persisted provenance is what points the decode at it.
+    const result = await decodeVenueSettlement({
+      row: morphoRow({
+        eventRole: "lend_borrow_operate",
+        tokenInAddress: ASSET,
+        tokenOutAddress: null,
+        amountInRaw: null,
+        amountOutRaw: null,
+        routeProvenance: {
+          morphoBorrow: { operation: "repay", marketId: MARKET, blueAddress: BLUE },
+        },
+      }),
+      logs: [repayLog(REPAID_ASSETS)],
+      hint: null,
+      deps,
+    });
+
+    expect(result).toEqual({
+      kind: "decoded",
+      amounts: { executedAmountInRaw: REPAID_ASSETS.toString() },
+    });
+  });
+
+  it("records a borrow's proven leg on the OUT side, because the wallet receives it", async () => {
+    const result = await decodeVenueSettlement({
+      row: morphoRow({
+        eventRole: "lend_borrow_operate",
+        tokenInAddress: null,
+        tokenOutAddress: ASSET,
+        amountInRaw: null,
+        amountOutRaw: BORROWED_ASSETS.toString(),
+        routeProvenance: {
+          morphoBorrow: { operation: "borrow", marketId: MARKET, blueAddress: BLUE },
+        },
+      }),
+      logs: [borrowLog(BORROWED_ASSETS)],
+      hint: null,
+      deps,
+    });
+
+    expect(result).toEqual({
+      kind: "decoded",
+      amounts: { executedAmountOutRaw: BORROWED_ASSETS.toString() },
+    });
+  });
+
+  it("declines a borrow row whose provenance the receipt cannot be read against, BY NAME", async () => {
+    const result = await decodeVenueSettlement({
+      row: morphoRow({
+        eventRole: "lend_borrow_operate",
+        tokenInAddress: ASSET,
+        tokenOutAddress: null,
+        amountInRaw: null,
+        amountOutRaw: null,
+        routeProvenance: null,
+      }),
+      logs: [repayLog(REPAID_ASSETS)],
+      hint: null,
+      deps,
+    });
+
+    expect(result).toMatchObject({ kind: "declined", reason: "amounts_undecodable" });
+    expect((result as { detail: string }).detail).toContain("did not persist");
+  });
+
+  it("never DEFERS on a borrow row either", async () => {
+    const result = await decodeVenueSettlement({
+      row: morphoRow({ eventRole: "lend_borrow_operate", routeProvenance: null }),
+      logs: [],
+      hint: null,
+      deps,
+    });
+    expect(result.kind).not.toBe("deferred");
   });
 
   it("still declines an UNMAPPED protocol by name, which is the fallback morpho used to hit", async () => {

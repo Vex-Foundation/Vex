@@ -16,6 +16,7 @@ import { MORPHO_VAULT_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/
 import { MORPHO_POSITION_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/position-reads.js";
 import { MORPHO_WALLET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/wallet-reads.js";
 import { MORPHO_QUOTE_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/quote-reads.js";
+import { MORPHO_BORROW_EXECUTE_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/execute-borrow.js";
 import { MORPHO_EXECUTE_WRITE_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/execute-writes.js";
 import {
   EXECUTE_GATE_TOOLS,
@@ -35,6 +36,7 @@ import {
 import { MORPHO_CHAINS, MORPHO_SUPPORTED_CHAIN_SLUGS } from "../../../tools/morpho/chains.js";
 import { getKyberChains } from "../../../tools/kyberswap/chains.js";
 import { listLocalChains } from "../../../tools/evm-chains/registry.js";
+import { definedValue } from "../../_test-value-guards.js";
 
 const EXPECTED_TOOL_IDS = [
   "morpho.markets.discover",
@@ -48,6 +50,11 @@ const EXPECTED_TOOL_IDS = [
   "morpho.vault.quote",
   "morpho.vault.deposit",
   "morpho.vault.withdraw",
+  "morpho.market.quote",
+  "morpho.market.supplyCollateral",
+  "morpho.market.withdrawCollateral",
+  "morpho.market.borrow",
+  "morpho.market.repay",
 ];
 
 /**
@@ -55,7 +62,14 @@ const EXPECTED_TOOL_IDS = [
  * name rather than by a softened predicate: a check that quietly accepts a
  * mutating tool is a check that would accept the next one by accident.
  */
-const MORPHO_EXECUTE_TOOL_IDS = ["morpho.vault.deposit", "morpho.vault.withdraw"];
+const MORPHO_EXECUTE_TOOL_IDS = [
+  "morpho.vault.deposit",
+  "morpho.vault.withdraw",
+  "morpho.market.supplyCollateral",
+  "morpho.market.withdrawCollateral",
+  "morpho.market.borrow",
+  "morpho.market.repay",
+];
 
 /** Every discovery passage in the namespace, whichever lane module owns it. */
 const MORPHO_DISCOVERY = {
@@ -65,6 +79,7 @@ const MORPHO_DISCOVERY = {
   ...MORPHO_WALLET_READ_DISCOVERY,
   ...MORPHO_QUOTE_READ_DISCOVERY,
   ...MORPHO_EXECUTE_WRITE_DISCOVERY,
+  ...MORPHO_BORROW_EXECUTE_DISCOVERY,
 };
 
 describe("morpho manifest", () => {
@@ -89,10 +104,11 @@ describe("morpho manifest", () => {
     // `user_wallet_broadcast` is what the taxonomy and the approval card read.
     // A spending tool that declared neither would broadcast unattended.
     for (const toolId of MORPHO_EXECUTE_TOOL_IDS) {
-      const tool = MORPHO_TOOLS.find((t) => t.toolId === toolId);
-      expect(tool, toolId).toBeDefined();
-      expect(tool!.mutating).toBe(true);
-      expect(tool!.actionKind).toBe("user_wallet_broadcast");
+      const found = MORPHO_TOOLS.find((t) => t.toolId === toolId);
+      expect(found, toolId).toBeDefined();
+      const tool = definedValue(found, `execute tool ${toolId}`);
+      expect(tool.mutating).toBe(true);
+      expect(tool.actionKind).toBe("user_wallet_broadcast");
     }
   });
 
@@ -136,7 +152,7 @@ describe("morpho manifest", () => {
       for (const param of tool.params) {
         if (/\bone of\b/i.test(param.description) && param.description.includes(",")) {
           expect(param.enum, `${tool.toolId}.${param.key}`).toBeDefined();
-          expect(param.enum!.length).toBeGreaterThan(1);
+          expect(definedValue(param.enum, `${tool.toolId}.${param.key} enum`).length).toBeGreaterThan(1);
         }
       }
     }
@@ -182,6 +198,15 @@ describe("morpho manifest", () => {
       // of any kind, so an APY-basis sentence here would be a claim the reply
       // cannot support.
       "morpho.vault.quote",
+      // The BLUE MARKET lane returns a health factor, a liquidity figure and a
+      // settlement - no rate at all. Its preview is a point-in-time price of one
+      // operation, exactly like the vault preview above, and the four executes
+      // return a proven amount and a hash.
+      "morpho.market.quote",
+      "morpho.market.supplyCollateral",
+      "morpho.market.withdrawCollateral",
+      "morpho.market.borrow",
+      "morpho.market.repay",
     ];
     for (const tool of MORPHO_TOOLS) {
       if (NO_APY_TOOL_IDS.includes(tool.toolId)) continue;

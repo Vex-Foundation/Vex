@@ -55,7 +55,7 @@ function resolveMorphoRpcUrl(chainId: number): string | undefined {
   return MORPHO_DEFAULT_RPC[chainId];
 }
 
-function buildViemChain(chainId: number): Chain {
+function buildViemChain(chainId: number): { chain: Chain; rpcUrl: string } {
   const chain = BY_ID.get(chainId);
   const rpcUrl = resolveMorphoRpcUrl(chainId);
   if (chain === undefined || rpcUrl === undefined) {
@@ -67,11 +67,14 @@ function buildViemChain(chainId: number): Chain {
   }
   const symbol = MORPHO_NATIVE_SYMBOL[chainId] ?? "ETH";
   return {
-    id: chain.chainId,
-    name: chain.morphoNetwork,
-    nativeCurrency: { name: symbol, symbol, decimals: 18 },
-    rpcUrls: { default: { http: [rpcUrl] } },
-    contracts: { multicall3: { address: MORPHO_MULTICALL3 } },
+    chain: {
+      id: chain.chainId,
+      name: chain.morphoNetwork,
+      nativeCurrency: { name: symbol, symbol, decimals: 18 },
+      rpcUrls: { default: { http: [rpcUrl] } },
+      contracts: { multicall3: { address: MORPHO_MULTICALL3 } },
+    },
+    rpcUrl,
   };
 }
 
@@ -96,10 +99,10 @@ function buildMorphoTransport(chainId: number, primaryUrl: string): Transport {
 
 /** A budgeted, Multicall3-wired public client for a supported Morpho chain. */
 export function getMorphoPublicClient(chainId: number): PublicClient<Transport, Chain> {
-  const chain = buildViemChain(chainId);
+  const { chain, rpcUrl } = buildViemChain(chainId);
   return createPublicClient({
     chain,
-    transport: buildMorphoTransport(chainId, chain.rpcUrls.default.http[0]),
+    transport: buildMorphoTransport(chainId, rpcUrl),
   }) as PublicClient<Transport, Chain>;
 }
 
@@ -123,8 +126,8 @@ export interface MorphoEvmClients {
  * read, cached or logged here.
  */
 export function getMorphoEvmClients(chainId: number, privateKey: Hex): MorphoEvmClients {
-  const chain = buildViemChain(chainId);
-  const transport = buildMorphoTransport(chainId, chain.rpcUrls.default.http[0]);
+  const { chain, rpcUrl } = buildViemChain(chainId);
+  const transport = buildMorphoTransport(chainId, rpcUrl);
   return {
     publicClient: createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>,
     walletClient: createWalletClient({

@@ -1,6 +1,7 @@
 /**
  * Relay substrate unit tests (Wave 2c) — HTTP client (mocked), chain resolver,
- * currency mapping, quote-shape validator, and the bridge venue router.
+ * currency mapping, and quote-shape validator. The bridge venue router has its
+ * own file (`bridge-venue.test.ts`).
  *
  * No live network: `@utils/http` is mocked so the client's Zod validation +
  * error mapping are exercised against fixtures (quote steps, status terminal
@@ -14,7 +15,6 @@ vi.mock("@utils/http.js", () => http);
 
 import { RelayClient } from "@tools/relay/client.js";
 import { resolveRelayChainId, toRelayCurrency, RELAY_NATIVE_CURRENCY } from "@tools/relay/chains.js";
-import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { isValidRelayQuoteShape } from "@vex-agent/tools/protocols/prequote/identity/relay-bridge.js";
 import type { RelayChain } from "@tools/relay/types.js";
 
@@ -134,19 +134,9 @@ describe("toRelayCurrency", () => {
   });
 });
 
-// ── Bridge venue router ─────────────────────────────────────────────────────
-
-describe("resolveBridgeVenue", () => {
-  it("routes to relay whenever either side is Robinhood Chain", () => {
-    expect(resolveBridgeVenue("base", "robinhood")).toBe("relay");
-    expect(resolveBridgeVenue("robinhood", "base")).toBe("relay");
-    expect(resolveBridgeVenue("base", "4663")).toBe("relay");
-  });
-  it("routes to khalani between two non-local chains", () => {
-    expect(resolveBridgeVenue("base", "ethereum")).toBe("khalani");
-    expect(resolveBridgeVenue("arbitrum", "optimism")).toBe("khalani");
-  });
-});
+// The bridge venue router moved to `bridge-venue.test.ts`: it now reads the
+// live Khalani chain registry, which needs a mock this file's HTTP mock cannot
+// stand in for.
 
 // ── Relay quote-shape validator (own extraction) ────────────────────────────
 

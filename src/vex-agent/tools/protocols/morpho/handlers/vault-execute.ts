@@ -294,6 +294,40 @@ async function readGovernance(vaultAddress: string, chainId: number): Promise<Mo
 }
 
 /**
+ * The two sides of a settled vault operation, in the key names the ledger's leg
+ * reader recognises.
+ *
+ * `tokenIn` is what the wallet SENT and `tokenOut` what it RECEIVED, which on a
+ * deposit is the asset and the vault's shares and on a withdrawal is the mirror.
+ * THE TWO SCALES ARE DIFFERENT and each amount is rendered at its own token's
+ * decimals; they are never compared here or anywhere downstream.
+ */
+function morphoVaultLegKeys(outcome: Extract<MorphoExecutionOutcome, { kind: "confirmed" }>): Record<string, string> {
+  const { tokens, executed } = outcome;
+  const keys: Record<string, string> = {};
+  const inToken = tokens.inSymbol ?? tokens.inAddress;
+  const outToken = tokens.outSymbol ?? tokens.outAddress;
+  if (inToken !== null) {
+    keys["tokenIn"] = inToken;
+    keys["amountIn"] = dottedHuman(executed.amountInHuman);
+  }
+  if (outToken !== null) {
+    keys["tokenOut"] = outToken;
+    keys["amountOut"] = dottedHuman(executed.amountOutHuman);
+  }
+  return keys;
+}
+
+/**
+ * A whole number of tokens rendered as `"5"` is indistinguishable from 5 RAW
+ * base units, so the ledger's amount grammar deliberately prints nothing for it.
+ * The trailing `.0` is what tells the two apart.
+ */
+function dottedHuman(human: string): string {
+  return human.includes(".") ? human : `${human}.0`;
+}
+
+/**
  * Turn one of the four execution endings into the tool's own result.
  *
  * FOUR ENDINGS, FOUR ANSWERS. Only `confirmed` is a success. `refused` and
@@ -328,6 +362,13 @@ function renderOutcome(
       txHash: outcome.txHash,
       executed: outcome.executed,
       shares: outcome.shares,
+      // THE LEG LINE. The amounts alone are not a leg: until these keys existed
+      // the app rendered no leg line at all for a confirmed Morpho execution,
+      // because the result carried the numbers and never said what they were
+      // (live defect, 2026-08-17). A token falls back to its lower-case address
+      // when the chain did not answer `symbol()`, and the human amounts are
+      // dotted so a whole-token amount cannot be mistaken for raw base units.
+      ...morphoVaultLegKeys(outcome),
       summary: outcome.message,
       notes: {
         proven:

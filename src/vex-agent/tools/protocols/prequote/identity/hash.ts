@@ -31,6 +31,7 @@ import {
   lpToPtHashMaterial,
   lpTransferHashMaterial,
 } from "./hash/pendle-lp.js";
+import { morphoBorrowHashMaterial } from "./hash/morpho-borrow.js";
 import { lendHashMaterial } from "./hash/morpho-lend.js";
 import { redeemHashMaterial, ptRolloverHashMaterial } from "./hash/pendle-pt.js";
 import { mintHashMaterial, redeemPyHashMaterial } from "./hash/pendle-py.js";
@@ -46,6 +47,12 @@ import type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+import type {
+  LendBorrowMatchInput,
+  LendRepayMatchInput,
+  LendSupplyCollateralMatchInput,
+  LendWithdrawCollateralMatchInput,
+} from "./hash/morpho-borrow.js";
 import type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 import type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 import type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
@@ -61,6 +68,13 @@ export type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+export type {
+  LendBorrowMatchInput,
+  LendRepayMatchInput,
+  LendSupplyCollateralMatchInput,
+  LendWithdrawCollateralMatchInput,
+  MorphoBorrowMatchInput,
+} from "./hash/morpho-borrow.js";
 export type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 export type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 export type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
@@ -90,7 +104,11 @@ export type PrequoteMatchInput =
   | LpTransferMatchInput
   | LpToPtMatchInput
   | LendDepositMatchInput
-  | LendWithdrawMatchInput;
+  | LendWithdrawMatchInput
+  | LendSupplyCollateralMatchInput
+  | LendWithdrawCollateralMatchInput
+  | LendBorrowMatchInput
+  | LendRepayMatchInput;
 
 /**
  * Deterministic sha256-hex match-hash over the trade identity. Identical at
@@ -177,6 +195,15 @@ export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
       // tags: the tag is the ONLY thing separating the mirror operations, which
       // is why it leads the material.
       material = lendHashMaterial(input);
+      break;
+    case "lend_supply_collateral":
+    case "lend_withdraw_collateral":
+    case "lend_borrow":
+    case "lend_repay":
+      // Morpho Blue borrow lane (E3c). One material function, four kind tags:
+      // the tag is what keeps a collateral-supply quote from authorizing a
+      // borrow execute on the same market, which is why it leads the material.
+      material = morphoBorrowHashMaterial(input);
       break;
   }
   return createHash("sha256").update(material).digest("hex");

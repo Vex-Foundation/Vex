@@ -131,9 +131,9 @@ describe("chainSupportsFeature", () => {
 });
 
 describe("getKyberChains", () => {
-  it("returns 19 chains (Scroll/zkSync dropped)", () => {
+  it("returns 18 chains (Scroll/zkSync/Etherlink dropped)", () => {
     const chains = getKyberChains();
-    expect(chains).toHaveLength(19);
+    expect(chains).toHaveLength(18);
   });
 
   it("each chain has required fields", () => {
@@ -147,13 +147,21 @@ describe("getKyberChains", () => {
 
   it("every chain is aggregator-enabled (the only surviving feature)", () => {
     const aggregatorChains = getKyberChains().filter((c) => c.aggregator);
-    expect(aggregatorChains.length).toBe(19);
+    expect(aggregatorChains.length).toBe(18);
   });
 
   it("no chain slug is the deleted Scroll/zkSync entry", () => {
     const slugs = getKyberChains().map((c) => c.slug);
     expect(slugs).not.toContain("scroll");
     expect(slugs).not.toContain("zksync");
+  });
+
+  // Owner decision 2026-08-17: a swap venue with zero bridge reach is removed.
+  it("no chain slug or id is the deleted Etherlink entry", () => {
+    expect(getKyberChains().map((c) => c.slug)).not.toContain("etherlink");
+    expect(getKyberChains().map((c) => c.chainId)).not.toContain(42793);
+    expect(() => resolveChainSlug("etherlink")).toThrow();
+    expect(() => resolveChainSlug("42793")).toThrow();
   });
 });
 

@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { resolveToolLegs } from "../ToolLedger/toolLegs.js";
+import { resolveToolLegs, resolveToolSingleLeg } from "../ToolLedger/toolLegs.js";
 import type { ToolOperation } from "../ToolLedger/toolOperation.js";
 
 /**
@@ -271,5 +271,138 @@ describe("resolveToolLegs — shapes and provenance", () => {
     // An unknown mint gets a truncated address and NO brand mark.
     expect(legs?.to.token.text).toContain("…");
     expect(legs?.to.token.iconSymbol).toBeNull();
+  });
+});
+
+/**
+ * MORPHO VAULT - the two-sided case, and the live defect this pins closed. A
+ * vault supply moves an asset OUT of the wallet and vault SHARES back in, so it
+ * really is a pair, and the handler now emits the same `tokenIn`/`tokenOut` +
+ * `amountIn`/`amountOut` root keys the swap reader already knows. Before those
+ * keys existed the payload named only a vault address and a raw amount, and a
+ * settled deposit rendered NO leg line at all.
+ */
+describe("resolveToolLegs - Morpho vault execute output", () => {
+  const DEPOSIT_ARGS =
+    '{"vaultAddress":"0xbeef0e0834849acc03f0089f01f4f1eeb06873c9","chain":"base","depositAmountRaw":"200000"}';
+  const DEPOSIT_OUTPUT =
+    '{"toolId":"morpho.vault.deposit","status":"confirmed","tokenIn":"USDC","amountIn":"0.2","tokenOut":"steakUSDC","amountOut":"0.192836490590443813","summary":"Deposited 0.2 USDC and received 0.192836490590443813 steakUSDC."}';
+
+  it("renders the settled deposit as a pair, with NO change to the reader", () => {
+    const legs = legsFor(DEPOSIT_ARGS, DEPOSIT_OUTPUT, true);
+    expect(legs?.outcome).toBe("executed");
+    expect(legs?.from.token.text).toBe("USDC");
+    expect(legs?.from.amount).toBe("0.2");
+    expect(legs?.to.token.text).toBe("STEAKUSDC");
+    expect(legs?.to.amount).toBe("0.192836");
+  });
+
+  it("falls back to the lower-case ADDRESS form when a symbol is unknown", () => {
+    const legs = legsFor(
+      DEPOSIT_ARGS,
+      '{"tokenIn":"0xbeef0e0834849acc03f0089f01f4f1eeb06873c9","tokenOut":"0xdead0e0834849acc03f0089f01f4f1eeb06873c9"}',
+      true,
+    );
+    // An address is truncated by the shared grammar and NEVER wears a brand.
+    expect(legs?.from.token.text).toContain("…");
+    expect(legs?.from.token.iconSymbol).toBeNull();
+  });
+
+  it("shows NO legs for the same deposit while it is unproven - args carry no tokens", () => {
+    expect(legsFor(DEPOSIT_ARGS, DEPOSIT_OUTPUT, null)).toBeNull();
+    expect(legsFor(DEPOSIT_ARGS, DEPOSIT_OUTPUT, false)).toBeNull();
+  });
+});
+
+/**
+ * MORPHO BLUE MARKET - the one-sided case. A market operation moves exactly one
+ * token in one direction, so the pair reader must decline it and the single-leg
+ * reader must report the direction it actually had. A mirror leg invented to
+ * make the row look like a swap would claim a movement that never happened.
+ */
+describe("resolveToolSingleLeg - one token, one direction", () => {
+  const MARKET_ARGS = '{"marketId":"0xfeed","chain":"base"}';
+  const SENT_OUTPUT =
+    '{"toolId":"morpho.market.supplyCollateral","status":"confirmed","tokenIn":"WETH","amountIn":"0.05"}';
+  const RECEIVED_OUTPUT =
+    '{"toolId":"morpho.market.borrow","status":"confirmed","tokenOut":"USDC","amountOut":"120.5"}';
+
+  function singleFor(
+    toolArgs: string | null,
+    output: string | null,
+    success: boolean | null | undefined,
+    operation: ToolOperation = "mutating",
+  ) {
+    return resolveToolSingleLeg(toolArgs, output, success, operation);
+  }
+
+  it("reads a SENT leg from the from-side keys alone", () => {
+    const single = singleFor(MARKET_ARGS, SENT_OUTPUT, true);
+    expect(single?.direction).toBe("sent");
+    expect(single?.outcome).toBe("executed");
+    expect(single?.leg.token.text).toBe("WETH");
+    expect(single?.leg.amount).toBe("0.05");
+  });
+
+  it("reads a RECEIVED leg from the to-side keys alone", () => {
+    const single = singleFor(MARKET_ARGS, RECEIVED_OUTPUT, true);
+    expect(single?.direction).toBe("received");
+    expect(single?.leg.token.text).toBe("USDC");
+    expect(single?.leg.amount).toBe("120.5");
+  });
+
+  it("declines a payload that has BOTH sides - that is a pair, not a single leg", () => {
+    expect(
+      singleFor(MARKET_ARGS, '{"tokenIn":"USDC","tokenOut":"steakUSDC"}', true),
+    ).toBeNull();
+    // ... and the PAIR reader is the one that reports it.
+    expect(
+      resolveToolLegs(MARKET_ARGS, '{"tokenIn":"USDC","tokenOut":"steakUSDC"}', true, "mutating")
+        ?.to.token.text,
+    ).toBe("STEAKUSDC");
+  });
+
+  it.each([
+    ["neither side present", '{"marketId":"0xfeed"}'],
+    ["a non-string token", '{"tokenIn":42}'],
+    ["truncated JSON", '{"tokenIn":"WET'],
+    ["not JSON at all", "tokenIn=WETH"],
+  ])("fails closed to null for %s", (_label, output) => {
+    expect(singleFor(MARKET_ARGS, output, true)).toBeNull();
+  });
+
+  it("never parses an OVERSIZED output", () => {
+    const oversized = `{"tokenIn":"WETH","amountIn":"0.05","pad":"${"x".repeat(21_000)}"}`;
+    expect(oversized.length).toBeGreaterThan(20_000);
+    expect(singleFor(MARKET_ARGS, oversized, true)).toBeNull();
+  });
+
+  it("IGNORES the output for an unproven or failed act - hostile text invents nothing", () => {
+    expect(singleFor(MARKET_ARGS, SENT_OUTPUT, null)).toBeNull();
+    expect(singleFor(MARKET_ARGS, SENT_OUTPUT, false)).toBeNull();
+  });
+
+  it("carries the same outcome ladder a pair does", () => {
+    expect(singleFor(MARKET_ARGS, SENT_OUTPUT, true, "quote")?.outcome).toBe("quote");
+    expect(singleFor(MARKET_ARGS, SENT_OUTPUT, true, "unproven")?.outcome).toBe(
+      "completed",
+    );
+    expect(
+      resolveToolSingleLeg('{"tokenIn":"WETH"}', null, false, "mutating", "pending")
+        ?.outcome,
+    ).toBe("pending");
+    expect(
+      resolveToolSingleLeg('{"tokenIn":"WETH"}', null, false, "mutating", null)?.outcome,
+    ).toBe("failed");
+  });
+
+  it("prints NO amount for a raw base-unit integer", () => {
+    const single = singleFor(
+      MARKET_ARGS,
+      '{"tokenIn":"WETH","amountIn":"50000000000000000"}',
+      true,
+    );
+    expect(single?.leg.token.text).toBe("WETH");
+    expect(single?.leg.amount).toBeNull();
   });
 });

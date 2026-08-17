@@ -25,6 +25,8 @@ const EMPTY: Omit<RoleLegRow, "eventRole"> = {
   executedAmountOutRaw: null,
   executedAmountIn2Raw: null,
   executedAmountOut2Raw: null,
+  tokenInAddress: null,
+  tokenOutAddress: null,
   tokenIn2Address: null,
   tokenOut2Address: null,
 };
@@ -44,7 +46,6 @@ const BOTH_LEG_ROLES: readonly AgentActivityEventRole[] = [
   "yield_sy",
   "lend_deposit",
   "lend_withdraw",
-  "lend_borrow_operate",
   "predict_buy",
   "predict_sell",
   "predict_claim",
@@ -89,6 +90,60 @@ describe("roleLegsIncomplete — the asymmetric roles", () => {
     expect(roleLegsIncomplete(row("yield_claim"))).toBe(true);
     expect(roleLegsIncomplete(row("yield_claim", { executedAmountOutRaw: "1" }))).toBe(false);
     expect(roleLegsIncomplete(row("yield_claim", { executedAmountInRaw: "1" }))).toBe(true);
+  });
+});
+
+describe("roleLegsIncomplete — the single-leg operate role", () => {
+  /**
+   * Every Morpho Blue operation and every Jupiter /operate leg moves exactly ONE
+   * token: supply_collateral and repay send it, withdraw_collateral and borrow
+   * receive it. The row populates that side's token and leaves the other null,
+   * so the leg it requires is the leg it actually has.
+   */
+  it("lend_borrow_operate requires a leg only where the row populated its token", () => {
+    // The SEND side (supply_collateral / repay).
+    expect(roleLegsIncomplete(row("lend_borrow_operate", { tokenInAddress: "0xdai" }))).toBe(true);
+    expect(
+      roleLegsIncomplete(
+        row("lend_borrow_operate", { tokenInAddress: "0xdai", executedAmountInRaw: "1000000" }),
+      ),
+    ).toBe(false);
+
+    // The RECEIVE side (withdraw_collateral / borrow).
+    expect(roleLegsIncomplete(row("lend_borrow_operate", { tokenOutAddress: "0xdai" }))).toBe(true);
+    expect(
+      roleLegsIncomplete(
+        row("lend_borrow_operate", { tokenOutAddress: "0xdai", executedAmountOutRaw: "1000000" }),
+      ),
+    ).toBe(false);
+
+    // The absent side must never hold a whole single-leg row incomplete.
+    expect(
+      roleLegsIncomplete(
+        row("lend_borrow_operate", { tokenInAddress: "0xdai", executedAmountOutRaw: "1" }),
+      ),
+    ).toBe(true);
+
+    // A row that did populate both tokens still owes both legs.
+    expect(
+      roleLegsIncomplete(
+        row("lend_borrow_operate", {
+          tokenInAddress: "0xdai",
+          tokenOutAddress: "0xusdc",
+          executedAmountInRaw: "1",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      roleLegsIncomplete(
+        row("lend_borrow_operate", {
+          tokenInAddress: "0xdai",
+          tokenOutAddress: "0xusdc",
+          executedAmountInRaw: "1",
+          executedAmountOutRaw: "2",
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

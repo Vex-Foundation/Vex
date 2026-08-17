@@ -98,7 +98,7 @@ describe("planMorphoAllowance", () => {
 
     expect(plan.shape).toBe("approve");
     expect(plan.steps).toHaveLength(1);
-    const step = plan.steps[0]!;
+    const step = plan.steps[0];
     expect(step.kind).toBe("allowance");
     // The transaction targets the ASSET, and authorises the pinned adapter for
     // the operation's own amount. Never `maxUint256`, never a rounded-up figure.
@@ -113,16 +113,16 @@ describe("planMorphoAllowance", () => {
     expect(plan.steps.map((s) => s.kind)).toEqual(["allowance_reset", "allowance"]);
     // Order is the property under test: the zeroing must precede the grant, or a
     // USDT-shaped token reverts the approval that pays for the operation.
-    expect(decodeStep(plan.steps[0]!.data)).toEqual({ spender: BASE_GENERAL_ADAPTER_1, amount: 0n });
-    expect(decodeStep(plan.steps[1]!.data)).toEqual({ spender: BASE_GENERAL_ADAPTER_1, amount: AMOUNT });
+    expect(decodeStep(plan.steps[0].data)).toEqual({ spender: BASE_GENERAL_ADAPTER_1, amount: 0n });
+    expect(decodeStep(plan.steps[1].data)).toEqual({ spender: BASE_GENERAL_ADAPTER_1, amount: AMOUNT });
   });
 
   it("projects the reset step as its own named requirement rather than a second approval", async () => {
     const requirements = describeMorphoAllowancePlan(await planWith(AMOUNT - 1n));
 
     expect(requirements.map((r) => r.kind)).toEqual(["approval_reset", "approval"]);
-    expect(requirements[0]!.amountRaw).toBe("0");
-    expect(requirements[1]!.amountRaw).toBe(AMOUNT.toString());
+    expect(requirements[0].amountRaw).toBe("0");
+    expect(requirements[1].amountRaw).toBe(AMOUNT.toString());
   });
 
   it("REFUSES the operation when the allowance could not be read, rather than assuming zero", async () => {

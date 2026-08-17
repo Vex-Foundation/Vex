@@ -51,6 +51,19 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
       // that NEEDS it (the hidden Uniswap pair) always throws here, which
       // correctly falls back to the registry's static `mutating` flag below.
       const target = router(call.args, undefined);
+      // An ASYNC router (`bridge`, which awaits the live Khalani chain registry
+      // to pick its venue) cannot be resolved at this SYNCHRONOUS classification
+      // site. Fall back to the alias's registry flag exactly as an un-routable
+      // call does - conservative, and identical to what either bridge target
+      // would classify as, since both are mutating.
+      if (target instanceof Promise) {
+        // The discarded promise must not become an unhandled rejection: this
+        // classification never awaits it, and the router rejects for ordinary
+        // reasons (invalid args, an unreadable registry). The real failure
+        // surfaces from the dispatch branch, which does await its own call.
+        target.catch(() => undefined);
+        return isMutatingTool(call.name);
+      }
       return getProtocolManifest(target.toolId)?.mutating === true;
     } catch {
       // Un-routable args are NOT a side-effect signal — fall back to the

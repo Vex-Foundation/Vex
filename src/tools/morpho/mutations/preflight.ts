@@ -26,11 +26,19 @@
  * and collapsing it into "ok" is worse. Rules/90: a decoder that cannot prove
  * what happened must decline rather than claim.
  *
- * A DEPOSIT SIMULATION USUALLY REVERTS BEFORE THE APPROVAL LANDS, AND THAT IS
- * NOT A BUG. The bundle pulls the asset through GeneralAdapter1, so until the
- * wallet's exact-amount approval to that adapter exists there is nothing for it
- * to pull. The verdict is reported as what it is, with that reading attached,
- * rather than presented as a fault in the vault.
+ * A PULLING OPERATION'S SIMULATION USUALLY REVERTS BEFORE THE APPROVAL LANDS,
+ * AND THAT IS NOT A BUG. A deposit, a collateral supply and a repayment all pull
+ * a token through GeneralAdapter1, so until the wallet's exact-amount approval to
+ * that adapter exists there is nothing for it to pull. The verdict is reported as
+ * what it is, with that reading attached, rather than presented as a fault in the
+ * vault or the market.
+ *
+ * WHICH IS WHY THE OPERATION IS A PARAMETER AND NOT AN ASSUMPTION. Half of the
+ * operations in this lane pull nothing: a withdrawal, a borrow and a collateral
+ * withdrawal move tokens OUT, and no approval is involved in any of them. Telling
+ * the reader of a reverted withdrawal to go and check an approval sends them
+ * looking for a cause that cannot exist, so each operation is asked whether it
+ * pulls and the explanation follows the answer.
  *
  * ── AND A THIRD CHECK, ON THE NODE ITSELF ───────────────────────────────────
  *
@@ -58,6 +66,46 @@ import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import { sanitizeMorphoCause } from "../errors.js";
 import type { MorphoActionClient } from "./client.js";
 import type { MorphoBuiltTransaction } from "./bundle-decoder.js";
+
+/**
+ * The operation a preflight is running for. Every Morpho operation Vex builds,
+ * across both the vault lane and the market lane.
+ */
+export type MorphoPreflightOperation =
+  | "deposit"
+  | "withdraw"
+  | "supply_collateral"
+  | "withdraw_collateral"
+  | "borrow"
+  | "repay";
+
+interface OperationReading {
+  readonly label: string;
+  /**
+   * Whether this operation pulls a token from the wallet, which is the ONLY
+   * thing that makes a missing approval a candidate explanation for a revert.
+   */
+  readonly pullsFromWallet: boolean;
+}
+
+const OPERATION_READINGS: Readonly<Record<MorphoPreflightOperation, OperationReading>> = {
+  deposit: { label: "deposit", pullsFromWallet: true },
+  withdraw: { label: "withdrawal", pullsFromWallet: false },
+  supply_collateral: { label: "collateral supply", pullsFromWallet: true },
+  withdraw_collateral: { label: "collateral withdrawal", pullsFromWallet: false },
+  borrow: { label: "borrow", pullsFromWallet: false },
+  repay: { label: "repayment", pullsFromWallet: true },
+};
+
+/** The reading attached to a failed estimate or a proven revert, per operation. */
+function explainFailureFor(operation: MorphoPreflightOperation): string {
+  const { label, pullsFromWallet } = OPERATION_READINGS[operation];
+  return pullsFromWallet
+    ? `For a ${label} this is usually the missing approval to GeneralAdapter1, which the exact-amount allowance `
+      + "step has not landed yet, rather than a problem with the vault or the market."
+    : `A ${label} pulls no token from the wallet, so a missing approval is NOT the explanation here. The cause is `
+      + "in the position or in the market state rather than in an allowance.";
+}
 
 /** Our gas figure beside the node's, each labelled for what it is. */
 export interface MorphoGasBound {
@@ -173,6 +221,7 @@ export async function boundMorphoGas(
   client: MorphoActionClient,
   tx: MorphoBuiltTransaction,
   from: Address,
+  operation: MorphoPreflightOperation,
 ): Promise<MorphoGasBound> {
   const note =
     "The Morpho SDK publishes no gas figure for a bundle, so there is no provider hint to hold to a ceiling: "
@@ -191,9 +240,8 @@ export async function boundMorphoGas(
       nodeEstimate: null,
       vexGasLimit: null,
       unavailableReason:
-        `The node could not estimate gas for this transaction as it stands: ${sanitize(err)}. For a deposit this is `
-        + "usually the missing approval to GeneralAdapter1 rather than a problem with the vault. The gas "
-        + "figure is UNKNOWN, not zero.",
+        `The node could not estimate gas for this transaction as it stands: ${sanitize(err)}. `
+        + `${explainFailureFor(operation)} The gas figure is UNKNOWN, not zero.`,
       note,
     };
   }
@@ -204,6 +252,7 @@ export async function preflightMorphoTransaction(
   client: MorphoActionClient,
   tx: MorphoBuiltTransaction,
   from: Address,
+  operation: MorphoPreflightOperation,
 ): Promise<MorphoPreflight> {
   try {
     await client.call({ account: from, to: tx.to as Address, data: tx.data as `0x${string}`, value: tx.value ?? 0n });
@@ -221,9 +270,8 @@ export async function preflightMorphoTransaction(
         verdict: "reverted",
         revertReason: message,
         explanation:
-          "The node proved this call reverts against latest state. For a deposit the ordinary cause is that the "
-          + "exact-amount approval to GeneralAdapter1 does not exist yet, so there is nothing for the bundle to "
-          + "pull. Nothing was signed or sent.",
+          `The node proved this call reverts against latest state. ${explainFailureFor(operation)} `
+          + "Nothing was signed or sent.",
       };
     }
     return {

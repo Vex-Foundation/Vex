@@ -197,9 +197,10 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 
 | Where | What Vex can do there |
 | --- | --- |
-| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Mantle, Sonic, Berachain, Ronin, Unichain, HyperEVM, Plasma, Etherlink, Monad, MegaETH, Robinhood Chain | Swap, via KyberSwap (19 chains) |
+| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Mantle, Sonic, Berachain, Ronin, Unichain, HyperEVM, Plasma, Monad, MegaETH, Robinhood Chain | Swap, via KyberSwap (18 chains) |
 | Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Robinhood Chain | Swap directly on Uniswap, as the backup route (7 chains) |
 | Ethereum, Optimism, BSC, Base, Arbitrum, Mantle, Sonic, HyperEVM, Berachain, Monad, Plasma | Pendle yield trading (11 chains) |
+| Ethereum, Optimism, Unichain, Polygon, Monad, HyperEVM, Robinhood Chain, Base, Arbitrum | Morpho variable-rate lending (9 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
 | Robinhood Chain | Trench Express launches and curve trading |
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
@@ -208,13 +209,16 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 One of the oldest token-swap exchanges on Ethereum-style ("EVM") chains. Vex quotes and executes swaps directly on-chain, on Uniswap V2 and V3. It stays hidden from the agent until a KyberSwap attempt fails for a routing reason - no route, an unknown token, a refused build, or the swap itself reverting - and only then is it offered as the backup, with its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC" - if KyberSwap has no route, Uniswap catches it.
 
 ### ![KyberSwap](/protocols/kyberswap.svg) KyberSwap
-An aggregator: it shops 19 EVM chains for the best swap price. This is Vex's primary swap venue - quotes, execution, and basic token-safety checks. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
+An aggregator: it shops 18 EVM chains for the best swap price. This is Vex's primary swap venue - quotes, execution, and basic token-safety checks. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
 
 ### ![Jupiter](/protocols/jupiter.jpg) Jupiter
 The main swap router on Solana. Vex swaps Solana tokens, looks up prices, searches tokens, deposits into and withdraws from Jupiter Lend - it can even borrow against a position - and it can both browse **and trade** Jupiter Predict prediction markets, buying, selling, claiming and closing. Everything except the reads moves real money and goes through approval. Example: "Put half my SOL into USDC."
 
 ### ![Pendle](/protocols/pendle.jpg) Pendle
 A protocol that splits a yield-bearing token into two: a principal part (**PT**, the principal token) and a yield part (**YT**, the yield token). Vex trades PT and YT, manages LP positions ("liquidity provider" - supplying both sides of a pool and earning from its trades), and claims yield, on 11 chains. Pendle positions can be term-locked; when they are, the approval card says so and names the date. **Pendle is the one venue with no Vex fee.** Example: "Scout Pendle yields and show me the best fixed rates."
+
+### ![Morpho](/protocols/morpho.jpg) Morpho
+Variable-rate lending on 9 EVM chains - the opposite shape to Pendle. A rate here floats with demand and never expires, where Pendle locks a fixed rate until a maturity date. Vex screens two things: **markets** (one asset borrowed against one collateral, which you pick yourself) and **curated vaults** (you hand one asset to a curator who spreads it across markets for a fee). It always reads the detail before recommending anything, because only the detail call returns bad debt, the oracle price and the real liquidity. Vex can **deposit into and withdraw from a vault**, and on a market it can **supply and withdraw collateral, borrow and repay**. Every one of those is quoted first: the quote prices that exact amount, names the approval you would have to give, and commits nothing - the execution refuses to run without a fresh one. Each leg is its own transaction, so supplying collateral and then borrowing against it are two separate approvals and Vex never holds standing authorization between them. **Claiming Morpho rewards is still read-only**: Vex reports what has accrued and cannot sweep it. Example: "Where can I park 500 USDC on Base at a decent rate?"
 
 ### ![DexScreener](/protocols/dexscreener.jpg) DexScreener
 A market-data service - read-only, no funds move. Vex pulls pair and token analytics, trending tokens, and current prices across many chains, fetched fresh each time it looks. Example: "What memecoins are trending in the last hour?"

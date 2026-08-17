@@ -25,14 +25,14 @@
 
 import { describe, it, expect } from "vitest";
 
-import type { PublicClient } from "viem";
-
+import { getMorphoPublicClient } from "@tools/morpho/evm-client.js";
 import { readMorphoWalletSnapshot, resolveMorphoSpenders } from "@tools/morpho/wallet-reads.js";
 import { UINT256_MAX } from "@tools/morpho/constants.js";
 import { projectWalletSnapshot, countUnlimitedApprovals } from "@vex-agent/tools/protocols/morpho/projectors.js";
 import { parseMorphoWalletBalanceParams } from "@vex-agent/tools/protocols/morpho/read-params.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 
+const BASE_CHAIN_ID = 8453;
 const WALLET = "0x245fcfd93908A7a52F584AAc67B7F47657ADf02e";
 const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const WETH = "0x4200000000000000000000000000000000000006";
@@ -51,14 +51,17 @@ function ok(result: unknown): Read {
  * `readMorphoWalletSnapshot` builds: decimals, symbol, balanceOf, then one
  * allowance per available spender, per token.
  */
-function stubClient(options: { native?: bigint | Error; reads: Read[] }): PublicClient {
-  return {
+function stubClient(options: { native?: bigint | Error; reads: Read[] }) {
+  // The REAL Base client with only the two actions under test replaced: a
+  // two-key object literal is not a `PublicClient`, and typing one as if it
+  // were would keep compiling after the read path started using a third action.
+  return Object.assign(getMorphoPublicClient(BASE_CHAIN_ID), {
     getBalance: async () => {
       if (options.native instanceof Error) throw options.native;
       return options.native ?? 211088872510200n;
     },
     multicall: async () => options.reads,
-  } as unknown as PublicClient;
+  });
 }
 
 /** The captured Base reads for USDC then WETH, four spenders each. */

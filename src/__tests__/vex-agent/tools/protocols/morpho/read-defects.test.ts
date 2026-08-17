@@ -37,7 +37,6 @@ import { morphoMarketsActivity } from "@vex-agent/tools/protocols/morpho/handler
 import { morphoRewardsGet } from "@vex-agent/tools/protocols/morpho/handlers/rewards-get.js";
 import { validateMorphoMarketPositionPage } from "@tools/morpho/validation/positions.js";
 import type { MorphoWalletSnapshot } from "@tools/morpho/wallet-reads.js";
-import type { MerklClient } from "@tools/merkl/client.js";
 import { validateMerklOpportunity, validateMerklUserRewards } from "@tools/merkl/validation.js";
 import {
   MERKL_OPPORTUNITY_MOONWELL,
@@ -61,8 +60,12 @@ vi.mock("@tools/merkl/client.js", async () => {
   const actual = await vi.importActual<typeof import("@tools/merkl/client.js")>("@tools/merkl/client.js");
   return {
     ...actual,
+    // A REAL `MerklClient` with only its two read methods answered from the
+    // captured bodies. The class holds private state, so an object literal is
+    // not one; overriding a genuine instance keeps the double's type the
+    // contract's own rather than forcing a stand-in through a type escape.
     getMerklClient: () =>
-      ({
+      Object.assign(new actual.MerklClient(), {
         getUserRewards: async (_wallet: string, chainId: number) =>
           validateMerklUserRewards(MERKL_USER_REWARDS_BASE, chainId),
         getOpportunity: async (id: string) => {
@@ -70,7 +73,7 @@ vi.mock("@tools/merkl/client.js", async () => {
           if (id === MOONWELL_OPPORTUNITY_ID) return validateMerklOpportunity(MERKL_OPPORTUNITY_MOONWELL);
           throw new Error(`unexpected opportunity ${id}`);
         },
-      }) as unknown as MerklClient,
+      }),
   };
 });
 
@@ -95,12 +98,13 @@ function stubMorphoByOperation(bodies: Record<string, unknown>): { calls: SentCa
       const sent = JSON.parse(String(init.body)) as SentCall;
       calls.push(sent);
       const key = Object.keys(bodies).find((k) => sent.query.includes(k));
-      return {
-        ok: true,
-        status: 200,
-        headers: { get: () => null },
-        json: async () => (key === undefined ? { data: null, errors: [{ message: "unstubbed" }] } : bodies[key]),
-      } as unknown as Response;
+      // A REAL `Response`: the client reads `ok`, `status`,
+      // `headers.get("retry-after")` and `json()`, and a hand-shaped double
+      // keeps passing if it starts reading a fifth.
+      return new Response(
+        JSON.stringify(key === undefined ? { data: null, errors: [{ message: "unstubbed" }] } : bodies[key]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     }),
   );
   return { calls };
@@ -400,6 +404,7 @@ describe("D12: an allowance carries the scale needed to read it", () => {
           balanceRaw: "403515",
           allowances: [
             {
+              role: "generalAdapter1",
               spender: "0xb98c948cfa24072e58935bc004a8a7b376ae746a",
               spenderRole: "GeneralAdapter1",
               raw: "1000000",
@@ -412,7 +417,7 @@ describe("D12: an allowance carries the scale needed to read it", () => {
       ],
       failures: [],
       chainSpenderGaps: [],
-    } as unknown as MorphoWalletSnapshot;
+    };
     const allowance = projectWalletSnapshot(snapshot, "base").tokens.at(0)?.allowances.at(0);
     expect(allowance?.decimals).toBe(6);
     expect(allowance?.human).toBe("1");

@@ -43,6 +43,21 @@
  *   allowance-legs.ts the approval legs and what happens when one fails.
  *   operation-leg.ts  the vault operation: rebuild, prove, send, settle.
  *   outcome.ts        the four endings and the exact words each one owes.
+ *   refusal.ts        the pre-signature refusal row, shared by both lanes.
+ *
+ * The BLUE MARKET lane (supply_collateral, withdraw_collateral, borrow, repay)
+ * adds two more, and adds no second copy of anything above:
+ *
+ *   borrow-intent.ts         its one-leg plan and its approval predicates.
+ *   borrow-operate-params.ts the versioned `intent_params` effects payload that
+ *                            owns the operation delta, in the Jupiter style.
+ *
+ * All four Blue operations file under the single EXISTING `lend_borrow_operate`
+ * role that migration 079 already admits on the `eip155` lend arm; the operation
+ * is a delta in `intent_params`, never a new role. See `./signed-broadcast/
+ * protocol.ts` for why, and `./signed-broadcast/borrow-intent.ts` for why there
+ * is no authorization row at all: the operation calls Morpho Blue directly with
+ * `msg.sender == onBehalf`, so no adapter is ever authorised.
  *
  * ── ORDERING, WHICH IS THE MONEY-SAFETY PROPERTY ────────────────────────────
  *
@@ -71,20 +86,18 @@
  * Ambiguity never terminalizes and never re-broadcasts.
  */
 
-import {
-  createAgentActivityPreBroadcastFailure,
-  type AgentActivityFailureCode,
-  type AgentActivityLegInput,
+import { formatUnits } from "viem";
+
+import type {
+  AgentActivityFailureCode,
+  AgentActivityLegInput,
 } from "@vex-agent/db/repos/agent-activity.js";
-import logger from "@utils/logger.js";
+import type { MorphoBorrowIntent, MorphoBorrowLeg } from "@tools/morpho/mutations.js";
 
 import { morphoOperationRole } from "./signed-broadcast/intent.js";
-import {
-  MORPHO_ACTIVITY_CHAIN_FAMILY,
-  MORPHO_ACTIVITY_KIND,
-  MORPHO_ACTIVITY_PROTOCOL,
-  morphoActivityChainSlug,
-} from "./signed-broadcast/protocol.js";
+import { buildMorphoBorrowIntentParams } from "./signed-broadcast/borrow-operate-params.js";
+import { recordMorphoPreBroadcastRefusal } from "./signed-broadcast/refusal.js";
+import { MORPHO_BORROW_OPERATE_ROLE } from "./signed-broadcast/protocol.js";
 import {
   runMorphoExecution,
   type MorphoExecutionClients,
@@ -96,15 +109,34 @@ export {
   MORPHO_ACTIVITY_CHAIN_FAMILY,
   MORPHO_ACTIVITY_KIND,
   MORPHO_ACTIVITY_PROTOCOL,
+  MORPHO_BORROW_OPERATE_ROLE,
   morphoActivityChainSlug,
   type MorphoActivityRole,
 } from "./signed-broadcast/protocol.js";
+export {
+  planMorphoBorrowLegs,
+  morphoBorrowIntentParams,
+  type MorphoBorrowIntentInput,
+} from "./signed-broadcast/borrow-intent.js";
+export {
+  MORPHO_BORROW_EFFECTS_VERSION,
+  buildMorphoBorrowIntentParams,
+  type MorphoBorrowEffect,
+  type MorphoBorrowIntentParams,
+  type MorphoBorrowMarketParams,
+} from "./signed-broadcast/borrow-operate-params.js";
+export { createMorphoIntent, type MorphoLegPlan } from "./signed-broadcast/intent.js";
 export {
   MORPHO_AMBIGUOUS_BROADCAST_MESSAGE,
   type MorphoExecutedAmounts,
   type MorphoExecutionOutcome,
 } from "./signed-broadcast/outcome.js";
 export type { MorphoExecutionClients, MorphoVaultExecutionRequest } from "./signed-broadcast/run.js";
+export { executeMorphoMarketOperation } from "./signed-broadcast/market-run.js";
+export type {
+  MorphoMarketExecutionContext,
+  MorphoMarketExecutionRequest,
+} from "./signed-broadcast/market-context.js";
 
 /**
  * Supply the wallet's own assets to a Morpho vault: the exact-amount approval
@@ -150,49 +182,80 @@ export interface MorphoRefusalPlan {
 }
 
 /**
- * Record a refusal that happened BEFORE anything could be signed - a vault that
- * does not exist, a rejected bundle, an allowance disagreement, a parameter the
- * handler would not accept. A hashless `definitively_failed` row in one step:
- * there was never a payload to broadcast, so there is nothing to stage or sweep.
- *
- * Deliberately fail-soft. The refusal itself is the product behavior and it has
- * already been decided by the caller; a bookkeeping error must not convert a
- * clean, funds-untouched refusal into an error the agent might read as something
- * having happened on-chain.
+ * What a durable BLUE MARKET refusal needs. The market identity and the leg come
+ * from the engine's own resolved intent, so the row a refusal writes describes
+ * the same operation, market and scale a successful one would have.
+ */
+export interface MorphoBorrowRefusalPlan {
+  readonly toolId: string;
+  readonly sessionId: string;
+  readonly intent: MorphoBorrowIntent;
+  readonly leg: MorphoBorrowLeg;
+}
+
+/**
+ * Record a VAULT refusal that happened BEFORE anything could be signed - a vault
+ * that does not exist, a rejected bundle, an allowance disagreement, a parameter
+ * the handler would not accept. The write itself lives in
+ * `./signed-broadcast/refusal.ts`, shared with the Blue market lane.
  */
 export async function recordMorphoRefusal(
   plan: MorphoRefusalPlan,
   failureCode: AgentActivityFailureCode,
   failureReason: string,
 ): Promise<number | null> {
-  try {
-    const chainSlug = morphoActivityChainSlug(plan.chainId);
-    const { executionId } = await createAgentActivityPreBroadcastFailure({
+  return recordMorphoPreBroadcastRefusal(
+    {
       toolId: plan.toolId,
-      namespace: MORPHO_ACTIVITY_PROTOCOL,
+      sessionId: plan.sessionId,
       intentParams: plan.intentParams,
-      event: {
-        eventIndex: 0,
-        eventRole: morphoOperationRole(plan.direction),
-        kind: MORPHO_ACTIVITY_KIND,
-        protocol: MORPHO_ACTIVITY_PROTOCOL,
-        chainId: plan.chainId,
-        ...(chainSlug === undefined ? {} : { chainSlug }),
-        chainFamily: MORPHO_ACTIVITY_CHAIN_FAMILY,
-        walletAddress: plan.walletAddress.toLowerCase(),
-        sessionId: plan.sessionId,
-        ...(plan.tokenIn ? { tokenIn: plan.tokenIn } : {}),
-        ...(plan.tokenOut ? { tokenOut: plan.tokenOut } : {}),
-        failureCode,
-        failureReason,
-      },
-    });
-    return executionId;
-  } catch (err) {
-    logger.warn("morpho.activity.pre_broadcast_record_failed", {
+      chainId: plan.chainId,
+      walletAddress: plan.walletAddress,
+      eventRole: morphoOperationRole(plan.direction),
+      ...(plan.tokenIn ? { tokenIn: plan.tokenIn } : {}),
+      ...(plan.tokenOut ? { tokenOut: plan.tokenOut } : {}),
+    },
+    failureCode,
+    failureReason,
+  );
+}
+
+/**
+ * Record a BLUE MARKET refusal that happened before anything could be signed -
+ * the market gate, the health-factor floor, an approval plan that disagrees with
+ * its operation. Filed under `lend_borrow_operate` with the SAME versioned
+ * `intent_params` shape a succeeded operation would have carried, so a refused
+ * operation is queryable beside the ones that ran.
+ *
+ * The chain id comes from the market identity the engine resolved, never from a
+ * tool parameter, and the single leg is recorded on the side the operation's own
+ * direction names.
+ */
+export async function recordMorphoBorrowRefusal(
+  plan: MorphoBorrowRefusalPlan,
+  failureCode: AgentActivityFailureCode,
+  failureReason: string,
+): Promise<number | null> {
+  const { intent, leg } = plan;
+  const legInput: AgentActivityLegInput = {
+    tokenAddress: leg.tokenAddress.toLowerCase(),
+    ...(leg.tokenSymbol === null ? {} : { tokenSymbol: leg.tokenSymbol }),
+    tokenDecimals: leg.decimals,
+    ...(leg.amountRaw === null
+      ? {}
+      : { amountRaw: leg.amountRaw, amountHuman: formatUnits(BigInt(leg.amountRaw), leg.decimals) }),
+  };
+  return recordMorphoPreBroadcastRefusal(
+    {
       toolId: plan.toolId,
-      error: err instanceof Error ? err.name : "unknown",
-    });
-    return null;
-  }
+      sessionId: plan.sessionId,
+      intentParams: buildMorphoBorrowIntentParams(intent, leg),
+      chainId: intent.market.chainId,
+      walletAddress: intent.userAddress,
+      eventRole: MORPHO_BORROW_OPERATE_ROLE,
+      ...(leg.direction === "in" ? { tokenIn: legInput } : { tokenOut: legInput }),
+    },
+    failureCode,
+    failureReason,
+  );
 }

@@ -17,6 +17,13 @@ import { morphoRewardsGet } from "./handlers/rewards-get.js";
 import { morphoWalletBalance } from "./handlers/wallet-balance.js";
 import { morphoVaultQuote } from "./handlers/vault-quote.js";
 import { morphoVaultDeposit, morphoVaultWithdraw } from "./handlers/vault-execute.js";
+import { morphoMarketQuote } from "./handlers/market-quote.js";
+import {
+  morphoMarketBorrow,
+  morphoMarketRepay,
+  morphoMarketSupplyCollateral,
+  morphoMarketWithdrawCollateral,
+} from "./handlers/market-execute.js";
 
 export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.markets.discover": (params, context) =>
@@ -43,4 +50,12 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   // and none of those may come from model input.
   "morpho.vault.deposit": morphoVaultDeposit,
   "morpho.vault.withdraw": morphoVaultWithdraw,
+  // The BLUE MARKET lane. The quote takes the full context too: a health factor
+  // has no meaning without a position, so it resolves the session's SELECTED
+  // address to know whose to project. It never resolves a signing wallet.
+  "morpho.market.quote": morphoMarketQuote,
+  "morpho.market.supplyCollateral": morphoMarketSupplyCollateral,
+  "morpho.market.withdrawCollateral": morphoMarketWithdrawCollateral,
+  "morpho.market.borrow": morphoMarketBorrow,
+  "morpho.market.repay": morphoMarketRepay,
 };

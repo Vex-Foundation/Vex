@@ -36,6 +36,22 @@ export {
   type MorphoBundleBounds,
 } from "./mutations/bundle-decoder.js";
 
+export { requireMorphoBlue } from "./mutations/market-state.js";
+
+export {
+  buildMorphoMarketOperation,
+  MORPHO_RAY,
+  type MorphoMarketBuildRequest,
+  type MorphoMarketBuiltOperation,
+} from "./mutations/build-market.js";
+
+export {
+  verifyMorphoMarketBundle,
+  type MorphoMarketBundleBounds,
+  type MorphoMarketBundleReport,
+  type MorphoMarketParamsTuple,
+} from "./mutations/market-bundle-decoder.js";
+
 export {
   classifyMorphoRequirements,
   requireGeneralAdapter1,
@@ -93,6 +109,68 @@ export {
 } from "./mutations/client.js";
 
 export { readMorphoVaultState, type MorphoVaultState } from "./mutations/vault-state.js";
+export {
+  buildMorphoMarketTransaction,
+  type MorphoMarketTransaction,
+} from "./mutations/market-dispatch.js";
+export {
+  previewMorphoMarketOperation,
+  resolveMorphoBorrowIntent,
+  type MorphoMarketPreview,
+  type MorphoMarketPreviewRequest,
+} from "./mutations/market-quote.js";
+
+// ── The Blue MARKET (borrow) lane ──────────────────────────────────────────
+//
+// Four operations on a permissionless lending market, gated by a market policy
+// and a health-factor floor. The borrow leg calls Morpho Blue DIRECTLY rather
+// than through Bundler3, so that no standing `setAuthorization` is ever granted
+// to GeneralAdapter1; `./mutations/borrow-engine.ts` carries the full reasoning
+// and names the atomic SDK combinations that ruling puts out of reach.
+
+export {
+  MORPHO_MIN_HEALTH_FACTOR_DECIMAL,
+  MORPHO_MIN_HEALTH_FACTOR_WAD,
+  assertMorphoHealthFactorFloor,
+  assertMorphoMarketExecutable,
+  formatWad,
+  type MorphoMarketParamsInput,
+  type MorphoMarketPolicyVerdict,
+  type MorphoOracleProvenance,
+} from "./mutations/market-policy.js";
+
+export {
+  normalizeHealthFactor,
+  readMorphoBlueMarket,
+  readMorphoBluePosition,
+  type MorphoBlueMarketState,
+} from "./mutations/market-state.js";
+
+export {
+  assertMorphoBorrowStillSafe,
+  buildMorphoDirectBorrow,
+  describeMorphoBorrowLeg,
+  planMorphoBorrowOperation,
+  projectHealthFactorAfter,
+  type MorphoBorrowTransaction,
+} from "./mutations/borrow-engine.js";
+
+export {
+  verifyMorphoBlueCall,
+  type MorphoBlueCallReport,
+} from "./mutations/blue-call-decoder.js";
+
+export {
+  MORPHO_BORROW_OPERATIONS,
+  type MorphoBorrowIntent,
+  type MorphoBorrowLeg,
+  type MorphoBorrowOperation,
+  type MorphoBorrowPlan,
+  type MorphoMarketIdentity,
+  type MorphoMarketSnapshot,
+  type MorphoPositionSnapshot,
+  type MorphoRepayMode,
+} from "./mutations/borrow-types.js";
 
 export type {
   MorphoBundleReport,

@@ -38,14 +38,46 @@ export interface MorphoExecutedAmounts {
   readonly amountOutHuman: string;
 }
 
+/**
+ * WHICH TOKENS the two amounts above are denominated in.
+ *
+ * An amount without the identity of its token is not a leg the ledger can draw,
+ * and until this existed a confirmed Morpho execution rendered no leg line at
+ * all in the app: the handler's result carried the numbers and never said what
+ * they were (live defect, 2026-08-17). `null` where the chain did not answer
+ * `symbol()`, which is honest - the amount still travels with its decimals,
+ * which is the part that makes it readable.
+ *
+ * On a VAULT operation the two sides are the asset and the vault's own shares,
+ * at DIFFERENT scales. On a BLUE MARKET operation only one side exists, and the
+ * other is `null` rather than a mirrored copy of the first.
+ */
+export interface MorphoExecutedTokens {
+  readonly inSymbol: string | null;
+  readonly inAddress: string | null;
+  readonly inDecimals: number | null;
+  readonly outSymbol: string | null;
+  readonly outAddress: string | null;
+  readonly outDecimals: number | null;
+}
+
 export type MorphoExecutionOutcome =
   | {
       readonly kind: "confirmed";
       readonly executionId: number;
       readonly txHash: Hex;
       readonly executed: MorphoExecutedAmounts;
-      /** Proven against the approved absolute bound. Reported, never a gate. */
-      readonly shares: MorphoSharesVerdict;
+      /** What the amounts are denominated in. See `MorphoExecutedTokens`. */
+      readonly tokens: MorphoExecutedTokens;
+      /**
+       * Proven against the approved absolute bound. Reported, never a gate.
+       *
+       * `null` for a Morpho BLUE MARKET operation, which mints and burns no
+       * shares the user holds: a collateral supply moves collateral, a borrow
+       * moves debt. Inventing a shares verdict for one would report a comparison
+       * against a quantity that does not exist.
+       */
+      readonly shares: MorphoSharesVerdict | null;
       readonly message: string;
     }
   | {

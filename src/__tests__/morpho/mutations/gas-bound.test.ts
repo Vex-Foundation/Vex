@@ -29,7 +29,10 @@ import { describe, it, expect } from "vitest";
 
 import { boundMorphoGas, type MorphoBuiltTransaction } from "@tools/morpho/mutations.js";
 import { gasLimitWithHeadroom } from "../../../tools/evm-chains/gas-limit-headroom.js";
-import type { MorphoActionClient } from "@tools/morpho/mutations.js";
+import { getMorphoActionClient } from "../../../tools/morpho/mutations/client.js";
+import { definedValue } from "../../_test-value-guards.js";
+
+const BASE_CHAIN_ID = 8453;
 
 const FROM = "0x00000000000000000000000000000000000000a1" as const;
 const BUNDLER = "0x00000000000000000000000000000000000000b3" as const;
@@ -41,22 +44,25 @@ interface EstimateCall {
 }
 
 /**
- * A client that answers only `estimateGas`, recording what it was asked.
+ * The REAL Morpho action client with `estimateGas` alone replaced, recording
+ * what it was asked.
  *
- * Deliberately not a mock of the whole Morpho client: `boundMorphoGas` uses
- * exactly one method, and widening the double would let it start using more
- * without a test noticing.
+ * A four-key object literal is not a `MorphoActionClient`, so a hand-built
+ * double could only be passed through a type escape - and an escaped double
+ * keeps compiling after the client's contract moves. Building the genuine
+ * client (its transport is never reached, because `estimateGas` is the only
+ * action `boundMorphoGas` calls) and overriding that one action keeps the
+ * double's type exactly the contract's. Same idiom as
+ * `src/__tests__/vex-agent/tools/internal/wallet/send-execute-evm.test.ts`.
  */
-function clientReturning(
-  answer: bigint | Error,
-): { client: MorphoActionClient; calls: EstimateCall[] } {
+function clientReturning(answer: bigint | Error) {
   const calls: EstimateCall[] = [];
-  const client = {
+  const client = Object.assign(getMorphoActionClient(BASE_CHAIN_ID), {
     estimateGas(args: { to: string; data: string; value?: bigint }) {
       calls.push({ to: args.to, data: args.data, value: args.value });
       return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
     },
-  } as unknown as MorphoActionClient;
+  });
   return { client, calls };
 }
 
@@ -68,21 +74,22 @@ describe("boundMorphoGas composes the node estimate with the repo-wide headroom 
   it("reports the node estimate and the headroomed limit as two separate, labelled numbers", async () => {
     const { client } = clientReturning(1_000_000n);
 
-    const bound = await boundMorphoGas(client, tx(), FROM);
+    const bound = await boundMorphoGas(client, tx(), FROM, "deposit");
 
     expect(bound.nodeEstimate).toBe("1000000");
     expect(bound.vexGasLimit).toBe(gasLimitWithHeadroom(1_000_000n).toString());
     // The two must not be the same number: signing the bare estimate is the
     // 2026-07-24 loss this policy exists to prevent.
     expect(bound.vexGasLimit).not.toBe(bound.nodeEstimate);
-    expect(BigInt(bound.vexGasLimit!)).toBeGreaterThan(BigInt(bound.nodeEstimate!));
+    expect(BigInt(definedValue(bound.vexGasLimit, "vexGasLimit")))
+      .toBeGreaterThan(BigInt(definedValue(bound.nodeEstimate, "nodeEstimate")));
     expect(bound.unavailableReason).toBeNull();
   });
 
   it("holds the composition across magnitudes, so no bracket is special-cased", async () => {
     for (const estimate of [21_000n, 356_167n, 1_634_838n, 30_000_000n]) {
       const { client } = clientReturning(estimate);
-      const bound = await boundMorphoGas(client, tx(), FROM);
+      const bound = await boundMorphoGas(client, tx(), FROM, "deposit");
       expect(bound.vexGasLimit, `estimate ${estimate}`).toBe(gasLimitWithHeadroom(estimate).toString());
     }
   });
@@ -92,7 +99,7 @@ describe("boundMorphoGas composes the node estimate with the repo-wide headroom 
     // is the ordinary case rather than an error. Zero would read as free.
     const { client } = clientReturning(new Error("execution reverted: ERC20: insufficient allowance"));
 
-    const bound = await boundMorphoGas(client, tx(), FROM);
+    const bound = await boundMorphoGas(client, tx(), FROM, "deposit");
 
     expect(bound.nodeEstimate).toBeNull();
     expect(bound.vexGasLimit).toBeNull();
@@ -105,7 +112,7 @@ describe("boundMorphoGas composes the node estimate with the repo-wide headroom 
       new Error("HTTP request failed to https://mainnet.example.com/v2/SUPERSECRETKEY body 0x" + "ab".repeat(40)),
     );
 
-    const bound = await boundMorphoGas(client, tx(), FROM);
+    const bound = await boundMorphoGas(client, tx(), FROM, "deposit");
 
     expect(bound.unavailableReason).not.toContain("SUPERSECRETKEY");
     expect(bound.unavailableReason).not.toContain("https://");
@@ -118,7 +125,7 @@ describe("a gas figure carried on the built transaction is never a floor, a ceil
     // The KyberSwap shape: a published figure far below what the call needs.
     const { client } = clientReturning(1_634_838n);
 
-    const bound = await boundMorphoGas(client, tx({ gas: 356_167n }), FROM);
+    const bound = await boundMorphoGas(client, tx({ gas: 356_167n }), FROM, "deposit");
 
     expect(bound.nodeEstimate).toBe("1634838");
     expect(bound.vexGasLimit).toBe(gasLimitWithHeadroom(1_634_838n).toString());
@@ -128,16 +135,16 @@ describe("a gas figure carried on the built transaction is never a floor, a ceil
   it("ignores an absurdly HIGH gas field too, so a builder cannot inflate what Vex would sign", async () => {
     const { client } = clientReturning(150_000n);
 
-    const bound = await boundMorphoGas(client, tx({ gas: 30_000_000n, gasLimit: 30_000_000n }), FROM);
+    const bound = await boundMorphoGas(client, tx({ gas: 30_000_000n, gasLimit: 30_000_000n }), FROM, "deposit");
 
     expect(bound.vexGasLimit).toBe(gasLimitWithHeadroom(150_000n).toString());
-    expect(BigInt(bound.vexGasLimit!)).toBeLessThan(30_000_000n);
+    expect(BigInt(definedValue(bound.vexGasLimit, "vexGasLimit"))).toBeLessThan(30_000_000n);
   });
 
   it("passes only the transaction's to, data and value to the node, never a supplied gas", async () => {
     const { client, calls } = clientReturning(500_000n);
 
-    await boundMorphoGas(client, tx({ gas: 999n }), FROM);
+    await boundMorphoGas(client, tx({ gas: 999n }), FROM, "deposit");
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ to: BUNDLER, data: "0xdeadbeef", value: 0n });
@@ -146,8 +153,8 @@ describe("a gas figure carried on the built transaction is never a floor, a ceil
   it("estimates FRESH for each transaction rather than reusing an earlier answer", async () => {
     const { client, calls } = clientReturning(500_000n);
 
-    await boundMorphoGas(client, tx({ data: "0xaaaa" }), FROM);
-    await boundMorphoGas(client, tx({ data: "0xbbbb" }), FROM);
+    await boundMorphoGas(client, tx({ data: "0xaaaa" }), FROM, "deposit");
+    await boundMorphoGas(client, tx({ data: "0xbbbb" }), FROM, "deposit");
 
     expect(calls.map((c) => c.data)).toEqual(["0xaaaa", "0xbbbb"]);
   });
@@ -155,7 +162,7 @@ describe("a gas figure carried on the built transaction is never a floor, a ceil
   it("states in its own note that there is no provider hint to hold to a ceiling", async () => {
     const { client } = clientReturning(500_000n);
 
-    const bound = await boundMorphoGas(client, tx(), FROM);
+    const bound = await boundMorphoGas(client, tx(), FROM, "deposit");
 
     expect(bound.note).toContain("no provider hint");
     // A limit is not a cost, and the note must keep saying so.

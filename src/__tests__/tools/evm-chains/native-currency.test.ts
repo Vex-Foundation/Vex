@@ -30,7 +30,6 @@ describe("getEvmNativeCurrency", () => {
     expect(getEvmNativeCurrency(80094)?.symbol).toBe("BERA"); // Berachain
     expect(getEvmNativeCurrency(2020)?.symbol).toBe("RON"); // Ronin
     expect(getEvmNativeCurrency(9745)?.symbol).toBe("XPL"); // Plasma
-    expect(getEvmNativeCurrency(42793)?.symbol).toBe("XTZ"); // Etherlink
     expect(getEvmNativeCurrency(143)?.symbol).toBe("MON"); // Monad
     expect(getEvmNativeCurrency(999)?.symbol).toBe("HYPE"); // HyperEVM
   });

@@ -405,6 +405,40 @@ export const ErrorCodes = {
    * a transaction would land declines to spend the gas finding out.
    */
   MORPHO_PREFLIGHT_UNPROVEN: "MORPHO_PREFLIGHT_UNPROVEN",
+  /**
+   * The Blue MARKET itself is outside the set Vex will operate on: its IRM is
+   * not the chain's pinned AdaptiveCurveIRM, or its oracle could not be shown to
+   * come from the chain's pinned Morpho Chainlink oracle factory.
+   *
+   * Morpho Blue is PERMISSIONLESS: anyone can create a market naming any oracle
+   * and any IRM, and a market's id is just the hash of those parameters. An
+   * attacker-authored oracle can report whatever price makes the borrower
+   * liquidatable, so entering a market by id alone is entering a contract whose
+   * price feed nobody vouched for. The refusal names the exact failing
+   * predicate, because "unsupported market" tells an agent nothing it can act
+   * on.
+   */
+  MORPHO_MARKET_POLICY_VIOLATION: "MORPHO_MARKET_POLICY_VIOLATION",
+  /**
+   * The operation would leave the position's health factor BELOW Vex's policy
+   * floor, so it is refused before anything is signed.
+   *
+   * Morpho Blue has NO CLOSE FACTOR: the moment a position crosses a health
+   * factor of 1.0 it can be liquidated IN FULL, with a liquidation incentive of
+   * up to 15%. There is no partial-liquidation cushion to fall back on, which is
+   * why the floor sits well above 1.0 rather than just above it. The message
+   * carries the projected number and the floor, so the agent can size a smaller
+   * operation rather than guess.
+   */
+  MORPHO_HEALTH_FACTOR_FLOOR: "MORPHO_HEALTH_FACTOR_FLOOR",
+  /**
+   * The market does not currently hold enough loan-asset liquidity to fund the
+   * borrow. Distinct from the health-factor floor: the position is healthy
+   * enough, the market simply has less free liquidity than the request
+   * (`totalSupplyAssets - totalBorrowAssets`). Named separately so the agent
+   * borrows less rather than adding collateral that would not help.
+   */
+  MORPHO_MARKET_LIQUIDITY: "MORPHO_MARKET_LIQUIDITY",
 
   // Merkl (reward distribution API behind Morpho's campaigns - keyless, batch 4)
   MERKL_API_ERROR: "MERKL_API_ERROR",

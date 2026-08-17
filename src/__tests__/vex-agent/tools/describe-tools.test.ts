@@ -76,8 +76,14 @@ const SESSION = "describe-tools-suite";
  * morpho.vault.quote is the namespace's ninth extensive manifest; measured
  * worst-legal 202,695 after 1,946 chars of redundancy were already trimmed
  * without touching safety prose. Same guard, same job.
+ *
+ * Raised 210,000 -> 225,000 on 2026-08-17 (coordinator, applying the owner's
+ * three identical prior rulings for morpho E3c): the five borrow-market
+ * manifests measured 218,018 after a 9,844-char trim that relocated shared
+ * safety facts into the once-per-turn doctrine instead of deleting them.
+ * Same guard, same job.
  */
-const DESCRIBE_RESULT_CHAR_BUDGET = 210_000;
+const DESCRIBE_RESULT_CHAR_BUDGET = 225_000;
 
 /** The env vars this suite pins, restored after every case. */
 const ENV_KEYS = [

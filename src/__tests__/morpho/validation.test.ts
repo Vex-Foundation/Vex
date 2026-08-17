@@ -102,7 +102,7 @@ describe("validateMorphoMarketPage", () => {
     const body = structuredClone(MORPHO_MARKETS_PAGE) as {
       data: { markets: { items: Array<Record<string, unknown>> } };
     };
-    (body.data.markets.items[0]!["loanAsset"] as Record<string, unknown>)["decimals"] = null;
+    (body.data.markets.items[0]["loanAsset"] as Record<string, unknown>)["decimals"] = null;
     const damaged = validateMorphoMarketPage(body);
     expect(damaged.markets).toHaveLength(2);
     expect(damaged.droppedRows).toBe(1);
@@ -112,7 +112,7 @@ describe("validateMorphoMarketPage", () => {
     const body = structuredClone(MORPHO_MARKETS_PAGE) as {
       data: { markets: { items: Array<Record<string, unknown>> } };
     };
-    const loan = body.data.markets.items[0]!["loanAsset"] as Record<string, unknown>;
+    const loan = body.data.markets.items[0]["loanAsset"] as Record<string, unknown>;
     loan["symbol"] = null;
     loan["price"] = null;
     const tolerant = validateMorphoMarketPage(body);

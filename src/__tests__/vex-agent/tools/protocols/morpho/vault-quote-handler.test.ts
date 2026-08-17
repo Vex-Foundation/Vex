@@ -23,6 +23,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { mutableRecord } from "../../../../_test-value-guards.js";
 import {
   MORPHO_VAULT_NOT_FOUND,
   MORPHO_VAULT_V1_DETAIL,
@@ -56,8 +57,16 @@ function nextVaultAddress(): string {
   return `0x${vaultSeq.toString(16).padStart(40, "0")}`;
 }
 
+/**
+ * A REAL `Response`: the Morpho client reads `ok`, `status`,
+ * `headers.get("retry-after")` and `json()`, and a hand-shaped double that
+ * answers exactly those keeps passing if the client starts reading a fifth.
+ */
 function jsonResponse(body: unknown): Response {
-  return { ok: true, status: 200, headers: { get: () => null }, json: async () => body } as unknown as Response;
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** A preview result shaped like the engine's, with only what these cases read. */
@@ -139,8 +148,37 @@ function stubVaultReadFailure(): void {
   }));
 }
 
-function data(result: { output: string }): Record<string, any> {
-  return JSON.parse(result.output) as Record<string, any>;
+/**
+ * Exactly the slice of the quote payload these cases read, named so a reader
+ * sees the agent-facing contract under assertion rather than an untyped bag.
+ * Anything absent from this shape is not asserted here on purpose.
+ */
+interface QuotePayload {
+  readonly summary: string;
+  readonly nextStep: string;
+  readonly filtersApplied: Record<string, unknown> & { readonly slippageBps: number };
+  readonly governance: {
+    readonly status: string;
+    readonly depositGated: boolean | null;
+    readonly withdrawalGated: boolean | null;
+    readonly note: string;
+  };
+  readonly quote: {
+    readonly input: { readonly decimals: number };
+    readonly expectedShares: { readonly raw: string; readonly decimals: number };
+    readonly requirements: readonly unknown[];
+  };
+  readonly notes: {
+    readonly preview: string;
+    readonly wallet: string;
+    readonly simulation: string;
+    readonly shape: string;
+    readonly scales: string;
+  };
+}
+
+function data(result: { output: string }): QuotePayload {
+  return JSON.parse(result.output) as QuotePayload;
 }
 
 /** Params that pass validation, so each case varies only what it is testing. */
@@ -286,8 +324,11 @@ describe("morpho.vault.quote governance, which the on-chain preview cannot see",
 
   it("surfaces a WITHDRAWAL gate too, which strands money that is already in", async () => {
     const gatedOnExit = JSON.parse(JSON.stringify(MORPHO_VAULT_V2_DETAIL_GATED)) as typeof MORPHO_VAULT_V2_DETAIL_GATED;
-    const config = (gatedOnExit.data.vaultV2ByAddress as Record<string, any>)["gatesConfig"];
-    config.sendSharesGate = { address: "0x000000000000000000000000000000000000dEaD", abdicated: false };
+    const config = mutableRecord(
+      mutableRecord(gatedOnExit.data.vaultV2ByAddress, "gated V2 detail")["gatesConfig"],
+      "gated V2 gatesConfig",
+    );
+    config["sendSharesGate"] = { address: "0x000000000000000000000000000000000000dEaD", abdicated: false };
     stubMorphoByOperation({ VexMorphoVaultV2: gatedOnExit });
 
     const payload = data(await morphoVaultQuote(goodParams()));

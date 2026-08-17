@@ -114,6 +114,45 @@ export const MORPHO_VAULT_WITHDRAW_CALL: MorphoAllowedCall = allowed(
 export const MORPHO_ALLOWED_BUNDLE_LEGS: readonly MorphoAllowedCall[] = [
   allowed(generalAdapter1Abi as Abi, "erc20TransferFrom", ["generalAdapter1"]),
   allowed(generalAdapter1Abi as Abi, "erc4626Deposit", ["generalAdapter1"]),
+
+  // ── E3c: the two Blue MARKET operations that still go through Bundler3 ────
+  //
+  // PROVENANCE, per this file's own rule that an entry requires a capture of
+  // the flow that emits it. Captured 2026-08-17 by
+  // `agents_dm/morpho-e3/capture-borrow-bundles.ts` against the real Base
+  // cbBTC/USDC market on an Anvil fork, fixture
+  // `agents_dm/morpho-e3/fixtures/base-borrow-bundles.json`. Observed shapes:
+  //
+  //   supplyCollateral -> Bundler3.multicall, 2 legs on GeneralAdapter1:
+  //                       erc20TransferFrom(0xd96ca0b9) then
+  //                       morphoSupplyCollateral(0xca463673)
+  //   repay(assets)    -> Bundler3.multicall, 2 legs on GeneralAdapter1:
+  //                       erc20TransferFrom then morphoRepay(0x4d5fcf68)
+  //   repay(shares)    -> Bundler3.multicall, THREE legs: erc20TransferFrom,
+  //                       morphoRepay, then erc20Transfer(0x3790767d)
+  //
+  // THE THIRD LEG IS THE FINDING THAT MOST CHANGES THE CONTRACT. A repayment
+  // denominated in SHARES cannot know the exact asset cost in advance, so the
+  // SDK pulls MORE than the debt and sweeps the residual back with a final
+  // `erc20Transfer`. In the capture the debt was 500,000,001 raw USDC and the
+  // approval requirement was 500,005,281: the over-transfer bound, not the
+  // debt. Two consequences a caller must respect:
+  //   - the "operation amount" that the exact-amount approval policy in
+  //     `./requirements.ts` measures against is that TRANSFER BOUND, not the
+  //     debt. Passing the debt would make every shares-repayment fail the
+  //     policy check for an approval that is correctly larger;
+  //   - the sweep leg's recipient must be verified to be the user, because a
+  //     leg that moves the residual anywhere else is the whole over-transfer
+  //     going somewhere it should not.
+  //
+  // The BORROW and WITHDRAW COLLATERAL legs are deliberately NOT here: under
+  // the owner's option-1 ruling they are direct Morpho Blue calls with no
+  // bundle at all, and `./blue-call-decoder.ts` verifies that shape instead.
+  // The same capture confirms it: withdrawCollateral built as a direct call to
+  // Morpho Blue (0x8720316d), never touching Bundler3.
+  allowed(generalAdapter1Abi as Abi, "morphoSupplyCollateral", ["generalAdapter1"]),
+  allowed(generalAdapter1Abi as Abi, "morphoRepay", ["generalAdapter1"]),
+  allowed(generalAdapter1Abi as Abi, "erc20Transfer", ["generalAdapter1"]),
 ];
 
 const LEG_BY_SELECTOR = new Map(

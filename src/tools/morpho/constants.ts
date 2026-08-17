@@ -119,6 +119,103 @@ export const MORPHO_CONTRACTS: Readonly<Record<number, MorphoChainContracts>> = 
 } as const;
 
 /**
+ * The two contracts that decide whether a Blue MARKET is one Vex will operate
+ * on at all, per chain.
+ *
+ * WHY A MARKET NEEDS VOUCHING AND A VAULT DID NOT. Morpho Blue is
+ * permissionless: a market is created by naming five parameters, and its id is
+ * simply their hash. Anybody can deploy an oracle that reports any price they
+ * like, an IRM that charges any rate they like, and open a market around them.
+ * Entering such a market by id is entering a contract whose price feed nobody
+ * vouched for, and the price feed is what decides when the position is
+ * liquidated. So the two parameters that carry that authority are pinned here.
+ *
+ *   adaptiveCurveIrm       - the ONLY interest rate model Vex will borrow
+ *                            against. It is Morpho's own audited curve, and the
+ *                            equality check is exact.
+ *   chainlinkOracleFactory - the factory that MINTED a market's oracle. It
+ *                            answers `isMorphoChainlinkOracleV2(address)`
+ *                            on-chain, so oracle acceptability is a fact read
+ *                            from the chain rather than a list maintained here.
+ *
+ * PROVENANCE. Both extracted on 2026-08-17 from `@morpho-org/blue-sdk`'s
+ * `getChainAddresses(chainId)` for the nine chains in `./chains.ts`, and pinned
+ * EXPLICITLY here for the same reason the table above is explicit: these are
+ * security-relevant addresses, and a transitive dependency upgrade must not be
+ * able to move them without review. Re-extraction is a deliberate, dated edit.
+ * Cross-checked live on Base 2026-08-17: the pinned IRM matches the IRM of the
+ * cbBTC/USDC market read from Morpho's own API, and the pinned factory answered
+ * `true` for that market's oracle and `false` for GeneralAdapter1.
+ */
+export interface MorphoMarketPolicyContracts {
+  readonly adaptiveCurveIrm: Address;
+  /** `null` would mean the chain has no factory to ask, and every market on it
+   *  would fall through to the (empty) manual oracle allowlist. No chain in the
+   *  table is in that state today; the field is nullable so a future chain
+   *  without a factory is refused by name instead of crashing. */
+  readonly chainlinkOracleFactory: Address | null;
+}
+
+export const MORPHO_MARKET_POLICY_CONTRACTS: Readonly<Record<number, MorphoMarketPolicyContracts>> = {
+  1: {
+    adaptiveCurveIrm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
+    chainlinkOracleFactory: "0x3A7bB36Ee3f3eE32A60e9f2b33c1e5f2E83ad766",
+  },
+  10: {
+    adaptiveCurveIrm: "0x8cD70A8F399428456b29546BC5dBe10ab6a06ef6",
+    chainlinkOracleFactory: "0x1ec408D4131686f727F3Fd6245CF85Bc5c9DAD70",
+  },
+  130: {
+    adaptiveCurveIrm: "0x9a6061d51743B31D2c3Be75D83781Fa423f53F0E",
+    chainlinkOracleFactory: "0x43269546e1D586a1f7200a0AC07e26f9631f7539",
+  },
+  137: {
+    adaptiveCurveIrm: "0xe675A2161D4a6E2de2eeD70ac98EEBf257FBF0B0",
+    chainlinkOracleFactory: "0x1ff7895Eb842794c5d07C4c547b6730e61295215",
+  },
+  143: {
+    adaptiveCurveIrm: "0x09475a3D6eA8c314c592b1a3799bDE044E2F400F",
+    chainlinkOracleFactory: "0xC8659Bcd5279DB664Be973aEFd752a5326653739",
+  },
+  999: {
+    adaptiveCurveIrm: "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+    chainlinkOracleFactory: "0xeb476f124FaD625178759d13557A72394A6f9aF5",
+  },
+  4663: {
+    adaptiveCurveIrm: "0x2BD3d5965B26B51814AC95127B2b80dD6CcC0fa1",
+    chainlinkOracleFactory: "0xB7c16F6F8cF531447Bf27Ca7220f981E79C9cdF2",
+  },
+  8453: {
+    adaptiveCurveIrm: "0x46415998764C29aB2a25CbeA6254146D50D22687",
+    chainlinkOracleFactory: "0x2DC205F24BCb6B311E5cdf0745B0741648Aebd3d",
+  },
+  42161: {
+    adaptiveCurveIrm: "0x66F30587FB8D4206918deb78ecA7d5eBbafD06DA",
+    chainlinkOracleFactory: "0x98Ce5D183DC0c176f54D37162F87e7eD7f2E41b5",
+  },
+} as const;
+
+/**
+ * Oracles the OWNER has vouched for by hand, per chain, for markets whose oracle
+ * did not come from the pinned factory.
+ *
+ * IT STARTS EMPTY AND THAT IS THE POINT. Every entry here is an oracle a human
+ * decided to trust that the chain itself cannot vouch for, so the list is a
+ * record of deliberate exceptions rather than a convenience. An empty list means
+ * exactly one thing today: every executable market's oracle must be provable
+ * from the chain's own factory.
+ *
+ * THE OWNER PATH TO EXTEND IT, so a future session does not invent one: add the
+ * oracle address under its chain id in this constant, in a commit that states
+ * WHO vouched for it, WHEN, and on what evidence (who deployed it, what it
+ * reads, whether its source is verified and audited). It is a security-posture
+ * change under rules/00, so it needs explicit owner approval and never a
+ * builder's judgement. Adding an address here widens the set of markets Vex will
+ * put real funds into.
+ */
+export const MORPHO_MANUAL_ORACLE_ALLOWLIST: Readonly<Record<number, readonly Address[]>> = {};
+
+/**
  * Human label per role, for a report a person can read without knowing which
  * Morpho contract does what.
  */

@@ -37,7 +37,11 @@
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
 import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
-import { decodeMorphoSettlement } from "../morpho-settlement-decoder.js";
+import {
+  decodeMorphoBorrowSettlement,
+  decodeMorphoSettlement,
+  readMorphoBorrowRouteProvenance,
+} from "../morpho-settlement-decoder.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
 import { getAddress, type Address } from "viem";
 import {
@@ -338,6 +342,7 @@ function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
   if (!row.walletAddress) {
     return { kind: "declined", reason: "amounts_undecodable", detail: "the row carries no wallet address" };
   }
+  if (row.eventRole === "lend_borrow_operate") return decodeMorphoBorrowRow(input, row.walletAddress);
   const decoded = decodeMorphoSettlement({
     logs: input.logs,
     walletAddress: row.walletAddress,
@@ -360,6 +365,46 @@ function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
       executedAmountInRaw: decoded.executedAmountInRaw,
       executedAmountOutRaw: decoded.executedAmountOutRaw,
     },
+  };
+}
+
+/**
+ * A Morpho BLUE MARKET operation (`lend_borrow_operate`). A DIFFERENT rule from
+ * the vault rows above, routed here rather than folded into them, because the
+ * two prove their amounts from different evidence - the vault lane from net
+ * wallet deltas, this one from Blue's own market events. The decoder module owns
+ * why; this branch only resolves inputs.
+ *
+ * ITS INPUTS COME FROM THE ROW'S OWN `route_provenance`, which the writer
+ * persisted at intent time: the operation, the market id and the Blue
+ * deployment. The `settlementDecode` hint is not enough here - it names one
+ * verified router and this decode needs the market and the operation as well,
+ * neither of which is a column. A row without that block declines by name rather
+ * than being read against a guessed market.
+ *
+ * EXACTLY ONE EXECUTED LEG IS RECORDED, and that is the honest shape: a Blue
+ * market operation moves one token in one direction, so a second executed
+ * amount would be a claim about a movement that never happened.
+ *
+ * Takes no chain read, so it never DEFERS - same reason as the vault branch.
+ */
+function decodeMorphoBorrowRow(input: VenueDecodeInput, walletAddress: string): VenueDecodeResult {
+  const { row } = input;
+  const decoded = decodeMorphoBorrowSettlement({
+    logs: input.logs,
+    walletAddress,
+    provenance: readMorphoBorrowRouteProvenance(row.routeProvenance),
+    amountInRaw: row.amountInRaw,
+    amountOutRaw: row.amountOutRaw,
+  });
+  if (decoded.kind === "declined") {
+    return { kind: "declined", reason: "amounts_undecodable", detail: decoded.reason };
+  }
+  return {
+    kind: "decoded",
+    amounts: decoded.direction === "in"
+      ? { executedAmountInRaw: decoded.executedAmountRaw }
+      : { executedAmountOutRaw: decoded.executedAmountRaw },
   };
 }
 

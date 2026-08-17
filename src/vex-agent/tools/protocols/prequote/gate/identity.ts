@@ -34,8 +34,23 @@ import {
   buildMorphoLendDepositIdentity,
   buildMorphoLendWithdrawIdentity,
 } from "../identity/morpho-lend.js";
+import { buildMorphoBorrowIdentityFor } from "../identity/morpho-borrow.js";
+import type { MorphoBorrowDirection } from "../identity/morpho-borrow.js";
 import { GateIdentityError } from "../gate-errors.js";
 import { canonSlippageBps, readParamSlippageBps } from "../slippage.js";
+
+/**
+ * The Morpho Blue market execute kinds, and the quote direction each pairs with.
+ * A lookup rather than a fourth if/else limb: the four differ only in which
+ * direction they name, and a missing entry must read as "not a borrow execute"
+ * rather than as a default direction.
+ */
+const BORROW_DIRECTION_BY_KIND: Partial<Record<ExecuteGateRegistration["kind"], MorphoBorrowDirection>> = {
+  lend_supply_collateral: "supplyCollateral",
+  lend_withdraw_collateral: "withdrawCollateral",
+  lend_borrow: "borrow",
+  lend_repay: "repay",
+};
 
 /**
  * Swap execute trade identity for the match-hash. `chainId` is the numeric chain
@@ -254,6 +269,16 @@ export async function computeGateMatch(
     const identity = gated.kind === "lend_deposit"
       ? buildMorphoLendDepositIdentity(sessionId, params, context)
       : buildMorphoLendWithdrawIdentity(sessionId, params, context);
+    return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
+  }
+
+  const borrowDirection = BORROW_DIRECTION_BY_KIND[gated.kind];
+  if (borrowDirection !== undefined) {
+    // Morpho Blue market operations - their OWN identity path (E3c). Each binds
+    // the market id, the chain, its own raw amount and the approved slippage,
+    // and the kind itself carries the operation, so a collateral quote cannot
+    // authorize a borrow execute on the same market for the same amount.
+    const identity = buildMorphoBorrowIdentityFor(borrowDirection, sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 

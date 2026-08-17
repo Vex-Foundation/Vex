@@ -211,6 +211,17 @@ const entries: [string, MutationContract][] = [
   // for it.
   ["morpho.vault.deposit",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.vault.withdraw",    { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho Blue market operations (E3c). Same contract as the two vault rows
+  // above and for the same reasons: the durable truth is the `agent_activity`
+  // row written by `morpho/handlers/signed-broadcast.ts`, so the legacy
+  // projection pipeline must never also run; all four take `dryRun`, which
+  // returns the full preview and signs nothing. `expectedType: "lend"` because
+  // the borrow lane is the same lending domain as the vaults - the market
+  // operations move a position within it rather than trading a pair.
+  ["morpho.market.supplyCollateral",   { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.withdrawCollateral", { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.borrow",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.repay",              { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   // Jupiter Lend BORROW `/operate` (Agent Scan Phase 3 Batch 5, card B1) —
   // full lifecycle (create/deposit/withdraw/borrow/repay) on the SAME K2
   // staged `agent_activity` write path as the two Earn tools above —

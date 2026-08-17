@@ -109,10 +109,35 @@ async function recordAndCapture(direction: "deposit" | "withdraw", params: Recor
  */
 function seed(row: { matchHash: string; kind: string }) {
   mockFindLatest.mockImplementation(async (_s, hash, kind) =>
-    hash === row.matchHash && kind === row.kind
-      ? ({ prequoteId: "p1", safetyVerdict: "pass", safetyDetail: {} } as unknown as SwapPrequote)
-      : null,
+    hash === row.matchHash && kind === row.kind ? storedPrequote(row) : null,
   );
+}
+
+/**
+ * A COMPLETE stored row, not a three-field stand-in: the gate reads
+ * `safetyVerdict` and the row's identity, and a partial row typed as if it were
+ * whole would keep compiling after the gate started reading a fourth column.
+ */
+function storedPrequote(row: { matchHash: string; kind: string }): SwapPrequote {
+  return {
+    prequoteId: "p1",
+    sessionId: "session-1",
+    matchHash: row.matchHash,
+    kind: row.kind as SwapPrequote["kind"],
+    family: "eip155",
+    provider: "morpho",
+    chainId: 8453,
+    walletAddress: "0xaaaabbbbccccddddeeeeffff0000111122223333",
+    tokenIn: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    tokenOut: "0xc1256ae5ff1cf2719d4937adb3bbccab2e00a2ca",
+    amount: "1000000",
+    slippageBps: 100,
+    safetyVerdict: "pass",
+    safetyDetail: {},
+    routeRef: null,
+    createdAt: "2026-08-17T00:00:00.000Z",
+    expiresAt: "2026-08-17T00:05:00.000Z",
+  };
 }
 
 beforeEach(() => {

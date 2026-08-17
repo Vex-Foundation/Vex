@@ -11,8 +11,13 @@
  * specific deposit into or withdrawal from a vault, building and decoding the
  * exact transaction without signing or sending it. EXECUTE: the two tools that
  * actually move money, supplying assets to a vault and redeeming them back out.
- * Nine of the eleven are read-only; the two execute tools sign and broadcast
- * real transactions from the user's wallet, and both are gated on a fresh quote.
+ * BORROW: one preview and four executes covering the whole Blue market position
+ * lifecycle - supplying collateral, borrowing against it, repaying the debt and
+ * withdrawing the collateral back out, each a single leg on a market whose
+ * oracle Vex vouches for and each gated on a fresh quote of its OWN direction.
+ * Ten of the sixteen are read-only; the six execute tools sign and broadcast
+ * real transactions from the user's wallet, and every one of them is gated on a
+ * fresh matching quote.
  *
  * One module per tool under `./manifests/`, composed here, so a tool's contract
  * and its long description live in a file named after the tool.
@@ -30,6 +35,11 @@ import { MORPHO_WALLET_BALANCE_TOOL } from "./manifests/wallet-balance.js";
 import { MORPHO_VAULT_QUOTE_TOOL } from "./manifests/vault-quote.js";
 import { MORPHO_VAULT_DEPOSIT_TOOL } from "./manifests/vault-deposit.js";
 import { MORPHO_VAULT_WITHDRAW_TOOL } from "./manifests/vault-withdraw.js";
+import { MORPHO_MARKET_QUOTE_TOOL } from "./manifests/market-quote.js";
+import { MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL } from "./manifests/market-supply-collateral.js";
+import { MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL } from "./manifests/market-withdraw-collateral.js";
+import { MORPHO_MARKET_BORROW_TOOL } from "./manifests/market-borrow.js";
+import { MORPHO_MARKET_REPAY_TOOL } from "./manifests/market-repay.js";
 
 export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_MARKETS_DISCOVER_TOOL,
@@ -43,4 +53,9 @@ export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_VAULT_QUOTE_TOOL,
   MORPHO_VAULT_DEPOSIT_TOOL,
   MORPHO_VAULT_WITHDRAW_TOOL,
+  MORPHO_MARKET_QUOTE_TOOL,
+  MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL,
+  MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL,
+  MORPHO_MARKET_BORROW_TOOL,
+  MORPHO_MARKET_REPAY_TOOL,
 ];

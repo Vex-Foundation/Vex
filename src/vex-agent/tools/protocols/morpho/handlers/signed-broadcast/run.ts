@@ -15,11 +15,10 @@
  */
 
 import { getAddress } from "viem";
-import type { Account, Address, Chain, PublicClient, Transport, WalletClient } from "viem";
+import type { Address } from "viem";
 
 import {
   prepareMorphoVaultExecution,
-  type MorphoActionClient,
   type MorphoAllowancePlan,
   type MorphoVaultState,
 } from "@tools/morpho/mutations.js";
@@ -27,21 +26,12 @@ import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-esti
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 
 import { createMorphoIntent, planMorphoLegs, type MorphoLegPlan } from "./intent.js";
+import type { MorphoAllowanceContext, MorphoExecutionClients } from "./allowance-context.js";
 import { runAllowanceLegs } from "./allowance-legs.js";
 import { runOperationLeg } from "./operation-leg.js";
 import type { MorphoExecutionOutcome } from "./outcome.js";
 
-/** The client pair one execution runs against. Both must be the SAME chain. */
-export interface MorphoExecutionClients {
-  readonly publicClient: PublicClient<Transport, Chain>;
-  readonly walletClient: WalletClient<Transport, Chain, Account>;
-  /**
-   * The Morpho-extended client the build and the reads go through. Extend the
-   * SAME public client above with `morphoActionsExtension()`, so the vault is
-   * read from the chain the transaction is sent to.
-   */
-  readonly actionClient: MorphoActionClient;
-}
+export type { MorphoExecutionClients } from "./allowance-context.js";
 
 export interface MorphoVaultExecutionRequest {
   readonly toolId: string;
@@ -60,7 +50,7 @@ export interface MorphoVaultExecutionRequest {
 }
 
 /** Everything the legs share. See the header for why it is exactly this much. */
-export interface MorphoExecutionContext {
+export interface MorphoExecutionContext extends MorphoAllowanceContext {
   readonly clients: MorphoExecutionClients;
   readonly request: MorphoVaultExecutionRequest;
   readonly direction: "deposit" | "withdraw";
@@ -140,6 +130,13 @@ export async function runMorphoExecution(
     allowancePlan: prepared.allowancePlan,
     expectedSharesRaw: prepared.expectedSharesRaw,
     verifiedTarget,
+    // The vault lane plans its operation leg last and approves the ASSET amount,
+    // which is what the approval loop used to assume. Both are now stated.
+    operationLegIndex: legs.length - 1,
+    operationLabel: `vault ${direction}`,
+    approvalAmountRaw: request.amountRaw,
+    approvalDecimals: prepared.state.assetDecimals,
+    approvalSymbol: prepared.state.assetSymbol,
     residual: null,
     priorLeg: undefined,
   };

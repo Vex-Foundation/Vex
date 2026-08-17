@@ -27,7 +27,9 @@
 import { describe, it, expect } from "vitest";
 
 import { probeMorphoReceiptCapability, prepareMorphoVaultExecution } from "@tools/morpho/mutations.js";
-import type { MorphoActionClient } from "@tools/morpho/mutations.js";
+import { getMorphoActionClient } from "../../../tools/morpho/mutations/client.js";
+
+const BASE_CHAIN_ID = 8453;
 
 const WALLET = "0x00000000000000000000000000000000000000a1" as const;
 const VAULT = "0x00000000000000000000000000000000000000be" as const;
@@ -39,15 +41,20 @@ const PUBLICNODE_REFUSAL = new Error(
   + "Get one at: https://www.allnodes.com/publicnode",
 );
 
+/**
+ * The REAL Morpho action client with only the probe's two methods replaced, so
+ * the double's type is the contract's own rather than a hand-written stand-in
+ * that a type escape had to force into position.
+ */
 function clientWith(
   block: { transactions: readonly string[] } | Error,
   receipt: unknown | Error,
-): MorphoActionClient {
-  return {
+) {
+  return Object.assign(getMorphoActionClient(BASE_CHAIN_ID), {
     getBlock: () => (block instanceof Error ? Promise.reject(block) : Promise.resolve(block)),
     getTransactionReceipt: () =>
       receipt instanceof Error ? Promise.reject(receipt) : Promise.resolve(receipt),
-  } as unknown as MorphoActionClient;
+  });
 }
 
 const headBlock = { transactions: [HEAD_TX] };
@@ -119,7 +126,7 @@ describe("what a refusing node does to an execution", () => {
 
   it("does not read the vault at all once the node has refused", async () => {
     let vaultReads = 0;
-    const client = {
+    const client = Object.assign(getMorphoActionClient(BASE_CHAIN_ID), {
       getBlock: () => Promise.resolve(headBlock),
       getTransactionReceipt: () => Promise.reject(PUBLICNODE_REFUSAL),
       readContract: () => {
@@ -130,7 +137,7 @@ describe("what a refusing node does to an execution", () => {
         vaultReads += 1;
         return Promise.resolve([]);
       },
-    } as unknown as MorphoActionClient;
+    });
 
     await expect(
       prepareMorphoVaultExecution(

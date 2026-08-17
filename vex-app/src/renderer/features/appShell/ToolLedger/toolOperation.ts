@@ -79,7 +79,8 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * Curated EXACT `toolId` → operation, for protocols the engine addresses only
- * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`,
+ * and Morpho, `tools/protocols/morpho/manifests/`).
  * `null` means the act carries no money legs at all: a read, or a `local_write`
  * that drafts a row and spends nothing (`trench.launch_request_form`, which the
  * manifest marks `mutating: true` for APPROVAL-GATE reasons — no funds move, so
@@ -118,6 +119,39 @@ const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
   ["relay.bridge", "mutating"],
   ["khalani.quote.get", "quote"],
   ["khalani.bridge", "mutating"],
+
+  // Morpho lending, verified against `tools/protocols/morpho/manifests/*` and
+  // the funded probe of 2026-08-17. The nine reads move nothing and carry no
+  // legs. `morpho.vault.quote` is the read-only preview of a supply/redeem.
+  // The two executing ids are the vault supply and redeem the probe settled on
+  // Base; BOTH take `dryRun` (mutation-matrix `previewSupport: true`), whose
+  // preview returns `success: true` and signs nothing, so their `mutating`
+  // verdict is routed through `mutatingUnlessDryRun` exactly like the bridges.
+  // Without these rows both executions fell through to the fail-closed
+  // `unproven` label, which under-claimed a settled deposit.
+  ["morpho.markets.discover", null],
+  ["morpho.market.get", null],
+  ["morpho.markets.activity", null],
+  ["morpho.vaults.discover", null],
+  ["morpho.vault.get", null],
+  ["morpho.rewards.get", null],
+  ["morpho.positions.get", null],
+  ["morpho.wallet.balance", null],
+  ["morpho.vault.quote", "quote"],
+  ["morpho.vault.deposit", "mutating"],
+  ["morpho.vault.withdraw", "mutating"],
+
+  // Morpho BLUE market acts. `morpho.market.quote` is the read-only preview of
+  // a market operation and signs nothing. The four executes each move exactly
+  // one token: the wallet SENDS on `supplyCollateral` / `repay` and RECEIVES on
+  // `withdrawCollateral` / `borrow`. Their `mutating` verdict is routed through
+  // `mutatingUnlessDryRun` like every other one here, so a rehearsal that
+  // returns `success: true` without signing can never claim an execution.
+  ["morpho.market.quote", "quote"],
+  ["morpho.market.supplyCollateral", "mutating"],
+  ["morpho.market.withdrawCollateral", "mutating"],
+  ["morpho.market.borrow", "mutating"],
+  ["morpho.market.repay", "mutating"],
 ]);
 
 /**

@@ -17,13 +17,16 @@ import { morphoMarketGet } from "../../../../../vex-agent/tools/protocols/morpho
 import { formatRawAmount } from "../../../../../vex-agent/tools/protocols/morpho/projectors.js";
 import { MORPHO_MARKETS_PAGE, MORPHO_MARKET_DETAIL, MORPHO_MARKETS_UNLISTED } from "./fixtures.js";
 
-function jsonResponse(body: unknown): Response {
-  return {
-    ok: true,
-    status: 200,
-    headers: { get: () => null },
-    json: async () => body,
-  } as unknown as Response;
+/**
+ * A REAL `Response`. The Morpho client reads `ok`, `status`,
+ * `headers.get("retry-after")` and `json()`; a hand-shaped double answers
+ * exactly those and would keep passing if the client started reading a fifth.
+ */
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** Capture the GraphQL variables the handler ultimately sent. */
@@ -281,12 +284,8 @@ describe("morpho.market.get", () => {
   it("surfaces a Morpho refusal with its code, status and remediation", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        status: 400,
-        headers: { get: () => null },
-        json: async () => ({ errors: [{ message: 'Cannot query field "priceUsd" on type "Asset".' }] }),
-      } as unknown as Response)),
+      vi.fn(async () =>
+        jsonResponse({ errors: [{ message: 'Cannot query field "priceUsd" on type "Asset".' }] }, 400)),
     );
     // A distinct market id, so the client's short TTL cache cannot serve an
     // earlier test's successful body in place of this refusal.

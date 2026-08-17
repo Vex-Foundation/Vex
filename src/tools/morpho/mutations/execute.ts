@@ -208,8 +208,8 @@ export async function prepareMorphoOperationLeg(
   const value = built.tx.value ?? 0n;
 
   const [gas, preflight] = await Promise.all([
-    boundMorphoGas(client, built.tx, request.walletAddress),
-    preflightMorphoTransaction(client, built.tx, request.walletAddress),
+    boundMorphoGas(client, built.tx, request.walletAddress, request.direction),
+    preflightMorphoTransaction(client, built.tx, request.walletAddress, request.direction),
   ]);
 
   if (preflight.verdict === "reverted") {

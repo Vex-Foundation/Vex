@@ -119,7 +119,6 @@ export const DEFAULT_RPC: Record<string, string> = {
   unichain: "https://mainnet.unichain.org",
   hyperevm: "https://rpc.hyperliquid.xyz/evm",
   plasma: "https://rpc.plasma.to",
-  etherlink: "https://node.mainnet.etherlink.com",
   monad: "https://rpc.monad.xyz",
   megaeth: "https://mainnet.megaeth.com/rpc",
 };

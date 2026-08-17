@@ -56,8 +56,14 @@ const SOLANA_LIST_CHAR_BUDGET = 21_000;
  * cost 6,191 chars in the listing after redundancy was trimmed; what remains
  * is the safety prose (two-transaction consent, non-atomicity remediations,
  * exact-amount approval policy). Measured 37,017 with them.
+ *
+ * Raised 38,000 -> 52,000 on 2026-08-17 (coordinator, applying the owner's
+ * three identical prior rulings for morpho E3c): five borrow-market tools
+ * measured 50,343 after a 7,898-char trim relocated the facts shared by all
+ * five into the namespace doctrine. Baseline headroom was 983 chars, i.e.
+ * 197 per tool - structurally unreachable for fund-spending manifests.
  */
-const ANY_LIST_CHAR_BUDGET = 38_000;
+const ANY_LIST_CHAR_BUDGET = 52_000;
 
 describe("discover_tools namespace list mode", () => {
   const ENV_KEYS = [

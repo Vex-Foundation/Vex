@@ -25,6 +25,7 @@ import {
   validateMorphoActivityPage,
 } from "../../tools/morpho/validation/activity.js";
 import { requireBigIntString } from "../../tools/morpho/validation/_shared.js";
+import { definedValue } from "../_test-value-guards.js";
 import {
   MORPHO_ACTIVITY_LIQUIDATION_PAGE,
   MORPHO_ACTIVITY_MIXED_PAGE,
@@ -51,7 +52,7 @@ function firstPositionRow(): Record<string, unknown> {
   const page = mutable(MORPHO_MARKET_POSITIONS_PAGE) as {
     data: { marketPositions: { items: Record<string, unknown>[] } };
   };
-  return page.data.marketPositions.items[0]!;
+  return page.data.marketPositions.items[0];
 }
 
 describe("morpho market position validation", () => {
@@ -59,14 +60,14 @@ describe("morpho market position validation", () => {
     const page = validateMorphoMarketPositionPage(MORPHO_MARKET_POSITIONS_PAGE);
     expect(page.droppedRows).toBe(0);
     expect(page.countTotal).toBe(22);
-    const worst = page.positions[0]!;
+    const worst = page.positions[0];
     expect(worst.healthFactor).toBe(0.3053054108729547);
     expect(worst.market.listed).toBe(false);
     expect(worst.market.warnings.map((w) => w.type)).toContain("bad_debt_unrealized");
   });
 
   it("carries every amount with the decimals of the asset it is denominated in", () => {
-    const worst = validateMorphoMarketPositionPage(MORPHO_MARKET_POSITIONS_PAGE).positions[0]!;
+    const worst = validateMorphoMarketPositionPage(MORPHO_MARKET_POSITIONS_PAGE).positions[0];
     // Collateral is USR at 18 decimals, debt is USDC at 6. Swapping them would
     // misread the position by twelve orders of magnitude.
     expect(worst.collateral?.decimals).toBe(18);
@@ -76,7 +77,7 @@ describe("morpho market position validation", () => {
   });
 
   it("reads SIGNED margin and borrow PnL that the unsigned money reader refuses", () => {
-    const worst = validateMorphoMarketPositionPage(MORPHO_MARKET_POSITIONS_PAGE).positions[0]!;
+    const worst = validateMorphoMarketPositionPage(MORPHO_MARKET_POSITIONS_PAGE).positions[0];
     expect(worst.margin?.raw).toBe("-23633633");
     expect(worst.borrowPnl?.raw).toBe("-24648763");
     // The guard that makes the separate reader necessary rather than tidy.
@@ -127,7 +128,7 @@ describe("morpho vault position validation", () => {
     const page = validateMorphoVaultPositionPage(MORPHO_VAULT_POSITIONS_PAGE);
     expect(page.droppedRows).toBe(0);
     expect(page.positions.length).toBeGreaterThan(0);
-    const first = page.positions[0]!;
+    const first = page.positions[0];
     expect(first.vaultVersion).toBe("v1");
     expect(first.assets.decimals).toBe(first.asset.decimals);
     expect(first.shares).toMatch(/^\d+$/);
@@ -176,14 +177,17 @@ describe("morpho activity validation", () => {
     expect(shapes.has("MarketTransactionCollateralTransferData")).toBe(true);
     expect(shapes.has("MarketTransactionTransferData")).toBe(true);
     // A collateral transfer carries NO shares. An empty map, never a zero.
-    const collateral = page.transactions.find((t) => t.dataShape === "MarketTransactionCollateralTransferData")!;
+    const collateral = definedValue(
+      page.transactions.find((t) => t.dataShape === "MarketTransactionCollateralTransferData"),
+      "a collateral-transfer transaction",
+    );
     expect(collateral.shares).toEqual({});
     expect(collateral.amounts["assets"]?.asset).toBe("collateral");
   });
 
   it("denominates a liquidation's two legs in DIFFERENT assets at their own scales", () => {
     const page = validateMorphoActivityPage(MORPHO_ACTIVITY_LIQUIDATION_PAGE);
-    const row = page.transactions[0]!;
+    const row = page.transactions[0];
     expect(row.type).toBe("Liquidation");
     expect(row.liquidatorAddress).toBe("0x6cf59693571329db4a613f9a398205e6de04d05f");
     expect(row.amounts["repaidAssets"]).toEqual({
@@ -205,7 +209,7 @@ describe("morpho activity validation", () => {
     const page = mutable(MORPHO_ACTIVITY_LIQUIDATION_PAGE) as {
       data: { marketTransactions: { items: Record<string, unknown>[] } };
     };
-    const row = page.data.marketTransactions.items[0]!;
+    const row = page.data.marketTransactions.items[0];
     (row["market"] as Record<string, unknown>)["collateralAsset"] = null;
     // "Somebody was liquidated" with no idea what was taken reads as a small
     // event. Omitting it is the honest option.
@@ -216,7 +220,7 @@ describe("morpho activity validation", () => {
     const page = mutable(MORPHO_ACTIVITY_MIXED_PAGE) as {
       data: { marketTransactions: { items: Record<string, unknown>[] } };
     };
-    const row = page.data.marketTransactions.items[0]!;
+    const row = page.data.marketTransactions.items[0];
     (row["data"] as Record<string, unknown>)["__typename"] = "MarketTransactionSomethingNewData";
     const parsed = readMarketTransaction(row);
     expect(parsed).not.toBeNull();

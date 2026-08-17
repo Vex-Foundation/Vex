@@ -217,7 +217,7 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
   // `settled_block_time` NULL on every operation row while the approval rows
   // (which confirm first) carried one. Caught by the fork run's own row dump on
   // 2026-08-17, which is exactly the kind of ordering bug no mock notices.
-  await noteMorphoSettledBlockTime(context.clients.publicClient, row.id, outcome.receipt.blockNumber);
+  await noteMorphoSettledBlockTime(context.clients.publicClient, row.id, outcome.receipt);
 
   // The shares side of the settlement, held against the ABSOLUTE per-operation
   // bound the approved slippage allows - the same bound the on-chain
@@ -254,6 +254,26 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
     executionId: context.executionId,
     txHash: outcome.txHash,
     executed,
+    // The asset and the vault's own share token, on whichever side each one
+    // landed. A deposit sends the asset and receives shares; a withdrawal is
+    // the mirror. Two scales, never compared.
+    tokens: context.direction === "deposit"
+      ? {
+        inSymbol: context.state.assetSymbol,
+        inAddress: context.state.assetAddress.toLowerCase(),
+        inDecimals: context.state.assetDecimals,
+        outSymbol: context.state.shareSymbol,
+        outAddress: context.state.address.toLowerCase(),
+        outDecimals: context.state.shareDecimals,
+      }
+      : {
+        inSymbol: context.state.shareSymbol,
+        inAddress: context.state.address.toLowerCase(),
+        inDecimals: context.state.shareDecimals,
+        outSymbol: context.state.assetSymbol,
+        outAddress: context.state.assetAddress.toLowerCase(),
+        outDecimals: context.state.assetDecimals,
+      },
     shares,
     message: `${toolId}: ${summary} Tx: ${outcome.txHash}.${drift}`,
   };
