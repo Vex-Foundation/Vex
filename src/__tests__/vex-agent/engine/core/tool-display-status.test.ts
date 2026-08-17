@@ -47,6 +47,22 @@ describe("deriveToolDisplayStatus", () => {
     ).toBe("pending");
   });
 
+  it("derives 'pending' from a source-scoped ambiguous Lighter deposit", () => {
+    expect(
+      deriveToolDisplayStatus({
+        source: "vex_lighter_live_deposit",
+        status: "ambiguous",
+        stage: "deposit",
+      }),
+    ).toBe("pending");
+    expect(
+      deriveToolDisplayStatus({
+        source: "vex_lighter_live_deposit",
+        status: "failed",
+      }),
+    ).toBeNull();
+  });
+
   it("returns null for every status outside the closed allowlist", () => {
     expect(deriveToolDisplayStatus({ status: "confirmed" })).toBeNull();
     expect(deriveToolDisplayStatus({ status: "" })).toBeNull();

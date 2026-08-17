@@ -217,6 +217,45 @@ describe("lighter.deposit execution lease", () => {
     });
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
+
+  it("reports an executor throw as ambiguous so approval runtime cannot claim failure", async () => {
+    const depositHash = `0x${"b".repeat(64)}`;
+    mocks.acquireExecutionLease.mockResolvedValue({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        release: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValue({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockRejectedValueOnce(new Error("receipt unavailable"));
+    mocks.markAmbiguous.mockResolvedValueOnce(intentRow({
+      executionState: "ambiguous",
+      depositTxHash: depositHash,
+    }));
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      source: "vex_lighter_live_deposit",
+      status: "ambiguous",
+      stage: "deposit",
+      txHash: depositHash,
+    });
+    expect(mocks.markAmbiguous).toHaveBeenCalledWith(
+      intentRow().intentId,
+      "Deposit executor error: receipt unavailable",
+    );
+    expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("lighter.deposit.prepare", () => {

@@ -67,6 +67,7 @@ const LIGHTER_PENDING_STATUSES: ReadonlySet<string> = new Set([
   "ambiguous",
   "sequencer_pending",
 ]);
+const LIGHTER_DEPOSIT_PENDING_SOURCE = "vex_lighter_live_deposit";
 
 export function deriveToolDisplayStatus(data: unknown): ToolDisplayStatus | null {
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
@@ -74,6 +75,12 @@ export function deriveToolDisplayStatus(data: unknown): ToolDisplayStatus | null
   }
   const source = (data as Record<string, unknown>)["source"];
   const status = (data as Record<string, unknown>)["status"];
+  if (
+    source === LIGHTER_DEPOSIT_PENDING_SOURCE
+    && status === "ambiguous"
+  ) {
+    return PENDING_STATUS;
+  }
   if (
     source === LIGHTER_PENDING_SOURCE
     && typeof status === "string"

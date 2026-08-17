@@ -190,6 +190,28 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
       displayStatus: "pending",
     });
   });
+
+  it("classifies an ambiguous Lighter deposit as indeterminate, not succeeded", async () => {
+    mockDispatchTool.mockResolvedValue({
+      success: true,
+      output: "{}",
+      data: {
+        source: "vex_lighter_live_deposit",
+        status: "ambiguous",
+        stage: "deposit",
+        txHash: `0x${"a".repeat(64)}`,
+      },
+    });
+
+    const outcome = await applyApproveSideEffects("appr-1", approvedSnapshot());
+
+    if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
+    expect(outcome.executionStatus).toBe("indeterminate");
+    expect(mockCommitApprovedToolResult.mock.calls[0]![0]).toMatchObject({
+      executionStatus: "indeterminate",
+      displayStatus: "pending",
+    });
+  });
 });
 
 describe("deriveApprovedDispatchExecutionStatus", () => {
@@ -198,7 +220,7 @@ describe("deriveApprovedDispatchExecutionStatus", () => {
     expect(deriveApprovedDispatchExecutionStatus({ success: false, data: {} })).toBe("failed");
   });
 
-  it("uses indeterminate only for source-scoped unresolved Lighter create results", () => {
+  it("uses indeterminate only for source-scoped unresolved Lighter results", () => {
     expect(
       deriveApprovedDispatchExecutionStatus({
         success: true,
@@ -212,6 +234,21 @@ describe("deriveApprovedDispatchExecutionStatus", () => {
       deriveApprovedDispatchExecutionStatus({
         success: true,
         data: { status: "sequencer_pending" },
+      }),
+    ).toBe("succeeded");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: {
+          source: "vex_lighter_live_deposit",
+          status: "ambiguous",
+        },
+      }),
+    ).toBe("indeterminate");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: { source: "vex_lighter_live_deposit", status: "failed" },
       }),
     ).toBe("succeeded");
   });

@@ -142,11 +142,17 @@ import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slo
 
 type ApprovedDispatchExecutionStatus = "succeeded" | "failed" | "indeterminate";
 
-function isLighterUnresolvedCreateResult(data: unknown): boolean {
+function isLighterUnresolvedResult(data: unknown): boolean {
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
     return false;
   }
   const row = data as Record<string, unknown>;
+  if (
+    row["source"] === "vex_lighter_live_deposit"
+    && row["status"] === "ambiguous"
+  ) {
+    return true;
+  }
   if (row["source"] !== "vex_lighter_live_order_create") return false;
   const status = row["status"];
   const executionState = row["executionState"];
@@ -163,7 +169,7 @@ export function deriveApprovedDispatchExecutionStatus(input: {
   readonly data?: Record<string, unknown>;
 }): ApprovedDispatchExecutionStatus {
   if (!input.success) return "failed";
-  return isLighterUnresolvedCreateResult(input.data) ? "indeterminate" : "succeeded";
+  return isLighterUnresolvedResult(input.data) ? "indeterminate" : "succeeded";
 }
 
 /**

@@ -292,11 +292,27 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         userGuidance: depositUserGuidance(execution),
       });
     } catch (err) {
-      await onboardingIntentsRepo.markAmbiguous(
+      const reason = err instanceof Error ? err.message : String(err);
+      const ambiguous = await onboardingIntentsRepo.markAmbiguous(
         approved.intentId,
-        `Deposit executor error: ${err instanceof Error ? err.message : String(err)}`,
+        `Deposit executor error: ${reason}`,
       );
-      return fail(err instanceof Error ? err.message : String(err));
+      const txHash = ambiguous?.depositTxHash ?? ambiguous?.approveTxHash ?? null;
+      const stage = ambiguous?.depositTxHash
+        ? "deposit"
+        : ambiguous?.approveTxHash
+          ? "approve"
+          : "execution";
+      return ok({
+        source: "vex_lighter_live_deposit",
+        status: "ambiguous",
+        stage,
+        txHash,
+        reason,
+        intentId: approved.intentId,
+        userGuidance:
+          "The deposit execution outcome is uncertain. Tell the user it must be reconciled before any retry; do not say it succeeded or failed.",
+      });
     } finally {
       await leaseHandle.release().catch((err) => {
         logger.warn("lighter.deposit.execution_lease_release_failed", {
