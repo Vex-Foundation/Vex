@@ -55,7 +55,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare a separate security-sensitive approval for registering a locally generated Lighter trading credential on the selected Vex-wallet-owned Core account. Reads every public API-key slot, transactionally reserves an unused index from 4 through 254, generates the key only through the privileged packaged signer helper, encrypts the private key in the local vault before public metadata, reads the exact public next nonce, and binds wallet, account, index, public key, fingerprint, nonce, and granted authority into a trusted approval card. No wallet signature, L2ChangePubKey transaction, sendTx, deposit, order, transfer, or withdrawal runs during preparation.",
+      "Prepare a separate security-sensitive approval for registering a locally generated Lighter trading credential on the selected Vex-wallet-owned Core account. Reads every public API-key slot, transactionally reserves an unused index from 4 through 254, generates the key only through the privileged packaged signer helper, encrypts the private key in the local vault before public metadata, reads the exact public next nonce, and binds wallet, account, index, public key, fingerprint, nonce, and granted authority into a trusted approval card. Returns the durable intent id, account and key indexes, nonce, public-key fingerprint, approval disclosure, expiry, and approval-card guidance. No wallet signature, L2ChangePubKey transaction, sendTx, deposit, order, transfer, or withdrawal runs during preparation.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM],

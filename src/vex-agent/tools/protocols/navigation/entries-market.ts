@@ -440,6 +440,19 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         ],
       },
       {
+        label: "Trading credential setup",
+        summary:
+          "Prepare, execute through trusted approval, or reconcile an exact Lighter trading-key registration without exposing key material.",
+        toolPrefixes: ["lighter.key.register"],
+        hints: [
+          "prepare lighter key registration",
+          "register lighter api key",
+          "lighter key registration status",
+          "reconcile trading key",
+          "finish lighter account setup",
+        ],
+      },
+      {
         label: "My orders and fills",
         summary:
           "Read authenticated open orders, order history, and account trade fills using the configured read-only token.",

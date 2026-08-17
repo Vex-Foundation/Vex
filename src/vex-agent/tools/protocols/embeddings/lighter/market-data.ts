@@ -196,7 +196,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.key.register": {
     embeddingText: embeddingText(
-      `Approval-resume target for one exact prepared Lighter key registration. ` +
+      `Execute one exact prepared Lighter key registration after the trusted host approval resumes. ` +
       `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused; the privileged release gate remains independently default-closed. When opened, main signs and submits the exact TxType 8 registration, then requires exact key, CheckClient, and nonce evidence before activation. ` +
       `Example queries: execute approved Lighter key registration, resume Lighter key approval.`,
     ),
