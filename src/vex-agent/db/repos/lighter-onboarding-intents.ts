@@ -303,6 +303,64 @@ export async function markApprovalDecisionWith(
   return intent;
 }
 
+/**
+ * Extend only an approved deposit intent that provably never reached signing,
+ * staging, submission, or settlement evidence. The original approval remains
+ * in the audit trail; the caller must issue and bind a fresh approval card
+ * before execution can resume.
+ */
+export async function renewPristineApprovedDepositIntentWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  if (
+    !Number.isFinite(input.expiresAt.getTime())
+    || input.expiresAt.getTime() <= Date.now()
+  ) {
+    throw new Error("Lighter deposit approval retry expiry must be in the future.");
+  }
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET expires_at = $3,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'deposit'
+        AND approval_status = 'approved'
+        AND execution_state = 'approved'
+        AND approve_tx_hash IS NULL
+        AND approve_tx_from IS NULL
+        AND approve_tx_nonce IS NULL
+        AND approve_replacement_tx_hash IS NULL
+        AND approve_replacement_reason IS NULL
+        AND approve_replacement_observed_at IS NULL
+        AND deposit_tx_hash IS NULL
+        AND deposit_tx_from IS NULL
+        AND deposit_tx_nonce IS NULL
+        AND deposit_replacement_tx_hash IS NULL
+        AND deposit_replacement_reason IS NULL
+        AND deposit_replacement_observed_at IS NULL
+        AND deposit_l1_block_hash IS NULL
+        AND deposit_l1_block_number IS NULL
+        AND deposit_event_account_index IS NULL
+        AND lighter_tx_hash IS NULL
+        AND lighter_tx_status IS NULL
+        AND lighter_block_height IS NULL
+        AND lighter_executed_at IS NULL
+        AND lighter_evidence_observed_at IS NULL
+        AND resolved_account_index IS NULL
+        AND failure_reason IS NULL
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.expiresAt],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Persist an approve tx hash before broadcast; only from the approved state. */
 export async function markApproveSubmittedWith(
   client: LighterOnboardingQueryClient,

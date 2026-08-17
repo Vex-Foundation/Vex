@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   setIntegrationEnabled: vi.fn(),
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
+  renewPristineApproved: vi.fn(),
   markAmbiguous: vi.fn(),
   withSessionControlLock: vi.fn(),
   resolveSelectedAddress: vi.fn(),
@@ -36,6 +37,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   findByIntentId: mocks.findByIntentId,
   markApprovalDecisionWith: (_client: unknown, input: unknown) =>
     mocks.markApprovalDecision(input),
+  renewPristineApprovedDepositIntentWith: (_client: unknown, input: unknown) =>
+    mocks.renewPristineApproved(input),
   markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
     mocks.markAmbiguous(intentId, reason),
 }));
@@ -197,6 +200,14 @@ beforeEach(() => {
   }));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.markAmbiguous.mockResolvedValue(intentRow({ executionState: "ambiguous" }));
+  mocks.renewPristineApproved.mockImplementation(async (input) =>
+    intentRow({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      decisionReason: "user approved exact Lighter deposit intent",
+      expiresAt: input.expiresAt,
+    }));
   mocks.leaseAssertOwned.mockResolvedValue(undefined);
   mocks.leaseRelease.mockResolvedValue(undefined);
   mocks.buildExecutionDeps.mockReturnValue({ marker: "execution-deps" });
@@ -472,6 +483,52 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
 
+  it("executes a pristine approved intent only through a freshly bound approval", async () => {
+    const pristineApproved = intentRow({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      decisionReason: "user approved exact Lighter deposit intent",
+    });
+    mocks.findByIntentId.mockResolvedValueOnce(pristineApproved);
+    mocks.acquireExecutionLease.mockResolvedValue({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValue({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValue({
+      status: "l2_pending",
+      approveTxHash: null,
+      depositTxHash: `0x${"b".repeat(64)}`,
+      reason: "exact Lighter evidence pending",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: pristineApproved.intentId },
+      approvedContext,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.assertApprovalBinding).toHaveBeenCalledWith({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: pristineApproved,
+    });
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
+    expect(mocks.executeApprovedDeposit).toHaveBeenCalledWith({
+      intent: pristineApproved,
+      deps: { marker: "execution-deps" },
+    });
+    expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
+  });
+
   it("reports an executor throw as ambiguous so approval runtime cannot claim failure", async () => {
     const depositHash = `0x${"b".repeat(64)}`;
     mocks.acquireExecutionLease.mockResolvedValue({
@@ -626,6 +683,44 @@ describe("lighter.deposit.prepare", () => {
     });
   });
 
+  it("renews a gate-closed pristine approval and requires a fresh approval card", async () => {
+    const gateClosedIntent = intentRow({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      decisionReason: "user approved exact Lighter deposit intent",
+    });
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "live_conflict",
+      intent: gateClosedIntent,
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      intentId: gateClosedIntent.intentId,
+      approvalReissued: true,
+    });
+    expect(mocks.renewPristineApproved).toHaveBeenCalledWith({
+      intentId: gateClosedIntent.intentId,
+      sessionId: "session-1",
+      expiresAt: expect.any(Date),
+    });
+    expect(result.preparedActionFollowUp).toMatchObject({
+      args: {
+        toolId: "lighter.deposit",
+        params: { intentId: gateClosedIntent.intentId },
+      },
+    });
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
   it.each([
     { sessionId: "session-2" },
     { approvalId: "approval-previous" },
@@ -644,6 +739,28 @@ describe("lighter.deposit.prepare", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("already unresolved");
+    expect(result.preparedActionFollowUp).toBeUndefined();
+  });
+
+  it("refuses to renew an approved intent after any transaction identity was staged", async () => {
+    mocks.createOrFind.mockResolvedValue({
+      outcome: "live_conflict",
+      intent: intentRow({
+        approvalId: "approval-previous",
+        approvalStatus: "approved",
+        executionState: "approved",
+        approveTxHash: `0x${"a".repeat(64)}`,
+      }),
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already unresolved in state approved");
+    expect(mocks.renewPristineApproved).not.toHaveBeenCalled();
     expect(result.preparedActionFollowUp).toBeUndefined();
   });
 

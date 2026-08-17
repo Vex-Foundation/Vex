@@ -237,6 +237,44 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(params).toEqual(["core", ROW.wallet_address]);
   });
 
+  it("renews only a pristine approved deposit without changing its audit binding", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const approvedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approved",
+      approval_id: "approval-previous",
+      decision_reason: "user approved exact Lighter deposit intent",
+      expires_at: expiresAt,
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [approvedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.renewPristineApprovedDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: ROW.session_id,
+      expiresAt,
+    });
+
+    expect(result).toMatchObject({
+      intentId: ROW.intent_id,
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      expiresAt,
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("approval_status = 'approved'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("approve_tx_hash IS NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("lighter_tx_hash IS NULL");
+    expect(sql).toContain("failure_reason IS NULL");
+    expect(sql).not.toContain("approval_id =");
+    expect(params).toEqual([ROW.intent_id, ROW.session_id, expiresAt]);
+  });
+
   it("scopes unresolved deposit status reads to capability and wallet", async () => {
     dbMocks.query.mockResolvedValueOnce([ROW]);
 
