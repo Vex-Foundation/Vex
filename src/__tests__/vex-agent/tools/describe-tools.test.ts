@@ -71,8 +71,13 @@ const SESSION = "describe-tools-suite";
  * the owner's extensive-descriptions decree, and the old headroom was already
  * exhausted before the batch (184,583 measured without it, 192,740 with it).
  * The guard's job is unchanged - a runaway manifest still fails here first.
+ *
+ * Raised 200,000 -> 210,000 on 2026-08-17 (owner decision, morpho E3b-1):
+ * morpho.vault.quote is the namespace's ninth extensive manifest; measured
+ * worst-legal 202,695 after 1,946 chars of redundancy were already trimmed
+ * without touching safety prose. Same guard, same job.
  */
-const DESCRIBE_RESULT_CHAR_BUDGET = 200_000;
+const DESCRIBE_RESULT_CHAR_BUDGET = 210_000;
 
 /** The env vars this suite pins, restored after every case. */
 const ENV_KEYS = [

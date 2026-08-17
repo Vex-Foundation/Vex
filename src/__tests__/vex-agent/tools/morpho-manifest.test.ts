@@ -1,8 +1,9 @@
 /**
  * Morpho manifest surface, mirroring `pendle-manifest.test.ts`.
  *
- * Three lanes ship: MARKETS (batch 1), VAULTS (batch 2), and PORTFOLIO (batch 3:
- * one wallet's positions, and the markets' transaction record). The tool-count
+ * Four lanes ship: MARKETS (batch 1), VAULTS (batch 2), PORTFOLIO (batch 3: one
+ * wallet's positions, and the markets' transaction record), and PREVIEW (E3b-1:
+ * pricing one vault operation without performing it). The tool-count
  * assertion is deliberate: a later batch adding a tool must update this list, so
  * a tool can never reach discovery without someone naming it here.
  */
@@ -14,6 +15,7 @@ import { MORPHO_MARKET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols
 import { MORPHO_VAULT_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/vault-reads.js";
 import { MORPHO_POSITION_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/position-reads.js";
 import { MORPHO_WALLET_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/wallet-reads.js";
+import { MORPHO_QUOTE_READ_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/morpho/quote-reads.js";
 import {
   PROTOCOL_NAMESPACE_ALLOWLIST,
   NAMESPACE_DEFAULTS,
@@ -21,6 +23,10 @@ import {
   getProtocolManifest,
 } from "../../../vex-agent/tools/protocols/catalog.js";
 import { NAMESPACE_LIFECYCLE } from "../../../vex-agent/tools/protocols/lifecycle.js";
+import {
+  VEX_DEFAULT_SLIPPAGE_BPS,
+  VEX_MAX_SLIPPAGE_BPS,
+} from "../../../vex-agent/tools/protocols/slippage-policy.js";
 import { MORPHO_CHAINS, MORPHO_SUPPORTED_CHAIN_SLUGS } from "../../../tools/morpho/chains.js";
 import { getKyberChains } from "../../../tools/kyberswap/chains.js";
 import { listLocalChains } from "../../../tools/evm-chains/registry.js";
@@ -34,6 +40,7 @@ const EXPECTED_TOOL_IDS = [
   "morpho.markets.activity",
   "morpho.rewards.get",
   "morpho.wallet.balance",
+  "morpho.vault.quote",
 ];
 
 /** Every discovery passage in the namespace, whichever lane module owns it. */
@@ -42,10 +49,11 @@ const MORPHO_DISCOVERY = {
   ...MORPHO_VAULT_READ_DISCOVERY,
   ...MORPHO_POSITION_READ_DISCOVERY,
   ...MORPHO_WALLET_READ_DISCOVERY,
+  ...MORPHO_QUOTE_READ_DISCOVERY,
 };
 
 describe("morpho manifest", () => {
-  it("declares exactly the markets, vaults and portfolio lanes", () => {
+  it("declares exactly the markets, vaults, portfolio and preview lanes", () => {
     expect(MORPHO_TOOLS).toHaveLength(EXPECTED_TOOL_IDS.length);
     expect(MORPHO_TOOLS.map((t) => t.toolId).sort()).toEqual([...EXPECTED_TOOL_IDS].sort());
   });
@@ -114,7 +122,15 @@ describe("morpho manifest", () => {
     // says a reward APR is not part of the lending rate instead of quoting one;
     // `morpho.wallet.balance` is an on-chain balance and allowance read that
     // touches no rate at all.
-    const NO_APY_TOOL_IDS = ["morpho.markets.activity", "morpho.rewards.get", "morpho.wallet.balance"];
+    const NO_APY_TOOL_IDS = [
+      "morpho.markets.activity",
+      "morpho.rewards.get",
+      "morpho.wallet.balance",
+      // The preview prices ONE operation at a point in time and returns no rate
+      // of any kind, so an APY-basis sentence here would be a claim the reply
+      // cannot support.
+      "morpho.vault.quote",
+    ];
     for (const tool of MORPHO_TOOLS) {
       if (NO_APY_TOOL_IDS.includes(tool.toolId)) continue;
       expect(tool.description, tool.toolId).toMatch(/EXCLUDE/);
@@ -152,6 +168,71 @@ describe("morpho manifest", () => {
     // a real vault does not exist when they guessed wrong.
     const get = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.get");
     expect(get?.params.map((p) => p.key)).not.toContain("version");
+  });
+
+  it("states the preview-only contract on the quote tool, in the description and in the classification", () => {
+    // The one claim that must survive every future edit to this manifest: a
+    // quote commits nothing. It is asserted three ways because a description
+    // sentence alone would not stop the tool being reclassified as mutating.
+    const quote = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.quote");
+    expect(quote?.mutating).toBe(false);
+    expect(quote?.actionKind).toBe("read");
+    expect(quote?.description).toMatch(/PREVIEW AND IT COMMITS NOTHING/);
+    expect(quote?.description).toMatch(/nothing is signed, nothing is sent/);
+  });
+
+  it("names the two different scales and the withdrawal-is-not-a-bundle fact on the quote tool", () => {
+    const quote = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.quote");
+    // Reading a share raw amount at the asset's scale is the thousandfold error.
+    expect(quote?.description).toMatch(/THE TWO SCALES ARE DIFFERENT/);
+    // A withdrawal has no bundle and no price guard, and neither absence is a bug.
+    expect(quote?.description).toMatch(/A DEPOSIT IS A BUNDLER3 MULTICALL; A WITHDRAWAL IS NOT/);
+    // A revert before the approval exists must never be reported as a broken vault.
+    expect(quote?.description).toMatch(/NOT A FAULT IN THE VAULT/);
+  });
+
+  it("surfaces the gated-vault hazard on the quote tool too, since a deposit is the act it gates", () => {
+    const quote = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.quote");
+    expect(quote?.description).toMatch(/withdrawal-gated vault/);
+    expect(quote?.description).toMatch(/UNKNOWN rather than absent/);
+  });
+
+  it("declares the amount pair as an ENFORCED exclusive group, not prose", () => {
+    const quote = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.quote");
+    expect(quote?.exclusiveParamGroups).toEqual([["depositAmountRaw", "withdrawAmountRaw"]]);
+    // Exactly-one, so neither amount may be marked required on its own.
+    for (const key of ["depositAmountRaw", "withdrawAmountRaw"]) {
+      expect(quote?.params.find((p) => p.key === key)?.required, key).not.toBe(true);
+    }
+    const direction = quote?.params.find((p) => p.key === "direction");
+    expect(direction?.required).toBe(true);
+    expect(direction?.enum).toEqual(["deposit", "withdraw"]);
+  });
+
+  it("writes its OWN decimals-source sentence on each raw amount, not the canonical one", () => {
+    // CANONICAL_RAW_AMOUNT_SENTENCE points at `token_find` and contains an em
+    // dash, which this namespace bans. Each amount must therefore name the
+    // vault ASSET's decimals itself, and must not name the SHARE decimals as
+    // the source, which is the wrong number sitting right next to the right one.
+    const quote = MORPHO_TOOLS.find((t) => t.toolId === "morpho.vault.quote");
+    for (const key of ["depositAmountRaw", "withdrawAmountRaw"]) {
+      const param = quote?.params.find((p) => p.key === key);
+      expect(param?.description, key).toMatch(/RAW base units/);
+      expect(param?.description, key).toMatch(/asset\.decimals/);
+      expect(param?.description, key).toMatch(/morpho\.vault\.get/);
+      expect(param?.description, key).not.toContain("token_find");
+    }
+  });
+
+  it("declares the quote slippage param as a bps number so a fractional value cannot pass", () => {
+    const slippage = MORPHO_TOOLS
+      .find((t) => t.toolId === "morpho.vault.quote")
+      ?.params.find((p) => p.key === "slippageBps");
+    expect(slippage?.type).toBe("number");
+    expect(slippage?.unit).toBe("bps");
+    // The default is interpolated from slippage-policy.ts, never written here.
+    expect(slippage?.description).toContain(`Default ${VEX_DEFAULT_SLIPPAGE_BPS}`);
+    expect(slippage?.description).toContain(`caps this at ${VEX_MAX_SLIPPAGE_BPS}`);
   });
 
   it("states the no-close-factor liquidation rule wherever a health factor is discussed", () => {

@@ -45,8 +45,13 @@ const SOLANA_LIST_CHAR_BUDGET = 21_000;
  * callable-shaped instead of a name the agent had to re-discover. Measured
  * cost on the worst case (pendle, 29 rows): 22.9k → 25.1k. Still a ratchet
  * against prose growth, and still far below the same namespace's full schema.
+ *
+ * Raised 27,500 -> 32,000 on 2026-08-17 (owner decision, morpho E3b-1): the
+ * morpho namespace reached nine deliberately thorough lending manifests under
+ * the extensive-descriptions decree and its lean list measured 30,808. The
+ * ratchet's job is unchanged - silent prose growth still fails here first.
  */
-const ANY_LIST_CHAR_BUDGET = 27_500;
+const ANY_LIST_CHAR_BUDGET = 32_000;
 
 describe("discover_tools namespace list mode", () => {
   const ENV_KEYS = [

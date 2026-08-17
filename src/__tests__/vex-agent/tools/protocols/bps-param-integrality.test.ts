@@ -246,9 +246,14 @@ describe("manifest bps declarations", () => {
     // which reject above the 1000 bps cap rather than clamping like the rest.
     // +2 since W3: the two Relay bridge tools, whose slippageBps moved from a
     // manifest STRING (which the bps gate never inspected) to number+unit.
-    expect(declared.length).toBe(31);
+    // +1 since E3b-1: `morpho.vault.quote`. It is a READ tool and still belongs
+    // here, because the gate is about the VALUE, not the side effect: its
+    // tolerance becomes the on-chain `maxSharePrice` ceiling of a transaction
+    // the agent is about to be told to send, so a fractional value would
+    // silently widen the very guard the preview exists to report.
+    expect(declared.length).toBe(32);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
     );
   });
 

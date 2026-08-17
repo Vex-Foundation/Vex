@@ -7,8 +7,10 @@
  * PORTFOLIO: what one wallet already holds, and the transaction record of the
  * markets themselves. WALLET: the two reads that sit beside the position rather
  * than inside it - the reward campaigns a wallet can claim, and what it holds
- * and has already approved before it acts. All eight are read-only; nothing in
- * this namespace signs or spends today.
+ * and has already approved before it acts. PREVIEW: one tool that prices a
+ * specific deposit into or withdrawal from a vault, building and decoding the
+ * exact transaction without signing or sending it. All nine are read-only;
+ * nothing in this namespace signs or spends today.
  *
  * One module per tool under `./manifests/`, composed here, so a tool's contract
  * and its long description live in a file named after the tool.
@@ -23,6 +25,7 @@ import { MORPHO_POSITIONS_GET_TOOL } from "./manifests/positions-get.js";
 import { MORPHO_MARKETS_ACTIVITY_TOOL } from "./manifests/markets-activity.js";
 import { MORPHO_REWARDS_GET_TOOL } from "./manifests/rewards-get.js";
 import { MORPHO_WALLET_BALANCE_TOOL } from "./manifests/wallet-balance.js";
+import { MORPHO_VAULT_QUOTE_TOOL } from "./manifests/vault-quote.js";
 
 export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_MARKETS_DISCOVER_TOOL,
@@ -33,4 +36,5 @@ export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_MARKETS_ACTIVITY_TOOL,
   MORPHO_REWARDS_GET_TOOL,
   MORPHO_WALLET_BALANCE_TOOL,
+  MORPHO_VAULT_QUOTE_TOOL,
 ];

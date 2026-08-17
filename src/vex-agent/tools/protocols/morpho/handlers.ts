@@ -15,6 +15,7 @@ import { morphoPositionsGet } from "./handlers/positions-get.js";
 import { morphoMarketsActivity } from "./handlers/markets-activity.js";
 import { morphoRewardsGet } from "./handlers/rewards-get.js";
 import { morphoWalletBalance } from "./handlers/wallet-balance.js";
+import { morphoVaultQuote } from "./handlers/vault-quote.js";
 
 export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.markets.discover": (params, context) =>
@@ -34,4 +35,6 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   // No abortSignal: the wallet read is an RPC batch through viem's own transport,
   // which owns its timeout and takes no signal from us.
   "morpho.wallet.balance": (params) => morphoWalletBalance(params),
+  "morpho.vault.quote": (params, context) =>
+    morphoVaultQuote(params, context.abortSignal ? { abortSignal: context.abortSignal } : {}),
 };

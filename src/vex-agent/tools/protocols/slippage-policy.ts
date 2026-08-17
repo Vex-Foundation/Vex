@@ -177,6 +177,50 @@ export function resolveRelaySlippageBps(subject: string, raw: unknown): { ok: tr
 }
 
 /**
+ * Resolve the EFFECTIVE Morpho vault slippage tolerance from untrusted params.
+ *
+ * NO `MORPHO_MAX_SLIPPAGE_BPS` CONSTANT EXISTS, and its absence is the decision
+ * rather than an omission. `effectiveMaxSlippageBps` takes a venue maximum only
+ * when the venue publishes one below Vex's; the Morpho SDK takes the tolerance
+ * as a WAD fraction and documents no ceiling at all, so inventing a number here
+ * would be a guess dressed as a policy. Vex's own 1000 bps ceiling binds on its
+ * own, which is the fail-safe reading the function's own contract names.
+ *
+ * An OMITTED value resolves to {@link VEX_DEFAULT_SLIPPAGE_BPS} and is passed
+ * down EXPLICITLY. `src/tools/morpho/mutations` holds no default of its own by
+ * construction (it cannot import `src/vex-agent`), so a tolerance this function
+ * failed to resolve would not be silently replaced downstream; it would be a
+ * missing argument on a price guard.
+ *
+ * WHAT THE TOLERANCE ACTUALLY GUARDS ON A VAULT DEPOSIT, because it is not the
+ * swap meaning of the word: it raises the `maxSharePrice` ceiling the deposit
+ * adapter enforces on chain, so it bounds how much worse the share price may be
+ * than the one this preview read. A withdrawal is a direct vault call with no
+ * share-price leg, so the value is accepted, echoed and simply has nothing to
+ * bind on there.
+ *
+ * @returns the effective bps value, or an agent-actionable rejection reason.
+ */
+export function resolveMorphoSlippageBps(
+  subject: string,
+  raw: unknown,
+): { ok: true; bps: number } | { ok: false; reason: string } {
+  if (raw === undefined || raw === null || raw === "") {
+    return { ok: true, bps: VEX_DEFAULT_SLIPPAGE_BPS };
+  }
+  if (typeof raw !== "number") {
+    return {
+      ok: false,
+      reason:
+        `${subject} must be a NUMBER of basis points (e.g. ${VEX_DEFAULT_SLIPPAGE_BPS}), not a ${typeof raw}; `
+        + `1 bps = 0.01%, so ${VEX_DEFAULT_SLIPPAGE_BPS / 100}% is ${VEX_DEFAULT_SLIPPAGE_BPS}.`,
+    };
+  }
+  const violation = checkSlippageBps(subject, raw);
+  return violation ? { ok: false, reason: violation } : { ok: true, bps: raw };
+}
+
+/**
  * Name the correct form for the value the caller most plausibly meant, WITHOUT
  * choosing it for them — the common mistake is passing a percentage into a bps
  * field. Silent unless the percent reading is itself a whole number of bps.

@@ -53,3 +53,8 @@ export {
   type MorphoWalletBalanceQuery,
   parseMorphoWalletBalanceParams,
 } from "./read-params/wallet.js";
+
+export {
+  type MorphoVaultQuoteQuery,
+  parseMorphoVaultQuoteParams,
+} from "./read-params/quote.js";

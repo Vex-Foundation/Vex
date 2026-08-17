@@ -169,6 +169,24 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // the narrower view and accepts the incompleteness. Naming the protocol in
   // the key is what stops it being read as a generic switch.
   ["morphoOnly", "narrow a multi-protocol reward read to campaigns attributed to Morpho alone"],
+
+  // -- Which way an operation moves (morpho vault quote, E3b-1) ----
+  //
+  // `direction` was never a convention DEFECT; it was simply never ratified,
+  // so the two pendle manifests that already ship it carried allowlist debt
+  // instead. Ratifying it here is what removes those two entries.
+  //
+  // It earns a key rather than being inferred from which amount param arrived,
+  // even though the amount key alone would determine it. On a money path the
+  // caller's STATED intent and the amount it sent are two independent facts,
+  // and a call that says withdraw while sending a deposit amount is a caller
+  // that has confused itself. Deriving the direction silently would resolve
+  // that confusion in the caller's favour and act on the amount; requiring both
+  // lets the mismatch be refused by name, which is rules/90's rule for a
+  // money-path parameter disagreement.
+  //
+  // The accepted set is ALWAYS declared as an `enum`, never left in prose.
+  ["direction", "which way an operation moves value; the accepted set is declared as an `enum`"],
 ]);
 
 /**

@@ -73,3 +73,15 @@ export {
   summariseActivity,
   type ProjectedActivityRow,
 } from "./projectors/activity.js";
+
+export {
+  MORPHO_QUOTE_GAS_NOTE,
+  MORPHO_QUOTE_DEPOSIT_GATING_WARNING,
+  MORPHO_QUOTE_GATING_WARNING,
+  MORPHO_QUOTE_GOVERNANCE_UNKNOWN_NOTE,
+  MORPHO_QUOTE_PREVIEW_NOTE,
+  projectQuoteGovernance,
+  summariseQuote,
+  type MorphoQuoteGovernance,
+  type ProjectedQuoteGovernance,
+} from "./projectors/quote.js";
