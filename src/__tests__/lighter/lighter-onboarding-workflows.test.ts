@@ -145,4 +145,22 @@ describe("Lighter onboarding workflow foundation", () => {
     expect(sql).toContain("INSERT INTO lighter_onboarding_workflows");
     expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
   });
+
+  it("backfills upgraded deposit workflows from durable public evidence", async () => {
+    const sql = await readFile(
+      new URL(
+        "../../vex-agent/db/migrations/092_lighter_workflow_deposit_backfill.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(sql).toContain("DISTINCT ON (environment, LOWER(wallet_address))");
+    expect(sql).toContain("deposit.execution_state = 'deposit_submitted'");
+    expect(sql).toContain("THEN 'deposit_staged'");
+    expect(sql).toContain("deposit.execution_state = 'ambiguous'");
+    expect(sql).toContain("active_deposit_intent_id = deposit.intent_id");
+    expect(sql).toContain("resolved_account_index = deposit.resolved_account_index");
+    expect(sql).not.toMatch(/private_key|signed_payload|auth_token/i);
+  });
 });

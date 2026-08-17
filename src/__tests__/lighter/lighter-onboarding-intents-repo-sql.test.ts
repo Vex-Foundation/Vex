@@ -38,6 +38,21 @@ const ROW = {
   expires_at: new Date("2030-01-01T00:15:00.000Z"),
 };
 
+const WORKFLOW_ROW = {
+  environment: "core",
+  wallet_address: ROW.wallet_address.toLowerCase(),
+  workflow_state: "deposit_approval_pending",
+  last_stable_state: "deposit_approval_pending",
+  active_deposit_intent_id: ROW.intent_id,
+  resolved_account_index: null,
+  api_key_index: null,
+  public_key_fingerprint: null,
+  failure_code: null,
+  revision: 1,
+  created_at: ROW.created_at,
+  updated_at: ROW.updated_at,
+};
+
 const INPUT: repo.CreateDepositIntentInput = {
   sessionId: "session-1",
   environment: "core",
@@ -58,7 +73,9 @@ beforeEach(() => {
 describe("lighter onboarding intent creation SQL", () => {
   it("creates through a caller-bound client with conflict-safe insertion", async () => {
     const client = {
-      query: vi.fn().mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [WORKFLOW_ROW], rowCount: 1 }),
     };
 
     const result = await repo.createOrFindLiveDepositApprovalPendingWith(
@@ -69,7 +86,9 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(result).toMatchObject({ outcome: "created", intent: { intentId: ROW.intent_id } });
     const [sql] = client.query.mock.calls[0]!;
     expect(sql).toContain("ON CONFLICT DO NOTHING");
-    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query).toHaveBeenCalledTimes(2);
+    const [workflowSql] = client.query.mock.calls[1]!;
+    expect(workflowSql).toContain("workflow_state = ANY($3)");
   });
 
   it("returns the live conflicting row after losing the unique-index race", async () => {
@@ -113,7 +132,12 @@ describe("lighter onboarding intent creation SQL", () => {
 
   it("reconciles an approval receipt only against its staged hash and pre-deposit states", async () => {
     const client = {
-      query: vi.fn().mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "approve_confirmed" }],
+          rowCount: 1,
+        }),
     };
     const txHash = `0x${"a".repeat(64)}`;
 
@@ -132,7 +156,16 @@ describe("lighter onboarding intent creation SQL", () => {
 
   it("reconciles deposit credit only after the hash-bound confirmed state", async () => {
     const client = {
-      query: vi.fn().mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...WORKFLOW_ROW,
+            workflow_state: "account_resolved",
+            resolved_account_index: 800123,
+          }],
+          rowCount: 1,
+        }),
     };
     const txHash = `0x${"b".repeat(64)}`;
 
@@ -146,5 +179,21 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
     expect(sql).toContain("execution_state = 'deposit_confirmed'");
     expect(params).toEqual([ROW.intent_id, txHash, 800123]);
+  });
+
+  it("throws when the wallet workflow CAS rejects an otherwise valid intent transition", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{ ...ROW, execution_state: "allowance_verified" }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }),
+    };
+
+    await expect(
+      repo.markAllowanceVerifiedWith(client as never, ROW.intent_id),
+    ).rejects.toThrow("workflow rejected allowance_verified");
+    expect(client.query).toHaveBeenCalledTimes(2);
   });
 });

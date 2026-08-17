@@ -11,6 +11,10 @@ import type { PoolClient } from "pg";
 
 import { query, queryOne } from "../client.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
+import {
+  transitionLighterOnboardingWorkflowWith,
+  type LighterOnboardingWorkflowState,
+} from "./lighter-onboarding-workflows.js";
 
 export type LighterOnboardingCapability = "deposit" | "key_registration" | "swap" | "withdrawal";
 
@@ -123,7 +127,17 @@ export async function createOrFindLiveDepositApprovalPendingWith(
   ]);
   const created = inserted.rows[0];
   if (created !== undefined) {
-    return { outcome: "created", intent: mapRow(created) };
+    const intent = mapRow(created);
+    await requireDepositWorkflowTransition(client, intent, {
+      expectedStates: [
+        "integration_enabled",
+        "account_resolved",
+        "ready_to_trade",
+        "failed",
+      ],
+      nextState: "deposit_approval_pending",
+    });
+    return { outcome: "created", intent };
   }
 
   const existing = await client.query<Record<string, unknown>>(
@@ -192,7 +206,18 @@ export async function markApprovalDecisionWith(
     [input.intentId, input.decision, input.approvalId ?? null, input.protocolExecutionId ?? null, input.reason ?? null],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  if (input.decision !== "approved") {
+    await requireDepositWorkflowTransition(client, intent, {
+      expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
+      nextState: "failed",
+      failureCode: input.decision === "rejected"
+        ? "deposit_approval_rejected"
+        : "deposit_approval_expired",
+    });
+  }
+  return intent;
 }
 
 /** Persist an approve tx hash before broadcast; only from the approved state. */
@@ -208,8 +233,11 @@ export async function markApproveSubmittedWith(
   intentId: string,
   approveTxHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(client, intentId, "approve_submitted", ["approved"], {
+  return advanceDepositWith(client, intentId, "approve_submitted", ["approved"], {
     approve_tx_hash: approveTxHash,
+  }, {
+    expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
+    nextState: "approve_staged",
   });
 }
 
@@ -221,7 +249,14 @@ export async function markApproveConfirmedWith(
   client: PoolClient,
   intentId: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(client, intentId, "approve_confirmed", ["approve_submitted"]);
+  return advanceDepositWith(
+    client,
+    intentId,
+    "approve_confirmed",
+    ["approve_submitted"],
+    {},
+    { expectedStates: ["approve_staged", "ambiguous"], nextState: "approve_confirmed" },
+  );
 }
 
 /** Record that the live on-chain allowance already covered this exact amount. */
@@ -235,7 +270,17 @@ export async function markAllowanceVerifiedWith(
   client: PoolClient,
   intentId: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(client, intentId, "allowance_verified", ["approved"]);
+  return advanceDepositWith(
+    client,
+    intentId,
+    "allowance_verified",
+    ["approved"],
+    {},
+    {
+      expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
+      nextState: "allowance_verified",
+    },
+  );
 }
 
 /** Persist a deposit tx hash before broadcast; only after allowance is proven. */
@@ -253,12 +298,16 @@ export async function markDepositSubmittedWith(
   intentId: string,
   depositTxHash: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(
+  return advanceDepositWith(
     client,
     intentId,
     "deposit_submitted",
     ["approve_confirmed", "allowance_verified"],
     { deposit_tx_hash: depositTxHash },
+    {
+      expectedStates: ["approve_confirmed", "allowance_verified"],
+      nextState: "deposit_staged",
+    },
   );
 }
 
@@ -270,7 +319,17 @@ export async function markDepositConfirmedWith(
   client: PoolClient,
   intentId: string,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(client, intentId, "deposit_confirmed", ["deposit_submitted"]);
+  return advanceDepositWith(
+    client,
+    intentId,
+    "deposit_confirmed",
+    ["deposit_submitted"],
+    {},
+    {
+      expectedStates: ["deposit_staged", "ambiguous"],
+      nextState: "deposit_l2_pending",
+    },
+  );
 }
 
 export async function markCredited(
@@ -285,9 +344,18 @@ export async function markCreditedWith(
   intentId: string,
   resolvedAccountIndex: number,
 ): Promise<LighterOnboardingIntentRow | null> {
-  return advanceWith(client, intentId, "credited", ["deposit_confirmed"], {
-    resolved_account_index: resolvedAccountIndex,
-  });
+  return advanceDepositWith(
+    client,
+    intentId,
+    "credited",
+    ["deposit_confirmed"],
+    { resolved_account_index: resolvedAccountIndex },
+    {
+      expectedStates: ["deposit_l2_pending", "ambiguous"],
+      nextState: "account_resolved",
+      resolvedAccountIndex,
+    },
+  );
 }
 
 export async function markAmbiguous(
@@ -317,7 +385,23 @@ export async function markAmbiguousWith(
     [intentId, reason],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: [
+      "deposit_approval_pending",
+      "deposit_preflight_validated",
+      "allowance_verified",
+      "approve_staged",
+      "approve_confirmed",
+      "deposit_staged",
+      "deposit_l1_confirmed",
+      "deposit_l2_pending",
+    ],
+    nextState: "ambiguous",
+    failureCode: "deposit_outcome_ambiguous",
+  });
+  return intent;
 }
 
 export async function markFailed(
@@ -347,7 +431,24 @@ export async function markFailedWith(
     [intentId, reason],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: [
+      "deposit_approval_pending",
+      "deposit_preflight_validated",
+      "allowance_verified",
+      "approve_staged",
+      "approve_confirmed",
+      "deposit_staged",
+      "deposit_l1_confirmed",
+      "deposit_l2_pending",
+      "ambiguous",
+    ],
+    nextState: "failed",
+    failureCode: "deposit_failed",
+  });
+  return intent;
 }
 
 export async function findByIntentId(intentId: string): Promise<LighterOnboardingIntentRow | null> {
@@ -414,7 +515,19 @@ export async function reconcileApproveReceiptWith(
     [input.intentId, input.txHash, next, reason],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, input.outcome === "confirmed"
+    ? {
+        expectedStates: ["approve_staged", "ambiguous"],
+        nextState: "approve_confirmed",
+      }
+    : {
+        expectedStates: ["approve_staged", "ambiguous"],
+        nextState: "failed",
+        failureCode: "approve_transaction_reverted",
+      });
+  return intent;
 }
 
 export async function reconcileDepositReceiptWith(
@@ -441,7 +554,19 @@ export async function reconcileDepositReceiptWith(
     [input.intentId, input.txHash, next, reason],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, input.outcome === "confirmed"
+    ? {
+        expectedStates: ["deposit_staged", "ambiguous"],
+        nextState: "deposit_l2_pending",
+      }
+    : {
+        expectedStates: ["deposit_staged", "ambiguous"],
+        nextState: "failed",
+        failureCode: "deposit_transaction_reverted",
+      });
+  return intent;
 }
 
 export async function reconcileCreditedWith(
@@ -465,7 +590,14 @@ export async function reconcileCreditedWith(
     [input.intentId, input.txHash, input.accountIndex],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_l2_pending", "ambiguous"],
+    nextState: "account_resolved",
+    resolvedAccountIndex: input.accountIndex,
+  });
+  return intent;
 }
 
 /** Guarded CAS advance: only from an allowed prior state. */
@@ -487,12 +619,17 @@ async function advance(
   return row ? mapRow(row) : null;
 }
 
-async function advanceWith(
+async function advanceDepositWith(
   client: PoolClient,
   intentId: string,
   next: LighterOnboardingExecutionState,
   from: LighterOnboardingExecutionState[],
   set: Record<string, unknown> = {},
+  workflow: {
+    readonly expectedStates: readonly LighterOnboardingWorkflowState[];
+    readonly nextState: LighterOnboardingWorkflowState;
+    readonly resolvedAccountIndex?: number | null;
+  },
 ): Promise<LighterOnboardingIntentRow | null> {
   const columns = Object.keys(set);
   const setClauses = columns.map((col, i) => `${col} = $${i + 3}`);
@@ -504,7 +641,36 @@ async function advanceWith(
     [intentId, next, ...columns.map((c) => set[c]), from],
   );
   const row = result.rows[0];
-  return row === undefined ? null : mapRow(row);
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, workflow);
+  return intent;
+}
+
+async function requireDepositWorkflowTransition(
+  client: PoolClient,
+  intent: LighterOnboardingIntentRow,
+  input: {
+    readonly expectedStates: readonly LighterOnboardingWorkflowState[];
+    readonly nextState: LighterOnboardingWorkflowState;
+    readonly resolvedAccountIndex?: number | null;
+    readonly failureCode?: string | null;
+  },
+): Promise<void> {
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: input.expectedStates,
+    nextState: input.nextState,
+    activeDepositIntentId: intent.intentId,
+    resolvedAccountIndex: input.resolvedAccountIndex,
+    failureCode: input.failureCode,
+  });
+  if (workflow === null) {
+    throw new Error(
+      `Lighter onboarding workflow rejected ${input.nextState} for intent ${intent.intentId}.`,
+    );
+  }
 }
 
 function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {

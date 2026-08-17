@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closePool, execute } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { ensureLighterOnboardingWorkflowEnabledWith } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
@@ -33,8 +34,9 @@ async function newSession(): Promise<string> {
 
 async function newDepositIntent(sessionId: string) {
   const wallet = walletForSession(sessionId);
-  const created = await withSessionControlLock(sessionId, (client) =>
-    repo.createOrFindLiveDepositApprovalPendingWith(client, {
+  const created = await withSessionControlLock(sessionId, async (client) => {
+    await ensureLighterOnboardingWorkflowEnabledWith(client, "core", wallet);
+    return repo.createOrFindLiveDepositApprovalPendingWith(client, {
       sessionId,
       environment: "core",
       walletAddress: wallet,
@@ -45,8 +47,8 @@ async function newDepositIntent(sessionId: string) {
       routeType: 0,
       amountUnits: "11000000",
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    }),
-  );
+    });
+  });
   expect(created.outcome).toBe("created");
   return created.intent!;
 }
