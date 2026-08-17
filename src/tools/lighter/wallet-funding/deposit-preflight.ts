@@ -74,10 +74,11 @@ const ERC20_PREFLIGHT_ABI = [
 const ETHEREUM_USDC_ALLOWANCE_STORAGE_SLOT = 10n;
 
 /**
- * Independent compile-time boundary for the unfinished pre-sign enforcement
- * slice. Opening the operator release environment variable cannot bypass it.
+ * Independent compile-time boundary for the verified fee, replacement, and
+ * canonical-receipt enforcement path. The operator gate remains separately
+ * default-closed and cannot weaken these checks.
  */
-export const LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE = false;
+export const LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE = true;
 
 /** Runtime accessor used by the privileged handler before it resolves a key. */
 export function isLighterDepositFeePreflightComplete(): boolean {

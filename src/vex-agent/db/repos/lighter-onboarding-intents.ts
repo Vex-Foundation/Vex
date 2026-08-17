@@ -41,6 +41,19 @@ export type LighterOnboardingExecutionState =
   | "ambiguous"
   | "failed";
 
+export interface LighterStagedEvmTransaction {
+  readonly txHash: string;
+  readonly fromAddress: string;
+  readonly nonce: number;
+}
+
+export interface LighterReplacementTransaction {
+  readonly originalTxHash: string;
+  readonly replacementTxHash: string;
+  readonly reason: "repriced";
+  readonly observedAt: Date;
+}
+
 export interface LighterOnboardingIntentRow {
   readonly intentId: string;
   readonly sessionId: string;
@@ -77,7 +90,17 @@ export interface LighterOnboardingIntentRow {
   readonly approvalStatus: LighterOnboardingApprovalStatus;
   readonly executionState: LighterOnboardingExecutionState;
   readonly approveTxHash: string | null;
+  readonly approveTxFrom: string | null;
+  readonly approveTxNonce: string | null;
+  readonly approveReplacementTxHash: string | null;
+  readonly approveReplacementReason: "repriced" | null;
+  readonly approveReplacementObservedAt: Date | null;
   readonly depositTxHash: string | null;
+  readonly depositTxFrom: string | null;
+  readonly depositTxNonce: string | null;
+  readonly depositReplacementTxHash: string | null;
+  readonly depositReplacementReason: "repriced" | null;
+  readonly depositReplacementObservedAt: Date | null;
   readonly depositL1BlockHash: string | null;
   readonly depositL1BlockNumber: string | null;
   readonly depositEventAccountIndex: number | null;
@@ -128,7 +151,12 @@ const RETURNING = `
   preflight_approve_max_fee_wei, preflight_deposit_max_fee_wei,
   preflight_total_max_fee_wei, preflight_native_reserve_wei,
   preflight_required_native_balance_wei,
-  approval_status, execution_state, approve_tx_hash, deposit_tx_hash, resolved_account_index,
+  approval_status, execution_state,
+  approve_tx_hash, approve_tx_from, approve_tx_nonce,
+  approve_replacement_tx_hash, approve_replacement_reason, approve_replacement_observed_at,
+  deposit_tx_hash, deposit_tx_from, deposit_tx_nonce,
+  deposit_replacement_tx_hash, deposit_replacement_reason, deposit_replacement_observed_at,
+  resolved_account_index,
   deposit_l1_block_hash, deposit_l1_block_number, deposit_event_account_index,
   lighter_tx_hash, lighter_tx_status, lighter_block_height, lighter_executed_at,
   lighter_evidence_observed_at,
@@ -277,10 +305,12 @@ export async function markApprovalDecisionWith(
 export async function markApproveSubmittedWith(
   client: LighterOnboardingQueryClient,
   intentId: string,
-  approveTxHash: string,
+  transaction: LighterStagedEvmTransaction,
 ): Promise<LighterOnboardingIntentRow | null> {
   return advanceDepositWith(client, intentId, "approve_submitted", ["approved"], {
-    approve_tx_hash: approveTxHash,
+    approve_tx_hash: transaction.txHash,
+    approve_tx_from: transaction.fromAddress,
+    approve_tx_nonce: transaction.nonce,
   }, {
     expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
     nextState: "approve_staged",
@@ -323,19 +353,39 @@ export async function markAllowanceVerifiedWith(
 export async function markDepositSubmittedWith(
   client: LighterOnboardingQueryClient,
   intentId: string,
-  depositTxHash: string,
+  transaction: LighterStagedEvmTransaction,
 ): Promise<LighterOnboardingIntentRow | null> {
   return advanceDepositWith(
     client,
     intentId,
     "deposit_submitted",
     ["approve_confirmed", "allowance_verified"],
-    { deposit_tx_hash: depositTxHash },
+    {
+      deposit_tx_hash: transaction.txHash,
+      deposit_tx_from: transaction.fromAddress,
+      deposit_tx_nonce: transaction.nonce,
+    },
     {
       expectedStates: ["approve_confirmed", "allowance_verified"],
       nextState: "deposit_staged",
     },
   );
+}
+
+export async function recordApproveReplacementWith(
+  client: LighterOnboardingQueryClient,
+  intentId: string,
+  replacement: LighterReplacementTransaction,
+): Promise<LighterOnboardingIntentRow | null> {
+  return recordReplacementWith(client, "approve", intentId, replacement);
+}
+
+export async function recordDepositReplacementWith(
+  client: LighterOnboardingQueryClient,
+  intentId: string,
+  replacement: LighterReplacementTransaction,
+): Promise<LighterOnboardingIntentRow | null> {
+  return recordReplacementWith(client, "deposit", intentId, replacement);
 }
 
 export async function markDepositConfirmedWith(
@@ -352,7 +402,7 @@ export async function markDepositConfirmedWith(
             failure_reason = NULL,
             updated_at = NOW()
       WHERE intent_id = $1
-        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)
         AND LOWER(wallet_address) = LOWER($6)
         AND asset_index = $7
         AND route_type = $8
@@ -403,7 +453,7 @@ export async function markDepositCreditedWith(
             updated_at = NOW()
       WHERE intent_id = $1
         AND execution_state = 'deposit_confirmed'
-        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)
         AND LOWER(deposit_l1_block_hash) = LOWER($8)
         AND deposit_l1_block_number = $9
         AND deposit_event_account_index = $3
@@ -456,7 +506,44 @@ export async function recordConfirmedDepositL1EvidenceWith(
         AND deposit_l1_block_hash IS NULL
         AND deposit_l1_block_number IS NULL
         AND deposit_event_account_index IS NULL
-        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)
+        AND LOWER(wallet_address) = LOWER($6)
+        AND asset_index = $7
+        AND route_type = $8
+        AND amount_units = $9
+      RETURNING ${RETURNING}`,
+    [
+      intentId,
+      evidence.txHash,
+      evidence.blockHash,
+      evidence.blockNumber,
+      evidence.accountIndex,
+      evidence.walletAddress,
+      evidence.assetIndex,
+      evidence.routeType,
+      evidence.amountUnits,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+/** Rebind a still-uncredited confirmed deposit to its latest canonical block evidence. */
+export async function reconcileConfirmedDepositL1EvidenceWith(
+  client: LighterOnboardingQueryClient,
+  intentId: string,
+  evidence: LighterDepositL1Evidence,
+): Promise<LighterOnboardingIntentRow | null> {
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET deposit_l1_block_hash = $3,
+            deposit_l1_block_number = $4,
+            deposit_event_account_index = $5,
+            failure_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND execution_state = 'deposit_confirmed'
+        AND LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)
         AND LOWER(wallet_address) = LOWER($6)
         AND asset_index = $7
         AND route_type = $8
@@ -600,7 +687,7 @@ export async function reconcileApproveReceiptWith(
             failure_reason = $4,
             updated_at = NOW()
       WHERE intent_id = $1
-        AND LOWER(approve_tx_hash) = LOWER($2)
+        AND LOWER(COALESCE(approve_replacement_tx_hash, approve_tx_hash)) = LOWER($2)
         AND deposit_tx_hash IS NULL
         AND execution_state IN ('approve_submitted', 'ambiguous')
       RETURNING ${RETURNING}`,
@@ -649,7 +736,7 @@ export async function reconcileDepositReceiptWith(
             failure_reason = $4,
             updated_at = NOW()
       WHERE intent_id = $1
-        AND LOWER(deposit_tx_hash) = LOWER($2)
+        AND LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)
         AND execution_state IN ('deposit_submitted', 'ambiguous')
       RETURNING ${RETURNING}`,
     [input.intentId, input.txHash, next, reason],
@@ -663,6 +750,48 @@ export async function reconcileDepositReceiptWith(
     failureCode: "deposit_transaction_reverted",
   });
   return intent;
+}
+
+async function recordReplacementWith(
+  client: LighterOnboardingQueryClient,
+  stage: "approve" | "deposit",
+  intentId: string,
+  replacement: LighterReplacementTransaction,
+): Promise<LighterOnboardingIntentRow | null> {
+  const prefix = stage === "approve" ? "approve" : "deposit";
+  const allowedStates = stage === "approve"
+    ? ["approve_submitted", "ambiguous"]
+    : ["deposit_submitted", "ambiguous"];
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET ${prefix}_replacement_tx_hash = $3,
+            ${prefix}_replacement_reason = $4,
+            ${prefix}_replacement_observed_at = COALESCE(
+              ${prefix}_replacement_observed_at,
+              $5
+            ),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND LOWER(${prefix}_tx_hash) = LOWER($2)
+        AND ${prefix}_tx_from IS NOT NULL
+        AND ${prefix}_tx_nonce IS NOT NULL
+        AND execution_state = ANY($6)
+        AND (
+          ${prefix}_replacement_tx_hash IS NULL
+          OR LOWER(${prefix}_replacement_tx_hash) = LOWER($3)
+        )
+      RETURNING ${RETURNING}`,
+    [
+      intentId,
+      replacement.originalTxHash,
+      replacement.replacementTxHash,
+      replacement.reason,
+      replacement.observedAt,
+      allowedStates,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
 }
 
 async function advanceDepositWith(
@@ -778,7 +907,29 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     approvalStatus: row.approval_status as LighterOnboardingApprovalStatus,
     executionState: row.execution_state as LighterOnboardingExecutionState,
     approveTxHash: row.approve_tx_hash === null ? null : String(row.approve_tx_hash),
+    approveTxFrom: nullableString(row.approve_tx_from),
+    approveTxNonce: nullableString(row.approve_tx_nonce),
+    approveReplacementTxHash: nullableString(row.approve_replacement_tx_hash),
+    approveReplacementReason: row.approve_replacement_reason === null
+      || row.approve_replacement_reason === undefined
+      ? null
+      : "repriced",
+    approveReplacementObservedAt: row.approve_replacement_observed_at === null
+      || row.approve_replacement_observed_at === undefined
+      ? null
+      : row.approve_replacement_observed_at as Date,
     depositTxHash: row.deposit_tx_hash === null ? null : String(row.deposit_tx_hash),
+    depositTxFrom: nullableString(row.deposit_tx_from),
+    depositTxNonce: nullableString(row.deposit_tx_nonce),
+    depositReplacementTxHash: nullableString(row.deposit_replacement_tx_hash),
+    depositReplacementReason: row.deposit_replacement_reason === null
+      || row.deposit_replacement_reason === undefined
+      ? null
+      : "repriced",
+    depositReplacementObservedAt: row.deposit_replacement_observed_at === null
+      || row.deposit_replacement_observed_at === undefined
+      ? null
+      : row.deposit_replacement_observed_at as Date,
     depositL1BlockHash: row.deposit_l1_block_hash === null ? null : String(row.deposit_l1_block_hash),
     depositL1BlockNumber: row.deposit_l1_block_number === null ? null : String(row.deposit_l1_block_number),
     depositEventAccountIndex: row.deposit_event_account_index === null
@@ -816,4 +967,12 @@ function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
 
 function nullableString(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
+}
+
+export function effectiveApproveTxHash(intent: LighterOnboardingIntentRow): string | null {
+  return intent.approveReplacementTxHash ?? intent.approveTxHash;
+}
+
+export function effectiveDepositTxHash(intent: LighterOnboardingIntentRow): string | null {
+  return intent.depositReplacementTxHash ?? intent.depositTxHash;
 }

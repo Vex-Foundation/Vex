@@ -40,7 +40,8 @@ import { keccak256 } from "viem";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
-  waitForReceiptWithRetry,
+  waitForReceiptWithReplacementEvidence,
+  type ReceiptReplacementEvidence,
   type ReceiptWaitRetryOptions,
 } from "@tools/evm-chains/receipt-guard.js";
 import {
@@ -71,8 +72,18 @@ export interface StagedSendHandles {
 }
 
 export type StagedBroadcastOutcome =
-  | { readonly kind: "confirmed"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
-  | { readonly kind: "reverted"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
+  | {
+      readonly kind: "confirmed";
+      readonly txHash: Hex;
+      readonly receipt: TransactionReceipt;
+      readonly replacement?: ReceiptReplacementEvidence;
+    }
+  | {
+      readonly kind: "reverted";
+      readonly txHash: Hex;
+      readonly receipt: TransactionReceipt;
+      readonly replacement?: ReceiptReplacementEvidence;
+    }
   | {
       readonly kind: "ambiguous";
       readonly txHash: Hex;
@@ -238,10 +249,48 @@ export async function signStageBroadcast(
   // transient wait failure left an already-mined swap recorded `pending`.
   // The broadcast above is never re-sent — only this read repeats.
   try {
-    const receipt = await waitForReceiptWithRetry(publicClient, txHash, receiptWaitRetry);
+    const waited = await waitForReceiptWithReplacementEvidence(
+      publicClient,
+      txHash,
+      receiptWaitRetry,
+    );
+    const { receipt, replacement } = waited;
+    if (
+      replacement !== null
+      && (
+        replacement.reason !== "repriced"
+        || replacement.replacedTxHash.toLowerCase() !== txHash.toLowerCase()
+        || replacement.fromAddress.toLowerCase() !== account.address.toLowerCase()
+        || replacement.nonce !== nonce
+        || replacement.to === null
+        || replacement.to.toLowerCase() !== txParams.to.toLowerCase()
+        || replacement.data.toLowerCase() !== txParams.data.toLowerCase()
+        || replacement.value !== value
+        || feeExposureLimit === undefined
+        || (
+          feeExposureLimit !== undefined && (
+            replacement.maxFeePerGas === null
+            || replacement.maxPriorityFeePerGas === null
+            || replacement.gas > feeExposureLimit.gasLimit
+            || replacement.maxFeePerGas > feeExposureLimit.maxFeePerGas
+            || replacement.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+            || replacement.gas * replacement.maxFeePerGas
+              > feeExposureLimit.maxNetworkFeeWei
+          )
+        )
+      )
+    ) {
+      return {
+        kind: "ambiguous",
+        txHash,
+        stage: "confirm",
+        reason: "Ethereum reported a replacement that does not match the staged identity, calldata, or approved fee ceiling.",
+      };
+    }
+    const replacementField = replacement === null ? {} : { replacement };
     return receipt.status === "success"
-      ? { kind: "confirmed", txHash, receipt }
-      : { kind: "reverted", txHash, receipt };
+      ? { kind: "confirmed", txHash, receipt, ...replacementField }
+      : { kind: "reverted", txHash, receipt, ...replacementField };
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "confirm", reason: describeFailureForLog(err) };
   }

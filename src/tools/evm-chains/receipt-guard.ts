@@ -14,7 +14,13 @@
  * answer, revert included, and is never retried.
  */
 
-import type { Hex, PublicClient, TransactionReceipt } from "viem";
+import type {
+  Hex,
+  PublicClient,
+  ReplacementReason,
+  ReplacementReturnType,
+  TransactionReceipt,
+} from "viem";
 
 import { ErrorCodes, VexError } from "../../errors.js";
 
@@ -35,6 +41,29 @@ export const RECEIPT_WAIT_BASE_DELAY_MS = 1_500;
 export interface ReceiptWaitRetryOptions {
   /** Base backoff override — tests pass 0. Attempt N waits `delayMs * 2^(N-1)`. */
   readonly delayMs?: number;
+  /** Total wait calls, including the first. Defaults to the shared bounded limit. */
+  readonly attempts?: number;
+  /** Optional viem polling timeout for each wait call. */
+  readonly timeoutMs?: number;
+}
+
+export interface ReceiptReplacementEvidence {
+  readonly reason: ReplacementReason;
+  readonly replacedTxHash: Hex;
+  readonly replacementTxHash: Hex;
+  readonly fromAddress: Hex;
+  readonly nonce: number;
+  readonly to: Hex | null;
+  readonly data: Hex;
+  readonly value: bigint;
+  readonly gas: bigint;
+  readonly maxFeePerGas: bigint | null;
+  readonly maxPriorityFeePerGas: bigint | null;
+}
+
+export interface ReceiptWithReplacementEvidence {
+  readonly receipt: TransactionReceipt;
+  readonly replacement: ReceiptReplacementEvidence | null;
 }
 
 /**
@@ -48,19 +77,62 @@ export async function waitForReceiptWithRetry(
   hash: Hex,
   options?: ReceiptWaitRetryOptions,
 ): Promise<TransactionReceipt> {
+  return (await waitForReceiptWithReplacementEvidence(client, hash, options)).receipt;
+}
+
+/** Same bounded receipt read, preserving any provider-proven replacement. */
+export async function waitForReceiptWithReplacementEvidence(
+  client: ReceiptWaitClient,
+  hash: Hex,
+  options?: ReceiptWaitRetryOptions,
+): Promise<ReceiptWithReplacementEvidence> {
   const baseDelayMs = options?.delayMs ?? RECEIPT_WAIT_BASE_DELAY_MS;
+  const attempts = options?.attempts ?? RECEIPT_WAIT_ATTEMPTS;
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > RECEIPT_WAIT_ATTEMPTS) {
+    throw new Error(`Receipt wait attempts must be between 1 and ${RECEIPT_WAIT_ATTEMPTS}.`);
+  }
+  if (
+    options?.timeoutMs !== undefined
+    && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1)
+  ) {
+    throw new Error("Receipt wait timeout must be a positive integer.");
+  }
   let lastError: unknown;
-  for (let attempt = 1; attempt <= RECEIPT_WAIT_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let replacement: ReceiptReplacementEvidence | null = null;
     try {
-      return await client.waitForTransactionReceipt({ hash });
+      const receipt = await client.waitForTransactionReceipt({
+        hash,
+        ...(options?.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+        onReplaced: (value) => {
+          replacement = projectReplacement(value);
+        },
+      });
+      return { receipt, replacement };
     } catch (err) {
       lastError = err;
-      if (attempt < RECEIPT_WAIT_ATTEMPTS) {
+      if (attempt < attempts) {
         await delay(baseDelayMs * 2 ** (attempt - 1));
       }
     }
   }
   throw lastError;
+}
+
+function projectReplacement(value: ReplacementReturnType): ReceiptReplacementEvidence {
+  return {
+    reason: value.reason,
+    replacedTxHash: value.replacedTransaction.hash,
+    replacementTxHash: value.transaction.hash,
+    fromAddress: value.transaction.from,
+    nonce: value.transaction.nonce,
+    to: value.transaction.to,
+    data: value.transaction.input,
+    value: value.transaction.value,
+    gas: value.transaction.gas,
+    maxFeePerGas: value.transaction.maxFeePerGas ?? null,
+    maxPriorityFeePerGas: value.transaction.maxPriorityFeePerGas ?? null,
+  };
 }
 
 function delay(ms: number): Promise<void> {

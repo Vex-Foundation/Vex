@@ -21,6 +21,7 @@ const OWNER = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" as Address;
 const TO = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5" as Address;
 const SERIALIZED = "0x02f8710182012a8459682f008459682f2f82520894111111111111111111111111111111111111111180840123456780c0" as Hex;
 const HASH = keccak256(SERIALIZED);
+const REPLACEMENT_HASH = `0x${"d".repeat(64)}` as Hex;
 const NONCE = 42;
 
 function makeClients(opts: {
@@ -38,6 +39,12 @@ function makeClients(opts: {
   maxPriorityFeePerGas?: bigint;
   preparedMaxFeePerGasOverride?: bigint;
   headBlock?: bigint;
+  replacement?: {
+    data?: Hex;
+    gas?: bigint;
+    maxFeePerGas?: bigint;
+    maxPriorityFeePerGas?: bigint;
+  };
 } = {}) {
   const calls: string[] = [];
   const estimateArgs: Array<Record<string, unknown>> = [];
@@ -71,8 +78,28 @@ function makeClients(opts: {
       if (opts.sendThrows) throw new Error("network down");
       return HASH;
     }),
-    waitForTransactionReceipt: vi.fn(async () => {
+    waitForTransactionReceipt: vi.fn(async (args: Record<string, unknown>) => {
       calls.push("waitForTransactionReceipt");
+      if (opts.replacement) {
+        const onReplaced = args.onReplaced as ((value: unknown) => void) | undefined;
+        onReplaced?.({
+          reason: "repriced",
+          replacedTransaction: { hash: HASH },
+          transaction: {
+            hash: REPLACEMENT_HASH,
+            from: OWNER,
+            nonce: NONCE,
+            to: TO,
+            input: opts.replacement.data ?? "0x",
+            value: 0n,
+            gas: opts.replacement.gas ?? 200_000n,
+            maxFeePerGas: opts.replacement.maxFeePerGas ?? 20_000_000_000n,
+            maxPriorityFeePerGas:
+              opts.replacement.maxPriorityFeePerGas ?? 2_000_000_000n,
+          },
+          transactionReceipt: { status: "success", logs: [] },
+        });
+      }
       if (receiptScript) {
         const next = receiptScript.shift();
         if (next === undefined) throw new Error("test: waitForTransactionReceipt called past the scripted bound");
@@ -385,6 +412,75 @@ describe("signStageBroadcast approval-bound fee exposure", () => {
 
     expect(calls).not.toContain("signTransaction");
     expect(calls).not.toContain("sendRawTransaction");
+  });
+
+  it("preserves an exact fee-only replacement within the approved ceiling", async () => {
+    const { publicClient, walletClient } = makeClients({ replacement: {} });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "confirmed",
+      replacement: {
+        reason: "repriced",
+        replacedTxHash: HASH,
+        replacementTxHash: REPLACEMENT_HASH,
+        fromAddress: OWNER,
+        nonce: NONCE,
+      },
+    });
+  });
+
+  it("refuses to confirm a replacement above the approved fee ceiling", async () => {
+    const { publicClient, walletClient } = makeClients({
+      replacement: { maxFeePerGas: ceiling.maxFeePerGas + 1n },
+    });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "ambiguous",
+      stage: "confirm",
+      reason: expect.stringContaining("approved fee ceiling"),
+    });
+  });
+
+  it("refuses to confirm a replacement that changes the staged calldata", async () => {
+    const { publicClient, walletClient } = makeClients({
+      replacement: { data: "0x1234" },
+    });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "ambiguous",
+      stage: "confirm",
+      reason: expect.stringContaining("calldata"),
+    });
   });
 });
 

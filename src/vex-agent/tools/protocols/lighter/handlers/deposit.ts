@@ -194,7 +194,19 @@ function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string
     preflightNativeReserveWei: intent.preflightNativeReserveWei,
     preflightRequiredNativeBalanceWei: intent.preflightRequiredNativeBalanceWei,
     approveTxHash: intent.approveTxHash,
+    approveTxFrom: intent.approveTxFrom,
+    approveTxNonce: intent.approveTxNonce,
+    approveReplacementTxHash: intent.approveReplacementTxHash,
+    approveReplacementReason: intent.approveReplacementReason,
+    approveReplacementObservedAt:
+      intent.approveReplacementObservedAt?.toISOString() ?? null,
     depositTxHash: intent.depositTxHash,
+    depositTxFrom: intent.depositTxFrom,
+    depositTxNonce: intent.depositTxNonce,
+    depositReplacementTxHash: intent.depositReplacementTxHash,
+    depositReplacementReason: intent.depositReplacementReason,
+    depositReplacementObservedAt:
+      intent.depositReplacementObservedAt?.toISOString() ?? null,
     depositL1BlockHash: intent.depositL1BlockHash,
     depositL1BlockNumber: intent.depositL1BlockNumber,
     depositEventAccountIndex: intent.depositEventAccountIndex,
@@ -562,10 +574,14 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           `Deposit executor error: ${reason}`,
         ),
       );
-      const txHash = ambiguous?.depositTxHash ?? ambiguous?.approveTxHash ?? null;
-      const stage = ambiguous?.depositTxHash
+      const txHash = ambiguous?.depositReplacementTxHash
+        ?? ambiguous?.depositTxHash
+        ?? ambiguous?.approveReplacementTxHash
+        ?? ambiguous?.approveTxHash
+        ?? null;
+      const stage = ambiguous?.depositReplacementTxHash || ambiguous?.depositTxHash
         ? "deposit"
-        : ambiguous?.approveTxHash
+        : ambiguous?.approveReplacementTxHash || ambiguous?.approveTxHash
           ? "approve"
           : "execution";
       return ok({

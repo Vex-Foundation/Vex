@@ -10,14 +10,23 @@ import {
   LIGHTER_DEPOSIT_EVENT_ABI,
   type LighterDepositReceipt,
 } from "@tools/lighter/wallet-funding/deposit-evidence.js";
+import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
-const APPROVE_HASH = "0x" + "a".repeat(64);
-const DEPOSIT_HASH = "0x" + "b".repeat(64);
-const BLOCK_HASH = "0x" + "c".repeat(64);
+const APPROVE_HASH: `0x${string}` = `0x${"a".repeat(64)}`;
+const DEPOSIT_HASH: `0x${string}` = `0x${"b".repeat(64)}`;
+const BLOCK_HASH: `0x${string}` = `0x${"c".repeat(64)}`;
+const REPLACEMENT_HASH: `0x${string}` = `0x${"d".repeat(64)}`;
 
-function depositReceipt(): LighterDepositReceipt {
+function staged(txHash: string, nonce: number) {
+  return { txHash, fromAddress: WALLET, nonce };
+}
+
+function depositReceipt(
+  overrides: Partial<LighterDepositReceipt> = {},
+): LighterDepositReceipt {
   return {
     status: "success",
     transactionHash: DEPOSIT_HASH,
@@ -39,6 +48,31 @@ function depositReceipt(): LighterDepositReceipt {
         [42, WALLET, 3, 0, 11_000_000n],
       ),
     }],
+    ...overrides,
+  };
+}
+
+function depositReplacement(
+  overrides: Partial<ReceiptReplacementEvidence> = {},
+): ReceiptReplacementEvidence {
+  return {
+    reason: "repriced",
+    replacedTxHash: DEPOSIT_HASH,
+    replacementTxHash: REPLACEMENT_HASH,
+    fromAddress: WALLET,
+    nonce: 8,
+    to: CONTRACT,
+    data: buildLighterDepositCalldata({
+      to: WALLET,
+      amountUnits: 11_000_000n,
+      assetIndex: 3,
+      route: "perps",
+    }).data,
+    value: 0n,
+    gas: 190_000n,
+    maxFeePerGas: 19_000_000_000n,
+    maxPriorityFeePerGas: 1_900_000_000n,
+    ...overrides,
   };
 }
 
@@ -90,7 +124,17 @@ function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnb
     approvalStatus: "approved",
     executionState: "approved",
     approveTxHash: null,
+    approveTxFrom: null,
+    approveTxNonce: null,
+    approveReplacementTxHash: null,
+    approveReplacementReason: null,
+    approveReplacementObservedAt: null,
     depositTxHash: null,
+    depositTxFrom: null,
+    depositTxNonce: null,
+    depositReplacementTxHash: null,
+    depositReplacementReason: null,
+    depositReplacementObservedAt: null,
     depositL1BlockHash: null,
     depositL1BlockNumber: null,
     depositEventAccountIndex: null,
@@ -115,6 +159,8 @@ function intentsSpy() {
     markApproveSubmitted: vi.fn().mockResolvedValue({ executionState: "approve_submitted" }),
     markApproveConfirmed: vi.fn().mockResolvedValue({ executionState: "approve_confirmed" }),
     markDepositSubmitted: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
+    recordApproveReplacement: vi.fn().mockResolvedValue({ executionState: "approve_submitted" }),
+    recordDepositReplacement: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
     markDepositConfirmed: vi.fn().mockResolvedValue({ executionState: "deposit_confirmed" }),
     markAmbiguous: vi.fn().mockResolvedValue({ executionState: "ambiguous" }),
     markFailed: vi.fn().mockResolvedValue({ executionState: "failed" }),
@@ -128,11 +174,11 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
     assertExecutionLease: vi.fn().mockResolvedValue(undefined),
     assertFreshPreSignPreflight: vi.fn().mockResolvedValue(undefined),
     runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
-      await onHashStaged(APPROVE_HASH);
+      await onHashStaged(staged(APPROVE_HASH, 7));
       return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
     }),
     runDepositLeg: vi.fn(async ({ onHashStaged }) => {
-      await onHashStaged(DEPOSIT_HASH);
+      await onHashStaged(staged(DEPOSIT_HASH, 8));
       return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const, receipt: depositReceipt() };
     }),
     intents: intentsSpy(),
@@ -198,8 +244,14 @@ describe("executeApprovedLighterDeposit", () => {
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result).toMatchObject({ status: "l2_pending", depositTxHash: DEPOSIT_HASH });
     // Hash persisted (markApproveSubmitted/markDepositSubmitted) via onHashStaged.
-    expect(d.intents.markApproveSubmitted).toHaveBeenCalledWith("lighter-onboard-1", APPROVE_HASH);
-    expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith("lighter-onboard-1", DEPOSIT_HASH);
+    expect(d.intents.markApproveSubmitted).toHaveBeenCalledWith(
+      "lighter-onboard-1",
+      staged(APPROVE_HASH, 7),
+    );
+    expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith(
+      "lighter-onboard-1",
+      staged(DEPOSIT_HASH, 8),
+    );
     expect(d.runApproveLegIfNeeded).toHaveBeenCalledWith(expect.objectContaining({
       feeCeiling: {
         gasLimit: 100000n,
@@ -232,7 +284,7 @@ describe("executeApprovedLighterDeposit", () => {
   it("fails on an approve revert without sending the deposit", async () => {
     const d = deps({
       runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
-        await onHashStaged(APPROVE_HASH);
+        await onHashStaged(staged(APPROVE_HASH, 7));
         return { skipped: false as const, txHash: APPROVE_HASH, outcome: "reverted" as const };
       }),
     });
@@ -245,7 +297,7 @@ describe("executeApprovedLighterDeposit", () => {
   it("marks ambiguous and does not credit when the deposit is unconfirmed", async () => {
     const d = deps({
       runDepositLeg: vi.fn(async ({ onHashStaged }) => {
-        await onHashStaged(DEPOSIT_HASH);
+        await onHashStaged(staged(DEPOSIT_HASH, 8));
         return { txHash: DEPOSIT_HASH, outcome: "ambiguous" as const };
       }),
     });
@@ -262,6 +314,61 @@ describe("executeApprovedLighterDeposit", () => {
       reason: expect.stringContaining("Exact Lighter-side evidence"),
     });
     expect(d.intents.markDepositConfirmed).toHaveBeenCalled();
+  });
+
+  it("persists an exact fee-only replacement and proves the mined replacement hash", async () => {
+    const d = deps({
+      runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(staged(DEPOSIT_HASH, 8));
+        return {
+          txHash: DEPOSIT_HASH,
+          outcome: "confirmed" as const,
+          receipt: depositReceipt({ transactionHash: REPLACEMENT_HASH }),
+          replacement: depositReplacement(),
+        };
+      }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+
+    expect(result).toMatchObject({
+      status: "l2_pending",
+      depositTxHash: REPLACEMENT_HASH,
+    });
+    expect(d.intents.recordDepositReplacement).toHaveBeenCalledWith(
+      "lighter-onboard-1",
+      expect.objectContaining({
+        originalTxHash: DEPOSIT_HASH,
+        replacementTxHash: REPLACEMENT_HASH,
+        reason: "repriced",
+      }),
+    );
+    expect(d.intents.markDepositConfirmed).toHaveBeenCalledWith(
+      "lighter-onboard-1",
+      expect.objectContaining({ txHash: REPLACEMENT_HASH }),
+    );
+  });
+
+  it("moves a calldata-changing replacement to durable ambiguity", async () => {
+    const d = deps({
+      runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(staged(DEPOSIT_HASH, 8));
+        return {
+          txHash: DEPOSIT_HASH,
+          outcome: "confirmed" as const,
+          receipt: depositReceipt({ transactionHash: REPLACEMENT_HASH }),
+          replacement: depositReplacement({ data: "0x1234" }),
+        };
+      }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
+
+    expect(result).toMatchObject({ status: "ambiguous", stage: "deposit" });
+    expect(result.reason).toContain("changed the approved deposit calldata");
+    expect(d.intents.recordDepositReplacement).not.toHaveBeenCalled();
+    expect(d.intents.markDepositConfirmed).not.toHaveBeenCalled();
+    expect(d.intents.markAmbiguous).toHaveBeenCalled();
   });
 
   it("refuses to start unless the exact approved lifecycle state is supplied", async () => {
@@ -305,7 +412,7 @@ describe("executeApprovedLighterDeposit", () => {
     const d = deps({
       intents: intentTransitions,
       runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
-        await onHashStaged(APPROVE_HASH);
+        await onHashStaged(staged(APPROVE_HASH, 7));
         broadcastReached = true;
         return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
       }),
@@ -347,7 +454,7 @@ describe("executeApprovedLighterDeposit", () => {
     const d = deps({
       intents: intentTransitions,
       runDepositLeg: vi.fn(async ({ onHashStaged }) => {
-        await onHashStaged(DEPOSIT_HASH);
+        await onHashStaged(staged(DEPOSIT_HASH, 8));
         broadcastReached = true;
         return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const, receipt: depositReceipt() };
       }),

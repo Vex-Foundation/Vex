@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   markApproveSubmittedWith: vi.fn(),
   markApproveConfirmedWith: vi.fn(),
   markDepositSubmittedWith: vi.fn(),
+  recordApproveReplacementWith: vi.fn(),
+  recordDepositReplacementWith: vi.fn(),
   markDepositConfirmedWith: vi.fn(),
   markAmbiguousWith: vi.fn(),
   markFailedWith: vi.fn(),
@@ -20,6 +22,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   markApproveSubmittedWith: mocks.markApproveSubmittedWith,
   markApproveConfirmedWith: mocks.markApproveConfirmedWith,
   markDepositSubmittedWith: mocks.markDepositSubmittedWith,
+  recordApproveReplacementWith: mocks.recordApproveReplacementWith,
+  recordDepositReplacementWith: mocks.recordDepositReplacementWith,
   markDepositConfirmedWith: mocks.markDepositConfirmedWith,
   markAmbiguousWith: mocks.markAmbiguousWith,
   markFailedWith: mocks.markFailedWith,
@@ -51,6 +55,8 @@ describe("Lighter deposit execution lifecycle locking", () => {
       mocks.markApproveSubmittedWith,
       mocks.markApproveConfirmedWith,
       mocks.markDepositSubmittedWith,
+      mocks.recordApproveReplacementWith,
+      mocks.recordDepositReplacementWith,
       mocks.markDepositConfirmedWith,
       mocks.markAmbiguousWith,
       mocks.markFailedWith,
@@ -65,9 +71,31 @@ describe("Lighter deposit execution lifecycle locking", () => {
     });
 
     await deps.intents.markAllowanceVerified("intent-1");
-    await deps.intents.markApproveSubmitted("intent-1", `0x${"a".repeat(64)}`);
+    const approveStaged = {
+      txHash: `0x${"a".repeat(64)}`,
+      fromAddress: "0x1111111111111111111111111111111111111111",
+      nonce: 7,
+    };
+    const depositStaged = {
+      txHash: `0x${"b".repeat(64)}`,
+      fromAddress: "0x1111111111111111111111111111111111111111",
+      nonce: 8,
+    };
+    await deps.intents.markApproveSubmitted("intent-1", approveStaged);
     await deps.intents.markApproveConfirmed("intent-1");
-    await deps.intents.markDepositSubmitted("intent-1", `0x${"b".repeat(64)}`);
+    await deps.intents.markDepositSubmitted("intent-1", depositStaged);
+    const replacement = {
+      originalTxHash: approveStaged.txHash,
+      replacementTxHash: `0x${"d".repeat(64)}`,
+      reason: "repriced" as const,
+      observedAt: new Date("2030-01-01T00:00:00.000Z"),
+    };
+    await deps.intents.recordApproveReplacement("intent-1", replacement);
+    await deps.intents.recordDepositReplacement("intent-1", {
+      ...replacement,
+      originalTxHash: depositStaged.txHash,
+      replacementTxHash: `0x${"e".repeat(64)}`,
+    });
     await deps.intents.markDepositConfirmed("intent-1", {
       txHash: `0x${"b".repeat(64)}`,
       blockHash: `0x${"c".repeat(64)}`,
@@ -81,19 +109,19 @@ describe("Lighter deposit execution lifecycle locking", () => {
     await deps.intents.markAmbiguous("intent-1", "uncertain");
     await deps.intents.markFailed("intent-1", "reverted");
 
-    expect(mocks.withSessionControlLock).toHaveBeenCalledTimes(7);
+    expect(mocks.withSessionControlLock).toHaveBeenCalledTimes(9);
     for (const call of mocks.withSessionControlLock.mock.calls) {
       expect(call[0]).toBe("session-1");
     }
     expect(mocks.markApproveSubmittedWith).toHaveBeenCalledWith(
       lockedClient,
       "intent-1",
-      `0x${"a".repeat(64)}`,
+      approveStaged,
     );
     expect(mocks.markDepositSubmittedWith).toHaveBeenCalledWith(
       lockedClient,
       "intent-1",
-      `0x${"b".repeat(64)}`,
+      depositStaged,
     );
   });
 });

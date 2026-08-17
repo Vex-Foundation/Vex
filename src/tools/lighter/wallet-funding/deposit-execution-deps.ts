@@ -31,6 +31,7 @@ import {
   LIGHTER_DEPOSIT_CHAIN_ID,
 } from "./constants.js";
 import type { LegOutcome, LighterDepositExecutionDeps } from "./deposit-execution.js";
+import type { LighterStagedEvmTransaction } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   projectLighterDepositReceipt,
   type LighterDepositReceipt,
@@ -141,6 +142,7 @@ export function buildLighterDepositExecutionDeps(
         txHash: outcome.txHash,
         outcome: outcome.outcome,
         confirmedBlockNumber: outcome.receipt?.blockNumber,
+        replacement: outcome.replacement,
         reason: outcome.reason,
       };
     },
@@ -166,6 +168,7 @@ export function buildLighterDepositExecutionDeps(
         receipt: outcome.receipt === undefined
           ? undefined
           : projectLighterDepositReceipt(outcome.receipt),
+        replacement: outcome.replacement,
         reason: outcome.reason,
       };
     },
@@ -173,12 +176,16 @@ export function buildLighterDepositExecutionDeps(
     intents: {
       markAllowanceVerified: (intentId) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markAllowanceVerifiedWith(client, intentId)),
-      markApproveSubmitted: (intentId, hash) => writeUnderSessionLock((client) =>
-        onboardingIntentsRepo.markApproveSubmittedWith(client, intentId, hash)),
+      markApproveSubmitted: (intentId, transaction) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markApproveSubmittedWith(client, intentId, transaction)),
       markApproveConfirmed: (intentId) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markApproveConfirmedWith(client, intentId)),
-      markDepositSubmitted: (intentId, hash) => writeUnderSessionLock((client) =>
-        onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, hash)),
+      markDepositSubmitted: (intentId, transaction) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, transaction)),
+      recordApproveReplacement: (intentId, replacement) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.recordApproveReplacementWith(client, intentId, replacement)),
+      recordDepositReplacement: (intentId, replacement) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.recordDepositReplacementWith(client, intentId, replacement)),
       markDepositConfirmed: (intentId, evidence) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markDepositConfirmedWith(client, intentId, evidence)),
       markAmbiguous: (intentId, reason) => writeUnderSessionLock((client) =>
@@ -192,13 +199,14 @@ export function buildLighterDepositExecutionDeps(
 async function runStaged(
   clients: ReturnType<typeof getUniswapEvmClients>,
   tx: { readonly to: Address; readonly data: Hex; readonly value: bigint },
-  onHashStaged: (txHash: string) => Promise<void>,
+  onHashStaged: (transaction: LighterStagedEvmTransaction) => Promise<void>,
   confirmedPriorBlockNumber?: bigint,
   feeCeiling?: LighterDepositSignedFeeCeiling,
 ): Promise<{
   readonly txHash: string;
   readonly outcome: LegOutcome;
   readonly receipt?: TransactionReceipt;
+  readonly replacement?: import("@tools/evm-chains/receipt-guard.js").ReceiptReplacementEvidence;
   readonly reason?: string;
 }> {
   const result = await signStageBroadcast(
@@ -207,7 +215,11 @@ async function runStaged(
     tx,
     {
       onHashStaged: async (handles) => {
-        await onHashStaged(handles.txHash);
+        await onHashStaged({
+          txHash: handles.txHash,
+          fromAddress: handles.fromAddress,
+          nonce: handles.nonce,
+        });
       },
       onAccepted: async () => {},
     },
@@ -216,10 +228,20 @@ async function runStaged(
     feeCeiling,
   );
   if (result.kind === "confirmed") {
-    return { txHash: result.txHash, outcome: "confirmed", receipt: result.receipt };
+    return {
+      txHash: result.txHash,
+      outcome: "confirmed",
+      receipt: result.receipt,
+      replacement: result.replacement,
+    };
   }
   if (result.kind === "reverted") {
-    return { txHash: result.txHash, outcome: "reverted", receipt: result.receipt };
+    return {
+      txHash: result.txHash,
+      outcome: "reverted",
+      receipt: result.receipt,
+      replacement: result.replacement,
+    };
   }
   return { txHash: result.txHash, outcome: "ambiguous", reason: result.reason };
 }

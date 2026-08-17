@@ -15,10 +15,13 @@ import type {
   LighterAccountsByL1AddressResponse,
   LighterTxFromL1Response,
 } from "@tools/lighter/types.js";
+import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
-const APPROVE_HASH = `0x${"a".repeat(64)}`;
-const DEPOSIT_HASH = `0x${"b".repeat(64)}`;
-const BLOCK_HASH = `0x${"c".repeat(64)}`;
+const APPROVE_HASH: `0x${string}` = `0x${"a".repeat(64)}`;
+const DEPOSIT_HASH: `0x${string}` = `0x${"b".repeat(64)}`;
+const REPLACEMENT_HASH: `0x${string}` = `0x${"d".repeat(64)}`;
+const BLOCK_HASH: `0x${string}` = `0x${"c".repeat(64)}`;
 const WALLET = "0x1111111111111111111111111111111111111111";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 
@@ -59,6 +62,30 @@ function depositEventTopics(): readonly string[] {
     throw new Error("unexpected Deposit topic fixture");
   }
   return [signature];
+}
+
+function depositReplacement(
+  overrides: Partial<ReceiptReplacementEvidence> = {},
+): ReceiptReplacementEvidence {
+  return {
+    reason: "repriced",
+    replacedTxHash: DEPOSIT_HASH,
+    replacementTxHash: REPLACEMENT_HASH,
+    fromAddress: WALLET,
+    nonce: 7,
+    to: CONTRACT,
+    data: buildLighterDepositCalldata({
+      to: WALLET,
+      amountUnits: 11_000_000n,
+      assetIndex: 3,
+      route: "perps",
+    }).data,
+    value: 0n,
+    gas: 190_000n,
+    maxFeePerGas: 19_000_000_000n,
+    maxPriorityFeePerGas: 1_900_000_000n,
+    ...overrides,
+  };
 }
 
 function lighterTx(overrides: Partial<LighterTxFromL1Response> = {}): LighterTxFromL1Response {
@@ -143,7 +170,17 @@ function intent(
     approvalStatus: "approved",
     executionState: "ambiguous",
     approveTxHash: null,
+    approveTxFrom: null,
+    approveTxNonce: null,
+    approveReplacementTxHash: null,
+    approveReplacementReason: null,
+    approveReplacementObservedAt: null,
     depositTxHash: null,
+    depositTxFrom: null,
+    depositTxNonce: null,
+    depositReplacementTxHash: null,
+    depositReplacementReason: null,
+    depositReplacementObservedAt: null,
     depositL1BlockHash: null,
     depositL1BlockNumber: null,
     depositEventAccountIndex: null,
@@ -167,12 +204,18 @@ function deps(): LighterDepositRepairDeps & {
 } {
   return {
     listUnresolved: vi.fn().mockResolvedValue([]),
-    readReceipt: vi.fn(),
+    readReceipt: vi.fn().mockResolvedValue({
+      receipt: depositReceipt(),
+      replacement: null,
+    }),
     readLighterTx: vi.fn().mockResolvedValue(null),
     readOwnedAccounts: vi.fn().mockResolvedValue(ownedAccounts()),
     reconcileApproveReceipt: vi.fn(),
     reconcileDepositReceipt: vi.fn(),
-    recordConfirmedDepositL1Evidence: vi.fn(),
+    recordApproveReplacement: vi.fn(),
+    recordDepositReplacement: vi.fn(),
+    reconcileConfirmedDepositL1Evidence: vi.fn(),
+    markAmbiguous: vi.fn(),
     markCredited: vi.fn(),
   } as never;
 }
@@ -214,7 +257,14 @@ describe("Lighter deposit evidence-only repair", () => {
       executionState: "approve_submitted",
       approveTxHash: APPROVE_HASH,
     });
-    d.readReceipt.mockResolvedValueOnce(depositReceipt({ status: "reverted", logs: [] }));
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({
+        status: "reverted",
+        transactionHash: APPROVE_HASH,
+        logs: [],
+      }),
+      replacement: null,
+    });
     d.reconcileApproveReceipt.mockResolvedValueOnce(intent({
       executionState: "failed",
       approveTxHash: APPROVE_HASH,
@@ -236,7 +286,7 @@ describe("Lighter deposit evidence-only repair", () => {
     const d = deps();
     const row = intent({ depositTxHash: DEPOSIT_HASH });
     const confirmed = confirmedIntent();
-    d.readReceipt.mockResolvedValueOnce(depositReceipt());
+    d.readReceipt.mockResolvedValueOnce({ receipt: depositReceipt(), replacement: null });
     d.reconcileDepositReceipt.mockResolvedValueOnce(confirmed);
 
     const result = await repairLighterDepositIntent(row, d);
@@ -263,8 +313,140 @@ describe("Lighter deposit evidence-only repair", () => {
     const result = await repairLighterDepositIntent(row, d);
 
     expect(result.resolution).toBe("awaiting_lighter");
-    expect(d.readReceipt).not.toHaveBeenCalled();
+    expect(d.readReceipt).toHaveBeenCalledWith(DEPOSIT_HASH);
     expect(d.readLighterTx).toHaveBeenCalledWith(DEPOSIT_HASH);
+  });
+
+  it("blocks Lighter credit when a previously confirmed receipt disappears", async () => {
+    const d = deps();
+    const row = confirmedIntent();
+    d.readReceipt.mockResolvedValueOnce(null);
+    d.markAmbiguous.mockResolvedValueOnce(intent({
+      ...row,
+      executionState: "ambiguous",
+      failureReason: "receipt no longer canonical",
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "manual_review",
+      stateBefore: "deposit_confirmed",
+      stateAfter: "ambiguous",
+      txHash: DEPOSIT_HASH,
+    });
+    expect(result.guidance).toContain("no longer canonical");
+    expect(d.markAmbiguous).toHaveBeenCalledWith(row, expect.stringContaining("no longer canonical"));
+    expect(d.readLighterTx).not.toHaveBeenCalled();
+  });
+
+  it("rebinds uncredited L1 evidence when the same exact deposit moves blocks", async () => {
+    const d = deps();
+    const row = confirmedIntent();
+    const nextBlockHash = `0x${"e".repeat(64)}`;
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({ blockHash: nextBlockHash, blockNumber: 23_456_790n }),
+      replacement: null,
+    });
+    d.reconcileConfirmedDepositL1Evidence.mockResolvedValueOnce(intent({
+      ...row,
+      depositL1BlockHash: nextBlockHash,
+      depositL1BlockNumber: "23456790",
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result.resolution).toBe("awaiting_lighter");
+    expect(d.reconcileConfirmedDepositL1Evidence).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        txHash: DEPOSIT_HASH,
+        blockHash: nextBlockHash,
+        blockNumber: "23456790",
+      }),
+    );
+    expect(d.readLighterTx).toHaveBeenCalledWith(DEPOSIT_HASH);
+  });
+
+  it("adopts an exact fee-only deposit replacement and queries Lighter by its mined hash", async () => {
+    const d = deps();
+    const row = intent({
+      executionState: "deposit_submitted",
+      depositTxHash: DEPOSIT_HASH,
+      depositTxFrom: WALLET,
+      depositTxNonce: "7",
+      preflightDepositGasLimit: "200000",
+      preflightMaxFeePerGasWei: "20000000000",
+      preflightMaxPriorityFeePerGasWei: "2000000000",
+      preflightDepositMaxFeeWei: "4000000000000000",
+    });
+    const replacementRow = intent({
+      ...row,
+      depositReplacementTxHash: REPLACEMENT_HASH,
+      depositReplacementReason: "repriced",
+      depositReplacementObservedAt: new Date("2030-01-01T00:02:00.000Z"),
+    });
+    const confirmed = intent({
+      ...replacementRow,
+      executionState: "deposit_confirmed",
+      depositL1BlockHash: BLOCK_HASH,
+      depositL1BlockNumber: "23456789",
+      depositEventAccountIndex: 42,
+    });
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({ transactionHash: REPLACEMENT_HASH }),
+      replacement: depositReplacement(),
+    });
+    d.recordDepositReplacement.mockResolvedValueOnce(replacementRow);
+    d.reconcileDepositReceipt.mockResolvedValueOnce(confirmed);
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "deposit_confirmed",
+      txHash: REPLACEMENT_HASH,
+    });
+    expect(d.recordDepositReplacement).toHaveBeenCalledWith(
+      row,
+      expect.objectContaining({
+        originalTxHash: DEPOSIT_HASH,
+        replacementTxHash: REPLACEMENT_HASH,
+        reason: "repriced",
+      }),
+    );
+    expect(d.reconcileDepositReceipt).toHaveBeenCalledWith(
+      replacementRow,
+      REPLACEMENT_HASH,
+      "confirmed",
+      expect.objectContaining({ txHash: REPLACEMENT_HASH }),
+    );
+    expect(d.readLighterTx).toHaveBeenCalledWith(REPLACEMENT_HASH);
+  });
+
+  it("moves a calldata-changing replacement to manual review", async () => {
+    const d = deps();
+    const row = intent({
+      executionState: "deposit_submitted",
+      depositTxHash: DEPOSIT_HASH,
+      depositTxFrom: WALLET,
+      depositTxNonce: "7",
+      preflightDepositGasLimit: "200000",
+      preflightMaxFeePerGasWei: "20000000000",
+      preflightMaxPriorityFeePerGasWei: "2000000000",
+      preflightDepositMaxFeeWei: "4000000000000000",
+    });
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({ transactionHash: REPLACEMENT_HASH }),
+      replacement: depositReplacement({ data: "0x1234" }),
+    });
+    d.markAmbiguous.mockResolvedValueOnce(intent({ ...row, executionState: "ambiguous" }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result.resolution).toBe("manual_review");
+    expect(result.guidance).toContain("changed the approved deposit calldata");
+    expect(d.recordDepositReplacement).not.toHaveBeenCalled();
+    expect(d.reconcileDepositReceipt).not.toHaveBeenCalled();
   });
 
   it("credits only after the exact Lighter transaction and owned account both match", async () => {

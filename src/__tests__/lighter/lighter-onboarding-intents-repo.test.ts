@@ -125,11 +125,19 @@ d("lighter_onboarding_intents repo", () => {
     expect(approved?.executionState).toBe("approved");
 
     expect((await withSessionControlLock(sessionId, (client) =>
-      repo.markApproveSubmittedWith(client, intent.intentId, "0x" + "a".repeat(64))))?.executionState).toBe("approve_submitted");
+      repo.markApproveSubmittedWith(client, intent.intentId, {
+        txHash: "0x" + "a".repeat(64),
+        fromAddress: intent.walletAddress,
+        nonce: 7,
+      })))?.executionState).toBe("approve_submitted");
     expect((await withSessionControlLock(sessionId, (client) =>
       repo.markApproveConfirmedWith(client, intent.intentId)))?.executionState).toBe("approve_confirmed");
     expect((await withSessionControlLock(sessionId, (client) =>
-      repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "b".repeat(64))))?.executionState).toBe("deposit_submitted");
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: "0x" + "b".repeat(64),
+        fromAddress: intent.walletAddress,
+        nonce: 8,
+      })))?.executionState).toBe("deposit_submitted");
     expect((await withSessionControlLock(sessionId, (client) =>
       repo.markDepositConfirmedWith(client, intent.intentId, {
         txHash: "0x" + "b".repeat(64),
@@ -167,7 +175,11 @@ d("lighter_onboarding_intents repo", () => {
       repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
     // Skipping approve submit/confirm must not advance.
     const skipped = await withSessionControlLock(sessionId, (client) =>
-      repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "c".repeat(64)));
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: "0x" + "c".repeat(64),
+        fromAddress: intent.walletAddress,
+        nonce: 7,
+      }));
     expect(skipped).toBeNull();
     expect((await repo.findByIntentId(intent.intentId))?.executionState).toBe("approved");
   });
@@ -184,8 +196,113 @@ d("lighter_onboarding_intents repo", () => {
     expect(verified?.approveTxHash).toBeNull();
     expect(
       (await withSessionControlLock(sessionId, (client) =>
-        repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "d".repeat(64))))?.executionState,
+        repo.markDepositSubmittedWith(client, intent.intentId, {
+          txHash: "0x" + "d".repeat(64),
+          fromAddress: intent.walletAddress,
+          nonce: 7,
+        })))?.executionState,
     ).toBe("deposit_submitted");
+  });
+
+  it("persists a repriced deposit identity and rebinds canonical evidence before credit", async () => {
+    const sessionId = await newSession();
+    const intent = await newDepositIntent(sessionId);
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markAllowanceVerifiedWith(client, intent.intentId));
+    const originalTxHash = "0x" + "b".repeat(64);
+    const replacementTxHash = "0x" + "e".repeat(64);
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: originalTxHash,
+        fromAddress: intent.walletAddress,
+        nonce: 19,
+      }));
+
+    const replaced = await withSessionControlLock(sessionId, (client) =>
+      repo.recordDepositReplacementWith(client, intent.intentId, {
+        originalTxHash,
+        replacementTxHash,
+        reason: "repriced",
+        observedAt: new Date(),
+      }));
+    expect(replaced).toMatchObject({
+      depositTxHash: originalTxHash,
+      depositTxFrom: intent.walletAddress,
+      depositTxNonce: "19",
+      depositReplacementTxHash: replacementTxHash,
+      depositReplacementReason: "repriced",
+    });
+    expect(repo.effectiveDepositTxHash(replaced!)).toBe(replacementTxHash);
+
+    const firstBlockHash = "0x" + "c".repeat(64);
+    const confirmed = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositConfirmedWith(client, intent.intentId, {
+        txHash: replacementTxHash,
+        blockHash: firstBlockHash,
+        blockNumber: "23456789",
+        accountIndex: 42,
+        walletAddress: intent.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+      }));
+    expect(confirmed?.executionState).toBe("deposit_confirmed");
+
+    const canonicalBlockHash = "0x" + "f".repeat(64);
+    const canonical = await withSessionControlLock(sessionId, (client) =>
+      repo.reconcileConfirmedDepositL1EvidenceWith(client, intent.intentId, {
+        txHash: replacementTxHash,
+        blockHash: canonicalBlockHash,
+        blockNumber: "23456790",
+        accountIndex: 42,
+        walletAddress: intent.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+      }));
+    expect(canonical).toMatchObject({
+      executionState: "deposit_confirmed",
+      depositL1BlockHash: canonicalBlockHash,
+      depositL1BlockNumber: "23456790",
+    });
+
+    const credited = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositCreditedWith(client, intent.intentId, {
+        txHash: replacementTxHash,
+        blockHash: canonicalBlockHash,
+        blockNumber: "23456790",
+        accountIndex: 42,
+        walletAddress: intent.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+        lighterTxHash: "lighter-replacement-tx-hash",
+        lighterStatus: 3,
+        lighterBlockHeight: 313485203,
+        lighterExecutedAt: 1786949159113,
+      }));
+    expect(credited?.executionState).toBe("credited");
+  });
+
+  it("rejects staging identity that does not belong to the selected wallet", async () => {
+    const sessionId = await newSession();
+    const intent = await newDepositIntent(sessionId);
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markAllowanceVerifiedWith(client, intent.intentId));
+
+    await expect(withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: "0x" + "d".repeat(64),
+        fromAddress: "0x1111111111111111111111111111111111111111",
+        nonce: 7,
+      }))).rejects.toThrow();
+    expect((await repo.findByIntentId(intent.intentId))?.executionState).toBe(
+      "allowance_verified",
+    );
   });
 
   it("returns the authoritative live intent instead of creating a duplicate deposit", async () => {

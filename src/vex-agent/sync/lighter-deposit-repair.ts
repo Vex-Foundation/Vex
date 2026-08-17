@@ -1,8 +1,9 @@
 /**
  * Evidence-only repair for unresolved Lighter Core deposit intents.
  *
- * This module has no signer, wallet client, send, retry, or replacement path.
- * It reads already-staged Ethereum transaction hashes, then advances local state
+ * This module has no signer, wallet client, send, or retry-broadcast path.
+ * It reads already-staged Ethereum transaction identities, accepts only exact
+ * fee-only repricings, then advances local state
  * through hash-bound CAS updates under the
  * owning session's control lock. A missing receipt remains pending; an RPC
  * failure is surfaced as an error and is never converted into a verdict.
@@ -13,7 +14,12 @@ import { getAddress } from "viem";
 import { ErrorCodes, VexError } from "../../errors.js";
 
 import * as intentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
-import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import {
+  effectiveApproveTxHash,
+  effectiveDepositTxHash,
+  type LighterOnboardingIntentRow,
+  type LighterReplacementTransaction,
+} from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
@@ -31,6 +37,11 @@ import {
   type LighterDepositL1Evidence,
   type LighterDepositReceipt,
 } from "@tools/lighter/wallet-funding/deposit-evidence.js";
+import {
+  waitForReceiptWithReplacementEvidence,
+  type ReceiptReplacementEvidence,
+} from "@tools/evm-chains/receipt-guard.js";
+import { proveApprovedLighterDepositReplacement } from "@tools/lighter/wallet-funding/deposit-replacement.js";
 
 export type LighterDepositRepairResolution =
   | "awaiting_approval"
@@ -66,7 +77,10 @@ export interface LighterDepositRepairSweepReport {
 
 export interface LighterDepositRepairDeps {
   readonly listUnresolved: () => Promise<LighterOnboardingIntentRow[]>;
-  readonly readReceipt: (txHash: string) => Promise<LighterDepositReceipt | null>;
+  readonly readReceipt: (txHash: string) => Promise<{
+    readonly receipt: LighterDepositReceipt;
+    readonly replacement: ReceiptReplacementEvidence | null;
+  } | null>;
   readonly readLighterTx: (txHash: string) => Promise<LighterTxFromL1Response | null>;
   readonly readOwnedAccounts: (
     walletAddress: string,
@@ -82,9 +96,21 @@ export interface LighterDepositRepairDeps {
     outcome: "confirmed" | "reverted",
     evidence?: LighterDepositL1Evidence,
   ) => Promise<LighterOnboardingIntentRow | null>;
-  readonly recordConfirmedDepositL1Evidence: (
+  readonly recordApproveReplacement: (
+    intent: LighterOnboardingIntentRow,
+    replacement: LighterReplacementTransaction,
+  ) => Promise<LighterOnboardingIntentRow | null>;
+  readonly recordDepositReplacement: (
+    intent: LighterOnboardingIntentRow,
+    replacement: LighterReplacementTransaction,
+  ) => Promise<LighterOnboardingIntentRow | null>;
+  readonly reconcileConfirmedDepositL1Evidence: (
     intent: LighterOnboardingIntentRow,
     evidence: LighterDepositL1Evidence,
+  ) => Promise<LighterOnboardingIntentRow | null>;
+  readonly markAmbiguous: (
+    intent: LighterOnboardingIntentRow,
+    reason: string,
   ) => Promise<LighterOnboardingIntentRow | null>;
   readonly markCredited: (
     intent: LighterOnboardingIntentRow,
@@ -112,9 +138,22 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
         const receipt = await publicClient.getTransactionReceipt({
           hash: txHash as `0x${string}`,
         });
-        return projectLighterDepositReceipt(receipt);
+        return { receipt: projectLighterDepositReceipt(receipt), replacement: null };
       } catch (err) {
-        if (isReceiptNotFound(err)) return null;
+        if (!isReceiptNotFound(err)) throw err;
+      }
+      try {
+        const read = await waitForReceiptWithReplacementEvidence(
+          publicClient,
+          txHash as `0x${string}`,
+          { attempts: 1, delayMs: 0, timeoutMs: 5_000 },
+        );
+        return {
+          receipt: projectLighterDepositReceipt(read.receipt),
+          replacement: read.replacement,
+        };
+      } catch (err) {
+        if (isReceiptUnavailable(err)) return null;
         throw err;
       }
     },
@@ -173,13 +212,21 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
         }),
       );
     },
-    recordConfirmedDepositL1Evidence(intent, evidence) {
+    recordApproveReplacement(intent, replacement) {
       return withIntentSessionLock(intent, (client) =>
-        intentsRepo.recordConfirmedDepositL1EvidenceWith(
-          client,
-          intent.intentId,
-          evidence,
-        ));
+        intentsRepo.recordApproveReplacementWith(client, intent.intentId, replacement));
+    },
+    recordDepositReplacement(intent, replacement) {
+      return withIntentSessionLock(intent, (client) =>
+        intentsRepo.recordDepositReplacementWith(client, intent.intentId, replacement));
+    },
+    reconcileConfirmedDepositL1Evidence(intent, evidence) {
+      return withIntentSessionLock(intent, (client) =>
+        intentsRepo.reconcileConfirmedDepositL1EvidenceWith(client, intent.intentId, evidence));
+    },
+    markAmbiguous(intent, reason) {
+      return withIntentSessionLock(intent, (client) =>
+        intentsRepo.markAmbiguousWith(client, intent.intentId, reason));
     },
     markCredited(intent, evidence) {
       return withIntentSessionLock(intent, (client) =>
@@ -201,10 +248,10 @@ export async function repairLighterDepositIntent(
       "The deposit intent is already terminal; no repair was needed.");
   }
 
-  if (intent.depositTxHash !== null) {
+  if (effectiveDepositTxHash(intent) !== null) {
     return repairDepositLeg(intent, deps);
   }
-  if (intent.approveTxHash !== null) {
+  if (effectiveApproveTxHash(intent) !== null) {
     return repairApproveLeg(intent, deps);
   }
   if (intent.approvalStatus === "approval_pending") {
@@ -256,29 +303,59 @@ async function repairApproveLeg(
   intent: LighterOnboardingIntentRow,
   deps: LighterDepositRepairDeps,
 ): Promise<LighterDepositRepairReport> {
-  const txHash = intent.approveTxHash!;
+  let current = intent;
+  let txHash = effectiveApproveTxHash(current)!;
   if (intent.executionState === "approve_confirmed") {
     return report(intent, "manual_review", "ethereum_receipt", txHash, null,
       "The approval is confirmed but no deposit hash is staged. Repair will never broadcast the missing deposit.");
   }
-  const receipt = await deps.readReceipt(txHash);
-  if (receipt === null) {
+  const read = await deps.readReceipt(txHash);
+  if (read === null) {
     return report(intent, "awaiting_chain", "none", txHash, null,
       "No Ethereum receipt exists yet. Wait and reconcile again; never rebroadcast the approval.");
   }
+  if (read.replacement !== null) {
+    let replacement: LighterReplacementTransaction;
+    try {
+      replacement = proveApprovedLighterDepositReplacement({
+        intent: current,
+        stage: "approve",
+        replacement: read.replacement,
+      });
+    } catch (err) {
+      return markManualReview(
+        current,
+        deps,
+        txHash,
+        `Ethereum reported an unsafe approval replacement: ${errorText(err)}`,
+      );
+    }
+    const updated = await deps.recordApproveReplacement(current, replacement);
+    if (updated === null) return superseded(current, txHash);
+    current = updated;
+    txHash = replacement.replacementTxHash;
+  }
+  if (read.receipt.transactionHash.toLowerCase() !== txHash.toLowerCase()) {
+    return markManualReview(
+      current,
+      deps,
+      txHash,
+      "Ethereum returned an approval receipt for a different transaction hash.",
+    );
+  }
   const updated = await deps.reconcileApproveReceipt(
-    intent,
+    current,
     txHash,
-    receipt.status === "success" ? "confirmed" : "reverted",
+    read.receipt.status === "success" ? "confirmed" : "reverted",
   );
   if (updated === null) return superseded(intent, txHash);
   return report(
     updated,
-    receipt.status === "success" ? "approve_confirmed" : "failed",
+    read.receipt.status === "success" ? "approve_confirmed" : "failed",
     "ethereum_receipt",
     txHash,
     null,
-    receipt.status === "success"
+    read.receipt.status === "success"
       ? "Ethereum proves the approval confirmed. No deposit was broadcast by repair."
       : "Ethereum proves the approval reverted. The intent is terminally failed.",
     intent.executionState,
@@ -289,38 +366,87 @@ async function repairDepositLeg(
   intent: LighterOnboardingIntentRow,
   deps: LighterDepositRepairDeps,
 ): Promise<LighterDepositRepairReport> {
-  const txHash = intent.depositTxHash!;
-  let confirmed = intent;
+  let current = intent;
+  let txHash = effectiveDepositTxHash(current)!;
+  let confirmed = current;
   let advancedFromReceipt = false;
-  let l1 = l1EvidenceFromIntent(intent);
-  if (intent.executionState !== "deposit_confirmed" || l1 === null) {
-    const receipt = await deps.readReceipt(txHash);
-    if (receipt === null) {
-      return report(intent, "awaiting_chain", "none", txHash, null,
-        "No Ethereum receipt exists yet. Wait and reconcile again; never rebroadcast the deposit.");
+  const priorL1 = l1EvidenceFromIntent(current);
+  const read = await deps.readReceipt(txHash);
+  if (read === null) {
+    if (current.executionState === "deposit_confirmed" && priorL1 !== null) {
+      return markManualReview(
+        current,
+        deps,
+        txHash,
+        "The previously confirmed Ethereum receipt is no longer canonical. Lighter credit is blocked until the exact transaction is proven again.",
+        "none",
+      );
     }
-    if (receipt.status === "reverted") {
-      const updated = await deps.reconcileDepositReceipt(intent, txHash, "reverted");
-      if (updated === null) return superseded(intent, txHash);
-      return report(updated, "failed", "ethereum_receipt", txHash, null,
-        "Ethereum proves the deposit reverted. The intent is terminally failed.", intent.executionState);
-    }
+    return report(current, "awaiting_chain", "none", txHash, null,
+      "No Ethereum receipt exists yet. Wait and reconcile again; never rebroadcast the deposit.");
+  }
+  if (read.replacement !== null) {
+    let replacement: LighterReplacementTransaction;
     try {
-      l1 = proveLighterDepositL1(receipt, expectedDeposit(intent, txHash));
+      replacement = proveApprovedLighterDepositReplacement({
+        intent: current,
+        stage: "deposit",
+        replacement: read.replacement,
+      });
     } catch (err) {
-      return report(intent, "manual_review", "ethereum_receipt", txHash, null,
-        evidenceErrorGuidance(err));
+      return markManualReview(
+        current,
+        deps,
+        txHash,
+        `Ethereum reported an unsafe deposit replacement: ${errorText(err)}`,
+      );
     }
-    if (intent.executionState === "deposit_confirmed") {
-      const updated = await deps.recordConfirmedDepositL1Evidence(intent, l1);
-      if (updated === null) return superseded(intent, txHash);
-      confirmed = updated;
-    } else {
-      const updated = await deps.reconcileDepositReceipt(intent, txHash, "confirmed", l1);
-      if (updated === null) return superseded(intent, txHash);
-      confirmed = updated;
-      advancedFromReceipt = true;
+    const updated = await deps.recordDepositReplacement(current, replacement);
+    if (updated === null) return superseded(current, txHash);
+    current = updated;
+    confirmed = updated;
+    txHash = replacement.replacementTxHash;
+  }
+  if (read.receipt.transactionHash.toLowerCase() !== txHash.toLowerCase()) {
+    return markManualReview(
+      current,
+      deps,
+      txHash,
+      "Ethereum returned a deposit receipt for a different transaction hash.",
+    );
+  }
+  if (read.receipt.status === "reverted") {
+    if (current.executionState === "deposit_confirmed") {
+      return markManualReview(
+        current,
+        deps,
+        txHash,
+        "The canonical Ethereum receipt now proves a revert after an earlier confirmation. Automatic Lighter credit is blocked.",
+      );
     }
+    const updated = await deps.reconcileDepositReceipt(current, txHash, "reverted");
+    if (updated === null) return superseded(current, txHash);
+    return report(updated, "failed", "ethereum_receipt", txHash, null,
+      "Ethereum proves the deposit reverted. The intent is terminally failed.", intent.executionState);
+  }
+
+  let l1: LighterDepositL1Evidence;
+  try {
+    l1 = proveLighterDepositL1(read.receipt, expectedDeposit(current, txHash));
+  } catch (err) {
+    return markManualReview(current, deps, txHash, evidenceErrorGuidance(err));
+  }
+  if (current.executionState === "deposit_confirmed") {
+    if (priorL1 === null || !sameL1Evidence(priorL1, l1)) {
+      const updated = await deps.reconcileConfirmedDepositL1Evidence(current, l1);
+      if (updated === null) return superseded(current, txHash);
+      confirmed = updated;
+    }
+  } else {
+    const updated = await deps.reconcileDepositReceipt(current, txHash, "confirmed", l1);
+    if (updated === null) return superseded(current, txHash);
+    confirmed = updated;
+    advancedFromReceipt = true;
   }
 
   const lighterTx = await deps.readLighterTx(txHash);
@@ -389,7 +515,7 @@ function l1EvidenceFromIntent(
   intent: LighterOnboardingIntentRow,
 ): LighterDepositL1Evidence | null {
   if (
-    intent.depositTxHash === null
+    effectiveDepositTxHash(intent) === null
     || intent.depositL1BlockHash === null
     || intent.depositL1BlockNumber === null
     || intent.depositEventAccountIndex === null
@@ -398,7 +524,7 @@ function l1EvidenceFromIntent(
     || intent.routeType === null
   ) return null;
   return {
-    txHash: intent.depositTxHash,
+    txHash: effectiveDepositTxHash(intent)!,
     blockHash: intent.depositL1BlockHash,
     blockNumber: intent.depositL1BlockNumber,
     accountIndex: intent.depositEventAccountIndex,
@@ -409,8 +535,43 @@ function l1EvidenceFromIntent(
   };
 }
 
+function sameL1Evidence(
+  left: LighterDepositL1Evidence,
+  right: LighterDepositL1Evidence,
+): boolean {
+  return left.txHash.toLowerCase() === right.txHash.toLowerCase()
+    && left.blockHash.toLowerCase() === right.blockHash.toLowerCase()
+    && left.blockNumber === right.blockNumber
+    && left.accountIndex === right.accountIndex
+    && left.walletAddress.toLowerCase() === right.walletAddress.toLowerCase()
+    && left.assetIndex === right.assetIndex
+    && left.routeType === right.routeType
+    && left.amountUnits === right.amountUnits;
+}
+
+async function markManualReview(
+  intent: LighterOnboardingIntentRow,
+  deps: LighterDepositRepairDeps,
+  txHash: string,
+  reason: string,
+  evidence: LighterDepositRepairReport["evidence"] = "ethereum_receipt",
+): Promise<LighterDepositRepairReport> {
+  const updated = await deps.markAmbiguous(intent, reason);
+  return report(
+    updated ?? intent,
+    "manual_review",
+    evidence,
+    txHash,
+    intent.depositEventAccountIndex,
+    updated === null
+      ? `${reason} The durable ambiguous state could not be recorded.`
+      : reason,
+    intent.executionState,
+  );
+}
+
 function evidenceErrorGuidance(err: unknown): string {
-  const detail = err instanceof Error ? err.message : String(err);
+  const detail = errorText(err);
   return `Deposit evidence did not match the approved intent: ${detail} Do not retry or register a key automatically; inspect the exact transaction.`;
 }
 
@@ -462,6 +623,22 @@ function isReceiptNotFound(err: unknown): boolean {
   }
   const message = err instanceof Error ? err.message : String(err);
   return /transaction receipt.*(?:not found|could not be found)/i.test(message);
+}
+
+function isReceiptUnavailable(err: unknown): boolean {
+  if (isReceiptNotFound(err)) return true;
+  if (
+    err instanceof Error
+    && (
+      err.name === "WaitForTransactionReceiptTimeoutError"
+      || err.name === "TransactionNotFoundError"
+    )
+  ) return true;
+  return /timed out while waiting for transaction|transaction .* not found/i.test(errorText(err));
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function isLighterTxNotFound(err: unknown): boolean {

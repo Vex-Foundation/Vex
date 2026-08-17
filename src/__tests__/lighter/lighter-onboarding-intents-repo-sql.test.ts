@@ -48,7 +48,17 @@ const ROW = {
   approval_status: "approval_pending",
   execution_state: "approval_pending",
   approve_tx_hash: null,
+  approve_tx_from: null,
+  approve_tx_nonce: null,
+  approve_replacement_tx_hash: null,
+  approve_replacement_reason: null,
+  approve_replacement_observed_at: null,
   deposit_tx_hash: null,
+  deposit_tx_from: null,
+  deposit_tx_nonce: null,
+  deposit_replacement_tx_hash: null,
+  deposit_replacement_reason: null,
+  deposit_replacement_observed_at: null,
   deposit_l1_block_hash: null,
   deposit_l1_block_number: null,
   deposit_event_account_index: null,
@@ -261,7 +271,7 @@ describe("lighter onboarding intent creation SQL", () => {
     });
 
     const [sql, params] = client.query.mock.calls[0]!;
-    expect(sql).toContain("LOWER(approve_tx_hash) = LOWER($2)");
+    expect(sql).toContain("LOWER(COALESCE(approve_replacement_tx_hash, approve_tx_hash)) = LOWER($2)");
     expect(sql).toContain("deposit_tx_hash IS NULL");
     expect(sql).toContain("execution_state IN ('approve_submitted', 'ambiguous')");
     expect(params).toEqual([ROW.intent_id, txHash, "approve_confirmed", null]);
@@ -281,6 +291,98 @@ describe("lighter onboarding intent creation SQL", () => {
       repo.markAllowanceVerifiedWith(client, ROW.intent_id),
     ).rejects.toThrow("workflow rejected allowance_verified");
     expect(client.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("stages the public sender and nonce with the deposit hash before broadcast", async () => {
+    const staged = {
+      txHash: `0x${"b".repeat(64)}`,
+      fromAddress: ROW.wallet_address,
+      nonce: 17,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{
+            ...ROW,
+            execution_state: "deposit_submitted",
+            deposit_tx_hash: staged.txHash,
+            deposit_tx_from: staged.fromAddress,
+            deposit_tx_nonce: staged.nonce,
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_staged" }],
+          rowCount: 1,
+        }),
+    };
+
+    const result = await repo.markDepositSubmittedWith(client, ROW.intent_id, staged);
+
+    expect(result).toMatchObject({
+      depositTxHash: staged.txHash,
+      depositTxFrom: staged.fromAddress,
+      depositTxNonce: "17",
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("deposit_tx_hash = $3");
+    expect(sql).toContain("deposit_tx_from = $4");
+    expect(sql).toContain("deposit_tx_nonce = $5");
+    expect(params).toEqual([
+      ROW.intent_id,
+      "deposit_submitted",
+      staged.txHash,
+      staged.fromAddress,
+      staged.nonce,
+      ["approve_confirmed", "allowance_verified"],
+    ]);
+  });
+
+  it("records only an idempotent repriced replacement against the original hash", async () => {
+    const originalTxHash = `0x${"b".repeat(64)}`;
+    const replacementTxHash = `0x${"d".repeat(64)}`;
+    const observedAt = new Date("2030-01-01T00:02:00.000Z");
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{
+          ...ROW,
+          execution_state: "deposit_submitted",
+          deposit_tx_hash: originalTxHash,
+          deposit_tx_from: ROW.wallet_address,
+          deposit_tx_nonce: 17,
+          deposit_replacement_tx_hash: replacementTxHash,
+          deposit_replacement_reason: "repriced",
+          deposit_replacement_observed_at: observedAt,
+        }],
+        rowCount: 1,
+      }),
+    };
+
+    const result = await repo.recordDepositReplacementWith(client, ROW.intent_id, {
+      originalTxHash,
+      replacementTxHash,
+      reason: "repriced",
+      observedAt,
+    });
+
+    expect(result).toMatchObject({
+      depositTxHash: originalTxHash,
+      depositReplacementTxHash: replacementTxHash,
+      depositReplacementReason: "repriced",
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
+    expect(sql).toContain("deposit_tx_from IS NOT NULL");
+    expect(sql).toContain("deposit_tx_nonce IS NOT NULL");
+    expect(sql).toContain("LOWER(deposit_replacement_tx_hash) = LOWER($3)");
+    expect(params).toEqual([
+      ROW.intent_id,
+      originalTxHash,
+      replacementTxHash,
+      "repriced",
+      observedAt,
+      ["deposit_submitted", "ambiguous"],
+    ]);
   });
 
   it("binds L1 confirmation to the staged hash and every approved deposit field", async () => {
@@ -323,7 +425,7 @@ describe("lighter onboarding intent creation SQL", () => {
     const firstCall = client.query.mock.calls[0];
     if (firstCall === undefined) throw new Error("expected the intent update query");
     const [sql, params] = firstCall;
-    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
+    expect(sql).toContain("LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)");
     expect(sql).toContain("LOWER(wallet_address) = LOWER($6)");
     expect(sql).toContain("asset_index = $7");
     expect(sql).toContain("amount_units = $9");

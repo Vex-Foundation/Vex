@@ -18,11 +18,17 @@ import {
   type LighterDepositReceipt,
 } from "./deposit-evidence.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import type {
+  LighterReplacementTransaction,
+  LighterStagedEvmTransaction,
+} from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
 import {
   approvedFeeCeiling,
   type LighterDepositPreSignStage,
   type LighterDepositSignedFeeCeiling,
 } from "./deposit-pre-sign.js";
+import { proveApprovedLighterDepositReplacement } from "./deposit-replacement.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
@@ -72,7 +78,7 @@ export interface LighterDepositExecutionDeps {
     readonly spender: string;
     readonly amountUnits: bigint;
     readonly feeCeiling: LighterDepositSignedFeeCeiling;
-    readonly onHashStaged: (txHash: string) => Promise<void>;
+    readonly onHashStaged: (transaction: LighterStagedEvmTransaction) => Promise<void>;
   }) => Promise<
     | { readonly skipped: true }
     | {
@@ -80,6 +86,7 @@ export interface LighterDepositExecutionDeps {
         readonly txHash: string;
         readonly outcome: LegOutcome;
         readonly confirmedBlockNumber?: bigint;
+        readonly replacement?: ReceiptReplacementEvidence;
         readonly reason?: string;
       }
   >;
@@ -90,18 +97,33 @@ export interface LighterDepositExecutionDeps {
     readonly data: string;
     readonly confirmedApprovalBlockNumber?: bigint;
     readonly feeCeiling: LighterDepositSignedFeeCeiling;
-    readonly onHashStaged: (txHash: string) => Promise<void>;
+    readonly onHashStaged: (transaction: LighterStagedEvmTransaction) => Promise<void>;
   }) => Promise<{
     readonly txHash: string;
     readonly outcome: LegOutcome;
     readonly receipt?: LighterDepositReceipt;
+    readonly replacement?: ReceiptReplacementEvidence;
     readonly reason?: string;
   }>;
   readonly intents: {
     markAllowanceVerified(intentId: string): Promise<unknown | null>;
-    markApproveSubmitted(intentId: string, hash: string): Promise<unknown | null>;
+    markApproveSubmitted(
+      intentId: string,
+      transaction: LighterStagedEvmTransaction,
+    ): Promise<unknown | null>;
     markApproveConfirmed(intentId: string): Promise<unknown | null>;
-    markDepositSubmitted(intentId: string, hash: string): Promise<unknown | null>;
+    markDepositSubmitted(
+      intentId: string,
+      transaction: LighterStagedEvmTransaction,
+    ): Promise<unknown | null>;
+    recordApproveReplacement(
+      intentId: string,
+      replacement: LighterReplacementTransaction,
+    ): Promise<unknown | null>;
+    recordDepositReplacement(
+      intentId: string,
+      replacement: LighterReplacementTransaction,
+    ): Promise<unknown | null>;
     markDepositConfirmed(
       intentId: string,
       evidence: LighterDepositL1Evidence,
@@ -176,6 +198,7 @@ export async function executeApprovedLighterDeposit(input: {
 
   // Leg 1: approval (only if allowance is short). Hash persists before broadcast.
   let approveTxHash: string | null = null;
+  let approveStaged: LighterStagedEvmTransaction | null = null;
   let confirmedApprovalBlockNumber: bigint | undefined;
   try {
     await deps.assertExecutionLease();
@@ -185,10 +208,11 @@ export async function executeApprovedLighterDeposit(input: {
       spender: intent.depositContract,
       amountUnits,
       feeCeiling: approveFeeCeiling,
-      onHashStaged: async (hash) => {
-        approveTxHash = hash;
+      onHashStaged: async (transaction) => {
+        approveTxHash = transaction.txHash;
+        approveStaged = transaction;
         const staged = await tryTransition(() =>
-          deps.intents.markApproveSubmitted(intent.intentId, hash));
+          deps.intents.markApproveSubmitted(intent.intentId, transaction));
         if (!staged) {
           throw new PreBroadcastPersistenceError(
             "Approval transaction hash could not be durably staged; broadcast was aborted.",
@@ -215,6 +239,51 @@ export async function executeApprovedLighterDeposit(input: {
           approveTxHash ?? approve.txHash,
           "Approval runner returned without the same durably staged transaction hash.",
         );
+      }
+      if (approve.replacement !== undefined) {
+        const stagedApprove = approveStaged as LighterStagedEvmTransaction | null;
+        if (stagedApprove === null) {
+          return await ambiguousResult(
+            deps,
+            intent.intentId,
+            "approve",
+            approve.txHash,
+            "Ethereum reported an approval replacement without staged sender and nonce evidence.",
+          );
+        }
+        let accepted: LighterReplacementTransaction;
+        try {
+          accepted = proveApprovedLighterDepositReplacement({
+            intent: {
+              ...intent,
+              approveTxHash: stagedApprove.txHash,
+              approveTxFrom: stagedApprove.fromAddress,
+              approveTxNonce: stagedApprove.nonce.toString(10),
+            },
+            stage: "approve",
+            replacement: approve.replacement,
+          });
+        } catch (err) {
+          return await ambiguousResult(
+            deps,
+            intent.intentId,
+            "approve",
+            approve.replacement.replacementTxHash,
+            errText(err),
+          );
+        }
+        const replacementRecorded = await tryTransition(() =>
+          deps.intents.recordApproveReplacement(intent.intentId, accepted));
+        if (!replacementRecorded) {
+          return await ambiguousResult(
+            deps,
+            intent.intentId,
+            "approve",
+            accepted.replacementTxHash,
+            "The exact approval replacement could not be recorded durably.",
+          );
+        }
+        approveTxHash = accepted.replacementTxHash;
       }
       if (approve.outcome === "reverted") {
         const reason = approve.reason ?? "Settlement-asset approval reverted on chain.";
@@ -267,6 +336,7 @@ export async function executeApprovedLighterDeposit(input: {
 
   // Leg 2: deposit. Hash persists before broadcast.
   let depositTxHash: string | null = null;
+  let depositStaged: LighterStagedEvmTransaction | null = null;
   let depositEvidence: LighterDepositL1Evidence | null = null;
   try {
     await deps.assertExecutionLease();
@@ -277,10 +347,11 @@ export async function executeApprovedLighterDeposit(input: {
       data: calldata.data,
       confirmedApprovalBlockNumber,
       feeCeiling: depositFeeCeiling,
-      onHashStaged: async (hash) => {
-        depositTxHash = hash;
+      onHashStaged: async (transaction) => {
+        depositTxHash = transaction.txHash;
+        depositStaged = transaction;
         const staged = await tryTransition(() =>
-          deps.intents.markDepositSubmitted(intent.intentId, hash));
+          deps.intents.markDepositSubmitted(intent.intentId, transaction));
         if (!staged) {
           throw new PreBroadcastPersistenceError(
             "Deposit transaction hash could not be durably staged; broadcast was aborted.",
@@ -296,6 +367,51 @@ export async function executeApprovedLighterDeposit(input: {
         depositTxHash ?? deposit.txHash,
         "Deposit runner returned without the same durably staged transaction hash.",
       );
+    }
+    if (deposit.replacement !== undefined) {
+      const stagedDeposit = depositStaged as LighterStagedEvmTransaction | null;
+      if (stagedDeposit === null) {
+        return await ambiguousResult(
+          deps,
+          intent.intentId,
+          "deposit",
+          deposit.txHash,
+          "Ethereum reported a deposit replacement without staged sender and nonce evidence.",
+        );
+      }
+      let accepted: LighterReplacementTransaction;
+      try {
+        accepted = proveApprovedLighterDepositReplacement({
+          intent: {
+            ...intent,
+            depositTxHash: stagedDeposit.txHash,
+            depositTxFrom: stagedDeposit.fromAddress,
+            depositTxNonce: stagedDeposit.nonce.toString(10),
+          },
+          stage: "deposit",
+          replacement: deposit.replacement,
+        });
+      } catch (err) {
+        return await ambiguousResult(
+          deps,
+          intent.intentId,
+          "deposit",
+          deposit.replacement.replacementTxHash,
+          errText(err),
+        );
+      }
+      const replacementRecorded = await tryTransition(() =>
+        deps.intents.recordDepositReplacement(intent.intentId, accepted));
+      if (!replacementRecorded) {
+        return await ambiguousResult(
+          deps,
+          intent.intentId,
+          "deposit",
+          accepted.replacementTxHash,
+          "The exact deposit replacement could not be recorded durably.",
+        );
+      }
+      depositTxHash = accepted.replacementTxHash;
     }
     if (deposit.outcome === "reverted") {
       const reason = deposit.reason ?? "Deposit transaction reverted on chain.";
@@ -320,7 +436,7 @@ export async function executeApprovedLighterDeposit(input: {
       );
     }
     depositEvidence = proveLighterDepositL1(deposit.receipt, {
-      txHash: deposit.txHash,
+      txHash: depositTxHash,
       gatewayAddress: intent.depositContract,
       walletAddress: intent.walletAddress,
       recipientAddress: intent.depositTo,
