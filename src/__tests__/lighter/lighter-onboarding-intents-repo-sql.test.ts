@@ -71,6 +71,18 @@ beforeEach(() => {
 });
 
 describe("lighter onboarding intent creation SQL", () => {
+  it("exposes deposit mutations only through caller-owned transactions", () => {
+    expect(repo).not.toHaveProperty("markApprovalDecision");
+    expect(repo).not.toHaveProperty("markApproveSubmitted");
+    expect(repo).not.toHaveProperty("markApproveConfirmed");
+    expect(repo).not.toHaveProperty("markAllowanceVerified");
+    expect(repo).not.toHaveProperty("markDepositSubmitted");
+    expect(repo).not.toHaveProperty("markDepositConfirmed");
+    expect(repo).not.toHaveProperty("markCredited");
+    expect(repo).not.toHaveProperty("markAmbiguous");
+    expect(repo).not.toHaveProperty("markFailed");
+  });
+
   it("creates through a caller-bound client with conflict-safe insertion", async () => {
     const client = {
       query: vi.fn()

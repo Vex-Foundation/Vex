@@ -72,15 +72,21 @@ d("lighter_onboarding_intents repo", () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
 
-    const approved = await repo.markApprovalDecision({ intentId: intent.intentId, decision: "approved" });
+    const approved = await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
     expect(approved?.approvalStatus).toBe("approved");
     expect(approved?.executionState).toBe("approved");
 
-    expect((await repo.markApproveSubmitted(intent.intentId, "0x" + "a".repeat(64)))?.executionState).toBe("approve_submitted");
-    expect((await repo.markApproveConfirmed(intent.intentId))?.executionState).toBe("approve_confirmed");
-    expect((await repo.markDepositSubmitted(intent.intentId, "0x" + "b".repeat(64)))?.executionState).toBe("deposit_submitted");
-    expect((await repo.markDepositConfirmed(intent.intentId))?.executionState).toBe("deposit_confirmed");
-    const credited = await repo.markCredited(intent.intentId, 800001);
+    expect((await withSessionControlLock(sessionId, (client) =>
+      repo.markApproveSubmittedWith(client, intent.intentId, "0x" + "a".repeat(64))))?.executionState).toBe("approve_submitted");
+    expect((await withSessionControlLock(sessionId, (client) =>
+      repo.markApproveConfirmedWith(client, intent.intentId)))?.executionState).toBe("approve_confirmed");
+    expect((await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "b".repeat(64))))?.executionState).toBe("deposit_submitted");
+    expect((await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositConfirmedWith(client, intent.intentId)))?.executionState).toBe("deposit_confirmed");
+    const credited = await withSessionControlLock(sessionId, (client) =>
+      repo.markCreditedWith(client, intent.intentId, 800001));
     expect(credited?.executionState).toBe("credited");
     expect(credited?.resolvedAccountIndex).toBe(800001);
   });
@@ -88,9 +94,11 @@ d("lighter_onboarding_intents repo", () => {
   it("refuses an out-of-order transition (no deposit before approve confirmed)", async () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
-    await repo.markApprovalDecision({ intentId: intent.intentId, decision: "approved" });
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
     // Skipping approve submit/confirm must not advance.
-    const skipped = await repo.markDepositSubmitted(intent.intentId, "0x" + "c".repeat(64));
+    const skipped = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "c".repeat(64)));
     expect(skipped).toBeNull();
     expect((await repo.findByIntentId(intent.intentId))?.executionState).toBe("approved");
   });
@@ -98,13 +106,16 @@ d("lighter_onboarding_intents repo", () => {
   it("records a sufficient existing allowance without inventing an approval transaction", async () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
-    await repo.markApprovalDecision({ intentId: intent.intentId, decision: "approved" });
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
 
-    const verified = await repo.markAllowanceVerified(intent.intentId);
+    const verified = await withSessionControlLock(sessionId, (client) =>
+      repo.markAllowanceVerifiedWith(client, intent.intentId));
     expect(verified?.executionState).toBe("allowance_verified");
     expect(verified?.approveTxHash).toBeNull();
     expect(
-      (await repo.markDepositSubmitted(intent.intentId, "0x" + "d".repeat(64)))?.executionState,
+      (await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "d".repeat(64))))?.executionState,
     ).toBe("deposit_submitted");
   });
 
@@ -134,8 +145,10 @@ d("lighter_onboarding_intents repo", () => {
   it("lists unresolved intents and excludes credited/failed", async () => {
     const sessionId = await newSession();
     const live = await newDepositIntent(sessionId);
-    const done = await newDepositIntent(sessionId);
-    await repo.markFailed(done.intentId, "test failed");
+    const doneSessionId = await newSession();
+    const done = await newDepositIntent(doneSessionId);
+    await withSessionControlLock(doneSessionId, (client) =>
+      repo.markFailedWith(client, done.intentId, "test failed"));
 
     const unresolved = await repo.listUnresolved("core");
     const ids = unresolved.map((r) => r.intentId);
@@ -146,8 +159,10 @@ d("lighter_onboarding_intents repo", () => {
   it("markApprovalDecision only acts on approval_pending", async () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
-    await repo.markApprovalDecision({ intentId: intent.intentId, decision: "approved" });
-    const second = await repo.markApprovalDecision({ intentId: intent.intentId, decision: "rejected" });
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
+    const second = await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "rejected" }));
     expect(second).toBeNull();
   });
 });
