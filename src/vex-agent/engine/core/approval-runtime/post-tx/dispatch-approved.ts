@@ -149,7 +149,7 @@ function isLighterUnresolvedResult(data: unknown): boolean {
   const row = data as Record<string, unknown>;
   if (
     row["source"] === "vex_lighter_live_deposit"
-    && row["status"] === "ambiguous"
+    && (row["status"] === "ambiguous" || row["status"] === "l2_pending")
   ) {
     return true;
   }

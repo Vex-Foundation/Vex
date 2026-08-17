@@ -233,6 +233,15 @@ describe("deriveApprovedDispatchExecutionStatus", () => {
     expect(
       deriveApprovedDispatchExecutionStatus({
         success: true,
+        data: {
+          source: "vex_lighter_live_deposit",
+          status: "l2_pending",
+        },
+      }),
+    ).toBe("indeterminate");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
         data: { status: "sequencer_pending" },
       }),
     ).toBe("succeeded");

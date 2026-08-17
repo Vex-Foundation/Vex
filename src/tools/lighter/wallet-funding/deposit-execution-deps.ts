@@ -28,7 +28,6 @@ import {
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_DEPOSIT_CHAIN_ID,
 } from "./constants.js";
-import { buildLighterOnboardingReaders } from "./onboarding-readers.js";
 import type { LegOutcome, LighterDepositExecutionDeps } from "./deposit-execution.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
@@ -72,7 +71,6 @@ export function buildLighterDepositExecutionDeps(
     throw new Error("Ethereum mainnet deployment is not configured for Lighter deposits.");
   }
   const clients = getUniswapEvmClients(deployment, input.privateKey);
-  const readers = buildLighterOnboardingReaders();
   const usdc = getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS);
   const writeUnderSessionLock = <T>(
     write: (client: PoolClient) => Promise<T>,
@@ -115,11 +113,6 @@ export function buildLighterDepositExecutionDeps(
       return { txHash: outcome.txHash, outcome: outcome.outcome, reason: outcome.reason };
     },
 
-    async resolveAccountIndex(walletAddress) {
-      const account = await readers.readLighterAccount("core", walletAddress);
-      return account?.account_index ?? null;
-    },
-
     intents: {
       markAllowanceVerified: (intentId) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markAllowanceVerifiedWith(client, intentId)),
@@ -131,8 +124,6 @@ export function buildLighterDepositExecutionDeps(
         onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, hash)),
       markDepositConfirmed: (intentId) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markDepositConfirmedWith(client, intentId)),
-      markCredited: (intentId, accountIndex) => writeUnderSessionLock((client) =>
-        onboardingIntentsRepo.markCreditedWith(client, intentId, accountIndex)),
       markAmbiguous: (intentId, reason) => writeUnderSessionLock((client) =>
         onboardingIntentsRepo.markAmbiguousWith(client, intentId, reason)),
       markFailed: (intentId, reason) => writeUnderSessionLock((client) =>

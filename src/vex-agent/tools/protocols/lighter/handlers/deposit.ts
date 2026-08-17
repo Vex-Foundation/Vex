@@ -95,10 +95,8 @@ function depositUserGuidance(execution: LighterDepositExecutionResult): string {
   switch (execution.status) {
     case "gate_closed":
       return "The deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Tell the user nothing was signed or submitted.";
-    case "credited":
-      return execution.resolvedAccountIndex === null
-        ? "The deposit transaction is confirmed on-chain; Lighter credits the account asynchronously, so the account index is not resolved yet. Tell the user the deposit is on-chain and the Lighter account will appear shortly; offer to re-check onboarding status."
-        : `The deposit is confirmed on-chain and credited to Lighter account ${execution.resolvedAccountIndex}. Tell the user their Lighter account is funded.`;
+    case "l2_pending":
+      return "Ethereum confirmed the deposit, but Vex has not yet proven that Lighter credited this exact transaction. Tell the user the deposit is awaiting Lighter confirmation and must not be retried.";
     case "ambiguous":
       return `The ${execution.stage} transaction outcome could not be confirmed. Tell the user the state is uncertain and that it must be reconciled before any retry; do not say it succeeded or failed.`;
     case "failed":
@@ -224,7 +222,8 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       reconciliationReports: repairReports,
       intents: refreshedIntents.map(projectDepositStatus),
       riskNotes: [
-        "Reconciliation reads already-staged Ethereum receipts and public Lighter account state only; it never signs, broadcasts, retries, or replaces a transaction.",
+        "Phase 1 reconciliation reads already-staged Ethereum receipts only; it never treats generic account existence as proof that this deposit was credited.",
+        "Exact Lighter-side evidence for the staged L1 transaction is required before the workflow can advance beyond L2 pending.",
         "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
       ],
       message:

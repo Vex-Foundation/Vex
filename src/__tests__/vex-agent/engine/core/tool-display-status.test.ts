@@ -47,11 +47,18 @@ describe("deriveToolDisplayStatus", () => {
     ).toBe("pending");
   });
 
-  it("derives 'pending' from a source-scoped ambiguous Lighter deposit", () => {
+  it("derives 'pending' from source-scoped unresolved Lighter deposits", () => {
     expect(
       deriveToolDisplayStatus({
         source: "vex_lighter_live_deposit",
         status: "ambiguous",
+        stage: "deposit",
+      }),
+    ).toBe("pending");
+    expect(
+      deriveToolDisplayStatus({
+        source: "vex_lighter_live_deposit",
+        status: "l2_pending",
         stage: "deposit",
       }),
     ).toBe("pending");

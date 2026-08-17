@@ -303,10 +303,10 @@ describe("lighter.deposit execution lease", () => {
       privateKey: `0x${"1".repeat(64)}`,
     });
     mocks.executeApprovedDeposit.mockResolvedValue({
-      status: "credited",
+      status: "l2_pending",
       approveTxHash: null,
       depositTxHash: `0x${"b".repeat(64)}`,
-      resolvedAccountIndex: 800123,
+      reason: "exact Lighter evidence pending",
     });
 
     const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
@@ -328,6 +328,7 @@ describe("lighter.deposit execution lease", () => {
       intent: expect.objectContaining({ executionState: "approved" }),
       deps: { marker: "execution-deps" },
     });
+    expect(JSON.stringify(result.output)).toContain("awaiting Lighter confirmation");
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
 

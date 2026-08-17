@@ -279,25 +279,6 @@ export async function markDepositConfirmedWith(
   );
 }
 
-export async function markCreditedWith(
-  client: PoolClient,
-  intentId: string,
-  resolvedAccountIndex: number,
-): Promise<LighterOnboardingIntentRow | null> {
-  return advanceDepositWith(
-    client,
-    intentId,
-    "credited",
-    ["deposit_confirmed"],
-    { resolved_account_index: resolvedAccountIndex },
-    {
-      expectedStates: ["deposit_l2_pending", "ambiguous"],
-      nextState: "account_resolved",
-      resolvedAccountIndex,
-    },
-  );
-}
-
 export async function markAmbiguousWith(
   client: PoolClient,
   intentId: string,
@@ -478,37 +459,6 @@ export async function reconcileDepositReceiptWith(
         nextState: "failed",
         failureCode: "deposit_transaction_reverted",
       });
-  return intent;
-}
-
-export async function reconcileCreditedWith(
-  client: PoolClient,
-  input: {
-    readonly intentId: string;
-    readonly txHash: string;
-    readonly accountIndex: number;
-  },
-): Promise<LighterOnboardingIntentRow | null> {
-  const result = await client.query<Record<string, unknown>>(
-    `UPDATE lighter_onboarding_intents
-        SET execution_state = 'credited',
-            resolved_account_index = $3,
-            failure_reason = NULL,
-            updated_at = NOW()
-      WHERE intent_id = $1
-        AND LOWER(deposit_tx_hash) = LOWER($2)
-        AND execution_state = 'deposit_confirmed'
-      RETURNING ${RETURNING}`,
-    [input.intentId, input.txHash, input.accountIndex],
-  );
-  const row = result.rows[0];
-  if (row === undefined) return null;
-  const intent = mapRow(row);
-  await requireDepositWorkflowTransition(client, intent, {
-    expectedStates: ["deposit_l2_pending", "ambiguous"],
-    nextState: "account_resolved",
-    resolvedAccountIndex: input.accountIndex,
-  });
   return intent;
 }
 

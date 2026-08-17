@@ -77,7 +77,7 @@ export function deriveToolDisplayStatus(data: unknown): ToolDisplayStatus | null
   const status = (data as Record<string, unknown>)["status"];
   if (
     source === LIGHTER_DEPOSIT_PENDING_SOURCE
-    && status === "ambiguous"
+    && (status === "ambiguous" || status === "l2_pending")
   ) {
     return PENDING_STATUS;
   }

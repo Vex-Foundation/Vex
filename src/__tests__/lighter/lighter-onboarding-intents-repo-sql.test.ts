@@ -79,6 +79,8 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(repo).not.toHaveProperty("markDepositSubmitted");
     expect(repo).not.toHaveProperty("markDepositConfirmed");
     expect(repo).not.toHaveProperty("markCredited");
+    expect(repo).not.toHaveProperty("markCreditedWith");
+    expect(repo).not.toHaveProperty("reconcileCreditedWith");
     expect(repo).not.toHaveProperty("markAmbiguous");
     expect(repo).not.toHaveProperty("markFailed");
   });
@@ -164,33 +166,6 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("deposit_tx_hash IS NULL");
     expect(sql).toContain("execution_state IN ('approve_submitted', 'ambiguous')");
     expect(params).toEqual([ROW.intent_id, txHash, "approve_confirmed", null]);
-  });
-
-  it("reconciles deposit credit only after the hash-bound confirmed state", async () => {
-    const client = {
-      query: vi.fn()
-        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
-        .mockResolvedValueOnce({
-          rows: [{
-            ...WORKFLOW_ROW,
-            workflow_state: "account_resolved",
-            resolved_account_index: 800123,
-          }],
-          rowCount: 1,
-        }),
-    };
-    const txHash = `0x${"b".repeat(64)}`;
-
-    await repo.reconcileCreditedWith(client as never, {
-      intentId: ROW.intent_id,
-      txHash,
-      accountIndex: 800123,
-    });
-
-    const [sql, params] = client.query.mock.calls[0]!;
-    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
-    expect(sql).toContain("execution_state = 'deposit_confirmed'");
-    expect(params).toEqual([ROW.intent_id, txHash, 800123]);
   });
 
   it("throws when the wallet workflow CAS rejects an otherwise valid intent transition", async () => {

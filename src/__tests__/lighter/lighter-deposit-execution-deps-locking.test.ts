@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   markApproveConfirmedWith: vi.fn(),
   markDepositSubmittedWith: vi.fn(),
   markDepositConfirmedWith: vi.fn(),
-  markCreditedWith: vi.fn(),
   markAmbiguousWith: vi.fn(),
   markFailedWith: vi.fn(),
 }));
@@ -22,7 +21,6 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   markApproveConfirmedWith: mocks.markApproveConfirmedWith,
   markDepositSubmittedWith: mocks.markDepositSubmittedWith,
   markDepositConfirmedWith: mocks.markDepositConfirmedWith,
-  markCreditedWith: mocks.markCreditedWith,
   markAmbiguousWith: mocks.markAmbiguousWith,
   markFailedWith: mocks.markFailedWith,
 }));
@@ -31,11 +29,6 @@ vi.mock("@tools/uniswap/deployments.js", () => ({
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
   getUniswapEvmClients: () => ({ publicClient: {}, walletClient: {} }),
-}));
-vi.mock("@tools/lighter/wallet-funding/onboarding-readers.js", () => ({
-  buildLighterOnboardingReaders: () => ({
-    readLighterAccount: vi.fn(),
-  }),
 }));
 vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
   LIGHTER_DEPOSIT_RELEASE_GATE: { isEnabled: () => false },
@@ -59,7 +52,6 @@ describe("Lighter deposit execution lifecycle locking", () => {
       mocks.markApproveConfirmedWith,
       mocks.markDepositSubmittedWith,
       mocks.markDepositConfirmedWith,
-      mocks.markCreditedWith,
       mocks.markAmbiguousWith,
       mocks.markFailedWith,
     ]) {
@@ -77,11 +69,10 @@ describe("Lighter deposit execution lifecycle locking", () => {
     await deps.intents.markApproveConfirmed("intent-1");
     await deps.intents.markDepositSubmitted("intent-1", `0x${"b".repeat(64)}`);
     await deps.intents.markDepositConfirmed("intent-1");
-    await deps.intents.markCredited("intent-1", 800123);
     await deps.intents.markAmbiguous("intent-1", "uncertain");
     await deps.intents.markFailed("intent-1", "reverted");
 
-    expect(mocks.withSessionControlLock).toHaveBeenCalledTimes(8);
+    expect(mocks.withSessionControlLock).toHaveBeenCalledTimes(7);
     for (const call of mocks.withSessionControlLock.mock.calls) {
       expect(call[0]).toBe("session-1");
     }

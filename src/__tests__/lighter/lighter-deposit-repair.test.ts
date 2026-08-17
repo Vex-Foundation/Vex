@@ -47,10 +47,8 @@ function deps(): LighterDepositRepairDeps & {
   return {
     listUnresolved: vi.fn().mockResolvedValue([]),
     readReceipt: vi.fn(),
-    readAccountIndex: vi.fn(),
     reconcileApproveReceipt: vi.fn(),
     reconcileDepositReceipt: vi.fn(),
-    reconcileCredited: vi.fn(),
   } as never;
 }
 
@@ -72,7 +70,6 @@ describe("Lighter deposit evidence-only repair", () => {
       txHash: DEPOSIT_HASH,
     });
     expect(d.reconcileDepositReceipt).not.toHaveBeenCalled();
-    expect(d.reconcileCredited).not.toHaveBeenCalled();
   });
 
   it("terminalizes an approval only from a proven reverted receipt", async () => {
@@ -99,7 +96,7 @@ describe("Lighter deposit evidence-only repair", () => {
     );
   });
 
-  it("advances a confirmed deposit then resolves its Lighter account index", async () => {
+  it("advances an Ethereum-confirmed deposit only to Lighter credit pending", async () => {
     const d = deps();
     const row = intent({ depositTxHash: DEPOSIT_HASH });
     const confirmed = intent({
@@ -107,38 +104,23 @@ describe("Lighter deposit evidence-only repair", () => {
       depositTxHash: DEPOSIT_HASH,
       failureReason: null,
     });
-    const credited = intent({
-      executionState: "credited",
-      depositTxHash: DEPOSIT_HASH,
-      resolvedAccountIndex: 800123,
-      failureReason: null,
-    });
     d.readReceipt.mockResolvedValueOnce("success");
     d.reconcileDepositReceipt.mockResolvedValueOnce(confirmed);
-    d.readAccountIndex.mockResolvedValueOnce(800123);
-    d.reconcileCredited.mockResolvedValueOnce(credited);
 
     const result = await repairLighterDepositIntent(row, d);
 
     expect(result).toMatchObject({
-      resolution: "credited",
+      resolution: "deposit_confirmed",
       stateBefore: "ambiguous",
-      stateAfter: "credited",
-      accountIndex: 800123,
+      stateAfter: "deposit_confirmed",
+      accountIndex: null,
     });
     expect(d.reconcileDepositReceipt).toHaveBeenCalledWith(
       row,
       DEPOSIT_HASH,
       "confirmed",
     );
-    expect(d.reconcileCredited).toHaveBeenCalledWith(
-      confirmed,
-      DEPOSIT_HASH,
-      800123,
-    );
-    expect(d.reconcileDepositReceipt.mock.invocationCallOrder[0]).toBeLessThan(
-      d.reconcileCredited.mock.invocationCallOrder[0]!,
-    );
+    expect(result.guidance).toContain("exact Lighter-side evidence");
   });
 
   it("keeps an Ethereum-confirmed deposit pending until Lighter exposes the account", async () => {
@@ -147,13 +129,10 @@ describe("Lighter deposit evidence-only repair", () => {
       executionState: "deposit_confirmed",
       depositTxHash: DEPOSIT_HASH,
     });
-    d.readAccountIndex.mockResolvedValueOnce(null);
-
     const result = await repairLighterDepositIntent(row, d);
 
     expect(result.resolution).toBe("awaiting_lighter");
     expect(d.readReceipt).not.toHaveBeenCalled();
-    expect(d.reconcileCredited).not.toHaveBeenCalled();
   });
 
   it("never invents a transaction when an approved intent has no staged hash", async () => {
@@ -165,10 +144,8 @@ describe("Lighter deposit evidence-only repair", () => {
     expect(result.resolution).toBe("manual_review");
     expect(result.guidance).toContain("Do not broadcast from repair");
     expect(d.readReceipt).not.toHaveBeenCalled();
-    expect(d.readAccountIndex).not.toHaveBeenCalled();
     expect(d.reconcileApproveReceipt).not.toHaveBeenCalled();
     expect(d.reconcileDepositReceipt).not.toHaveBeenCalled();
-    expect(d.reconcileCredited).not.toHaveBeenCalled();
   });
 
   it("isolates per-intent provider errors during a sweep", async () => {

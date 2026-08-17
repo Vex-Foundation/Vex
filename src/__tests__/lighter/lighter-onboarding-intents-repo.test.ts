@@ -85,10 +85,7 @@ d("lighter_onboarding_intents repo", () => {
       repo.markDepositSubmittedWith(client, intent.intentId, "0x" + "b".repeat(64))))?.executionState).toBe("deposit_submitted");
     expect((await withSessionControlLock(sessionId, (client) =>
       repo.markDepositConfirmedWith(client, intent.intentId)))?.executionState).toBe("deposit_confirmed");
-    const credited = await withSessionControlLock(sessionId, (client) =>
-      repo.markCreditedWith(client, intent.intentId, 800001));
-    expect(credited?.executionState).toBe("credited");
-    expect(credited?.resolvedAccountIndex).toBe(800001);
+    expect((await repo.findByIntentId(intent.intentId))?.resolvedAccountIndex).toBeNull();
   });
 
   it("refuses an out-of-order transition (no deposit before approve confirmed)", async () => {

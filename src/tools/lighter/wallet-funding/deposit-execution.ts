@@ -24,10 +24,10 @@ export type LegOutcome = "confirmed" | "reverted" | "ambiguous";
 export type LighterDepositExecutionResult =
   | { readonly status: "gate_closed"; readonly reason: string }
   | {
-      readonly status: "credited";
+      readonly status: "l2_pending";
       readonly approveTxHash: string | null;
       readonly depositTxHash: string;
-      readonly resolvedAccountIndex: number | null;
+      readonly reason: string;
     }
   | {
       readonly status: "ambiguous";
@@ -64,15 +64,12 @@ export interface LighterDepositExecutionDeps {
     readonly data: string;
     readonly onHashStaged: (txHash: string) => Promise<void>;
   }) => Promise<{ readonly txHash: string; readonly outcome: LegOutcome; readonly reason?: string }>;
-  /** Resolve the account index Lighter credited after the deposit settles. */
-  readonly resolveAccountIndex: (walletAddress: string) => Promise<number | null>;
   readonly intents: {
     markAllowanceVerified(intentId: string): Promise<unknown | null>;
     markApproveSubmitted(intentId: string, hash: string): Promise<unknown | null>;
     markApproveConfirmed(intentId: string): Promise<unknown | null>;
     markDepositSubmitted(intentId: string, hash: string): Promise<unknown | null>;
     markDepositConfirmed(intentId: string): Promise<unknown | null>;
-    markCredited(intentId: string, accountIndex: number): Promise<unknown | null>;
     markAmbiguous(intentId: string, reason: string): Promise<unknown | null>;
     markFailed(intentId: string, reason: string): Promise<unknown | null>;
   };
@@ -291,24 +288,13 @@ export async function executeApprovedLighterDeposit(input: {
     );
   }
 
-  // The deposit is on-chain; L2 crediting is asynchronous, so a null index is
-  // not a failure — the account index may resolve on a later status check.
-  const resolvedAccountIndex = await deps.resolveAccountIndex(intent.walletAddress).catch(() => null);
-  if (resolvedAccountIndex !== null) {
-    const credited = await tryTransition(() =>
-      deps.intents.markCredited(intent.intentId, resolvedAccountIndex));
-    if (!credited) {
-      return await ambiguousResult(
-        deps,
-        intent.intentId,
-        "deposit",
-        depositTxHash,
-        "Lighter account credit was observed, but the durable credited transition conflicted.",
-      );
-    }
-  }
-
-  return { status: "credited", approveTxHash, depositTxHash, resolvedAccountIndex };
+  return {
+    status: "l2_pending",
+    approveTxHash,
+    depositTxHash,
+    reason:
+      "Ethereum confirmed the deposit. Exact Lighter-side evidence for this L1 transaction is still required before Vex can mark it credited.",
+  };
 }
 
 class PreBroadcastPersistenceError extends Error {}

@@ -47,7 +47,6 @@ function intentsSpy() {
     markApproveConfirmed: vi.fn().mockResolvedValue({ executionState: "approve_confirmed" }),
     markDepositSubmitted: vi.fn().mockResolvedValue({ executionState: "deposit_submitted" }),
     markDepositConfirmed: vi.fn().mockResolvedValue({ executionState: "deposit_confirmed" }),
-    markCredited: vi.fn().mockResolvedValue({ executionState: "credited" }),
     markAmbiguous: vi.fn().mockResolvedValue({ executionState: "ambiguous" }),
     markFailed: vi.fn().mockResolvedValue({ executionState: "failed" }),
   };
@@ -65,7 +64,6 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
       await onHashStaged(DEPOSIT_HASH);
       return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const };
     }),
-    resolveAccountIndex: vi.fn().mockResolvedValue(800123),
     intents: intentsSpy(),
     ...overrides,
   };
@@ -94,20 +92,19 @@ describe("executeApprovedLighterDeposit", () => {
     expect(d.runDepositLeg).not.toHaveBeenCalled();
   });
 
-  it("stages each tx hash before broadcast and credits on the happy path", async () => {
+  it("stages each tx hash before broadcast and stops at Lighter credit pending", async () => {
     const d = deps();
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result).toMatchObject({ status: "credited", depositTxHash: DEPOSIT_HASH, resolvedAccountIndex: 800123 });
+    expect(result).toMatchObject({ status: "l2_pending", depositTxHash: DEPOSIT_HASH });
     // Hash persisted (markApproveSubmitted/markDepositSubmitted) via onHashStaged.
     expect(d.intents.markApproveSubmitted).toHaveBeenCalledWith("lighter-onboard-1", APPROVE_HASH);
     expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith("lighter-onboard-1", DEPOSIT_HASH);
-    expect(d.intents.markCredited).toHaveBeenCalledWith("lighter-onboard-1", 800123);
   });
 
   it("skips the approve broadcast when allowance already suffices", async () => {
     const d = deps({ runApproveLegIfNeeded: vi.fn().mockResolvedValue({ skipped: true }) });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result.status).toBe("credited");
+    expect(result.status).toBe("l2_pending");
     expect(d.intents.markApproveSubmitted).not.toHaveBeenCalled();
     expect(d.intents.markAllowanceVerified).toHaveBeenCalledWith("lighter-onboard-1");
     expect(d.intents.markApproveConfirmed).not.toHaveBeenCalled();
@@ -136,14 +133,15 @@ describe("executeApprovedLighterDeposit", () => {
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result).toMatchObject({ status: "ambiguous", stage: "deposit" });
     expect(d.intents.markAmbiguous).toHaveBeenCalled();
-    expect(d.intents.markCredited).not.toHaveBeenCalled();
   });
 
-  it("still reports credited when the account index has not resolved yet", async () => {
-    const d = deps({ resolveAccountIndex: vi.fn().mockResolvedValue(null) });
+  it("does not claim Lighter credit from an Ethereum receipt alone", async () => {
+    const d = deps();
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result).toMatchObject({ status: "credited", resolvedAccountIndex: null });
-    expect(d.intents.markCredited).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "l2_pending",
+      reason: expect.stringContaining("Exact Lighter-side evidence"),
+    });
     expect(d.intents.markDepositConfirmed).toHaveBeenCalled();
   });
 
@@ -241,16 +239,6 @@ describe("executeApprovedLighterDeposit", () => {
   it("never reports credited when a post-broadcast lifecycle transition conflicts", async () => {
     const intentTransitions = intentsSpy();
     intentTransitions.markDepositConfirmed.mockResolvedValueOnce(null);
-    const d = deps({ intents: intentTransitions });
-
-    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result).toMatchObject({ status: "ambiguous", stage: "deposit", txHash: DEPOSIT_HASH });
-    expect(d.intents.markCredited).not.toHaveBeenCalled();
-  });
-
-  it("never reports credited when the final credited CAS conflicts", async () => {
-    const intentTransitions = intentsSpy();
-    intentTransitions.markCredited.mockResolvedValueOnce(null);
     const d = deps({ intents: intentTransitions });
 
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
