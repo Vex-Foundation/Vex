@@ -347,21 +347,25 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(err instanceof Error ? err.message : String(err));
     }
     if (intent.expiresAt.getTime() <= Date.now()) {
-      await onboardingIntentsRepo.markApprovalDecision({
-        intentId: intent.intentId,
-        decision: "expired",
-        approvalId: context.approvalId,
-        reason: "approval resume observed an expired Lighter deposit intent",
-      });
+      await withSessionControlLock(sessionId, (client) =>
+        onboardingIntentsRepo.markApprovalDecisionWith(client, {
+          intentId: intent.intentId,
+          decision: "expired",
+          approvalId: context.approvalId,
+          reason: "approval resume observed an expired Lighter deposit intent",
+        }),
+      );
       return fail(`Lighter deposit intent ${intent.intentId} expired before approval resume.`);
     }
 
-    const approved = await onboardingIntentsRepo.markApprovalDecision({
-      intentId: intent.intentId,
-      decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact Lighter deposit intent",
-    });
+    const approved = await withSessionControlLock(sessionId, (client) =>
+      onboardingIntentsRepo.markApprovalDecisionWith(client, {
+        intentId: intent.intentId,
+        decision: "approved",
+        approvalId: context.approvalId,
+        reason: "user approved exact Lighter deposit intent",
+      }),
+    );
     if (approved === null) {
       return fail(`Lighter deposit intent ${intent.intentId} has already left approval_pending.`);
     }
@@ -416,6 +420,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
 
       const deps = buildLighterDepositExecutionDeps({
         privateKey: signer.privateKey as Hex,
+        sessionId,
         assertExecutionLease: () => leaseHandle.assertOwned(),
       });
       const execution = await executeApprovedLighterDeposit({ intent: approved, deps });
@@ -427,9 +432,12 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      const ambiguous = await onboardingIntentsRepo.markAmbiguous(
-        approved.intentId,
-        `Deposit executor error: ${reason}`,
+      const ambiguous = await withSessionControlLock(sessionId, (client) =>
+        onboardingIntentsRepo.markAmbiguousWith(
+          client,
+          approved.intentId,
+          `Deposit executor error: ${reason}`,
+        ),
       );
       const txHash = ambiguous?.depositTxHash ?? ambiguous?.approveTxHash ?? null;
       const stage = ambiguous?.depositTxHash

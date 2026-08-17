@@ -30,8 +30,10 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   createOrFindLiveDepositApprovalPendingWith: mocks.createOrFind,
   listUnresolvedDepositsForWallet: mocks.listUnresolvedDepositsForWallet,
   findByIntentId: mocks.findByIntentId,
-  markApprovalDecision: mocks.markApprovalDecision,
-  markAmbiguous: mocks.markAmbiguous,
+  markApprovalDecisionWith: (_client: unknown, input: unknown) =>
+    mocks.markApprovalDecision(input),
+  markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
+    mocks.markAmbiguous(intentId, reason),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
@@ -319,6 +321,7 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.leaseAssertOwned).toHaveBeenCalled();
     expect(mocks.buildExecutionDeps).toHaveBeenCalledWith(expect.objectContaining({
       privateKey: `0x${"1".repeat(64)}`,
+      sessionId: "session-1",
       assertExecutionLease: expect.any(Function),
     }));
     expect(mocks.executeApprovedDeposit).toHaveBeenCalledWith({

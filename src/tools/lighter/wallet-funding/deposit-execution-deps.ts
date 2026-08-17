@@ -16,11 +16,13 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import type { PoolClient } from "pg";
 
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { LIGHTER_DEPOSIT_RELEASE_GATE } from "./release-gates.js";
 import {
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
@@ -55,6 +57,8 @@ const ERC20_ALLOWANCE_APPROVE_ABI = [
 export interface LighterDepositSignerInput {
   /** The Vex wallet L1 private key, resolved by the privileged handler. */
   readonly privateKey: Hex;
+  /** Owning host session; every lifecycle write serializes through its lock. */
+  readonly sessionId: string;
   /** Re-prove the cross-process chain-wallet lease at signing boundaries. */
   readonly assertExecutionLease: () => Promise<void>;
 }
@@ -70,6 +74,9 @@ export function buildLighterDepositExecutionDeps(
   const clients = getUniswapEvmClients(deployment, input.privateKey);
   const readers = buildLighterOnboardingReaders();
   const usdc = getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS);
+  const writeUnderSessionLock = <T>(
+    write: (client: PoolClient) => Promise<T>,
+  ): Promise<T> => withSessionControlLock(input.sessionId, write);
 
   return {
     depositGateEnabled: () => LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled(),
@@ -114,14 +121,22 @@ export function buildLighterDepositExecutionDeps(
     },
 
     intents: {
-      markAllowanceVerified: (intentId) => onboardingIntentsRepo.markAllowanceVerified(intentId),
-      markApproveSubmitted: (intentId, hash) => onboardingIntentsRepo.markApproveSubmitted(intentId, hash),
-      markApproveConfirmed: (intentId) => onboardingIntentsRepo.markApproveConfirmed(intentId),
-      markDepositSubmitted: (intentId, hash) => onboardingIntentsRepo.markDepositSubmitted(intentId, hash),
-      markDepositConfirmed: (intentId) => onboardingIntentsRepo.markDepositConfirmed(intentId),
-      markCredited: (intentId, accountIndex) => onboardingIntentsRepo.markCredited(intentId, accountIndex),
-      markAmbiguous: (intentId, reason) => onboardingIntentsRepo.markAmbiguous(intentId, reason),
-      markFailed: (intentId, reason) => onboardingIntentsRepo.markFailed(intentId, reason),
+      markAllowanceVerified: (intentId) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markAllowanceVerifiedWith(client, intentId)),
+      markApproveSubmitted: (intentId, hash) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markApproveSubmittedWith(client, intentId, hash)),
+      markApproveConfirmed: (intentId) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markApproveConfirmedWith(client, intentId)),
+      markDepositSubmitted: (intentId, hash) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markDepositSubmittedWith(client, intentId, hash)),
+      markDepositConfirmed: (intentId) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markDepositConfirmedWith(client, intentId)),
+      markCredited: (intentId, accountIndex) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markCreditedWith(client, intentId, accountIndex)),
+      markAmbiguous: (intentId, reason) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markAmbiguousWith(client, intentId, reason)),
+      markFailed: (intentId, reason) => writeUnderSessionLock((client) =>
+        onboardingIntentsRepo.markFailedWith(client, intentId, reason)),
     },
   };
 }
