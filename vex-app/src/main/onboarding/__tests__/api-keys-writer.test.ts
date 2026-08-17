@@ -4,6 +4,7 @@ const sessionMocks = vi.hoisted(() => ({
   writeUnlockedSecrets: vi.fn(),
   writeTradingKey: vi.fn(),
   deleteTradingKey: vi.fn(),
+  getTradingRegistrationState: vi.fn(),
 }));
 
 vi.mock("../../logger/index.js", () => ({
@@ -21,6 +22,8 @@ vi.mock("../../secrets/lighter-trading-credential.js", () => ({
   ) => sessionMocks.writeTradingKey(reference, privateKey),
   deleteUnlockedLighterTradingApiPrivateKey: (reference: unknown) =>
     sessionMocks.deleteTradingKey(reference),
+  getUnlockedLighterTradingCredentialRegistrationState: (reference: unknown) =>
+    sessionMocks.getTradingRegistrationState(reference),
 }));
 
 const { writeApiKeys } = await import("../api-keys-writer.js");
@@ -30,6 +33,7 @@ describe("writeApiKeys", () => {
     sessionMocks.writeUnlockedSecrets.mockReset();
     sessionMocks.writeTradingKey.mockReset();
     sessionMocks.deleteTradingKey.mockReset();
+    sessionMocks.getTradingRegistrationState.mockReset();
     sessionMocks.writeUnlockedSecrets.mockReturnValue({ ok: true, data: undefined });
     sessionMocks.writeTradingKey.mockReturnValue({
       present: true,
@@ -43,6 +47,7 @@ describe("writeApiKeys", () => {
         kind: "encrypted_vault_reference",
       },
     });
+    sessionMocks.getTradingRegistrationState.mockReturnValue(null);
   });
 
   it("returns empty fieldsWritten when nothing is submitted", async () => {
@@ -109,6 +114,27 @@ describe("writeApiKeys", () => {
       apiKeyIndex: 9,
       vaultCredentialId: "lighter/core/account-42/api-key-9",
     });
+  });
+
+  it("refuses to overwrite or remove a Vex-managed registered credential", async () => {
+    sessionMocks.getTradingRegistrationState.mockReturnValue("key_registered_active");
+
+    const result = await writeApiKeys({
+      jupiterApiKey: "new-jupiter-key",
+      lighterCoreTradingAccountIndex: 737810,
+      lighterCoreTradingApiKeyIndex: 4,
+      lighterCoreTradingRemove: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("Vex manages the registered Lighter CORE credential");
+      expect(result.error.message).toContain("orphan the registered key");
+      expect(result.error.message).not.toContain("private");
+    }
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
+    expect(sessionMocks.deleteTradingKey).not.toHaveBeenCalled();
+    expect(sessionMocks.writeTradingKey).not.toHaveBeenCalled();
   });
 
   it("rejects Lighter trading changes without an exact account/API-key scope", async () => {

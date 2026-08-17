@@ -411,6 +411,30 @@ describe("Lighter trading credential vault status and removal", () => {
     expect(JSON.stringify(listUnlockedLighterTradingCredentialScopes())).not.toContain(PRIVATE_KEY);
   });
 
+  it("lists only Vex-managed active credential scopes", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        "lighter/core/account-737810/api-key-4": PRIVATE_KEY,
+        "lighter/core/account-737810/api-key-4/registration-state": "key_registered_active",
+        "lighter/core/account-42/api-key-7": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-9": PRIVATE_KEY,
+        "lighter/rhc/account-1171/api-key-9/registration-state":
+          "key_generated_pending_registration",
+      },
+    });
+    const { listUnlockedManagedLighterTradingCredentialScopes } = await loadModule();
+
+    expect(listUnlockedManagedLighterTradingCredentialScopes("core")).toEqual([
+      { environment: "core", accountIndex: 737810, apiKeyIndex: 4 },
+    ]);
+    expect(listUnlockedManagedLighterTradingCredentialScopes("rhc")).toEqual([]);
+    expect(JSON.stringify(listUnlockedManagedLighterTradingCredentialScopes())).not
+      .toContain(PRIVATE_KEY);
+  });
+
   it("reports environment-level absence while locked", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({
       ok: false,

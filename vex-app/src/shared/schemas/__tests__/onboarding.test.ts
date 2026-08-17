@@ -45,6 +45,31 @@ describe("envStateSchema", () => {
     expect(envStateSchema.safeParse(validState).success).toBe(true);
   });
 
+  it("accepts bounded public scopes for Vex-managed Lighter credentials", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      apiKeys: {
+        ...validState.apiKeys,
+        lighterCoreTradingConfigured: true,
+        lighterCoreManagedTradingScopes: [{ accountIndex: 737810, apiKeyIndex: 4 }],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects reserved API-key indexes in managed credential metadata", () => {
+    const result = envStateSchema.safeParse({
+      ...validState,
+      apiKeys: {
+        ...validState.apiKeys,
+        lighterCoreManagedTradingScopes: [{ accountIndex: 737810, apiKeyIndex: 3 }],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("accepts baseUrlRedacted = null when embeddings.configured = false", () => {
     const state: EnvState = {
       ...validState,

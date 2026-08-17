@@ -103,6 +103,10 @@ export function ApiKeysStep({
     apiKeysState?.lighterCoreTradingConfigured ?? false;
   const lighterRhcTradingConfigured =
     apiKeysState?.lighterRhcTradingConfigured ?? false;
+  const lighterCoreManagedTradingScopes =
+    apiKeysState?.lighterCoreManagedTradingScopes ?? [];
+  const lighterRhcManagedTradingScopes =
+    apiKeysState?.lighterRhcManagedTradingScopes ?? [];
   // Back-edit ALWAYS renders the full form. In setup mode the skip-card
   // stays available whenever Jupiter is already configured (the skip-card
   // copy assumes it).
@@ -237,6 +241,7 @@ export function ApiKeysStep({
           environment="rhc"
           status={statusFor(lighterRhcTradingConfigured)}
           configured={lighterRhcTradingConfigured}
+          managedScopes={lighterRhcManagedTradingScopes}
           accountIndexRef={refs.lighterRhcTradingAccountIndex}
           apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
           privateKeyRef={refs.lighterRhcTradingPrivateKey}
@@ -247,6 +252,7 @@ export function ApiKeysStep({
           environment="core"
           status={statusFor(lighterCoreTradingConfigured)}
           configured={lighterCoreTradingConfigured}
+          managedScopes={lighterCoreManagedTradingScopes}
           accountIndexRef={refs.lighterCoreTradingAccountIndex}
           apiKeyIndexRef={refs.lighterCoreTradingApiKeyIndex}
           privateKeyRef={refs.lighterCoreTradingPrivateKey}

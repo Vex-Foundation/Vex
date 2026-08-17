@@ -307,6 +307,45 @@ describe("ApiKeysStep", () => {
     expect(container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]')).not.toBeNull();
   });
 
+  it("shows a Vex-managed Core credential without asking for a dashboard key", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterCoreTradingConfigured: true,
+      lighterCoreManagedTradingScopes: [{ accountIndex: 737810, apiKeyIndex: 4 }],
+    })));
+
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    const managedStatus = container.querySelector(
+      '[data-vex-lighter-managed-credential="core"]',
+    );
+    expect(managedStatus).not.toBeNull();
+    expect(getByText("Managed by Vex")).toBeTruthy();
+    expect(managedStatus?.textContent ?? "").toContain("737810");
+    expect(managedStatus?.textContent ?? "").toContain("4");
+    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Nothing needs to be copied from the Lighter dashboard");
+    expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="core"]',
+    )?.hasAttribute("open")).toBe(false);
+  });
+
+  it("routes normal Core setup to Vex onboarding and keeps manual import advanced", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    expect(card?.textContent ?? "").toContain("Vex creates and registers the key locally");
+    expect(card?.textContent ?? "").toContain("Advanced: manage an externally created Core key");
+    expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
+  });
+
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(

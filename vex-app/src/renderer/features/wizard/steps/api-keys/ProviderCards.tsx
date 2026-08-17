@@ -15,6 +15,7 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
+import type { LighterManagedTradingScope } from "@shared/schemas/onboarding.js";
 import {
   KeyRoundIcon,
   VexIcon,
@@ -239,6 +240,7 @@ export interface LighterTradingCardProps {
   readonly environment: "core" | "rhc";
   readonly status: ProviderCardStatus;
   readonly configured: boolean;
+  readonly managedScopes: readonly LighterManagedTradingScope[];
   readonly accountIndexRef: RefObject<HTMLInputElement | null>;
   readonly apiKeyIndexRef: RefObject<HTMLInputElement | null>;
   readonly privateKeyRef: RefObject<HTMLInputElement | null>;
@@ -249,6 +251,7 @@ export function LighterTradingCard({
   environment,
   status,
   configured,
+  managedScopes,
   accountIndexRef,
   apiKeyIndexRef,
   privateKeyRef,
@@ -259,21 +262,136 @@ export function LighterTradingCard({
       ? "Lighter RHC trading"
       : "Lighter Core trading";
   const prefix = `vex-apikey-lighter-${environment}-trading`;
+  const managed = managedScopes.length > 0;
+  const manualFields = (
+    <LighterManualTradingFields
+      title={title}
+      prefix={prefix}
+      configured={configured}
+      managed={managed}
+      accountIndexRef={accountIndexRef}
+      apiKeyIndexRef={apiKeyIndexRef}
+      privateKeyRef={privateKeyRef}
+      removeRef={removeRef}
+    />
+  );
   return (
     <ProviderCard
       slug={environment === "rhc" ? "lighter-rhc-trading" : "lighter-core-trading"}
       iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
       name={title}
-      status={status}
-      description="One key for Lighter previews, approval preparation, and trading actions."
+      status={managed ? { tone: "set", label: "MANAGED" } : status}
+      description={environment === "core"
+        ? "Vex creates, registers, and encrypts the trading key during wallet-funded onboarding."
+        : "One locally encrypted key for Lighter RHC previews, approvals, and trading."}
       detail={
-        <>
-          Add the trading API private key from Lighter. Vex uses it only from
-          the encrypted local vault, keeps preview paths read-only, and still
-          requires your explicit approval before any order can be submitted.
-        </>
+        environment === "core" ? (
+          managed ? (
+            <>
+              Your Core credential was generated locally by Vex, registered
+              with Lighter after your approval, and is ready for approved
+              trading. Nothing needs to be copied from the Lighter dashboard.
+            </>
+          ) : (
+            <>
+              For normal Core setup, enable Lighter and complete wallet-funded
+              onboarding. Vex creates and registers the key locally after your
+              approval; you do not paste a private key from Lighter.
+            </>
+          )
+        ) : (
+          <>
+            RHC automatic registration is not available yet. Existing RHC users
+            can import a trading API private key, which stays in the encrypted
+            local vault. Every order still requires explicit approval.
+          </>
+        )
       }
     >
+      {managed ? (
+        <div
+          role="status"
+          data-vex-lighter-managed-credential={environment}
+          className="space-y-3 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] p-4"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-[var(--color-text-primary)]">
+              Managed by Vex
+            </span>
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--color-success)]">
+              Active
+            </span>
+          </div>
+          <div className="space-y-2">
+            {managedScopes.map((scope) => (
+              <dl
+                key={`${scope.accountIndex}:${scope.apiKeyIndex}`}
+                className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs"
+              >
+                <dt className="text-[var(--color-text-muted)]">Account index</dt>
+                <dd className="text-right font-mono text-[var(--color-text-primary)]">
+                  {scope.accountIndex}
+                </dd>
+                <dt className="text-[var(--color-text-muted)]">API-key index</dt>
+                <dd className="text-right font-mono text-[var(--color-text-primary)]">
+                  {scope.apiKeyIndex}
+                </dd>
+              </dl>
+            ))}
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            The private key is encrypted in the local Vex vault. It is never
+            displayed here, and every trade still requires your approval.
+          </p>
+        </div>
+      ) : environment === "core" && configured ? (
+        <p
+          data-vex-lighter-external-credential="core"
+          className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] p-4 text-xs text-[var(--color-text-muted)]"
+        >
+          An externally managed Core trading key is saved in the encrypted
+          local vault. No key value is displayed.
+        </p>
+      ) : null}
+
+      {environment === "core" ? (
+        <details
+          data-vex-lighter-manual-credential="core"
+          className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-4 py-3"
+        >
+          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Advanced: manage an externally created Core key
+          </summary>
+          <div className="mt-4 space-y-3">{manualFields}</div>
+        </details>
+      ) : manualFields}
+    </ProviderCard>
+  );
+}
+
+interface LighterManualTradingFieldsProps {
+  readonly title: string;
+  readonly prefix: string;
+  readonly configured: boolean;
+  readonly managed: boolean;
+  readonly accountIndexRef: RefObject<HTMLInputElement | null>;
+  readonly apiKeyIndexRef: RefObject<HTMLInputElement | null>;
+  readonly privateKeyRef: RefObject<HTMLInputElement | null>;
+  readonly removeRef: RefObject<HTMLInputElement | null>;
+}
+
+function LighterManualTradingFields({
+  title,
+  prefix,
+  configured,
+  managed,
+  accountIndexRef,
+  apiKeyIndexRef,
+  privateKeyRef,
+  removeRef,
+}: LighterManualTradingFieldsProps): JSX.Element {
+  return (
+    <>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label
@@ -331,13 +449,15 @@ export function LighterTradingCard({
           type="checkbox"
           className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-subtle)] bg-transparent"
         />
-        Remove the saved trading key for this account/API-key scope.
+        Remove the manually imported trading key for this account/API-key scope.
       </label>
       <p className="text-xs text-[var(--color-text-muted)]">
-        {configured
-          ? "Leave blank to keep the saved trading key, paste a replacement, or check remove."
-          : "Needed once to enable Lighter account-aware previews and approval preparation."}
+        {managed
+          ? "Vex-managed registered keys cannot be replaced or removed here. These controls are only for a different externally managed scope."
+          : configured
+            ? "Leave blank to keep the saved external key, paste a replacement, or check remove."
+            : "Use only for an existing account whose key was created outside Vex."}
       </p>
-    </ProviderCard>
+    </>
   );
 }

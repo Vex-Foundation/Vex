@@ -46,7 +46,10 @@ import { log } from "../logger/index.js";
 import { probeEmbeddings } from "./embedding-state.js";
 import { probeProvider } from "./provider-state.js";
 import { getUnlockedSecretPresence } from "../secrets/session.js";
-import { hasUnlockedLighterTradingCredential } from "../secrets/lighter-trading-credential.js";
+import {
+  hasUnlockedLighterTradingCredential,
+  listUnlockedManagedLighterTradingCredentialScopes,
+} from "../secrets/lighter-trading-credential.js";
 
 // Fixed-keystore filenames for legacy (pre multi-wallet) primary entries.
 // Non-legacy inventory entries use `wallet-<id>.json` (see primaryKeystoreFile).
@@ -242,6 +245,16 @@ export async function gatherEnvState(): Promise<EnvState> {
     secretPresence.secrets.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN === true;
   const hasLighterCoreTrading = hasUnlockedLighterTradingCredential("core");
   const hasLighterRhcTrading = hasUnlockedLighterTradingCredential("rhc");
+  const lighterCoreManagedTradingScopes =
+    listUnlockedManagedLighterTradingCredentialScopes("core").map((scope) => ({
+      accountIndex: scope.accountIndex,
+      apiKeyIndex: scope.apiKeyIndex,
+    }));
+  const lighterRhcManagedTradingScopes =
+    listUnlockedManagedLighterTradingCredentialScopes("rhc").map((scope) => ({
+      accountIndex: scope.accountIndex,
+      apiKeyIndex: scope.apiKeyIndex,
+    }));
 
   return {
     hasKeystorePassword: hasPwd,
@@ -255,6 +268,8 @@ export async function gatherEnvState(): Promise<EnvState> {
       lighterRhcReadOnlyConfigured: hasLighterRhcReadOnly,
       lighterCoreTradingConfigured: hasLighterCoreTrading,
       lighterRhcTradingConfigured: hasLighterRhcTrading,
+      lighterCoreManagedTradingScopes,
+      lighterRhcManagedTradingScopes,
     },
     secrets: {
       vaultConfigured: secretPresence.vaultConfigured,

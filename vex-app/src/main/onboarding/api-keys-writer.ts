@@ -27,6 +27,7 @@ import { log } from "../logger/index.js";
 import { writeUnlockedSecrets } from "../secrets/session.js";
 import {
   deleteUnlockedLighterTradingApiPrivateKey,
+  getUnlockedLighterTradingCredentialRegistrationState,
   writeUnlockedLighterTradingApiPrivateKey,
 } from "../secrets/lighter-trading-credential.js";
 
@@ -155,6 +156,16 @@ export async function writeApiKeys(
     coreTrading.data.action,
     rhcTrading.data.action,
   ].filter((action): action is NonNullable<typeof action> => action !== null);
+
+  for (const action of tradingActions) {
+    const registrationState =
+      getUnlockedLighterTradingCredentialRegistrationState(action.reference);
+    if (registrationState !== null) {
+      return invalidTradingInput(
+        `Vex manages the registered Lighter ${action.reference.environment.toUpperCase()} credential for account ${action.reference.accountIndex}, API-key index ${action.reference.apiKeyIndex}. Manual replacement or removal is disabled because it would orphan the registered key.`,
+      );
+    }
+  }
 
   if (writes.length === 0 && tradingActions.length === 0) {
     // Nothing to write — empty submission is a legal Continue.

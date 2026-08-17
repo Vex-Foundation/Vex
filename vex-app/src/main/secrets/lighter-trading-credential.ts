@@ -275,6 +275,24 @@ export function hasUnlockedLighterTradingCredential(
 export function listUnlockedLighterTradingCredentialScopes(
   environment?: LighterTradingCredentialVaultReference["environment"],
 ): readonly UnlockedLighterTradingCredentialScope[] {
+  return listUnlockedLighterTradingCredentialScopesByManagement(environment, false);
+}
+
+/**
+ * Public scope metadata for credentials generated and registered by Vex.
+ * The active registration marker distinguishes them from manually imported
+ * external keys without returning or deriving any secret material.
+ */
+export function listUnlockedManagedLighterTradingCredentialScopes(
+  environment?: LighterTradingCredentialVaultReference["environment"],
+): readonly UnlockedLighterTradingCredentialScope[] {
+  return listUnlockedLighterTradingCredentialScopesByManagement(environment, true);
+}
+
+function listUnlockedLighterTradingCredentialScopesByManagement(
+  environment: LighterTradingCredentialVaultReference["environment"] | undefined,
+  managedOnly: boolean,
+): readonly UnlockedLighterTradingCredentialScope[] {
   const password = requireUnlockedMasterPassword();
   if (!password.ok) return [];
 
@@ -294,6 +312,9 @@ export function listUnlockedLighterTradingCredentialScopes(
         registrationState !== undefined
         && registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
       ) {
+        continue;
+      }
+      if (managedOnly && registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE) {
         continue;
       }
       const [, env, accountIndexRaw, apiKeyIndexRaw] = match;
