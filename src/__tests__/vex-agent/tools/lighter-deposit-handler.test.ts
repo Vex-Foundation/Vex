@@ -13,8 +13,10 @@ const mocks = vi.hoisted(() => ({
   findByIntentId: vi.fn(),
   markApprovalDecision: vi.fn(),
   renewPristineApproved: vi.fn(),
+  supersedePristine: vi.fn(),
   markAmbiguous: vi.fn(),
   withSessionControlLock: vi.fn(),
+  withSessionControlLocks: vi.fn(),
   resolveSelectedAddress: vi.fn(),
   resolveSigningWallet: vi.fn(),
   assertApprovalBinding: vi.fn(),
@@ -39,6 +41,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
     mocks.markApprovalDecision(input),
   renewPristineApprovedDepositIntentWith: (_client: unknown, input: unknown) =>
     mocks.renewPristineApproved(input),
+  supersedePristineDepositIntentWith: (_client: unknown, input: unknown) =>
+    mocks.supersedePristine(input),
   markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
     mocks.markAmbiguous(intentId, reason),
 }));
@@ -54,6 +58,7 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: mocks.withSessionControlLock,
+  withSessionControlLocks: mocks.withSessionControlLocks,
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -208,11 +213,21 @@ beforeEach(() => {
       decisionReason: "user approved exact Lighter deposit intent",
       expiresAt: input.expiresAt,
     }));
+  mocks.supersedePristine.mockImplementation(async () =>
+    intentRow({
+      sessionId: "session-previous",
+      approvalStatus: "approved",
+      executionState: "failed",
+      failureReason:
+        "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.",
+    }));
   mocks.leaseAssertOwned.mockResolvedValue(undefined);
   mocks.leaseRelease.mockResolvedValue(undefined);
   mocks.buildExecutionDeps.mockReturnValue({ marker: "execution-deps" });
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
+  mocks.withSessionControlLocks.mockImplementation(async (_sessionIds, fn) =>
+    fn({ marker: "multi-locked-client" }));
   mocks.readDepositPreflight.mockResolvedValue({
     observedAt: new Date(),
     walletAddress: WALLET,
@@ -721,8 +736,61 @@ describe("lighter.deposit.prepare", () => {
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
+  it("starts fresh in a new chat after a prior gate-closed approval signed nothing", async () => {
+    const previous = intentRow({
+      sessionId: "session-previous",
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      decisionReason: "user approved exact Lighter deposit intent",
+    });
+    const fresh = intentRow({
+      intentId: "lighter-onboard-00000000-0000-4000-8000-000000000002",
+      sessionId: "session-1",
+    });
+    mocks.createOrFind
+      .mockResolvedValueOnce({ outcome: "live_conflict", intent: previous })
+      .mockResolvedValueOnce({ outcome: "created", intent: fresh });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      intentId: fresh.intentId,
+    });
+    expect(result.data).not.toHaveProperty("approvalReissued");
+    expect(mocks.withSessionControlLocks).toHaveBeenCalledWith(
+      ["session-previous", "session-1"],
+      expect.any(Function),
+    );
+    expect(mocks.supersedePristine).toHaveBeenCalledWith({
+      intentId: previous.intentId,
+      sessionId: "session-previous",
+      environment: "core",
+      walletAddress: WALLET,
+    });
+    expect(mocks.createOrFind).toHaveBeenLastCalledWith(
+      { marker: "multi-locked-client" },
+      expect.objectContaining({
+        sessionId: "session-1",
+        walletAddress: WALLET,
+        amountUnits: "11000000",
+      }),
+    );
+    expect(result.preparedActionFollowUp).toMatchObject({
+      args: {
+        toolId: "lighter.deposit",
+        params: { intentId: fresh.intentId },
+      },
+    });
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
   it.each([
-    { sessionId: "session-2" },
     { approvalId: "approval-previous" },
     { approveTxHash: `0x${"a".repeat(64)}` },
     { expiresAt: new Date("2020-01-01T00:00:00.000Z") },
@@ -746,6 +814,7 @@ describe("lighter.deposit.prepare", () => {
     mocks.createOrFind.mockResolvedValue({
       outcome: "live_conflict",
       intent: intentRow({
+        sessionId: "session-previous",
         approvalId: "approval-previous",
         approvalStatus: "approved",
         executionState: "approved",

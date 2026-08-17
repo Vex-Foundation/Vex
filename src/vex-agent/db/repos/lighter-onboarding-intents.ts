@@ -284,7 +284,10 @@ export async function markApprovalDecisionWith(
            decision_reason = $5,
            decided_at = NOW(),
            updated_at = NOW()
-     WHERE intent_id = $1 AND approval_status = 'approval_pending'
+     WHERE intent_id = $1
+       AND capability = 'deposit'
+       AND approval_status = 'approval_pending'
+       AND execution_state = 'approval_pending'
      RETURNING ${RETURNING}`,
     [input.intentId, input.decision, input.approvalId ?? null, input.protocolExecutionId ?? null, input.reason ?? null],
   );
@@ -300,6 +303,100 @@ export async function markApprovalDecisionWith(
         : "deposit_approval_expired",
     });
   }
+  return intent;
+}
+
+/**
+ * Retire an old-session deposit only when durable state proves that signing,
+ * staging, submission, and settlement observation never began. The old row is
+ * retained for audit; callers may atomically create a brand-new intent for the
+ * current session after this transition succeeds.
+ */
+export async function supersedePristineDepositIntentWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const reason =
+    "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.";
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET approval_status = CASE
+              WHEN approval_status = 'approval_pending' THEN 'expired'
+              ELSE approval_status
+            END,
+            execution_state = 'failed',
+            decision_reason = CASE
+              WHEN approval_status = 'approval_pending' THEN $5
+              ELSE decision_reason
+            END,
+            decided_at = CASE
+              WHEN approval_status = 'approval_pending' THEN NOW()
+              ELSE decided_at
+            END,
+            failure_reason = $5,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND capability = 'deposit'
+        AND failure_reason IS NULL
+        AND (
+          (
+            approval_status = 'approval_pending'
+            AND execution_state = 'approval_pending'
+            AND approval_id IS NULL
+            AND protocol_execution_id IS NULL
+            AND decision_reason IS NULL
+          )
+          OR (
+            approval_status = 'approved'
+            AND execution_state = 'approved'
+          )
+        )
+        AND approve_tx_hash IS NULL
+        AND approve_tx_from IS NULL
+        AND approve_tx_nonce IS NULL
+        AND approve_replacement_tx_hash IS NULL
+        AND approve_replacement_reason IS NULL
+        AND approve_replacement_observed_at IS NULL
+        AND deposit_tx_hash IS NULL
+        AND deposit_tx_from IS NULL
+        AND deposit_tx_nonce IS NULL
+        AND deposit_replacement_tx_hash IS NULL
+        AND deposit_replacement_reason IS NULL
+        AND deposit_replacement_observed_at IS NULL
+        AND deposit_l1_block_hash IS NULL
+        AND deposit_l1_block_number IS NULL
+        AND deposit_event_account_index IS NULL
+        AND lighter_tx_hash IS NULL
+        AND lighter_tx_status IS NULL
+        AND lighter_block_height IS NULL
+        AND lighter_executed_at IS NULL
+        AND lighter_evidence_observed_at IS NULL
+        AND resolved_account_index IS NULL
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.environment,
+      input.walletAddress,
+      reason,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
+    nextState: "failed",
+    failureCode: "deposit_superseded_pristine",
+  });
   return intent;
 }
 

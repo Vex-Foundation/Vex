@@ -37,7 +37,10 @@ import {
 import { LIGHTER_DEPOSIT_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  withSessionControlLock,
+  withSessionControlLocks,
+} from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
   buildProductionLighterDepositRepairDeps,
   repairLighterDepositIntent,
@@ -242,6 +245,48 @@ function canRenewPristineApprovedDepositApproval(input: {
   }
 }
 
+function canSupersedePristineDepositFromAnotherSession(input: {
+  readonly intent: LighterOnboardingIntentRow;
+  readonly sessionId: string;
+}): boolean {
+  const { intent, sessionId } = input;
+  if (
+    intent.sessionId === sessionId
+    || intent.capability !== "deposit"
+    || intent.failureReason !== null
+    || intent.approveTxHash !== null
+    || intent.approveTxFrom !== null
+    || intent.approveTxNonce !== null
+    || intent.approveReplacementTxHash !== null
+    || intent.approveReplacementReason !== null
+    || intent.approveReplacementObservedAt !== null
+    || intent.depositTxHash !== null
+    || intent.depositTxFrom !== null
+    || intent.depositTxNonce !== null
+    || intent.depositReplacementTxHash !== null
+    || intent.depositReplacementReason !== null
+    || intent.depositReplacementObservedAt !== null
+    || intent.depositL1BlockHash !== null
+    || intent.depositL1BlockNumber !== null
+    || intent.depositEventAccountIndex !== null
+    || intent.lighterTxHash !== null
+    || intent.lighterTxStatus !== null
+    || intent.lighterBlockHeight !== null
+    || intent.lighterExecutedAt !== null
+    || intent.lighterEvidenceObservedAt !== null
+    || intent.resolvedAccountIndex !== null
+  ) {
+    return false;
+  }
+  return (
+    intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approval_pending"
+    && intent.approvalId === null
+    && intent.protocolExecutionId === null
+    && intent.decisionReason === null
+  ) || isPristineApprovedDepositIntent(intent);
+}
+
 function depositUserGuidance(execution: LighterDepositExecutionResult): string {
   switch (execution.status) {
     case "gate_closed":
@@ -276,7 +321,7 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
       return "This is encrypted key-registration state, not a deposit state. Continue only through the dedicated key-registration flow.";
     case "approved":
       if (isPristineApprovedDepositIntent(intent)) {
-        return "No transaction was staged. Prepare the same deposit again to issue a fresh approval card before execution.";
+        return "No transaction was staged. A new onboarding chat can safely prepare a fresh deposit approval without technical retry instructions.";
       }
       return "Reconcile the existing intent before any retry. Never rebroadcast either transaction from this status result.";
     case "allowance_verified":
@@ -515,7 +560,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(err instanceof Error ? err.message : String(err));
     }
 
-    const creation = await withSessionControlLock(sessionId, (client) =>
+    let creation = await withSessionControlLock(sessionId, (client) =>
       onboardingIntentsRepo.createOrFindLiveDepositApprovalPendingWith(client, {
         sessionId,
         environment: "core",
@@ -530,6 +575,56 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         expiresAt: new Date(Date.now() + INTENT_TTL_MS),
       }),
     );
+    if (creation.outcome === "live_conflict") {
+      const conflict = creation.intent;
+      if (
+        conflict !== null
+        && canSupersedePristineDepositFromAnotherSession({ intent: conflict, sessionId })
+      ) {
+        try {
+          const restarted = await withSessionControlLocks(
+            [conflict.sessionId, sessionId],
+            async (client) => {
+              const superseded = await onboardingIntentsRepo.supersedePristineDepositIntentWith(
+                client,
+                {
+                  intentId: conflict.intentId,
+                  sessionId: conflict.sessionId,
+                  environment: conflict.environment,
+                  walletAddress: conflict.walletAddress,
+                },
+              );
+              if (superseded === null) return null;
+              const replacement = await onboardingIntentsRepo
+                .createOrFindLiveDepositApprovalPendingWith(client, {
+                  sessionId,
+                  environment: "core",
+                  walletAddress: preflight.walletAddress,
+                  chainId: preflight.chainId,
+                  depositContract: preflight.gatewayAddress,
+                  depositTo: preflight.walletAddress,
+                  assetIndex: preflight.assetIndex,
+                  routeType: preflight.routeType,
+                  amountUnits: preflight.amountUnits,
+                  preflight,
+                  expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+                });
+              if (replacement.outcome !== "created") {
+                throw new Error("A replacement Lighter deposit intent was not created.");
+              }
+              return replacement;
+            },
+          );
+          if (restarted !== null) {
+            creation = restarted;
+          }
+        } catch {
+          return fail(
+            "Vex could not safely start a fresh Lighter deposit approval. Nothing was signed or submitted; check onboarding status and try again.",
+          );
+        }
+      }
+    }
     if (creation.outcome === "live_conflict") {
       const conflict = creation.intent;
       if (

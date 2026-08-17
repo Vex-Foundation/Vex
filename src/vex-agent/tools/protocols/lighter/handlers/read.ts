@@ -525,7 +525,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const userGuidance = plan.ready && managedTradingAccessActive
         ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
         : !depositAmountProvided && needsFunding
-          ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Do not ask for a wallet address, account index, API-key index, nonce, fingerprint, or key.`
+          ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
           : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
       return ok({
         ...liveProvenance(

@@ -179,6 +179,7 @@ describe("Lighter agent discovery surface", () => {
 
   it.each([
     "hey, set up my Lighter account",
+    "I need to trade on Lighter",
     "I want to trade perps on Lighter",
     "get me ready to trade on Lighter",
   ])("recalls managed onboarding from a normal-user request: %s", async (query) => {

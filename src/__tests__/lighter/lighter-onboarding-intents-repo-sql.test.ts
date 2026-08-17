@@ -275,6 +275,94 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(params).toEqual([ROW.intent_id, ROW.session_id, expiresAt]);
   });
 
+  it("supersedes only a pristine old-session deposit and preserves its approval audit", async () => {
+    const reason =
+      "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.";
+    const supersededRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "failed",
+      approval_id: "approval-previous",
+      decision_reason: "user approved exact Lighter deposit intent",
+      failure_reason: reason,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [supersededRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...WORKFLOW_ROW,
+            workflow_state: "failed",
+            failure_code: "deposit_superseded_pristine",
+          }],
+          rowCount: 1,
+        }),
+    };
+
+    const result = await repo.supersedePristineDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: "session-previous",
+      environment: "core",
+      walletAddress: ROW.wallet_address,
+    });
+
+    expect(result).toMatchObject({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "failed",
+      decisionReason: "user approved exact Lighter deposit intent",
+      failureReason: reason,
+    });
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("session_id = $2");
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("approval_id IS NULL");
+    expect(sql).toContain("protocol_execution_id IS NULL");
+    expect(sql).toContain("approve_tx_hash IS NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("lighter_tx_hash IS NULL");
+    expect(sql).toContain("resolved_account_index IS NULL");
+    expect(params).toEqual([
+      ROW.intent_id,
+      "session-previous",
+      "core",
+      ROW.wallet_address,
+      reason,
+    ]);
+    const [workflowSql, workflowParams] = client.query.mock.calls[1]!;
+    expect(workflowSql).toContain("workflow_state = ANY($3)");
+    expect(workflowParams).toEqual([
+      "core",
+      ROW.wallet_address,
+      ["deposit_approval_pending", "deposit_preflight_validated"],
+      "failed",
+      ROW.intent_id,
+      null,
+      null,
+      null,
+      "deposit_superseded_pristine",
+    ]);
+  });
+
+  it("will not record a stale approval after a deposit was superseded", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [], rowCount: 0 }),
+    };
+
+    const result = await repo.markApprovalDecisionWith(client, {
+      intentId: ROW.intent_id,
+      decision: "approved",
+      approvalId: "approval-stale",
+    });
+
+    expect(result).toBeNull();
+    const [sql] = client.query.mock.calls[0]!;
+    expect(sql).toContain("capability = 'deposit'");
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approval_pending'");
+  });
+
   it("scopes unresolved deposit status reads to capability and wallet", async () => {
     dbMocks.query.mockResolvedValueOnce([ROW]);
 

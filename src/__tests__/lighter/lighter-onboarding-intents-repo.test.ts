@@ -6,7 +6,10 @@ import { runMigrations } from "@vex-agent/db/migrate.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { ensureLighterOnboardingWorkflowEnabledWith } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  withSessionControlLock,
+  withSessionControlLocks,
+} from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { raceGateAgainstWriter } from "../integration/engine/money-gate-race-harness.js";
 
 const RUN = process.env.VEX_LIGHTER_ONBOARDING_DB === "1";
@@ -345,6 +348,68 @@ d("lighter_onboarding_intents repo", () => {
     expect(created).toHaveLength(1);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]?.intent?.intentId).toBe(created[0]?.intent?.intentId);
+  });
+
+  it("atomically retires a pristine old-session approval and creates a fresh current-session intent", async () => {
+    const previousSessionId = await newSession();
+    const currentSessionId = await newSession();
+    const sharedWallet = walletForSession(`restart-${randomUUID()}`);
+    const previousOutcome = await createDepositOutcome(previousSessionId, sharedWallet);
+    expect(previousOutcome.outcome).toBe("created");
+    const previous = previousOutcome.intent!;
+    await withSessionControlLock(previousSessionId, (client) =>
+      repo.markApprovalDecisionWith(client, {
+        intentId: previous.intentId,
+        decision: "approved",
+        reason: "user approved exact Lighter deposit intent",
+      }));
+
+    const restarted = await withSessionControlLocks(
+      [previousSessionId, currentSessionId],
+      async (client) => {
+        const superseded = await repo.supersedePristineDepositIntentWith(client, {
+          intentId: previous.intentId,
+          sessionId: previousSessionId,
+          environment: "core",
+          walletAddress: sharedWallet,
+        });
+        expect(superseded?.executionState).toBe("failed");
+        return repo.createOrFindLiveDepositApprovalPendingWith(client, {
+          sessionId: currentSessionId,
+          environment: "core",
+          walletAddress: sharedWallet,
+          chainId: 1,
+          depositContract: CONTRACT,
+          depositTo: sharedWallet,
+          assetIndex: 3,
+          routeType: 0,
+          amountUnits: "12000000",
+          preflight: preflight(sharedWallet, "12000000"),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+      },
+    );
+
+    expect(restarted).toMatchObject({
+      outcome: "created",
+      intent: {
+        sessionId: currentSessionId,
+        approvalStatus: "approval_pending",
+        executionState: "approval_pending",
+        amountUnits: "12000000",
+      },
+    });
+    expect(await repo.findByIntentId(previous.intentId)).toMatchObject({
+      sessionId: previousSessionId,
+      approvalStatus: "approved",
+      executionState: "failed",
+      decisionReason: "user approved exact Lighter deposit intent",
+    });
+    await expect(withSessionControlLock(previousSessionId, (client) =>
+      repo.markApprovalDecisionWith(client, {
+        intentId: previous.intentId,
+        decision: "approved",
+      }))).resolves.toBeNull();
   });
 
   it("proves the compaction race harness detects an unlocked onboarding writer", async () => {

@@ -6,10 +6,10 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Inspect whether the selected Vex EVM wallet is ready to trade on Lighter Core and compute the minimal onboarding legs still required. ` +
       `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, asks Vex to set up Lighter, or expresses an intent to trade perps on Lighter. It resolves the selected wallet automatically and reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
-      `Example queries: set up my Lighter account, get me ready to trade on Lighter, I want to trade perps on Lighter, can this wallet trade on Lighter.`,
+      `Example queries: set up my Lighter account, I need to trade on Lighter, get me ready to trade on Lighter, I want to trade perps on Lighter, can this wallet trade on Lighter.`,
     ),
-    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
-    exampleIntents: ["set up my Lighter account", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
+    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
+    exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
     ecosystems: ["lighter", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
