@@ -47,6 +47,7 @@ import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
+import { installLighterOnboardingReleaseGates } from "./lighter/onboarding-release-gates.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -150,6 +151,10 @@ async function initializeMainRuntime(): Promise<void> {
   const uninstallLighterOrderCreateExecutionDeps = installLighterOrderCreateExecutionDeps();
   globalCleanup.add(() => {
     uninstallLighterOrderCreateExecutionDeps();
+  });
+  const uninstallLighterOnboardingReleaseGates = installLighterOnboardingReleaseGates();
+  globalCleanup.add(() => {
+    uninstallLighterOnboardingReleaseGates();
   });
 
   registerAllIpcHandlers();

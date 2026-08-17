@@ -170,7 +170,7 @@ export function decimalToBaseUnits(value: string, decimals: number): bigint {
   if (!/^\d+(\.\d+)?$/.test(value)) {
     throw new Error(`Amount must be a non-negative decimal string, got ${value}.`);
   }
-  const [whole, fraction = ""] = value.split(".");
+  const [whole = "0", fraction = ""] = value.split(".");
   if (fraction.length > decimals) {
     throw new Error(`Amount ${value} exceeds ${decimals} settlement decimals.`);
   }

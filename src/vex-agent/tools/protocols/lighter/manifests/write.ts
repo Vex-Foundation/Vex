@@ -25,7 +25,45 @@ const INTENT_ID_PARAM: ProtocolParamDef = {
     "Session-scoped Lighter order execution intent id produced by lighter.order.create.prepare. The approved create path refuses ids from other sessions.",
 };
 
+const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
+  key: "amountIn",
+  type: "string",
+  required: true,
+  description:
+    'USDC amount to deposit in human decimals (USDC has 6 decimals), for example "11". Minimum 1 USDC; a smaller deposit is not credited.',
+};
+
+const DEPOSIT_INTENT_ID_PARAM: ProtocolParamDef = {
+  key: "intentId",
+  type: "string",
+  required: true,
+  description:
+    "Session-scoped Lighter deposit intent id produced by lighter.deposit.prepare. The approved deposit path refuses ids from other sessions.",
+};
+
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "lighter.deposit.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare an approval-gated Lighter Core deposit that funds the user's own Lighter account from their Vex wallet's USDC on Ethereum mainnet. Use this when the user wants to fund Lighter, deposit into Lighter, or onboard their wallet to Lighter after checking lighter.account.onboarding.status. The first deposit creates a Lighter account owned by the wallet. Creates a durable deposit intent and asks the engine to enqueue the approval card for lighter.deposit, with a non-spoofable disclosure (amount, destination account, contract, chain, and a scope note that this authorizes only a deposit — no trade, no withdrawal). Returns the deposit intent id, environment, amount display, credit address, and approval status. This is a preparation step only: no signer, key read, approval, or on-chain transaction happens here. Core only in this release, funding the perps account.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, DEPOSIT_AMOUNT_PARAM],
+    exampleParams: { environment: "core", amountIn: "11" },
+  },
+  {
+    toolId: "lighter.deposit",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Approval-gated Lighter Core deposit resume target for a prepared deposit intent. Call this only through the approval card that lighter.deposit.prepare enqueues; never call it directly without a prepared intent and approval-resume context. When the privileged deposit release gate is open, an approved call signs an ERC-20 approval and the deposit with the Vex wallet key and submits them on Ethereum mainnet, so real funds move into the user's Lighter account (the first deposit creates the account). Returns the recorded approval decision plus the execution outcome: credited, an ambiguous outcome that must be reconciled before any retry, a failed leg, or gate-closed when the release gate is shut.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [DEPOSIT_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-onboard-example" },
+  },
   {
     toolId: "lighter.order.create.prepare",
     namespace: "lighter",

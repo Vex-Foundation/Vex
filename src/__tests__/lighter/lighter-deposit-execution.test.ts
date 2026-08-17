@@ -3,12 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   executeApprovedLighterDeposit,
   type LighterDepositExecutionDeps,
-  type ReceiptOutcome,
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+const APPROVE_HASH = "0x" + "a".repeat(64);
+const DEPOSIT_HASH = "0x" + "b".repeat(64);
 
 function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnboardingIntentRow {
   return {
@@ -54,9 +55,14 @@ function intentsSpy() {
 function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepositExecutionDeps {
   return {
     depositGateEnabled: () => true,
-    ensureAllowance: vi.fn().mockResolvedValue({ approveTxHash: "0x" + "a".repeat(64) }),
-    sendDeposit: vi.fn().mockResolvedValue({ depositTxHash: "0x" + "b".repeat(64) }),
-    confirmReceipt: vi.fn<[string], Promise<ReceiptOutcome>>().mockResolvedValue("confirmed"),
+    runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
+      await onHashStaged(APPROVE_HASH);
+      return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
+    }),
+    runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+      await onHashStaged(DEPOSIT_HASH);
+      return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const };
+    }),
     resolveAccountIndex: vi.fn().mockResolvedValue(800123),
     intents: intentsSpy(),
     ...overrides,
@@ -65,25 +71,29 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
 
 describe("executeApprovedLighterDeposit", () => {
   it("does nothing and signs nothing when the deposit gate is closed", async () => {
-    const d = deps({ depositGateEnabled: () => false, ensureAllowance: vi.fn(), sendDeposit: vi.fn() });
+    const d = deps({
+      depositGateEnabled: () => false,
+      runApproveLegIfNeeded: vi.fn(),
+      runDepositLeg: vi.fn(),
+    });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result.status).toBe("gate_closed");
-    expect(d.ensureAllowance).not.toHaveBeenCalled();
-    expect(d.sendDeposit).not.toHaveBeenCalled();
+    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
   });
 
-  it("runs approve -> deposit -> credited on the happy path", async () => {
+  it("stages each tx hash before broadcast and credits on the happy path", async () => {
     const d = deps();
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result).toMatchObject({ status: "credited", depositTxHash: "0x" + "b".repeat(64), resolvedAccountIndex: 800123 });
-    expect(d.intents.markApproveSubmitted).toHaveBeenCalled();
-    expect(d.intents.markApproveConfirmed).toHaveBeenCalled();
-    expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith("lighter-onboard-1", "0x" + "b".repeat(64));
+    expect(result).toMatchObject({ status: "credited", depositTxHash: DEPOSIT_HASH, resolvedAccountIndex: 800123 });
+    // Hash persisted (markApproveSubmitted/markDepositSubmitted) via onHashStaged.
+    expect(d.intents.markApproveSubmitted).toHaveBeenCalledWith("lighter-onboard-1", APPROVE_HASH);
+    expect(d.intents.markDepositSubmitted).toHaveBeenCalledWith("lighter-onboard-1", DEPOSIT_HASH);
     expect(d.intents.markCredited).toHaveBeenCalledWith("lighter-onboard-1", 800123);
   });
 
   it("skips the approve broadcast when allowance already suffices", async () => {
-    const d = deps({ ensureAllowance: vi.fn().mockResolvedValue({ approveTxHash: null }) });
+    const d = deps({ runApproveLegIfNeeded: vi.fn().mockResolvedValue({ skipped: true }) });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result.status).toBe("credited");
     expect(d.intents.markApproveSubmitted).not.toHaveBeenCalled();
@@ -91,18 +101,25 @@ describe("executeApprovedLighterDeposit", () => {
   });
 
   it("fails on an approve revert without sending the deposit", async () => {
-    const d = deps({ confirmReceipt: vi.fn().mockResolvedValue("reverted") });
+    const d = deps({
+      runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(APPROVE_HASH);
+        return { skipped: false as const, txHash: APPROVE_HASH, outcome: "reverted" as const };
+      }),
+    });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result).toMatchObject({ status: "failed", stage: "approve" });
-    expect(d.sendDeposit).not.toHaveBeenCalled();
+    expect(d.runDepositLeg).not.toHaveBeenCalled();
     expect(d.intents.markFailed).toHaveBeenCalled();
   });
 
-  it("marks ambiguous and does not retry when the deposit receipt is unconfirmed", async () => {
-    const confirm = vi.fn<[string], Promise<ReceiptOutcome>>()
-      .mockResolvedValueOnce("confirmed") // approve
-      .mockResolvedValueOnce("ambiguous"); // deposit
-    const d = deps({ confirmReceipt: confirm });
+  it("marks ambiguous and does not credit when the deposit is unconfirmed", async () => {
+    const d = deps({
+      runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(DEPOSIT_HASH);
+        return { txHash: DEPOSIT_HASH, outcome: "ambiguous" as const };
+      }),
+    });
     const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
     expect(result).toMatchObject({ status: "ambiguous", stage: "deposit" });
     expect(d.intents.markAmbiguous).toHaveBeenCalled();

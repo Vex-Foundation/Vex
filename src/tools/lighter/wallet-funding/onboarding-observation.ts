@@ -78,7 +78,7 @@ export function parseSettlementFloor(
   if (!/^\d+(\.\d+)?$/.test(value)) {
     throw new Error(`Settlement amount must be a non-negative decimal string, got ${value}.`);
   }
-  const [whole, fraction = ""] = value.split(".");
+  const [whole = "0", fraction = ""] = value.split(".");
   const truncated = fraction.slice(0, decimals).padEnd(decimals, "0");
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(truncated || "0");
 }

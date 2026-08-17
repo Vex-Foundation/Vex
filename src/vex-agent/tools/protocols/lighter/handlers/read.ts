@@ -458,10 +458,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     // Intended position collateral is optional; without it the plan reports the
     // account/key state and only a key-registration leg if one is missing.
     let requiredCollateralUnits = 0n;
-    const requiredCollateral = params.requiredCollateral;
+    const requiredCollateral = params.amountIn;
     if (requiredCollateral !== undefined) {
       if (typeof requiredCollateral !== "string") {
-        return fail("requiredCollateral must be a decimal USDC string, for example \"11\".");
+        return fail("amountIn must be a decimal USDC string, for example \"11\".");
       }
       try {
         requiredCollateralUnits = decimalToBaseUnits(requiredCollateral, LIGHTER_SETTLEMENT_ASSET_DECIMALS);

@@ -230,10 +230,10 @@ const ONBOARDING_WALLET_ADDRESS_PARAM: ProtocolParamDef = {
 };
 
 const ONBOARDING_REQUIRED_COLLATERAL_PARAM: ProtocolParamDef = {
-  key: "requiredCollateral",
+  key: "amountIn",
   type: "string",
   description:
-    "Optional intended position collateral as a decimal USDC string, for example \"11\". When provided, the onboarding plan includes the funding legs needed to reach it; when omitted, the plan reports account/key state and only a trading-key registration leg if one is missing.",
+    "Optional intended position collateral in human decimals (USDC, 6 decimals), for example \"11\". When provided, the onboarding plan includes the funding legs needed to reach it; when omitted, the plan reports account/key state and only a trading-key registration leg if one is missing.",
 };
 
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
@@ -242,7 +242,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report whether the Vex wallet can open a Lighter Core position, and the minimal steps to get there. Read-only: it reads the wallet's Ethereum-mainnet USDC balance and whether the wallet can acquire more, whether the wallet's L1 address already owns a Lighter account and its free collateral, and whether a trading key is registered in the account's trading-key index range. It returns the account state plus an ordered onboarding plan (acquire settlement asset, approve, deposit, register trading key) with only the legs the current state requires; an already funded and keyed account returns ready with no legs. Provide requiredCollateral to plan funding for a specific position size. Core only in this release. This moves no funds and signs nothing; the registered-key check is a public heuristic and Vex control is confirmed only at execution time.",
+      "Report whether the Vex wallet can open a Lighter Core position, and the minimal steps to get there. Use this when the user asks whether they can trade on Lighter, wants to fund or onboard Lighter, or before preparing a deposit. Read-only: it reads the wallet's Ethereum-mainnet USDC balance and whether the wallet can acquire more, whether the wallet's L1 address already owns a Lighter account and its free collateral, and whether a trading key is registered in the account's trading-key index range. It returns the account state plus an ordered onboarding plan (acquire settlement asset, approve, deposit, register trading key) with only the legs the current state requires; an already funded and keyed account returns ready with no legs. Provide amountIn to plan funding for a specific position size. Core only in this release. This moves no funds and signs nothing; the registered-key check is a public heuristic and Vex control is confirmed only at execution time.",
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, ONBOARDING_WALLET_ADDRESS_PARAM, ONBOARDING_REQUIRED_COLLATERAL_PARAM],
