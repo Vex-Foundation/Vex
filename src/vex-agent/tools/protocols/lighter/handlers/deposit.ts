@@ -1,6 +1,10 @@
 import { getAddress, type Hex } from "viem";
 
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import {
+  getLighterOnboardingWorkflow,
+  type LighterOnboardingWorkflowRow,
+} from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
@@ -149,6 +153,25 @@ function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string
   };
 }
 
+function projectOnboardingWorkflow(
+  workflow: LighterOnboardingWorkflowRow | null,
+): Record<string, unknown> | null {
+  if (workflow === null) return null;
+  return {
+    environment: workflow.environment,
+    walletAddress: workflow.walletAddress,
+    state: workflow.workflowState,
+    lastStableState: workflow.lastStableState,
+    activeDepositIntentId: workflow.activeDepositIntentId,
+    resolvedAccountIndex: workflow.resolvedAccountIndex,
+    apiKeyIndex: workflow.apiKeyIndex,
+    publicKeyFingerprint: workflow.publicKeyFingerprint,
+    failureCode: workflow.failureCode,
+    revision: workflow.revision,
+    updatedAt: workflow.updatedAt.toISOString(),
+  };
+}
+
 export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.deposit.status": async (params, context) => {
     const environment = readEnvironment(params);
@@ -176,6 +199,10 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       : [await onboardingIntentsRepo.findByIntentId(intentId)].filter(
           (intent): intent is LighterOnboardingIntentRow => intent !== null,
         );
+    const workflow = await getLighterOnboardingWorkflow(
+      environment.value,
+      walletAddress,
+    );
 
     if (intentId !== null && intents.length === 0) {
       return fail(`No Lighter deposit intent ${intentId} exists locally.`);
@@ -217,6 +244,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       source: "vex_lighter_local_deposit_status",
       environment: environment.value,
       walletAddress,
+      workflow: projectOnboardingWorkflow(workflow),
       checkedIntents: refreshedIntents.length,
       reconciliationErrors,
       reconciliationReports: repairReports,

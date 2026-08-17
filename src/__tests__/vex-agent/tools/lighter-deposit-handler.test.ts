@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   releaseGateEnabled: vi.fn(),
   buildRepairDeps: vi.fn(),
   repairDepositIntent: vi.fn(),
+  getOnboardingWorkflow: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
@@ -38,6 +39,10 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
   isLighterIntegrationEnabled: mocks.isIntegrationEnabled,
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
+  getLighterOnboardingWorkflow: mocks.getOnboardingWorkflow,
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -128,6 +133,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
   mocks.listUnresolvedDepositsForWallet.mockResolvedValue([]);
+  mocks.getOnboardingWorkflow.mockResolvedValue(null);
   mocks.isIntegrationEnabled.mockResolvedValue(true);
   mocks.releaseGateEnabled.mockReturnValue(true);
   mocks.buildRepairDeps.mockReturnValue({ marker: "repair-deps" });
@@ -152,6 +158,20 @@ beforeEach(() => {
 
 describe("lighter.deposit.status", () => {
   it("lists only unresolved deposits for the selected wallet without executing", async () => {
+    mocks.getOnboardingWorkflow.mockResolvedValueOnce({
+      environment: "core",
+      walletAddress: WALLET.toLowerCase(),
+      workflowState: "ambiguous",
+      lastStableState: "deposit_staged",
+      activeDepositIntentId: intentRow().intentId,
+      resolvedAccountIndex: null,
+      apiKeyIndex: null,
+      publicKeyFingerprint: null,
+      failureCode: "deposit_outcome_ambiguous",
+      revision: 4,
+      createdAt: new Date("2030-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2030-01-01T00:02:00.000Z"),
+    });
     mocks.listUnresolvedDepositsForWallet.mockResolvedValueOnce([
       intentRow({
         executionState: "ambiguous",
@@ -181,6 +201,13 @@ describe("lighter.deposit.status", () => {
       source: "vex_lighter_local_deposit_status",
       checkedIntents: 1,
       reconciliationErrors: 0,
+      workflow: {
+        state: "ambiguous",
+        lastStableState: "deposit_staged",
+        activeDepositIntentId: intentRow().intentId,
+        failureCode: "deposit_outcome_ambiguous",
+        revision: 4,
+      },
       intents: [
         {
           intentId: intentRow().intentId,
