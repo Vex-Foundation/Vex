@@ -21,6 +21,7 @@ import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
 import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
 import { describeFailureForLog } from "@utils/error-summary.js";
 import logger from "@utils/logger.js";
+import { enrichKhalaniBalancePrices } from "./balance-price-enrichment.js";
 
 /** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
 function toInventoryFamily(family: ChainFamily): InventoryFamily {
@@ -35,6 +36,8 @@ export interface SyncResult {
   tokensUpdated: number;
   chainsUpdated: number;
   totalUsd: number;
+  /** False when at least one non-zero holding has no usable USD price. */
+  valuationComplete: boolean;
 }
 
 export interface WalletSnapshotResult {
@@ -119,6 +122,7 @@ export async function syncWalletBalances(
       tokensUpdated: 0,
       chainsUpdated: 0,
       totalUsd: walletBalances.reduce((sum, b) => sum + (b.balanceUsd ?? 0), 0),
+      valuationComplete: hasCompleteValuation(walletBalances),
     };
   } else {
     base = await syncKhalaniWalletBalances(family, address, khalaniChainIds);
@@ -219,7 +223,7 @@ async function syncKhalaniWalletBalances(
   // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
   // balance responses and lets cleanup distinguish "empty" from "not scanned".
   const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
-  const tokens = scan.tokens;
+  const tokens = await enrichKhalaniBalancePrices(family, scan.tokens);
 
   // Group by chainId for transactional replace
   const byChain = new Map<number, BalanceRow[]>();
@@ -267,6 +271,7 @@ async function syncKhalaniWalletBalances(
   // Calculate total USD for this wallet
   const walletBalances = await balancesRepo.getBalances(address);
   const totalUsd = walletBalances.reduce((sum, b) => sum + (b.balanceUsd ?? 0), 0);
+  const valuationComplete = hasCompleteValuation(walletBalances);
 
   logger.info("sync.balance.completed", {
     family,
@@ -283,6 +288,7 @@ async function syncKhalaniWalletBalances(
     tokensUpdated,
     chainsUpdated: byChain.size,
     totalUsd,
+    valuationComplete,
   };
 }
 
@@ -350,40 +356,56 @@ async function runFullBalanceSync(policy: SnapshotPolicy): Promise<FullSyncResul
     walletEntries.map((entry) => entry.address),
   );
 
-  // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana), one snapshot each.
+  // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana) before writing any
+  // snapshot. Snapshot completeness is group-wide: one partially-valued wallet
+  // must suppress the whole cycle rather than minting a misleading baseline.
   for (const { family, address } of walletEntries) {
     const sync = await syncWalletBalances(family, address);
     wallets.push(sync);
     aggregateTotalUsd += sync.totalUsd;
+  }
 
-    if (!snapshotAllowed) continue;
+  const valuationComplete = wallets.every((wallet) => wallet.valuationComplete);
+  const shouldSnapshot = snapshotAllowed && valuationComplete;
 
-    const positions = await buildPositionsBreakdown(family, address);
-    const positionData = positions as { chains?: Array<{ chainId: number }> };
-    const chainSet = new Set<string>();
-    for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
-
-    const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
-      walletFamily: family,
-      walletAddress: address,
-      snapshotGroupId,
-      totalUsd: sync.totalUsd,
-      positions,
-      activeChains: [...chainSet],
+  if (!valuationComplete) {
+    logger.info("sync.balance.snapshot_deferred", {
+      reason: "incomplete_valuation",
+      hint: "balances still refreshed; the snapshot resumes when every held asset has a USD price",
     });
-    snapshots.push({
-      walletFamily: family,
-      walletAddress: address,
-      snapshotId,
-      totalUsd: sync.totalUsd,
-      pnlVsPrev,
-    });
+  }
+
+  if (shouldSnapshot) {
+    for (let index = 0; index < walletEntries.length; index += 1) {
+      const { family, address } = walletEntries[index]!;
+      const sync = wallets[index]!;
+      const positions = await buildPositionsBreakdown(family, address);
+      const positionData = positions as { chains?: Array<{ chainId: number }> };
+      const chainSet = new Set<string>();
+      for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
+
+      const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
+        walletFamily: family,
+        walletAddress: address,
+        snapshotGroupId,
+        totalUsd: sync.totalUsd,
+        positions,
+        activeChains: [...chainSet],
+      });
+      snapshots.push({
+        walletFamily: family,
+        walletAddress: address,
+        snapshotId,
+        totalUsd: sync.totalUsd,
+        pnlVsPrev,
+      });
+    }
   }
 
   logger.info("sync.balance.full_completed", {
     wallets: wallets.length,
     snapshots: snapshots.length,
-    snapshotSkipped: !snapshotAllowed,
+    snapshotSkipped: !shouldSnapshot,
     totalUsd: aggregateTotalUsd.toFixed(2),
     snapshotGroupId,
   });
@@ -449,7 +471,11 @@ export async function selectiveBalanceSync(chainHint: string): Promise<Selective
 function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: KhalaniToken): BalanceRow {
   const balanceRaw = token.extensions?.balance ?? "0";
   const priceUsdStr = token.extensions?.price?.usd;
-  const priceUsd = priceUsdStr ? parseFloat(priceUsdStr) : null;
+  const parsedPriceUsd = priceUsdStr ? Number(priceUsdStr) : Number.NaN;
+  const priceUsd =
+    Number.isFinite(parsedPriceUsd) && parsedPriceUsd > 0
+      ? parsedPriceUsd
+      : null;
 
   // Calculate USD value: balance in human units * price
   let balanceUsd: number | null = null;
@@ -474,6 +500,22 @@ function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: Kh
     priceUsd,
     decimals: token.decimals,
   };
+}
+
+/**
+ * A total is complete only when every non-zero row has a finite USD value.
+ * Malformed raw balances are treated conservatively as held/unknown.
+ */
+function hasCompleteValuation(rows: readonly BalanceRow[]): boolean {
+  return rows.every((row) => {
+    let isZero = false;
+    try {
+      isZero = BigInt(row.balanceRaw) === 0n;
+    } catch {
+      return false;
+    }
+    return isZero || (row.balanceUsd !== null && Number.isFinite(row.balanceUsd));
+  });
 }
 
 /** Build the per-chain token breakdown for ONE wallet's snapshot row. */

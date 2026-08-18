@@ -32,6 +32,7 @@ import {
   flattenPortfolioWallets,
   type PortfolioWallet,
 } from "./wallet-scope.js";
+import { hasUnpricedHoldings } from "./valuation.js";
 
 export function PortfolioOverviewCard(): JSX.Element {
   const globalQuery = usePortfolio(null);
@@ -104,6 +105,8 @@ function TotalFigure({
 }: {
   readonly portfolio: PortfolioDto | null;
 }): JSX.Element {
+  const partial =
+    portfolio !== null && hasUnpricedHoldings(portfolio.tokens);
   return (
     <div className="flex flex-col gap-1">
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
@@ -111,9 +114,21 @@ function TotalFigure({
       </span>
       {/* Serif is rationed to this ONE display figure (typography law). */}
       <span className="font-serif text-[34px] leading-none tracking-[-0.01em] text-foreground">
-        {formatUsd(portfolio?.liveTotalUsd ?? null)}
+        <span>{formatUsd(portfolio?.liveTotalUsd ?? null)}</span>
+        {partial ? (
+          <span
+            className="ml-0.5 font-mono text-[13px] text-[var(--vex-text-3)]"
+            aria-label="Partial valuation"
+          >
+            +
+          </span>
+        ) : null}
       </span>
-      {portfolio !== null &&
+      {partial ? (
+        <span className="font-mono text-[10px] text-[var(--vex-text-3)]">
+          partial · unpriced assets excluded
+        </span>
+      ) : portfolio !== null &&
       portfolio.snapshotTotalUsd !== null &&
       portfolio.pnlVsPrev !== null ? (
         <span className="flex items-baseline gap-1.5 font-mono text-[11px] tabular-nums">

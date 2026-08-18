@@ -32,6 +32,11 @@ vi.mock("../../../vex-agent/sync/local-chain-balance-sync.js", () => ({
   syncLocalChainForWallet: (...args: unknown[]) => mockLocalSync(...args),
 }));
 
+const mockEnrichPrices = vi.fn();
+vi.mock("../../../vex-agent/sync/balance-price-enrichment.js", () => ({
+  enrichKhalaniBalancePrices: (...args: unknown[]) => mockEnrichPrices(...args),
+}));
+
 // Pendle enrichment is its own suite (balance-sync-pendle + merge). Here both the
 // merge and the standalone seed are no-ops so these Khalani-focused tests stay
 // hermetic (the real enrichment reads proj_activity + Pendle RPC/API): the merge
@@ -83,6 +88,9 @@ function emptyScan(scannedChainIds: number[] = []) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockScan.mockResolvedValue(emptyScan());
+  mockEnrichPrices.mockImplementation((_family: string, tokens: unknown[]) =>
+    Promise.resolve([...tokens]),
+  );
   mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 0, skipped: true });
   // Khalani registry WITHOUT 4663 (the real-world state today).
   mockGetCachedKhalaniChains.mockResolvedValue([
@@ -129,6 +137,41 @@ describe("syncWalletBalances", () => {
   it("forwards a chainIds filter to the scan", async () => {
     await syncWalletBalances("eip155", EVM_A, [1, 8453]);
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [1, 8453] });
+  });
+
+  it("enriches a live balance-only response before persisting USD values", async () => {
+    const liveShape = {
+      chainId: 1,
+      address: "0xA0b86991c6218b36c1d19d4a2e9eb0cE3606eB48",
+      symbol: "USDC",
+      name: "USD Coin",
+      decimals: 6,
+      extensions: { balance: "2070000" },
+    };
+    mockScan.mockResolvedValue({
+      tokens: [liveShape],
+      scannedChainIds: [1],
+      chainErrors: [],
+    });
+    mockEnrichPrices.mockResolvedValue([
+      {
+        ...liveShape,
+        extensions: {
+          ...liveShape.extensions,
+          price: { usd: "1" },
+        },
+      },
+    ]);
+
+    await syncWalletBalances("eip155", EVM_A, [1]);
+
+    expect(mockEnrichPrices).toHaveBeenCalledWith("eip155", [liveShape]);
+    const rows = mockReplaceBalances.mock.calls[0]?.[2] as Array<{
+      priceUsd: number | null;
+      balanceUsd: number | null;
+    }>;
+    expect(rows[0]?.priceUsd).toBe(1);
+    expect(rows[0]?.balanceUsd).toBeCloseTo(2.07);
   });
 
   // ── Native top-up MUST stay off on the projection path ──────────
@@ -249,6 +292,30 @@ describe("fullBalanceSync — snapshot guard", () => {
     // duration of a pending swap. Only the SNAPSHOT is deferred.
     expect(result.wallets).toHaveLength(3);
     expect(mockScan).toHaveBeenCalled();
+  });
+
+  it("does not record a snapshot baseline while any held asset is unpriced", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockGetBalances.mockResolvedValue([
+      {
+        walletFamily: "eip155",
+        walletAddress: EVM_A,
+        chainId: 1,
+        tokenAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        tokenSymbol: "ETH",
+        tokenName: "Ether",
+        balanceRaw: "425500000000000",
+        balanceUsd: null,
+        priceUsd: null,
+        decimals: 18,
+      },
+    ]);
+
+    const result = await fullBalanceSync();
+
+    expect(result.wallets.some((wallet) => !wallet.valuationComplete)).toBe(true);
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    expect(result.snapshots).toEqual([]);
   });
 
   it("asks the predicate ONCE, before the wallet loop, for every wallet at once", async () => {

@@ -241,6 +241,33 @@ describe("WelcomePortfolioPanel — overview scope chips", () => {
     expect(overviewRegion().getByText("vs last snapshot")).not.toBeNull();
   });
 
+  it("marks an aggregate as partial and suppresses snapshot comparison while a held asset is unpriced", () => {
+    mockUsePortfolio.mockReturnValue(
+      loaded(
+        portfolio({
+          liveTotalUsd: 1.17,
+          tokens: [
+            {
+              chainId: 1,
+              symbol: "USDC",
+              balanceUsd: null,
+              amount: 2.07,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<WelcomePortfolioPanel bookOpen onToggle={() => {}} />);
+
+    expect(overviewRegion().getByText("$1.17")).not.toBeNull();
+    expect(overviewRegion().getByLabelText("Partial valuation")).not.toBeNull();
+    expect(
+      overviewRegion().getByText("partial · unpriced assets excluded"),
+    ).not.toBeNull();
+    expect(overviewRegion().queryByText("vs last snapshot")).toBeNull();
+  });
+
   it("puts the Primary badge on family-primary chips only (index 0 per family)", () => {
     render(<WelcomePortfolioPanel bookOpen onToggle={() => {}} />);
     const chips = scopeChips();
