@@ -88,9 +88,9 @@ describe("buildProtocolsPrompt", () => {
     expect(section).toContain("fundingAssessment.decision = prepare_deposit");
     expect(section).toContain("immediately call `lighter.deposit.prepare`");
     expect(section).toContain("deposit approval card is the consent surface");
-    expect(section).toContain("fundingAssessment.decision = insufficient_wallet_usdc");
+    expect(section).toContain("fundingAssessment.decision = insufficient_wallet_settlement_asset");
     expect(section).toContain("Show requested collateral, current Lighter collateral");
-    expect(section).toContain("Do not count ETH or other assets as depositable USDC");
+    expect(section).toContain("Do not count ETH or other assets as depositable settlement collateral");
     expect(section).toContain("fundingAssessment.decision = below_lighter_deposit_minimum");
     expect(section).toContain("never round the top-up upward");
     expect(section).toContain("Lighter's live minimum deposit");

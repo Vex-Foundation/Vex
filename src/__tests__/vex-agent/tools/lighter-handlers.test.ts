@@ -550,7 +550,7 @@ describe("Lighter agent read handlers", () => {
       decision: "prepare_deposit",
       requiredCollateralDisplay: "2 USDC",
       lighterCollateralDisplay: "1 USDC",
-      walletUsdcDisplay: "2.07 USDC",
+      walletSettlementDisplay: "2.07 USDC",
       depositAmountIn: "1",
       depositDisplay: "1 USDC",
     });
@@ -661,10 +661,10 @@ describe("Lighter agent read handlers", () => {
     });
 
     expect(data.fundingAssessment).toMatchObject({
-      decision: "insufficient_wallet_usdc",
+      decision: "insufficient_wallet_settlement_asset",
       requiredCollateralDisplay: "2 USDC",
       lighterCollateralDisplay: "1 USDC",
-      walletUsdcDisplay: "0.25 USDC",
+      walletSettlementDisplay: "0.25 USDC",
       depositDisplay: "1 USDC",
       walletDepositShortfallDisplay: "0.75 USDC",
     });
@@ -674,8 +674,8 @@ describe("Lighter agent read handlers", () => {
       params: null,
     });
     expect(data.userGuidance).toContain("Do not prepare a deposit");
-    expect(data.userGuidance).toContain("non-USDC wallet assets are not counted");
-    expect(data.userGuidance).toContain("mere presence of ETH");
+    expect(data.userGuidance).toContain("other wallet assets are not counted");
+    expect(data.userGuidance).toContain("ETH is reported only for network fees");
   });
 
   it("stops before approval when the exact top-up is below Lighter's live minimum", async () => {
@@ -709,8 +709,8 @@ describe("Lighter agent read handlers", () => {
       decision: "below_lighter_deposit_minimum",
       requiredCollateralDisplay: "2 USDC",
       lighterCollateralDisplay: "1.5 USDC",
-      walletUsdcDisplay: "50 USDC",
-      combinedUsdcDisplay: "51.5 USDC",
+      walletSettlementDisplay: "50 USDC",
+      combinedSettlementDisplay: "51.5 USDC",
       collateralShortfallDisplay: "0.5 USDC",
       minimumDepositDisplay: "1 USDC",
       depositAmountIn: null,

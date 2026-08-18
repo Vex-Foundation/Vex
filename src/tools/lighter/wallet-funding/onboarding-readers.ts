@@ -19,27 +19,36 @@ import {
   LIGHTER_TRADING_API_KEY_INDEX_MAX,
   LIGHTER_TRADING_API_KEY_INDEX_MIN,
 } from "../trading-credentials.js";
-import {
-  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
-  LIGHTER_DEPOSIT_CHAIN_ID,
-  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-  LIGHTER_USDC_ASSET_INDEX,
-} from "./constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 import { decimalToBaseUnits } from "./onboarding-plan.js";
 import type { LighterAccountCollateralRow } from "./onboarding-observation.js";
 import type { LighterOnboardingReaders } from "./onboarding-status.js";
 
 export function buildLighterOnboardingReaders(): LighterOnboardingReaders {
   return {
-    async readWalletSettlementUnits(walletAddress) {
+    async readWalletSettlementUnits(environment, walletAddress) {
+      const funding = getLighterFundingDeployment(environment);
       return await readErc20Balance(
-        mainnetClient(),
-        getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS),
+        settlementClient(environment),
+        funding.settlementTokenProxy,
         getAddress(walletAddress),
       );
     },
-    async readWalletCanAcquireSettlement(walletAddress) {
-      const wei = await mainnetClient().getBalance({ address: getAddress(walletAddress) });
+    async readWalletSettlementAllowanceUnits(environment, walletAddress) {
+      const funding = getLighterFundingDeployment(environment);
+      return await settlementClient(environment).readContract({
+        address: funding.settlementTokenProxy,
+        abi: ERC20_ALLOWANCE_ABI,
+        functionName: "allowance",
+        args: [getAddress(walletAddress), funding.gatewayProxy],
+      });
+    },
+    async readWalletNativeBalanceWei(environment, walletAddress) {
+      return await settlementClient(environment).getBalance({ address: getAddress(walletAddress) });
+    },
+    async readWalletCanAcquireSettlement(environment, walletAddress) {
+      if (environment === "rhc") return false;
+      const wei = await settlementClient(environment).getBalance({ address: getAddress(walletAddress) });
       return wei > 0n;
     },
     async readLighterAccount(environment, walletAddress) {
@@ -80,41 +89,60 @@ export function buildLighterOnboardingReaders(): LighterOnboardingReaders {
       );
     },
     async readMinimumDepositUnits(environment) {
+      const funding = getLighterFundingDeployment(environment);
       const response = await getLighterClient().getAssetDetails(environment);
       const rows = response.asset_details.filter(
-        (asset) => asset.asset_id === LIGHTER_USDC_ASSET_INDEX,
+        (asset) => asset.asset_id === funding.settlementAssetIndex,
       );
       const asset = rows[0];
       if (
         response.code !== 200
         || rows.length !== 1
         || asset === undefined
-        || asset.symbol.toUpperCase() !== "USDC"
-        || asset.l1_decimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
-        || asset.decimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
-        || getAddress(asset.l1_address) !== getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS)
+        || asset.symbol !== funding.settlementSymbol
+        || asset.l1_decimals !== funding.settlementDecimals
+        || asset.decimals !== funding.settlementDecimals
+        || getAddress(asset.l1_address) !== funding.settlementTokenProxy
       ) {
-        throw new Error("Lighter did not return one verified Core USDC deposit asset.");
+        throw new Error(
+          `Lighter did not return one verified ${environment} ${funding.settlementSymbol} deposit asset.`,
+        );
       }
       const minimumUnits = decimalToBaseUnits(
         asset.min_transfer_amount,
-        LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+        funding.settlementDecimals,
       );
       if (minimumUnits <= 0n) {
-        throw new Error("Lighter returned an invalid minimum Core USDC deposit amount.");
+        throw new Error(
+          `Lighter returned an invalid minimum ${environment} ${funding.settlementSymbol} deposit amount.`,
+        );
       }
       return minimumUnits;
     },
   };
 }
 
-function mainnetClient() {
-  const deployment = getUniswapDeployment(LIGHTER_DEPOSIT_CHAIN_ID);
+function settlementClient(environment: "core" | "rhc") {
+  const funding = getLighterFundingDeployment(environment);
+  const deployment = getUniswapDeployment(funding.settlementChainId);
   if (!deployment) {
-    throw new Error("Ethereum mainnet deployment is not configured for Lighter deposits.");
+    throw new Error(`${funding.settlementNetworkName} is not configured for Lighter deposits.`);
   }
   return getUniswapPublicClient(deployment);
 }
+
+const ERC20_ALLOWANCE_ABI = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
 
 /** True when a getAccount failure is Lighter's "no account for this L1 address". */
 function isLighterAccountNotFound(err: unknown): boolean {

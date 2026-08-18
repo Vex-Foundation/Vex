@@ -173,7 +173,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
-      `Use when: managed onboarding validates an explicit deposit amount or returns prepare_deposit for the exact trade shortfall. Never use it for below_lighter_deposit_minimum or insufficient_wallet_usdc. The host card is the consent surface. Preparation creates durable intent state but does not read a private key, sign, broadcast, or move funds. ` +
+      `Use when: managed onboarding validates an explicit deposit amount or returns prepare_deposit for the exact trade shortfall. Never use it for below_lighter_deposit_minimum or insufficient_wallet_settlement_asset. The host card is the consent surface. Preparation creates durable intent state but does not read a private key, sign, broadcast, or move funds. ` +
       `Example queries: deposit 11 USDC to set up Lighter, fund my Lighter account with 5 USDC, use 20 USDC for Lighter perps.`,
     ),
     aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet", "deposit for lighter setup"],

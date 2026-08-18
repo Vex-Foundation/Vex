@@ -19,12 +19,29 @@ import {
   type LighterOnboardingPlan,
 } from "./onboarding-plan.js";
 import { LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "./constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 
 export interface LighterOnboardingReaders {
   /** Settlement asset (USDC) base units the wallet holds on the deposit chain. */
-  readWalletSettlementUnits(walletAddress: string): Promise<bigint>;
+  readWalletSettlementUnits(
+    environment: LighterEnvironment,
+    walletAddress: string,
+  ): Promise<bigint>;
+  /** Current settlement-token allowance to the exact environment gateway. */
+  readWalletSettlementAllowanceUnits(
+    environment: LighterEnvironment,
+    walletAddress: string,
+  ): Promise<bigint>;
+  /** Native ETH balance used only for settlement-chain network fees. */
+  readWalletNativeBalanceWei(
+    environment: LighterEnvironment,
+    walletAddress: string,
+  ): Promise<bigint>;
   /** Whether the wallet holds a swappable asset to acquire more settlement asset. */
-  readWalletCanAcquireSettlement(walletAddress: string): Promise<boolean>;
+  readWalletCanAcquireSettlement(
+    environment: LighterEnvironment,
+    walletAddress: string,
+  ): Promise<boolean>;
   /** The Lighter account owned by the wallet's L1 address, or null if none. */
   readLighterAccount(
     environment: LighterEnvironment,
@@ -50,6 +67,8 @@ export interface LighterOnboardingStatus {
   readonly environment: LighterEnvironment;
   readonly walletAddress: string;
   readonly walletSettlementUnits: string;
+  readonly walletSettlementAllowanceUnits: string;
+  readonly walletNativeBalanceWei: string;
   readonly walletCanAcquireSettlement: boolean;
   readonly accountExists: boolean;
   readonly accountIndex: number | null;
@@ -71,7 +90,7 @@ export type LighterFundingDecision =
   | "ready"
   | "prepare_deposit"
   | "below_lighter_deposit_minimum"
-  | "insufficient_wallet_usdc";
+  | "insufficient_wallet_settlement_asset";
 
 /**
  * Exact live-balance decision for funding an intended Lighter position.
@@ -82,15 +101,16 @@ export type LighterFundingDecision =
  * be prepared.
  */
 export interface LighterFundingAssessment {
+  readonly settlementAsset: "USDC" | "USDG";
   readonly decision: LighterFundingDecision;
   readonly requiredCollateralUnits: string;
   readonly requiredCollateralDisplay: string;
   readonly lighterCollateralUnits: string;
   readonly lighterCollateralDisplay: string;
-  readonly walletUsdcUnits: string;
-  readonly walletUsdcDisplay: string;
-  readonly combinedUsdcUnits: string;
-  readonly combinedUsdcDisplay: string;
+  readonly walletSettlementUnits: string;
+  readonly walletSettlementDisplay: string;
+  readonly combinedSettlementUnits: string;
+  readonly combinedSettlementDisplay: string;
   readonly collateralShortfallUnits: string;
   readonly collateralShortfallDisplay: string;
   readonly depositUnits: string | null;
@@ -102,11 +122,14 @@ export interface LighterFundingAssessment {
 }
 
 export function assessLighterFunding(input: {
+  readonly environment?: LighterEnvironment;
   readonly walletSettlementUnits: bigint;
   readonly accountCollateralUnits: bigint;
   readonly requiredCollateralUnits: bigint;
   readonly minimumDepositUnits: bigint;
 }): LighterFundingAssessment {
+  const environment = input.environment ?? "core";
+  const settlementAsset = getLighterFundingDeployment(environment).settlementSymbol;
   assertNonNegativeFundingUnits("walletSettlementUnits", input.walletSettlementUnits);
   assertNonNegativeFundingUnits("accountCollateralUnits", input.accountCollateralUnits);
   assertNonNegativeFundingUnits("requiredCollateralUnits", input.requiredCollateralUnits);
@@ -132,28 +155,30 @@ export function assessLighterFunding(input: {
       : "below_lighter_deposit_minimum"
     : walletDepositShortfall === 0n
       ? "prepare_deposit"
-      : "insufficient_wallet_usdc";
+      : "insufficient_wallet_settlement_asset";
 
   return {
+    settlementAsset,
     decision,
     requiredCollateralUnits: input.requiredCollateralUnits.toString(),
-    requiredCollateralDisplay: displaySettlementUnits(input.requiredCollateralUnits),
+    requiredCollateralDisplay: displaySettlementUnits(input.requiredCollateralUnits, settlementAsset),
     lighterCollateralUnits: input.accountCollateralUnits.toString(),
-    lighterCollateralDisplay: displaySettlementUnits(input.accountCollateralUnits),
-    walletUsdcUnits: input.walletSettlementUnits.toString(),
-    walletUsdcDisplay: displaySettlementUnits(input.walletSettlementUnits),
-    combinedUsdcUnits: (input.accountCollateralUnits + input.walletSettlementUnits).toString(),
-    combinedUsdcDisplay: displaySettlementUnits(
+    lighterCollateralDisplay: displaySettlementUnits(input.accountCollateralUnits, settlementAsset),
+    walletSettlementUnits: input.walletSettlementUnits.toString(),
+    walletSettlementDisplay: displaySettlementUnits(input.walletSettlementUnits, settlementAsset),
+    combinedSettlementUnits: (input.accountCollateralUnits + input.walletSettlementUnits).toString(),
+    combinedSettlementDisplay: displaySettlementUnits(
       input.accountCollateralUnits + input.walletSettlementUnits,
+      settlementAsset,
     ),
     collateralShortfallUnits: collateralShortfall.toString(),
-    collateralShortfallDisplay: displaySettlementUnits(collateralShortfall),
+    collateralShortfallDisplay: displaySettlementUnits(collateralShortfall, settlementAsset),
     depositUnits: depositUnits?.toString() ?? null,
     depositAmountIn: depositUnits === null ? null : formatSettlementUnits(depositUnits),
-    depositDisplay: depositUnits === null ? null : displaySettlementUnits(depositUnits),
+    depositDisplay: depositUnits === null ? null : displaySettlementUnits(depositUnits, settlementAsset),
     walletDepositShortfallUnits: walletDepositShortfall.toString(),
-    walletDepositShortfallDisplay: displaySettlementUnits(walletDepositShortfall),
-    minimumDepositDisplay: displaySettlementUnits(input.minimumDepositUnits),
+    walletDepositShortfallDisplay: displaySettlementUnits(walletDepositShortfall, settlementAsset),
+    minimumDepositDisplay: displaySettlementUnits(input.minimumDepositUnits, settlementAsset),
   };
 }
 
@@ -165,9 +190,17 @@ export async function resolveLighterOnboardingStatus(
   const vexTradingKeyRegistered = account
     ? await readers.readVexTradingKeyRegistered(input.environment, account.account_index)
     : false;
-  const [walletSettlementUnits, walletCanAcquireSettlement, minimumDepositUnits] = await Promise.all([
-    readers.readWalletSettlementUnits(input.walletAddress),
-    readers.readWalletCanAcquireSettlement(input.walletAddress),
+  const [
+    walletSettlementUnits,
+    walletSettlementAllowanceUnits,
+    walletNativeBalanceWei,
+    walletCanAcquireSettlement,
+    minimumDepositUnits,
+  ] = await Promise.all([
+    readers.readWalletSettlementUnits(input.environment, input.walletAddress),
+    readers.readWalletSettlementAllowanceUnits(input.environment, input.walletAddress),
+    readers.readWalletNativeBalanceWei(input.environment, input.walletAddress),
+    readers.readWalletCanAcquireSettlement(input.environment, input.walletAddress),
     readers.readMinimumDepositUnits(input.environment),
   ]);
 
@@ -183,6 +216,7 @@ export async function resolveLighterOnboardingStatus(
 
   const plan = planLighterOnboarding(observation);
   const fundingAssessment = assessLighterFunding({
+    environment: input.environment,
     walletSettlementUnits,
     accountCollateralUnits: observation.accountCollateralUnits,
     requiredCollateralUnits: input.requiredCollateralUnits,
@@ -193,6 +227,8 @@ export async function resolveLighterOnboardingStatus(
     environment: input.environment,
     walletAddress: input.walletAddress,
     walletSettlementUnits: walletSettlementUnits.toString(),
+    walletSettlementAllowanceUnits: walletSettlementAllowanceUnits.toString(),
+    walletNativeBalanceWei: walletNativeBalanceWei.toString(),
     walletCanAcquireSettlement,
     accountExists: observation.accountExists,
     accountIndex: account?.account_index ?? null,
@@ -215,8 +251,8 @@ function formatSettlementUnits(units: bigint): string {
   return fraction.length === 0 ? whole.toString() : `${whole}.${fraction}`;
 }
 
-function displaySettlementUnits(units: bigint): string {
-  return `${formatSettlementUnits(units)} USDC`;
+function displaySettlementUnits(units: bigint, asset: "USDC" | "USDG"): string {
+  return `${formatSettlementUnits(units)} ${asset}`;
 }
 
 function maxUnits(left: bigint, right: bigint): bigint {

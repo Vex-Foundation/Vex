@@ -34,6 +34,7 @@ import {
   assessLighterFunding,
   resolveLighterOnboardingStatus,
 } from "@tools/lighter/wallet-funding/onboarding-status.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
@@ -506,9 +507,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.account.onboarding.status": async (params, context) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
-    if (environment.value !== "core") {
-      return fail("Lighter wallet-funded onboarding is available on Core only in this release.");
-    }
+    const fundingDeployment = getLighterFundingDeployment(environment.value);
+    const settlementAsset = fundingDeployment.settlementSymbol;
 
     // Wallet address: an explicit override, else the session's selected EVM
     // wallet resolved address-only (never decrypts a key).
@@ -542,7 +542,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     const depositAmountProvided = requiredCollateral !== undefined;
     if (requiredCollateral !== undefined) {
       if (typeof requiredCollateral !== "string") {
-        return fail("amountIn must be a decimal USDC string, for example \"11\".");
+        return fail(`amountIn must be a decimal ${settlementAsset} string, for example \"11\".`);
       }
       try {
         requiredCollateralUnits = decimalToBaseUnits(requiredCollateral, LIGHTER_SETTLEMENT_ASSET_DECIMALS);
@@ -581,6 +581,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           : Promise.resolve(null),
       ]);
       const fundingAssessment = assessLighterFunding({
+        environment: environment.value,
         walletSettlementUnits: BigInt(status.walletSettlementUnits),
         accountCollateralUnits: BigInt(status.accountCollateralUnits),
         requiredCollateralUnits,
@@ -603,15 +604,16 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             marketId: tradeMarket.market_id,
             marketSymbol: tradeMarket.symbol,
             requestedTradeDisplay: fundingAssessment.requiredCollateralDisplay,
-            minimumTradeDisplay: `${tradeMarket.min_quote_amount} USDC`,
-            combinedAvailableDisplay: fundingAssessment.combinedUsdcDisplay,
+            minimumTradeDisplay: `${tradeMarket.min_quote_amount} ${settlementAsset}`,
+            combinedAvailableDisplay: fundingAssessment.combinedSettlementDisplay,
             combinedBalanceMeetsMinimum: combinedAvailableUnits >= marketMinimumUnits,
           } as const;
       const belowTradeMinimum = tradeMinimumAssessment?.decision === "below_lighter_trade_minimum";
-      const managedTradingReadiness = status.accountIndex === null
+      const managedTradingReadiness = status.accountIndex === null || environment.value === "rhc"
         ? null
         : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
-      const managedTradingAccessActive = status.tradingKeyRegistered
+      const managedTradingAccessActive = environment.value === "core"
+        && status.tradingKeyRegistered
         && managedTradingReadiness?.ready === true;
       const readinessRecoveryLeg = managedTradingReadiness?.ready === false
         ? managedReadinessRecoveryLeg(managedTradingReadiness)
@@ -652,7 +654,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
               amountIn: fundingAssessment.depositAmountIn,
             },
           }
-          : fundingAssessment.decision === "insufficient_wallet_usdc"
+        : fundingAssessment.decision === "insufficient_wallet_settlement_asset"
             ? {
                 kind: "show_insufficient_balance",
                 toolId: null,
@@ -670,15 +672,17 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
                 params: null,
               };
       const userGuidance = belowTradeMinimum && tradeMinimumAssessment !== null
-        ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet USDC ${fundingAssessment.walletUsdcDisplay}; combined available USDC ${fundingAssessment.combinedUsdcDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
+        ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined available ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
         : !depositAmountProvided && needsFunding
-        ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
+        ? `Ask exactly one setup question: \"How much ${settlementAsset} do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} ${settlementAsset}.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
         : fundingAssessment.decision === "prepare_deposit"
-          ? `The requested trade amount is known and live balances prove the selected Vex wallet can directly fund the exact Lighter top-up. Immediately call lighter.deposit.prepare in this same turn with amountIn \"${fundingAssessment.depositAmountIn}\" so the host shows the deposit approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.deposit directly. Explain that Lighter currently has ${fundingAssessment.lighterCollateralDisplay}, the selected Vex wallet has ${fundingAssessment.walletUsdcDisplay}, the requested collateral is ${fundingAssessment.requiredCollateralDisplay}, and the prepared deposit is ${fundingAssessment.depositDisplay}. After approval, only the trusted approval-resume path may execute the deposit.`
-          : fundingAssessment.decision === "insufficient_wallet_usdc"
-            ? `Do not prepare a deposit because the selected Vex wallet's directly depositable Ethereum-mainnet USDC cannot cover the required top-up. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet USDC ${fundingAssessment.walletUsdcDisplay}; required deposit ${fundingAssessment.depositDisplay}; wallet USDC shortfall ${fundingAssessment.walletDepositShortfallDisplay}. Explain that non-USDC wallet assets are not counted as directly depositable collateral and would require a separate live-quoted, separately approved swap. Do not claim the wallet can fund the trade from the mere presence of ETH.`
+          ? `The requested trade amount is known and live balances prove the selected Vex wallet can directly fund the exact Lighter top-up. Immediately call lighter.deposit.prepare in this same turn with amountIn \"${fundingAssessment.depositAmountIn}\" so the host shows the deposit approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.deposit directly. Explain that Lighter currently has ${fundingAssessment.lighterCollateralDisplay}, the selected Vex wallet has ${fundingAssessment.walletSettlementDisplay}, the requested collateral is ${fundingAssessment.requiredCollateralDisplay}, and the prepared deposit is ${fundingAssessment.depositDisplay}. After approval, only the trusted approval-resume path may execute the deposit.`
+          : fundingAssessment.decision === "insufficient_wallet_settlement_asset"
+            ? `Do not prepare a deposit because the selected Vex wallet's directly depositable ${settlementAsset} on ${fundingDeployment.settlementNetworkName} cannot cover the required top-up. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; required deposit ${fundingAssessment.depositDisplay}; wallet ${settlementAsset} shortfall ${fundingAssessment.walletDepositShortfallDisplay}. Explain that other wallet assets are not counted as directly depositable collateral and would require a separate live-quoted, separately approved swap or bridge. ETH is reported only for network fees and never counted as ${settlementAsset}.`
             : fundingAssessment.decision === "below_lighter_deposit_minimum"
-              ? `Do not prepare a deposit and do not round the top-up upward. The current Lighter collateral is not enough for the requested trade, but the exact required top-up ${fundingAssessment.collateralShortfallDisplay} is below Lighter's live minimum deposit ${fundingAssessment.minimumDepositDisplay}. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet USDC ${fundingAssessment.walletUsdcDisplay}; combined USDC ${fundingAssessment.combinedUsdcDisplay}; required top-up ${fundingAssessment.collateralShortfallDisplay}; Lighter minimum deposit ${fundingAssessment.minimumDepositDisplay}. Explain that Vex will not move extra funds beyond the requested top-up; the user must choose a trade or funding amount whose required deposit meets the live minimum.`
+              ? `Do not prepare a deposit and do not round the top-up upward. The current Lighter collateral is not enough for the requested trade, but the exact required top-up ${fundingAssessment.collateralShortfallDisplay} is below Lighter's live minimum deposit ${fundingAssessment.minimumDepositDisplay}. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}; required top-up ${fundingAssessment.collateralShortfallDisplay}; Lighter minimum deposit ${fundingAssessment.minimumDepositDisplay}. Explain that Vex will not move extra funds beyond the requested top-up; the user must choose a trade or funding amount whose required deposit meets the live minimum.`
+            : environment.value === "rhc"
+              ? "RHC funding is sufficient. Phase 1 does not register a trading key or place a trade; key registration and the later trade each require their own approval in later phases."
             : plan.ready && managedTradingAccessActive
               ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
               : managedTradingReadiness?.reason === "nonce_not_reservable"

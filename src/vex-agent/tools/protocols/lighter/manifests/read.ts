@@ -233,7 +233,7 @@ const ONBOARDING_REQUIRED_COLLATERAL_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
   description:
-    "Optional intended position collateral in human decimals (USDC, 6 decimals), for example \"11\". For a trade request stated as a USDC amount or 'USDC worth', pass that known amount together with marketSymbol or marketId so Vex checks the live market minimum before any deposit preparation, then compares live Lighter collateral with directly depositable wallet USDC. Omit only during amount-free setup discovery. Never ask the user for account or API-key indexes.",
+    "Optional intended position collateral in human settlement-asset decimals (USDC on Core or USDG on RHC, both 6 decimals), for example \"11\". Pass a known trade amount with marketSymbol or marketId so Vex checks the live market minimum before deposit preparation, then compares live Lighter collateral with the wallet's directly depositable settlement asset. Omit only during amount-free setup discovery. Never ask the user for account or API-key indexes.",
 };
 
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
@@ -242,7 +242,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report whether the selected Vex wallet is ready to trade on Lighter Core and the minimal managed setup steps still required. Use for setup, funding, perp trades, or readiness. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. For a USDC-sized trade, pass amountIn plus marketSymbol or marketId. Read-only: it checks the live market quote minimum before funding, Ethereum-mainnet USDC, wallet-owned Lighter collateral, the live deposit minimum, and registered Vex trading access. Returns exact balance displays, tradeMinimumAssessment when a market is supplied, and a deterministic funding route. A trade below the market minimum, a top-up below the deposit minimum, or insufficient wallet USDC always stops before deposit preparation and shows the requested amount, Lighter balance, Vex-wallet balance, combined balance, and applicable minimum. Only an eligible exact shortfall may route to lighter.deposit.prepare. Core only; moves no funds and signs nothing.",
+      "Report the selected Vex wallet's Lighter funding readiness on Core or Robinhood Chain and the minimal setup steps still required. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, and live deposit minimum. Returns exact balance displays and a deterministic funding route. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Only an eligible exact shortfall may route to lighter.deposit.prepare. RHC key registration and trading readiness remain later, separately approved phases; this tool moves no funds and signs nothing.",
     mutating: false,
     actionKind: "read",
     params: [

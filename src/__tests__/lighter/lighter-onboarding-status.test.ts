@@ -8,6 +8,8 @@ import {
 function readers(overrides: Partial<LighterOnboardingReaders> = {}): LighterOnboardingReaders {
   return {
     readWalletSettlementUnits: vi.fn().mockResolvedValue(0n),
+    readWalletSettlementAllowanceUnits: vi.fn().mockResolvedValue(0n),
+    readWalletNativeBalanceWei: vi.fn().mockResolvedValue(0n),
     readWalletCanAcquireSettlement: vi.fn().mockResolvedValue(true),
     readLighterAccount: vi.fn().mockResolvedValue(null),
     readVexTradingKeyRegistered: vi.fn().mockResolvedValue(false),
@@ -114,8 +116,8 @@ describe("resolveLighterOnboardingStatus", () => {
       decision: "prepare_deposit",
       requiredCollateralDisplay: "2 USDC",
       lighterCollateralDisplay: "1 USDC",
-      walletUsdcDisplay: "2.07 USDC",
-      combinedUsdcDisplay: "3.07 USDC",
+      walletSettlementDisplay: "2.07 USDC",
+      combinedSettlementDisplay: "3.07 USDC",
       collateralShortfallDisplay: "1 USDC",
       depositAmountIn: "1",
       depositDisplay: "1 USDC",
@@ -141,10 +143,10 @@ describe("resolveLighterOnboardingStatus", () => {
 
     expect(status.walletCanAcquireSettlement).toBe(true);
     expect(status.fundingAssessment).toEqual(expect.objectContaining({
-      decision: "insufficient_wallet_usdc",
+      decision: "insufficient_wallet_settlement_asset",
       lighterCollateralDisplay: "1 USDC",
-      walletUsdcDisplay: "0.25 USDC",
-      combinedUsdcDisplay: "1.25 USDC",
+      walletSettlementDisplay: "0.25 USDC",
+      combinedSettlementDisplay: "1.25 USDC",
       depositDisplay: "1 USDC",
       walletDepositShortfallDisplay: "0.75 USDC",
     }));
@@ -169,8 +171,8 @@ describe("resolveLighterOnboardingStatus", () => {
       decision: "below_lighter_deposit_minimum",
       requiredCollateralDisplay: "2 USDC",
       lighterCollateralDisplay: "1.5 USDC",
-      walletUsdcDisplay: "50 USDC",
-      combinedUsdcDisplay: "51.5 USDC",
+      walletSettlementDisplay: "50 USDC",
+      combinedSettlementDisplay: "51.5 USDC",
       collateralShortfallDisplay: "0.5 USDC",
       minimumDepositDisplay: "1 USDC",
       depositAmountIn: null,
@@ -183,5 +185,38 @@ describe("resolveLighterOnboardingStatus", () => {
       legs: [],
     });
     expect(status.plan.blocked).toContain("below Lighter's live minimum deposit");
+  });
+
+  it("assesses RHC USDG and ETH without treating ETH as depositable collateral", async () => {
+    const r = readers({
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(750_000n),
+      readWalletSettlementAllowanceUnits: vi.fn().mockResolvedValue(500_000n),
+      readWalletNativeBalanceWei: vi.fn().mockResolvedValue(25_000_000_000_000_000n),
+      readWalletCanAcquireSettlement: vi.fn().mockResolvedValue(false),
+      readLighterAccount: vi.fn().mockResolvedValue({
+        account_index: 42,
+        available_balance: "1",
+      }),
+    });
+    const status = await resolveLighterOnboardingStatus(r, {
+      environment: "rhc",
+      walletAddress: "0xabc",
+      requiredCollateralUnits: 2_000_000n,
+    });
+
+    expect(status).toMatchObject({
+      walletSettlementUnits: "750000",
+      walletSettlementAllowanceUnits: "500000",
+      walletNativeBalanceWei: "25000000000000000",
+      walletCanAcquireSettlement: false,
+      fundingAssessment: {
+        settlementAsset: "USDG",
+        decision: "insufficient_wallet_settlement_asset",
+        walletSettlementDisplay: "0.75 USDG",
+        walletDepositShortfallDisplay: "0.25 USDG",
+      },
+    });
+    expect(r.readWalletSettlementUnits).toHaveBeenCalledWith("rhc", "0xabc");
+    expect(r.readWalletNativeBalanceWei).toHaveBeenCalledWith("rhc", "0xabc");
   });
 });
