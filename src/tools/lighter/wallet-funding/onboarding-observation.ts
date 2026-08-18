@@ -37,6 +37,8 @@ export interface DeriveOnboardingObservationInput {
   readonly walletCanAcquireSettlement: boolean;
   /** Settlement base units the intended position requires as collateral. */
   readonly requiredCollateralUnits: bigint;
+  /** Live minimum settlement units Lighter credits for one deposit. */
+  readonly minimumDepositUnits: bigint;
 }
 
 /**
@@ -62,6 +64,7 @@ export function deriveLighterOnboardingObservation(
     tradingKeyRegistered: accountExists && input.vexTradingKeyRegistered,
     accountCollateralUnits,
     requiredCollateralUnits: input.requiredCollateralUnits,
+    minimumDepositUnits: input.minimumDepositUnits,
   };
 }
 

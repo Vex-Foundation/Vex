@@ -11,6 +11,7 @@ function readers(overrides: Partial<LighterOnboardingReaders> = {}): LighterOnbo
     readWalletCanAcquireSettlement: vi.fn().mockResolvedValue(true),
     readLighterAccount: vi.fn().mockResolvedValue(null),
     readVexTradingKeyRegistered: vi.fn().mockResolvedValue(false),
+    readMinimumDepositUnits: vi.fn().mockResolvedValue(1_000_000n),
     ...overrides,
   };
 }
@@ -149,9 +150,9 @@ describe("resolveLighterOnboardingStatus", () => {
     }));
   });
 
-  it("enforces the one-USDC venue floor in the funding decision", async () => {
+  it("stops without rounding when the exact top-up is below Lighter's live minimum", async () => {
     const r = readers({
-      readWalletSettlementUnits: vi.fn().mockResolvedValue(750_000n),
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(50_000_000n),
       readLighterAccount: vi.fn().mockResolvedValue({
         account_index: 42,
         available_balance: "1.5",
@@ -165,11 +166,22 @@ describe("resolveLighterOnboardingStatus", () => {
     });
 
     expect(status.fundingAssessment).toEqual(expect.objectContaining({
-      decision: "insufficient_wallet_usdc",
+      decision: "below_lighter_deposit_minimum",
+      requiredCollateralDisplay: "2 USDC",
+      lighterCollateralDisplay: "1.5 USDC",
+      walletUsdcDisplay: "50 USDC",
+      combinedUsdcDisplay: "51.5 USDC",
       collateralShortfallDisplay: "0.5 USDC",
       minimumDepositDisplay: "1 USDC",
-      depositDisplay: "1 USDC",
-      walletDepositShortfallDisplay: "0.25 USDC",
+      depositAmountIn: null,
+      depositDisplay: null,
+      walletDepositShortfallDisplay: "0 USDC",
     }));
+    expect(status.plan).toMatchObject({
+      ready: false,
+      depositUnits: null,
+      legs: [],
+    });
+    expect(status.plan.blocked).toContain("below Lighter's live minimum deposit");
   });
 });

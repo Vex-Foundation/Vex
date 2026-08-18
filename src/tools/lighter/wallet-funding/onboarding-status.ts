@@ -15,14 +15,10 @@ import {
   type LighterAccountCollateralRow,
 } from "./onboarding-observation.js";
 import {
-  decimalToBaseUnits,
   planLighterOnboarding,
   type LighterOnboardingPlan,
 } from "./onboarding-plan.js";
-import {
-  LIGHTER_DEPOSIT_MIN_USDC,
-  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-} from "./constants.js";
+import { LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "./constants.js";
 
 export interface LighterOnboardingReaders {
   /** Settlement asset (USDC) base units the wallet holds on the deposit chain. */
@@ -39,6 +35,8 @@ export interface LighterOnboardingReaders {
     environment: LighterEnvironment,
     accountIndex: number,
   ): Promise<boolean>;
+  /** Live minimum USDC base units Lighter credits for one Core deposit. */
+  readMinimumDepositUnits(environment: LighterEnvironment): Promise<bigint>;
 }
 
 export interface LighterOnboardingStatusInput {
@@ -58,6 +56,7 @@ export interface LighterOnboardingStatus {
   readonly accountCollateralUnits: string;
   readonly tradingKeyRegistered: boolean;
   readonly requiredCollateralUnits: string;
+  readonly minimumDepositUnits: string;
   readonly fundingAssessment: LighterFundingAssessment;
   readonly plan: {
     readonly legs: readonly { readonly kind: string; readonly reason: string }[];
@@ -71,6 +70,7 @@ export interface LighterOnboardingStatus {
 export type LighterFundingDecision =
   | "ready"
   | "prepare_deposit"
+  | "below_lighter_deposit_minimum"
   | "insufficient_wallet_usdc";
 
 /**
@@ -101,32 +101,35 @@ export interface LighterFundingAssessment {
   readonly minimumDepositDisplay: string;
 }
 
-const LIGHTER_DEPOSIT_MIN_UNITS = decimalToBaseUnits(
-  LIGHTER_DEPOSIT_MIN_USDC,
-  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-);
-
 export function assessLighterFunding(input: {
   readonly walletSettlementUnits: bigint;
   readonly accountCollateralUnits: bigint;
   readonly requiredCollateralUnits: bigint;
+  readonly minimumDepositUnits: bigint;
 }): LighterFundingAssessment {
   assertNonNegativeFundingUnits("walletSettlementUnits", input.walletSettlementUnits);
   assertNonNegativeFundingUnits("accountCollateralUnits", input.accountCollateralUnits);
   assertNonNegativeFundingUnits("requiredCollateralUnits", input.requiredCollateralUnits);
+  if (input.minimumDepositUnits <= 0n) {
+    throw new Error("Lighter funding assessment minimumDepositUnits must be positive.");
+  }
 
   const collateralShortfall = maxUnits(
     input.requiredCollateralUnits - input.accountCollateralUnits,
     0n,
   );
-  const depositUnits = collateralShortfall === 0n
+  const belowMinimum = collateralShortfall > 0n
+    && collateralShortfall < input.minimumDepositUnits;
+  const depositUnits = collateralShortfall === 0n || belowMinimum
     ? null
-    : maxUnits(collateralShortfall, LIGHTER_DEPOSIT_MIN_UNITS);
+    : collateralShortfall;
   const walletDepositShortfall = depositUnits === null
     ? 0n
     : maxUnits(depositUnits - input.walletSettlementUnits, 0n);
   const decision: LighterFundingDecision = depositUnits === null
-    ? "ready"
+    ? collateralShortfall === 0n
+      ? "ready"
+      : "below_lighter_deposit_minimum"
     : walletDepositShortfall === 0n
       ? "prepare_deposit"
       : "insufficient_wallet_usdc";
@@ -150,7 +153,7 @@ export function assessLighterFunding(input: {
     depositDisplay: depositUnits === null ? null : displaySettlementUnits(depositUnits),
     walletDepositShortfallUnits: walletDepositShortfall.toString(),
     walletDepositShortfallDisplay: displaySettlementUnits(walletDepositShortfall),
-    minimumDepositDisplay: displaySettlementUnits(LIGHTER_DEPOSIT_MIN_UNITS),
+    minimumDepositDisplay: displaySettlementUnits(input.minimumDepositUnits),
   };
 }
 
@@ -162,8 +165,11 @@ export async function resolveLighterOnboardingStatus(
   const vexTradingKeyRegistered = account
     ? await readers.readVexTradingKeyRegistered(input.environment, account.account_index)
     : false;
-  const walletSettlementUnits = await readers.readWalletSettlementUnits(input.walletAddress);
-  const walletCanAcquireSettlement = await readers.readWalletCanAcquireSettlement(input.walletAddress);
+  const [walletSettlementUnits, walletCanAcquireSettlement, minimumDepositUnits] = await Promise.all([
+    readers.readWalletSettlementUnits(input.walletAddress),
+    readers.readWalletCanAcquireSettlement(input.walletAddress),
+    readers.readMinimumDepositUnits(input.environment),
+  ]);
 
   const observation = deriveLighterOnboardingObservation({
     environment: input.environment,
@@ -172,6 +178,7 @@ export async function resolveLighterOnboardingStatus(
     walletSettlementUnits,
     walletCanAcquireSettlement,
     requiredCollateralUnits: input.requiredCollateralUnits,
+    minimumDepositUnits,
   });
 
   const plan = planLighterOnboarding(observation);
@@ -179,6 +186,7 @@ export async function resolveLighterOnboardingStatus(
     walletSettlementUnits,
     accountCollateralUnits: observation.accountCollateralUnits,
     requiredCollateralUnits: input.requiredCollateralUnits,
+    minimumDepositUnits,
   });
 
   return {
@@ -191,6 +199,7 @@ export async function resolveLighterOnboardingStatus(
     accountCollateralUnits: observation.accountCollateralUnits.toString(),
     tradingKeyRegistered: observation.tradingKeyRegistered,
     requiredCollateralUnits: input.requiredCollateralUnits.toString(),
+    minimumDepositUnits: minimumDepositUnits.toString(),
     fundingAssessment,
     plan: projectPlan(plan),
   };

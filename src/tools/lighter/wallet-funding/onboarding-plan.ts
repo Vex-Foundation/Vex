@@ -12,7 +12,6 @@
  */
 
 import type { LighterEnvironment } from "../constants.js";
-import { LIGHTER_DEPOSIT_MIN_USDC, LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "./constants.js";
 
 /** Ordered kinds of onboarding leg. Ordering here is execution order. */
 export const LIGHTER_ONBOARDING_LEG_KINDS = [
@@ -46,6 +45,8 @@ export interface LighterOnboardingObservation {
   readonly accountCollateralUnits: bigint;
   /** Settlement collateral the intended position requires. */
   readonly requiredCollateralUnits: bigint;
+  /** Live minimum settlement units Lighter credits for one deposit. */
+  readonly minimumDepositUnits: bigint;
 }
 
 export interface LighterOnboardingLeg {
@@ -67,11 +68,6 @@ export interface LighterOnboardingPlan {
   readonly acquireUnits: bigint | null;
 }
 
-const LIGHTER_DEPOSIT_MIN_UNITS = decimalToBaseUnits(
-  LIGHTER_DEPOSIT_MIN_USDC,
-  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-);
-
 /**
  * Compute the minimal onboarding leg plan. Deterministic and side-effect free.
  */
@@ -81,6 +77,9 @@ export function planLighterOnboarding(
   assertNonNegative("walletSettlementUnits", observation.walletSettlementUnits);
   assertNonNegative("accountCollateralUnits", observation.accountCollateralUnits);
   assertNonNegative("requiredCollateralUnits", observation.requiredCollateralUnits);
+  if (observation.minimumDepositUnits <= 0n) {
+    throw new Error("Lighter onboarding observation minimumDepositUnits must be positive.");
+  }
 
   const legs: LighterOnboardingLeg[] = [];
   let depositUnits: bigint | null = null;
@@ -90,9 +89,16 @@ export function planLighterOnboarding(
   const collateralGap = observation.requiredCollateralUnits - observation.accountCollateralUnits;
 
   if (collateralGap > 0n) {
-    // A deposit is needed. It never credits below the venue floor, so a small
-    // gap is raised to the minimum credited deposit.
-    depositUnits = collateralGap < LIGHTER_DEPOSIT_MIN_UNITS ? LIGHTER_DEPOSIT_MIN_UNITS : collateralGap;
+    // Never round a requested top-up upward. If the exact gap is below the
+    // venue's live deposit floor, stop before approval and let the user choose
+    // a larger trade/funding amount explicitly.
+    if (collateralGap < observation.minimumDepositUnits) {
+      return blockedPlan(
+        observation.environment,
+        `Required top-up ${collateralGap} base units is below Lighter's live minimum deposit ${observation.minimumDepositUnits} base units.`,
+      );
+    }
+    depositUnits = collateralGap;
 
     // The wallet must hold enough settlement asset to deposit it. Acquire only
     // the shortfall, and only if the wallet has a route to more.

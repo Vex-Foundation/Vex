@@ -17,6 +17,7 @@ function observe(overrides: Partial<LighterOnboardingObservation> = {}): Lighter
     tradingKeyRegistered: false,
     accountCollateralUnits: USDC("0"),
     requiredCollateralUnits: USDC("11"),
+    minimumDepositUnits: USDC("1"),
     ...overrides,
   };
 }
@@ -88,7 +89,7 @@ describe("planLighterOnboarding", () => {
     expect(plan.depositUnits).toBe(USDC("3"));
   });
 
-  it("raises a sub-minimum deposit gap to the venue floor", () => {
+  it("blocks a sub-minimum deposit gap without rounding or creating deposit legs", () => {
     const plan = planLighterOnboarding(
       observe({
         accountExists: true,
@@ -98,8 +99,13 @@ describe("planLighterOnboarding", () => {
         walletSettlementUnits: USDC("50"),
       }),
     );
-    // gap is 0.5 USDC but the credited minimum is 1 USDC.
-    expect(plan.depositUnits).toBe(USDC("1"));
+    expect(plan).toMatchObject({
+      ready: false,
+      depositUnits: null,
+      acquireUnits: null,
+      legs: [],
+    });
+    expect(plan.blocked).toContain("below Lighter's live minimum deposit");
   });
 
   it("blocks when funding is short and the wallet cannot acquire more", () => {
@@ -114,6 +120,12 @@ describe("planLighterOnboarding", () => {
   it("rejects negative observations", () => {
     expect(() => planLighterOnboarding(observe({ accountCollateralUnits: -1n }))).toThrow(
       /non-negative/,
+    );
+  });
+
+  it("rejects a non-positive live minimum", () => {
+    expect(() => planLighterOnboarding(observe({ minimumDepositUnits: 0n }))).toThrow(
+      /minimumDepositUnits must be positive/,
     );
   });
 });

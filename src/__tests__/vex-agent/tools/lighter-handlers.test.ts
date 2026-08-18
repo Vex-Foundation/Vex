@@ -482,6 +482,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "0",
       tradingKeyRegistered: false,
       requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [
           { kind: "approve_settlement_asset", reason: "approval" },
@@ -526,6 +527,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "1000000",
       tradingKeyRegistered: true,
       requiredCollateralUnits: "2000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [
           { kind: "approve_settlement_asset", reason: "approval" },
@@ -563,6 +565,70 @@ describe("Lighter agent read handlers", () => {
     expect(data.userGuidance).toContain("approval card is the user's consent");
   });
 
+  it("checks the live market minimum and stops before funding a sub-minimum trade", async () => {
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [{
+        ...MARKET,
+        market_id: 16,
+        symbol: "SUI-USD",
+        min_quote_amount: "10",
+      }],
+    });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "2070000",
+      walletCanAcquireSettlement: true,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "2000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: [
+          { kind: "approve_settlement_asset", reason: "approval" },
+          { kind: "deposit", reason: "top up" },
+        ],
+        ready: false,
+        blocked: null,
+        depositUnits: "1000000",
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      amountIn: "2",
+      marketSymbol: "SUI",
+    });
+
+    expect(mocks.client.getMarkets).toHaveBeenCalledWith("core", { filter: "all" });
+    expect(data.tradeMinimumAssessment).toEqual({
+      decision: "below_lighter_trade_minimum",
+      marketId: 16,
+      marketSymbol: "SUI-USD",
+      requestedTradeDisplay: "2 USDC",
+      minimumTradeDisplay: "10 USDC",
+      combinedAvailableDisplay: "3.07 USDC",
+      combinedBalanceMeetsMinimum: false,
+    });
+    expect(data.fundingRoute).toEqual({
+      kind: "show_below_lighter_trade_minimum",
+      toolId: null,
+      params: null,
+    });
+    expect(data.userGuidance).toContain("Do not prepare a deposit or approval card");
+    expect(data.userGuidance).toContain("requested trade 2 USDC");
+    expect(data.userGuidance).toContain("Lighter market minimum 10 USDC");
+    expect(data.userGuidance).toContain("current Lighter collateral 1 USDC");
+    expect(data.userGuidance).toContain("Vex wallet USDC 2.07 USDC");
+    expect(data.userGuidance).toContain("combined available USDC 3.07 USDC");
+    expect(data.userGuidance).toContain("combined are also below the venue minimum");
+  });
+
   it("reports both live balances and stops when wallet USDC cannot cover the deposit", async () => {
     mocks.onboarding.resolveStatus.mockResolvedValue({
       environment: "core",
@@ -574,6 +640,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "1000000",
       tradingKeyRegistered: true,
       requiredCollateralUnits: "2000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [
           { kind: "acquire_settlement_asset", reason: "acquire" },
@@ -611,6 +678,55 @@ describe("Lighter agent read handlers", () => {
     expect(data.userGuidance).toContain("mere presence of ETH");
   });
 
+  it("stops before approval when the exact top-up is below Lighter's live minimum", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "50000000",
+      walletCanAcquireSettlement: true,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1500000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "2000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: [],
+        ready: false,
+        blocked: "Required top-up 500000 base units is below Lighter's live minimum deposit 1000000 base units.",
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      amountIn: "2",
+    });
+
+    expect(data.fundingAssessment).toMatchObject({
+      decision: "below_lighter_deposit_minimum",
+      requiredCollateralDisplay: "2 USDC",
+      lighterCollateralDisplay: "1.5 USDC",
+      walletUsdcDisplay: "50 USDC",
+      combinedUsdcDisplay: "51.5 USDC",
+      collateralShortfallDisplay: "0.5 USDC",
+      minimumDepositDisplay: "1 USDC",
+      depositAmountIn: null,
+      depositDisplay: null,
+    });
+    expect(data.fundingRoute).toEqual({
+      kind: "show_below_lighter_minimum",
+      toolId: null,
+      params: null,
+    });
+    expect(data.userGuidance).toContain("Do not prepare a deposit");
+    expect(data.userGuidance).toContain("do not round the top-up upward");
+    expect(data.userGuidance).toContain("combined USDC 51.5 USDC");
+    expect(data.userGuidance).toContain("Lighter minimum deposit 1 USDC");
+  });
+
   it("does not report ready from a public key without active local trading access", async () => {
     mocks.onboarding.resolveStatus.mockResolvedValue({
       environment: "core",
@@ -622,6 +738,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "1000000",
       tradingKeyRegistered: true,
       requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [],
         ready: true,
@@ -668,6 +785,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "1000000",
       tradingKeyRegistered: true,
       requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [],
         ready: true,
@@ -716,6 +834,7 @@ describe("Lighter agent read handlers", () => {
       accountCollateralUnits: "1000000",
       tradingKeyRegistered: true,
       requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
       plan: {
         legs: [],
         ready: true,

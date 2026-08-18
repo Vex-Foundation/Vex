@@ -22,7 +22,10 @@ import {
 import {
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_DEPOSIT_CHAIN_ID,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+  LIGHTER_USDC_ASSET_INDEX,
 } from "./constants.js";
+import { decimalToBaseUnits } from "./onboarding-plan.js";
 import type { LighterAccountCollateralRow } from "./onboarding-observation.js";
 import type { LighterOnboardingReaders } from "./onboarding-status.js";
 
@@ -75,6 +78,32 @@ export function buildLighterOnboardingReaders(): LighterOnboardingReaders {
           key.api_key_index <= LIGHTER_TRADING_API_KEY_INDEX_MAX &&
           isRegisteredPubKey(key.public_key),
       );
+    },
+    async readMinimumDepositUnits(environment) {
+      const response = await getLighterClient().getAssetDetails(environment);
+      const rows = response.asset_details.filter(
+        (asset) => asset.asset_id === LIGHTER_USDC_ASSET_INDEX,
+      );
+      const asset = rows[0];
+      if (
+        response.code !== 200
+        || rows.length !== 1
+        || asset === undefined
+        || asset.symbol.toUpperCase() !== "USDC"
+        || asset.l1_decimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
+        || asset.decimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
+        || getAddress(asset.l1_address) !== getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS)
+      ) {
+        throw new Error("Lighter did not return one verified Core USDC deposit asset.");
+      }
+      const minimumUnits = decimalToBaseUnits(
+        asset.min_transfer_amount,
+        LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+      );
+      if (minimumUnits <= 0n) {
+        throw new Error("Lighter returned an invalid minimum Core USDC deposit amount.");
+      }
+      return minimumUnits;
     },
   };
 }

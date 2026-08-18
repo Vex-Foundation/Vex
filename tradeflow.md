@@ -565,7 +565,10 @@ decision:
 
 - `ready` when current Lighter collateral already covers the request;
 - `prepare_deposit` when the selected Vex wallet's Ethereum-mainnet USDC covers
-  the exact collateral shortfall, raised to Lighter's one-USDC deposit floor;
+  the exact collateral shortfall and that shortfall meets Lighter's live deposit
+  minimum;
+- `below_lighter_deposit_minimum` when the exact top-up is positive but below
+  the live deposit minimum, with no rounding and no deposit preparation;
 - `insufficient_wallet_usdc` when directly depositable wallet USDC cannot cover
   the required deposit.
 
@@ -581,9 +584,9 @@ deposit, and wallet USDC shortfall. ETH and other assets are not counted as
 depositable USDC merely because they are present; acquiring USDC requires a
 separate live quote and approval.
 
-Verification covers the reported 2-USDC SUI case (1 USDC on Lighter and 2.07
-USDC in the wallet produces an exact 1-USDC deposit preparation) plus insufficient
-USDC and sub-minimum-gap cases. Seventy-six focused tests and a broader 371-test
+Verification originally covered the reported 2-USDC SUI funding arithmetic
+without a market-specific minimum precheck. That sequencing is superseded by
+the eleventh slice below. Seventy-six focused tests and a broader 371-test
 Lighter suite passed, along with root type checking/build, Electron lint,
 process-boundary checks, all production bundles, artifact validation, migration
 mirroring, and all six packaged Lighter signer targets. The local shell warned
@@ -624,6 +627,33 @@ manifest checks. The local shell remains below the repository's declared
 Node/pnpm versions. No wallet was unlocked and no transaction was signed or
 broadcast. A live approved deposit retry is still required as the acceptance
 proof for this slice.
+
+The eleventh Phase 4 slice prevents funding an order that Lighter will reject
+for minimum size. For a named USDC-sized perp request, onboarding now resolves
+the active market from live Lighter Core metadata and checks its live
+`min_quote_amount` before any deposit route. A below-minimum request returns
+`below_lighter_trade_minimum`; Vex creates no deposit intent or approval card
+and shows the requested trade, market minimum, current Lighter collateral,
+selected Vex-wallet USDC, and combined available USDC. It never increases the
+trade or moves extra funds automatically.
+
+The same slice removes the previous sub-minimum top-up rounding behavior.
+Lighter's deposit minimum is read from the verified live Core USDC asset row.
+When the exact collateral gap is below that minimum, onboarding returns
+`below_lighter_deposit_minimum`, produces no deposit legs, and shows the exact
+gap and balances instead of silently rounding the transfer upward.
+
+On 2026-08-19, a read-only production check confirmed active Core SUI market
+`16` reports a `10.000000 USDC` minimum quote size and Core USDC asset `3`
+reports a `1.000000 USDC` minimum transfer with six decimals and the verified
+Ethereum USDC address. Therefore the reported `2 USDC` SUI request now stops
+before funding. Verification passed 495 focused tests, the broader 634-test
+Lighter/agent set, root type checking and production build, Electron type
+ratchet and process-boundary checks, all production bundles, artifact
+validation, migration mirroring, and all six packaged Lighter signer targets.
+No wallet was unlocked and no transaction or order was signed, submitted, or
+broadcast during this verification. The local shell remains below the
+repository's declared Node/pnpm versions.
 
 ### Managed onboarding UX status — 2026-08-17
 

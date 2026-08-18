@@ -233,7 +233,7 @@ const ONBOARDING_REQUIRED_COLLATERAL_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
   description:
-    "Optional intended position collateral in human decimals (USDC, 6 decimals), for example \"11\". For a trade request stated as a USDC amount or 'USDC worth', pass that known amount here so Vex can compare live Lighter collateral with directly depositable wallet USDC and compute the exact top-up. Omit only during amount-free setup discovery; Vex then uses the 1 USDC activation minimum and asks the user for their desired deposit amount. Never ask the user for account or API-key indexes.",
+    "Optional intended position collateral in human decimals (USDC, 6 decimals), for example \"11\". For a trade request stated as a USDC amount or 'USDC worth', pass that known amount together with marketSymbol or marketId so Vex checks the live market minimum before any deposit preparation, then compares live Lighter collateral with directly depositable wallet USDC. Omit only during amount-free setup discovery. Never ask the user for account or API-key indexes.",
 };
 
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
@@ -242,11 +242,18 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report whether the selected Vex wallet is ready to trade on Lighter Core and the minimal managed setup steps still required. Use when: the user asks to set up Lighter, trade Lighter perps, check readiness, or continue onboarding. Omit walletAddress to resolve the selected wallet automatically, and never ask a normal user for wallet, account, API-key index, nonce, fingerprint, or key material. Read-only: it checks Ethereum-mainnet USDC, the wallet-owned Lighter account and collateral, and registered Vex trading access. For a known USDC trade amount, pass amountIn. The returned fundingAssessment deterministically says ready, prepare_deposit, or insufficient_wallet_usdc and includes exact display amounts. When prepare_deposit, call lighter.deposit.prepare immediately with depositAmountIn so the host approval card becomes the consent surface; do not ask another chat question. When insufficient, show both live balances and the shortfall and do not prepare. When amountIn is omitted, Vex uses the 1 USDC activation minimum for setup discovery and asks for the desired deposit amount. Core only in this release. This moves no funds and signs nothing; Vex control is confirmed only by the managed execution path.",
+      "Report whether the selected Vex wallet is ready to trade on Lighter Core and the minimal managed setup steps still required. Use for setup, funding, perp trades, or readiness. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. For a USDC-sized trade, pass amountIn plus marketSymbol or marketId. Read-only: it checks the live market quote minimum before funding, Ethereum-mainnet USDC, wallet-owned Lighter collateral, the live deposit minimum, and registered Vex trading access. Returns exact balance displays, tradeMinimumAssessment when a market is supplied, and a deterministic funding route. A trade below the market minimum, a top-up below the deposit minimum, or insufficient wallet USDC always stops before deposit preparation and shows the requested amount, Lighter balance, Vex-wallet balance, combined balance, and applicable minimum. Only an eligible exact shortfall may route to lighter.deposit.prepare. Core only; moves no funds and signs nothing.",
     mutating: false,
     actionKind: "read",
-    params: [ENVIRONMENT_PARAM, ONBOARDING_WALLET_ADDRESS_PARAM, ONBOARDING_REQUIRED_COLLATERAL_PARAM],
-    exampleParams: { environment: "core", amountIn: "11" },
+    params: [
+      ENVIRONMENT_PARAM,
+      ONBOARDING_WALLET_ADDRESS_PARAM,
+      ONBOARDING_REQUIRED_COLLATERAL_PARAM,
+      MARKET_ID_OPTIONAL_PARAM,
+      MARKET_SYMBOL_PARAM,
+    ],
+    atMostOne: [["marketId", "marketSymbol"]],
+    exampleParams: { environment: "core", amountIn: "11", marketSymbol: "SUI" },
     discovery:
       LIGHTER_MARKET_DATA_DISCOVERY["lighter.account.onboarding.status"],
   },

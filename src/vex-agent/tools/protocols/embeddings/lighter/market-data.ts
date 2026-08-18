@@ -4,9 +4,9 @@ import { embeddingText } from "../../_embedding-text.js";
 export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.account.onboarding.status": {
     embeddingText: embeddingText(
-      `Inspect whether the selected Vex EVM wallet is ready to trade on Lighter Core and compute the minimal onboarding legs still required. ` +
-      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, asks Vex to set up Lighter, or expresses an intent to trade perps on Lighter. For a USDC-sized trade, pass the amount so it deterministically returns ready, prepare_deposit with the exact shortfall, or insufficient_wallet_usdc with both live balances. It resolves the selected wallet automatically and reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
-      `Example queries: set up my Lighter account, I need to trade on Lighter, get me ready to trade on Lighter, I want to trade perps on Lighter, can this wallet trade on Lighter.`,
+      `Inspect whether the selected Vex wallet is ready to trade on Lighter Core and compute only the required onboarding legs. ` +
+      `Use when: setup, funding, readiness, or a USDC-sized perp request needs checking. For a trade, pass its market so Vex checks the live market minimum before funding. It also reads wallet USDC, Lighter collateral, deposit minimum, and public key state. Below-market, below-deposit, and insufficient-balance outcomes show live balances and never prepare a deposit. It signs and moves nothing. ` +
+      `Example queries: set up my Lighter account, can this wallet trade on Lighter, fund Lighter for a 2 USDC trade.`,
     ),
     aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
     exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
@@ -173,8 +173,8 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
-      `Use when: managed onboarding has inspected the selected wallet and either the user supplied the USDC deposit amount or fundingAssessment returned prepare_deposit with an exact trade-funding shortfall. Call it in the same turn for that exact shortfall without asking another chat confirmation; the host approval card is the consent surface. It activates the local integration and creates durable intent state plus a precise approval card; it does not read a private key, sign, or broadcast. ` +
-      `Example queries: deposit 11 USDC to set up Lighter, fund my Lighter account with 5 USDC, use 20 USDC to get me ready for Lighter perps.`,
+      `Use when: managed onboarding validates an explicit deposit amount or returns prepare_deposit for the exact trade shortfall. Never use it for below_lighter_deposit_minimum or insufficient_wallet_usdc. The host card is the consent surface. Preparation creates durable intent state but does not read a private key, sign, broadcast, or move funds. ` +
+      `Example queries: deposit 11 USDC to set up Lighter, fund my Lighter account with 5 USDC, use 20 USDC for Lighter perps.`,
     ),
     aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet", "deposit for lighter setup"],
     exampleIntents: ["deposit 11 USDC to set up Lighter", "fund my Lighter account with 5 USDC", "use 20 USDC for Lighter perps"],

@@ -15,6 +15,7 @@ function input(overrides: Partial<DeriveOnboardingObservationInput> = {}): Deriv
     walletSettlementUnits: 0n,
     walletCanAcquireSettlement: true,
     requiredCollateralUnits: 11_000_000n,
+    minimumDepositUnits: 1_000_000n,
     ...overrides,
   };
 }
