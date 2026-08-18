@@ -229,6 +229,35 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["feeRecipientAddress", "the ACCOUNT a token's fee stream pays; on some launchpads it differs from the deployer"],
   ["timeframe", "the base unit of one price candle (minute/hour/day)"],
   ["aggregate", "how many timeframe units make one candle; the span is aggregate x timeframe"],
+
+  // -- Screening DEPTH (morpho, coverage audit 2026-08-18) ---------
+  //
+  // Ratified together, because they were found together: an external audit
+  // measured the Morpho discover tools sending 15 of 43 market filters and 6 of
+  // 23 usable sort keys, and the owner's Provider Integration Depth decree makes
+  // an undeclared depth gap a defect rather than a backlog item. Each key below
+  // is a REAL server-side predicate confirmed against live introspection AND a
+  // live result count on that date.
+  //
+  // Two shapes worth naming, because both generalise past Morpho. An `*Tags`
+  // key filters on a provider's OWN classification vocabulary rather than on an
+  // identifier we control, so its accepted set is a captured measurement and an
+  // unknown member is refused by name - the provider would otherwise treat it as
+  // a predicate matching nothing, and an empty page reads as "none exist". A
+  // `min*Raw` key is a size floor in RAW base units as a quoted string, carrying
+  // its scale in the name for the same reason every `*Percent` and `*Usd` key
+  // above does.
+  ["oracleAddress", "contract address of the price oracle a lending market prices collateral with"],
+  ["irmAddress", "contract address of the interest rate model a lending market's rate follows"],
+  ["isIdle", "keep or exclude IDLE markets, which have no collateral asset and cannot be borrowed from"],
+  ["loanAssetTags", "a LIST of the provider's own classification tags the BORROWABLE asset must carry"],
+  ["collateralAssetTags", "a LIST of the provider's own classification tags the COLLATERAL asset must carry"],
+  ["assetTags", "a LIST of the provider's own classification tags the asset a vault holds must carry"],
+  ["suppliesMarketIds", "keep only vaults that supply at least one named lending market; the exposure question"],
+  ["txHash", "one transaction hash to look a history row up by; the singular form, as no list predicate exists"],
+  ["liquidatorAddress", "address of the party that PERFORMED a liquidation; the counterpart of `walletAddress`"],
+  ["minBadDebtAssetsRaw", "floor on bad debt left by a liquidation, in RAW base units of the LOAN asset"],
+  ["minSeizedAssetsRaw", "floor on collateral taken by a liquidation, in RAW base units of the COLLATERAL asset"],
 ]);
 
 /**

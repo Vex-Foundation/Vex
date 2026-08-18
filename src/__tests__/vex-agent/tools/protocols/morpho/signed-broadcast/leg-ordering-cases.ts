@@ -22,9 +22,15 @@ export function registerLegOrderingCases(ctx: SignedBroadcastContext): void {
     // the signer at all.
     expect(ctx.signStageBroadcast).toHaveBeenCalledTimes(1);
     expect(outcome.kind).toBe("refused");
-    // The deposit row is terminalized with the code that says a SIMULATION
-    // refused it, not one that implies something was sent.
-    expect(ctx.fail).toHaveBeenCalledWith(101, expect.objectContaining({ failureCode: "simulation_reverted" }));
+    // THE CODE IS `unknown`, NOT `simulation_reverted`, AND THAT CHANGED ON
+    // PURPOSE (funded live audit 2026-08-18, D1). This execution's own approval
+    // had just confirmed, and a simulation runs against "latest": the node may
+    // have been answering from a view that predates our own write, which is
+    // precisely what happened on real funds, so the row must not record a chain
+    // verdict Vex could not establish. What has NOT changed is the part that
+    // protects the wallet - nothing was signed, and no gas was spent.
+    expect(ctx.fail).toHaveBeenCalledWith(101, expect.objectContaining({ failureCode: "unknown" }));
+    expect(outcome.message).toContain("NOT a definitive refusal from the chain");
   });
 
   it("names the residual allowance the landed approval left behind, with its remediation", async () => {

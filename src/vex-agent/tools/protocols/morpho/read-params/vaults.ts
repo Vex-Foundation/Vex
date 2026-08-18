@@ -28,6 +28,7 @@ import {
   MORPHO_VAULT_VERSIONS,
   feePercentToWad,
   vaultSortSupported,
+  vaultSortVersions,
   type MorphoOrder,
   type MorphoVaultSort,
   type MorphoVaultV1Filters,
@@ -50,6 +51,7 @@ import {
   reject,
   type MorphoParams,
 } from "./_primitives.js";
+import { readAssetTagList, readMarketIdList } from "./list-values.js";
 
 /** Row field groups a caller may keep. `all` (the default) keeps everything. */
 export const MORPHO_VAULT_FIELD_GROUPS = [
@@ -196,6 +198,10 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
   if (!assetSymbols.ok) return assetSymbols;
   const curators = readAddressCsv(p["curatorAddress"], "curatorAddress");
   if (!curators.ok) return curators;
+  const assetTags = readAssetTagList(p["assetTags"], "assetTags");
+  if (!assetTags.ok) return assetTags;
+  const suppliesMarketIds = readMarketIdList(p["suppliesMarketIds"], "suppliesMarketIds");
+  if (!suppliesMarketIds.ok) return suppliesMarketIds;
 
   const minTvlUsd = readOptionalNumber(p["minTvlUsd"], "minTvlUsd", { min: 0 });
   if (!minTvlUsd.ok) return minTvlUsd;
@@ -231,15 +237,24 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
   if (assetSymbols.value !== undefined && versions.includes("v2")) {
     return v1OnlyRejection("assetSymbol", "asset-symbol predicate (use `assetTokenAddress`, which both generations serve)");
   }
+  if (assetTags.value !== undefined && versions.includes("v2")) {
+    return v1OnlyRejection("assetTags", "asset-tag predicate");
+  }
+  if (suppliesMarketIds.value !== undefined && versions.includes("v2")) {
+    return v1OnlyRejection("suppliesMarketIds", "predicate for which markets a vault supplies");
+  }
 
   const chosenSort = sort.value ?? DEFAULT_SORT;
   for (const generation of versions) {
     if (vaultSortSupported(generation, chosenSort)) continue;
+    const servedBy = vaultSortVersions(chosenSort);
     return reject(
       "sort",
       `\`sort: "${chosenSort}"\` is not a ranking Morpho's ${generation} vault query can perform - its order-by enum `
       + "has no such member. Vex refuses rather than substituting another key and presenting the result as the "
-      + `ranking you asked for. Either set \`version: "v1"\`, or sort by ${MORPHO_VAULT_MERGEABLE_SORT_KEYS.join(", ")}.`,
+      + "ranking you asked for. Either set "
+      + servedBy.map((version) => `\`version: "${version}"\``).join(" or ")
+      + `, or sort by a key both generations serve: ${MORPHO_VAULT_MERGEABLE_SORT_KEYS.join(", ")}.`,
     );
   }
 
@@ -273,6 +288,8 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
     ...shared,
     ...(search !== undefined ? { search } : {}),
     ...(assetSymbols.value ? { assetSymbol_in: assetSymbols.value } : {}),
+    ...(assetTags.value ? { assetTags_in: assetTags.value } : {}),
+    ...(suppliesMarketIds.value ? { marketUniqueKey_in: suppliesMarketIds.value } : {}),
     ...(maxFee.value !== undefined ? { fee_lte: maxFee.value / 100 } : {}),
   };
   const v2Filters: MorphoVaultV2Filters = {
@@ -293,6 +310,8 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
     ["assetTokenAddress", assetAddresses.value],
     ["assetSymbol", assetSymbols.value],
     ["curatorAddress", curators.value],
+    ["assetTags", assetTags.value],
+    ["suppliesMarketIds", suppliesMarketIds.value],
     ["minTvlUsd", minTvlUsd.value],
     ["maxTvlUsd", maxTvlUsd.value],
     ["minNetApyPercent", minNetApy.value],

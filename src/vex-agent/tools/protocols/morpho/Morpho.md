@@ -19,6 +19,18 @@ decisions were made, and what is deliberately absent so a later session does not
 | `protocols/morpho/` (here) | Agent surface. Manifests, handlers, read-params, projectors. |
 | `protocols/morpho/handlers/signed-broadcast*` | The one owning write module: sign, broadcast, record. Mirrors the Pendle shape. |
 
+## Provider surface: APIs, SDKs, docs
+
+| Surface | What | Where |
+| --- | --- | --- |
+| Morpho GraphQL API | All indexed reads (markets, vaults, positions, activity, curation) | `POST https://api.morpho.org/graphql`, configured in `src/tools/morpho/client.ts`; schema notes and probe dates in `src/tools/morpho/request/*.ts` headers |
+| Morpho SDK | Mutation building via `getRequirements()` then `buildTx()`, client runs `supportSignature: false` | `@morpho-org/morpho-sdk@5.5.0` (direct dependency in root `package.json`) |
+| SDK transitive packages | `MarketParams` and `blueAbi` come from `@morpho-org/blue-sdk@6.5.0` and `blue-sdk-viem`; contract addresses were extracted from `@morpho-org/morpho-ts@2.9.0` into `src/tools/morpho/constants.ts` with provenance comments; `@morpho-org/midnight-sdk@1.3.0` is installed as a transitive package and deliberately UNUSED (Midnight is out of scope) | imported in `src/tools/morpho/mutations/`, declared only transitively - a version bump of the root SDK can move them |
+| Merkl API | Reward reads; Morpho deprecated its own URD, claims go through Merkl | `https://api.merkl.xyz` in `src/tools/merkl/constants.ts`; Distributor contract address pinned there too |
+| Official docs | Product and integration reference | `https://docs.morpho.org` (Blue, MetaMorpho vaults, Midnight), `https://docs.merkl.xyz` |
+| Per-tool parameters | The authoritative parameter list for every tool is its manifest; `describe_tools` renders exactly that | `protocols/morpho/manifests/`; a full rendered export from the 2026-08-18 audit sits in `agents_dm/morpho-audit/catalog.md` (local, gitignored) |
+| On-chain reads | Everything a signature depends on | viem clients in `src/tools/morpho/evm-client.ts`, RPC table shared with KyberSwap, fallback transports per chain |
+
 ## What the agent can do
 
 **Read.** Screen markets and vaults with full range filters, inspect one of
@@ -219,6 +231,137 @@ the vault pair and the direct-market pair: they carry `lend_deposit` /
   positions.
 - **Raw historical timeseries.** Averaged windows are served; full charts are
   not.
+
+## Known gaps, verified by audit 2026-08-18
+
+Found by an independent coverage audit against live GraphQL introspection and
+`@morpho-org/morpho-sdk@5.5.0`. These are UNDECLARED omissions, distinct from
+the "Deliberately absent" list above, recorded here until fixed.
+
+Filter and sort depth on discover tools is the widest gap. The agent sees each
+object in near full resolution, but can ask the population few questions:
+
+- `markets.discover` sends 15 of 43 `MarketFilters` and 6 of 23 sort keys.
+  Missing with real agent value: `oracleAddress_in`, `irmAddress_in`,
+  `uniqueKey_in` (batch-fetch a known market set), `isIdle`, loan and
+  collateral asset tags.
+**CLOSED 2026-08-18.** Every filter and sort key named by the audit now ships,
+verified against live introspection AND a live result count on that date:
+
+- `markets.discover` gained `uniqueKey_in` (as `marketIds`), `oracleAddress_in`,
+  `irmAddress_in`, `isIdle`, and both asset-tag predicates, and its sort
+  vocabulary went from 6 keys to 18 of the 24 `MarketOrderBy` declares.
+- `vaults.discover` gained `assetTags_in` and `marketUniqueKey_in` (as
+  `suppliesMarketIds`), both V1-ONLY - `VaultV2sFilters` declares neither, so
+  they are refused by name when v2 is in scope rather than half-applied. Its
+  sort vocabulary went from 4 keys to 13 across the two generations, with a
+  refusal that names the `version` able to serve a key.
+- `markets.activity` gained `hash` (as `txHash`), `liquidatorAddress_in`,
+  `badDebtAssets_gte` and `seizedAssets_gte`, and its `marketIds` now accepts a
+  real array as well as a comma string.
+
+What remains deliberately absent, with the reason, per the Provider Integration
+Depth decree:
+
+- Market sorts `UniqueKey` (ranks by an opaque hash), `BorrowAssets`,
+  `SupplyAssets`, `BorrowShares` and `SupplyShares` (raw base units and share
+  counts are not comparable across markets at different decimals; the `*Usd`
+  twins are offered), and `RateAtUTarget` (deprecated in the live schema).
+- Vault sorts `Address` and the raw-unit twins `TotalAssets`, `TotalSupply`,
+  `Liquidity`, `RealAssets`, `IdleAssets`, for the same comparability reason.
+- The asset-tag vocabulary is a CAPTURE, not a schema enum: Morpho types these
+  filters `[String!]`, so `MORPHO_ASSET_TAGS` in `@tools/morpho/request/markets.ts`
+  is every distinct `Asset.tags` member across all 5,520 indexed assets, paged
+  in full on 2026-08-18. It is enforced as a closed set anyway, because an
+  unknown tag is not an error to Morpho - it is a predicate matching nothing,
+  and the empty page would read as "no such markets exist". Refresh it by
+  re-running that sweep.
+- `markets.activity` sends 6 of 20 `MarketTransactionFilters`. Missing: `hash`
+  lookup, `liquidatorAddress_in`, `badDebtAssets_gte`, `seizedAssets_gte`.
+
+Capability and read gaps:
+
+- **V2 forced deallocation is shown but not executable.** STILL OPEN, and the
+  projector no longer implies otherwise: as of 2026-08-18 it states outright
+  that `forceDeallocatableLiquidity` needs a forced deallocation Vex HAS NO TOOL
+  FOR, so the agent must not count it toward what this session could withdraw.
+  The SDK builds `forceWithdraw` / `forceRedeem` with no `getRequirements` - no
+  approval and no authorization - so both fit the approval policy, and the
+  scoped follow-up is: capture the calldata each builder produces, extend the
+  bundle and direct-call decoders FROM that capture (never add a selector to the
+  allowlist without it), wire the consent card, and gate it exactly as the
+  existing vault withdrawal is. It was deferred rather than rushed because it is
+  a money path and a half-verified one is worse than none.
+- **Vault exit is assets-only.** STILL OPEN. `redeem` by shares is not built,
+  although this file argues shares-first for full repay for exactly the same
+  rounding reason, so a full vault exit by assets can leave share dust. The
+  approved shape is an explicit alternative param on `morpho.vault.withdraw`,
+  mutually exclusive with `withdrawAmountRaw` and refused by name when both
+  arrive, dispatched on `state.generation` the way `mutations/build.ts` already
+  dispatches the deposit. It needs the SDK redeem calldata CAPTURED before the
+  decoder allowlist grows by one selector, the quote path able to price the
+  shares exit so the prequote gate can pair it, and the approval card to say
+  which denomination is being burnt. Deferred in the same pass and for the same
+  reason as the forced deallocation above.
+- ~~**`market.get` supplier list is silently V1-only.**~~ **CLOSED 2026-08-18.**
+  The detail query now reads `supplyingVaultV2s` beside `supplyingVaults` and
+  merges them into one list with a `version` tag per row. The two nest
+  differently - V1's APY is under `state`, V2's is flat - so each is read
+  through its own shape. On the Base cbBTC/USDC market this had been reporting
+  13 suppliers and hiding 14, including a V2 vault sharing the exact NAME of a
+  V1 one already in the list, which is why the version tag is per row and the
+  projector tells the agent to identify a route by address.
+- ~~**Curator disclosure metadata is unread.**~~ **CLOSED 2026-08-18.**
+  `vault.get` now returns a `disclosure` block on both generations:
+  `Vault.metadata` / `VaultV2.metadata` (the curator's published description and
+  image), the curator's own `description`, `image`, `socials` links and
+  `state.aum`, and on V1 `VaultState.curatorMetadata` classifying the account
+  holding the curator role (`safe` or `aragon`). All display-only and therefore
+  nullable, and the block says in words that it is the curator's own claim
+  rather than an audit, and that an EMPTY classification list is an absence of
+  information rather than evidence a single key controls the vault. Paid for on
+  the DETAIL reads only: the curator connection cost 8,530 extra complexity on
+  one V2 vault (45,560 to 54,090, measured 2026-08-18), which a 50-row screen
+  could not carry for information nobody reads while screening. V2 exposes no
+  `curatorMetadata` equivalent.
+- **No vault activity read.** Markets have history; vaults do not.
+  `vaultV1Transactions` and `vaultV2AllocationTransactions` are unconsumed.
+
+Funded-run defects, found by the live 3-chain audit the same day (full
+evidence in `agents_dm/morpho-audit/report.md` and `runs/`):
+
+- **D1 HIGH**: a deposit was refused as DEFINITIVE because the post-approval
+  simulation ran against a node that had not yet seen the approval this
+  execution had just broadcast. The identical call minutes later confirmed.
+  The fix is to require the simulation block to be at or past the approval's
+  inclusion block, else classify unproven.
+- **D2 HIGH**: `wallet.balance` silently drops an array `tokenAddress`
+  (`readAddressCsv` returns undefined for arrays) and reports native-only
+  with no warning, despite the manifest promising array support.
+- **D3 HIGH**: `wallet.balance` `nextStep` still says "Vex has no Morpho
+  mutating tools yet" while nine mutators ship.
+- **D4 HIGH, owner decision**: the market lane re-runs curation + oracle +
+  liveness for EXIT operations too, so `market.withdraw`, `market.repay` and
+  `market.withdrawCollateral` are gated on Morpho's off-chain API being
+  reachable. The vault lane deliberately never gates a withdrawal. A blocked
+  repay pushes a position toward liquidation. Fired live from a plain
+  "fetch failed".
+- **D5 MEDIUM**: `failure_reason` is persisted truncated at 512 chars, cutting
+  off the standing-allowance disclosure and remediation.
+- **D6-D8 LOW**: `route:"both"` summary never mentions the comparison fields;
+  vault dust invisible to `positions.get` while coverage claims complete;
+  `chainIds` rejects a bare number and `marketIds` is plural but rejects
+  a list.
+
+Agentscan-side, verified the same day (owned by vex-agentscan, not this lane):
+
+- A vault deposit's share leg is unquotable by the price feed, so every vault
+  deposit lands in "could not be fully priced" and drops out of realized
+  result and win rate, although volume itself books correctly.
+- `supplyCollateral` volume is counted as zero until the ingest contract
+  carries the operation name or per-operation roles. Borrow, repay and
+  withdrawCollateral are correctly zero; a lender's market supply maps to
+  `lend_deposit` and IS counted.
 
 ## Do not
 

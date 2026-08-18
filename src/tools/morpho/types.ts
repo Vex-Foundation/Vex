@@ -132,6 +132,16 @@ export interface MorphoSharedLiquidity {
 export interface MorphoSupplyingVault {
   address: string;
   name: string | null;
+  /**
+   * Which generation this supplier is.
+   *
+   * Carried per row rather than implied by the list it came from, because the
+   * two generations are read from two different GraphQL fields and merged into
+   * one list here. A V1 and a V2 vault can share a name (`Gauntlet USDC Prime`
+   * exists as both on Base), so without this tag two different contracts are
+   * indistinguishable in the reply.
+   */
+  version: MorphoVaultVersion;
   /** Vault APY is NET of the vault fee - not the same basis as a market APY. */
   netApy: number | null;
 }
@@ -175,11 +185,34 @@ export interface MorphoVaultReward {
 }
 
 /** A named curation entity Morpho recognises, as opposed to a bare address. */
+/** One link a curator published about itself: a site, a forum thread, a social account. */
+export interface MorphoCuratorLink {
+  /** Morpho's own label. Observed live: `url`, `forum`, `twitter` (2026-08-18). */
+  type: string;
+  url: string;
+}
+
+/**
+ * The party a depositor is actually trusting.
+ *
+ * Everything past `verified` is DISCLOSURE, and it is all display-only, so every
+ * field is nullable and an absent one is read as "not published" rather than as
+ * a malformed response (rules/90's tolerant-reader split). The deposit gate
+ * rests on a curator vouching for the markets a vault lends into, so a reply
+ * carrying only a name and a boolean gave the agent nothing to say about WHO
+ * that is; `links` is where the curator's own site, forum presence and social
+ * accounts are, and `aumUsd` is Morpho's estimate of everything they run.
+ */
 export interface MorphoVaultCurator {
   id: string | null;
   name: string | null;
   /** Morpho's own verification flag. `false` is not an accusation, only an absence. */
   verified: boolean;
+  description: string | null;
+  imageUrl: string | null;
+  links: MorphoCuratorLink[];
+  /** Total assets under this curator's management across Morpho, in USD. */
+  aumUsd: number | null;
 }
 
 /**
@@ -338,6 +371,18 @@ export interface MorphoVaultDetail extends MorphoVault {
   forceDeallocatableLiquidityRaw: string | null;
   /** V2's `maxApy`: the ceiling the vault's rate is capped at. */
   maxApy: number | null;
+  /** The curator's own published description of the vault's strategy. Display-only. */
+  description: string | null;
+  imageUrl: string | null;
+  /**
+   * What KIND of account holds the curator role, as Morpho classifies it.
+   *
+   * Observed members: `safe` (a Safe multisig) and `aragon`. An empty list means
+   * Morpho published no classification, which is NOT evidence the role is held
+   * by a single private key - it is an absence, and must be reported as one.
+   * V1 only; the V2 read exposes no equivalent (introspection, 2026-08-18).
+   */
+  curatorAccountTypes: string[];
 }
 
 /**

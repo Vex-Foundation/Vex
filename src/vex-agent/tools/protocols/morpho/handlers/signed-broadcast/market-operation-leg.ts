@@ -41,6 +41,7 @@ import logger from "@utils/logger.js";
 import { morphoFailureDetail } from "../shared.js";
 import { broadcastMorphoLeg, finalizeMorphoFailSoft, noteMorphoSettledBlockTime } from "./leg-broadcast.js";
 import { morphoMarketOperationRole } from "./protocol.js";
+import { morphoPreSignDetail } from "./post-approval-preflight.js";
 import {
   MORPHO_AMBIGUOUS_BROADCAST_MESSAGE,
   morphoUndecodableMessage,
@@ -156,10 +157,18 @@ export async function runMarketOperationLeg(
       ...(context.priorLeg === undefined ? {} : { priorLeg: context.priorLeg }),
     });
   } catch (err) {
+    // THE PRE-SIGN GAS ESTIMATE IS THIS LANE'S STALE-NODE EXPOSURE. It has no
+    // simulation of its own, so the read-after-write lag that made the vault
+    // deposit refuse on its own landed approval (audit 2026-08-18, D1) arrives
+    // here through `estimateGasForPlanLeg` instead. That check already retries
+    // against the approval's block; `morphoPreSignDetail` is what stops its
+    // "one more try is reasonable" verdict being overwritten with the generic
+    // do-not-retry sentence on the way out.
+    const detail = morphoPreSignDetail(err);
     await finalizeMorphoFailSoft(toolId, () =>
       failActivityEvent(row.id, {
         failureCode: "unknown",
-        failureReason: `${toolId}: refused before signing - ${morphoFailureDetail(err)}`,
+        failureReason: `${toolId}: refused before signing - ${detail}`,
       }),
     );
     return {
@@ -168,7 +177,7 @@ export async function runMarketOperationLeg(
       role: roleOf(context),
       message: withResidual(
         `${toolId}: the ${context.operationLabel} was refused before anything was signed - `
-        + `${morphoFailureDetail(err)}. No transaction was sent and no gas was spent on it.`,
+        + `${detail}. No transaction was sent and no gas was spent on it.`,
         context.residual,
       ),
     };

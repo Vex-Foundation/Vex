@@ -21,9 +21,11 @@ export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
   lifecycle: "active",
   description:
     "Read the TRANSACTION RECORD of Morpho Blue lending markets: every supply, withdraw, borrow, repay, collateral "
-    + "movement and liquidation, filterable by market, chain, address, event type and time window. Use this when "
+    + "movement and liquidation, filterable by market, chain, address, event type, time window, LIQUIDATOR address, "
+    + "a minimum bad-debt or seized-collateral size, and by one TRANSACTION HASH. Use this when "
     + "the user asks what has been happening in a market, whether anyone still uses it, how often and how badly "
-    + "are liquidated there, or wants one address audited. This is history, not a recommendation signal. Use "
+    + "are liquidated there, wants one address audited, or asks what a specific transaction did. "
+    + "This is history, not a recommendation signal. Use "
     + "morpho.markets.discover to find a market, morpho.market.get for its current state, and morpho.positions.get "
     + "for what a wallet holds NOW. "
     + "LIQUIDATION ROWS carry `repaidAssets` (debt the liquidator cleared), `seizedAssets` (collateral taken), "
@@ -58,8 +60,9 @@ export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
     {
       key: "marketIds",
       type: "string",
+      acceptsStringArray: true,
       description:
-        "Comma-separated Morpho Blue market ids, up to 20. A market id is a 0x-prefixed 64-hex hash, NOT a "
+        "Morpho Blue market ids as a comma list OR an array, up to 20. A market id is a 0x-prefixed 64-hex hash, NOT a "
         + "contract address, and it is chain-scoped; read one from morpho.markets.discover. An address here is "
         + "rejected by name and told what it actually is.",
     },
@@ -78,6 +81,42 @@ export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
         "Scope the history to ONE actor, 0x-prefixed and 40 hex. On liquidation rows this matches the BORROWER "
         + "whose position was taken, not the liquidator - which is what makes it the way to see who liquidated an "
         + "address and when.",
+    },
+    {
+      key: "txHash",
+      type: "string",
+      description:
+        "Look up ONE transaction by its 0x-prefixed 64-hex hash. Use it when the user pastes a hash and asks what it "
+        + "did on Morpho; a single transaction can produce several rows, so expect more than one. Morpho declares no "
+        + "list form of this filter, so it takes exactly one hash.",
+    },
+    {
+      key: "liquidatorAddress",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of LIQUIDATOR addresses, up to 20. This is the other side of `walletAddress`, which "
+        + "matches the borrower who was liquidated: use this one to profile who is doing the liquidating on a market. "
+        + "It only ever matches liquidation rows, so pair it with `types: 'liquidation'` for a clean page.",
+    },
+    {
+      key: "minBadDebtAssetsRaw",
+      type: "string",
+      description:
+        "Keep only liquidations that left at least this much BAD DEBT, in the LOAN asset's RAW base units as a "
+        + "quoted string (\"1000000\" is 1 USDC at 6 decimals). Bad debt is loss socialised across everyone supplying "
+        + "the market, so this is the direct way to ask 'has this market ever lost lenders money'. Scope it to one "
+        + "market or one asset, because a raw floor means different money in different markets. A human decimal "
+        + "amount, or an unquoted number, is rejected by name rather than rounded.",
+    },
+    {
+      key: "minSeizedAssetsRaw",
+      type: "string",
+      description:
+        "Keep only liquidations that seized at least this much COLLATERAL, in the COLLATERAL asset's RAW base units "
+        + "as a quoted string. Note the different asset from `minBadDebtAssetsRaw`: on one live row the two legs sat "
+        + "at 18 and 6 decimals, so the same integer means wildly different money on each. Same by-name refusal of a "
+        + "human decimal.",
     },
     {
       key: "types",

@@ -23,6 +23,7 @@ import type {
   MorphoRawAmount,
   MorphoSharedLiquidity,
   MorphoSupplyingVault,
+  MorphoVaultVersion,
 } from "../types.js";
 import { MORPHO_LOOKBACKS, type MorphoLookback } from "../request.js";
 import {
@@ -270,16 +271,25 @@ function readSharedLiquidity(raw: unknown[]): MorphoSharedLiquidity[] {
   }));
 }
 
-function readSupplyingVaults(raw: unknown[]): MorphoSupplyingVault[] {
+/**
+ * The market's supplier list, read from BOTH generation fields and merged.
+ *
+ * The nesting differs by generation and that is the whole reason this takes a
+ * `version`: `Vault.state.netApy` is under `state`, `VaultV2.netApy` is flat.
+ * Reading a V2 row through the V1 shape returns a null APY on every row, which
+ * would have looked like missing data rather than a wrong path.
+ */
+function readSupplyingVaults(raw: unknown[], version: MorphoVaultVersion): MorphoSupplyingVault[] {
   const vaults: MorphoSupplyingVault[] = [];
   for (const entry of raw) {
     if (!isRecord(entry)) continue;
     const address = requireAddress(entry["address"]);
     if (address === null) continue;
-    const state = readRecord(entry, "state");
+    const state = version === "v1" ? readRecord(entry, "state") : entry;
     vaults.push({
       address,
       name: readDisplayString(entry["name"]),
+      version,
       netApy: state === null ? null : readDisplayNumber(state["netApy"]),
     });
   }
@@ -337,7 +347,12 @@ export function validateMorphoMarketDetail(body: unknown, options: MorphoMarketD
         ? null
         : readAmount(state, "totalLiquidity", "totalLiquidityUsd", market.loanAsset.decimals),
     sharedLiquidity: readSharedLiquidity(readArray(raw, "publicAllocatorSharedLiquidity")),
-    supplyingVaults: options.includeSupplyingVaults ? readSupplyingVaults(readArray(raw, "supplyingVaults")) : null,
+    supplyingVaults: options.includeSupplyingVaults
+      ? [
+          ...readSupplyingVaults(readArray(raw, "supplyingVaults"), "v1"),
+          ...readSupplyingVaults(readArray(raw, "supplyingVaultV2s"), "v2"),
+        ]
+      : null,
     apyWindow: options.includeHistory && state !== null ? readApyWindow(state, options.lookback) : null,
   };
 }

@@ -60,7 +60,7 @@
  * binding` CHECK rejects `kind IN ('lend','prediction')` with any other family.
  *
  * Sanitization at the repo boundary (finding 9/C5): `failure_reason` passes
- * `redact()` + a hard 500-char cap here, ALWAYS — callers cannot bypass it by
+ * `redact()` here, ALWAYS — callers cannot bypass it by
  * pre-sanitizing. `intentParams` sanitization (secret-shape scrub + 8KiB cap)
  * lives in `executions.ts`'s `createExecutionIntent` (the actual
  * `protocol_executions.params` boundary, shared with Hyperliquid).
@@ -351,7 +351,7 @@ export async function createAgentActivityIntent(
  * A pre-broadcast route/validation failure: create AND finalize a hashless
  * `definitively_failed` `swap` event in one step — there was never a signed
  * payload to broadcast, so no CAS staging is needed. `failureReason` is
- * sanitized here (redact + 500-char cap) regardless of what the caller
+ * sanitized here (redacted, never truncated) regardless of what the caller
  * passed. Accepts an optional shared `client` — see
  * `createAgentActivityPreBroadcastFailure` below for the atomic-with-intent-
  * creation entry point most callers want.

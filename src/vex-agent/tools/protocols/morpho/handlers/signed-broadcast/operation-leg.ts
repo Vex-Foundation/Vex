@@ -42,6 +42,12 @@ import { morphoFailureDetail } from "../shared.js";
 import { broadcastMorphoLeg, finalizeMorphoFailSoft, noteMorphoSettledBlockTime } from "./leg-broadcast.js";
 import { morphoOperationRole } from "./intent.js";
 import {
+  MorphoPostApprovalRevertUnproven,
+  morphoPostApprovalUnprovenMessage,
+  morphoPreSignDetail,
+  prepareLegAfterApproval,
+} from "./post-approval-preflight.js";
+import {
   MORPHO_AMBIGUOUS_BROADCAST_MESSAGE,
   morphoUndecodableMessage,
   withResidual,
@@ -72,23 +78,51 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
   // A WITHDRAWAL IS NEVER GATED ON THIS. Delisting must not trap a depositor
   // inside, so an exit keeps the fresh rebuild, the pinned target and the
   // simulation and gives up only the curation question.
+  //
+  // AND THE SIMULATION IS HELD TO THIS EXECUTION'S OWN APPROVAL BLOCK. See
+  // `./post-approval-preflight.ts`: once an allowance leg of ours has confirmed,
+  // a revert here may be the simulating node's stale view of our own write
+  // rather than the chain's answer, and terminalizing it cost a funded user two
+  // approval transactions and no deposit on 2026-08-18.
   let leg;
   try {
     if (context.direction === "deposit") {
       await assertMorphoCuratesVault(context.request.chainId, context.request.vaultAddress);
     }
-    leg = await prepareMorphoOperationLeg(
-      {
-        chainId: context.request.chainId,
-        vaultAddress: context.request.vaultAddress,
-        direction: context.direction,
-        amountRaw: context.request.amountRaw,
-        slippageBps: context.request.slippageBps,
-        walletAddress: context.request.walletAddress,
-      },
-      { client: context.clients.actionClient },
-    );
+    leg = await prepareLegAfterApproval({
+      priorLeg: context.priorLeg,
+      simulatingClient: context.clients.actionClient,
+      isProvenRevert: isMorphoPreflightRevert,
+      prepare: () => prepareMorphoOperationLeg(
+        {
+          chainId: context.request.chainId,
+          vaultAddress: context.request.vaultAddress,
+          direction: context.direction,
+          amountRaw: context.request.amountRaw,
+          slippageBps: context.request.slippageBps,
+          walletAddress: context.request.walletAddress,
+        },
+        { client: context.clients.actionClient },
+      ),
+    });
   } catch (err) {
+    if (err instanceof MorphoPostApprovalRevertUnproven) {
+      const unproven = morphoPostApprovalUnprovenMessage(err, `vault ${context.direction}`);
+      // `unknown`, never `simulation_reverted`: the durable row must not record a
+      // chain verdict this execution could not establish.
+      await finalizeMorphoFailSoft(toolId, () =>
+        failActivityEvent(row.id, {
+          failureCode: "unknown",
+          failureReason: `${toolId}: refused before signing, NOT definitively - ${unproven}`,
+        }),
+      );
+      return {
+        kind: "refused",
+        executionId: context.executionId,
+        role,
+        message: withResidual(`${toolId}: ${unproven}`, context.residual),
+      };
+    }
     await finalizeMorphoFailSoft(toolId, () =>
       failActivityEvent(row.id, {
         failureCode: preflightFailureCode(err),
@@ -132,10 +166,11 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
       ...(context.priorLeg === undefined ? {} : { priorLeg: context.priorLeg }),
     });
   } catch (err) {
+    const detail = morphoPreSignDetail(err);
     await finalizeMorphoFailSoft(toolId, () =>
       failActivityEvent(row.id, {
         failureCode: "unknown",
-        failureReason: `${toolId}: refused before signing - ${morphoFailureDetail(err)}`,
+        failureReason: `${toolId}: refused before signing - ${detail}`,
       }),
     );
     return {
@@ -143,7 +178,7 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
       executionId: context.executionId,
       role,
       message: withResidual(
-        `${toolId}: the ${context.direction} was refused before anything was signed - ${morphoFailureDetail(err)}. `
+        `${toolId}: the ${context.direction} was refused before anything was signed - ${detail}. `
         + "No transaction was sent and no gas was spent on it.",
         context.residual,
       ),
@@ -300,6 +335,11 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
   };
 }
 
+/** The node PROVED a revert, as opposed to refusing, failing to answer or not building. */
+function isMorphoPreflightRevert(err: unknown): boolean {
+  return err instanceof VexError && err.code === "MORPHO_PREFLIGHT_REVERTED";
+}
+
 /**
  * A pre-signature refusal's durable code. A PROVEN revert is
  * `simulation_reverted`; anything else is `unknown` with the real cause in the
@@ -307,7 +347,5 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
  * failure rules/90 names.
  */
 function preflightFailureCode(err: unknown): AgentActivityFailureCode {
-  return err instanceof VexError && err.code === "MORPHO_PREFLIGHT_REVERTED"
-    ? "simulation_reverted"
-    : "unknown";
+  return isMorphoPreflightRevert(err) ? "simulation_reverted" : "unknown";
 }

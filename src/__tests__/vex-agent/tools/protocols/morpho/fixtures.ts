@@ -459,6 +459,23 @@ export const MORPHO_MARKET_DETAIL: unknown = {
             }
           }
         ],
+        // Captured live on 2026-08-18 from the same Base cbBTC/USDC market as the
+        // V1 list below. Note the FLAT `netApy`, where V1 nests it under `state`,
+        // and note "Gauntlet USDC Prime": a V1 vault in the list below carries
+        // the SAME NAME at a different address, which is why a supplier row must
+        // report its version.
+        "supplyingVaultV2s": [
+          {
+            "address": "0x050cE30b927Da55177A4914EC73480238BAD56f0",
+            "name": "Gauntlet USDC Prime",
+            "netApy": 0.041219206521614114
+          },
+          {
+            "address": "0xbeef0e0834849aCC03f0089F01f4F1Eeb06873C9",
+            "name": "Steakhouse Prime USDC",
+            "netApy": 0.0412193957569257
+          }
+        ],
         "supplyingVaults": [
           {
             "address": "0x1401d1271C47648AC70cBcdfA3776D4A87CE006B",

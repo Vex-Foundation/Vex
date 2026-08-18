@@ -105,6 +105,29 @@ const VAULT_V2_CORE_FIELDS = `
   }
 `;
 
+/**
+ * CURATOR DISCLOSURE, and why it is on the DETAIL reads only.
+ *
+ * It is expensive. Measured 2026-08-18: selecting these fields on a TWO-row V2
+ * list cost 23,130 complexity against the 1,000,000 ceiling, because `curators`
+ * is a paginated connection and the cost scales with the page. A 50-row screen
+ * would sit within an order of magnitude of the budget for information nobody
+ * reads while screening. One vault at a time is where a depositor asks who is
+ * running this, so that is where it is paid for.
+ *
+ * Both blocks below re-select `curators`, which the shared list fragments
+ * already select more narrowly. That is deliberate and legal: GraphQL MERGES two
+ * selections of the same field, so the detail read gets the union of the two
+ * sets and the list read keeps the cheap one. Field names verified against live
+ * introspection and a live response on 2026-08-18.
+ */
+const VAULT_CURATOR_DISCLOSURE_FIELDS = `
+  description
+  image
+  socials { type url }
+  state { aum }
+`;
+
 export const MORPHO_VAULTS_V1_QUERY = `
 query VexMorphoVaultsV1($first: Int!, $skip: Int!, $orderBy: VaultOrderBy, $orderDirection: OrderDirection, $where: VaultFilters) {
   vaults(first: $first, skip: $skip, orderBy: $orderBy, orderDirection: $orderDirection, where: $where) {
@@ -136,10 +159,13 @@ export const MORPHO_VAULT_V1_QUERY = `
 query VexMorphoVaultV1($address: String!, $chainId: Int!) {
   vaultByAddress(address: $address, chainId: $chainId) {
     ${VAULT_V1_CORE_FIELDS}
+    metadata { description image }
     liquidity { underlying usd }
     allocators { address }
     state {
       ${VAULT_V1_STATE_FIELDS}
+      curators { ${VAULT_CURATOR_DISCLOSURE_FIELDS} }
+      curatorMetadata { items { type } }
       feeRecipient
       skimRecipient
       pendingOwner
@@ -174,6 +200,8 @@ export const MORPHO_VAULT_V2_QUERY = `
 query VexMorphoVaultV2($address: String!, $chainId: Int!) {
   vaultV2ByAddress(address: $address, chainId: $chainId) {
     ${VAULT_V2_CORE_FIELDS}
+    metadata { description image }
+    curators { items { ${VAULT_CURATOR_DISCLOSURE_FIELDS} } }
     avgNetApy
     avgNetApyExcludingRewards
     maxRate

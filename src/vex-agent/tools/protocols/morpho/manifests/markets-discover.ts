@@ -1,13 +1,19 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { MORPHO_MARKET_READ_DISCOVERY } from "../../embeddings/morpho/market-reads.js";
-import { MORPHO_MARKET_SORT_KEYS, MORPHO_MAX_PAGE_LIMIT, MORPHO_ORDERS } from "@tools/morpho/request.js";
+import {
+  MORPHO_MARKET_SORT_KEYS,
+  MORPHO_MAX_PAGE_LIMIT,
+  MORPHO_ORDERS,
+} from "@tools/morpho/request.js";
 import { MORPHO_MARKET_FIELD_GROUPS } from "../read-params.js";
 
 /**
  * `morpho.markets.discover` - the screening entry point for the namespace.
  *
  * Every filter here is a REAL server-side predicate and every sort key a real
- * `MarketOrderBy` member, both verified by live introspection on 2026-08-14. A
+ * `MarketOrderBy` member, both verified by live introspection on 2026-08-14 and
+ * re-verified, with the depth added on 2026-08-18, against the same live schema
+ * and against live result counts. A
  * value outside a declared set is refused BY NAME rather than dropped, and every
  * filter that ran is echoed in `filtersApplied` - a screening tool that silently
  * ignores a floor is worse than one that errors, because the agent then believes
@@ -37,9 +43,11 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "rates float with utilization and there is no maturity. Use this when the user asks where to lend or deposit an "
     + "asset, what a deposit would earn, where the cheapest borrow rate is, which markets accept a given collateral, or "
     + "how deep a lending market is; use `pendle.yields` instead when they want a FIXED rate locked to an expiry date, "
-    + "and `solana.lend.*` for Solana. Filter by chain, free-text search, loan token, collateral token, supplied USD, "
+    + "and `solana.lend.*` for Solana. Filter by chain, free-text search, loan token, collateral token, Morpho's own "
+    + "asset TAGS on either side, a set of known market ids, oracle contract, "
+    + "interest-rate-model contract, whether the market is IDLE, supplied USD, "
     + "borrowed USD, utilization percent, net supply APY percent, net borrow APY percent and liquidation-threshold "
-    + "percent; sort by supplyUsd, netSupplyApy, netBorrowApy, utilization, liquidityUsd or lltv; page with "
+    + `percent; sort by any of ${MORPHO_MARKET_SORT_KEYS.join(", ")}; page with `
     + `offset/limit (max ${MORPHO_MAX_PAGE_LIMIT}). Every filter is applied SERVER-SIDE and echoed back in `
     + "`filtersApplied`; an off-enum or out-of-range value is REJECTED BY NAME, never clamped or dropped. "
     + "RETURNS one row per market: marketId (a 64-hex id, not an address) plus chain, loan and collateral asset each "
@@ -86,6 +94,61 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
       description:
         "Comma-separated contract addresses of the COLLATERAL asset - what a borrower locks up. Up to 20 entries. "
         + "Use it to answer 'where can I borrow against X'. Addresses only.",
+    },
+    {
+      key: "loanAssetTags",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of Morpho's own asset-class TAGS the BORROWABLE asset must carry. The accepted set is "
+        + "Morpho's, not ours, and it is NOT enumerated here on purpose: discovery indexes this prose, and repeating a "
+        + "list of asset-class words in a screening tool's parameter made it outrank other namespaces on queries that "
+        + "merely NAMED an asset. Send a tag; a wrong one is rejected by name with the whole accepted set spelled "
+        + "out, which is where that list belongs.",
+    },
+    {
+      key: "collateralAssetTags",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of Morpho's own asset-class TAGS the COLLATERAL asset must carry - the way to ask what "
+        + "can be borrowed against a whole class of collateral rather than one named token. Same accepted set as "
+        + "`loanAssetTags`, and the same reason it is not enumerated here; an unknown tag is rejected by name with "
+        + "the full set.",
+    },
+    {
+      key: "marketIds",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of up to 20 known 64-hex market ids, to re-read a specific set in ONE call instead of "
+        + "one morpho.market.get per market. Use it to refresh markets you already hold or already shortlisted. A "
+        + "40-hex contract address here is rejected by name as an address.",
+    },
+    {
+      key: "oracleAddress",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of ORACLE contract addresses to scope to. Every market names the oracle that prices its "
+        + "collateral, so this is how you find the other markets exposed to one price feed - the blast radius when an "
+        + "oracle is flagged unusable or is known to be stale. Read an address from any row's `oracle.address`.",
+    },
+    {
+      key: "irmAddress",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of INTEREST RATE MODEL contract addresses to scope to. Markets sharing an IRM share the "
+        + "shape of how their rate responds to utilization. Read an address from any row's `irmAddress`.",
+    },
+    {
+      key: "isIdle",
+      type: "boolean",
+      description:
+        "True keeps ONLY idle markets, false excludes them. An idle market has no collateral asset and cannot be "
+        + "borrowed from: it is where a vault parks uninvested cash, so it earns nothing and is never a lending "
+        + "recommendation. Omit to include both kinds.",
     },
     {
       key: "minSupplyUsd",
@@ -165,7 +228,11 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
       type: "string",
       enum: MORPHO_MARKET_SORT_KEYS,
       description:
-        "Ranking key, one of: supplyUsd (default), netSupplyApy, netBorrowApy, utilization, liquidityUsd, lltv. "
+        `Ranking key, one of: ${MORPHO_MARKET_SORT_KEYS.join(", ")} (default supplyUsd). `
+        + "`supplyApy` and `borrowApy` rank by the incentive-FREE rate while `netSupplyApy` and `netBorrowApy` "
+        + "include incentives; `avg*` and `daily*` rank by a trailing average instead of the spot rate, which is the "
+        + "way to avoid ranking on a one-block spike. `sizeUsd` is Morpho's own combined-size measure, `fee` is the "
+        + "market's protocol fee share, and the two symbol keys sort alphabetically for a readable listing. "
         + "Applied server-side over ALL matches, not just the returned page. Anything else is rejected by name.",
     },
     {

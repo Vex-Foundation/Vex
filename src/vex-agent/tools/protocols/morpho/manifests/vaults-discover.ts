@@ -45,9 +45,13 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "miss rows. "
     + "Filter by chain, vault asset address, curator address, TVL in USD, minimum net APY percent and maximum curator "
     + "cut percent (the fee bound is spelled `maxCuratorCutPercent`: a key containing 'fee' is reserved here for a "
-    + "fee VEX charges); `search` and `assetSymbol` are V1-only predicates and are REJECTED BY NAME when v2 is in scope, "
-    + "because applying a filter to half a result set and not the other half is worse than refusing. Sort by tvlUsd "
-    + "(default), netApy, apy or name (name is V1-only); page with offset/limit (max "
+    + "fee VEX charges); also filter by asset TAGS and by which lending MARKETS a vault supplies "
+    + "(`suppliesMarketIds`, the way to ask 'which vaults are exposed to this market'). "
+    + "`search`, `assetSymbol`, `assetTags` and `suppliesMarketIds` are V1-only predicates and are REJECTED BY NAME "
+    + "when v2 is in scope, "
+    + "because applying a filter to half a result set and not the other half is worse than refusing. Sort by "
+    + `${MORPHO_VAULT_SORT_KEYS.join(", ")} (default tvlUsd); a key only one generation's order-by declares is `
+    + "rejected by name, naming the `version` that can serve it; page with offset/limit (max "
     + `${MORPHO_MAX_PAGE_LIMIT}). Every filter that ran is echoed in \`filtersApplied\`. `
     + "RETURNS one row per vault: address, version, chain, name, symbol, listed flag, the vault asset with address, "
     + "symbol and decimals, TVL as {raw, decimals, symbol, human, usd}, share supply as a SHARE count at an "
@@ -156,6 +160,27 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
         + "entries. Use it to find every vault run by a manager the user already trusts.",
     },
     {
+      key: "assetTags",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of Morpho's own asset-class TAGS the vault's asset must carry, to screen a whole class "
+        + "of vault rather than one named token. The accepted set is not enumerated here, for the reason recorded on "
+        + "`morpho.markets.discover.loanAssetTags`; an unknown tag is rejected by name with the full set spelled out, "
+        + "rather than sent as a predicate that matches nothing. V1-ONLY: "
+        + "Morpho's V2 filter input declares no tag predicate, so this is rejected by name unless `version` is 'v1'.",
+    },
+    {
+      key: "suppliesMarketIds",
+      type: "string",
+      acceptsStringArray: true,
+      description:
+        "Comma list or array of up to 20 64-hex MARKET ids; keeps only vaults that supply at least one listed market. This "
+        + "is the 'which vaults are exposed to this market' question - use it to find the curated routes into a "
+        + "market you already picked, or to size who else is exposed when a market looks unsafe. V1-ONLY: Morpho's V2 "
+        + "filter input has no equivalent, so it is rejected by name unless `version` is 'v1'.",
+    },
+    {
       key: "minTvlUsd",
       type: "number",
       description:
@@ -195,9 +220,11 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
       type: "string",
       enum: MORPHO_VAULT_SORT_KEYS,
       description:
-        "Ranking key, one of: tvlUsd (default), netApy, apy, name. `name` is V1-ONLY and is rejected by name when v2 "
-        + "is in scope, rather than being swapped for a key that exists. Applied server-side over ALL matches within "
-        + "each generation.",
+        `Ranking key, one of: ${MORPHO_VAULT_SORT_KEYS.join(", ")} (default tvlUsd). Only tvlUsd, apy and netApy are `
+        + "served by BOTH generations. `name`, `curator`, `fee` and the four trailing-average keys (avgApy, avgNetApy, "
+        + "dailyApy, dailyNetApy) are V1-ONLY; `liquidityUsd`, `idleAssetsUsd` and `realAssetsUsd` are V2-ONLY. A key "
+        + "the selected generation cannot serve is rejected by name, naming the `version` that can, rather than being "
+        + "swapped for a key that exists. Applied server-side over ALL matches within each generation.",
     },
     {
       key: "order",

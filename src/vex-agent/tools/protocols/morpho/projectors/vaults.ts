@@ -224,6 +224,41 @@ function projectAllocation(allocation: MorphoVaultAllocation): Record<string, un
   };
 }
 
+/** The sentence the disclosure block is qualified by. */
+export const MORPHO_VAULT_DISCLOSURE_NOTE =
+  "This is what the CURATOR PUBLISHED ABOUT ITSELF, plus Morpho's own `verified` flag and its estimate of the "
+  + "curator's total assets under management. It is marketing copy and self-declared links, not an audit and not a "
+  + "guarantee: `verified` says Morpho recognises the curator, never that the strategy is safe or that deposits are "
+  + "protected. Quote it as the curator's own claim, and say so. `curatorAccountTypes` names how Morpho classifies "
+  + "the account holding the curator role - an EMPTY list means Morpho published no classification, which is an "
+  + "absence of information and is NOT evidence that one private key controls the vault.";
+
+/**
+ * Who the depositor is trusting, in the depositor's own terms.
+ *
+ * Separated from `config` on purpose: `config` answers "who CAN change this
+ * vault and how fast", which is mechanism, while this answers "who ARE they",
+ * which is the question the deposit gate actually rests on and the one the lane
+ * previously could not answer beyond a name and a boolean.
+ */
+function projectDisclosure(detail: MorphoVaultDetail): Record<string, unknown> {
+  return {
+    vaultDescription: detail.description,
+    imageUrl: detail.imageUrl,
+    curatorAccountTypes: detail.curatorAccountTypes,
+    curators: detail.curators.map((curator) => ({
+      id: curator.id,
+      name: curator.name,
+      verified: curator.verified,
+      description: curator.description,
+      imageUrl: curator.imageUrl,
+      aumUsd: curator.aumUsd,
+      links: curator.links,
+    })),
+    note: MORPHO_VAULT_DISCLOSURE_NOTE,
+  };
+}
+
 /**
  * Detail projection: the screening row plus everything only the by-address read
  * returns. Roles, timelocks and pending governance are grouped under `config`
@@ -233,6 +268,7 @@ export function projectVaultDetail(detail: MorphoVaultDetail, includeHistory: bo
   const row = projectVaultRow(detail);
   return {
     ...row,
+    disclosure: projectDisclosure(detail),
     config: {
       ownerAddress: detail.ownerAddress,
       pendingOwnerAddress: detail.pendingOwnerAddress,
@@ -271,8 +307,10 @@ export function projectVaultDetail(detail: MorphoVaultDetail, includeHistory: bo
       note:
         "`totalSupplyShares` is a SHARE count, not asset units, and is not comparable with `totalAssets`. "
         + MORPHO_SHARES_NOTE
-        + " `liquidity` is what could be withdrawn immediately; `forceDeallocatableLiquidity` needs a forced "
-        + "deallocation that costs a penalty, so it is not free exit capacity. `maxApyPercent` is a V2-only "
+        + " `liquidity` is what could be withdrawn immediately. `forceDeallocatableLiquidity` is NOT exit capacity "
+        + "Vex can reach: it requires a forced deallocation, which costs a penalty and which VEX HAS NO TOOL FOR "
+        + "today, so treat it as liquidity someone else would have to unlock and never count it toward what this "
+        + "session could withdraw. `maxApyPercent` is a V2-only "
         + "CONFIGURED CEILING on the vault's rate, as a percent, and is null on V1: it is not a yield anyone is "
         + "earning and it does not share the basis of the `apy` block, so never quote it as this vault's APY.",
     },

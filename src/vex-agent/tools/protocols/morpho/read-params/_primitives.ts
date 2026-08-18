@@ -96,15 +96,40 @@ export function readOptionalEnum<T extends string>(
   return { ok: true, value: match };
 }
 
-/** Comma-separated EVM addresses, lowercased. A malformed entry is named. */
+/**
+ * EVM addresses as a comma-separated string OR a string array (every manifest
+ * declaring one of these params also declares `acceptsStringArray`). A malformed
+ * entry is named.
+ *
+ * THE ARRAY BRANCH IS NOT OPTIONAL POLISH (funded live audit, 2026-08-18). This
+ * reader used to open with `readOptionalString`, which yields `undefined` for an
+ * array, so `tokenAddress: [USDC]` on `morpho.wallet.balance` read as NO filter
+ * at all: the reply came back `nativeOnly`, "0 token(s) read", and no warning,
+ * while the identical CSV form returned the wallet's real 0.403952 USDC. An
+ * agent asking for a balance was told an absence of funds. Its sibling
+ * `readChains` had the array branch from the start; this is the same shape, so
+ * every entry - array member or CSV token - passes the SAME validation and a bad
+ * one is still refused by name.
+ */
 export function readAddressCsv(raw: unknown, param: string): MorphoParams<string[] | undefined> {
-  const value = readOptionalString(raw);
-  if (value === undefined) return { ok: true, value: undefined };
-  const items = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  const tokens: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (typeof entry !== "string") return reject(param, `\`${param}\` array entries must be strings.`);
+      tokens.push(...entry.split(","));
+    }
+  } else {
+    const value = readOptionalString(raw);
+    if (value === undefined) return { ok: true, value: undefined };
+    tokens.push(...value.split(","));
+  }
+
+  const items = tokens.map((s) => s.trim()).filter((s) => s.length > 0);
   if (items.length > MAX_CSV_ENTRIES) {
     return reject(
       param,
-      `\`${param}\` accepts at most ${MAX_CSV_ENTRIES} comma-separated addresses; ${items.length} were supplied. `
+      `\`${param}\` accepts at most ${MAX_CSV_ENTRIES} addresses, as a comma-separated string or an array; `
+      + `${items.length} were supplied. `
       + "Narrow the list and retry - Vex will not silently drop the extras.",
     );
   }

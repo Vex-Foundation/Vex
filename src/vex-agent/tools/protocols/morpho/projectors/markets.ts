@@ -199,12 +199,17 @@ export function projectMarketDetail(detail: MorphoMarketDetail, lookback: string
       detail.supplyingVaults === null
         ? null
         : {
+            count: detail.supplyingVaults.length,
             note:
-              "A vault's `netApyPercent` is NET of the vault's fee and is not the same basis as this market's "
+              "Every curated vault that lends into this market, ACROSS BOTH GENERATIONS: each row's `version` says "
+              + "whether it is a v1 (MetaMorpho) or a v2 vault, and the same curator often runs one of each under "
+              + "the SAME NAME at different addresses, so quote the address, never the name alone. "
+              + "A vault's `netApyPercent` is NET of the vault's fee and is not the same basis as this market's "
               + "`supplyApyPercent`. Do not rank the two against each other.",
             vaults: detail.supplyingVaults.map((vault) => ({
               address: vault.address,
               name: vault.name,
+              version: vault.version,
               netApyPercent: toPercent(vault.netApy),
             })),
           },

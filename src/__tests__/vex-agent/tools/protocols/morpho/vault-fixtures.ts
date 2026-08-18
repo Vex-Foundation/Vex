@@ -452,6 +452,10 @@ export const MORPHO_VAULTS_V2_PAGE = {
 export const MORPHO_VAULT_V1_DETAIL = {
   "data": {
     "vaultByAddress": {
+      "metadata": {
+        "description": "The Smokehouse USDC vault aims to optimize yields by lending USDC against blue chip crypto and real world asset (RWA) collateral markets.",
+        "image": "https://cdn.morpho.org/v2/assets/images/steakhouse.png"
+      },
       "address": "0xBEeFFF209270748ddd194831b3fa287a5386f5bC",
       "name": "Smokehouse USDC",
       "symbol": "bbqUSDC",
@@ -507,9 +511,23 @@ export const MORPHO_VAULT_V1_DETAIL = {
           {
             "id": "steakhouse-financial",
             "name": "Steakhouse Financial",
-            "verified": true
+            "verified": true,
+            "description": null,
+            "image": "https://cdn.morpho.org/v2/assets/images/steakhouse.svg",
+            "socials": [
+              { "type": "url", "url": "https://www.steakhouse.financial" },
+              { "type": "forum", "url": "https://forum.morpho.org/c/vaults/steakhouse-financial/18" },
+              { "type": "twitter", "url": "https://x.com/SteakhouseFi" },
+              { "type": "broken", "url": null }
+            ],
+            "state": { "aum": 2277792414.443664 }
           }
         ],
+        "curatorMetadata": {
+          "items": [
+            { "type": "safe" }
+          ]
+        },
         "feeRecipient": "0x255c7705e8BB334DfCae438197f7C4297988085a",
         "skimRecipient": "0x0000000000000000000000000000000000000000",
         "pendingOwner": null,
@@ -630,6 +648,10 @@ export const MORPHO_VAULT_V1_DETAIL = {
 export const MORPHO_VAULT_V2_DETAIL_GATED = {
   "data": {
     "vaultV2ByAddress": {
+      "metadata": {
+        "description": "An uncurated test vault. Morpho publishes a description even for a vault nobody vouches for, which is exactly why a description is not an endorsement.",
+        "image": null
+      },
       "address": "0x01Fb7F4f156256bc0084421330305bA50a83501B",
       "name": "Basecamp",
       "symbol": "CAMP",

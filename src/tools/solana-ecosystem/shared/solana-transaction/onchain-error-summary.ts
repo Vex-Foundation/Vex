@@ -25,13 +25,12 @@
  *     the same chain error always produces the same row text and two rows are
  *     diffable. Array order is preserved — an `InstructionError`'s leading
  *     instruction INDEX is data, not something to sort away.
- *   - BOUNDED. `err` is chain/provider-controlled input. `failure_reason` is
- *     capped at 500 chars at the repo boundary (`agent-activity/validation.ts`
- *     `sanitizeFailureReason`, which also redacts) and the sweep's own prefix
- *     spends ~70 of those, so 200 chars is generous for every realistic Solana
- *     `err` while leaving the prefix intact. The repo boundary stays the
- *     backstop; this is the local bound so an oversized `err` cannot eat the
- *     sentence that explains it.
+ *   - BOUNDED AT THE SOURCE. `err` is chain/provider-controlled input, and the
+ *     repo boundary (`agent-activity/validation.ts` `sanitizeFailureReason`)
+ *     redacts without truncating, so nothing downstream will cut an oversized
+ *     blob for us. 200 chars is generous for every realistic Solana `err` and
+ *     leaves the sweep's own explaining prefix intact, which is the point: a
+ *     provider blob must not eat the sentence that explains it.
  *   - TOTAL. This runs on failure paths. A serializer that throws would
  *     replace a decoded failure with an undecoded crash, so a circular or
  *     BigInt-bearing value degrades to a descriptor instead of propagating.

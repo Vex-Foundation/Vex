@@ -155,6 +155,16 @@ interface VaultHalf {
   coverage: MorphoVaultV2Coverage | null;
 }
 
+/**
+ * Whether a V2 position still holds anything at all - shares OR assets. Either
+ * side being nonzero is a balance the wallet owns; only a row that is zero on
+ * both is an exited vault with nothing to report.
+ */
+function holdsSomething(position: MorphoVaultPosition): boolean {
+  const shares = position.shares;
+  return position.assets.raw !== "0" || (shares !== null && shares !== "0");
+}
+
 async function readVaultHalf(client: Client, q: MorphoPositionsQuery, signal?: AbortSignal): Promise<VaultHalf> {
   const page = await client.getVaultPositionPage(
     {
@@ -200,9 +210,18 @@ async function readVaultHalf(client: Client, q: MorphoPositionsQuery, signal?: A
       continue;
     }
     vaultsRead += 1;
-    // A fully exited vault resolves to null on a perfectly valid query, and a
-    // dust row is not a position anybody wants listed.
-    if (position !== null && position.assets.raw !== "0") v2Positions.push(position);
+    // A fully exited vault resolves to null on a perfectly valid query, and that
+    // null is the one thing this sweep may drop: there is no position.
+    //
+    // DUST IS NOT AN EXIT (funded live audit, 2026-08-18). This used to require
+    // `assets.raw !== "0"`, which also silenced a position holding real SHARES
+    // whose asset value rounds down to zero raw units - and it did so while the
+    // reply asserted `droppedRows: 0` and `vaultV2Coverage.complete: true`, so
+    // the wallet was told it held nothing. The V1 half filters on
+    // `shares_gte: "1"` and shows exactly that row, so the two halves also
+    // disagreed about the same wallet. A balance the user still owns is theirs
+    // to see, however small.
+    if (position !== null && holdsSomething(position)) v2Positions.push(position);
   }
 
   return {

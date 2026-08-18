@@ -463,8 +463,8 @@ function assertYieldConfirmLegs(
 
 /**
  * `pending -> definitively_failed`. CAS-guarded; returns `{applied, row}`
- * (FIX-SPINE C7). `failureReason` is sanitized here (redact + 500-char cap)
- * regardless of what the caller passed (finding 9/C5).
+ * (FIX-SPINE C7). `failureReason` is sanitized here (redacted, never
+ * truncated) regardless of what the caller passed (finding 9/C5).
  */
 export async function failActivityEvent(
   id: number,

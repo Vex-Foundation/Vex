@@ -27,7 +27,8 @@ export const MORPHO_MARKET_GET_TOOL: ProtocolToolManifest = {
     + "realized badDebt in loan-asset units, the oracle price collateral is valued at with the scale needed to read it, "
     + "apyAtTargetPercent from the adaptive-curve rate model, the protocol fee, total liquidity, and Public Allocator "
     + "liquidity broken down per supplying vault. Set `includeSupplyingVaults` to also list the curated vaults that "
-    + "supply this market with their NET APY - a vault APY is net of the vault's own fee and is NOT the same basis as "
+    + "supply this market with their NET APY, BOTH vault generations, each row tagged with its `version` - a vault "
+    + "APY is net of the vault's own fee and is NOT the same basis as "
     + "this market's supply APY, so never rank the two against each other. Set `includeHistory` with a `lookback` for "
     + "the AVERAGE rate over a day, week, month, quarter, year or since inception, split on the same base-versus-net "
     + "lines: `supplyApyPercent` and `borrowApyPercent` EXCLUDE incentives, the `net*` figures INCLUDE them, and each "
@@ -77,7 +78,9 @@ export const MORPHO_MARKET_GET_TOOL: ProtocolToolManifest = {
       key: "includeSupplyingVaults",
       type: "boolean",
       description:
-        "Also list the curated Morpho vaults supplying this market, with each vault's NET APY (default false). A vault "
+        "Also list the curated Morpho vaults supplying this market, with each vault's NET APY (default false). Covers "
+        + "BOTH generations and tags every row with its `version`; a curator commonly runs a v1 and a v2 vault under "
+        + "the same name at different addresses, so identify a route by address. A vault "
         + "APY is net of the vault fee and is a different basis from this market's supply APY.",
     },
   ],

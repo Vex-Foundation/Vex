@@ -34,6 +34,7 @@ import {
   reject,
   type MorphoParams,
 } from "./_primitives.js";
+import { readAddressList, readAssetTagList, readMarketIdList } from "./list-values.js";
 
 // -- morpho.markets.discover -----------------------------------------
 
@@ -62,6 +63,18 @@ export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoPara
   if (!loanTokens.ok) return loanTokens;
   const collateralTokens = readAddressCsv(p["collateralTokenAddress"], "collateralTokenAddress");
   if (!collateralTokens.ok) return collateralTokens;
+  const marketIds = readMarketIdList(p["marketIds"], "marketIds");
+  if (!marketIds.ok) return marketIds;
+  const oracleAddresses = readAddressList(p["oracleAddress"], "oracleAddress");
+  if (!oracleAddresses.ok) return oracleAddresses;
+  const irmAddresses = readAddressList(p["irmAddress"], "irmAddress");
+  if (!irmAddresses.ok) return irmAddresses;
+  const loanTags = readAssetTagList(p["loanAssetTags"], "loanAssetTags");
+  if (!loanTags.ok) return loanTags;
+  const collateralTags = readAssetTagList(p["collateralAssetTags"], "collateralAssetTags");
+  if (!collateralTags.ok) return collateralTags;
+  const isIdle = readOptionalBool(p["isIdle"], "isIdle");
+  if (!isIdle.ok) return isIdle;
 
   const minSupplyUsd = readOptionalNumber(p["minSupplyUsd"], "minSupplyUsd", { min: 0 });
   if (!minSupplyUsd.ok) return minSupplyUsd;
@@ -116,6 +129,12 @@ export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoPara
     ...(search !== undefined ? { search } : {}),
     ...(loanTokens.value ? { loanAssetAddress_in: loanTokens.value } : {}),
     ...(collateralTokens.value ? { collateralAssetAddress_in: collateralTokens.value } : {}),
+    ...(marketIds.value ? { uniqueKey_in: marketIds.value } : {}),
+    ...(oracleAddresses.value ? { oracleAddress_in: oracleAddresses.value } : {}),
+    ...(irmAddresses.value ? { irmAddress_in: irmAddresses.value } : {}),
+    ...(loanTags.value ? { loanAssetTags_in: loanTags.value } : {}),
+    ...(collateralTags.value ? { collateralAssetTags_in: collateralTags.value } : {}),
+    ...(isIdle.value !== undefined ? { isIdle: isIdle.value } : {}),
     ...(minSupplyUsd.value !== undefined ? { supplyAssetsUsd_gte: minSupplyUsd.value } : {}),
     ...(maxSupplyUsd.value !== undefined ? { supplyAssetsUsd_lte: maxSupplyUsd.value } : {}),
     ...(minBorrowUsd.value !== undefined ? { borrowAssetsUsd_gte: minBorrowUsd.value } : {}),
@@ -139,6 +158,12 @@ export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoPara
     ["search", search],
     ["loanTokenAddress", loanTokens.value],
     ["collateralTokenAddress", collateralTokens.value],
+    ["marketIds", marketIds.value],
+    ["oracleAddress", oracleAddresses.value],
+    ["irmAddress", irmAddresses.value],
+    ["loanAssetTags", loanTags.value],
+    ["collateralAssetTags", collateralTags.value],
+    ["isIdle", isIdle.value],
     ["minSupplyUsd", minSupplyUsd.value],
     ["maxSupplyUsd", maxSupplyUsd.value],
     ["minBorrowUsd", minBorrowUsd.value],

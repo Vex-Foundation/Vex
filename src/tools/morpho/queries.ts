@@ -16,6 +16,13 @@
  *   - `oracle.address`, not `oracleAddress` (`irmAddress` genuinely IS flat).
  *   - `marketById` takes `chainId: Int!` - the non-null matters, a nullable
  *     variable is refused at validation time.
+ *   - THE SUPPLIER LIST IS TWO FIELDS, NOT ONE. `supplyingVaults` returns V1
+ *     (MetaMorpho) vaults only and `supplyingVaultV2s` returns V2 vaults, and
+ *     the two nest differently: V1's APY is under `state { netApy }` while V2's
+ *     is FLAT, the same V1/V2 split `./queries-vaults.ts` documents. Reading
+ *     only the first was silently answering "who supplies this market" with half
+ *     the truth: on the Base cbBTC/USDC market, 13 V1 vaults were reported and
+ *     14 V2 vaults were invisible (measured 2026-08-18).
  *
  * The averaged-APY windows in {@link MORPHO_MARKET_QUERY} are FIXED FIELDS. No
  * field of `MarketState` accepts arguments (introspection, 2026-08-14), so a
@@ -90,6 +97,7 @@ query VexMorphoMarket($marketId: String!, $chainId: Int!) {
     realizedBadDebt { underlying usd }
     publicAllocatorSharedLiquidity { assets vault { address name } }
     supplyingVaults { address name state { netApy } }
+    supplyingVaultV2s { address name netApy }
     state {
       ${MARKET_STATE_FIELDS}
       price

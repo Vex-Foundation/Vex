@@ -71,7 +71,10 @@ export async function morphoWalletBalance(
         + "transaction on this chain at all, whatever its approvals say.",
     },
     nextStep:
-      "Vex has no Morpho mutating tools yet, so nothing here can be approved or spent from this namespace. "
-      + "Use morpho.positions.get for what the wallet already has inside Morpho.",
+      "This is a balance read only: nothing here is approved, spent or signed. Use morpho.positions.get for what "
+      + "the wallet already holds inside Morpho. To PUT any of this balance to work, quote first with "
+      + "morpho.vault.quote or morpho.market.quote and then execute that quote with the matching tool - the vault "
+      + "and Blue market mutators do exist, and each one prices, gates and discloses its own approval before it "
+      + "signs anything.",
   });
 }

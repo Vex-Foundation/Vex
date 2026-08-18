@@ -33,8 +33,6 @@ import {
 } from "@tools/morpho/request.js";
 import {
   ADDRESS_PATTERN,
-  MARKET_ID_PATTERN,
-  MAX_CSV_ENTRIES,
   checkRange,
   readChains,
   readOptionalEnum,
@@ -43,6 +41,10 @@ import {
   reject,
   type MorphoParams,
 } from "./_primitives.js";
+import { readAddressList, readMarketIdList, readRawIntegerBound } from "./list-values.js";
+
+/** A transaction hash: 32 bytes, the same shape as a market id and easy to confuse with one. */
+const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 /**
  * A unix SECONDS timestamp this far in the future is a milliseconds value.
@@ -61,33 +63,6 @@ export interface MorphoActivityQueryParams {
   offset: number;
   types: string[] | undefined;
   echo: Record<string, unknown>;
-}
-
-/** Comma-separated 64-hex market ids, lowercased. An address here is named as one. */
-function readMarketIdCsv(raw: unknown, param: string): MorphoParams<string[] | undefined> {
-  const value = readOptionalString(raw);
-  if (value === undefined) return { ok: true, value: undefined };
-  const items = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-  if (items.length > MAX_CSV_ENTRIES) {
-    return reject(
-      param,
-      `\`${param}\` accepts at most ${MAX_CSV_ENTRIES} comma-separated market ids; ${items.length} were supplied.`,
-    );
-  }
-  const out: string[] = [];
-  for (const item of items) {
-    if (!MARKET_ID_PATTERN.test(item)) {
-      return reject(
-        param,
-        `\`${param}\` contains "${item}", which is not a 0x-prefixed 64-hex market id.`
-        + (ADDRESS_PATTERN.test(item) ? " That is a 20-byte contract ADDRESS, not a market id." : "")
-        + " Read one from morpho.markets.discover.",
-      );
-    }
-    const lower = item.toLowerCase();
-    if (!out.includes(lower)) out.push(lower);
-  }
-  return { ok: true, value: out.length > 0 ? out : undefined };
 }
 
 /** The closed transaction-type vocabulary. Accepts a CSV string or a string array. */
@@ -136,13 +111,29 @@ function readUnixSeconds(raw: unknown, param: string): MorphoParams<number | und
 export function parseMorphoActivityParams(p: Record<string, unknown>): MorphoParams<MorphoActivityQueryParams> {
   const chainIds = readChains(p["chainIds"], "chainIds");
   if (!chainIds.ok) return chainIds;
-  const marketIds = readMarketIdCsv(p["marketIds"], "marketIds");
+  const marketIds = readMarketIdList(p["marketIds"], "marketIds");
   if (!marketIds.ok) return marketIds;
 
   const walletRaw = readOptionalString(p["walletAddress"]);
   if (walletRaw !== undefined && !ADDRESS_PATTERN.test(walletRaw)) {
     return reject("walletAddress", `\`walletAddress\` "${walletRaw}" is not a 0x-prefixed 40-hex EVM address.`);
   }
+
+  const txHash = readOptionalString(p["txHash"]);
+  if (txHash !== undefined && !TX_HASH_PATTERN.test(txHash)) {
+    return reject(
+      "txHash",
+      `\`txHash\` "${txHash}" is not a 0x-prefixed 64-hex transaction hash.`
+      + (ADDRESS_PATTERN.test(txHash) ? " That is a 20-byte contract ADDRESS." : ""),
+    );
+  }
+
+  const liquidators = readAddressList(p["liquidatorAddress"], "liquidatorAddress");
+  if (!liquidators.ok) return liquidators;
+  const minBadDebt = readRawIntegerBound(p["minBadDebtAssetsRaw"], "minBadDebtAssetsRaw");
+  if (!minBadDebt.ok) return minBadDebt;
+  const minSeized = readRawIntegerBound(p["minSeizedAssetsRaw"], "minSeizedAssetsRaw");
+  if (!minSeized.ok) return minSeized;
 
   const types = readTypes(p["types"], "types");
   if (!types.ok) return types;
@@ -167,6 +158,10 @@ export function parseMorphoActivityParams(p: Record<string, unknown>): MorphoPar
     ...(chainIds.value ? { chainId_in: chainIds.value } : {}),
     ...(marketIds.value ? { marketUniqueKey_in: marketIds.value } : {}),
     ...(wallet !== undefined ? { userAddress_in: [wallet] } : {}),
+    ...(txHash !== undefined ? { hash: txHash.toLowerCase() } : {}),
+    ...(liquidators.value ? { liquidatorAddress_in: liquidators.value } : {}),
+    ...(minBadDebt.value !== undefined ? { badDebtAssets_gte: minBadDebt.value } : {}),
+    ...(minSeized.value !== undefined ? { seizedAssets_gte: minSeized.value } : {}),
     ...(types.value ? { type_in: types.value.map((key) => MORPHO_ACTIVITY_TYPES[key as keyof typeof MORPHO_ACTIVITY_TYPES]) } : {}),
     ...(since.value !== undefined ? { timestamp_gte: since.value } : {}),
     ...(until.value !== undefined ? { timestamp_lte: until.value } : {}),
@@ -185,6 +180,10 @@ export function parseMorphoActivityParams(p: Record<string, unknown>): MorphoPar
         ...(chainIds.value ? { chainIds: chainIds.value } : {}),
         ...(marketIds.value ? { marketIds: marketIds.value } : {}),
         ...(wallet !== undefined ? { walletAddress: wallet } : {}),
+        ...(txHash !== undefined ? { txHash: txHash.toLowerCase() } : {}),
+        ...(liquidators.value ? { liquidatorAddress: liquidators.value } : {}),
+        ...(minBadDebt.value !== undefined ? { minBadDebtAssetsRaw: minBadDebt.value } : {}),
+        ...(minSeized.value !== undefined ? { minSeizedAssetsRaw: minSeized.value } : {}),
         ...(types.value ? { types: types.value } : {}),
         ...(since.value !== undefined ? { since: since.value } : {}),
         ...(until.value !== undefined ? { until: until.value } : {}),
