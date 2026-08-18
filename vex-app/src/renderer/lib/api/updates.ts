@@ -48,10 +48,10 @@ export function useUpdaterLiveSync(): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     const off = window.vex.updater.onStatus((status) => {
-      queryClient.setQueryData<Result<UpdateStatus>>(updaterKeys.status(), {
+      queryClient.setQueryData<Result<UpdateStatus>>(updaterKeys.status(), () => ({
         ok: true,
         data: status,
-      });
+      }));
     });
     return () => off();
   }, [queryClient]);

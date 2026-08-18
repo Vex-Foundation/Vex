@@ -186,7 +186,7 @@ function makeDeps(options: {
       check: vi.fn(async () => ({ publicKey: options.checkerPublicKey ?? PUBLIC_KEY })),
     },
     readVaultPrivateKey: vi.fn(() => LIGHTER_PRIVATE_KEY),
-    readVaultRegistrationState: vi.fn(() => "key_generated_pending_registration"),
+    readVaultRegistrationState: vi.fn(() => "key_generated_pending_registration" as const),
     activateVaultCredential,
     markStaged: vi.fn(async (_sessionId, _intentId, input) => {
       events.push("stage");
