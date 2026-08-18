@@ -6,8 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const configPath = path.resolve(root, process.argv[2] ?? "scripts/production-audit-allowlist.json");
+const auditRoot = path.resolve(root, process.argv[3] ?? ".");
 const allowlist = JSON.parse(
-  readFileSync(path.join(root, "scripts", "production-audit-allowlist.json"), "utf8"),
+  readFileSync(configPath, "utf8"),
 );
 
 const reviewBy = new Date(`${allowlist.reviewBy}T00:00:00.000Z`);
@@ -16,7 +18,7 @@ if (!Number.isFinite(reviewBy.getTime()) || Date.now() >= reviewBy.getTime()) {
 }
 
 const audit = spawnSync("corepack", ["pnpm", "audit", "--prod", "--json"], {
-  cwd: root,
+  cwd: auditRoot,
   encoding: "utf8",
   maxBuffer: 16 * 1024 * 1024,
 });

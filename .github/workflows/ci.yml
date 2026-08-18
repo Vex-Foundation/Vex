@@ -73,6 +73,9 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
+
       - name: Lint and typecheck
         run: pnpm run lint
 
@@ -118,6 +121,9 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       - name: Build (e2e needs the bundled main + preload + renderer)
         run: pnpm run build

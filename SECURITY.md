@@ -41,6 +41,9 @@ finding that is not an exact match for the package, version, severity, advisory
 URL, and dependency path in `scripts/production-audit-allowlist.json`. Reviewed
 exceptions have a mandatory expiry date; a resolved, changed, or expired
 exception also fails the audit so it cannot silently become permanent.
+Run the same command from `vex-app/` for its independently locked production
+graph; it uses its own exact-path exception file and the same fail-closed audit
+implementation.
 
 pnpm dependency build scripts are default-denied. The root package explicitly
 allows only build-critical scripts and records packages whose optional or

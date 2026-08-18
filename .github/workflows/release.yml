@@ -95,6 +95,10 @@ jobs:
       - name: Audit root production dependencies
         run: pnpm run audit:deps
 
+      - name: Audit vex-app production dependencies
+        working-directory: vex-app
+        run: pnpm run audit:deps
+
       - name: Run vex-app unit tests
         working-directory: vex-app
         run: pnpm test

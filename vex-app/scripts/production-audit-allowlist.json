@@ -1,0 +1,13 @@
+{
+  "reviewBy": "2026-09-18",
+  "exceptions": [
+    {
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+      "package": "uuid",
+      "severity": "moderate",
+      "version": "8.3.2",
+      "path": ".>@solana/web3.js>jayson>uuid",
+      "rationale": "The advisory affects uuid v3, v5, and v6 with caller-provided output buffers. Jayson imports and invokes uuid v4 only, without a caller-provided buffer. Re-review when Jayson or Solana accepts uuid 11.1.1 or newer."
+    }
+  ]
+}

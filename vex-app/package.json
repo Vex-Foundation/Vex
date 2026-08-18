@@ -36,14 +36,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "audit:deps": "pnpm audit --prod && pnpm audit",
+    "audit:deps": "node ../scripts/audit-production-dependencies.mjs vex-app/scripts/production-audit-allowlist.json vex-app",
     "doctor": "node scripts/doctor.mjs",
     "check:build": "node scripts/check-build-artifacts.mjs",
     "check:boundaries": "node scripts/check-process-boundaries.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "~5.2.2",
-    "@sentry/electron": "~7.13.0",
+    "@sentry/electron": "~7.16.0",
     "@solana/web3.js": "~1.98.4",
     "@tanstack/react-query": "~5.100.9",
     "@tanstack/react-virtual": "3.14.8",
@@ -54,7 +54,7 @@
     "class-variance-authority": "~0.7.1",
     "clsx": "~2.1.1",
     "electron-log": "~5.4.3",
-    "electron-updater": "~6.8.3",
+    "electron-updater": "~6.8.9",
     "lightweight-charts": "5.2.0",
     "lucide-react": "~1.27.0",
     "marked": "~18.0.3",
@@ -98,6 +98,15 @@
       "electron-winstaller",
       "esbuild",
       "sharp"
-    ]
+    ],
+    "ignoredBuiltDependencies": [
+      "bufferutil",
+      "utf-8-validate"
+    ],
+    "overrides": {
+      "electron-updater>js-yaml": "4.3.1",
+      "jayson>ws": "7.5.13",
+      "rpc-websockets>ws": "8.21.3"
+    }
   }
 }
