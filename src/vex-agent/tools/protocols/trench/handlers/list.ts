@@ -43,6 +43,12 @@ export interface TokenRow {
   symbol: string | null;
   creator: string | null;
   status: "curve" | "graduated";
+  /**
+   * Launchpad registry creation time, ms epoch (provider-required, strict).
+   * The projector used to drop it, which made "sort by newest" ordinal only:
+   * a blind eval ranked a 10.8-day-old token first with no way to see its age.
+   */
+  launchedAtMs: number;
   price: number;
   supply: number;
   links: string[];
@@ -65,6 +71,7 @@ export function projectToken(row: TrenchToken): TokenRow {
     symbol: row.symbol,
     creator: row.creator,
     status: row.graduated ? "graduated" : "curve",
+    launchedAtMs: row.time,
     price: row.price,
     supply: row.supply,
     links: row.links,

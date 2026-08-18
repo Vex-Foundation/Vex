@@ -97,6 +97,16 @@ function buildTokenResearchMapSection(): string {
   lines.push(
     "  Before any trade, use the chain's dedicated contract-safety surface when available, then request a fresh executable quote from the venue that would execute. DexScreener market data can shortlist a pool; it must never be reused as the execution price.",
   );
+  // The fresh-Solana clause names `solana.tokens.trending`, so it sits behind
+  // the SAME env gate as the solana paragraph below — a prompt must never
+  // recommend a tool the registry hides (prompt-safety-and-env-a2 pins this).
+  lines.push(
+    "  FRESHNESS LAG (measured 2026-08-17): DexScreener reads are edge-cached about 30s and are never real-time; its DISCOVERY lag for brand-new tokens is minutes to hours (youngest reachable pool measured ~16 min on Solana, ~7 h on Robinhood), because launch -> indexing -> profile -> feed window all sit in front of it. For fresh-token discovery route by chain instead: "
+    + (isProtocolNamespaceAvailable("solana")
+      ? "fresh Solana -> `solana.tokens.trending` category=recent (measured: tokens 10-175 s old, createdAt on every row proves age); "
+      : "")
+    + "fresh Robinhood -> `trench.tokens` status=curve sort=time (launchpad registry, ~2 s cache, launchedAtMs proves age) - COVERAGE: only tokens launched on Trench Express, never other Robinhood pools. Use DexScreener afterwards, for depth, price sanity and risk once the pool is indexed.",
+  );
 
   // Env-gated: `solana.*` needs JUPITER_API_KEY. Same predicate the registry,
   // `discoverProtocolCapabilities` and `executeProtocolTool` enforce.

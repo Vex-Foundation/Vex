@@ -69,7 +69,7 @@ export const TRENCH_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
     key: "sort",
     type: "string",
     description:
-      "Sort order (server-side): time (newest first, default), price, or bump (recent activity). Unknown values are rejected.",
+      "Sort order (server-side): time (orders by launchedAtMs, newest first, default), price, or bump (recent activity). Unknown values are rejected.",
   },
   {
     key: "limit",
