@@ -10,48 +10,23 @@
  *     query VexMorphoVaultV2   -> one VaultV2's full state
  *     query VexMorphoChains    -> liveness + chain coverage (diagnostics only)
  *
- * ONE private request method does the whole shape: build body -> budget/cache ->
- * fetch -> non-ok error mapping -> readJson -> GraphQL-errors check -> validator.
- * Every read goes through it, so none can skip the budget or the error contract.
+ * This file says WHAT Vex reads. HOW every read is carried - budget and cache,
+ * the POST, the non-ok mapping, GraphQL's 200-with-`errors` failure mode, and
+ * only then the validator - belongs to `./client/transport.ts`, and every method
+ * here goes through it, so none can skip the budget or the error contract.
  *
- * TWO properties are unusual enough to state here.
- *
- * GRAPHQL FAILS AT HTTP 200. A bad field name comes back as a 200 whose body
- * carries `errors[]` and no `data`. Treating "the call returned" as "the call
- * worked" would turn a schema removal into a silently empty market list, which
- * on a lending screen reads as "no markets match your filter". The 200-with-
- * errors path is therefore checked explicitly and mapped to a named refusal.
- * Morpho also reports "no such vault" through that SAME envelope, which is why
- * a request may carry its own `notFound` mapping.
- *
- * THE BUDGET IS A BAN GUARD, not a politeness feature. See `./budget.ts`: Morpho
- * answers abuse with a seven-day block. Everything this client does is routed
- * through {@link MorphoBudget}, whose breaker state travels into the error so a
- * refusal says who refused and until when.
- *
- * `extensions.warnings[]` is NOT what the plan expected. The 2026-08-14 probe
- * found `extensions` carrying only `complexity` and `maximumComplexity`;
- * deprecated fields are already hard errors rather than warnings. The extensions
- * block is still logged (it is the only view of our query cost against Morpho's
- * 1,000,000 ceiling), and a `warnings` key is logged if one ever appears - it
- * goes to structured logging and never into agent output.
+ * TWO READS ARE NOT LIKE THE OTHERS. `getMarketCuration` and `getVaultCuration`
+ * are UNCACHED and STRICTLY typed, because they are the trust root of a signing
+ * decision rather than a screen. See their own comments.
  */
 
 import { VexError, ErrorCodes } from "../../errors.js";
 import { loadConfig } from "../../config/store.js";
-import { fetchWithTimeout, readJson } from "../../utils/http.js";
-import logger from "../../utils/logger.js";
-import { isRecord } from "../../utils/validation-helpers.js";
 import { MorphoBudget, MORPHO_TTL } from "./budget.js";
-import {
-  USER_AGENT,
-  hasData,
-  isNotFoundBody,
-  parseRetryAfterSeconds,
-  type GraphqlRequest,
-} from "./client/envelope.js";
+import type { GraphqlRequest } from "./client/envelope.js";
 import { validateMorphoMarketCuration, type MorphoMarketCuration } from "./client/curation.js";
-import { mapMorphoGraphqlError, mapMorphoHttpError, mapMorphoTransportError } from "./errors.js";
+import { validateMorphoVaultCuration, type MorphoVaultCuration } from "./client/vault-curation.js";
+import { runMorphoGraphqlRequest } from "./client/transport.js";
 import {
   MORPHO_MARKETS_QUERY,
   MORPHO_MARKET_QUERY,
@@ -70,6 +45,8 @@ import {
   MORPHO_VAULTS_V2_QUERY,
   MORPHO_VAULT_V1_QUERY,
   MORPHO_VAULT_V2_QUERY,
+  MORPHO_VAULT_V1_CURATION_QUERY,
+  MORPHO_VAULT_V2_CURATION_QUERY,
 } from "./queries-vaults.js";
 import {
   MORPHO_ACTIVITY_SORTS,
@@ -93,7 +70,6 @@ import {
   type MorphoVaultsQuery,
 } from "./request.js";
 import {
-  describeGraphqlErrors,
   morphoMarketNotFound,
   validateMorphoMarketDetail,
   validateMorphoMarketPage,
@@ -134,67 +110,9 @@ export class MorphoClient {
     return this.budget.describeState();
   }
 
+  /** Every read below goes through `./client/transport.ts`; see its header. */
   private async request<T>(req: GraphqlRequest, validator: (raw: unknown) => T, signal?: AbortSignal): Promise<T> {
-    const key = `${req.operation}:${JSON.stringify(req.variables)}:${req.variant ?? ""}`;
-    try {
-      return await this.budget.run(key, req.ttlMs, async () => {
-        const response = await fetchWithTimeout(this.endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "User-Agent": USER_AGENT,
-          },
-          body: JSON.stringify({ query: req.query, variables: req.variables }),
-          ...(signal ? { signal } : {}),
-        });
-
-        const body = await readJson(response);
-
-        if (!response.ok) {
-          const retryAfter = parseRetryAfterSeconds(response.headers?.get?.("retry-after"));
-          if (response.status === 429) this.budget.recordRateLimit(retryAfter);
-          logger.warn("morpho.http_error", {
-            status: response.status,
-            operation: req.operation,
-            retryAfterSeconds: retryAfter ?? null,
-          });
-          // The BODY travels with the status. GraphQL's error text names the
-          // exact field that failed; dropping it leaves a bare status.
-          throw mapMorphoHttpError(response.status, body, retryAfter);
-        }
-
-        this.logExtensions(body, req.operation);
-
-        // HTTP 200 with `errors` and no `data` is GraphQL's real failure mode.
-        const graphqlErrors = describeGraphqlErrors(body);
-        if (graphqlErrors !== null && !hasData(body)) {
-          if (req.notFound !== undefined && isNotFoundBody(body)) throw req.notFound(graphqlErrors);
-          throw mapMorphoGraphqlError(graphqlErrors);
-        }
-
-        return validator(body);
-      });
-    } catch (err) {
-      mapMorphoTransportError(err);
-    }
-  }
-
-  /**
-   * Query cost against Morpho's ceiling, plus any `warnings` key should the
-   * schema ever grow one. Structured logging only - never agent output.
-   */
-  private logExtensions(body: unknown, operation: string): void {
-    if (!isRecord(body)) return;
-    const extensions = body["extensions"];
-    if (!isRecord(extensions)) return;
-    const warnings = extensions["warnings"];
-    logger.debug("morpho.graphql_extensions", {
-      operation,
-      complexity: typeof extensions["complexity"] === "number" ? extensions["complexity"] : null,
-      maximumComplexity: typeof extensions["maximumComplexity"] === "number" ? extensions["maximumComplexity"] : null,
-      warnings: Array.isArray(warnings) ? JSON.stringify(warnings) : null,
-    });
+    return runMorphoGraphqlRequest(this.endpoint, this.budget, req, validator, signal);
   }
 
   /** One page of filtered, sorted Blue markets. */
@@ -374,6 +292,68 @@ export class MorphoClient {
           morphoVaultNotFound(`${cause} (checked both the V2 and the V1 vault registries on this chain)`),
       },
       (raw) => validateMorphoVaultV1Detail(raw, options),
+      signal,
+    );
+  }
+
+  /**
+   * IS MORPHO CURATING THIS VAULT, asked live at execution time.
+   *
+   * UNCACHED ON PURPOSE (`ttlMs: 0`), exactly like {@link getMarketCuration} and
+   * for the same reason. The vault DETAIL read that carries `listed` today is
+   * served through a 15-second cache and reads the flag tolerantly, which is
+   * correct for a screen and wrong for the one fact a deposit is gated on:
+   * `ttlMs: 0` skips the cache READ so the answer is no older than the decision
+   * it supports, and skips the cache WRITE so this call can never seed a stale
+   * answer for anything else.
+   *
+   * GENERATION DETECTED, NOT ASKED FOR - V2 first, V1 as the fallback, the same
+   * order and the same reasoning as {@link getVault}. Only the SECOND failure is
+   * reported; surfacing the first would tell the caller a vault does not exist
+   * while we were still looking for it.
+   *
+   * STRICTLY TYPED AND BOUND TO THE VAULT IT IS ABOUT
+   * (`./client/vault-curation.ts`): the address and the chain must both be
+   * present and match, and an absent or non-boolean `listed` is a refusal rather
+   * than a falsy "no".
+   */
+  async getVaultCuration(
+    query: { readonly vaultAddress: string; readonly chainId: number },
+    signal?: AbortSignal,
+  ): Promise<MorphoVaultCuration> {
+    const address = requireVaultAddress(query.vaultAddress);
+    const chainId = requireQueryChainId(query.chainId);
+    const subject = { vaultAddress: address, chainId };
+
+    try {
+      return await this.readVaultCuration(MORPHO_VAULT_V2_CURATION_QUERY, "vaultV2ByAddress", subject, signal);
+    } catch (err) {
+      if (!(err instanceof VexError) || err.code !== ErrorCodes.MORPHO_VAULT_NOT_FOUND) throw err;
+    }
+
+    return this.readVaultCuration(MORPHO_VAULT_V1_CURATION_QUERY, "vaultByAddress", subject, signal);
+  }
+
+  private async readVaultCuration(
+    query: string,
+    operation: "vaultByAddress" | "vaultV2ByAddress",
+    subject: { readonly vaultAddress: string; readonly chainId: number },
+    signal?: AbortSignal,
+  ): Promise<MorphoVaultCuration> {
+    return this.request(
+      {
+        query,
+        operation,
+        ttlMs: 0,
+        variables: { address: subject.vaultAddress, chainId: subject.chainId },
+        variant: "curation",
+        notFound: (cause) => morphoVaultNotFound(cause),
+      },
+      (body) => {
+        const curation = validateMorphoVaultCuration(body, operation, subject);
+        if (curation === null) throw morphoVaultNotFound("Morpho returned no vault for that address on that chain");
+        return curation;
+      },
       signal,
     );
   }

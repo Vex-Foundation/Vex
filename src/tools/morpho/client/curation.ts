@@ -25,10 +25,26 @@
  *
  * The answer must therefore name the market that was asked about. A MISSING id
  * is a refusal, not a licence to fill in the expected one: a validator that
- * supplies the value it is meant to be checking is not checking anything. The
- * chain is bound the same way when the answer carries it, which it does today -
- * `chain { id }` is requested by {@link MORPHO_MARKET_CURATION_QUERY} - because
- * a market id is chain-scoped and the same id on two chains is two markets.
+ * supplies the value it is meant to be checking is not checking anything.
+ *
+ * ── WHY THE CHAIN IS BOUND JUST AS HARD, AND MUST BE PRESENT ────────────────
+ *
+ * An earlier revision bound the chain only WHEN THE ANSWER CARRIED IT, and read
+ * an omission as a schema change rather than a refusal. That was a fail-open on
+ * the one field that separates two different markets, because a Blue market id
+ * is the hash of the FIVE MARKET PARAMETERS and the chain id is not one of them.
+ * Identical parameter addresses on two chains therefore produce the IDENTICAL
+ * market id, and cross-chain address reuse is ordinary rather than exotic:
+ * Morpho Blue itself is deployed at the same address on Ethereum and on Base. So
+ * an answer about that id on ANOTHER chain, with its `chain` field absent, would
+ * have passed the market-id binding untouched and supplied the `listed: true`
+ * trust root for the chain Vex was about to fund.
+ *
+ * The market-id binding is consequently NOT sufficient on its own, and the chain
+ * is now required to be PRESENT and exactly equal. The execution query asks for
+ * `chain { id }` ({@link MORPHO_MARKET_CURATION_QUERY}), the answer is consumed
+ * by a signing decision, and rules/90 is explicit that such a field is read
+ * strictly. An absence is UNKNOWN, and unknown on a money path is a refusal.
  */
 
 import { VexError, ErrorCodes } from "../../../errors.js";
@@ -36,7 +52,8 @@ import { isRecord } from "../../../utils/validation-helpers.js";
 
 export interface MorphoMarketCuration {
   readonly marketId: string;
-  readonly chainId: number | null;
+  /** The chain the answer named. Never null: an omission is refused above. */
+  readonly chainId: number;
   /** Morpho's own statement that it curates this market. */
   readonly listed: boolean;
 }
@@ -102,14 +119,23 @@ export function validateMorphoMarketCuration(
     );
   }
 
-  // THE CHAIN IS BOUND WHEN THE ANSWER CARRIES IT. The query asks for it, so
-  // today it is always present; an absence is treated as a schema change rather
-  // than a refusal, because the market-id binding above is the primary proof and
-  // failing shut on a field Morpho stopped sending would close the money path
-  // over a display-shaped change.
+  // THE CHAIN MUST BE PRESENT AND MUST MATCH. It is not a second opinion on the
+  // market-id binding, it is the half of the identity that binding CANNOT prove:
+  // the id is the hash of the five market parameters and the chain is not among
+  // them, so the same id on another chain is a different market wearing the same
+  // name. See the header for why an omission is a refusal rather than a pass.
   const chain = isRecord(raw) ? raw["chain"] : undefined;
   const returnedChainId = isRecord(chain) && typeof chain["id"] === "number" ? chain["id"] : null;
-  if (returnedChainId !== null && returnedChainId !== subject.chainId) {
+  if (returnedChainId === null) {
+    identityViolation(
+      `Refusing the market: FAILING PREDICATE "curation-identity". Morpho's curation answer for market `
+      + `${requestedMarketId} on chain ${subject.chainId} carries NO CHAIN ID of its own. A Blue market id is the `
+      + "hash of the five market parameters and the chain is not one of them, so the same id on another chain is a "
+      + "different market with different collateral and a different oracle. Without the chain the answer cannot "
+      + "prove which of them its `listed` flag vouches for.",
+    );
+  }
+  if (returnedChainId !== subject.chainId) {
     identityViolation(
       `Refusing the market: FAILING PREDICATE "curation-identity". Vex asked about market ${requestedMarketId} on `
       + `chain ${subject.chainId}, and Morpho's curation answer is about chain ${returnedChainId}. A market id is `

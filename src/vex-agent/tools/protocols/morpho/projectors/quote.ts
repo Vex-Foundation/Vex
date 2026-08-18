@@ -33,6 +33,20 @@ export type MorphoQuoteGovernance =
 
 export interface ProjectedQuoteGovernance {
   readonly status: "read" | "unavailable";
+  /**
+   * Morpho's own curation flag for this vault, `null` when the read did not
+   * answer.
+   *
+   * IT RIDES ON EVERY DISCLOSURE because the approval card must not be able to
+   * omit it. It is the DISPLAY reading of `listed`, taken off the same detail
+   * read as the gates; the flag a DEPOSIT is actually gated on is read
+   * separately, uncached and strictly, by
+   * `@tools/morpho/mutations.js#assertMorphoCuratesVault`. Two reads rather than
+   * one is deliberate: this one exists so a reader is told, that one exists so a
+   * signature depends on it, and a cached display value must never become the
+   * thing a signature depends on.
+   */
+  readonly listed: boolean | null;
   readonly withdrawalGated: boolean | null;
   readonly depositGated: boolean | null;
   readonly timelockSeconds: number | null;
@@ -59,6 +73,18 @@ export const MORPHO_QUOTE_DEPOSIT_GATING_WARNING =
   "DEPOSITS ARE GATED on this vault: a gate contract decides whether assets may go in at all, so this operation can "
   + "be refused on chain no matter how the priced figures look. Say so before recommending it.";
 
+/**
+ * The sentence an UNCURATED vault must carry on every preview of it.
+ *
+ * It states the consequence rather than only the flag, and it states the
+ * asymmetry, because those are the two things a reader acts on: a deposit here
+ * will be refused, and an exit will not.
+ */
+export const MORPHO_QUOTE_UNCURATED_WARNING =
+  "MORPHO DOES NOT CURATE THIS VAULT (`listed: false`): nobody Morpho recognises vouches for the curator who decides "
+  + "which markets the deposited asset is spread across. Vex REFUSES to deposit into it, and re-checks live at "
+  + "signing time. Withdrawing from it is still allowed, because being delisted must never trap a depositor inside.";
+
 /** The sentence an unread governance block must carry. Never softened. */
 export const MORPHO_QUOTE_GOVERNANCE_UNKNOWN_NOTE =
   "The vault's governance could not be read on this call, so whether a gate can block a withdrawal, how long a "
@@ -82,6 +108,7 @@ export function projectQuoteGovernance(governance: MorphoQuoteGovernance): Proje
   if (governance.status === "unavailable") {
     return {
       status: "unavailable",
+      listed: null,
       withdrawalGated: null,
       depositGated: null,
       timelockSeconds: null,
@@ -96,6 +123,7 @@ export function projectQuoteGovernance(governance: MorphoQuoteGovernance): Proje
   const gating = detail.gating;
   return {
     status: "read",
+    listed: detail.listed,
     // A V1 vault has no gating MECHANISM, so false here is a proven absence
     // rather than a default: `gating: null` means the concept does not exist on
     // this generation, which is a stronger statement than "no gate installed".
@@ -141,7 +169,8 @@ export function summariseQuote(quote: MorphoVaultQuote, governance: ProjectedQuo
   // them differently.
   const gate = governance.status === "unavailable"
     ? " The vault's governance could not be read, so gating and timelocks are UNKNOWN rather than absent."
-    : `${governance.depositGated === true ? ` ${MORPHO_QUOTE_DEPOSIT_GATING_WARNING}` : ""}`
+    : `${governance.listed === false ? ` ${MORPHO_QUOTE_UNCURATED_WARNING}` : ""}`
+      + `${governance.depositGated === true ? ` ${MORPHO_QUOTE_DEPOSIT_GATING_WARNING}` : ""}`
       + `${governance.withdrawalGated === true ? ` ${MORPHO_QUOTE_GATING_WARNING}` : ""}`;
 
   const pending = governance.pendingConfigCount !== null && governance.pendingConfigCount > 0

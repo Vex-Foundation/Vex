@@ -89,6 +89,11 @@ vi.mock("@tools/morpho/mutations.js", async (importOriginal) => {
     ...actual,
     prepareMorphoVaultExecution: (...a: unknown[]) => mockPrepareExecution(...a),
     prepareMorphoOperationLeg: (...a: unknown[]) => mockPrepareLeg(...a),
+    // The deposit lane re-asks the curation gate immediately before signing. Its
+    // own predicate and the DEPOSIT-ONLY asymmetry are proved in
+    // `./vault-operation-leg-regate.test.ts`; here it is stubbed to the curated
+    // answer so these cases stay about settlement rather than about the gate.
+    assertMorphoCuratesVault: async () => undefined,
   };
 });
 

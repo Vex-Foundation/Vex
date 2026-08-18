@@ -141,6 +141,11 @@ export {
   type MorphoOracleProvenance,
 } from "./mutations/market-policy.js";
 
+// The VAULT lane's own curation gate. Deposits only, by design: see
+// `./mutations/vault-policy.ts` for why a delisted vault must still let a
+// depositor out.
+export { assertMorphoCuratesVault } from "./mutations/vault-policy.js";
+
 export {
   normalizeHealthFactor,
   readMorphoBlueMarket,

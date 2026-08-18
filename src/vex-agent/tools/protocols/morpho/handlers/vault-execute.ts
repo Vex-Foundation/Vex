@@ -57,6 +57,7 @@ import { getAddress, type Address, type Hex } from "viem";
 import { getMorphoClient } from "@tools/morpho/client.js";
 import { getMorphoEvmClients } from "@tools/morpho/evm-client.js";
 import {
+  assertMorphoCuratesVault,
   morphoActionsExtension,
   previewMorphoVaultOperation,
   type MorphoVaultDirection,
@@ -168,6 +169,35 @@ async function runMorphoVaultExecute(
       message,
     );
     return fail(message);
+  }
+
+  // THE CURATION GATE, BEFORE THE APPROVAL AND ON DEPOSITS ONLY.
+  //
+  // `Morpho.md` says execution happens on CURATED vaults, and this is the vault
+  // lane's half of that sentence. It is a live, UNCACHED read bound to this
+  // exact vault and chain, run here so an uncurated vault is refused before any
+  // allowance is granted rather than after. `signed-broadcast/operation-leg.ts`
+  // runs it AGAIN immediately before the deposit is signed, because a check that
+  // ran an approval and a confirmation ago is a claim about a different moment.
+  //
+  // WITHDRAWALS ARE EXEMPT, deliberately and permanently: delisting is the
+  // moment a depositor most needs to leave, and gating an exit on a curator's
+  // standing would turn an off-chain judgement into a lock on the user's own
+  // funds. The withdrawal keeps every check that is about correctness.
+  if (direction === "deposit") {
+    try {
+      await assertMorphoCuratesVault(query.chainId, query.vaultAddress);
+    } catch (err) {
+      const message =
+        `${toolId} refused before signing anything: ${morphoFailureDetail(err)}. No transaction was sent and no gas `
+        + "was spent.";
+      await recordMorphoRefusal(
+        { toolId, sessionId, intentParams: query.echo, chainId: query.chainId, walletAddress, direction },
+        "unknown",
+        message,
+      );
+      return fail(message);
+    }
   }
 
   const { publicClient, walletClient } = getMorphoEvmClients(query.chainId, signer.privateKey as Hex);

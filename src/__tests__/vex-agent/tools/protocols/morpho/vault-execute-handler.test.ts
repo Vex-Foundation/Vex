@@ -33,10 +33,15 @@ const recordRefusal = vi.hoisted(() => vi.fn(async () => 1));
 const evmClients = vi.hoisted(() => vi.fn());
 const selectedAddress = vi.hoisted(() => vi.fn());
 const signingWallet = vi.hoisted(() => vi.fn());
+const curatesVault = vi.hoisted(() => vi.fn(async (_chainId: number, _vaultAddress: string) => undefined));
 
 vi.mock("@tools/morpho/mutations.js", () => ({
   previewMorphoVaultOperation: preview,
   morphoActionsExtension: () => (client: unknown) => client,
+  // The gate's own predicate lives in `src/tools/morpho/mutations/vault-policy.ts`
+  // and has its own suite. What these cases assert is whether the HANDLER asks
+  // it, on which direction, and at which point relative to the signer.
+  assertMorphoCuratesVault: curatesVault,
 }));
 
 vi.mock("@tools/morpho/evm-client.js", () => ({
@@ -180,6 +185,8 @@ beforeEach(() => {
   evmClients.mockReset();
   selectedAddress.mockReset();
   signingWallet.mockReset();
+  curatesVault.mockReset();
+  curatesVault.mockResolvedValue(undefined);
   selectedAddress.mockReturnValue(WALLET);
   signingWallet.mockReturnValue({ family: "eip155", address: WALLET, privateKey: PRIVATE_KEY });
   evmClients.mockReturnValue({
@@ -343,6 +350,89 @@ describe("the disclosure travels with the operation", () => {
     expect(result.output).toContain("NOTHING was signed");
     expect(executeDeposit).not.toHaveBeenCalled();
     expect(recordRefusal).toHaveBeenCalled();
+  });
+
+  it("surfaces `listed` on the disclosure, so an approval card cannot omit it", async () => {
+    const result = await morphoVaultDeposit(depositParams({ dryRun: true }), context());
+
+    const governance = (result.data as Record<string, Record<string, unknown>>).governance;
+    expect(governance).toHaveProperty("listed");
+    expect(governance.listed).toBe(true);
+  });
+});
+
+// ── The curated-vault contract ────────────────────────────────────────────
+
+/**
+ * `Morpho.md` says execution happens on CURATED vaults. Until this gate landed
+ * the vault lane never enforced it: it refused only when the governance READ was
+ * unavailable, never when it came back `listed: false`.
+ *
+ * The asymmetry below is the load-bearing part and it is deliberate. A DEPOSIT
+ * into an uncurated vault is refused; a WITHDRAWAL from one is not, because
+ * delisting is the moment a depositor most needs to leave and gating an exit on
+ * a curator's standing would turn an off-chain judgement into a lock on the
+ * user's own funds.
+ */
+describe("the curated-vault contract is enforced on the way IN and never on the way OUT", () => {
+  const uncurated = () => Object.assign(
+    new Error(
+      'Refusing the deposit: FAILING PREDICATE "vault-listed". Morpho does not curate vault ' + VAULT,
+    ),
+    { code: "MORPHO_VAULT_POLICY_VIOLATION" },
+  );
+
+  it("asks the gate with THIS vault and chain, before a signer is ever used", async () => {
+    executeDeposit.mockResolvedValue({ kind: "refused", executionId: 3, role: "r", message: "m" });
+
+    await morphoVaultDeposit(depositParams(), context());
+
+    expect(curatesVault).toHaveBeenCalledWith(8453, VAULT);
+  });
+
+  it("REFUSES AN UNCURATED VAULT BY NAME, with nothing signed and no approval granted", async () => {
+    curatesVault.mockRejectedValue(uncurated());
+
+    const result = await morphoVaultDeposit(depositParams(), context());
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('FAILING PREDICATE "vault-listed"');
+    expect(result.output).toContain("No transaction was sent");
+    // The execution engine is never reached, so no approval leg can exist.
+    expect(executeDeposit).not.toHaveBeenCalled();
+    expect(evmClients).not.toHaveBeenCalled();
+    expect(recordRefusal).toHaveBeenCalled();
+  });
+
+  it("STILL WITHDRAWS from a vault Morpho has delisted, because an exit must never be gated", async () => {
+    // The gate is rigged to refuse everything. A withdrawal must not ask it at
+    // all, so a delisted vault cannot trap the depositor inside.
+    curatesVault.mockRejectedValue(uncurated());
+    executeWithdraw.mockResolvedValue({
+      kind: "confirmed",
+      executionId: 9,
+      txHash: "0xexit",
+      executed: { amountInRaw: "97", amountInHuman: "0.97", amountOutRaw: "1000000", amountOutHuman: "1" },
+      tokens: {
+        inSymbol: "mwUSDC",
+        inAddress: "0xbeef0e0834849acc03f0089f01f4f1eeb06873c9",
+        inDecimals: 18,
+        outSymbol: "USDC",
+        outAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        outDecimals: 6,
+      },
+      shares: { withinApprovedBound: true, accrualDriftRaw: "0" },
+      message: "Redeemed 0.97 mwUSDC.",
+    });
+
+    const result = await morphoVaultWithdraw(
+      { vaultAddress: VAULT, chain: "base", withdrawAmountRaw: "1000000" },
+      context(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(curatesVault).not.toHaveBeenCalled();
+    expect(executeWithdraw).toHaveBeenCalled();
   });
 });
 

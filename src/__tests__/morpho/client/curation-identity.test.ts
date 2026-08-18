@@ -73,10 +73,23 @@ describe("Morpho curation identity binding", () => {
     expect(error.message).toContain("chain-scoped");
   });
 
-  it("does not fail shut when the answer omits the chain, since the id binding is the proof", () => {
-    const curation = validateMorphoMarketCuration(answer({ marketId: MARKET, listed: true }), SUBJECT);
+  it("REFUSES an answer that omits the chain, because the id alone cannot name one", () => {
+    // The market id is the hash of the FIVE MARKET PARAMETERS and the chain is
+    // not among them, so identical parameter addresses on two chains hash to the
+    // same id - and cross-chain address reuse is ordinary (Morpho Blue itself
+    // sits at one address on Ethereum and Base). Accepting the omission let an
+    // answer about another chain supply this chain's `listed: true` trust root.
+    const error = refusal(answer({ marketId: MARKET, listed: true }));
 
-    expect(curation).toEqual({ marketId: MARKET, chainId: null, listed: true });
+    expect(error.code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
+    expect(error.message).toContain('FAILING PREDICATE "curation-identity"');
+    expect(error.message).toContain("NO CHAIN ID of its own");
+  });
+
+  it("refuses a chain id that is present but not a number, rather than reading it as absent-and-fine", () => {
+    const error = refusal(answer({ marketId: MARKET, listed: true, chain: { id: "1" } }));
+
+    expect(error.message).toContain("NO CHAIN ID of its own");
   });
 
   it("still refuses a non-boolean `listed` as UNKNOWN rather than false", () => {

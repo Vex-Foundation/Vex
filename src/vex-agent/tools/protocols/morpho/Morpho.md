@@ -27,7 +27,7 @@ activity including liquidations, read claimable Merkl rewards, read balances and
 the allowances that matter before acting, and compare curated vaults against
 supplying a market directly.
 
-**Execute.** Deposit to and withdraw from a curated vault. Supply and withdraw
+**Execute.** Deposit to a CURATED vault, and withdraw from any vault. Supply and withdraw
 the loan asset of a market directly. Supply and withdraw collateral, borrow, and
 repay. Claim Merkl rewards. Every execution is consent-gated. Every execution
 that moves a priced amount is also quote-gated: the vault pair and all six market
@@ -80,13 +80,17 @@ stale for 335 days, and an Ethereum market holding 2.97B whose feed reverts
 outright. Both are uncurated, so layer 1 refuses them. Conversely a curated
 market can rot after listing, which only layer 3 sees.
 
-Exchange-rate adapters (the wstETH/stETH and weETH/ETH class) report
-`updatedAt == 0` because they derive from live chain state rather than a pushed
-round. A zero timestamp is NOT a blanket exemption from layer 3: the contract is
-a RECOGNIZED-ADAPTER allowance. Only a feed the code can positively identify as
-that class may pass on a positive answer alone; an unrecognized feed reporting
-zero is a feed whose age cannot be established, and it is refused rather than
-waved through. Layers 1 and 2 apply either way.
+Exchange-rate adapters (Pendle PT discount adapters, vault share-price readers,
+and the wstETH/stETH and weETH/ETH class) report `updatedAt == 0` because they
+derive from live chain state rather than a pushed round. A zero timestamp is NOT
+a blanket exemption from layer 3: the allowance is a RECOGNIZED-ADDRESS TABLE in
+`market-policy/zero-round-feeds.ts`, seeded by surveying every listed market on
+the six chains that carry them. Only an address IN THAT TABLE may pass on a
+positive answer alone. The code does not identify an adapter class by its nature
+and makes no such claim - it recognises addresses somebody measured - so any feed
+not in the table that reports zero is a feed whose age cannot be established, and
+it is refused rather than waved through. Layers 1 and 2 apply either way, and
+widening the table is an owner decision under rules/00.
 
 `MORPHO_MANUAL_ORACLE_ALLOWLIST` in `src/tools/morpho/constants.ts` is the
 owner's escape hatch for a curated market whose oracle predates the factory. It
@@ -97,6 +101,32 @@ ONLY; curation and liveness still apply to an allowlisted oracle. Each entry
 carries its evidence as a field, not a comment, so tests can assert on it. Adding
 an entry is a security-posture decision under rules/00 and needs explicit owner
 approval, never a builder's judgement.
+
+**A vault must be CURATED to be deposited into, and delisting must never trap
+a depositor.** `src/tools/morpho/mutations/vault-policy.ts` reads Morpho's
+`listed` flag live and UNCACHED, bound to the exact vault address and chain, and
+refuses a deposit into a vault Morpho does not list. It runs TWICE on a deposit:
+once in the handler before the approval is broadcast, and again in
+`signed-broadcast/operation-leg.ts` immediately before the deposit is signed,
+because the first call is a transaction and a confirmation earlier than the
+signature it would otherwise authorise. Both `listed` and the governance
+disclosure ride on the approval output, so an approval card cannot omit them.
+
+Deliberately UNCACHED and deliberately SEPARATE from the vault detail read that
+also carries `listed`: that read is served through a 15-second cache and reads
+the flag tolerantly, which is right for a screen and wrong for a signing gate.
+And a clean simulation is not a substitute - it proves the deposit call would
+succeed, never that anyone vouches for the curator choosing the markets
+underneath or that the minted shares stay redeemable.
+
+WITHDRAWALS ARE EXEMPT, permanently and on purpose. Delisting is the moment a
+depositor most needs to leave; refusing to build their exit because a curator
+lost Morpho's endorsement would turn an off-chain judgement into a lock on the
+user's own self-custodied funds. A withdrawal keeps every check that is about
+CORRECTNESS - the fresh rebuild against current state, the pinned receiver, the
+target re-assertion and the simulation - and gives up only the one that is about
+desirability. `vault-operation-leg-regate.test.ts` pins the asymmetry in both
+directions, so a later change that gates both "for consistency" fails.
 
 **Health factor floor 1.25 is a buffer, not a guarantee.** It is projected from
 post-accrual state and re-read immediately before signing, but the direct Blue

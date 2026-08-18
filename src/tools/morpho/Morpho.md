@@ -13,7 +13,8 @@ lives at `src/vex-agent/tools/protocols/morpho/`.
 | Export | From | Purpose |
 | --- | --- | --- |
 | `getMorphoClient()` | `client.ts` | Process-wide singleton, keyed on `services.morphoApiUrl` |
-| `MorphoClient` | `client.ts` | `getMarketPage`, `getMarket`, `getVaultPage`, `getVault`, `getMarketPositionPage`, `getVaultPositionPage`, `getVaultV2Position`, `getVaultV2UserVaults`, `getActivityPage`, `getChains`, `describeBudget` |
+| `MorphoClient` | `client.ts` | `getMarketPage`, `getMarket`, `getMarketCuration`, `getVaultPage`, `getVault`, `getVaultCuration`, `getMarketPositionPage`, `getVaultPositionPage`, `getVaultV2Position`, `getVaultV2UserVaults`, `getActivityPage`, `getChains`, `describeBudget` |
+| `runMorphoGraphqlRequest` | `client/transport.ts` | The one outbound path: budget/cache, POST, HTTP and GraphQL error mapping, then the validator |
 | `MORPHO_CHAINS`, `resolveMorphoChainId`, `morphoChainSlug`, `describeUnsupportedChain` | `chains.ts` | Chain policy |
 | `MORPHO_MARKET_SORTS`, `MORPHO_LOOKBACKS`, `requireMarketId`, `lltvPercentToWad` | `request.ts` | Market request contract |
 | `MORPHO_VAULT_V1_SORTS`, `MORPHO_VAULT_V2_SORTS`, `vaultSortSupported`, `requireVaultAddress`, `feePercentToWad` | `request.ts` | Vault request contract |
@@ -27,14 +28,22 @@ lives at `src/vex-agent/tools/protocols/morpho/`.
 ## Endpoint
 
 One endpoint, `POST https://api.morpho.org/graphql`, configured as
-`services.morphoApiUrl`. Seven documents. `queries.ts` holds the market lane
-(`VexMorphoMarkets`, `VexMorphoMarket`, `VexMorphoChains`); `queries-vaults.ts`
-holds the vault lane (`VexMorphoVaultsV1`, `VexMorphoVaultsV2`,
-`VexMorphoVaultV1`, `VexMorphoVaultV2`).
+`services.morphoApiUrl`. `queries.ts` holds the market lane
+(`VexMorphoMarkets`, `VexMorphoMarket`, `VexMorphoMarketCuration`,
+`VexMorphoChains`); `queries-vaults.ts` holds the vault lane
+(`VexMorphoVaultsV1`, `VexMorphoVaultsV2`, `VexMorphoVaultV1`,
+`VexMorphoVaultV2`, `VexMorphoVaultV1Curation`, `VexMorphoVaultV2Curation`);
+`queries-positions.ts` and `queries-activity.ts` hold theirs.
 
-Four vault documents rather than two because `Vault` and `VaultV2` are separate
+Six vault documents rather than three because `Vault` and `VaultV2` are separate
 GraphQL types with separate filter inputs and separate order-by enums; nothing
 about them can be shared.
+
+THE TWO CURATION DOCUMENTS ARE NOT LIKE THE OTHERS. They are the only reads a
+SIGNING decision consumes, so they are tiny, served UNCACHED (`ttlMs: 0`), select
+the subject's own identity beside the flag so the answer can be proved to be
+about it, and read `listed` STRICTLY where every other document reads it as a
+tolerant display field. See `client/curation.ts` and `client/vault-curation.ts`.
 
 There is NO API key and therefore no `requiresEnv` on the tools. Gating a
 keyless integration behind an env var would hide it from every user who never

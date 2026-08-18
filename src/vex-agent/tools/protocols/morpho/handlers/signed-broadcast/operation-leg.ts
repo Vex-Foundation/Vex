@@ -27,7 +27,11 @@
 
 import { formatUnits, getAddress } from "viem";
 
-import { compareMorphoShares, prepareMorphoOperationLeg } from "@tools/morpho/mutations.js";
+import {
+  assertMorphoCuratesVault,
+  compareMorphoShares,
+  prepareMorphoOperationLeg,
+} from "@tools/morpho/mutations.js";
 import { confirmActivityEvent, failActivityEvent, type AgentActivityFailureCode } from "@vex-agent/db/repos/agent-activity.js";
 import { decodeMorphoSettlement } from "@vex-agent/sync/morpho-settlement-decoder.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
@@ -54,8 +58,25 @@ export async function runOperationLeg(context: MorphoExecutionContext): Promise<
   // PHASE 2. Rebuild against state as it now is - the approval has landed and
   // the vault has accrued - then decode, bound the gas and SIMULATE. A revert
   // here aborts before the operation is ever signed.
+  //
+  // THE CURATION RE-GATE COMES FIRST, and only on a DEPOSIT. The handler already
+  // asked whether Morpho curates this vault, but that was one transaction and
+  // one confirmation ago, and the claim the gate makes is about the transaction
+  // being SIGNED. A vault delisted in that window would otherwise be deposited
+  // into on the strength of an expired check. It is uncached, so this re-asks
+  // rather than re-reports. Refusing here costs nothing beyond the residual
+  // allowance the message already names, and the simulation below cannot stand
+  // in for it: a clean simulation proves the call succeeds, never that anyone
+  // vouches for the vault or that the minted shares stay redeemable.
+  //
+  // A WITHDRAWAL IS NEVER GATED ON THIS. Delisting must not trap a depositor
+  // inside, so an exit keeps the fresh rebuild, the pinned target and the
+  // simulation and gives up only the curation question.
   let leg;
   try {
+    if (context.direction === "deposit") {
+      await assertMorphoCuratesVault(context.request.chainId, context.request.vaultAddress);
+    }
     leg = await prepareMorphoOperationLeg(
       {
         chainId: context.request.chainId,

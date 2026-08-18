@@ -212,3 +212,39 @@ query VexMorphoVaultV2($address: String!, $chainId: Int!) {
     }
   }
 }`;
+
+/**
+ * IS MORPHO CURATING THIS VAULT - the smallest document that answers it, and the
+ * only vault read a signing decision consumes.
+ *
+ * SEPARATE FROM THE DETAIL DOCUMENTS ON PURPOSE, for three reasons that all
+ * point the same way. It is served UNCACHED (`ttlMs: 0`), so it must not be
+ * large; the detail reads are served through a 15-second cache, which is right
+ * for a screen and wrong for the flag a deposit is gated on. It selects the
+ * IDENTITY beside the flag - `address` and `chain { id }` - so the answer can be
+ * proved to be about the vault that was asked about rather than another curated
+ * one. And it reads `listed` STRICTLY where every detail read reads it
+ * tolerantly, which is rules/90's split between a display field and a field a
+ * signing decision consumes.
+ *
+ * Two documents rather than one because `Vault` and `VaultV2` are separate
+ * GraphQL types reached through separate root fields; the client tries V2 then
+ * V1 exactly as `getVault` does.
+ */
+export const MORPHO_VAULT_V2_CURATION_QUERY = `
+query VexMorphoVaultV2Curation($address: String!, $chainId: Int!) {
+  vaultV2ByAddress(address: $address, chainId: $chainId) {
+    address
+    listed
+    chain { id }
+  }
+}`;
+
+export const MORPHO_VAULT_V1_CURATION_QUERY = `
+query VexMorphoVaultV1Curation($address: String!, $chainId: Int!) {
+  vaultByAddress(address: $address, chainId: $chainId) {
+    address
+    listed
+    chain { id }
+  }
+}`;

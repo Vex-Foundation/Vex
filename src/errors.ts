@@ -420,6 +420,18 @@ export const ErrorCodes = {
    */
   MORPHO_MARKET_POLICY_VIOLATION: "MORPHO_MARKET_POLICY_VIOLATION",
   /**
+   * The VAULT is outside the set Vex will put funds INTO: Morpho does not list
+   * it, or the curation answer could not be shown to be about it.
+   *
+   * The vault counterpart of `MORPHO_MARKET_POLICY_VIOLATION`, and deliberately
+   * a distinct code because it binds in ONE DIRECTION ONLY. A deposit into an
+   * uncurated vault is refused; a WITHDRAWAL from one never is. Delisting is
+   * exactly the moment a depositor most needs to leave, and a gate that locked
+   * them in would turn a curator's judgement into a trap. Anything mapping this
+   * code onto an exit path is a bug.
+   */
+  MORPHO_VAULT_POLICY_VIOLATION: "MORPHO_VAULT_POLICY_VIOLATION",
+  /**
    * The operation would leave the position's health factor BELOW Vex's policy
    * floor, so it is refused before anything is signed.
    *
