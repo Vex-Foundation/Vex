@@ -82,6 +82,14 @@ describe("buildProtocolsPrompt", () => {
     expect(section).toContain('"set up my Lighter account"');
     expect(section).toContain('"I want to trade perps on Lighter"');
     expect(section).toContain("How much USDC do you want to deposit?");
+    expect(section).toContain("USDC worth");
+    expect(section).toContain("fundingAssessment.decision = prepare_deposit");
+    expect(section).toContain("immediately call `lighter.deposit.prepare`");
+    expect(section).toContain("deposit approval card is the consent surface");
+    expect(section).toContain("fundingAssessment.decision = insufficient_wallet_usdc");
+    expect(section).toContain("Show requested collateral, current Lighter collateral");
+    expect(section).toContain("Do not count ETH or other assets as depositable USDC");
+    expect(section).toContain("Never call `lighter.deposit` directly");
     expect(section).toContain("Vex resolves them internally");
     expect(section).toContain("activates the local integration automatically");
     expect(section).toContain("Never ask a normal user to visit the Lighter dashboard");

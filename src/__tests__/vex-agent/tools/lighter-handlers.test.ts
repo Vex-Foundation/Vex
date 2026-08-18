@@ -116,7 +116,8 @@ vi.mock("@tools/lighter/wallet-funding/onboarding-readers.js", () => ({
   buildLighterOnboardingReaders: mocks.onboarding.buildReaders,
 }));
 
-vi.mock("@tools/lighter/wallet-funding/onboarding-status.js", () => ({
+vi.mock("@tools/lighter/wallet-funding/onboarding-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/lighter/wallet-funding/onboarding-status.js")>()),
   resolveLighterOnboardingStatus: mocks.onboarding.resolveStatus,
 }));
 
@@ -504,9 +505,110 @@ describe("Lighter agent read handlers", () => {
       expect.objectContaining({ requiredCollateralUnits: 1_000_000n }),
     );
     expect(data.depositAmountProvided).toBe(false);
+    expect(data.fundingRoute).toEqual({
+      kind: "ask_for_deposit_amount",
+      toolId: null,
+      params: null,
+    });
     expect(data.userGuidance).toContain("How much USDC do you want to deposit?");
     expect(data.userGuidance).not.toContain("provide your account index");
     expect(data.userGuidance).not.toContain("choose an API-key index");
+  });
+
+  it("routes a known trade shortfall directly to the deposit approval card", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "2070000",
+      walletCanAcquireSettlement: true,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "2000000",
+      plan: {
+        legs: [
+          { kind: "approve_settlement_asset", reason: "approval" },
+          { kind: "deposit", reason: "top up" },
+        ],
+        ready: false,
+        blocked: null,
+        depositUnits: "1000000",
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      amountIn: "2",
+    });
+
+    expect(data.fundingAssessment).toMatchObject({
+      decision: "prepare_deposit",
+      requiredCollateralDisplay: "2 USDC",
+      lighterCollateralDisplay: "1 USDC",
+      walletUsdcDisplay: "2.07 USDC",
+      depositAmountIn: "1",
+      depositDisplay: "1 USDC",
+    });
+    expect(data.fundingRoute).toEqual({
+      kind: "prepare_deposit_approval",
+      toolId: "lighter.deposit.prepare",
+      params: { environment: "core", amountIn: "1" },
+    });
+    expect(data.userGuidance).toContain("Immediately call lighter.deposit.prepare");
+    expect(data.userGuidance).toContain('amountIn "1"');
+    expect(data.userGuidance).toContain("Do not ask whether to prepare it");
+    expect(data.userGuidance).toContain("approval card is the user's consent");
+  });
+
+  it("reports both live balances and stops when wallet USDC cannot cover the deposit", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "250000",
+      walletCanAcquireSettlement: true,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "2000000",
+      plan: {
+        legs: [
+          { kind: "acquire_settlement_asset", reason: "acquire" },
+          { kind: "approve_settlement_asset", reason: "approval" },
+          { kind: "deposit", reason: "top up" },
+        ],
+        ready: false,
+        blocked: null,
+        depositUnits: "1000000",
+        acquireUnits: "750000",
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      amountIn: "2",
+    });
+
+    expect(data.fundingAssessment).toMatchObject({
+      decision: "insufficient_wallet_usdc",
+      requiredCollateralDisplay: "2 USDC",
+      lighterCollateralDisplay: "1 USDC",
+      walletUsdcDisplay: "0.25 USDC",
+      depositDisplay: "1 USDC",
+      walletDepositShortfallDisplay: "0.75 USDC",
+    });
+    expect(data.fundingRoute).toEqual({
+      kind: "show_insufficient_balance",
+      toolId: null,
+      params: null,
+    });
+    expect(data.userGuidance).toContain("Do not prepare a deposit");
+    expect(data.userGuidance).toContain("non-USDC wallet assets are not counted");
+    expect(data.userGuidance).toContain("mere presence of ETH");
   });
 
   it("does not report ready from a public key without active local trading access", async () => {

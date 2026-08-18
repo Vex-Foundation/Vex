@@ -15,9 +15,14 @@ import {
   type LighterAccountCollateralRow,
 } from "./onboarding-observation.js";
 import {
+  decimalToBaseUnits,
   planLighterOnboarding,
   type LighterOnboardingPlan,
 } from "./onboarding-plan.js";
+import {
+  LIGHTER_DEPOSIT_MIN_USDC,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+} from "./constants.js";
 
 export interface LighterOnboardingReaders {
   /** Settlement asset (USDC) base units the wallet holds on the deposit chain. */
@@ -53,12 +58,99 @@ export interface LighterOnboardingStatus {
   readonly accountCollateralUnits: string;
   readonly tradingKeyRegistered: boolean;
   readonly requiredCollateralUnits: string;
+  readonly fundingAssessment: LighterFundingAssessment;
   readonly plan: {
     readonly legs: readonly { readonly kind: string; readonly reason: string }[];
     readonly ready: boolean;
     readonly blocked: string | null;
     readonly depositUnits: string | null;
     readonly acquireUnits: string | null;
+  };
+}
+
+export type LighterFundingDecision =
+  | "ready"
+  | "prepare_deposit"
+  | "insufficient_wallet_usdc";
+
+/**
+ * Exact live-balance decision for funding an intended Lighter position.
+ *
+ * Only Ethereum-mainnet USDC is directly depositable. Other wallet assets are
+ * deliberately excluded: spending them would require its own live quote and
+ * approval, so their presence must never be treated as proof that a deposit can
+ * be prepared.
+ */
+export interface LighterFundingAssessment {
+  readonly decision: LighterFundingDecision;
+  readonly requiredCollateralUnits: string;
+  readonly requiredCollateralDisplay: string;
+  readonly lighterCollateralUnits: string;
+  readonly lighterCollateralDisplay: string;
+  readonly walletUsdcUnits: string;
+  readonly walletUsdcDisplay: string;
+  readonly combinedUsdcUnits: string;
+  readonly combinedUsdcDisplay: string;
+  readonly collateralShortfallUnits: string;
+  readonly collateralShortfallDisplay: string;
+  readonly depositUnits: string | null;
+  readonly depositAmountIn: string | null;
+  readonly depositDisplay: string | null;
+  readonly walletDepositShortfallUnits: string;
+  readonly walletDepositShortfallDisplay: string;
+  readonly minimumDepositDisplay: string;
+}
+
+const LIGHTER_DEPOSIT_MIN_UNITS = decimalToBaseUnits(
+  LIGHTER_DEPOSIT_MIN_USDC,
+  LIGHTER_SETTLEMENT_ASSET_DECIMALS,
+);
+
+export function assessLighterFunding(input: {
+  readonly walletSettlementUnits: bigint;
+  readonly accountCollateralUnits: bigint;
+  readonly requiredCollateralUnits: bigint;
+}): LighterFundingAssessment {
+  assertNonNegativeFundingUnits("walletSettlementUnits", input.walletSettlementUnits);
+  assertNonNegativeFundingUnits("accountCollateralUnits", input.accountCollateralUnits);
+  assertNonNegativeFundingUnits("requiredCollateralUnits", input.requiredCollateralUnits);
+
+  const collateralShortfall = maxUnits(
+    input.requiredCollateralUnits - input.accountCollateralUnits,
+    0n,
+  );
+  const depositUnits = collateralShortfall === 0n
+    ? null
+    : maxUnits(collateralShortfall, LIGHTER_DEPOSIT_MIN_UNITS);
+  const walletDepositShortfall = depositUnits === null
+    ? 0n
+    : maxUnits(depositUnits - input.walletSettlementUnits, 0n);
+  const decision: LighterFundingDecision = depositUnits === null
+    ? "ready"
+    : walletDepositShortfall === 0n
+      ? "prepare_deposit"
+      : "insufficient_wallet_usdc";
+
+  return {
+    decision,
+    requiredCollateralUnits: input.requiredCollateralUnits.toString(),
+    requiredCollateralDisplay: displaySettlementUnits(input.requiredCollateralUnits),
+    lighterCollateralUnits: input.accountCollateralUnits.toString(),
+    lighterCollateralDisplay: displaySettlementUnits(input.accountCollateralUnits),
+    walletUsdcUnits: input.walletSettlementUnits.toString(),
+    walletUsdcDisplay: displaySettlementUnits(input.walletSettlementUnits),
+    combinedUsdcUnits: (input.accountCollateralUnits + input.walletSettlementUnits).toString(),
+    combinedUsdcDisplay: displaySettlementUnits(
+      input.accountCollateralUnits + input.walletSettlementUnits,
+    ),
+    collateralShortfallUnits: collateralShortfall.toString(),
+    collateralShortfallDisplay: displaySettlementUnits(collateralShortfall),
+    depositUnits: depositUnits?.toString() ?? null,
+    depositAmountIn: depositUnits === null ? null : formatSettlementUnits(depositUnits),
+    depositDisplay: depositUnits === null ? null : displaySettlementUnits(depositUnits),
+    walletDepositShortfallUnits: walletDepositShortfall.toString(),
+    walletDepositShortfallDisplay: displaySettlementUnits(walletDepositShortfall),
+    minimumDepositDisplay: displaySettlementUnits(LIGHTER_DEPOSIT_MIN_UNITS),
   };
 }
 
@@ -83,6 +175,11 @@ export async function resolveLighterOnboardingStatus(
   });
 
   const plan = planLighterOnboarding(observation);
+  const fundingAssessment = assessLighterFunding({
+    walletSettlementUnits,
+    accountCollateralUnits: observation.accountCollateralUnits,
+    requiredCollateralUnits: input.requiredCollateralUnits,
+  });
 
   return {
     environment: input.environment,
@@ -94,8 +191,33 @@ export async function resolveLighterOnboardingStatus(
     accountCollateralUnits: observation.accountCollateralUnits.toString(),
     tradingKeyRegistered: observation.tradingKeyRegistered,
     requiredCollateralUnits: input.requiredCollateralUnits.toString(),
+    fundingAssessment,
     plan: projectPlan(plan),
   };
+}
+
+function formatSettlementUnits(units: bigint): string {
+  const scale = 10n ** BigInt(LIGHTER_SETTLEMENT_ASSET_DECIMALS);
+  const whole = units / scale;
+  const fraction = (units % scale)
+    .toString()
+    .padStart(LIGHTER_SETTLEMENT_ASSET_DECIMALS, "0")
+    .replace(/0+$/, "");
+  return fraction.length === 0 ? whole.toString() : `${whole}.${fraction}`;
+}
+
+function displaySettlementUnits(units: bigint): string {
+  return `${formatSettlementUnits(units)} USDC`;
+}
+
+function maxUnits(left: bigint, right: bigint): bigint {
+  return left > right ? left : right;
+}
+
+function assertNonNegativeFundingUnits(field: string, value: bigint): void {
+  if (value < 0n) {
+    throw new Error(`Lighter funding assessment ${field} must be non-negative, got ${value}.`);
+  }
 }
 
 function projectPlan(plan: LighterOnboardingPlan): LighterOnboardingStatus["plan"] {

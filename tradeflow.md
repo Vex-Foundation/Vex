@@ -558,6 +558,41 @@ process-boundary and artifact checks, plus the full root suite with its 82
 read-only live-provider tests rerun successfully with network access. No wallet
 was unlocked and no transaction or order was signed or submitted.
 
+The ninth Phase 4 slice makes trade-triggered funding deterministic. When the
+user states a Lighter trade amount in USDC (including "USDC worth"), Vex passes
+that amount into the live onboarding check and returns one explicit funding
+decision:
+
+- `ready` when current Lighter collateral already covers the request;
+- `prepare_deposit` when the selected Vex wallet's Ethereum-mainnet USDC covers
+  the exact collateral shortfall, raised to Lighter's one-USDC deposit floor;
+- `insufficient_wallet_usdc` when directly depositable wallet USDC cannot cover
+  the required deposit.
+
+For `prepare_deposit`, the agent must prepare the exact shortfall in the same
+turn so the host displays the deposit approval card. It must not ask "shall I
+prepare" or require another chat confirmation. The card remains the only consent
+surface: preparation does not sign or move funds, and only the trusted approval
+resume can execute the deposit. The later trade remains a separate approval.
+
+For `insufficient_wallet_usdc`, Vex must stop before preparation and show the
+requested collateral, live Lighter collateral, selected-wallet USDC, required
+deposit, and wallet USDC shortfall. ETH and other assets are not counted as
+depositable USDC merely because they are present; acquiring USDC requires a
+separate live quote and approval.
+
+Verification covers the reported 2-USDC SUI case (1 USDC on Lighter and 2.07
+USDC in the wallet produces an exact 1-USDC deposit preparation) plus insufficient
+USDC and sub-minimum-gap cases. Seventy-six focused tests and a broader 371-test
+Lighter suite passed, along with root type checking/build, Electron lint,
+process-boundary checks, all production bundles, artifact validation, migration
+mirroring, and all six packaged Lighter signer targets. The local shell warned
+that its Node/pnpm versions are below the repository's declared versions; CI and
+release remain responsible for the pinned toolchain gate. No wallet was unlocked
+and no transaction or order was signed or submitted. A live app walkthrough of
+the new funding-decision-to-card routing remains the acceptance proof for this
+slice.
+
 ### Managed onboarding UX status — 2026-08-17
 
 The normal-user entry path is implemented. Requests such as "set up my Lighter

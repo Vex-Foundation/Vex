@@ -93,4 +93,83 @@ describe("resolveLighterOnboardingStatus", () => {
     expect(status.plan.blocked).not.toBeNull();
     expect(status.plan.ready).toBe(false);
   });
+
+  it("prepares only the live collateral shortfall when wallet USDC covers it", async () => {
+    const r = readers({
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(2_070_000n),
+      readLighterAccount: vi.fn().mockResolvedValue({
+        account_index: 42,
+        available_balance: "1.0",
+      }),
+      readVexTradingKeyRegistered: vi.fn().mockResolvedValue(true),
+    });
+    const status = await resolveLighterOnboardingStatus(r, {
+      environment: "core",
+      walletAddress: "0xabc",
+      requiredCollateralUnits: 2_000_000n,
+    });
+
+    expect(status.fundingAssessment).toEqual(expect.objectContaining({
+      decision: "prepare_deposit",
+      requiredCollateralDisplay: "2 USDC",
+      lighterCollateralDisplay: "1 USDC",
+      walletUsdcDisplay: "2.07 USDC",
+      combinedUsdcDisplay: "3.07 USDC",
+      collateralShortfallDisplay: "1 USDC",
+      depositAmountIn: "1",
+      depositDisplay: "1 USDC",
+      walletDepositShortfallDisplay: "0 USDC",
+    }));
+  });
+
+  it("does not count ETH as depositable USDC when the wallet cannot cover the top-up", async () => {
+    const r = readers({
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(250_000n),
+      readWalletCanAcquireSettlement: vi.fn().mockResolvedValue(true),
+      readLighterAccount: vi.fn().mockResolvedValue({
+        account_index: 42,
+        available_balance: "1.0",
+      }),
+      readVexTradingKeyRegistered: vi.fn().mockResolvedValue(true),
+    });
+    const status = await resolveLighterOnboardingStatus(r, {
+      environment: "core",
+      walletAddress: "0xabc",
+      requiredCollateralUnits: 2_000_000n,
+    });
+
+    expect(status.walletCanAcquireSettlement).toBe(true);
+    expect(status.fundingAssessment).toEqual(expect.objectContaining({
+      decision: "insufficient_wallet_usdc",
+      lighterCollateralDisplay: "1 USDC",
+      walletUsdcDisplay: "0.25 USDC",
+      combinedUsdcDisplay: "1.25 USDC",
+      depositDisplay: "1 USDC",
+      walletDepositShortfallDisplay: "0.75 USDC",
+    }));
+  });
+
+  it("enforces the one-USDC venue floor in the funding decision", async () => {
+    const r = readers({
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(750_000n),
+      readLighterAccount: vi.fn().mockResolvedValue({
+        account_index: 42,
+        available_balance: "1.5",
+      }),
+      readVexTradingKeyRegistered: vi.fn().mockResolvedValue(true),
+    });
+    const status = await resolveLighterOnboardingStatus(r, {
+      environment: "core",
+      walletAddress: "0xabc",
+      requiredCollateralUnits: 2_000_000n,
+    });
+
+    expect(status.fundingAssessment).toEqual(expect.objectContaining({
+      decision: "insufficient_wallet_usdc",
+      collateralShortfallDisplay: "0.5 USDC",
+      minimumDepositDisplay: "1 USDC",
+      depositDisplay: "1 USDC",
+      walletDepositShortfallDisplay: "0.25 USDC",
+    }));
+  });
 });

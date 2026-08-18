@@ -30,7 +30,10 @@ import {
 } from "@tools/lighter/wallet-funding/constants.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { buildLighterOnboardingReaders } from "@tools/lighter/wallet-funding/onboarding-readers.js";
-import { resolveLighterOnboardingStatus } from "@tools/lighter/wallet-funding/onboarding-status.js";
+import {
+  assessLighterFunding,
+  resolveLighterOnboardingStatus,
+} from "@tools/lighter/wallet-funding/onboarding-status.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
@@ -513,6 +516,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress,
         requiredCollateralUnits,
       });
+      const fundingAssessment = assessLighterFunding({
+        walletSettlementUnits: BigInt(status.walletSettlementUnits),
+        accountCollateralUnits: BigInt(status.accountCollateralUnits),
+        requiredCollateralUnits,
+      });
       const managedTradingReadiness = status.accountIndex === null
         ? null
         : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
@@ -536,15 +544,45 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           }
         : status.plan;
       const needsFunding = BigInt(status.accountCollateralUnits) < requiredCollateralUnits;
-      const userGuidance = plan.ready && managedTradingAccessActive
-        ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
-        : managedTradingReadiness?.reason === "nonce_not_reservable"
-          ? "Run lighter.order.status without an intent id to reconcile every unresolved local order and nonce reservation for Core. Do not prepare a key registration or another order until the nonce is reservable."
-          : readinessRecoveryLeg?.kind === "reconcile_trading_access"
-            ? "Reconcile the existing managed trading-access lifecycle from durable and provider evidence. Do not prepare or register a replacement key while readiness verification is unresolved."
-        : !depositAmountProvided && needsFunding
-          ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
-          : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
+      const fundingRoute = !depositAmountProvided && needsFunding
+        ? {
+            kind: "ask_for_deposit_amount",
+            toolId: null,
+            params: null,
+          }
+        : fundingAssessment.decision === "prepare_deposit"
+          ? {
+            kind: "prepare_deposit_approval",
+            toolId: "lighter.deposit.prepare",
+            params: {
+              environment: environment.value,
+              amountIn: fundingAssessment.depositAmountIn,
+            },
+          }
+          : fundingAssessment.decision === "insufficient_wallet_usdc"
+            ? {
+                kind: "show_insufficient_balance",
+                toolId: null,
+                params: null,
+              }
+            : {
+                kind: "funding_ready",
+                toolId: null,
+                params: null,
+              };
+      const userGuidance = !depositAmountProvided && needsFunding
+        ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
+        : fundingAssessment.decision === "prepare_deposit"
+          ? `The requested trade amount is known and live balances prove the selected Vex wallet can directly fund the exact Lighter top-up. Immediately call lighter.deposit.prepare in this same turn with amountIn \"${fundingAssessment.depositAmountIn}\" so the host shows the deposit approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.deposit directly. Explain that Lighter currently has ${fundingAssessment.lighterCollateralDisplay}, the selected Vex wallet has ${fundingAssessment.walletUsdcDisplay}, the requested collateral is ${fundingAssessment.requiredCollateralDisplay}, and the prepared deposit is ${fundingAssessment.depositDisplay}. After approval, only the trusted approval-resume path may execute the deposit.`
+          : fundingAssessment.decision === "insufficient_wallet_usdc"
+            ? `Do not prepare a deposit because the selected Vex wallet's directly depositable Ethereum-mainnet USDC cannot cover the required top-up. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet USDC ${fundingAssessment.walletUsdcDisplay}; required deposit ${fundingAssessment.depositDisplay}; wallet USDC shortfall ${fundingAssessment.walletDepositShortfallDisplay}. Explain that non-USDC wallet assets are not counted as directly depositable collateral and would require a separate live-quoted, separately approved swap. Do not claim the wallet can fund the trade from the mere presence of ETH.`
+            : plan.ready && managedTradingAccessActive
+              ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
+              : managedTradingReadiness?.reason === "nonce_not_reservable"
+                ? "Run lighter.order.status without an intent id to reconcile every unresolved local order and nonce reservation for Core. Do not prepare a key registration or another order until the nonce is reservable."
+                : readinessRecoveryLeg?.kind === "reconcile_trading_access"
+                  ? "Reconcile the existing managed trading-access lifecycle from durable and provider evidence. Do not prepare or register a replacement key while readiness verification is unresolved."
+                  : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
       return ok({
         ...liveProvenance(
           environment.value,
@@ -557,6 +595,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         managedTradingAccessActive,
         managedTradingReadiness,
         plan,
+        fundingAssessment,
+        fundingRoute,
         depositAmountProvided,
         userGuidance,
       });

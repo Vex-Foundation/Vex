@@ -5,7 +5,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.account.onboarding.status": {
     embeddingText: embeddingText(
       `Inspect whether the selected Vex EVM wallet is ready to trade on Lighter Core and compute the minimal onboarding legs still required. ` +
-      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, asks Vex to set up Lighter, or expresses an intent to trade perps on Lighter. It resolves the selected wallet automatically and reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
+      `Use when: the user asks whether they can trade, wants to onboard or fund Lighter, asks Vex to set up Lighter, or expresses an intent to trade perps on Lighter. For a USDC-sized trade, pass the amount so it deterministically returns ready, prepare_deposit with the exact shortfall, or insufficient_wallet_usdc with both live balances. It resolves the selected wallet automatically and reads public account and key metadata plus wallet settlement balance without signing or moving funds. ` +
       `Example queries: set up my Lighter account, I need to trade on Lighter, get me ready to trade on Lighter, I want to trade perps on Lighter, can this wallet trade on Lighter.`,
     ),
     aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
@@ -173,7 +173,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
-      `Use when: managed onboarding has inspected the selected wallet and the user has supplied the USDC amount they want to deposit. It activates the local integration and creates durable intent state plus a precise approval card; it does not read a private key, sign, or broadcast. ` +
+      `Use when: managed onboarding has inspected the selected wallet and either the user supplied the USDC deposit amount or fundingAssessment returned prepare_deposit with an exact trade-funding shortfall. Call it in the same turn for that exact shortfall without asking another chat confirmation; the host approval card is the consent surface. It activates the local integration and creates durable intent state plus a precise approval card; it does not read a private key, sign, or broadcast. ` +
       `Example queries: deposit 11 USDC to set up Lighter, fund my Lighter account with 5 USDC, use 20 USDC to get me ready for Lighter perps.`,
     ),
     aliases: ["lighter deposit prepare", "fund lighter", "lighter account deposit", "onboard lighter wallet", "deposit for lighter setup"],
