@@ -33,6 +33,7 @@ export interface LighterOrderStreamReconciliationDeps {
     typeof lighterNonceStateRepo,
     "find" | "recordExecutionObserved"
   >;
+  readonly transport?: "account_all_orders_stream" | "account_orders_resnapshot";
 }
 
 export interface LighterOrderStreamReconciliationReport {
@@ -62,6 +63,7 @@ export async function reconcileLighterOrderStreamMessage(
 ): Promise<LighterOrderStreamReconciliationReport> {
   const intents = await deps.intents.listStreamWatchable(environment, accountIndex, 500);
   const ordersByClientId = flattenOrders(message);
+  const transport = deps.transport ?? "account_all_orders_stream";
   const nonceScopes = new Map<string, LighterOrderExecutionIntentRow>();
   let matched = 0;
   let advanced = 0;
@@ -89,10 +91,10 @@ export async function reconcileLighterOrderStreamMessage(
     const source = isTerminalState(state) ? "inactive_order" : "active_order";
     const evidence = {
       ...lighterOrderEvidenceJson(source, order, intent.clientOrderIndex),
-      transport: "account_all_orders_stream",
+      transport,
       frameType: message.type,
     };
-    if (sameStreamEvidence(intent, state, status, order.order_id, evidence)) {
+    if (sameOrderEvidence(intent, state, status, order.order_id, evidence, transport)) {
       deduplicated += 1;
       continue;
     }
@@ -185,18 +187,19 @@ function isTerminalState(state: LighterProviderOutcomeExecutionState): boolean {
   return state === "filled" || state === "canceled" || state === "rejected";
 }
 
-function sameStreamEvidence(
+function sameOrderEvidence(
   intent: LighterOrderExecutionIntentRow,
   state: LighterProviderOutcomeExecutionState,
   status: string,
   orderId: string,
   evidence: Record<string, unknown>,
+  transport: NonNullable<LighterOrderStreamReconciliationDeps["transport"]>,
 ): boolean {
   if (
     intent.executionState !== state
     || intent.providerOrderId !== orderId
     || intent.providerOrderStatus !== status
-    || intent.providerOutcomeJson?.transport !== "account_all_orders_stream"
+    || intent.providerOutcomeJson?.transport !== transport
   ) {
     return false;
   }

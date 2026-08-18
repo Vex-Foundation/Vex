@@ -23,6 +23,38 @@ import { log } from "../logger/index.js";
 
 let unlockedMasterPassword: string | null = null;
 
+export type SecretSessionLifecycleState = "unlocked" | "locked";
+export type SecretSessionLifecycleListener = (
+  state: SecretSessionLifecycleState,
+) => void;
+
+const secretSessionLifecycleListeners = new Set<SecretSessionLifecycleListener>();
+
+/**
+ * Main-process-only lifecycle signal. It carries no password, secret, vault
+ * contents, or credential metadata. Privileged consumers use it to immediately
+ * revoke derived capabilities (for example authenticated read streams) on lock.
+ */
+export function onSecretSessionLifecycle(
+  listener: SecretSessionLifecycleListener,
+): () => void {
+  secretSessionLifecycleListeners.add(listener);
+  return () => {
+    secretSessionLifecycleListeners.delete(listener);
+  };
+}
+
+function emitSecretSessionLifecycle(state: SecretSessionLifecycleState): void {
+  for (const listener of secretSessionLifecycleListeners) {
+    try {
+      listener(state);
+    } catch {
+      // A capability cleanup listener must never make vault lock/unlock fail.
+      log.warn("[secrets-session] lifecycle listener failed", { state });
+    }
+  }
+}
+
 /**
  * Placeholder correlation id for session-layer errors built outside an IPC
  * handler (this module has no `requestId` of its own). `registerHandler`
@@ -165,6 +197,7 @@ export function initializeMasterPassword(
     unlockedMasterPassword = password;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
+    emitSecretSessionLifecycle("unlocked");
     return ok({ kind: existed ? "unchanged" : "set" });
   } catch (cause) {
     return toPublicError(cause);
@@ -179,6 +212,7 @@ export function unlockSecretSession(
     unlockedMasterPassword = password;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
+    emitSecretSessionLifecycle("unlocked");
     return ok({ unlocked: true });
   } catch (cause) {
     return toPublicError(cause);
@@ -196,6 +230,7 @@ export function unlockSecretSession(
  * just `VAULT_SECRET_KEYS`, so a relock leaves NO managed secret in env.
  */
 function scrubUnlockedRuntime(): void {
+  const wasUnlocked = unlockedMasterPassword !== null;
   unlockedMasterPassword = null;
   for (const key of MANAGED_SECRET_ENV_KEYS) {
     delete process.env[key];
@@ -204,6 +239,7 @@ function scrubUnlockedRuntime(): void {
   // chokepoint falls back to env-only, which is also scrubbed → signing fails
   // closed until the next unlock re-registers the provider.
   clearKeystorePasswordProvider();
+  if (wasUnlocked) emitSecretSessionLifecycle("locked");
 }
 
 /**
@@ -258,6 +294,7 @@ export function adoptUnlockedPassword(password: string): void {
   applyUnlockedRuntime(password);
   unlockedMasterPassword = password;
   stripManagedSecretsFromDotenvFile(ENV_FILE);
+  emitSecretSessionLifecycle("unlocked");
 }
 
 export function requireUnlockedMasterPassword(): Result<string> {

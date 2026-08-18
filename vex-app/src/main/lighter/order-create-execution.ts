@@ -31,6 +31,7 @@ import {
 } from "../secrets/lighter-trading-credential.js";
 import { readLighterLiveTradingReleaseGateStatus } from "./live-trading-release-gate.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
+import { installLighterOrderStreamSupervisor } from "./order-stream.js";
 
 // Short-lived account-auth token lifetime for read-only reconciliation reads.
 const REPAIR_ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
@@ -40,7 +41,7 @@ const REPAIR_ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
 // repair and authenticated account reads so a single trading key covers both
 // trading and read access. Returns null when the token cannot be minted (locked
 // vault, signer unavailable, unknown scope).
-async function deriveReadOnlyAccountAuth(
+export async function deriveLighterReadOnlyAccountAuth(
   reference: LighterTradingCredentialVaultReference,
   secretReader: LighterTradingSecretReader,
   signer: LighterSignerAdapter,
@@ -77,11 +78,15 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
       client: getLighterClient(),
     }),
   );
+  const stopOrderStream = installLighterOrderStreamSupervisor({
+    resolveAuth: (reference) =>
+      deriveLighterReadOnlyAccountAuth(reference, secretReader, signer),
+  });
   // Lets lighter.order.status reconcile a stranded order from account evidence
   // even when only a trading key is saved, by deriving a short-lived read-only
   // account auth token. The token authorizes account reads only.
   const uninstallRepairAuth = configureLighterRepairPrivilegedAccountAuthResolver(
-    (reference) => deriveReadOnlyAccountAuth(reference, secretReader, signer),
+    (reference) => deriveLighterReadOnlyAccountAuth(reference, secretReader, signer),
   );
   // Lets the authenticated account reads (open orders, order history, trades)
   // work on a single-key setup by deriving the same short-lived read-only token
@@ -100,7 +105,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
         apiKeyIndex: scope.apiKeyIndex,
         vaultCredentialId: defaultLighterTradingVaultCredentialId(scope),
       };
-      return deriveReadOnlyAccountAuth(reference, secretReader, signer);
+      return deriveLighterReadOnlyAccountAuth(reference, secretReader, signer);
     },
   );
   const uninstallScopeResolver = configureLighterTradingCredentialScopeResolver({
@@ -118,6 +123,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
       resolveManagedLighterTradingReadiness(environment, accountIndex),
   });
   return () => {
+    stopOrderStream();
     uninstallRepairAuth();
     uninstallReadAuth();
     uninstallScopeResolver();

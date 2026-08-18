@@ -92,6 +92,28 @@ afterEach(() => {
 });
 
 describe("lockSecretSession", () => {
+  it("emits secret-free unlock and synchronous lock lifecycle signals", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {} });
+
+    const session = await loadSession();
+    const events: string[] = [];
+    const unsubscribe = session.onSecretSessionLifecycle((state) => {
+      events.push(state);
+    });
+
+    session.unlockSecretSession("correct-password");
+    const lock = session.lockSecretSession();
+    // The capability-revocation event happens before lockSecretSession's first
+    // await, so streams close even when quit hooks fire-and-forget the promise.
+    expect(events).toEqual(["unlocked", "locked"]);
+    await lock;
+    unsubscribe();
+
+    session.unlockSecretSession("correct-password");
+    expect(events).toEqual(["unlocked", "locked"]);
+  });
+
   it("flips status.unlocked back to false after a successful unlock", async () => {
     mockGetSecretVaultStatus.mockReturnValue({ configured: true });
     mockUnlockSecretVault.mockReturnValue({
