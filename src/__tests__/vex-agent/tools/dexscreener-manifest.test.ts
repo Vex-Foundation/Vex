@@ -148,19 +148,28 @@ describe("dexscreener manifest", () => {
       "minLiquidityUsd",
       "minTurnoverRatio",
       "requirePriceUsd",
+      "requireLiquidityUsd",
       "explainDrops",
     ]);
   });
 
-  it("advertises only non-destructive snapshot shaping on tokens", () => {
+  it("advertises snapshot shaping plus a non-destructive sort on tokens", () => {
+    // A sort reorders and a window pages; no economic FILTER is advertised, so
+    // no holding can be silently removed. sortBy earned its place here after a
+    // measured 35-address portfolio had to page blind through provider order.
     expect(paramKeys("dexscreener.tokens")).toEqual([
       "chain",
       "tokenAddresses",
       "limit",
       "offset",
       "fields",
+      "sortBy",
+      "sortDir",
       "window",
       "includeAllWindows",
+      "maxPairAgeSeconds",
+      "minPairAgeSeconds",
+      "requireLiquidityUsd",
     ]);
   });
 

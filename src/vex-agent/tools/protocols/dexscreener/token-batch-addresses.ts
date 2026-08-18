@@ -32,10 +32,16 @@ import { PROVIDER_PAIR_CAP } from "./pair-list/index.js";
 export interface TokenBatchAddressEcho {
   requestedAddresses: string[];
   resolvedAddresses: string[];
-  /** Requested and NOT returned by the provider. Non-empty means truncation. */
+  /**
+   * Requested and NOT returned by a COMPLETED provider response. Non-empty means
+   * the provider answered without these addresses (likely unindexed). Addresses
+   * whose batch failed in transport are reported separately as
+   * `unreachedAddresses` by the handler; they were never asked, not refused.
+   * (The former `addressCapApplied` flag is gone: it meant "more than 30
+   * requested", which after batch-splitting was `true` on fully resolved calls
+   * - a cap Vex itself removed.)
+   */
   unresolvedAddresses: string[];
-  /** `true` when more addresses were requested than DexScreener will answer. */
-  addressCapApplied: boolean;
   /** Number of upstream requests used after splitting at the provider cap. */
   batchRequestCount: number;
   maxAddressesPerRequest: number;
@@ -77,7 +83,6 @@ export function reconcileTokenBatchAddresses(
     requestedAddresses,
     resolvedAddresses,
     unresolvedAddresses,
-    addressCapApplied: requestedAddresses.length > PROVIDER_PAIR_CAP,
     batchRequestCount,
     maxAddressesPerRequest: PROVIDER_PAIR_CAP,
   };

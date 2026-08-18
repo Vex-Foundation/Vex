@@ -292,7 +292,11 @@ describe("DexScreener pair-list provenance envelope", () => {
       tokenAddress: witness.baseToken.address,
       limit: 30,
     });
-    expect(typeof data.priceUsdMedianAcrossPools).toBe("string");
+    expect(typeof data.requestedTokenPriceUsdMedianAcrossPools).toBe("string");
+    // The pre-batching alias `priceUsdMedianAcrossPools` is GONE: its name
+    // promised a base-token median while the value became the requested-token
+    // median, inviting a false outlier verdict on every quote-side pool.
+    expect("priceUsdMedianAcrossPools" in data).toBe(false);
     const outliers = data.pricePoolOutliers;
     expect(Array.isArray(outliers)).toBe(true);
     expect((outliers as unknown[]).length).toBeGreaterThan(0);
@@ -318,7 +322,12 @@ describe("DexScreener pair-list provenance envelope", () => {
     expect(data.requestedAddresses).toHaveLength(40);
     expect(data.resolvedAddresses).toHaveLength(30);
     expect(data.unresolvedAddresses).toHaveLength(10);
-    expect(data.addressCapApplied).toBe(true);
+    // Both batches COMPLETED here, so nothing is "unreached" — the 10 missing
+    // addresses were asked and not returned. (`addressCapApplied` is gone: it
+    // meant ">30 requested", which after batch-splitting was true on fully
+    // resolved calls — a cap Vex itself removed.)
+    expect(data.unreachedAddresses).toEqual([]);
+    expect(data.failedBatchCount).toBe(0);
     expect(data.batchRequestCount).toBe(2);
   });
 

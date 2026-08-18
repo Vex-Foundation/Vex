@@ -83,6 +83,7 @@ export interface PairListFilters {
   requireSocials: boolean;
   requireWebsite: boolean;
   requirePriceUsd: boolean;
+  requireLiquidityUsd: boolean;
   onlyBoosted: boolean;
 }
 
@@ -274,6 +275,8 @@ export function parsePairListQuery(
   if (!requireWebsite.ok) return requireWebsite;
   const requirePriceUsd = readBoolean(params, "requirePriceUsd");
   if (!requirePriceUsd.ok) return requirePriceUsd;
+  const requireLiquidityUsd = readBoolean(params, "requireLiquidityUsd");
+  if (!requireLiquidityUsd.ok) return requireLiquidityUsd;
   const onlyBoosted = readBoolean(params, "onlyBoosted");
   if (!onlyBoosted.ok) return onlyBoosted;
 
@@ -281,6 +284,7 @@ export function parsePairListQuery(
     ["requireSocials", requireSocials.value],
     ["requireWebsite", requireWebsite.value],
     ["requirePriceUsd", requirePriceUsd.value],
+    ["requireLiquidityUsd", requireLiquidityUsd.value],
     ["onlyBoosted", onlyBoosted.value],
   ];
   for (const [key, value] of flagEchoes) {
@@ -324,6 +328,7 @@ export function parsePairListQuery(
         requireSocials: requireSocials.value,
         requireWebsite: requireWebsite.value,
         requirePriceUsd: requirePriceUsd.value,
+        requireLiquidityUsd: requireLiquidityUsd.value,
         onlyBoosted: onlyBoosted.value,
       },
       filtersApplied,

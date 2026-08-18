@@ -84,8 +84,15 @@ export interface DexScreenerRequestOptions {
 }
 
 export interface DexScreenerObservation {
+  /** When the provider generated the payload: local fetch time minus the upstream Age, when known. */
   readonly providerFetchedAtMs: number;
+  /** Whether THIS client served the value from its own URL cache. */
   readonly cacheHit: boolean;
+  /**
+   * Age of the value in THIS client's cache only. The upstream CDN's age is
+   * `upstreamAgeMs`; summing the two is the reader's call, never pre-added here
+   * - a pre-summed value next to `upstreamAgeMs` double-counts staleness.
+   */
   readonly cacheAgeMs: number;
   readonly upstreamAgeMs: number | null;
   readonly upstreamAgeKnown: boolean;
@@ -232,7 +239,7 @@ export class DexScreenerClient {
         this.observations.set(value, {
           providerFetchedAtMs: Math.max(0, observed.fetchedAtMs - (upstreamAgeMs ?? 0)),
           cacheHit: observed.cacheHit,
-          cacheAgeMs: observed.cacheAgeMs + (upstreamAgeMs ?? 0),
+          cacheAgeMs: observed.cacheAgeMs,
           upstreamAgeMs,
           upstreamAgeKnown: upstreamAgeMs !== null,
         });

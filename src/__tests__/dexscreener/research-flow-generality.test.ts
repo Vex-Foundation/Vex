@@ -243,7 +243,7 @@ describe("DexScreener research flows — generality", () => {
       requireSocials: true,
       fields: "liquidityQuoteTokens,marketCapEqualsFdv,hasSocials",
     });
-    expect(pools).toHaveProperty("priceUsdMedianAcrossPools");
+    expect(pools).toHaveProperty("requestedTokenPriceUsdMedianAcrossPools");
     expect(pools).toHaveProperty("pricePoolOutliers");
 
     // Has the project gone through a community takeover, and has it paid for
@@ -368,6 +368,7 @@ describe("DexScreener shared param vocabulary", () => {
       "minLiquidityUsd",
       "minTurnoverRatio",
       "requirePriceUsd",
+      "requireLiquidityUsd",
       "explainDrops",
     ]);
     expect(keys("dexscreener.tokens")).toEqual([
@@ -376,8 +377,13 @@ describe("DexScreener shared param vocabulary", () => {
       "limit",
       "offset",
       "fields",
+      "sortBy",
+      "sortDir",
       "window",
       "includeAllWindows",
+      "maxPairAgeSeconds",
+      "minPairAgeSeconds",
+      "requireLiquidityUsd",
     ]);
     for (const toolId of ["dexscreener.tokenPairs", "dexscreener.meta"]) {
       expect(keys(toolId)).toEqual(expect.arrayContaining([

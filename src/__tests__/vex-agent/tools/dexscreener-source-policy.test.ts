@@ -110,3 +110,39 @@ describe("DexScreener discovery routing", () => {
     expect(result.tools[0]?.toolId).toBe(expectedToolId);
   });
 });
+
+/**
+ * The regression PR #90 exists to fix, pinned NEGATIVELY: the synthetic
+ * attention merge must not outrank the provider feeds on ordinary trending
+ * or promotion queries, and must remain reachable when explicitly requested.
+ * A positive-only routing table cannot catch this class of regression - the
+ * collision that motivated the fix passed every positive case.
+ */
+describe("DexScreener attention demotion", () => {
+  it.each([
+    "what is trending right now",
+    "trending meme narratives",
+    "which tokens are being promoted today",
+  ])("does not put the synthetic attention merge first for %s", async (query) => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "dexscreener",
+      query,
+      limit: 3,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.toolId).toBeDefined();
+    expect(result.tools[0]?.toolId).not.toBe("dexscreener.attention");
+  });
+
+  it("still routes an explicit synthetic-merge request to attention", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "dexscreener",
+      query: "vex synthetic profile plus boost merge",
+      limit: 3,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.toolId).toBe("dexscreener.attention");
+  });
+});

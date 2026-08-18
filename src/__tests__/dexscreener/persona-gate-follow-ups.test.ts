@@ -71,14 +71,15 @@ describe("`limit` states the measured cost of a bare call, where there is one", 
     expect(tokens.description).toContain("hasMore");
   });
 
-  it("search is the only surface making a measured byte claim on `limit`", () => {
+  it("only surfaces with a live measurement make a byte claim on `limit`", () => {
     // A number is a measurement. Copying one onto a tool it was not measured on
     // would be the same class of error as asserting an unobserved provider cap.
+    // search: agentscan phase-4 replay; tokens: 2026-08-17 live 35-address batch.
     const claiming = DEXSCREENER_TOOLS.filter((tool) => {
       const limit = tool.params.find((param) => param.key === "limit");
       return limit !== undefined && /\d,\d{3} B/.test(limit.description);
     }).map((tool) => tool.toolId);
-    expect(claiming).toEqual(["dexscreener.search"]);
+    expect(claiming).toEqual(["dexscreener.search", "dexscreener.tokens"]);
   });
 
   it("documents whether an omitted limit uses a visible default", () => {

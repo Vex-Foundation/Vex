@@ -298,3 +298,141 @@ describe("DexScreener core handler correctness", () => {
     });
   });
 });
+
+describe("DexScreener batch partial-failure accounting", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("merges completed batches and reports a failed batch per address, not as total failure", async () => {
+    const addresses = Array.from({ length: 40 }, (_, index) => `token-${index}`);
+    const getTokens = vi.spyOn(getDexScreenerClient(), "getTokens").mockImplementation(
+      async (_chain, requested) => {
+        const batch = requested.split(",");
+        if (batch.length === 10) throw new Error("DexScreener answered HTTP 429: rate limited");
+        return batch.map((address) => pair(`pool-${address}`, address, "USD", "1", "1"));
+      },
+    );
+
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
+      { chain: "solana", tokenAddresses: addresses },
+      READ_CTX,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    const data = JSON.parse(result.output) as {
+      resolvedAddresses: string[];
+      unresolvedAddresses: string[];
+      unreachedAddresses: string[];
+      failedBatchCount: number;
+      batchRequestCount: number;
+      providerWindow: { note?: string };
+      sourceObservation: {
+        observed: boolean;
+        providerFetchedAtMs: number | null;
+        localCacheAgeMs: number | null;
+        dataAgeMs: number | null;
+      };
+    };
+
+    expect(getTokens).toHaveBeenCalledTimes(2);
+    expect(data.resolvedAddresses).toEqual(addresses.slice(0, 30));
+    // The failed batch's addresses are UNREACHED (never answered — retry), not
+    // "unresolved" (answered without them): conflating the two reads a
+    // transport failure as "not indexed".
+    expect(data.unreachedAddresses).toEqual(addresses.slice(30));
+    expect(data.unresolvedAddresses).toEqual([]);
+    expect(data.failedBatchCount).toBe(1);
+    expect(data.batchRequestCount).toBe(2);
+    expect(data.providerWindow.note).toContain("FAILED");
+    expect(data.providerWindow.note).toContain("rate limited");
+    // Test doubles carry no transport metadata: the observation must DECLINE,
+    // never fabricate "fetched now, age 0".
+    expect(data.sourceObservation.observed).toBe(false);
+    expect(data.sourceObservation.providerFetchedAtMs).toBeNull();
+    expect(data.sourceObservation.localCacheAgeMs).toBeNull();
+    expect(data.sourceObservation.dataAgeMs).toBeNull();
+  });
+
+  it("fails with the real cause when every batch fails", async () => {
+    vi.spyOn(getDexScreenerClient(), "getTokens").mockRejectedValue(
+      new Error("DexScreener answered HTTP 429: rate limited"),
+    );
+
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
+      { chain: "solana", tokenAddresses: "token-a,token-b" },
+      READ_CTX,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("every DexScreener batch failed");
+    expect(result.output).toContain("rate limited");
+  });
+
+  it("pairs reports a failed batch in unreachedPairAddresses", async () => {
+    const addresses = Array.from({ length: 40 }, (_, index) => `pool-${index}`);
+    vi.spyOn(getDexScreenerClient(), "getPairs").mockImplementation(
+      async (_chain, requested) => {
+        const batch = requested.split(",");
+        if (batch.length === 10) throw new Error("DexScreener answered HTTP 500");
+        return {
+          schemaVersion: "1.0.0",
+          pairs: batch.map((address) => pair(address, `base-${address}`, "USD", "1", "1")),
+        };
+      },
+    );
+
+    const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
+      { chain: "solana", pairAddress: addresses },
+      READ_CTX,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    const data = JSON.parse(result.output) as {
+      resolvedPairAddresses: string[];
+      unresolvedPairAddresses: string[];
+      unreachedPairAddresses: string[];
+      failedBatchCount: number;
+    };
+    expect(data.resolvedPairAddresses).toEqual(addresses.slice(0, 30));
+    expect(data.unreachedPairAddresses).toEqual(addresses.slice(30));
+    expect(data.unresolvedPairAddresses).toEqual([]);
+    expect(data.failedBatchCount).toBe(1);
+  });
+});
+
+describe("DexScreener requireLiquidityUsd", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("drops unknown-liquidity rows only on request, with the drop counted", async () => {
+    const withLiquidity = pair("pool-liquid", "TokenA", "USD", "1", "1");
+    const bondingCurve: DexPair = {
+      ...pair("pool-curve", "TokenB", "USD", "1", "1"),
+      liquidity: null,
+    };
+    vi.spyOn(getDexScreenerClient(), "search").mockResolvedValue({
+      schemaVersion: "1.0.0",
+      pairs: [withLiquidity, bondingCurve],
+    });
+
+    const kept = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+      { query: "TokenA", requireLiquidityUsd: true },
+      READ_CTX,
+    );
+    expect(kept.success, kept.output).toBe(true);
+    const keptData = JSON.parse(kept.output) as {
+      returned: number;
+      droppedByFilter: Record<string, number>;
+      filtersApplied: Record<string, unknown>;
+    };
+    expect(keptData.returned).toBe(1);
+    expect(keptData.droppedByFilter.requireLiquidityUsd).toBe(1);
+    expect(keptData.filtersApplied.requireLiquidityUsd).toBe(true);
+
+    // Off by default: a bonding-curve holding must never vanish unasked.
+    const all = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+      { query: "TokenA" },
+      READ_CTX,
+    );
+    expect(all.success, all.output).toBe(true);
+    expect((JSON.parse(all.output) as { returned: number }).returned).toBe(2);
+  });
+});

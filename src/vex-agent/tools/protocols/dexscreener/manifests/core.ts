@@ -6,6 +6,7 @@ import {
   PAIR_LOOKUP_PARAMS,
   SEARCH_CHAIN_FILTER_PARAM,
   SEARCH_LIST_PARAMS,
+  SOURCE_OBSERVATION_CLAUSE,
   STRING_OR_ARRAY_CLAUSE,
   TOKENS_BATCH_PARAMS,
 } from "./pair-list-params.js";
@@ -32,10 +33,15 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "price, selected-window change/volume, liquidity, age and labels in provider relevance order; "
       + "FDV, market cap, reserves and per-window transaction counts are opt-in through fields. "
       + "raw priceUsd always prices the pair's base token. The order is what DexScreener returned, "
-      + "not a ranking. Returns 5 rows by default; filtersApplied.limit and hasMore expose that "
+      + "not a ranking - and the window can EXCLUDE the canonical token entirely (measured: a "
+      + "ticker query returned 7 spoofed rows and not the genuine token, whose real symbol "
+      + "differed; querying the project NAME found it). A symbol match is never identity: confirm "
+      + "with an exact contract address before quoting a price. Returns 5 rows by default; "
+      + "filtersApplied.limit and hasMore expose that "
       + "window and offset reads the rest. Optional discovery filters: chainIds (e.g. "
       + "ethereum, base, solana, bsc, arbitrum, robinhood), minLiquidityUsd, limit. "
       + PAIR_DESCRIPTION_WINDOW_CLAUSE
+      + " " + SOURCE_OBSERVATION_CLAUSE
       + " Then use dexscreener.tokenPairs to pick the deepest pool.",
     mutating: false,
     actionKind: "read",
@@ -60,7 +66,10 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       // bare-call size — same key, same rules, one extra measured sentence.
       ...SEARCH_LIST_PARAMS,
     ],
-    exampleParams: { query: "PEPE", chainIds: "base", minTurnoverRatio: 0.05 },
+    // No minTurnoverRatio here: the description's INVERSION clause warns that a
+    // threshold catching impostors can delete the canonical deep pool, and an
+    // example teaches harder than prose.
+    exampleParams: { query: "PEPE", chainIds: "ethereum", explainDrops: true },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.search"],
   },
   {
@@ -75,7 +84,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "numbers. Raw priceUsd always prices the pair's base token. Direct lookup returns only the "
       + "pool(s) you name (a comma-separated address list "
       + "is fetched in one call). Vex applies no filtering here; DexScreener offers no server-side "
-      + "filter or sort.",
+      + "filter or sort. " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [
@@ -89,8 +98,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
           "Up to 60 DEX pool/pair contract addresses. Vex deduplicates them, splits them into "
           + "provider-safe calls of at most 30, and merges all responses — cheaper than "
           + `one call each. ${STRING_OR_ARRAY_CLAUSE} `
-          + "`requestedPairAddresses` and `found` in the reply say what was asked "
-          + "for and whether anything came back.",
+          + "The reply reconciles every address: requestedPairAddresses, resolvedPairAddresses, "
+          + "unresolvedPairAddresses (asked, not returned), unreachedPairAddresses (their batch "
+          + "failed - retry those), batchRequestCount, failedBatchCount, and `found`.",
       },
       ...PAIR_LOOKUP_PARAMS,
     ],
@@ -103,14 +113,24 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "Batch-price up to 60 token addresses on ONE chain. Vex deduplicates addresses, splits them "
-      + "into DexScreener's 30-address requests, and merges every completed batch. Returns 15 pair "
+      + "into DexScreener's 30-address requests, and merges every completed batch; a failed batch "
+      + "is reported per address in unreachedAddresses (never asked - retry) with failedBatchCount, "
+      + "distinct from unresolvedAddresses (asked, not returned). Returns 15 pair "
       + "rows by default while keeping complete requested/resolved/unresolved address accounting; "
-      + "filtersApplied.limit, hasMore and offset expose the remaining merged rows. "
+      + "filtersApplied.limit, hasMore and offset expose the remaining merged rows, and "
+      + "sortBy/sortDir order the window (e.g. sortBy: \"liquidityUsd\" for biggest holdings "
+      + "first) - a sort only reorders, it never removes a holding. "
       + "Returns one provider-chosen pair snapshot per resolved address. Raw priceUsd always prices "
       + "the pair's base token. DexScreener's batch endpoint is reconciled strictly against that "
       + "baseAddress; use dexscreener.tokenPairs for side-aware normalized requested-token prices. Use this tool for "
-      + "portfolio snapshots or comparing several tokens on the same chain without filters or sorts "
-      + "that could remove holdings. "
+      + "portfolio snapshots, comparing several tokens on the same chain, or resolving feed "
+      + "candidates in one batch. Optional screeners (requireLiquidityUsd, "
+      + "minPairAgeSeconds/maxPairAgeSeconds) drop rows only on request and every drop is counted "
+      + "in droppedByFilter - no holding is ever silently filtered out. Pre-graduation "
+      + "bonding-curve pools (e.g. pumpfun) legitimately report liquidityUsd: null and "
+      + "turnoverRatioH24: null - null means unknown reserves, not zero, and such rows sort last "
+      + "under sortBy: \"liquidityUsd\". "
+      + SOURCE_OBSERVATION_CLAUSE + " "
       + PAIR_DESCRIPTION_WINDOW_CLAUSE,
     mutating: false,
     actionKind: "read",
@@ -123,8 +143,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
         required: true,
         description:
           "Up to 60 comma-separated token addresses. Vex splits them into calls of at most 30, "
-          + "then reports batchRequestCount and every requested/resolved/unresolved address. "
-          + `Always inspect unresolvedAddresses. ${STRING_OR_ARRAY_CLAUSE} `
+          + "then reports batchRequestCount, failedBatchCount and every "
+          + "requested/resolved/unresolved/unreached address. "
+          + `Always inspect unresolvedAddresses and unreachedAddresses. ${STRING_OR_ARRAY_CLAUSE} `
           + "Address casing is preserved on both spellings (Solana base58 is case-sensitive). Each "
           + "address yields ONE arbitrary pool, often not the deepest; use dexscreener.tokenPairs "
           + "for depth.",
@@ -144,10 +165,17 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "price decision: obtain a fresh quote from the actual venue before trading. Returns concise pair "
       + "rows including pairAddress, requestedTokenSide, and requestedTokenPriceUsd. Raw priceUsd "
       + "always prices the pair's base token; requestedTokenPriceUsd is normalized for the requested "
-      + "token whether it appears on the base or quote side. Use dexscreener.pairs for a known pool's "
+      + "token whether it appears on the base or quote side. The envelope reports a cross-pool "
+      + "sanity check computed over the FULL provider window: "
+      + "requestedTokenPriceUsdMedianAcrossPools (the requested token's median price), "
+      + "pricePoolOutliers, and per-row priceSanity (ok | outlier_vs_pool_median | unknown; "
+      + "unknown means the price could not be proven, never that it is wrong). "
+      + SOURCE_OBSERVATION_CLAUSE
+      + " Use dexscreener.pairs for a known pool's "
       + "research metrics. Returns 15 sorted rows by default and exposes the rest through hasMore "
       + "and offset. The provider selects at most 30 pools per token, in unspecified order — "
-      + "high-pool-count tokens are truncated to 30 by DexScreener with no way to widen. Vex then "
+      + "an observed cap, not a documented one - high-pool-count tokens come back truncated with "
+      + "no way to widen. Vex then "
       + "sorts that bounded window (by USD liquidity by default) and applies every filter and "
       + "window; no server-side filter, sort, limit or pagination exists.",
     mutating: false,

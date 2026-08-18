@@ -210,7 +210,6 @@ describe("DexScreener identity params accept a string OR a string array", () => 
       expect(fromArray[key], key).toEqual(fromString[key]);
     }
     expect(fromArray.requestedAddresses).toEqual(asArray);
-    expect(fromArray.addressCapApplied).toBe(fromString.addressCapApplied);
   });
 
   it("tokens: a mixed-case address is never folded on either spelling", async () => {

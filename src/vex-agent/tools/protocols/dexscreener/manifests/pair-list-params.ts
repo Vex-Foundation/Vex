@@ -40,6 +40,7 @@ import {
 
 export {
   PAIR_DESCRIPTION_WINDOW_CLAUSE,
+  SOURCE_OBSERVATION_CLAUSE,
   STRING_OR_ARRAY_CLAUSE,
   WINDOW_CLAUSE,
 } from "./pair-list-params/clauses.js";
@@ -97,14 +98,15 @@ export const PAIR_LOOKUP_PARAMS: readonly ProtocolParamDef[] = [
 /**
  * A measured bare-call size, appended to `limit` on the surface it was measured on.
  *
- * CANONICAL SOURCE: `agents_dm/agentscan-phase4/persona-tests/call-records.json`,
- * the replay that measures what the ENGINE measures
+ * CANONICAL SOURCES: `agents_dm/agentscan-phase4/persona-tests/call-records.json`
+ * (search/tokenPairs) and the 2026-08-17 live blind-eval batch run (tokens) -
+ * both measure what the ENGINE measures
  * (`Buffer.byteLength(result.output, "utf8")`) —
  * not the persona scripts' whole-ToolResult count, which was ~2x inflated.
  *
- * Only these two pair surfaces exceeded the 16,384 B cap bare, so only these two
- * carry a number. Copying a figure onto a tool it was not measured on would be
- * the same class of error as asserting a provider cap nobody observed.
+ * Only surfaces measured to exceed the 16,384 B cap carry a number. Copying a
+ * figure onto a tool it was not measured on would be the same class of error as
+ * asserting a provider cap nobody observed.
  */
 function withBareCallByteCost(
   params: readonly ProtocolParamDef[],
@@ -137,6 +139,7 @@ export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteC
     "minLiquidityUsd",
     "minTurnoverRatio",
     "requirePriceUsd",
+    "requireLiquidityUsd",
     "explainDrops",
   ),
   "MEASURED: one bare pair-notation query with no limit returned 24,139 B against the 16,384 B "
@@ -147,13 +150,31 @@ export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteC
  * `dexscreener.tokens` — one arbitrary pool per requested token address.
  *
  * Each row represents a DIFFERENT requested token's provider-chosen pool.
- * Economic filters, sorting, paging, and drop diagnostics can remove or reorder
- * holdings, so this public surface exposes snapshot shaping only. The parser
- * remains wider for backwards compatibility with existing callers.
+ * `sortBy`/`sortDir` are advertised: with a default row window in place, an
+ * unadvertised sort left the agent unable to choose WHICH holdings the window
+ * shows (measured: a 35-address portfolio paged blind through arbitrary
+ * provider order). A sort reorders and a window pages; every row stays
+ * reachable and accounted through totalMatched/hasMore/offset.
+ *
+ * Three screening params are advertised because the fresh-token flow LANDS
+ * here (feeds carry no market data, so candidates get resolved through this
+ * batch) and hiding them cost a measured 6-call detour for a one-call answer:
+ * `requireLiquidityUsd` and the two age bounds. Each drops rows only on
+ * request and every drop is counted in droppedByFilter - nothing is ever
+ * silently filtered. Threshold screeners (minLiquidityUsd etc.) stay
+ * unadvertised: a portfolio call has no reason to hide small holdings.
  */
 export const PAIR_BATCH_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,
+  ...PAIR_SORT_PARAMS,
   ...PAIR_TIMEFRAME_PARAMS,
+  ...PAIR_AGE_FILTER_PARAMS,
+  ...PAIR_QUALITY_FILTER_PARAMS.filter((param) => param.key === "requireLiquidityUsd"),
 ];
 
-export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = PAIR_BATCH_PARAMS;
+export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
+  PAIR_BATCH_PARAMS,
+  "MEASURED: 35 resolved addresses at the default lean projection returned 22,378 B against the "
+    + "16,384 B tool-output cap (live batch, 2026-08-17, engine byte measure) - about 23 rows fit "
+    + "one response, so a full 60-address batch needs offset paging regardless of limit.",
+);

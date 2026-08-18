@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DexScreenerClient } from "@tools/dexscreener/client.js";
+import { sourceObservation } from "@vex-agent/tools/protocols/dexscreener/handlers/source-observation.js";
 import { ErrorCodes } from "../../errors.js";
 
 vi.mock("@config/store.js", () => ({
@@ -140,7 +141,9 @@ describe("search", () => {
 
     expect(observation).toMatchObject({
       cacheHit: false,
-      cacheAgeMs: 25_000,
+      // Local cache age only: this fetch was live, so 0 — the CDN's 25 s lives
+      // in upstreamAgeMs alone. Pre-summing the two double-counted staleness.
+      cacheAgeMs: 0,
       upstreamAgeMs: 25_000,
       upstreamAgeKnown: true,
     });
@@ -312,5 +315,74 @@ describe("error handling", () => {
       new TypeError("Failed to fetch"),
     );
     await expect(client.search("test")).rejects.toThrow();
+  });
+});
+
+describe("agent-layer source observation", () => {
+  let client: DexScreenerClient;
+
+  beforeEach(() => {
+    client = new DexScreenerClient("https://api.dexscreener.com");
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function mockOk(body: unknown, headers: Record<string, string> = {}): void {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(headers),
+      json: async () => body,
+    });
+  }
+
+  it("dataAgeMs sums local and upstream age exactly once", async () => {
+    mockOk({ schemaVersion: "1.0.0", pairs: [FIXTURE_PAIR] }, { age: "25" });
+    const first = await client.search("SOL");
+    // Second call within the TTL is served from the local cache: same value,
+    // observation overwritten with cacheHit: true and a growing local age.
+    const second = await client.search("SOL");
+    expect(second).toBe(first);
+
+    const observation = sourceObservation(client, second, Date.now());
+    expect(observation.observed).toBe(true);
+    expect(observation.localCacheHit).toBe(true);
+    expect(observation.upstreamAgeMs).toBe(25_000);
+    if (observation.localCacheAgeMs === null || observation.dataAgeMs === null) {
+      throw new Error("observed metadata must not be null");
+    }
+    // The total is the SUM of the two scoped ages — the pre-fix contract folded
+    // the upstream age into cacheAgeMs AND emitted upstreamAgeMs, so a reader
+    // summing them double-counted staleness by exactly the upstream age.
+    expect(observation.dataAgeMs).toBe(observation.localCacheAgeMs + 25_000);
+  });
+
+  it("declines to characterize freshness for values it never observed", () => {
+    const observation = sourceObservation(client, { pairs: [] }, 1_000);
+    expect(observation).toEqual({
+      observed: false,
+      responseAtMs: 1_000,
+      providerFetchedAtMs: null,
+      localCacheHit: null,
+      localCacheAgeMs: null,
+      upstreamAgeMs: null,
+      upstreamAgeKnown: false,
+      dataAgeMs: null,
+    });
+  });
+
+  it("keeps dataAgeMs null when the upstream age is unknown", async () => {
+    mockOk({ schemaVersion: "1.0.0", pairs: [FIXTURE_PAIR] });
+    const result = await client.search("SOL");
+    const observation = sourceObservation(client, result, Date.now());
+    expect(observation.observed).toBe(true);
+    expect(observation.upstreamAgeKnown).toBe(false);
+    // Null, not the local fetch time: the naive delta responseAtMs -
+    // providerFetchedAtMs must never read "0 ms, fresh" when the age is unknown.
+    expect(observation.providerFetchedAtMs).toBeNull();
+    // Unknown stays null, never 0: a partial sum presented as the total would
+    // understate staleness exactly when the reader most needs the truth.
+    expect(observation.dataAgeMs).toBeNull();
   });
 });

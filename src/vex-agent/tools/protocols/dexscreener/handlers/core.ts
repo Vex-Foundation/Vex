@@ -75,6 +75,88 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
   return result;
 }
 
+interface AddressBatchOutcome<T> {
+  fulfilled: T[];
+  /** Addresses whose batch FAILED: the provider never answered for them. */
+  unreachedAddresses: string[];
+  failedBatchCount: number;
+  firstFailureMessage: string | null;
+}
+
+/**
+ * Dispatch every batch and keep what succeeded. `Promise.all` here made a
+ * partially successful multi-batch call a total failure: one 429 on batch 2
+ * discarded batch 1's priced rows and reported nothing about which addresses
+ * were never asked. Failed batches are accounted per address instead.
+ */
+async function runAddressBatches<T>(
+  batches: readonly string[][],
+  run: (batch: readonly string[]) => Promise<T>,
+): Promise<AddressBatchOutcome<T>> {
+  const settled = await Promise.allSettled(batches.map((batch) => run(batch)));
+  const outcome: AddressBatchOutcome<T> = {
+    fulfilled: [],
+    unreachedAddresses: [],
+    failedBatchCount: 0,
+    firstFailureMessage: null,
+  };
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      outcome.fulfilled.push(result.value);
+      return;
+    }
+    outcome.failedBatchCount += 1;
+    outcome.unreachedAddresses.push(...(batches[index] ?? []));
+    if (outcome.firstFailureMessage === null) {
+      outcome.firstFailureMessage = result.reason instanceof Error
+        ? result.reason.message
+        : String(result.reason);
+    }
+  });
+  return outcome;
+}
+
+/**
+ * Split "requested and not returned" into its two different truths: addresses
+ * the provider answered without (unresolved - likely unindexed) and addresses
+ * whose batch failed (unreached - a transport fact, retryable). Reporting the
+ * second group as the first would read "not indexed" where the truth is
+ * "never asked".
+ */
+function partitionUnreached(
+  unresolved: readonly string[],
+  unreached: readonly string[],
+  caseSensitive: boolean,
+): { unresolved: string[]; unreached: string[] } {
+  const identity = (address: string): string => (caseSensitive ? address : address.toLowerCase());
+  const unreachedIdentities = new Set(unreached.map(identity));
+  return {
+    unresolved: unresolved.filter((address) => !unreachedIdentities.has(identity(address))),
+    unreached: unresolved.filter((address) => unreachedIdentities.has(identity(address))),
+  };
+}
+
+function batchProviderNote(
+  kind: "token" | "pair",
+  requestedCount: number,
+  batchCount: number,
+  failedBatchCount: number,
+  firstFailureMessage: string | null,
+): string | undefined {
+  if (batchCount <= 1 && failedBatchCount === 0) return undefined;
+  const unreachedField = kind === "token" ? "unreachedAddresses" : "unreachedPairAddresses";
+  const unresolvedField = kind === "token" ? "unresolvedAddresses" : "unresolvedPairAddresses";
+  const split = `Vex split ${requestedCount} requested ${kind} addresses into ${batchCount} `
+    + `DexScreener calls of at most ${DEXSCREENER_ADDRESS_BATCH_SIZE} addresses and merged the `
+    + "completed responses.";
+  return failedBatchCount === 0
+    ? `${split} ${unresolvedField} were absent after every batch completed.`
+    : `${split} ${failedBatchCount} of ${batchCount} batches FAILED `
+      + `(${firstFailureMessage ?? "unknown cause"}); their addresses are listed in `
+      + `${unreachedField} - the provider never answered for them, so retry those - while `
+      + `${unresolvedField} were asked and not returned.`;
+}
+
 function dedupeProviderPairs(
   pairs: readonly DexPair[],
   caseSensitive: boolean,
@@ -229,17 +311,29 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       uniqueAddresses(requestedPairs, addressCaseSensitive),
       DEXSCREENER_ADDRESS_BATCH_SIZE,
     );
-    const responses = await Promise.all(
-      pairBatches.map((batch) => client.getPairs(chain.slug, batch.join(","))),
+    const batchOutcome = await runAddressBatches(
+      pairBatches,
+      (batch) => client.getPairs(chain.slug, batch.join(",")),
     );
+    if (batchOutcome.fulfilled.length === 0) {
+      return fail(
+        `dexscreener.pairs: every DexScreener batch failed - `
+        + `${batchOutcome.firstFailureMessage ?? "unknown cause"}`,
+      );
+    }
     const asOfMs = Date.now();
     const providerPairs = dedupeProviderPairs(
-      responses.flatMap((response) => Array.isArray(response.pairs) ? response.pairs : []),
+      batchOutcome.fulfilled.flatMap((response) => Array.isArray(response.pairs) ? response.pairs : []),
       addressCaseSensitive,
     );
     const addresses = reconcilePairBatchAddresses(
       pairAddress,
       providerPairs,
+      addressCaseSensitive,
+    );
+    const partitioned = partitionUnreached(
+      addresses.unresolvedPairAddresses,
+      batchOutcome.unreachedAddresses,
       addressCaseSensitive,
     );
     const list = buildPairList({
@@ -249,19 +343,24 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       query: parsed.query,
       asOfMs,
       providerCap: pairBatches.length > 1 ? null : undefined,
-      providerNote: pairBatches.length > 1
-        ? `Vex split ${requestedPairs.length} requested pair addresses into ${pairBatches.length} `
-          + `DexScreener calls of at most ${DEXSCREENER_ADDRESS_BATCH_SIZE} addresses and merged `
-          + "the responses. unresolvedPairAddresses were absent after every batch completed."
-        : undefined,
+      providerNote: batchProviderNote(
+        "pair",
+        requestedPairs.length,
+        pairBatches.length,
+        batchOutcome.failedBatchCount,
+        batchOutcome.firstFailureMessage,
+      ),
     });
 
     return ok({
       chain: chain.slug.toLowerCase(),
       ...addresses,
+      unresolvedPairAddresses: partitioned.unresolved,
+      unreachedPairAddresses: partitioned.unreached,
       batchRequestCount: pairBatches.length,
+      failedBatchCount: batchOutcome.failedBatchCount,
       maxAddressesPerRequest: DEXSCREENER_ADDRESS_BATCH_SIZE,
-      sourceObservation: combinedSourceObservation(client, responses, asOfMs),
+      sourceObservation: combinedSourceObservation(client, batchOutcome.fulfilled, asOfMs),
       ...list,
     });
   },
@@ -299,11 +398,18 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       uniqueAddresses(requested, addressCaseSensitive),
       DEXSCREENER_ADDRESS_BATCH_SIZE,
     );
-    const responses = await Promise.all(
-      batches.map((batch) => client.getTokens(chain.slug, batch.join(","))),
+    const batchOutcome = await runAddressBatches(
+      batches,
+      (batch) => client.getTokens(chain.slug, batch.join(",")),
     );
+    if (batchOutcome.fulfilled.length === 0) {
+      return fail(
+        `dexscreener.tokens: every DexScreener batch failed - `
+        + `${batchOutcome.firstFailureMessage ?? "unknown cause"}`,
+      );
+    }
     const asOfMs = Date.now();
-    const result = dedupeProviderPairs(responses.flat(), addressCaseSensitive);
+    const result = dedupeProviderPairs(batchOutcome.fulfilled.flat(), addressCaseSensitive);
     // Reconciled against the PROVIDER's rows, before any Vex filter — otherwise
     // our own filtering would be indistinguishable from the provider dropping
     // addresses (40 requested → 30 returned, measured).
@@ -313,6 +419,11 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       addressCaseSensitive,
       batches.length,
     );
+    const partitioned = partitionUnreached(
+      addresses.unresolvedAddresses,
+      batchOutcome.unreachedAddresses,
+      addressCaseSensitive,
+    );
     const list = buildPairList({
       endpoint: "/tokens/v1",
       providerOrder: "unspecified",
@@ -320,17 +431,22 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       query: parsed.query,
       asOfMs,
       providerCap: batches.length > 1 ? null : undefined,
-      providerNote: batches.length > 1
-        ? `Vex split ${requested.length} requested token addresses into ${batches.length} `
-          + `DexScreener calls of at most ${DEXSCREENER_ADDRESS_BATCH_SIZE} addresses and merged `
-          + "the responses. unresolvedAddresses were absent after every batch completed."
-        : undefined,
+      providerNote: batchProviderNote(
+        "token",
+        requested.length,
+        batches.length,
+        batchOutcome.failedBatchCount,
+        batchOutcome.firstFailureMessage,
+      ),
     });
 
     return ok({
       chain: chain.slug.toLowerCase(),
       ...addresses,
-      sourceObservation: combinedSourceObservation(client, responses, asOfMs),
+      unresolvedAddresses: partitioned.unresolved,
+      unreachedAddresses: partitioned.unreached,
+      failedBatchCount: batchOutcome.failedBatchCount,
+      sourceObservation: combinedSourceObservation(client, batchOutcome.fulfilled, asOfMs),
       ...list,
     });
   },
@@ -371,8 +487,12 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       chain: chain.slug.toLowerCase(),
       tokenAddress,
       sourceObservation: observation,
+      // ONE name for the median. The pre-batching field `priceUsdMedianAcrossPools`
+      // measured the BASE-token median; this value is the REQUESTED-token median,
+      // so keeping the old key pointed at the new meaning would invite comparing
+      // row.priceUsd (base) against a requested-token median - a false outlier
+      // verdict on every quote-side pool.
       requestedTokenPriceUsdMedianAcrossPools: priceSanity.priceUsdMedianAcrossPools,
-      priceUsdMedianAcrossPools: priceSanity.priceUsdMedianAcrossPools,
       pricePoolOutliers: priceSanity.pricePoolOutliers,
       ...list,
     });
