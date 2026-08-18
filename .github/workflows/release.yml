@@ -82,12 +82,18 @@ jobs:
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
 
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Install vex-app dependencies
         working-directory: vex-app
         run: pnpm install --frozen-lockfile
+
+      - name: Audit root production dependencies
+        run: pnpm run audit:deps
 
       - name: Run vex-app unit tests
         working-directory: vex-app
@@ -151,6 +157,9 @@ jobs:
         with:
           go-version-file: src/tools/lighter/signer-runtime/go.mod
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
@@ -286,6 +295,9 @@ jobs:
           go-version-file: src/tools/lighter/signer-runtime/go.mod
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
 
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
         run: |
@@ -340,6 +352,9 @@ jobs:
         with:
           go-version-file: src/tools/lighter/signer-runtime/go.mod
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app

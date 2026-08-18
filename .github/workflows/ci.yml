@@ -28,8 +28,14 @@ jobs:
 
       - run: corepack enable
 
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm run audit:deps
 
       - name: Build
         run: pnpm run build
@@ -55,6 +61,10 @@ jobs:
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
 
       - run: corepack enable
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
@@ -97,6 +107,10 @@ jobs:
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
 
       - run: corepack enable
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo — same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}

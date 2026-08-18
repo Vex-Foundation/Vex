@@ -29,6 +29,25 @@ disclosure.
 - The auto-updater and release or signing integrity.
 - Leakage of keys, seeds, or secrets through logs, telemetry, or crash reports.
 
+## Production dependency policy
+
+Use the exact Node minimum and pnpm version declared in the root `package.json`.
+`pnpm run verify:toolchain` fails when either requirement is not met, and both
+CI and release jobs run it before installation. Both dependency trees must be
+installed with `--frozen-lockfile`.
+
+Run `pnpm run audit:deps` for the root production graph. The audit fails on any
+finding that is not an exact match for the package, version, severity, advisory
+URL, and dependency path in `scripts/production-audit-allowlist.json`. Reviewed
+exceptions have a mandatory expiry date; a resolved, changed, or expired
+exception also fails the audit so it cannot silently become permanent.
+
+pnpm dependency build scripts are default-denied. The root package explicitly
+allows only build-critical scripts and records packages whose optional or
+nonessential scripts are intentionally disabled. Do not add a package to the
+allowlist without reviewing the script and documenting why installation needs
+to execute it.
+
 ## Out of scope
 
 - Loss of funds due to a user-chosen weak master password, lost password, or
