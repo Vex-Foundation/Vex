@@ -8,10 +8,11 @@ import {
   type LighterUnsignedCreateOrderRequest,
 } from "./signer-order.js";
 import type { LighterTradingSecretMaterial } from "./trading-secret.js";
+import { getLighterFundingDeployment } from "./wallet-funding/deployments.js";
 
 export const LIGHTER_SIGNER_CHAIN_IDS: Record<LighterEnvironment, number> = {
-  core: 304,
-  rhc: 466324,
+  core: getLighterFundingDeployment("core").lighterSignerChainId,
+  rhc: getLighterFundingDeployment("rhc").lighterSignerChainId,
 } as const;
 
 export const LIGHTER_SIGNER_UINT32_MAX = (1n << 32n) - 1n;

@@ -10,27 +10,28 @@
  */
 
 import type { LighterEnvironment } from "../constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
+
+const CORE_FUNDING_DEPLOYMENT = getLighterFundingDeployment("core");
 
 /**
  * Lighter Core deposits settle on Ethereum L1 mainnet through a bridge contract.
  * The address is also served live at GET /info ("contract_address").
  */
-export const LIGHTER_DEPOSIT_CHAIN_ID = 1 as const;
-export const LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS =
-  "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7" as const;
+export const LIGHTER_DEPOSIT_CHAIN_ID = CORE_FUNDING_DEPLOYMENT.settlementChainId;
+export const LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS = CORE_FUNDING_DEPLOYMENT.gatewayProxy;
 
 /**
  * Canonical native USDC on Ethereum L1 mainnet (the Core settlement asset),
  * cross-checked against the Uniswap chain-1 deployment connector list.
  */
-export const LIGHTER_CORE_MAINNET_USDC_ADDRESS =
-  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
+export const LIGHTER_CORE_MAINNET_USDC_ADDRESS = CORE_FUNDING_DEPLOYMENT.settlementTokenProxy;
 
 /**
  * Deposit function ABI, confirmed by matching the on-chain selector 0x8a857083:
  * deposit(address _to, uint16 _assetIndex, uint8 _routeType, uint256 _amount).
  */
-export const LIGHTER_DEPOSIT_SELECTOR = "0x8a857083" as const;
+export const LIGHTER_DEPOSIT_SELECTOR = CORE_FUNDING_DEPLOYMENT.depositSelector;
 export const LIGHTER_DEPOSIT_FUNCTION_ABI = [
   {
     type: "function",
@@ -51,7 +52,7 @@ export const LIGHTER_DEPOSIT_FUNCTION_ABI = [
  * (types/txtypes/constants.go). MinAssetIndex 1, MaxAssetIndex 62, nil 0. A
  * wrong asset index loses the deposit, so a live run must confirm crediting.
  */
-export const LIGHTER_USDC_ASSET_INDEX = 3 as const;
+export const LIGHTER_USDC_ASSET_INDEX = CORE_FUNDING_DEPLOYMENT.settlementAssetIndex;
 export const LIGHTER_MIN_ASSET_INDEX = 1 as const;
 export const LIGHTER_MAX_ASSET_INDEX = 62 as const;
 
@@ -70,12 +71,12 @@ export const LIGHTER_DEPOSIT_MIN_USDC = "1" as const;
 
 /** Settlement/collateral asset symbol per environment. */
 export const LIGHTER_SETTLEMENT_ASSET: Record<LighterEnvironment, string> = {
-  core: "USDC",
-  rhc: "USDG",
+  core: getLighterFundingDeployment("core").settlementSymbol,
+  rhc: getLighterFundingDeployment("rhc").settlementSymbol,
 } as const;
 
 /** USDC has 6 decimals; settlement amounts are integer base units at this scale. */
-export const LIGHTER_SETTLEMENT_ASSET_DECIMALS = 6 as const;
+export const LIGHTER_SETTLEMENT_ASSET_DECIMALS = CORE_FUNDING_DEPLOYMENT.settlementDecimals;
 
 /**
  * Usable API-key index bounds for Vex-registered trading keys are the existing
