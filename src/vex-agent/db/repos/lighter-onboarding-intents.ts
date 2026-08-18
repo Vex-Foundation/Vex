@@ -131,22 +131,11 @@ export interface CreateDepositIntentInput {
   readonly amountUnits: string;
   readonly preflight: LighterDepositPreflightSnapshot;
   readonly expiresAt: Date;
-  /** Privileged rollout reservation ceiling; required by production callers. */
-  readonly rolling24hCapUnits?: string;
 }
 
 export type CreateDepositIntentOutcome =
   | { readonly outcome: "created"; readonly intent: LighterOnboardingIntentRow }
   | { readonly outcome: "live_conflict"; readonly intent: LighterOnboardingIntentRow | null };
-
-export class LighterDepositRolloutCapError extends Error {
-  constructor() {
-    super("The requested deposit would exceed the current rolling 24-hour Lighter rollout cap.");
-    this.name = "LighterDepositRolloutCapError";
-  }
-}
-
-const LIGHTER_DEPOSIT_ROLLOUT_LOCK_KEY = "vex:lighter:deposit-rollout:rolling-24h";
 
 export function generateOnboardingIntentId(): string {
   return `lighter-onboard-${randomUUID()}`;
@@ -210,16 +199,6 @@ export async function createOrFindLiveDepositApprovalPendingWith(
   input: CreateDepositIntentInput,
 ): Promise<CreateDepositIntentOutcome> {
   assertPreflightMatchesInput(input);
-  if (input.rolling24hCapUnits !== undefined) {
-    const capUnits = requiredPositiveDecimal(input.rolling24hCapUnits, "rolling24hCapUnits");
-    await acquireDepositRolloutLock(client);
-    const existing = await findLiveDepositConflictWith(client, input.environment, input.walletAddress);
-    if (existing !== null) return { outcome: "live_conflict", intent: existing };
-    await assertRolling24hCapacityWith(client, {
-      capUnits,
-      amountUnits: requiredPositiveDecimal(input.amountUnits, "amountUnits"),
-    });
-  }
   const inserted = await client.query<Record<string, unknown>>(INSERT_DEPOSIT_SQL, [
     generateOnboardingIntentId(),
     input.sessionId,
@@ -272,49 +251,6 @@ export async function createOrFindLiveDepositApprovalPendingWith(
     outcome: "live_conflict",
     intent: conflict,
   };
-}
-
-/** Re-check the already-reserved amount before any wallet-key resolution. */
-export async function assertExistingDepositWithinRolling24hCapWith(
-  client: LighterOnboardingQueryClient,
-  input: { readonly intentId: string; readonly amountUnits: string; readonly capUnits: string },
-): Promise<void> {
-  const amountUnits = requiredPositiveDecimal(input.amountUnits, "amountUnits");
-  const capUnits = requiredPositiveDecimal(input.capUnits, "capUnits");
-  await acquireDepositRolloutLock(client);
-  await assertRolling24hCapacityWith(client, {
-    capUnits,
-    amountUnits,
-    excludeIntentId: input.intentId,
-  });
-}
-
-async function acquireDepositRolloutLock(client: LighterOnboardingQueryClient): Promise<void> {
-  await client.query(
-    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-    [LIGHTER_DEPOSIT_ROLLOUT_LOCK_KEY],
-  );
-}
-
-async function assertRolling24hCapacityWith(
-  client: LighterOnboardingQueryClient,
-  input: { readonly capUnits: string; readonly amountUnits: string; readonly excludeIntentId?: string },
-): Promise<void> {
-  const usage = await client.query<{ used_units: string }>(
-    `SELECT COALESCE(SUM(amount_units::numeric), 0)::text AS used_units
-       FROM lighter_onboarding_intents
-      WHERE capability = 'deposit'
-        AND amount_units IS NOT NULL
-        AND created_at >= NOW() - INTERVAL '24 hours'
-        AND approval_status NOT IN ('rejected', 'expired')
-        AND execution_state <> 'failed'
-        AND ($1::text IS NULL OR intent_id <> $1)`,
-    [input.excludeIntentId ?? null],
-  );
-  const usedUnits = BigInt(usage.rows[0]?.used_units ?? "0");
-  if (usedUnits + BigInt(input.amountUnits) > BigInt(input.capUnits)) {
-    throw new LighterDepositRolloutCapError();
-  }
 }
 
 async function findLiveDepositConflictWith(
@@ -1414,13 +1350,6 @@ function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
   ) {
     throw new Error("Lighter deposit preflight does not match the durable intent fields.");
   }
-}
-
-function requiredPositiveDecimal(value: string, field: string): string {
-  if (!/^[1-9][0-9]*$/.test(value)) {
-    throw new Error(`lighter_onboarding_intents: ${field} must be a positive decimal integer`);
-  }
-  return BigInt(value).toString();
 }
 
 function nullableString(value: unknown): string | null {

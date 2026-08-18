@@ -379,7 +379,7 @@ export async function markLighterKeyRegistrationApprovalPendingWith(
   return intent;
 }
 
-/** Record the exact host approval before any release-gate or signer access. */
+/** Record the exact host approval before any signer access. */
 export async function markLighterKeyRegistrationApprovedWith(
   client: LighterOnboardingQueryClient,
   input: {

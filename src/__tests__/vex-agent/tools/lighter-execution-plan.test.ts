@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildLighterOrderReadyForSignerPlan,
-  requireLighterLiveTradingEnabled,
-} from "@vex-agent/tools/protocols/lighter/execution-plan.js";
+import { buildLighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 
 function intent(overrides: Partial<LighterOrderExecutionIntentRow> = {}): LighterOrderExecutionIntentRow {
@@ -115,9 +112,5 @@ describe("Lighter order execution plan", () => {
         },
       }))
     ).toThrow("credential reference does not match");
-  });
-
-  it("keeps live trading explicitly disabled until the submit milestone is approved", () => {
-    expect(() => requireLighterLiveTradingEnabled()).toThrow("live trading is disabled");
   });
 });

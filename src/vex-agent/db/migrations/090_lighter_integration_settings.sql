@@ -1,7 +1,7 @@
 -- 090_lighter_integration_settings.sql — public-scope user activation only.
 --
 -- This table stores no credential or authorization. Enabling a row does not
--- open any release gate and does not approve deposits, key registration,
+-- approve deposits, key registration,
 -- orders, transfers, or withdrawals.
 
 CREATE TABLE IF NOT EXISTS lighter_integration_settings (

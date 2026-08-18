@@ -227,7 +227,6 @@ function accountOrder(overrides: Record<string, unknown> = {}) {
 
 function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): ExecuteApprovedLighterCreateOrderDeps {
   return {
-    liveTradingEnabled: vi.fn(() => true),
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
     },
@@ -342,21 +341,6 @@ describe("Lighter approved create execution pipeline", () => {
 
     teardown();
     expect(getConfiguredLighterCreateOrderExecutionDeps()).toBeNull();
-  });
-
-  it("blocks at the release gate before reading key material or reserving a nonce", async () => {
-    const d = deps({ liveTradingEnabled: vi.fn(() => false) });
-
-    await expect(executeApprovedLighterCreateOrder({
-      plan: PLAN,
-      unsignedOrder: UNSIGNED_ORDER,
-      deps: d,
-    })).rejects.toThrow("live trading is disabled");
-
-    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
-    expect(d.reserveNonce).not.toHaveBeenCalled();
-    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
-    expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
   it("blocks an unavailable approved preview before provider credential or vault access", async () => {

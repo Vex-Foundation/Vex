@@ -15,7 +15,6 @@ import {
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
 import type { LighterApiKey } from "@tools/lighter/types.js";
-import { LIGHTER_KEY_REGISTRATION_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import { isLighterIntegrationEnabled } from "@vex-agent/db/repos/lighter-integration-settings.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
@@ -46,7 +45,6 @@ export interface LighterKeyRegistrationExecutionDeps {
   >;
   readonly readIntent: typeof keyIntentsRepo.findLighterKeyRegistrationIntent;
   readonly integrationEnabled: typeof isLighterIntegrationEnabled;
-  readonly releaseGateEnabled: () => boolean;
   readonly resolveWallet: typeof resolveSigningWallet;
   readonly sign: typeof signApprovedLighterKeyRegistration;
   readonly keyGenerator: LighterApiKeyGenerator;
@@ -96,9 +94,6 @@ async function runLighterKeyRegistration(
   if (allowSubmission) {
     if (!(await deps.integrationEnabled(intent.environment, intent.walletAddress))) {
       throw executionError("the Lighter integration was disabled before execution");
-    }
-    if (!deps.releaseGateEnabled()) {
-      throw executionError("the independent key-registration release gate is closed");
     }
   } else if (
     intent.executionState === "slot_reserved"
@@ -536,7 +531,6 @@ function defaultDeps(): LighterKeyRegistrationExecutionDeps {
     client: getLighterClient(),
     readIntent: keyIntentsRepo.findLighterKeyRegistrationIntent,
     integrationEnabled: isLighterIntegrationEnabled,
-    releaseGateEnabled: () => LIGHTER_KEY_REGISTRATION_RELEASE_GATE.isEnabled(),
     resolveWallet: resolveSigningWallet,
     sign: signApprovedLighterKeyRegistration,
     keyGenerator: createLighterApiKeyGeneratorBinary(),

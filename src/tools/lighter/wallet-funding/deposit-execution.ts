@@ -4,9 +4,9 @@
  * Each fund-moving leg is INJECTED as a runner that signs, stages its tx hash
  * BEFORE broadcast (via the `onHashStaged` callback this orchestration supplies,
  * so the durable mark lands before the send), broadcasts, and returns the
- * confirmed/reverted/ambiguous outcome. That keeps the orchestration — gate
- * check, leg ordering, lifecycle marks, ambiguity handling — fully unit-testable
- * without funds, while the live EVM signing runs only behind the gate. It holds
+ * confirmed/reverted/ambiguous outcome. That keeps the orchestration — approval
+ * binding, leg ordering, lifecycle marks, ambiguity handling — fully unit-testable
+ * without funds, while the live EVM signing remains approval-gated. It holds
  * no keys and never retries a broadcast: an unconfirmed leg becomes `ambiguous`
  * and stops for explicit reconciliation.
  */
@@ -41,7 +41,6 @@ import {
 export type LegOutcome = "confirmed" | "reverted" | "ambiguous";
 
 export type LighterDepositExecutionResult =
-  | { readonly status: "gate_closed"; readonly reason: string }
   | {
       readonly status: "l2_pending";
       readonly approveTxHash: string | null;
@@ -57,8 +56,6 @@ export type LighterDepositExecutionResult =
   | { readonly status: "failed"; readonly stage: "approve" | "deposit"; readonly reason: string };
 
 export interface LighterDepositExecutionDeps {
-  /** The privileged default-closed deposit release gate. */
-  readonly depositGateEnabled: () => boolean;
   /** Independent code boundary: live fee preflight must be implemented first. */
   readonly depositFeePreflightComplete: () => boolean;
   /** Re-prove the cross-process chain-wallet execution lease before each leg. */
@@ -141,20 +138,12 @@ export async function executeApprovedLighterDeposit(input: {
   const { intent, deps } = input;
   const resumingAfterConfirmedApproval = intent.executionState === "approve_confirmed";
 
-  // Gate first: default-closed, main-process-only. No signing before it opens.
-  if (!deps.depositGateEnabled()) {
-    return {
-      status: "gate_closed",
-      reason:
-        "Lighter deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Nothing was signed or submitted.",
-    };
-  }
   if (!deps.depositFeePreflightComplete()) {
     return {
       status: "failed",
       stage: "approve",
       reason:
-        "Lighter deposit fee preflight is not complete. Nothing was signed or submitted even though the operator release gate was open.",
+        "Lighter deposit fee preflight is not complete. Nothing was signed or submitted.",
     };
   }
 

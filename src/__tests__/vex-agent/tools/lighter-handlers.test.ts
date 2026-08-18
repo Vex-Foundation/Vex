@@ -855,7 +855,7 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.approvalsRepo.getByIdForSession).not.toHaveBeenCalled();
   });
 
-  it("records an approved Lighter create decision but refuses before signer submission", async () => {
+  it("records an approved Lighter create decision but refuses when privileged dependencies are unavailable", async () => {
     mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
     mocks.executionIntentsRepo.markApprovalDecision.mockResolvedValueOnce(executionIntentRow({
       approvalId: "approval-1",
@@ -880,7 +880,7 @@ describe("Lighter agent read handlers", () => {
       reason: "user approved exact Lighter order create intent",
     });
     expect(result.success).toBe(false);
-    expect(result.output).toContain("live trading is disabled");
+    expect(result.output).toContain("live order create dependencies are unavailable");
     expect(result.output).toContain("No order was signed or submitted.");
     expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
   });

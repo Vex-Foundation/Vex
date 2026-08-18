@@ -161,7 +161,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Approval-gated Lighter order create resume target for a prepared execution intent. ` +
       `Use when: the trusted approval follow-up from lighter.order.create.prepare resumes after the user approves. Direct model calls without a prepared intent and approval-resume context are refused. ` +
-      `Current implementation records approval and stays behind the explicit live-trading release gate until final provider-outcome repair and live proof are complete. ` +
+      `After exact host approval, the privileged runtime revalidates the live credential, account, nonce, and order before local signing and submission. ` +
       `Example queries: execute approved lighter order intent, resume lighter order create approval.`,
     ),
     aliases: ["lighter order create", "approved lighter order", "lighter order intent execute"],
@@ -197,7 +197,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.key.register": {
     embeddingText: embeddingText(
       `Execute one exact prepared Lighter key registration after the trusted host approval resumes. ` +
-      `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused; the privileged release gate remains independently default-closed. When opened, main signs and submits the exact TxType 8 registration, then requires exact key, CheckClient, and nonce evidence before activation. ` +
+      `Use when: only the trusted host approval runtime resumes the matching key-registration card. Direct calls are refused. Main signs and submits the exact TxType 8 registration, then requires exact key, CheckClient, and nonce evidence before activation. ` +
       `Example queries: execute approved Lighter key registration, resume Lighter key approval.`,
     ),
     aliases: ["approved lighter key registration", "lighter key register execute"],
@@ -221,7 +221,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.deposit": {
     embeddingText: embeddingText(
       `Approval-resume target for one exact prepared Lighter Core deposit. ` +
-      `Use when: only the trusted approval runtime is resuming the exact deposit card the user approved. When the privileged release gate is open it can sign and broadcast Ethereum approval and deposit transactions, so it must never be called directly or used as a status check. ` +
+      `Use when: only the trusted approval runtime is resuming the exact deposit card the user approved. It can securely sign and broadcast Ethereum approval and deposit transactions, so it must never be called directly or used as a status check. ` +
       `Example queries: execute approved Lighter deposit intent, resume Lighter deposit approval.`,
     ),
     aliases: ["approved lighter deposit", "lighter deposit execute", "resume lighter funding approval"],

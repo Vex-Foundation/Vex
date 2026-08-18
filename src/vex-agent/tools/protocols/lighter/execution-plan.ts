@@ -1,10 +1,6 @@
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
-import {
-  isLighterLiveTradingEnabled,
-  LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
-} from "./execution-boundary.js";
 
 export interface LighterOrderReadyForSignerPlan {
   readonly intentId: string;
@@ -85,15 +81,6 @@ export function buildLighterOrderReadyForSignerPlan(
       apiKeyIndex: intent.apiKeyIndex,
     },
   };
-}
-
-export function requireLighterLiveTradingEnabled(): void {
-  if (isLighterLiveTradingEnabled()) return;
-  throw new VexError(
-    ErrorCodes.LIGHTER_INVALID_REQUEST,
-    LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
-    "Ask to start the live Lighter trading milestone before enabling signer or sendTx behavior.",
-  );
 }
 
 function assertCredentialReferenceMatchesIntent(

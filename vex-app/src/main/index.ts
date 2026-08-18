@@ -47,7 +47,6 @@ import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
-import { installLighterOnboardingReleaseGates } from "./lighter/onboarding-release-gates.js";
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
 import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
 import { lockSecretSession } from "./secrets/session.js";
@@ -153,10 +152,6 @@ async function initializeMainRuntime(): Promise<void> {
   const uninstallLighterOrderCreateExecutionDeps = installLighterOrderCreateExecutionDeps();
   globalCleanup.add(() => {
     uninstallLighterOrderCreateExecutionDeps();
-  });
-  const uninstallLighterOnboardingReleaseGates = installLighterOnboardingReleaseGates();
-  globalCleanup.add(() => {
-    uninstallLighterOnboardingReleaseGates();
   });
   const uninstallLighterKeyRegistrationCredentialPreparer =
     installLighterKeyRegistrationCredentialPreparer();

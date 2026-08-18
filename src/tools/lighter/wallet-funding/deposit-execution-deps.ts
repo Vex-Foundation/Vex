@@ -5,8 +5,8 @@
  * Uniswap EVM clients and `signStageBroadcast` (which stages the tx hash before
  * broadcast and returns a confirmed/reverted/ambiguous outcome). The private key
  * is passed in by the privileged handler that resolved the signing wallet; this
- * module never resolves or stores key material and is only reachable behind the
- * default-closed deposit gate. Both legs are non-payable (value 0), so there is
+ * module never resolves or stores key material and is reachable only from the
+ * exact approved-intent handler. Both legs are non-payable (value 0), so there is
  * no native value to attribute.
  */
 
@@ -25,7 +25,6 @@ import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
-import { LIGHTER_DEPOSIT_RELEASE_GATE } from "./release-gates.js";
 import {
   LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_DEPOSIT_CHAIN_ID,
@@ -75,7 +74,7 @@ export interface LighterDepositSignerInput {
   readonly assertExecutionLease: () => Promise<void>;
 }
 
-/** Build the live deposit execution deps behind the (already-checked) gate. */
+/** Build the live deposit execution dependencies for an exact approved intent. */
 export function buildLighterDepositExecutionDeps(
   input: LighterDepositSignerInput,
 ): LighterDepositExecutionDeps {
@@ -90,7 +89,6 @@ export function buildLighterDepositExecutionDeps(
   ): Promise<T> => withSessionControlLock(input.sessionId, write);
 
   return {
-    depositGateEnabled: () => LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled(),
     depositFeePreflightComplete: () => LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE,
     assertExecutionLease: input.assertExecutionLease,
     async assertFreshPreSignPreflight(intent, stage) {

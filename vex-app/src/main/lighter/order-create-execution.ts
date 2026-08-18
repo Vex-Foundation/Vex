@@ -6,10 +6,6 @@ import {
 import { createLighterSignerBinaryAdapter } from "@tools/lighter/signer-binary-adapter.js";
 import { loadLighterTradingSecretMaterial } from "@tools/lighter/trading-secret.js";
 import {
-  configureLighterLiveTradingReleaseGate,
-  isLighterLiveTradingEnabled,
-} from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
-import {
   configureLighterCreateOrderExecutionDeps,
   defaultLighterCreateOrderExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
@@ -29,7 +25,6 @@ import {
   createUnlockedVaultLighterTradingSecretReader,
   listUnlockedLighterTradingCredentialScopes,
 } from "../secrets/lighter-trading-credential.js";
-import { readLighterLiveTradingReleaseGateStatus } from "./live-trading-release-gate.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
 
@@ -67,12 +62,8 @@ export async function deriveLighterReadOnlyAccountAuth(
 export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
   const signer = createLighterSignerBinaryAdapter();
-  const uninstallReleaseGate = configureLighterLiveTradingReleaseGate(
-    readLighterLiveTradingReleaseGateStatus,
-  );
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
-      liveTradingEnabled: isLighterLiveTradingEnabled,
       secretReader,
       signer,
       client: getLighterClient(),
@@ -129,6 +120,5 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallScopeResolver();
     uninstallReadinessResolver();
     uninstallExecutionDeps();
-    uninstallReleaseGate();
   };
 }

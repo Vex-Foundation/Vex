@@ -12,12 +12,8 @@ import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../typ
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { readEnvironment } from "../params.js";
-import {
-  buildLighterOrderReadyForSignerPlan,
-  requireLighterLiveTradingEnabled,
-} from "../execution-plan.js";
+import { buildLighterOrderReadyForSignerPlan } from "../execution-plan.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
-import { isLighterLiveTradingEnabled } from "../execution-boundary.js";
 import {
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
@@ -308,31 +304,24 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     try {
       const plan = buildLighterOrderReadyForSignerPlan(approved);
       const unsignedOrder = buildLighterUnsignedCreateOrderRequest(plan);
-      if (isLighterLiveTradingEnabled()) {
-        const deps = getConfiguredLighterCreateOrderExecutionDeps();
-        if (deps === null) {
-          return fail(
-            "Lighter live order create is enabled, but the privileged signer and vault dependencies are not configured. No order was signed or submitted.",
-          );
-        }
-        const execution = await executeApprovedLighterCreateOrder({
-          plan,
-          unsignedOrder,
-          deps,
-        });
-        return ok({
-          source: "vex_lighter_live_order_create",
-          ...execution,
-          userGuidance: lighterLiveOrderCreateUserGuidance(execution),
-        });
+      const deps = getConfiguredLighterCreateOrderExecutionDeps();
+      if (deps === null) {
+        return fail(
+          "Lighter live order create dependencies are unavailable. No order was signed or submitted.",
+        );
       }
-      requireLighterLiveTradingEnabled();
+      const execution = await executeApprovedLighterCreateOrder({
+        plan,
+        unsignedOrder,
+        deps,
+      });
+      return ok({
+        source: "vex_lighter_live_order_create",
+        ...execution,
+        userGuidance: lighterLiveOrderCreateUserGuidance(execution),
+      });
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
-
-    return fail(
-      "Lighter order create approval was recorded, but live submission is still blocked by the explicit Lighter live-trading release gate. No order was signed or submitted.",
-    );
   },
 };

@@ -174,7 +174,6 @@ function intentsSpy() {
 
 function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepositExecutionDeps {
   return {
-    depositGateEnabled: () => true,
     depositFeePreflightComplete: () => true,
     assertExecutionLease: vi.fn().mockResolvedValue(undefined),
     assertFreshPreSignPreflight: vi.fn().mockResolvedValue(undefined),
@@ -192,19 +191,7 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
 }
 
 describe("executeApprovedLighterDeposit", () => {
-  it("does nothing and signs nothing when the deposit gate is closed", async () => {
-    const d = deps({
-      depositGateEnabled: () => false,
-      runApproveLegIfNeeded: vi.fn(),
-      runDepositLeg: vi.fn(),
-    });
-    const result = await executeApprovedLighterDeposit({ intent: intent(), deps: d });
-    expect(result.status).toBe("gate_closed");
-    expect(d.runApproveLegIfNeeded).not.toHaveBeenCalled();
-    expect(d.runDepositLeg).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when the operator gate opens before fee preflight is complete", async () => {
+  it("does nothing before fee preflight is complete", async () => {
     const d = deps({
       depositFeePreflightComplete: () => false,
       runApproveLegIfNeeded: vi.fn(),

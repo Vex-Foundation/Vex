@@ -12,9 +12,6 @@ import {
   LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   LIGHTER_ORDER_WRITE_ACTION_KIND,
   LIGHTER_ORDER_WRITE_TOOL_IDS,
-  configureLighterLiveTradingReleaseGate,
-  getLighterLiveTradingReleaseGateStatus,
-  isLighterLiveTradingEnabled,
 } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 
 const ROOT = process.cwd();
@@ -40,6 +37,8 @@ const FORBIDDEN_SIGNED_ARTIFACT_RE =
 const TRADING_CREDENTIAL_ENV_KEY_RE = /\bLIGHTER_(CORE|RHC)_API_PRIVATE_KEY\b/;
 const FORBIDDEN_TRADING_SECRET_SHORTCUT_RE =
   /\b(process\.env|readUnlockedSecret|writeSecretVaultSecrets|VAULT_SECRET_KEYS)\b/;
+const OBSOLETE_OPERATOR_GATE_RE =
+  /\b(?:VEX_LIGHTER_(?:LIVE_TRADING_RELEASE_GATE|DEPOSIT_RELEASE_GATE|DEPOSIT_ROLLOUT_POLICY|DEPOSIT_KILL_SWITCH|DEPOSIT_WALLET_ALLOWLIST|DEPOSIT_MAX_USDC|DEPOSIT_ROLLING_24H_MAX_USDC|KEY_REGISTRATION_RELEASE_GATE)|liveTradingEnabled|depositGateEnabled|releaseGateEnabled|LighterDepositRolloutCapError)\b/;
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -91,7 +90,7 @@ describe("Lighter execution boundary", () => {
     expect(isLighterOrderTerminalExecutionState("filled")).toBe(true);
   });
 
-  it("names every boundary that must close before create/cancel can submit", () => {
+  it("names every permanent boundary that must close before create/cancel can submit", () => {
     expect(LIGHTER_ORDER_EXECUTION_REQUIRED_BOUNDARIES).toEqual([
       "fresh_matching_lighter_order_preview",
       "approval_disclosure_from_persisted_preview_and_live_reads",
@@ -101,46 +100,7 @@ describe("Lighter execution boundary", () => {
       "durable_activity_intent_before_submit",
       "api_acceptance_not_final_execution",
       "provider_evidence_before_terminal_state",
-      "explicit_live_trading_release_gate",
     ]);
-    expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.defaultLiveTradingEnabled).toBe(false);
-    expect(getLighterLiveTradingReleaseGateStatus()).toMatchObject({
-      enabled: false,
-      source: "default_closed",
-    });
-    expect(isLighterLiveTradingEnabled()).toBe(false);
-  });
-
-  it("opens live trading only through an installed privileged release-gate reader", () => {
-    const teardown = configureLighterLiveTradingReleaseGate(() => ({
-      enabled: true,
-      source: "privileged_runtime",
-      reason: "test privileged gate",
-    }));
-
-    expect(getLighterLiveTradingReleaseGateStatus()).toEqual({
-      enabled: true,
-      source: "privileged_runtime",
-      reason: "test privileged gate",
-    });
-    expect(isLighterLiveTradingEnabled()).toBe(true);
-
-    teardown();
-    expect(isLighterLiveTradingEnabled()).toBe(false);
-  });
-
-  it("fails closed when the installed release-gate reader throws", () => {
-    const teardown = configureLighterLiveTradingReleaseGate(() => {
-      throw new Error("gate storage unavailable");
-    });
-
-    expect(getLighterLiveTradingReleaseGateStatus()).toMatchObject({
-      enabled: false,
-      source: "default_closed",
-    });
-    expect(isLighterLiveTradingEnabled()).toBe(false);
-
-    teardown();
   });
 
   it("registers create only through the approval-gated execution path", () => {
@@ -210,6 +170,23 @@ describe("Lighter execution boundary", () => {
     expect(source).not.toMatch(TRADING_CREDENTIAL_ENV_KEY_RE);
   });
 
+  it("keeps removed operator rollout gates out of production Lighter code", () => {
+    const offenders: string[] = [];
+    for (const root of [
+      join(ROOT, "src/tools/lighter"),
+      join(ROOT, "src/vex-agent/tools/protocols/lighter"),
+      join(ROOT, "vex-app/src/main/lighter"),
+    ]) {
+      for (const file of walk(root)) {
+        const source = readFileSync(file, "utf-8");
+        if (OBSOLETE_OPERATOR_GATE_RE.test(source)) {
+          offenders.push(relative(ROOT, file));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps the signer-order adapter unsigned and provider-disconnected", () => {
     const file = join(ROOT, "src/tools/lighter/signer-order.ts");
     const source = readFileSync(file, "utf-8");
@@ -235,7 +212,6 @@ describe("Lighter execution boundary", () => {
 
   it("keeps the order-create execution pipeline behind injected privileged dependencies", () => {
     const source = readFileSync(ORDER_CREATE_EXECUTION_SOURCE, "utf-8");
-    expect(source).toContain("liveTradingEnabled");
     expect(source).toContain("loadLighterTradingSecretMaterial");
     expect(source).toContain("signLighterCreateOrderWithAdapter");
     expect(source).toContain("markSubmitted");

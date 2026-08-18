@@ -75,8 +75,8 @@ const ETHEREUM_USDC_ALLOWANCE_STORAGE_SLOT = 10n;
 
 /**
  * Independent compile-time boundary for the verified fee, replacement, and
- * canonical-receipt enforcement path. The operator gate remains separately
- * default-closed and cannot weaken these checks.
+ * canonical-receipt enforcement path. These checks are permanent and cannot be
+ * weakened by configuration.
  */
 export const LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE = true;
 

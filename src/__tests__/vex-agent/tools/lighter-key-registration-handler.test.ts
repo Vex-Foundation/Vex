@@ -30,7 +30,6 @@ const mocks = vi.hoisted(() => ({
   getPreparer: vi.fn(),
   prepareCredential: vi.fn(),
   assertApprovalBinding: vi.fn(),
-  releaseGateEnabled: vi.fn(),
   getExecutor: vi.fn(),
   executeRegistration: vi.fn(),
 }));
@@ -81,10 +80,6 @@ vi.mock("@vex-agent/tools/protocols/lighter/key-registration-preparation.js", ()
 
 vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js", () => ({
   assertLighterKeyRegistrationApprovalBinding: mocks.assertApprovalBinding,
-}));
-
-vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
-  LIGHTER_KEY_REGISTRATION_RELEASE_GATE: { isEnabled: mocks.releaseGateEnabled },
 }));
 
 vi.mock("@vex-agent/tools/protocols/lighter/key-registration-execution.js", () => ({
@@ -184,7 +179,6 @@ beforeEach(() => {
   mocks.markApproved.mockResolvedValue(row("approved"));
   mocks.renewPristineApproved.mockResolvedValue(row("approved"));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
-  mocks.releaseGateEnabled.mockReturnValue(false);
   mocks.getExecutor.mockReturnValue(null);
 });
 
@@ -389,30 +383,8 @@ describe("lighter.key.register", () => {
     expect(mocks.markApproved).not.toHaveBeenCalled();
   });
 
-  it("records approval but reaches no signer or submit path while the independent gate is closed", async () => {
+  it("stops at the privileged code boundary when the executor is unavailable", async () => {
     mocks.findIntent.mockResolvedValue(row("approval_pending"));
-
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
-      { intentId: INTENT_ID },
-      { ...CONTEXT, approved: true, approvalId: "approval-1" },
-    );
-
-    expect(result.success, result.output).toBe(true);
-    expect(result.data).toMatchObject({
-      status: "approval_recorded_gate_closed",
-      executionState: "approved",
-    });
-    expect(result.output).toContain("Nothing was signed or submitted");
-    expect(mocks.markApproved).toHaveBeenCalledWith({
-      intentId: INTENT_ID,
-      sessionId: "session-1",
-      approvalId: "approval-1",
-    });
-  });
-
-  it("still stops at the independent code boundary if the release gate is opened", async () => {
-    mocks.findIntent.mockResolvedValue(row("approval_pending"));
-    mocks.releaseGateEnabled.mockReturnValue(true);
 
     const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
       { intentId: INTENT_ID },
@@ -426,7 +398,6 @@ describe("lighter.key.register", () => {
 
   it("passes only trusted session wallet scope into the privileged executor", async () => {
     mocks.findIntent.mockResolvedValue(row("approval_pending"));
-    mocks.releaseGateEnabled.mockReturnValue(true);
     mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration });
     mocks.executeRegistration.mockResolvedValue({
       source: "vex_lighter_key_registration",

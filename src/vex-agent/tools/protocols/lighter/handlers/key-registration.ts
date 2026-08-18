@@ -5,7 +5,6 @@ import { readLighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/
 import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
 import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
-import { LIGHTER_KEY_REGISTRATION_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import {
   isLighterIntegrationEnabled,
@@ -389,16 +388,6 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       : intent.approvalStatus === "approved" ? intent : null;
     if (approved === null) {
       return fail(`Lighter key-registration intent ${intent.intentId} is not approval-authorized.`);
-    }
-    if (!LIGHTER_KEY_REGISTRATION_RELEASE_GATE.isEnabled()) {
-      return ok({
-        source: "vex_lighter_key_registration",
-        status: "approval_recorded_gate_closed",
-        intentId: approved.intentId,
-        executionState: approved.executionState,
-        message:
-          "Lighter key-registration approval was recorded, but the independent release gate is closed. Nothing was signed or submitted.",
-      });
     }
     const executor = getConfiguredLighterKeyRegistrationExecutor();
     if (executor === null) {

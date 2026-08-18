@@ -170,7 +170,6 @@ function makeDeps(options: {
     },
     readIntent: vi.fn(async () => current),
     integrationEnabled: vi.fn(async () => true),
-    releaseGateEnabled: vi.fn(() => true),
     resolveWallet: vi.fn(() => WALLET),
     sign: vi.fn(async () => {
       events.push("sign");
@@ -366,7 +365,6 @@ describe("Lighter key registration execution", () => {
     expect(setup.deps.sign).not.toHaveBeenCalled();
     expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
     expect(setup.deps.integrationEnabled).not.toHaveBeenCalled();
-    expect(setup.deps.releaseGateEnabled).not.toHaveBeenCalled();
   });
 
   it("refuses evidence-only reconciliation before a transaction is staged", async () => {

@@ -34,8 +34,6 @@ import {
   executeApprovedLighterDeposit,
   type LighterDepositExecutionResult,
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
-import { LIGHTER_DEPOSIT_RELEASE_GATE } from "@tools/lighter/wallet-funding/release-gates.js";
-import { readLighterDepositRolloutDecision } from "@tools/lighter/wallet-funding/deposit-rollout-policy.js";
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
 import {
@@ -351,8 +349,6 @@ function canSupersedePristineDepositFromAnotherSession(input: {
 
 function depositUserGuidance(execution: LighterDepositExecutionResult): string {
   switch (execution.status) {
-    case "gate_closed":
-      return "The deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Tell the user nothing was signed or submitted.";
     case "l2_pending":
       return "Ethereum confirmed the deposit, but Vex has not yet proven that Lighter credited this exact transaction. Tell the user the deposit is awaiting Lighter confirmation and must not be retried.";
     case "ambiguous":
@@ -614,23 +610,6 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`Lighter deposit must be at least ${LIGHTER_DEPOSIT_MIN_USDC} USDC; a smaller deposit is not credited.`);
     }
 
-    // Privileged gradual-rollout policy BEFORE live provider work. This is
-    // independent from the capability release gate: allowlist, per-deposit cap,
-    // rolling cap, and operator kill switch all fail closed on their own.
-    const rollout = readLighterDepositRolloutDecision({
-      walletAddress,
-      amountUnits: amountUnits.toString(),
-    });
-    const rolling24hCapUnits = rollout.rolling24hCapUnits;
-    if (!rollout.allowed || rolling24hCapUnits === null) {
-      logger.info("lighter.deposit.rollout_blocked", {
-        stage: "prepare",
-        source: rollout.source,
-        reason: rollout.reason,
-      });
-      return fail(`${rollout.reason} No deposit was prepared.`);
-    }
-
     const routeType = LIGHTER_DEPOSIT_ROUTE_TYPE.perps;
     let preflight;
     try {
@@ -658,19 +637,11 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           amountUnits: preflight.amountUnits,
           preflight,
           expiresAt: new Date(Date.now() + INTENT_TTL_MS),
-          rolling24hCapUnits,
         }),
       );
-    } catch (err) {
-      const isCap = err instanceof onboardingIntentsRepo.LighterDepositRolloutCapError;
-      logger.warn("lighter.deposit.rollout_reservation_failed", {
-        stage: "prepare",
-        reason: isCap ? "rolling_24h_cap_exceeded" : "capacity_check_unavailable",
-      });
+    } catch {
       return fail(
-        isCap
-          ? `${err.message} No deposit was prepared.`
-          : "The Lighter deposit rollout capacity could not be verified, so preparation failed closed.",
+        "Vex could not safely reserve the Lighter deposit intent. No deposit was prepared.",
       );
     }
     if (creation.outcome === "live_conflict") {
@@ -706,7 +677,6 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
                   amountUnits: preflight.amountUnits,
                   preflight,
                   expiresAt: new Date(Date.now() + INTENT_TTL_MS),
-                  rolling24hCapUnits,
                 });
               if (replacement.outcome !== "created") {
                 throw new Error("A replacement Lighter deposit intent was not created.");
@@ -913,62 +883,8 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`Lighter deposit intent ${intent.intentId} is not approval-authorized for execution.`);
     }
 
-    // Gate BEFORE any key resolution or signing.
-    if (!LIGHTER_DEPOSIT_RELEASE_GATE.isEnabled()) {
-      return ok({
-        source: "vex_lighter_deposit",
-        status: "approval_recorded_gate_closed",
-        message:
-          "Lighter deposit approval was recorded, but live deposits are blocked by the default-closed deposit release gate. Nothing was signed or submitted.",
-        intentId: approved.intentId,
-        executionState: approved.executionState,
-      });
-    }
     if (approved.amountUnits === null) {
       return fail("The approved Lighter deposit amount is missing. Nothing was signed or submitted.");
-    }
-    const rollout = readLighterDepositRolloutDecision({
-      walletAddress: approved.walletAddress,
-      amountUnits: approved.amountUnits,
-    });
-    if (!rollout.allowed || rollout.rolling24hCapUnits === null) {
-      logger.info("lighter.deposit.rollout_blocked", {
-        stage: "execute",
-        source: rollout.source,
-        reason: rollout.reason,
-      });
-      return ok({
-        source: "vex_lighter_deposit",
-        status: "approval_recorded_rollout_closed",
-        message: `${rollout.reason} Nothing was signed or submitted.`,
-        intentId: approved.intentId,
-        executionState: approved.executionState,
-      });
-    }
-    try {
-      await withSessionControlLock(sessionId, (client) =>
-        onboardingIntentsRepo.assertExistingDepositWithinRolling24hCapWith(client, {
-          intentId: approved.intentId,
-          amountUnits: approved.amountUnits!,
-          capUnits: rollout.rolling24hCapUnits!,
-        }),
-      );
-    } catch (err) {
-      const isCap = err instanceof onboardingIntentsRepo.LighterDepositRolloutCapError;
-      const reason = isCap
-        ? err.message
-        : "The Lighter deposit rollout capacity could not be verified, so execution failed closed.";
-      logger.warn("lighter.deposit.rollout_reservation_failed", {
-        stage: "execute",
-        reason: isCap ? "rolling_24h_cap_exceeded" : "capacity_check_unavailable",
-      });
-      return ok({
-        source: "vex_lighter_deposit",
-        status: "approval_recorded_rollout_closed",
-        message: `${reason} Nothing was signed or submitted.`,
-        intentId: approved.intentId,
-        executionState: approved.executionState,
-      });
     }
     if (!isLighterDepositFeePreflightComplete()) {
       return ok({

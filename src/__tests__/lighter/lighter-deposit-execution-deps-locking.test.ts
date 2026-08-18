@@ -34,9 +34,6 @@ vi.mock("@tools/uniswap/deployments.js", () => ({
 vi.mock("@tools/uniswap/evm-client.js", () => ({
   getUniswapEvmClients: () => ({ publicClient: {}, walletClient: {} }),
 }));
-vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
-  LIGHTER_DEPOSIT_RELEASE_GATE: { isEnabled: () => false },
-}));
 vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
   signStageBroadcast: vi.fn(),
 }));

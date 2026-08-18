@@ -11,7 +11,7 @@
 --     store private keys, seed material, signatures, signed transaction JSON,
 --     or raw provider auth errors.
 --   - A row authorizes nothing by itself. Signing/broadcast still require a
---     recorded user approval AND the per-capability default-closed release gate.
+--     recorded user approval and the privileged execution boundary.
 --   - Every lookup is session-scoped and environment-scoped so intents cannot
 --     replay across sessions or Core/RHC.
 

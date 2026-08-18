@@ -22,10 +22,6 @@ import {
 } from "./nonce-reservation.js";
 import type { LighterOrderReadyForSignerPlan } from "./execution-plan.js";
 import {
-  LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
-  isLighterLiveTradingEnabled,
-} from "./execution-boundary.js";
-import {
   findMatchingLighterOrder,
   findMatchingLighterTrade,
   lighterOrderEvidenceJson,
@@ -92,7 +88,6 @@ export type ExecuteApprovedLighterCreateOrderResult =
     };
 
 export interface ExecuteApprovedLighterCreateOrderDeps {
-  readonly liveTradingEnabled: () => boolean;
   readonly secretReader: LighterTradingSecretReader;
   readonly reserveNonce: typeof reserveLighterOrderNonceForSigning;
   readonly signer: LighterSignerAdapter;
@@ -145,14 +140,6 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, unsignedOrder, deps } = input;
-  if (!deps.liveTradingEnabled()) {
-    throw new VexError(
-      ErrorCodes.LIGHTER_INVALID_REQUEST,
-      LIGHTER_LIVE_TRADING_DISABLED_MESSAGE,
-      "Ask to start the live Lighter trading milestone before enabling signer or sendTx behavior.",
-    );
-  }
-
   await revalidateLiveOrderState(plan, deps);
   const providerCredential = await readLiveProviderCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(
@@ -311,7 +298,6 @@ export function defaultLighterCreateOrderExecutionDeps(
   },
 ): ExecuteApprovedLighterCreateOrderDeps {
   return {
-    liveTradingEnabled: isLighterLiveTradingEnabled,
     reserveNonce: reserveLighterOrderNonceForSigning,
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,

@@ -1,6 +1,6 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-17**
+**Last updated: 2026-08-18**
 
 Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, wallet-funded account onboarding, local trading
@@ -12,8 +12,8 @@ result. The credential becomes available to order signing only after the live
 slot matches the vault-derived public key, the official SDK `CheckClient`
 succeeds, and the next nonce is exactly the approved nonce plus one.
 
-Deposit, key registration, and order create each retain independent
-default-closed privileged release gates in addition to exact user approval.
+Deposit, key registration, and order create require exact user approval and
+execute through the privileged main-process boundary without operator environment gates.
 Signatures, signed payloads, private keys, and auth tokens are never persisted
 in PostgreSQL or returned through the agent tool surface. Approval-gated order
 create, market/IOC signing, and Phase 3 registration have real Core proofs. No
@@ -40,7 +40,6 @@ wallet-funded onboarding flow.
 | `throttle.ts` | Per-process public REST throttle, small TTL cache, in-flight dedupe |
 | `client.ts` | REST client and singleton; `sendTx` exists only as a low-level signed-submit transport |
 | `wallet-funding/api-key-slots.ts` | Strict full-slot inspection and conservative unused-index selection for `4..254` |
-| `wallet-funding/deposit-rollout-policy.ts` | Privileged wallet allowlist, per-deposit cap, rolling-24-hour cap, and operator kill-switch policy for deposits |
 | `change-pub-key.ts` | Exact TxType 8 unsigned identity and fixed-width L1 ownership-message construction |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting validator for exact encrypted-vault credential and nonce scope |
@@ -53,12 +52,10 @@ wallet-funded onboarding flow.
 | `../../../vex-app/src/main/lighter/key-registration-credential.ts` | Privileged pending-key creation/recovery and public-only promotion to active |
 | `../../../vex-app/src/main/lighter/key-registration-signing.ts` | Selected-wallet EIP-191 signature plus official TxType 8 signer orchestration |
 | `../../../vex-app/src/main/lighter/key-registration-execution.ts` | Exact preflight, staged submit, evidence verification, and reconciliation owner |
-| `../../../vex-app/src/main/lighter/onboarding-release-gates.ts` | Installs the independent default-closed deposit, deposit-rollout, and key-registration operator boundaries |
-| `../../../vex-app/src/main/lighter/live-trading-release-gate.ts` | Privileged default-closed operator gate for approval-gated Lighter create |
 | `../../vex-agent/tools/protocols/lighter/key-registration-execution.ts` | Public-only dependency seam for registration execution and reconciliation |
 | `../../vex-agent/db/repos/lighter-key-registration-intents.ts` | Durable public registration identity and checked lifecycle transitions |
-| `../../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
-| `../../vex-agent/tools/protocols/lighter/order-create-execution.ts` | Gated approved-create pipeline for vault secret load, nonce reservation, local signing, submit metadata, `sendTx`, and API-acceptance persistence |
+| `../../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan |
+| `../../vex-agent/tools/protocols/lighter/order-create-execution.ts` | Approved-create pipeline for vault secret load, nonce reservation, local signing, submit metadata, `sendTx`, and API-acceptance persistence |
 | `../../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
@@ -107,46 +104,33 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
 The submit boundary deliberately does not cache requests, does not attach
 read-only auth headers and does not expose provider rejection bodies. It is
-reachable from `lighter.order.create` only after an exact user approval and the
-privileged live-trading release gate are both present. A `code=200` response
+reachable from `lighter.order.create` only after an exact user approval resumes
+the configured privileged execution path. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
-## Production Deposit Rollout Policy
+## Production Deposit Boundary
 
-The deposit release gate and production rollout policy are independent. An
-operator must explicitly open both boundaries; exact user approval remains
-required as a third, separate condition.
-
-The privileged main process reads these values:
-
-- `VEX_LIGHTER_DEPOSIT_ROLLOUT_POLICY=allowlisted-v1`
-- `VEX_LIGHTER_DEPOSIT_KILL_SWITCH=clear-v1`
-- `VEX_LIGHTER_DEPOSIT_WALLET_ALLOWLIST` as comma-separated EVM addresses
-- `VEX_LIGHTER_DEPOSIT_MAX_USDC` as the positive per-deposit USDC cap
-- `VEX_LIGHTER_DEPOSIT_ROLLING_24H_MAX_USDC` as the positive aggregate cap
-
-Missing, malformed, truthy-but-inexact, empty, or internally inconsistent
-values fail closed. The rolling cap is enforced atomically in PostgreSQL across
-all wallets and processes before an intent reserves capacity, then checked
-again after exact approval and before live provider preflight, key resolution,
-or signing. Nonterminal deposit intents retain their reservation for the
-rolling 24-hour window; concurrent wallets cannot race past the aggregate cap.
-Policy failures return bounded reasons and never disclose the allowlist or raw
-environment configuration.
+Deposit execution has no operator environment gate, allowlist, rollout cap, or
+kill switch. It remains unavailable to direct model calls and resumes only from
+the exact approval card the user accepted. Before signing, Vex revalidates the
+selected wallet, Ethereum chain, Lighter gateway and USDC metadata, balances,
+allowance, transaction fee ceilings, intent freshness, workflow state, and
+wallet nonce lease. Transaction identity is staged durably before broadcast,
+and ambiguous outcomes are reconciliation-only.
 
 ## Phase 3 Key Registration Boundary
 
 | Tool | Capability |
 |------|------------|
 | `lighter.key.register.prepare` | Reserves a full-read-proven slot, creates/reuses an encrypted pending key, reads the exact nonce, and returns a security-sensitive approval card without signing or submitting |
-| `lighter.key.register` | Host-approval-only resume target; exact approval plus the independent main-process release gate are both required before signing or `sendTx` |
+| `lighter.key.register` | Host-approval-only resume target; exact approval is required before signing or `sendTx` |
 | `lighter.key.register.status` | Reconciles a previously staged registration from public evidence; structurally cannot sign, submit, or retry an unstaged intent |
 
 The privileged execution sequence is intentionally ordered:
 
 1. Re-prove the unique wallet-owned master account, reserved empty slot, exact
-   approved nonce, approval binding, workflow state, and release gate.
+   approved nonce, approval binding, and workflow state.
 2. Resolve and decrypt only the selected Vex EVM wallet and pending Lighter key.
 3. Sign the human-readable ownership message locally and build the official
    TxType 8 transaction.
@@ -159,11 +143,8 @@ The privileged execution sequence is intentionally ordered:
    the database lifecycle ready and promote the vault marker to
    `key_registered_active`.
 
-The exact operator gate value is
-`VEX_LIGHTER_KEY_REGISTRATION_RELEASE_GATE=wallet-funded-key-registration-v1`.
-It is installed only by Electron main and cannot be supplied by a tool or
-renderer argument. Pending keys use `key_generated_pending_registration` and
-are excluded from trading credential listing and order-signing reads.
+Pending keys use `key_generated_pending_registration` and are excluded from
+trading credential listing and order-signing reads.
 
 Lighter Core reports a missing exact API-key slot as HTTP `400` with the exact
 provider message `api key not found`, rather than as an empty successful list.
@@ -174,8 +155,8 @@ as vacancy; unrelated `400` responses still fail closed before wallet access.
 
 The execution architecture boundary is documented and code-guarded. The preview
 gate may feed an exact matching order, but no order can be sent unless the
-prepared approval card is approved and the privileged live-trading release gate
-is opened by the desktop main process. This is not yet live order proof:
+prepared approval card is approved and the configured privileged execution
+dependencies are available. This is not itself live order proof:
 
 - Lighter order writes classify as external exchange mutations. If the existing
   taxonomy is used, the first create/cancel tools must be `external_post`;
@@ -266,9 +247,7 @@ Signer and credential strategy:
   an approved, unexpired, session-scoped durable intent whose opaque vault
   reference still matches the preview-bound environment/account/API-key scope.
   It refuses intents that are unapproved, already advanced, expired, nonce
-  reserved, or credential-scope mismatched. The live submit gate remains
-  default-closed unless the desktop main process receives the exact operator
-  release value.
+  reserved, or credential-scope mismatched.
 - `trading-secret.ts` defines the private-key material boundary for the
   privileged signer adapter. It can load key bytes only from an injected
   privileged reader and refuses missing, incomplete, or read-only-token material.
@@ -284,7 +263,7 @@ Signer and credential strategy:
   private keys before import, refuses mismatched references before vault access,
   does not fall back to environment variables, and maps vault failures without
   echoing secret material. Approved `lighter.order.create` invokes this reader
-  only after the privileged release gate and live public credential reads pass.
+  only after live public credential reads pass.
 - Settings/API keys calls this main-process boundary directly for one-time
   import or removal. The renderer submits only the typed account/API-key scope
   plus the one-time private-key field; after a successful save the form is
@@ -321,21 +300,17 @@ Signer and credential strategy:
   `predicted_execution_time_ms`, and optional `volume_quota_remaining`). Submit rejection
   errors do not include provider response bodies because those may echo signed
   payload material. This client method is reachable from agent order handlers
-  only after exact approval and the privileged release gate are both present.
+  only after exact approval resumes the privileged execution path.
 - `order-create-execution.ts` is the only reviewed agent-side owner of the
   live create path. It is dependency-injected by the Vex main process
   with the unlocked-vault secret reader, packaged signer adapter, and Lighter
-  client. Its order is: release gate, exact live key and next-nonce reads, vault
+  client. Its order is: exact live key and next-nonce reads, vault
   key load, official-signer account auth, registered-public-key match,
   authenticated duplicate/readiness preflight, durable nonce observation and
   reservation, local order signing, signed-state persistence, submitted-state
   persistence before `sendTx`, API acceptance persistence, and bounded provider
   outcome reconciliation. It returns only bounded hashes/status metadata, never
   key bytes, account auth tokens, or `tx_info`.
-- `vex-app/src/main/lighter/live-trading-release-gate.ts` reads only the exact
-  operator value `VEX_LIGHTER_LIVE_TRADING_RELEASE_GATE=approval-gated-create-v1`.
-  Missing, truthy, or unrecognized values fail closed. This gate is not a
-  secret source and does not accept renderer or model arguments.
 - `lighter_order_execution_intents` stores the durable bridge between a preview
   and the signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /
@@ -356,17 +331,14 @@ Signer and credential strategy:
   local execution-intent row and uses Vex's trusted prepared-action registry to
   request approval for `lighter.order.create`.
 - Approved `lighter.order.create` records the approval decision against the
-  local Lighter execution intent, builds the signer-bound execution plan, builds
-  the unsigned create-order request, then either refuses at the default-closed
-  live-trading gate before any private-key read, signer initialization,
-  signature, or provider submission, or continues into the real signer/submit
-  pipeline only when the privileged operator gate is explicitly enabled.
+  local Lighter execution intent, builds the signer-bound execution plan and
+  unsigned create-order request, then continues through live revalidation,
+  privileged secret loading, local signing, and provider submission.
 
 Milestone 8 S1/S2 are closed for the documented execution boundary and
 code-level guardrails: create remains approval-gated, cancel surfaces are not
-registered, and submit/signing behavior is isolated behind the default-closed
-live-trading release gate. Live order proof belongs to the next approval-gated
-create milestone.
+registered, and submit/signing behavior remains isolated in the privileged
+runtime. Live order proof belongs to the approval-gated create milestone.
 
 Nonce foundation now has durable storage in `lighter_nonce_state` and an
 internal public nonce sync helper:
@@ -428,8 +400,8 @@ Not allowed:
 Agent tools accept `environment: "core" | "rhc"` as an advanced override and
 default to `rhc` for normal conversational Lighter requests. Tools are
 registered as read-only, approval-preparation, or approval-resume surfaces. The
-only execution resume target is exact-intent bound and remains unreachable for
-submission unless the privileged operator release gate is explicitly enabled.
+execution resume targets are exact-intent bound and reachable only from trusted
+host approval follow-ups with configured privileged dependencies.
 
 | Tool | Client calls | Returns |
 |------|--------------|---------|
@@ -444,7 +416,7 @@ submission unless the privileged operator release gate is explicitly enabled.
 | `lighter.apiKeys.inspect` | `getApiKeys` | Public API-key indexes, public keys, and nonce metadata |
 | `lighter.order.preview` | live market resolution, public API-key metadata, market detail, order book, public account | Persisted preview-only Lighter order preflight from conversational asset/price/expiry requests |
 | `lighter.order.create.prepare` | persisted preview, local vault reference boundary | Local approval-prepared execution intent |
-| `lighter.order.create` | exact approved intent, privileged runtime dependencies | Executes only when the default-closed operator release gate is explicitly enabled; otherwise stops before key access/signing/submission |
+| `lighter.order.create` | exact approved intent, privileged runtime dependencies | Revalidates live state, signs locally, submits, and reconciles only after trusted host approval |
 | `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
 | `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
@@ -655,7 +627,7 @@ venues. This proves the current public contracts used by the just-in-time nonce
 and registered-key preflight. It does not prove signing, authenticated reads
 with the user's encrypted trading key, `sendTx`, sequencer acceptance, or an
 order outcome; those require the user's exact preview and approval through the
-default-closed live create path.
+privileged live create path.
 
 2026-08-17 local time: the controlled wallet-funded Phase 3 registration exit
 gate passed on Lighter Core account `737810`, API-key index `4`. Vex generated
