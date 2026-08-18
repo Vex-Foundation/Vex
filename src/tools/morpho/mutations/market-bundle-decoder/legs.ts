@@ -77,7 +77,7 @@ export interface LegContext {
   /** The token the pull leg must move. */
   readonly pullToken: Address;
   /** Vex's own borrow share-price ceiling for a repayment, `null` for a supply. */
-  readonly maxBorrowSharePriceRaw: bigint | null;
+  readonly maxSharePriceRaw: bigint | null;
 }
 
 export interface LegVerification {
@@ -85,7 +85,7 @@ export interface LegVerification {
   readonly pulledAmountRaw?: bigint;
   readonly verifiedAmountRaw?: bigint;
   readonly verifiedSharesRaw?: bigint;
-  readonly maxBorrowSharePriceRaw?: bigint;
+  readonly maxSharePriceRaw?: bigint;
   readonly sweepRecipient?: string;
 }
 
@@ -127,6 +127,83 @@ function verifySupplyCollateral(args: readonly unknown[], ctx: LegContext): LegV
   };
 }
 
+/**
+ * `morphoSupply(marketParams, assets, shares, maxSharePrice, onBehalf, data)` -
+ * the SUPPLIER'S own leg, and the one that lends the loan asset into the market.
+ *
+ * Cited to `base-market-supply-withdraw.json` captures[0].legs[1], selector
+ * 0x5b866db6. Its argument order is NOT the collateral supply's: a collateral
+ * supply carries no price guard at all, while this leg carries a `maxSharePrice`
+ * in RAY in fourth position, so the `onBehalf` a collateral supply reads third
+ * is read FIFTH here. Reading the two with one shape would compare an address
+ * against a price.
+ *
+ * `shares` must be zero because the supply is denominated in ASSETS, and a leg
+ * carrying both denominations does not state one size.
+ */
+function verifySupply(args: readonly unknown[], ctx: LegContext): LegVerification {
+  const [marketParams, assets, shares, maxSharePrice, onBehalf, callbackData] =
+    args as [readonly unknown[], bigint, bigint, bigint, Address, unknown];
+  requireMarketParams(marketParams, ctx.params, "market supply");
+  if (assets !== ctx.intent.amountRaw) {
+    amountMismatch("supplied loan assets", assets, ctx.intent.amountRaw ?? 0n);
+  }
+  if (shares !== 0n) {
+    reject(
+      `Refusing a Morpho market supply: it was authorised in ASSETS but its Blue leg also names ${shares} supply `
+      + "shares. Morpho takes one denomination or the other, and a leg carrying both is not the operation asked for.",
+    );
+  }
+  // THE FIELD THAT DECIDES WHOSE POSITION EARNS THE INTEREST. A supply credited
+  // to any other address hands the wallet's money to someone else's position,
+  // and unlike a wrong recipient on a transfer there is nothing on chain
+  // afterwards that says it was not intended.
+  if (!isAddressEqual(onBehalf, ctx.intent.userAddress)) {
+    addressMismatch("supply position owner", onBehalf.toLowerCase(), ctx.intent.userAddress.toLowerCase());
+  }
+  requireEmptyCallback(callbackData, "market supply");
+  requireSupplySharePrice(maxSharePrice, ctx);
+  return {
+    summary:
+      `supplies ${assets} raw loan units to the market for ${onBehalf.toLowerCase()}'s own supply position, `
+      + `refusing on-chain any supply share price above ${maxSharePrice}`,
+    verifiedAmountRaw: assets,
+    maxSharePriceRaw: maxSharePrice,
+  };
+}
+
+/**
+ * Hold the market supply's on-chain price guard to a ceiling Vex derived itself.
+ *
+ * The mirror of `requireBorrowSharePrice`, kept separate so each refusal names
+ * the operation the reader is actually holding rather than telling a supplier
+ * about a repayment. Absolute against a number computed from a fresh market
+ * read, never a percentage of the trade (rules/90).
+ */
+function requireSupplySharePrice(sawRaw: bigint, ctx: LegContext): void {
+  if (sawRaw <= 0n) {
+    reject(
+      "Refusing a Morpho market supply: its Blue leg carries no positive supply share-price guard, so nothing "
+      + "on-chain would stop the supply from being credited at any price at all. That guard is what decides how many "
+      + "supply shares the wallet's assets buy.",
+    );
+  }
+  const ceiling = ctx.maxSharePriceRaw;
+  if (ceiling === null) {
+    reject(
+      "Refusing a Morpho market supply: Vex computed no supply share-price ceiling of its own to check the built one "
+      + "against, so the guard in the transaction is unverified.",
+    );
+  }
+  if (sawRaw > ceiling) {
+    reject(
+      `Refusing a Morpho market supply: its on-chain guard allows a supply share price of ${sawRaw}, above the `
+      + `${ceiling} Vex derived from the market's current supply share price at the requested slippage. The `
+      + "transaction would buy fewer supply shares for the same assets than was authorised.",
+    );
+  }
+}
+
 function verifyRepay(args: readonly unknown[], ctx: LegContext): LegVerification {
   const [marketParams, assets, shares, slippageAmount, onBehalf, callbackData] =
     args as [readonly unknown[], bigint, bigint, bigint, Address, unknown];
@@ -153,7 +230,7 @@ function verifyRepay(args: readonly unknown[], ctx: LegContext): LegVerification
         `burns ${shares} raw borrow shares of ${onBehalf.toLowerCase()}'s debt, refusing on-chain any borrow share `
         + `price above ${slippageAmount}`,
       verifiedSharesRaw: shares,
-      maxBorrowSharePriceRaw: slippageAmount,
+      maxSharePriceRaw: slippageAmount,
     };
   }
 
@@ -169,7 +246,7 @@ function verifyRepay(args: readonly unknown[], ctx: LegContext): LegVerification
       `repays ${assets} raw loan units against ${onBehalf.toLowerCase()}'s debt, refusing on-chain any borrow share `
       + `price above ${slippageAmount}`,
     verifiedAmountRaw: assets,
-    maxBorrowSharePriceRaw: slippageAmount,
+    maxSharePriceRaw: slippageAmount,
   };
 }
 
@@ -188,7 +265,7 @@ function requireBorrowSharePrice(sawRaw: bigint, ctx: LegContext): void {
       + "protection.",
     );
   }
-  const ceiling = ctx.maxBorrowSharePriceRaw;
+  const ceiling = ctx.maxSharePriceRaw;
   if (ceiling === null) {
     reject(
       "Refusing a Morpho repayment: Vex computed no borrow share-price ceiling of its own to check the built one "
@@ -243,6 +320,8 @@ export function verifyLeg(functionName: string, args: readonly unknown[], ctx: L
       return verifySupplyCollateral(args, ctx);
     case "morphoRepay":
       return verifyRepay(args, ctx);
+    case "morphoSupply":
+      return verifySupply(args, ctx);
     case "erc20Transfer":
       return verifySweep(args, ctx);
     default:
@@ -253,7 +332,16 @@ export function verifyLeg(functionName: string, args: readonly unknown[], ctx: L
   }
 }
 
-/** Vex's own price ceiling: mandatory for a repayment, forbidden for a supply. */
+/**
+ * Vex's own RAY price ceiling: mandatory for a repayment and for a MARKET
+ * SUPPLY, forbidden for a collateral supply.
+ *
+ * The split is a property of the legs, not a convention: `morphoSupplyCollateral`
+ * carries no price argument at all (collateral is not shares and buys nothing),
+ * while `morphoRepay` and `morphoSupply` each carry a share-price guard the
+ * chain enforces. A bound supplied for the operation that has nothing to bind is
+ * a sign the caller believes it is holding a different operation.
+ */
 function resolveSharePriceCeiling(kind: MarketBundleKind, ceiling: bigint | undefined): bigint | null {
   if (kind === "supply_collateral") {
     if (ceiling !== undefined) {
@@ -266,6 +354,12 @@ function resolveSharePriceCeiling(kind: MarketBundleKind, ceiling: bigint | unde
     return null;
   }
   if (ceiling === undefined || ceiling <= 0n) {
+    if (kind === "supply") {
+      reject(
+        "Refusing a Morpho market supply: Vex was given no positive supply share-price ceiling of its own. The "
+        + "supply's Blue leg carries an on-chain price guard, and a guard checked against nothing is not checked.",
+      );
+    }
     reject(
       "Refusing a Morpho repayment: Vex was given no positive borrow share-price ceiling of its own. The "
       + "repayment's Blue leg carries an on-chain price guard, and a guard checked against nothing is not checked.",
@@ -281,8 +375,11 @@ export function buildLegContext(
   generalAdapter1: Address,
   bounds: MorphoMarketBundleBounds,
 ): LegContext {
+  // Only a COLLATERAL supply pulls the collateral token. A repayment and a
+  // MARKET SUPPLY both pull the loan token, and the two tokens rarely share a
+  // scale.
   const pullToken = kind === "supply_collateral" ? params.collateralToken : params.loanToken;
-  const maxBorrowSharePriceRaw = resolveSharePriceCeiling(kind, bounds.maxBorrowSharePriceRaw);
+  const maxSharePriceRaw = resolveSharePriceCeiling(kind, bounds.maxSharePriceRaw);
 
   if (kind === "repay_shares") {
     const bound = bounds.transferBoundRaw;
@@ -293,7 +390,7 @@ export function buildLegContext(
         + "that bound the amount leaving the wallet is unchecked.",
       );
     }
-    return { intent, params, kind, generalAdapter1, pullAmountRaw: bound, pullToken, maxBorrowSharePriceRaw };
+    return { intent, params, kind, generalAdapter1, pullAmountRaw: bound, pullToken, maxSharePriceRaw };
   }
 
   if (bounds.transferBoundRaw !== undefined) {
@@ -310,5 +407,5 @@ export function buildLegContext(
       + "built transaction to.",
     );
   }
-  return { intent, params, kind, generalAdapter1, pullAmountRaw: amount, pullToken, maxBorrowSharePriceRaw };
+  return { intent, params, kind, generalAdapter1, pullAmountRaw: amount, pullToken, maxSharePriceRaw };
 }

@@ -3,12 +3,21 @@
  *
  * ── WHAT THIS HANDLER OWNS ─────────────────────────────────────────────────
  *
- *   1. VALIDATION. There is NO wallet parameter, deliberately: the distributor
- *      pays the wallet named in the leaf, so a caller-supplied address could
- *      only ever be a wallet whose rewards this session pays gas to deliver to
- *      someone else. The signing wallet comes from the session's resolution.
- *      There is no fee, recipient, amount or destination parameter either, and
- *      rules/90 forbids one ever being added.
+ *   1. VALIDATION. There is NO wallet parameter, deliberately: a
+ *      caller-supplied address could only ever be a wallet whose rewards this
+ *      session pays gas to deliver to someone else. The signing wallet comes
+ *      from the session's resolution. There is no fee, recipient, amount or
+ *      destination parameter either, and rules/90 forbids one ever being added.
+ *
+ *      THE DESTINATION IS PROVED, NOT INFERRED FROM THE LEAF. An earlier
+ *      version of this note said the distributor pays the wallet named in the
+ *      leaf. It does not: `claim(...)` resolves the destination from the
+ *      distributor's OWN `claimRecipient` state, so a redirect configured at
+ *      any earlier point would have paid somebody else while this lane
+ *      reported no credit. The lane therefore signs `claimWithRecipient` with
+ *      every recipient hard-bound to the signing wallet, and
+ *      `assertMerklClaimCalldata` checks that in the bytes. See
+ *      `src/tools/merkl/distributor.ts` for the deployed-contract evidence.
  *   2. THE CHAIN ID, from Vex's own registry, never from model input.
  *   3. THE FRESH READ. Proofs expire when a new distribution root lands, so the
  *      claim is always built from a read taken moments before signing, never
@@ -328,7 +337,16 @@ function renderOutcome(
     return {
       success: false,
       output: outcome.message,
-      data: { ...shared, status: "unproven", reason: outcome.reason, txHash: outcome.txHash, claimed: false },
+      data: {
+        ...shared,
+        status: "unproven",
+        reason: outcome.reason,
+        txHash: outcome.txHash,
+        claimed: false,
+        // Present only when the receipt proved a sibling credit the anchored
+        // row cannot carry. The tokens arrived; the ledger row did not move.
+        ...(outcome.credits === undefined ? {} : { credited: outcome.credits }),
+      },
     };
   }
 

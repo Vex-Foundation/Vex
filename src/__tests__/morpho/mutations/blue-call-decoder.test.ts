@@ -13,7 +13,10 @@ import { encodeFunctionData } from "viem";
 import { blueAbi } from "@morpho-org/blue-sdk-viem";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
-import { buildMorphoDirectBorrow } from "../../../tools/morpho/mutations/borrow-engine.js";
+import {
+  buildMorphoDirectBorrow,
+  buildMorphoDirectWithdraw,
+} from "../../../tools/morpho/mutations/borrow-engine.js";
 import { verifyMorphoBlueCall } from "../../../tools/morpho/mutations/blue-call-decoder.js";
 import type {
   MorphoBorrowIntent,
@@ -136,7 +139,7 @@ describe("direct Blue call verifier", () => {
     // The five parameters ARE the market. A calldata naming a different oracle
     // acts on a different market than the one whose oracle was vouched for, even
     // though every other field still looks right.
-    const hostile = { ...PARAMS, oracle: ATTACKER as unknown as typeof PARAMS.oracle };
+    const hostile = { ...PARAMS, oracle: ATTACKER };
     const error = refusal(() => verifyMorphoBlueCall(tx(borrowCalldata({ params: hostile })), intent(), PARAMS));
 
     expect(error.message).toContain("not the ones Vex vouched for");
@@ -144,7 +147,7 @@ describe("direct Blue call verifier", () => {
   });
 
   it("refuses a swapped IRM and a swapped LLTV, naming which differed", () => {
-    const wrongIrm = { ...PARAMS, irm: ATTACKER as unknown as typeof PARAMS.irm };
+    const wrongIrm = { ...PARAMS, irm: ATTACKER };
     expect(refusal(() => verifyMorphoBlueCall(tx(borrowCalldata({ params: wrongIrm })), intent(), PARAMS)).message)
       .toContain("irm differ");
 
@@ -210,5 +213,93 @@ describe("direct Blue call verifier", () => {
     // The collateral leg carries the COLLATERAL token's scale, not the loan's.
     expect(report.summary).toContain("8 decimals");
     expect(report.summary).toContain("cbBTC");
+  });
+});
+
+/**
+ * THE SUPPLIER'S WITHDRAWAL, the third operation this shape carries.
+ *
+ * It exists as a direct Blue call for a MEASURED reason rather than a stylistic
+ * one: the SDK's own `blue.withdraw()` builds a Bundler3 bundle whose single
+ * requirement is `blueAuthorization`, the standing GeneralAdapter1 grant the
+ * owner forbids (fixture `agents_dm/morpho-e3/fixtures/
+ * base-market-supply-withdraw.json`, captures[1].requirements[0]). So Vex
+ * encodes it, and then reads its own bytes back with the same suspicion it
+ * applies to the SDK's.
+ */
+describe("verifyMorphoBlueCall: the supplier's direct withdrawal", () => {
+  const withdrawIntent = intent({ operation: "withdraw" });
+
+  function withdrawCalldata(args: {
+    assets?: bigint; shares?: bigint; onBehalf?: string; receiver?: string;
+  } = {}) {
+    return encodeFunctionData({
+      abi: blueAbi,
+      functionName: "withdraw",
+      args: [
+        PARAMS,
+        args.assets ?? AMOUNT,
+        args.shares ?? 0n,
+        (args.onBehalf ?? WALLET) as typeof WALLET,
+        (args.receiver ?? WALLET) as typeof WALLET,
+      ],
+    });
+  }
+
+  it("accepts the bytes Vex's own encoder produced, and reads them in the LOAN token's scale", () => {
+    const built = buildMorphoDirectWithdraw(withdrawIntent, PARAMS);
+    const report = verifyMorphoBlueCall(built, withdrawIntent, PARAMS);
+
+    expect(report.functionName).toBe("withdraw");
+    expect(report.verifiedAmountRaw).toBe(AMOUNT.toString());
+    expect(report.onBehalf).toBe(WALLET.toLowerCase());
+    expect(report.receiver).toBe(WALLET.toLowerCase());
+    // A withdrawal of SUPPLIED assets moves the loan token at 6 decimals, not
+    // the 8-decimal collateral. Reading the wrong scale here would misreport the
+    // size by a hundredfold.
+    expect(report.summary).toContain("USDC (6 decimals)");
+    expect(report.summary).not.toContain("cbBTC");
+  });
+
+  it("refuses a withdrawal credited to somebody else's supply position", () => {
+    const error = refusal(() =>
+      verifyMorphoBlueCall(tx(withdrawCalldata({ onBehalf: ATTACKER })), withdrawIntent, PARAMS));
+
+    expect(error.code).toBe(ErrorCodes.MORPHO_BUNDLE_REJECTED);
+    expect(error.message).toContain(ATTACKER.toLowerCase());
+  });
+
+  it("refuses a withdrawal paid to an address the intent never named", () => {
+    const error = refusal(() =>
+      verifyMorphoBlueCall(tx(withdrawCalldata({ receiver: ATTACKER })), withdrawIntent, PARAMS));
+
+    expect(error.message).toContain(ATTACKER.toLowerCase());
+  });
+
+  it("refuses a withdrawal naming SUPPLY SHARES alongside an asset amount", () => {
+    const error = refusal(() =>
+      verifyMorphoBlueCall(tx(withdrawCalldata({ shares: 7n })), withdrawIntent, PARAMS));
+
+    expect(error.message).toContain("supply shares alongside an asset amount");
+  });
+
+  it("refuses a withdrawal whose calldata moves a different amount than the intent", () => {
+    const error = refusal(() =>
+      verifyMorphoBlueCall(tx(withdrawCalldata({ assets: AMOUNT * 2n })), withdrawIntent, PARAMS));
+
+    expect(error.message).toContain((AMOUNT * 2n).toString());
+  });
+
+  it("refuses a DIRECT Blue call for a market supply, which is a bundle in this lane", () => {
+    const error = refusal(() =>
+      verifyMorphoBlueCall(tx(withdrawCalldata()), intent({ operation: "supply" }), PARAMS));
+
+    expect(error.message).toContain("routed through Bundler3");
+  });
+
+  it("refuses a withdrawal whose calldata calls `borrow` instead", () => {
+    const error = refusal(() => verifyMorphoBlueCall(tx(borrowCalldata()), withdrawIntent, PARAMS));
+
+    expect(error.message).toContain('must call "withdraw"');
   });
 });

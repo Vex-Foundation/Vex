@@ -110,11 +110,14 @@ function repayLog(over: Partial<{ market: string; onBehalf: string; assets: bigi
   };
 }
 
+/** `Transfer(address,address,uint256)`, the topic every ERC-20 movement carries. */
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
 /** An ordinary ERC-20 Transfer of the same token, which must prove NOTHING here. */
 const NOISE: MorphoSettlementLog = {
   address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
   topics: [
-    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+    TRANSFER_TOPIC,
     addr(WALLET),
     addr(BLUE),
   ],
@@ -201,7 +204,7 @@ describe("morpho borrow settlement decoder: the four operations", () => {
     const logs: MorphoSettlementLog[] = [
       { ...NOISE, data: toHex(PULLED, { size: 32 }) },
       repayLog(),
-      { ...NOISE, topics: [NOISE.topics[0]!, addr(BLUE), addr(WALLET)], data: toHex(PULLED - REPAID_ASSETS, { size: 32 }) },
+      { ...NOISE, topics: [TRANSFER_TOPIC, addr(BLUE), addr(WALLET)], data: toHex(PULLED - REPAID_ASSETS, { size: 32 }) },
     ];
     expect(decode("repay", logs, null)).toEqual({
       kind: "decoded",

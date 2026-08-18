@@ -6,7 +6,7 @@
  * verifies the built transaction against THIS rather than against the builder's
  * own account of what it built.
  *
- * ── FOUR OPERATIONS, ONE LEG EACH ───────────────────────────────────────────
+ * ── SIX OPERATIONS, ONE LEG EACH ────────────────────────────────────────────
  *
  * A Blue market operation moves exactly one token in one direction, which is
  * what makes it far simpler to record than Jupiter's `/operate` (whose signed
@@ -18,6 +18,29 @@
  *   withdraw_collateral collateral token, wallet RECEIVES
  *   borrow              loan token,       wallet RECEIVES
  *   repay               loan token,       wallet SENDS
+ *   supply              loan token,       wallet SENDS      (the SUPPLIER side)
+ *   withdraw            loan token,       wallet RECEIVES   (the SUPPLIER side)
+ *
+ * ── THE SUPPLIER IS NOT A BORROWER, AND IS NOT MODELLED AS ONE ──────────────
+ *
+ * `supply` and `withdraw` are DIRECT LENDING into one Blue market: the wallet
+ * hands the market its loan asset and earns the borrowers' interest on it, with
+ * no vault curator in between and therefore no curator fee. They join this union
+ * because they are market operations with the same identity, the same policy
+ * gate and the same one-leg shape as the other four, but their SAFETY QUESTION
+ * IS A DIFFERENT ONE:
+ *
+ *   - a supplier of the LOAN asset takes on no debt, so neither operation moves
+ *     the health factor at all and no health-factor floor applies to them. A
+ *     floor applied anyway would be a check that always passes, which reads as
+ *     protection and is not;
+ *   - what CAN refuse a supplier is the market's ability to pay: a withdrawal is
+ *     bounded by the market's free liquidity (`MorphoMarketSnapshot.
+ *     availableLiquidityRaw`) and by the wallet's own supply position, and both
+ *     bounds refuse BY NAME rather than reverting on chain.
+ *
+ * That is why `MorphoPositionSnapshot` below carries the SUPPLY side explicitly
+ * beside the borrow side rather than reusing either.
  *
  * ── TWO TOKENS, TWO DECIMALS, ALWAYS ────────────────────────────────────────
  *
@@ -31,12 +54,14 @@
 
 import type { Address } from "viem";
 
-/** The four operations. There is no fifth, and no combined shape. */
+/** The six operations. There is no seventh, and no combined shape. */
 export type MorphoBorrowOperation =
   | "supply_collateral"
   | "withdraw_collateral"
   | "borrow"
-  | "repay";
+  | "repay"
+  | "supply"
+  | "withdraw";
 
 /** Every operation, in a stable order, for exhaustive checks and vocabularies. */
 export const MORPHO_BORROW_OPERATIONS: readonly MorphoBorrowOperation[] = [
@@ -44,7 +69,20 @@ export const MORPHO_BORROW_OPERATIONS: readonly MorphoBorrowOperation[] = [
   "withdraw_collateral",
   "borrow",
   "repay",
+  "supply",
+  "withdraw",
 ] as const;
+
+/** The two SUPPLIER-side operations, which move the loan asset and take no debt. */
+export const MORPHO_MARKET_SUPPLY_OPERATIONS: readonly MorphoBorrowOperation[] = [
+  "supply",
+  "withdraw",
+] as const;
+
+/** True for the two operations a supplier performs, which no health factor governs. */
+export function isMorphoSupplierOperation(operation: MorphoBorrowOperation): boolean {
+  return operation === "supply" || operation === "withdraw";
+}
 
 /**
  * A Blue market, fully identified.
@@ -116,6 +154,20 @@ export interface MorphoPositionSnapshot {
   readonly collateralRaw: bigint;
   readonly borrowSharesRaw: bigint;
   readonly borrowAssetsRaw: bigint;
+  /**
+   * The SUPPLIER side, and a separate pair of fields rather than a reuse of the
+   * borrow one because they answer a different question: these are what the
+   * wallet LENT to the market, and they are what bounds a withdrawal.
+   *
+   * `supplySharesRaw` is the authoritative holding (shares are what Blue stores,
+   * and they appreciate as borrowers pay interest); `supplyAssetsRaw` is what
+   * those shares are worth at the market's CURRENT accrued state, which is the
+   * number a withdrawal denominated in assets is measured against. Both are
+   * zero for a wallet that has never supplied, which is a real quantity rather
+   * than an absence, so neither is nullable.
+   */
+  readonly supplySharesRaw: bigint;
+  readonly supplyAssetsRaw: bigint;
   /** `null` when the position carries no debt and therefore cannot be liquidated. */
   readonly healthFactorWad: bigint | null;
   readonly ltvWad: bigint | null;

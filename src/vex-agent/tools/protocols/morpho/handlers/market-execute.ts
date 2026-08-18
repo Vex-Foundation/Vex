@@ -1,9 +1,13 @@
 /**
- * The FOUR agent-facing Morpho Blue market tools that move real funds:
- * `morpho.market.supplyCollateral`, `morpho.market.withdrawCollateral`,
- * `morpho.market.borrow` and `morpho.market.repay`.
+ * The SIX agent-facing Morpho Blue market tools that move real funds. Four are
+ * the BORROWER'S side - `morpho.market.supplyCollateral`,
+ * `morpho.market.withdrawCollateral`, `morpho.market.borrow` and
+ * `morpho.market.repay` - and two are the LENDER'S: `morpho.market.supply` and
+ * `morpho.market.withdraw`, which lend the loan asset into the market and take
+ * it back out. A supply earns the market's own borrow rate; it is not collateral
+ * and it changes no health factor.
  *
- * ONE SPINE, FOUR TOOLS. The operation is the only thing that differs between
+ * ONE SPINE, SIX TOOLS. The operation is the only thing that differs between
  * them at this layer and it is passed as an argument rather than duplicated,
  * exactly as `./vault-execute.ts` does for its two. Everything
  * operation-specific is either a param key (owned by
@@ -28,11 +32,12 @@
  *
  * ── TWO SHAPES, STATED HONESTLY RATHER THAN AVERAGED ────────────────────────
  *
- * `supplyCollateral` and `repay` PULL a token, so each is up to two transactions
- * behind one consent: an exact-amount approve() then a Bundler3 bundle. `borrow`
- * and `withdrawCollateral` only RECEIVE, so each is a single direct Morpho Blue
- * call with no approval and no standing allowance at any point. The output says
- * which shape ran rather than describing all four the same way.
+ * `supplyCollateral`, `repay` and `supply` PULL a token, so each is up to two
+ * transactions behind one consent: an exact-amount approve() then a Bundler3
+ * bundle. `borrow`, `withdrawCollateral` and `withdraw` only RECEIVE, so each is
+ * a single direct Morpho Blue call with no approval and no standing allowance at
+ * any point. The output says which shape ran rather than describing all six the
+ * same way.
  *
  * ── WHY THERE IS NO GENERIC ERROR IN THIS FILE ──────────────────────────────
  *
@@ -52,7 +57,9 @@ import {
   previewMorphoMarketOperation,
   readMorphoBlueMarket,
   resolveMorphoBorrowIntent,
+  readMorphoRemainingAllowance,
   type MorphoBorrowIntent,
+  type MorphoRemainingAllowance,
 } from "@tools/morpho/mutations.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import {
@@ -91,6 +98,8 @@ const TOOL_ID: Readonly<Record<MorphoMarketDirection, string>> = {
   withdrawCollateral: "morpho.market.withdrawCollateral",
   borrow: "morpho.market.borrow",
   repay: "morpho.market.repay",
+  supply: "morpho.market.supply",
+  withdraw: "morpho.market.withdraw",
 };
 
 export async function morphoMarketSupplyCollateral(
@@ -119,6 +128,26 @@ export async function morphoMarketRepay(
   context: ProtocolExecutionContext,
 ): Promise<ToolResult> {
   return runMorphoMarketExecute("repay", params, context);
+}
+
+/**
+ * The LENDER'S side of the same market. It shares this spine because the
+ * validation, the chain resolution, the wallet resolution and the four endings
+ * are identical; what differs is the token it moves and the position it changes,
+ * and both of those are already owned by the read-params table and the engine.
+ */
+export async function morphoMarketSupply(
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<ToolResult> {
+  return runMorphoMarketExecute("supply", params, context);
+}
+
+export async function morphoMarketWithdraw(
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<ToolResult> {
+  return runMorphoMarketExecute("withdraw", params, context);
 }
 
 async function runMorphoMarketExecute(
@@ -201,7 +230,21 @@ async function runMorphoMarketExecute(
     return fail(message);
   }
 
-  return renderOutcome(toolId, direction, query, intent, outcome);
+  // AFTER settlement, and only for the operations that PULL. The approval
+  // is sized to the operation's upper bound and the chain decides what was
+  // actually spent, so what remains standing is a fact only a fresh read has.
+  // Reporting-only: a null read never downgrades a confirmed operation.
+  const settledLeg = describeMorphoBorrowLeg(intent);
+  const remainingAllowance = outcome.kind === "confirmed" && settledLeg.direction === "in"
+    ? await readMorphoRemainingAllowance(actionClient, {
+      chainId: query.chainId,
+      assetAddress: getAddress(settledLeg.tokenAddress) as Address,
+      walletAddress,
+      assetDecimals: settledLeg.decimals,
+    })
+    : null;
+
+  return renderOutcome(toolId, direction, query, intent, outcome, remainingAllowance);
 }
 
 /**
@@ -309,6 +352,7 @@ function renderOutcome(
   query: MorphoMarketExecuteQuery,
   intent: MorphoBorrowIntent,
   outcome: MorphoExecutionOutcome,
+  remainingAllowance: MorphoRemainingAllowance | null,
 ): ToolResult {
   const leg = describeMorphoBorrowLeg(intent);
   const shared = {
@@ -340,12 +384,24 @@ function renderOutcome(
       tokenAddress: leg.tokenAddress,
       tokenDecimals: leg.decimals,
       summary: outcome.message,
+      ...(remainingAllowance === null ? {} : { remainingAllowance }),
       notes: {
         proven:
           "The amount above is PROVEN from the receipt's own Morpho Blue event, not copied from the quote. It is "
           + "denominated in the token named beside it, at that token's own decimals.",
         oneLeg: MORPHO_ONE_LEG_NOTE,
         ...(intent.repayMode === "shares" ? { repayMode: MORPHO_REPAY_SHARES_NOTE } : {}),
+        ...(remainingAllowance === null
+          ? {}
+          : {
+            remainingAllowance:
+              `${remainingAllowance.remainingHuman} (${remainingAllowance.remainingRaw} raw units) of this token is `
+              + "STILL APPROVED to GeneralAdapter1 after this operation, read from the chain rather than inferred. "
+              + "The approval is sized to the operation's upper bound and the chain decides what is actually spent, "
+              + "so a remainder is normal, especially after a full repay or a shares repayment. Nothing but "
+              + "GeneralAdapter1 can spend it. Vex does not revoke it on its own; ask the owner if you want it "
+              + "set back to zero, which costs a transaction.",
+          }),
       },
     });
   }

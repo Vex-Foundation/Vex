@@ -19,6 +19,8 @@
  *   withdraw_collateral collateral token, `tokenOut` (the wallet RECEIVES)
  *   borrow              loan token,       `tokenOut` (the wallet RECEIVES)
  *   repay               loan token,       `tokenIn`  (the wallet SENDS)
+ *   supply              loan token,       `tokenIn`  (the wallet SENDS)
+ *   withdraw            loan token,       `tokenOut` (the wallet RECEIVES)
  *
  * The row carries no second leg because none exists. Writing a mirror leg to
  * make the row look like a swap would be a claim about a movement that never
@@ -64,8 +66,8 @@ import {
   MORPHO_ACTIVITY_CHAIN_FAMILY,
   MORPHO_ACTIVITY_KIND,
   MORPHO_ACTIVITY_PROTOCOL,
-  MORPHO_BORROW_OPERATE_ROLE,
   morphoActivityChainSlug,
+  morphoMarketOperationRole,
 } from "./protocol.js";
 
 export interface MorphoBorrowIntentInput {
@@ -98,7 +100,7 @@ export interface MorphoBorrowIntentInput {
 }
 
 /** The two operations that must let Morpho Blue pull a token from the wallet. */
-const PULLING_OPERATIONS = new Set(["supply_collateral", "repay"]);
+const PULLING_OPERATIONS = new Set(["supply_collateral", "repay", "supply"]);
 
 function refuse(message: string, hint: string): never {
   throw new VexError(ErrorCodes.MORPHO_APPROVAL_POLICY_VIOLATION, message, hint);
@@ -245,14 +247,19 @@ export function planMorphoBorrowLegs(input: MorphoBorrowIntentInput): readonly M
   }
 
   const single = operationLeg(leg);
+  // The role names the ACT, not the venue-internal shape: the borrower's four
+  // file under `lend_borrow_operate`, the lender's two under the same
+  // `lend_deposit` / `lend_withdraw` roles a vault deposit uses. See
+  // `./protocol.ts` for why, and for what keeps the two lanes apart instead.
+  const operationRole = morphoMarketOperationRole(intent.operation);
   legs.push({
-    eventRole: MORPHO_BORROW_OPERATE_ROLE,
+    eventRole: operationRole,
     // Built after the approvals land, exactly like the vault lane: an operation
     // built now would be simulated against state two transactions in the past.
     txParams: null,
     event: {
       ...common,
-      eventRole: MORPHO_BORROW_OPERATE_ROLE,
+      eventRole: operationRole,
       ...(leg.direction === "in" ? { tokenIn: single } : { tokenOut: single }),
       routeProvenance: borrowRouteProvenance(input),
     },

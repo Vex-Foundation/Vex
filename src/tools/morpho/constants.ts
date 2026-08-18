@@ -135,8 +135,16 @@ export const MORPHO_CONTRACTS: Readonly<Record<number, MorphoChainContracts>> = 
  *                            equality check is exact.
  *   chainlinkOracleFactory - the factory that MINTED a market's oracle. It
  *                            answers `isMorphoChainlinkOracleV2(address)`
- *                            on-chain, so oracle acceptability is a fact read
- *                            from the chain rather than a list maintained here.
+ *                            on-chain.
+ *
+ * WHAT THE FACTORY ANSWER IS AND IS NOT. A `true` here proves the oracle's
+ * IMPLEMENTATION is Morpho's audited `MorphoChainlinkOracleV2` bytecode. It does
+ * NOT make the oracle acceptable, and this comment used to say it did. The
+ * factory's `createMorphoChainlinkOracleV2` has no access control of any kind
+ * (verified source, Base, 2026-08-17), so any caller can mint a `true` oracle
+ * over price feeds of their own choosing. Acceptability needs the second half:
+ * the oracle's own immutable feed and vault legs, read on chain and checked
+ * against the verified sets in `./oracle-allowlist.ts`.
  *
  * PROVENANCE. Both extracted on 2026-08-17 from `@morpho-org/blue-sdk`'s
  * `getChainAddresses(chainId)` for the nine chains in `./chains.ts`, and pinned
@@ -196,24 +204,82 @@ export const MORPHO_MARKET_POLICY_CONTRACTS: Readonly<Record<number, MorphoMarke
 } as const;
 
 /**
+ * One oracle the owner vouched for by hand, with the evidence that earned it.
+ *
+ * THE EVIDENCE IS A FIELD, NOT A COMMENT, because a comment is not something a
+ * test can assert on and is not something a future reader can be sure was ever
+ * true. Every field below is what a later session needs to RE-VERIFY the entry
+ * without re-deriving it: which market it serves, when it was checked, who
+ * decided, and what was actually measured.
+ */
+export interface MorphoVouchedOracle {
+  /** The oracle contract, checksummed. */
+  readonly oracle: Address;
+  /** The Blue market id this oracle prices, lower-cased. */
+  readonly marketId: string;
+  /** Human label for that market, so the entry reads without a lookup. */
+  readonly market: string;
+  /** ISO date the evidence below was measured. */
+  readonly verifiedOn: string;
+  /** WHO decided. Never a builder or an agent. */
+  readonly vouchedBy: string;
+  /** What the oracle reads, why the factory does not cover it, what was measured. */
+  readonly evidence: string;
+}
+
+/**
  * Oracles the OWNER has vouched for by hand, per chain, for markets whose oracle
  * did not come from the pinned factory.
  *
- * IT STARTS EMPTY AND THAT IS THE POINT. Every entry here is an oracle a human
- * decided to trust that the chain itself cannot vouch for, so the list is a
- * record of deliberate exceptions rather than a convenience. An empty list means
- * exactly one thing today: every executable market's oracle must be provable
- * from the chain's own factory.
+ * WHAT AN ENTRY HERE DOES, EXACTLY: it satisfies LAYER 2 (the implementation
+ * check) and NOTHING ELSE. Layer 1 still asks Morpho live whether it curates the
+ * market, and layer 3 still reads every price leg off the chain and refuses a
+ * dead or stale one. An allowlisted oracle is an oracle whose IMPLEMENTATION a
+ * human vouched for; it is not an oracle exempt from being curated or from
+ * having to answer. See `./mutations/market-policy.ts`.
  *
- * THE OWNER PATH TO EXTEND IT, so a future session does not invent one: add the
- * oracle address under its chain id in this constant, in a commit that states
- * WHO vouched for it, WHEN, and on what evidence (who deployed it, what it
- * reads, whether its source is verified and audited). It is a security-posture
- * change under rules/00, so it needs explicit owner approval and never a
- * builder's judgement. Adding an address here widens the set of markets Vex will
- * put real funds into.
+ * THE OWNER PATH TO EXTEND IT, so a future session does not invent one: add an
+ * entry under its chain id with the evidence fields filled from a real
+ * measurement. It is a security-posture change under rules/00, so it needs
+ * explicit owner approval and never a builder's judgement. Adding an address
+ * here widens the set of markets Vex will put real funds into.
+ *
+ * A CANDIDATE THAT WAS EXAMINED AND REFUSED, kept because the refusal is the
+ * more useful record: USDe/USDC on Base (353.4M USD, market
+ * `0x54cf9be5...b7354`, oracle `0xF4b17C79492d68775e22e8Dd0a2Bb22854A39A47`) was
+ * checked the same day and NOT added. That address is a 45-byte EIP-1167 clone
+ * of Steakhouse's `MetaOracleDeviationTimelock` (impl
+ * `0x846e726a1bf5fd5cbe08c179ee491b085b1cac3e`, Sourcify exact match), which
+ * SWITCHES between a primary and a backup oracle through permissionless
+ * `challenge()`/`acceptChallenge()` calls behind a 16h timelock. Its live
+ * primary `0xF243538bC89634B0Abb5686A5b72e21282A54695` is a factory-minted V2
+ * with ALL FOUR FEED LEGS ZERO: a HARDCODED 1.000000 USDe/USDC, which no
+ * liveness check can ever falsify because there is nothing to read. At a 91.5%
+ * LLTV a USDe depeg would be invisible to the price until a human challenged it.
+ * The meta-oracle also exposes none of the leg getters layer 3 reads, so it
+ * could not pass layer 3 even in principle. Not safe to vouch for.
  */
-export const MORPHO_MANUAL_ORACLE_ALLOWLIST: Readonly<Record<number, readonly Address[]>> = {};
+export const MORPHO_MANUAL_ORACLE_ALLOWLIST: Readonly<Record<number, readonly MorphoVouchedOracle[]>> = {
+  1: [
+    {
+      oracle: "0xDddd770BADd886dF3864029e4B377B5F6a2B6b83",
+      marketId: "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
+      market: "WBTC/USDC on Ethereum, LLTV 0.86, 118.7M USD supplied",
+      verifiedOn: "2026-08-17",
+      vouchedBy: "owner",
+      evidence:
+        "Morpho's own ChainlinkOracle V1 (`src/ChainlinkOracle.sol:ChainlinkOracle`, solc 0.8.21), Sourcify "
+        + "exact match on BOTH creation and runtime bytecode. The pinned factory refuses it because the pinned "
+        + "factory is the V2 one and this is the PRE-V2 implementation: it has no ERC4626 legs at all, so "
+        + "BASE_VAULT/QUOTE_VAULT revert while the four feed getters layer 3 reads all answer. Measured live: "
+        + "BASE_FEED_1 WBTC/BTC 0xfdFD9C85aD200c506Cf9e21F1FD8dd01932FBB23 = 1.00041684 (23.5h), BASE_FEED_2 "
+        + "BTC/USD 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c = 64286.09 (0.15h), QUOTE_FEED_1 USDC/USD "
+        + "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6 = 0.99983354 (12.6h), QUOTE_FEED_2 unused. price() "
+        + "643236030453537912320884934506197901702 at scale 1e34 (36 + 6 loan - 8 collateral decimals) is "
+        + "64323.60 USDC per WBTC, 0.13% from the 64238.30 USD Morpho's own API reports for the collateral.",
+    },
+  ],
+};
 
 /**
  * Human label per role, for a report a person can read without knowing which

@@ -1,5 +1,5 @@
 /**
- * Input contract for the FIVE Morpho Blue MARKET tools: the preview and the four
+ * Input contract for the SEVEN Morpho Blue MARKET tools: the preview and the six
  * operations that move real funds.
  *
  * ── ONE OWNER FOR THE OPERATION VOCABULARY ──────────────────────────────────
@@ -16,7 +16,7 @@
  * `borrowAmountRaw` and `supplyCollateralAmountRaw` are denominated in DIFFERENT
  * TOKENS at different scales: the market this lane was proven against pairs
  * 8-decimal cbBTC collateral against 6-decimal USDC debt. A single `amountRaw`
- * key shared by four operations would let a caller send a collateral-scaled
+ * key shared by six operations would let a caller send a collateral-scaled
  * number to a borrow and be off by a hundredfold with nothing to catch it. Each
  * key names its own operation, and ANOTHER operation's key arriving at the wrong
  * tool is REFUSED BY NAME rather than dropped: a silent drop hides an attempt to
@@ -48,18 +48,31 @@ import {
 /** A whole, non-negative decimal integer with no sign, exponent or separator. */
 const RAW_AMOUNT_PATTERN = /^[0-9]+$/;
 
-/** The agent-facing name of each operation. One tool per member, plus the quote. */
+/**
+ * The agent-facing name of each operation. One tool per member, plus the quote.
+ *
+ * `supply` and `withdraw` are the LENDER'S side of the same market: assets lent
+ * into it to earn the borrow rate, and those assets taken back out. They are not
+ * `supplyCollateral` / `withdrawCollateral`, which are the BORROWER'S side and
+ * move a different token that earns nothing. The six names are deliberately not
+ * abbreviated to four, because the two sides answer different questions and a
+ * shared name would let a lender's amount fund a borrower's position.
+ */
 export type MorphoMarketDirection =
   | "supplyCollateral"
   | "withdrawCollateral"
   | "borrow"
-  | "repay";
+  | "repay"
+  | "supply"
+  | "withdraw";
 
 export const MORPHO_MARKET_DIRECTIONS: readonly MorphoMarketDirection[] = [
   "supplyCollateral",
   "withdrawCollateral",
   "borrow",
   "repay",
+  "supply",
+  "withdraw",
 ] as const;
 
 /** Direction to the engine's own operation name. The only place these are paired. */
@@ -68,14 +81,18 @@ const ENGINE_OPERATION: Readonly<Record<MorphoMarketDirection, MorphoBorrowOpera
   withdrawCollateral: "withdraw_collateral",
   borrow: "borrow",
   repay: "repay",
+  supply: "supply",
+  withdraw: "withdraw",
 };
 
-/** The amount key that belongs to each direction. There is no shared fifth key. */
+/** The amount key that belongs to each direction. There is no shared seventh key. */
 const AMOUNT_KEY: Readonly<Record<MorphoMarketDirection, string>> = {
   supplyCollateral: "supplyCollateralAmountRaw",
   withdrawCollateral: "withdrawCollateralAmountRaw",
   borrow: "borrowAmountRaw",
   repay: "repayAmountRaw",
+  supply: "supplyAmountRaw",
+  withdraw: "withdrawAmountRaw",
 };
 
 /** Which of the market's two tokens an operation is denominated in. */
@@ -84,6 +101,9 @@ const AMOUNT_TOKEN: Readonly<Record<MorphoMarketDirection, "loan" | "collateral"
   withdrawCollateral: "collateral",
   borrow: "loan",
   repay: "loan",
+  // The LENDER'S side moves the loan token: it is the asset borrowers draw.
+  supply: "loan",
+  withdraw: "loan",
 };
 
 export function morphoEngineOperation(direction: MorphoMarketDirection): MorphoBorrowOperation {
@@ -191,9 +211,11 @@ function readChain(p: Record<string, unknown>): MorphoParams<{ chainId: number; 
  * Refuse ANOTHER operation's amount key by name.
  *
  * The vault lane refuses the opposite direction's key for the same reason, and
- * here there are three wrong keys rather than one. Two of them name a different
- * TOKEN as well as a different direction, so accepting one silently would move
- * the wrong asset at the wrong scale.
+ * here there are FIVE wrong keys rather than one. Two of them name a different
+ * TOKEN as well as a different operation, so accepting one silently would move
+ * the wrong asset at the wrong scale, and two more name the LENDER'S side of a
+ * market the caller addressed as a borrower (or the reverse), which is the same
+ * token in a different position entirely.
  */
 function rejectForeignAmountKeys(
   subject: string,
@@ -209,7 +231,7 @@ function rejectForeignAmountKeys(
       key,
       `\`${key}\` was supplied to ${subject}, which performs a ${direction}. Those name different operations`
       + (sameToken
-        ? ", which move the same token in OPPOSITE directions."
+        ? `, which both move the market's ${AMOUNT_TOKEN[direction]} token but are not interchangeable.`
         : `, and they are denominated in different tokens: a ${direction} moves the market's `
           + `${AMOUNT_TOKEN[direction]} token while a ${other} moves its ${AMOUNT_TOKEN[other]} token, and the two `
           + "rarely share a decimal scale.")
@@ -354,7 +376,7 @@ export function parseMorphoMarketQuoteParams(
 }
 
 /**
- * One of the four executes. It takes NO `direction` and NO `walletAddress`: the
+ * One of the six executes. It takes NO `direction` and NO `walletAddress`: the
  * tool is the direction, and the wallet that signs is the session's own.
  */
 export function parseMorphoMarketExecuteParams(

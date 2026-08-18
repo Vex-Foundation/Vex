@@ -281,7 +281,7 @@ async function requireMorphoReceiptCapability(client: MorphoActionClient): Promi
 }
 
 /**
- * The ABSOLUTE per-operation share bound the settlement is judged against,
+ * The per-operation share bound the settlement is judged against,
  * derived from the slippage the user actually approved.
  *
  * ── WHY THIS REPLACED A FIXED 1e-9-SHARE TOLERANCE (coordinator ruling,
@@ -305,14 +305,25 @@ async function requireMorphoReceiptCapability(client: MorphoActionClient): Promi
  * worst share count the approved transaction can legally return is
  * `quoted * 10000 / (10000 + bps)`, and that is this floor.
  *
- * ── WHY IT SATISFIES RULE 90 DESPITE BEING COMPUTED FROM A PERCENTAGE ───────
+ * ── WHAT IT DOES AND DOES NOT SCALE WITH, STATED PLAINLY ────────────────────
  *
- * Rule 90 bans a tolerance that SCALES WITH TRADE SIZE and so hides a bigger
- * loss behind a bigger trade. This is not one. It is a single absolute number of
- * raw shares, fixed for THIS operation, computed once from a basis-point figure
- * the user explicitly approved and the chain already enforces. It was not
- * invented to make a comparison pass; a loss beyond it is a loss the transaction
- * itself would have refused.
+ * IT DOES SCALE WITH SIZE. `morphoShareBoundRaw` is proportional to `quotedRaw`,
+ * and `share-bound.test.ts` pins exactly that: double the quote and the bound
+ * doubles. Any comment claiming otherwise is wrong, and one used to.
+ *
+ * That is not the property rule 90 asks for and it is not a defect here,
+ * because this is not a tolerance Vex invented to make a comparison pass. It is
+ * a per-share PRICE bound, and a price bound necessarily applies to whatever
+ * size is traded - which is precisely how the on-chain guard behaves. The chain
+ * enforces `maxSharePrice` on this same operation; a settlement worse than this
+ * floor is a settlement the transaction itself would have refused to mine.
+ * Restating the chain's own guard cannot be looser than the chain.
+ *
+ * What rule 90 actually forbids is a tolerance that stretches to cover whatever
+ * turns up, so that a bigger loss passes because the loss itself was bigger.
+ * This bound cannot do that. It is computed ONCE, from the QUOTE and the
+ * basis points the user approved, BEFORE the settlement is known, and nothing
+ * about what settles can widen it.
  *
  * ── DIRECTION MATTERS AND IS NOT SMOOTHED OVER ──────────────────────────────
  *
@@ -344,7 +355,12 @@ export interface MorphoSharesVerdict {
   readonly actualRaw: string;
   /** The raw quoted-vs-settled difference. DATA, not a verdict. */
   readonly accrualDriftRaw: string;
-  /** The absolute per-operation bound, in raw shares. */
+  /**
+   * The bound the approved slippage allows for THIS operation, in raw shares.
+   * Derived once from the quote and the approved bps, so it is proportional to
+   * the quoted size (as the chain's own per-share guard is) but cannot widen to
+   * fit whatever settled.
+   */
   readonly approvedBoundRaw: string;
   /** Which way the bound binds: a floor on a mint, a ceiling on a burn. */
   readonly boundSide: "minimum_shares_received" | "maximum_shares_burned";
@@ -354,7 +370,7 @@ export interface MorphoSharesVerdict {
 }
 
 /**
- * Judge the shares the settlement PROVED against the absolute bound the approved
+ * Judge the shares the settlement PROVED against the bound the approved
  * slippage allows, and report the raw quoted-vs-settled difference beside it as
  * accrual drift.
  *
@@ -389,8 +405,10 @@ export function compareMorphoShares(
     shareDecimals,
     note:
       "Every figure is in raw share units at `shareDecimals`, which is a different scale from the asset's. "
-      + "`approvedBoundRaw` is an ABSOLUTE number of shares for THIS operation, derived from the slippage that was "
-      + "approved, and it does not scale with trade size. `accrualDriftRaw` is the plain difference between the "
+      + "`approvedBoundRaw` is the share count this operation's APPROVED SLIPPAGE allows, derived once from the "
+      + "quote and those basis points before the settlement was known. Being a per-share price bound it is "
+      + "proportional to the size quoted, exactly as the chain's own `maxSharePrice` guard is; what it cannot do is "
+      + "widen to accommodate whatever actually settled. `accrualDriftRaw` is the plain difference between the "
       + "quoted and the settled share count: it is the interest the vault accrued between the block the quote was "
       + "read at and the block this settled in, it grows with both the delay and the position, and on its own it is "
       + "normal rather than a fault. "

@@ -40,7 +40,7 @@
  * NOTHING HERE SIGNS OR SENDS. The only chain access is one `allowance()` read.
  */
 
-import { encodeFunctionData, type Address, type Hex } from "viem";
+import { encodeFunctionData, formatUnits, type Address, type Hex } from "viem";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { sanitizeMorphoCause } from "../errors.js";
@@ -112,6 +112,59 @@ interface AllowanceReader {
 /** Encode `approve(spender, amount)` for the staged-broadcast primitive. */
 export function buildMorphoApproveCalldata(spender: Address, amount: bigint): Hex {
   return encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [spender, amount] });
+}
+
+/** What the wallet still has standing to GeneralAdapter1 AFTER an operation. */
+export interface MorphoRemainingAllowance {
+  readonly tokenAddress: string;
+  readonly spender: string;
+  readonly remainingRaw: string;
+  readonly remainingHuman: string;
+}
+
+/**
+ * Read what the operation LEFT approved, once it has already settled.
+ *
+ * WHY THIS IS A SEPARATE READ AND NOT A SUBTRACTION. The exact-amount approval
+ * is sized to the operation's upper bound, and the amount actually pulled is
+ * decided on-chain at execution: a shares repayment pulls more than the debt by
+ * design, and a full repay settles against interest accrued in the block that
+ * mined it. Computing "approved minus quoted" would report a number nobody
+ * verified. A live Base repay left 501 raw USDC standing, which is exactly the
+ * gap a subtraction from the quote would have reported as zero.
+ *
+ * REPORTING ONLY. It returns `null` when the read fails, because an operation
+ * that already succeeded must never be reported as failed over a follow-up
+ * read, and it NEVER emits an `approve(0)`: revoking is a funds-affecting
+ * transaction and belongs to an explicit owner decision, not to a reporting path.
+ */
+export async function readMorphoRemainingAllowance(
+  client: AllowanceReader,
+  request: { readonly chainId: number; readonly assetAddress: Address; readonly walletAddress: Address; readonly assetDecimals: number },
+): Promise<MorphoRemainingAllowance | null> {
+  let spender: Address;
+  try {
+    spender = requireGeneralAdapter1(request.chainId) as Address;
+  } catch {
+    return null;
+  }
+  try {
+    const read = await client.readContract({
+      address: request.assetAddress,
+      abi: ERC20_ALLOWANCE_ABI,
+      functionName: "allowance",
+      args: [request.walletAddress, spender],
+    });
+    if (typeof read !== "bigint") return null;
+    return {
+      tokenAddress: request.assetAddress.toLowerCase(),
+      spender: spender.toLowerCase(),
+      remainingRaw: read.toString(),
+      remainingHuman: formatUnits(read, request.assetDecimals),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface MorphoAllowancePlanRequest {
@@ -197,8 +250,14 @@ export async function planMorphoAllowance(
     explanation:
       `An ERC-20 approval of EXACTLY ${request.requiredAmountRaw.toString()} raw units to GeneralAdapter1, the `
       + "contract that moves the tokens in a bundled Morpho action. It is sent as its own transaction immediately "
-      + "before the operation and it is sized to that operation, so nothing is left standing once the operation "
-      + "consumes it. If the operation that follows fails, this approval remains until it is used or reset.",
+      + "before the operation and it is sized to that operation's UPPER BOUND. "
+      + "A REMAINDER CAN SURVIVE THE OPERATION, and it is reported rather than assumed away: where the bound "
+      + "exceeds what the operation actually spends - a repayment denominated in shares pulls more than the debt "
+      + "by design, and a full repay settles against interest accrued at execution rather than at quote time - the "
+      + "difference stays approved to GeneralAdapter1 afterwards. A live Base repay left 501 raw USDC standing this "
+      + "way. Nothing can spend it but GeneralAdapter1, and it is cleared by using it or by an explicit reset, "
+      + "which Vex does not perform on its own. If the operation that follows fails, the whole approval remains "
+      + "until it is used or reset.",
   };
 
   if (currentAllowanceRaw === 0n) {

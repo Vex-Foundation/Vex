@@ -7,6 +7,9 @@ import {
   MORPHO_VAULT_VERSIONS,
 } from "@tools/morpho/request.js";
 import { MORPHO_VAULT_FIELD_GROUPS } from "../read-params.js";
+// Direct import: `../read-params.js` is the public barrel and is being edited
+// concurrently, so this lane's newest export is taken from its own module.
+import { MORPHO_VAULT_ROUTES } from "../read-params/vaults.js";
 
 /**
  * `morpho.vaults.discover` - the screening entry point for the vaults lane.
@@ -66,8 +69,27 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "holding about ten dollars between them. "
     + "LIMITS: rates are point-in-time and move every block, USD values are Morpho's oracle marks rather than traded "
     + "prices, a curator can change a vault's allocations and therefore its risk at any time subject to a timelock, "
-    + "and Morpho publishes no SLA so this is never a hard dependency. Read-only - it signs nothing and spends "
-    + "nothing.",
+    + "and Morpho publishes no SLA so this is never a hard dependency. "
+    + "COMPARES CURATED VAULTS AGAINST SUPPLYING A MARKET DIRECTLY, in one call, through `route`. "
+    + "`route: \"curated\"` (the DEFAULT) returns only the vault rows described above and is exactly what this tool "
+    + "returned before the parameter existed. `route: \"direct\"` returns only the Morpho Blue markets whose LOAN "
+    + "asset is the asset you named, with net supply APY, utilization, liquidity, collateral asset, LLTV and the "
+    + "market's own warnings, and queries no vault at all. `route: \"both\"` is the COMPARISON MODE: both sets are "
+    + "returned and merged into one `options` list ranked on the single comparable rate, each entry carrying its net "
+    + "APY after every fee, the fee itself, what diversification stands behind it, its gating status, and "
+    + "`deltaVsBestDirectPercentagePoints` - how far it is, in PERCENTAGE POINTS, from the best direct option. "
+    + "`direct` and `both` need `assetTokenAddress` to name EXACTLY ONE asset, because a comparison is per-asset; "
+    + "any other count is rejected by name. "
+    + "THE TRADEOFF, stated once and not resolved for you: a curator's fee buys diversification across many markets "
+    + "and the right to reallocate out of one that deteriorates, while a direct supply pays no curator and "
+    + "concentrates the entire position in ONE market's collateral, oracle and LLTV. On a live Base read every "
+    + "curated USDC vault earned the same gross 4.13% because they allocate into the same markets and differed only "
+    + "by fee - 0%, 5%, 10% and 25% giving 4.13%, 3.92%, 3.71% and 3.08% net - while supplying cbBTC/USDC directly "
+    + "earned that same 4.13% with no fee and no diversification at all. "
+    + "EVERY OPTION NAMES THE TOOL IT IS ACTED ON WITH. `routing.quote` and `routing.execute` carry a toolId, the "
+    + "params this call already knows, the params still to decide, and an `available` flag - a curated option routes "
+    + "to morpho.vault.quote then morpho.vault.deposit, a direct option to morpho.market.quote then "
+    + "morpho.market.supply. Read-only - it signs nothing and spends nothing.",
   mutating: false,
   actionKind: "read",
   params: [
@@ -80,6 +102,19 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
         + "timelock and no gating; V2 adds per-function timelocks, a management fee and transfer gates. At 'both' the "
         + "two are queried separately and merged into one exact ranking, which bounds paging to a single window. "
         + "Anything else is rejected by name.",
+    },
+    {
+      key: "route",
+      type: "string",
+      enum: MORPHO_VAULT_ROUTES,
+      description:
+        "Which option SETS to return, one of: curated (default), direct, both. `curated` returns the vault rows "
+        + "only, unchanged from before this key existed. `direct` returns only the Blue markets that lend the same "
+        + "asset, each with its supply APY, utilization, liquidity, collateral asset, LLTV and warnings, and queries "
+        + "no vault. `both` returns both sets AND a merged `options` list ranked on net APY, where every entry "
+        + "carries its net APY after fees, the fee, its diversification, its gating status, the tool to act on it "
+        + "with, and its distance in PERCENTAGE POINTS from the best direct option. `direct` and `both` require "
+        + "`assetTokenAddress` to name exactly one asset. Anything else is rejected by name.",
     },
     {
       key: "chainIds",

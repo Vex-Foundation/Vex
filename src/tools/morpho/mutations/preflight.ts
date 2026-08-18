@@ -74,6 +74,7 @@ import type { MorphoBuiltTransaction } from "./bundle-decoder.js";
 export type MorphoPreflightOperation =
   | "deposit"
   | "withdraw"
+  | "supply"
   | "supply_collateral"
   | "withdraw_collateral"
   | "borrow"
@@ -90,7 +91,15 @@ interface OperationReading {
 
 const OPERATION_READINGS: Readonly<Record<MorphoPreflightOperation, OperationReading>> = {
   deposit: { label: "deposit", pullsFromWallet: true },
+  // ONE ENTRY, TWO LANES, and deliberately so: a vault redemption and a Blue
+  // market supplier's withdrawal are both withdrawals that pull NOTHING from the
+  // wallet, which is the only fact this table is consulted for. Splitting them
+  // would be two names for one reading.
   withdraw: { label: "withdrawal", pullsFromWallet: false },
+  // The Blue market SUPPLY does pull, through the same exact-amount approval to
+  // GeneralAdapter1 a vault deposit uses, so a revert before that approval lands
+  // has the same ordinary explanation.
+  supply: { label: "market supply", pullsFromWallet: true },
   supply_collateral: { label: "collateral supply", pullsFromWallet: true },
   withdraw_collateral: { label: "collateral withdrawal", pullsFromWallet: false },
   borrow: { label: "borrow", pullsFromWallet: false },

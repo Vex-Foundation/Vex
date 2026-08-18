@@ -49,7 +49,7 @@ export interface MorphoMarketBundleBounds {
    * not a spend ceiling. Reading it as an asset ceiling and bounding it by the
    * approved pull would refuse every genuine build.
    */
-  readonly maxBorrowSharePriceRaw?: bigint;
+  readonly maxSharePriceRaw?: bigint;
 }
 
 /** The verifier's account of a market bundle it ACCEPTED. A rejection throws. */
@@ -60,9 +60,9 @@ export interface MorphoMarketBundleReport {
   readonly selector: string;
   readonly functionName: string;
   readonly valueRaw: string;
-  readonly operation: "supply_collateral" | "repay";
+  readonly operation: "supply_collateral" | "repay" | "supply";
   readonly legs: readonly MorphoDecodedLeg[];
-  /** The token the bundle pulls from the wallet. Collateral on a supply, loan on a repay. */
+  /** The token the bundle pulls. Collateral on a collateral supply, loan on a repay or a market supply. */
   readonly pulledToken: string;
   /** The amount the decoder PROVED the bundle pulls. The transfer bound on a shares repay. */
   readonly pulledAmountRaw: string;
@@ -70,8 +70,17 @@ export interface MorphoMarketBundleReport {
   readonly verifiedAmountRaw: string | null;
   /** The share count a shares repayment burns, `null` otherwise. */
   readonly verifiedSharesRaw: string | null;
-  /** The on-chain borrow share-price guard a repayment carries, `null` on a supply. */
-  readonly maxBorrowSharePriceRaw: string | null;
+  /**
+   * The on-chain share-price guard the operation's Blue leg carries, in RAY, or
+   * `null` for the one operation that carries none.
+   *
+   * A repayment's guard is a BORROW share price and a market supply's is a
+   * SUPPLY share price - different prices on the same market, which is why each
+   * is checked by its own named assertion in `./legs.ts` rather than by one
+   * shared one. A collateral supply has no guard at all. The field keeps its
+   * original name so existing rows and readers stay stable.
+   */
+  readonly maxSharePriceRaw: string | null;
   /** The address the residual sweep returns the over-pull to, `null` when there is no sweep. */
   readonly sweepRecipient: string | null;
 }
@@ -95,23 +104,32 @@ export const MAX_UINT_256 = (1n << 256n) - 1n;
  * wrong order, or with a leg repeated, is refused. Order is what makes the pull
  * precede the spend and the sweep follow it.
  */
-export const EXPECTED_LEGS: Readonly<Record<"supply_collateral" | "repay_assets" | "repay_shares", readonly string[]>> = {
-  // captures[0].legs
+export const EXPECTED_LEGS: Readonly<
+  Record<"supply_collateral" | "repay_assets" | "repay_shares" | "supply", readonly string[]>
+> = {
+  // base-borrow-bundles.json captures[0].legs
   supply_collateral: ["erc20TransferFrom", "morphoSupplyCollateral"],
-  // captures[1].legs
+  // base-borrow-bundles.json captures[1].legs
   repay_assets: ["erc20TransferFrom", "morphoRepay"],
-  // captures[2].legs
+  // base-borrow-bundles.json captures[2].legs
   repay_shares: ["erc20TransferFrom", "morphoRepay", "erc20Transfer"],
+  // base-market-supply-withdraw.json captures[0].legs. The SUPPLIER'S SUPPLY,
+  // and the same two-leg pull-then-spend shape a collateral supply takes, with
+  // the LOAN token pulled instead of the collateral one and a `maxSharePrice`
+  // guard on the Blue leg that a collateral supply does not carry.
+  supply: ["erc20TransferFrom", "morphoSupply"],
 };
 
 export type MarketBundleKind = keyof typeof EXPECTED_LEGS;
 
 export function bundleKindOf(intent: MorphoBorrowIntent): MarketBundleKind {
   if (intent.operation === "supply_collateral") return "supply_collateral";
+  if (intent.operation === "supply") return "supply";
   if (intent.operation !== "repay") {
     reject(
       `Refusing a Morpho market bundle: ${intent.operation} is not a bundled operation. Under Vex's option-1 ruling `
-      + "borrow and withdraw_collateral are direct Morpho Blue calls, verified by `blue-call-decoder.ts`, and a "
+      + "borrow, withdraw_collateral and the supplier's withdraw are direct Morpho Blue calls, verified by "
+      + "`blue-call-decoder.ts`, and a "
       + "bundle arriving for one of them is the wrong shape entirely.",
     );
   }

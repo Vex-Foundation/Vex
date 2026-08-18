@@ -1,5 +1,6 @@
 /**
- * Morpho Blue BORROW-lane identity builders (E3c, migration 081).
+ * Morpho Blue MARKET-lane identity builders (E3c, migration 081), covering both
+ * the BORROWER'S four directions and the LENDER'S two.
  *
  * ONE BUILDER PER DIRECTION, TWO CALLERS EACH, which is the whole point: the
  * `morpho.market.quote` recorder and the four EXECUTE gates build IDENTICAL
@@ -33,6 +34,8 @@ import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type {
   LendBorrowMatchInput,
+  LendMarketSupplyMatchInput,
+  LendMarketWithdrawMatchInput,
   LendRepayMatchInput,
   LendSupplyCollateralMatchInput,
   LendWithdrawCollateralMatchInput,
@@ -49,6 +52,8 @@ const AMOUNT_KEY = {
   withdrawCollateral: "withdrawCollateralAmountRaw",
   borrow: "borrowAmountRaw",
   repay: "repayAmountRaw",
+  supply: "supplyAmountRaw",
+  withdraw: "withdrawAmountRaw",
 } as const;
 
 export type MorphoBorrowDirection = keyof typeof AMOUNT_KEY;
@@ -59,6 +64,11 @@ const KIND_FOR_DIRECTION = {
   withdrawCollateral: "lend_withdraw_collateral",
   borrow: "lend_borrow",
   repay: "lend_repay",
+  // The LENDER'S side reuses the VAULT lane's kinds, because supplying a loan
+  // asset IS lending. The `lane: "market"` field on the identity is what keeps
+  // the two apart in the hash - see `./hash/morpho-borrow.ts`.
+  supply: "lend_deposit",
+  withdraw: "lend_withdraw",
 } as const;
 
 export type MorphoBorrowKind = (typeof KIND_FOR_DIRECTION)[MorphoBorrowDirection];
@@ -172,7 +182,41 @@ export function buildMorphoRepayIdentity(
   };
 }
 
-/** Pick the builder the direction names. The ONLY place the four are paired. */
+/**
+ * The LENDER'S side: assets lent into the market, and those assets taken back
+ * out. Same anchor and same fields as the borrower's four, under the vault
+ * lane's kind tags plus the `lane` discriminator that separates them from an
+ * actual vault operation.
+ */
+export function buildMorphoMarketSupplyIdentity(
+  sessionId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): LendMarketSupplyMatchInput {
+  return {
+    ...resolveBorrowLeg(params, context),
+    kind: "lend_deposit",
+    lane: "market",
+    sessionId,
+    amount: requireAmount(params, "supply"),
+  };
+}
+
+export function buildMorphoMarketWithdrawIdentity(
+  sessionId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): LendMarketWithdrawMatchInput {
+  return {
+    ...resolveBorrowLeg(params, context),
+    kind: "lend_withdraw",
+    lane: "market",
+    sessionId,
+    amount: requireAmount(params, "withdraw"),
+  };
+}
+
+/** Pick the builder the direction names. The ONLY place the six are paired. */
 export function buildMorphoBorrowIdentityFor(
   direction: MorphoBorrowDirection,
   sessionId: string,
@@ -188,5 +232,9 @@ export function buildMorphoBorrowIdentityFor(
       return buildMorphoBorrowIdentity(sessionId, params, context);
     case "repay":
       return buildMorphoRepayIdentity(sessionId, params, context);
+    case "supply":
+      return buildMorphoMarketSupplyIdentity(sessionId, params, context);
+    case "withdraw":
+      return buildMorphoMarketWithdrawIdentity(sessionId, params, context);
   }
 }

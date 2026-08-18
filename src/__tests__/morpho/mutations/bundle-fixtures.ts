@@ -20,7 +20,8 @@
  * each is annotated with the single field it changes.
  */
 
-import { decodeFunctionData, encodeFunctionData, type Address } from "viem";
+import { generalAdapter1Abi } from "@morpho-org/morpho-sdk/abis";
+import { decodeFunctionData, encodeFunctionData, type Abi, type Address } from "viem";
 
 import { MORPHO_BUNDLER_ENTRY_CALL, type MorphoVaultIntent } from "@tools/morpho/mutations.js";
 
@@ -124,6 +125,30 @@ export interface CapturedLeg {
  * swap: the result is always structurally valid calldata, so a rejection proves
  * the CHECK fired rather than that the bytes became unparseable.
  */
+/**
+ * Rebuild the captured pull leg with a different receiver, leaving the token
+ * and the amount exactly as captured.
+ *
+ * Re-encoded from the ABI rather than string-patched because GeneralAdapter1's
+ * address appears several times in the calldata (it is also every leg's
+ * target), so a textual swap would move more than the one field this names.
+ */
+export function pullLegWithReceiver(legs: readonly CapturedLeg[], receiver: Address): readonly CapturedLeg[] {
+  return legs.map((leg, index) => {
+    if (index !== 0) return leg;
+    const decoded = decodeFunctionData({ abi: generalAdapter1Abi as Abi, data: leg.data });
+    const [asset, , amount] = (decoded.args ?? []) as [Address, Address, bigint];
+    return {
+      ...leg,
+      data: encodeFunctionData({
+        abi: generalAdapter1Abi as Abi,
+        functionName: "erc20TransferFrom",
+        args: [asset, receiver, amount],
+      }),
+    };
+  });
+}
+
 export function reencodeDepositBundle(
   rewrite: (legs: readonly CapturedLeg[]) => readonly CapturedLeg[],
 ): { to: string; data: string; value: bigint } {

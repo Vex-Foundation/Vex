@@ -49,6 +49,8 @@ import type {
 } from "./hash/pendle-lp.js";
 import type {
   LendBorrowMatchInput,
+  LendMarketSupplyMatchInput,
+  LendMarketWithdrawMatchInput,
   LendRepayMatchInput,
   LendSupplyCollateralMatchInput,
   LendWithdrawCollateralMatchInput,
@@ -70,6 +72,8 @@ export type {
 } from "./hash/pendle-lp.js";
 export type {
   LendBorrowMatchInput,
+  LendMarketSupplyMatchInput,
+  LendMarketWithdrawMatchInput,
   LendRepayMatchInput,
   LendSupplyCollateralMatchInput,
   LendWithdrawCollateralMatchInput,
@@ -105,6 +109,8 @@ export type PrequoteMatchInput =
   | LpToPtMatchInput
   | LendDepositMatchInput
   | LendWithdrawMatchInput
+  | LendMarketSupplyMatchInput
+  | LendMarketWithdrawMatchInput
   | LendSupplyCollateralMatchInput
   | LendWithdrawCollateralMatchInput
   | LendBorrowMatchInput
@@ -191,10 +197,17 @@ export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
       break;
     case "lend_deposit":
     case "lend_withdraw":
-      // Morpho vault supply / redeem (E3b-2). One material function, two kind
-      // tags: the tag is the ONLY thing separating the mirror operations, which
-      // is why it leads the material.
-      material = lendHashMaterial(input);
+      // TWO KINDS, TWO LANES. A Morpho VAULT deposit/redeem (E3b-2) and a Blue
+      // MARKET supply/withdraw share these kind tags, because supplying a loan
+      // asset IS lending and a per-venue-shape kind would fragment the agent's
+      // own history. The kind therefore no longer decides the material on its
+      // own: `lane` does, and it is carried on the match input rather than only
+      // on the registration precisely so this dispatch can read it. The vault
+      // material is UNCHANGED and `lane` is in neither material - see
+      // `hash/morpho-borrow.ts` for why the two can never collide anyway.
+      material = input.lane === "market"
+        ? morphoBorrowHashMaterial(input)
+        : lendHashMaterial(input);
       break;
     case "lend_supply_collateral":
     case "lend_withdraw_collateral":

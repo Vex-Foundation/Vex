@@ -1,6 +1,14 @@
 /**
- * The Morpho BLUE MARKET (borrow) engine: plan, project, gate and build the four
- * position operations.
+ * The Morpho BLUE MARKET engine: plan, project, gate and build the six position
+ * operations - the borrower's four, and the SUPPLIER'S TWO (`supply` and
+ * `withdraw` of the loan asset, which is direct lending into one market with no
+ * vault curator and therefore no curator fee).
+ *
+ * The supplier's operations are gated DIFFERENTLY and on purpose: they move
+ * neither collateral nor debt, so no health-factor floor applies to them, and
+ * what bounds them instead is the market's free liquidity and the wallet's own
+ * supply position. `./borrow-types.ts` states the doctrine; the two named
+ * assertions below enforce it.
  *
  * ── WHY THE BORROW LEG IS BUILT BY VEX AND NOT BY THE SDK ───────────────────
  *
@@ -27,6 +35,13 @@
  * gets. A builder that also gets to say whether its output is correct is not a
  * check, and that applies to Vex's own encoder exactly as it applies to the
  * SDK's.
+ *
+ * The SUPPLIER'S WITHDRAWAL falls on the same side of that ruling for the same
+ * reason, measured rather than assumed: the SDK's `blue.withdraw()` builds a
+ * bundle whose only requirement is `blueAuthorization`. So it too is encoded
+ * here, by `buildMorphoDirectWithdraw`, and decoded back. The supplier's SUPPLY
+ * is not: it needs one exact-amount ERC-20 approval to GeneralAdapter1, which is
+ * squarely inside the owner's approval policy, so the SDK builds it.
  *
  * ── DELIBERATE NON-GOALS, NAMED RATHER THAN SILENTLY ABSENT ─────────────────
  *
@@ -73,12 +88,13 @@ import {
   MORPHO_MIN_HEALTH_FACTOR_DECIMAL,
 } from "./market-policy.js";
 import { normalizeHealthFactor, readMorphoBluePosition, type MorphoBlueMarketState } from "./market-state.js";
-import type {
-  MorphoBorrowIntent,
-  MorphoBorrowLeg,
-  MorphoBorrowOperation,
-  MorphoBorrowPlan,
-  MorphoPositionSnapshot,
+import {
+  isMorphoSupplierOperation as isSupplierOperation,
+  type MorphoBorrowIntent,
+  type MorphoBorrowLeg,
+  type MorphoBorrowOperation,
+  type MorphoBorrowPlan,
+  type MorphoPositionSnapshot,
 } from "./borrow-types.js";
 
 /** The transaction an operation resolves to, before it is decoded and checked. */
@@ -99,6 +115,10 @@ const LEG_SHAPE: Readonly<Record<MorphoBorrowOperation, {
   withdraw_collateral: { token: "collateral", direction: "out" },
   borrow: { token: "loan", direction: "out" },
   repay: { token: "loan", direction: "in" },
+  // The SUPPLIER side. Same token as the borrower's legs, opposite economics:
+  // the wallet LENDS the loan asset rather than owing it.
+  supply: { token: "loan", direction: "in" },
+  withdraw: { token: "loan", direction: "out" },
 };
 
 function refuse(code: string, message: string, hint: string): never {
@@ -146,6 +166,8 @@ export function projectHealthFactorAfter(
     readonly repay: (assets: bigint, shares: bigint, timestamp?: bigint) => { position: { healthFactor?: bigint } };
     readonly supplyCollateral: (assets: bigint) => { healthFactor?: bigint };
     readonly withdrawCollateral: (assets: bigint, timestamp?: bigint) => { healthFactor?: bigint };
+    /** The position's CURRENT health factor, which the supplier's legs leave alone. */
+    readonly healthFactor?: bigint;
   },
   intent: MorphoBorrowIntent,
   nowSeconds: bigint,
@@ -166,6 +188,17 @@ export function projectHealthFactorAfter(
             ? position.repay(0n, shares, nowSeconds).position.healthFactor
             : position.repay(amount, 0n, nowSeconds).position.healthFactor,
         );
+      case "supply":
+      case "withdraw":
+        // NOT A PROJECTION AND DELIBERATELY SO. Lending the loan asset to a
+        // market, or taking it back, changes the wallet's SUPPLY side and
+        // touches neither its collateral nor its debt, so Morpho's own health
+        // factor for this position is the same number before and after. Running
+        // it through a projection would manufacture a check that can never fail
+        // and read like protection. What actually bounds these two is the
+        // market's free liquidity and the wallet's own supply position, both
+        // asserted by name below.
+        return normalizeHealthFactor(position.healthFactor);
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -182,14 +215,40 @@ export function projectHealthFactorAfter(
   }
 }
 
-/** The market must actually hold the loan assets a borrow asks for. */
+/**
+ * The market must actually hold the loan assets a borrow, or a SUPPLIER'S
+ * WITHDRAWAL, asks for.
+ *
+ * ── WHY THE SAME NUMBER BINDS TWO DIFFERENT PEOPLE ──────────────────────────
+ *
+ * `availableLiquidityRaw` is the market's supplied assets minus its borrowed
+ * ones: the loan tokens actually sitting in the contract. A borrow cannot draw
+ * more than that, and neither can a supplier's withdrawal, because a supplier's
+ * assets are lent out to borrowers and only the free remainder can be paid back
+ * on demand. That is the SUPPLIER'S REAL RISK on this lane and it is checked BY
+ * NAME here rather than left to revert on chain: a fully-utilised market can owe
+ * a supplier more than it can pay today, and the honest answer names the number
+ * the market can pay instead of failing with an opaque revert.
+ */
 function assertMarketLiquidity(market: MorphoBlueMarketState, intent: MorphoBorrowIntent): void {
-  if (intent.operation !== "borrow") return;
+  if (intent.operation !== "borrow" && intent.operation !== "withdraw") return;
   const wanted = intent.amountRaw ?? 0n;
   const available = market.snapshot.availableLiquidityRaw;
   if (wanted <= available) return;
 
   const symbol = market.identity.loanSymbol ?? market.identity.loanToken.toLowerCase();
+  if (intent.operation === "withdraw") {
+    refuse(
+      ErrorCodes.MORPHO_MARKET_LIQUIDITY,
+      `Refusing this withdrawal: the market can pay out ${available} raw units of ${symbol} today `
+      + `(${market.identity.loanDecimals} decimals) and the withdrawal asks for ${wanted}. Free liquidity is the `
+      + "market's total supplied assets minus its total borrowed assets, and the rest of what was supplied is lent "
+      + "out to borrowers, so it is not available until they repay or new suppliers arrive. The position itself is "
+      + "intact and keeps earning; this is the market being unable to pay right now, not the wallet being short.",
+      `Nothing was signed or sent. Withdraw at most ${available} raw units now and the remainder later, or wait for `
+      + "borrowers to repay. Interest keeps accruing on whatever stays supplied.",
+    );
+  }
   refuse(
     ErrorCodes.MORPHO_MARKET_LIQUIDITY,
     `Refusing this borrow: the market holds ${available} raw units of ${symbol} in free liquidity `
@@ -198,6 +257,40 @@ function assertMarketLiquidity(market: MorphoBlueMarketState, intent: MorphoBorr
     + "how healthy the position is.",
     `Nothing was signed or sent. Borrow at most ${available} raw units, or wait for suppliers to add liquidity. This `
     + "is a liquidity limit, not a collateral one, so adding collateral would not help.",
+  );
+}
+
+/**
+ * A supplier may only take back what they actually supplied.
+ *
+ * The mirror of `assertRepayDenomination` on the borrower's side, and the second
+ * of the supplier's two bounds. It is measured in ASSETS at the market's current
+ * accrued state, because that is what `supplyAssetsRaw` is and what the
+ * withdrawal is denominated in; the share count underneath appreciates as
+ * borrowers pay interest, so the asset figure is the one that answers "how much
+ * can this wallet take out".
+ *
+ * NO EQUALITY TRAP HERE, unlike a repayment. A withdrawal of exactly
+ * `supplyAssetsRaw` is legitimate and lands: accrual since the read can only
+ * make the position WORTH MORE, so an amount that was withdrawable when it was
+ * computed is still withdrawable when it lands. The borrower's mirror problem
+ * runs the other way, which is why only that side forbids the exact figure.
+ */
+function assertSupplyPosition(intent: MorphoBorrowIntent, position: MorphoPositionSnapshot): void {
+  if (intent.operation !== "withdraw") return;
+  const wanted = intent.amountRaw ?? 0n;
+  if (wanted <= position.supplyAssetsRaw) return;
+
+  const symbol = intent.market.loanSymbol ?? intent.market.loanToken.toLowerCase();
+  refuse(
+    ErrorCodes.MORPHO_APPROVAL_POLICY_VIOLATION,
+    `Refusing this withdrawal: the wallet has ${position.supplyAssetsRaw} raw units of ${symbol} supplied to market `
+    + `${intent.market.marketId} (${intent.market.loanDecimals} decimals, held on chain as `
+    + `${position.supplySharesRaw} supply shares) and the withdrawal asks for ${wanted}. A supplier can only take `
+    + "back what they lent plus the interest it has earned.",
+    `Nothing was approved, signed or sent. Withdraw at most ${position.supplyAssetsRaw} raw units. Check the `
+    + "position with morpho.positions.get: a wallet that supplied to a DIFFERENT market on the same token holds "
+    + "nothing on this one.",
   );
 }
 
@@ -292,6 +385,56 @@ export function buildMorphoDirectBorrow(intent: MorphoBorrowIntent, marketParams
 }
 
 /**
+ * Encode the DIRECT Blue withdrawal of SUPPLIED loan assets.
+ *
+ * ── WHY VEX ENCODES THIS ONE TOO ────────────────────────────────────────────
+ *
+ * The SDK's `blue.withdraw()` builds a Bundler3 bundle whose single requirement
+ * is `blueAuthorization`: the same global, permanent, unbounded
+ * `setAuthorization(generalAdapter1, true)` grant the owner's option-1 ruling
+ * forbids for a borrow. Captured 2026-08-18 on an Anvil fork of Base against the
+ * real cbBTC/USDC market, fixture
+ * `agents_dm/morpho-e3/fixtures/base-market-supply-withdraw.json`,
+ * `captures[1].requirements[0].type === "blueAuthorization"`. So the withdrawal
+ * takes the road the borrow already takes: a DIRECT call to Morpho Blue with
+ * `msg.sender == onBehalf`, which Blue permits with no authorization at all.
+ * Landed on that same fork: status success, exactly 250,000,000 raw USDC
+ * received, supply shares halved, and no authorization ever granted.
+ *
+ * The shape is `withdraw(marketParams, assets, shares, onBehalf, receiver)` -
+ * five arguments with the SAME LEADING SHAPE as `borrow`, which is why
+ * `./blue-call-decoder.ts` reads both with one positional rule rather than two.
+ * `shares` is fixed at zero because the withdrawal is denominated in assets, and
+ * `receiver` is carried explicitly so a change to it shows up in the diff.
+ *
+ * A supply, by contrast, is NOT here: it needs only an exact-amount ERC-20
+ * approval to GeneralAdapter1, which IS the owner's policy, so the SDK builds it
+ * as an ordinary Bundler3 bundle and `./market-bundle-decoder.ts` proves it.
+ */
+export function buildMorphoDirectWithdraw(intent: MorphoBorrowIntent, marketParams: {
+  loanToken: Address; collateralToken: Address; oracle: Address; irm: Address; lltv: bigint;
+}): MorphoBorrowTransaction {
+  const amount = intent.amountRaw ?? 0n;
+  if (amount <= 0n) {
+    refuse(
+      ErrorCodes.MORPHO_APPROVAL_POLICY_VIOLATION,
+      "Refusing this withdrawal: it names no amount to withdraw.",
+      NOTHING_HAPPENED_HINT,
+    );
+  }
+  return {
+    to: requireMorphoBlue(intent.market.chainId),
+    data: encodeFunctionData({
+      abi: blueAbi,
+      functionName: "withdraw",
+      args: [marketParams, amount, 0n, intent.userAddress, intent.recipient],
+    }),
+    value: 0n,
+    builtBy: "vex-direct-blue",
+  };
+}
+
+/**
  * Plan one operation: read fresh, gate it, and say what it will do.
  *
  * This is the gate every operation passes BEFORE anything is built or signed.
@@ -311,19 +454,33 @@ export async function planMorphoBorrowOperation(
     client, market.identity.chainId, market.marketParams, intent.userAddress,
   );
   assertRepayDenomination(intent, positionBefore);
+  assertSupplyPosition(intent, positionBefore);
   assertMarketLiquidity(market, intent);
 
   const accrual = await client.morpho
     .blue(market.marketParams, market.identity.chainId)
     .getPositionData(intent.userAddress);
   const healthFactorAfterWad = projectHealthFactorAfter(accrual, intent, nowSeconds);
-  assertMorphoHealthFactorFloor(healthFactorAfterWad, intent.operation.replace(/_/g, " "));
+  // THE FLOOR IS THE BORROWER'S CHECK AND IS NOT APPLIED TO A SUPPLIER. Lending
+  // the loan asset or taking it back moves neither collateral nor debt, so the
+  // health factor is identical either side of the operation; asserting a floor
+  // on an unchanged number would refuse a perfectly safe withdrawal purely
+  // because the SAME wallet also happens to hold a thin borrow position on the
+  // same market. The supplier's own two bounds ran above instead.
+  if (!isSupplierOperation(intent.operation)) {
+    assertMorphoHealthFactorFloor(healthFactorAfterWad, intent.operation.replace(/_/g, " "));
+  }
 
   const leg = describeMorphoBorrowLeg(intent);
-  const healthClause = healthFactorAfterWad === null
-    ? "The position carries no debt afterwards, so it cannot be liquidated."
-    : `The position's health factor afterwards is ${formatWad(healthFactorAfterWad)}, at or above Vex's floor of `
-      + `${MORPHO_MIN_HEALTH_FACTOR_DECIMAL}.`;
+  const healthClause = isSupplierOperation(intent.operation)
+    ? "This is the SUPPLIER side of the market: it moves neither collateral nor debt, so it does not change the "
+      + "wallet's health factor and no health-factor floor applies to it. What bounds it is the market's free "
+      + `liquidity of ${market.snapshot.availableLiquidityRaw} raw loan units and the wallet's own supplied `
+      + `${positionBefore.supplyAssetsRaw}, both checked above.`
+    : healthFactorAfterWad === null
+      ? "The position carries no debt afterwards, so it cannot be liquidated."
+      : `The position's health factor afterwards is ${formatWad(healthFactorAfterWad)}, at or above Vex's floor of `
+        + `${MORPHO_MIN_HEALTH_FACTOR_DECIMAL}.`;
   const amountClause = leg.amountRaw === null
     ? `an amount decided on-chain from ${intent.sharesRaw ?? 0n} borrow shares`
     : `${leg.amountRaw} raw units (${leg.decimals} decimals)`;
@@ -363,6 +520,10 @@ export async function assertMorphoBorrowStillSafe(
     .blue(market.marketParams, market.identity.chainId)
     .getPositionData(intent.userAddress);
   const projected = projectHealthFactorAfter(accrual, intent, nowSeconds);
-  assertMorphoHealthFactorFloor(projected, `${intent.operation.replace(/_/g, " ")} (re-checked before sending)`);
+  // Same reason as in the plan: a supplier's operation cannot move this number,
+  // so re-asserting a floor on it would refuse for something that did not change.
+  if (!isSupplierOperation(intent.operation)) {
+    assertMorphoHealthFactorFloor(projected, `${intent.operation.replace(/_/g, " ")} (re-checked before sending)`);
+  }
   return projected;
 }

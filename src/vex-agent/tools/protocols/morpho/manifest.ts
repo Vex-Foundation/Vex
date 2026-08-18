@@ -11,15 +11,17 @@
  * specific deposit into or withdrawal from a vault, building and decoding the
  * exact transaction without signing or sending it. EXECUTE: the two tools that
  * actually move money, supplying assets to a vault and redeeming them back out.
- * BORROW: one preview and four executes covering the whole Blue market position
- * lifecycle - supplying collateral, borrowing against it, repaying the debt and
- * withdrawing the collateral back out, each a single leg on a market whose
- * oracle Vex vouches for and each gated on a fresh quote of its OWN direction.
+ * MARKET: one preview and six executes covering the whole Blue market
+ * lifecycle. Four are the BORROWER'S side - supplying collateral, borrowing
+ * against it, repaying the debt and withdrawing the collateral back out. Two are
+ * the LENDER'S - supplying the loan asset into the market to earn its borrow
+ * rate, and taking it back out. Each is a single leg on a market whose oracle
+ * Vex vouches for, and each is gated on a fresh quote of its OWN direction.
  * CLAIM: one tool that sweeps the reward tokens a Morpho position has already
  * earned, out of Merkl's distributor and into the wallet.
  *
- * Ten of the seventeen are read-only; the seven execute tools sign and broadcast
- * real transactions from the user's wallet. Six of the seven are gated on a
+ * Ten of the nineteen are read-only; the nine execute tools sign and broadcast
+ * real transactions from the user's wallet. Eight of the nine are gated on a
  * fresh matching quote. `morpho.rewards.claim` is the exception and the reason
  * is structural rather than an oversight: a claim has no price, no slippage, no
  * counterparty and no size to choose, so there is nothing a quote could bind an
@@ -47,6 +49,8 @@ import { MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL } from "./manifests/market-supply-
 import { MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL } from "./manifests/market-withdraw-collateral.js";
 import { MORPHO_MARKET_BORROW_TOOL } from "./manifests/market-borrow.js";
 import { MORPHO_MARKET_REPAY_TOOL } from "./manifests/market-repay.js";
+import { MORPHO_MARKET_SUPPLY_TOOL } from "./manifests/market-supply.js";
+import { MORPHO_MARKET_WITHDRAW_TOOL } from "./manifests/market-withdraw.js";
 import { MORPHO_REWARDS_CLAIM_TOOL } from "./manifests/rewards-claim.js";
 
 export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
@@ -66,5 +70,7 @@ export const MORPHO_TOOLS: readonly ProtocolToolManifest[] = [
   MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL,
   MORPHO_MARKET_BORROW_TOOL,
   MORPHO_MARKET_REPAY_TOOL,
+  MORPHO_MARKET_SUPPLY_TOOL,
+  MORPHO_MARKET_WITHDRAW_TOOL,
   MORPHO_REWARDS_CLAIM_TOOL,
 ];

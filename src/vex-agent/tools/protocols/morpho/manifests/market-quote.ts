@@ -14,7 +14,7 @@ import {
 /**
  * `morpho.market.quote` - price ONE Blue market operation without performing it.
  *
- * THE GATE IN FRONT OF FOUR SPENDING TOOLS, and the only Morpho market tool that
+ * THE GATE IN FRONT OF SIX SPENDING TOOLS, and the only Morpho market tool that
  * commits nothing. It runs the execute's own path - the same market gate, the
  * same health-factor projection, the same builder and decoder, the same
  * allowance planner - so it REFUSES exactly where the execute would refuse, and
@@ -32,7 +32,8 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
   lifecycle: "active",
   description:
     "Read-only. PRICE one Morpho Blue market operation without performing it: supplying collateral, borrowing, "
-    + "repaying, or withdrawing collateral. It signs NOTHING, sends nothing, approves nothing and moves no funds, so "
+    + "repaying, withdrawing collateral, lending the loan asset into the market, or taking what was lent back out. "
+    + "It signs NOTHING, sends nothing, approves nothing and moves no funds, so "
     + "there is "
     + "never a reason to hesitate over calling it. Use it whenever the user asks what an operation WOULD do: how "
     + "close to liquidation it leaves them, how much they can safely borrow, whether the market can fund it, what "
@@ -42,7 +43,7 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
     + "here first, for free. "
     + `${MORPHO_ORACLE_VOUCHING_SENTENCE} `
     + `${MORPHO_HEALTH_FLOOR_SENTENCE} `
-    + "IT IS ALSO MANDATORY: each of the four executes is REFUSED without a fresh quote of ITS OWN direction for the "
+    + "IT IS ALSO MANDATORY: each of the six executes is REFUSED without a fresh quote of ITS OWN direction for the "
     + "same market, chain, amount and slippageBps. A quote of one direction NEVER authorizes another - a "
     + "supplyCollateral quote cannot authorize a borrow - because supplying collateral is safe on its own while "
     + "borrowing against it is the operation that can be liquidated. "
@@ -62,12 +63,15 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
       key: "direction",
       type: "string",
       required: true,
-      enum: ["supplyCollateral", "withdrawCollateral", "borrow", "repay"],
+      enum: ["supplyCollateral", "withdrawCollateral", "borrow", "repay", "supply", "withdraw"],
       description:
         "Which operation to price. `supplyCollateral` moves the collateral token onto the market (raises the health "
         + "factor), `borrow` takes the loan token out against it (lowers it, and is the only one that creates "
         + "liquidation risk), `repay` pays debt down (raises it), `withdrawCollateral` takes collateral back off "
-        + "(lowers it whenever debt remains). The quote authorizes only the execute matching this direction.",
+        + "(lowers it whenever debt remains). `supply` and `withdraw` are the LENDER'S side and move the LOAN token: "
+        + "`supply` lends into the market to earn its borrow rate and `withdraw` takes that back out. Neither moves "
+        + "any health factor, and neither is `supplyCollateral`/`withdrawCollateral`, which move the other token. The "
+        + "quote authorizes only the execute matching this direction.",
     },
     {
       key: "marketId",
@@ -119,6 +123,22 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
         "Set true with `direction: repay` to price closing the debt COMPLETELY. It reads the position's own borrow "
         + "shares from the chain, which is the only denomination that reaches zero: an amount always leaves accruing "
         + "dust behind. Only meaningful for a repayment.",
+    },
+    {
+      key: "supplyAmountRaw",
+      type: "string",
+      description:
+        "Required when `direction` is `supply`. RAW base units of the LOAN token being LENT into the market, at that "
+        + "token's own decimals (`loanAsset.decimals` from `morpho.market.get`). This is the lender's side; "
+        + "`supplyCollateralAmountRaw` is a different operation on a different token and is refused by name.",
+    },
+    {
+      key: "withdrawAmountRaw",
+      type: "string",
+      description:
+        "Required when `direction` is `withdraw`. RAW base units of the LOAN token being taken back out of the "
+        + "market, at that token's own decimals. Bounded by the wallet's own supplied position AND by the market's "
+        + "free liquidity, each refused by name rather than clamped.",
     },
     {
       key: "walletAddress",

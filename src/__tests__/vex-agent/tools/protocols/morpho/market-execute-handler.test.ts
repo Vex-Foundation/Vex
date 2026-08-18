@@ -1,7 +1,10 @@
 /**
- * The FOUR Morpho Blue market executes, at the handler layer:
+ * The BORROWER-side Morpho Blue market executes, at the handler layer:
  * `morpho.market.supplyCollateral`, `morpho.market.withdrawCollateral`,
- * `morpho.market.borrow` and `morpho.market.repay`.
+ * `morpho.market.borrow` and `morpho.market.repay`. The LENDER'S two are the
+ * same spine and their cases live in `./market-execute-handler/lender-cases.ts`,
+ * registered at the bottom of this file: module mocking is per-test-file and
+ * has to stay here, while the cases are their own responsibility.
  *
  * The EXECUTION SPINE is not under test here. It has its own suite and its own
  * fork harness, and it is stubbed so these cases can assert only what the agent
@@ -21,6 +24,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { definedValue, mutableRecord } from "../../../../_test-value-guards.js";
+import { registerMarketLenderCases } from "./market-execute-handler/lender-cases.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import {
@@ -90,7 +94,9 @@ vi.mock(
 const {
   morphoMarketBorrow,
   morphoMarketRepay,
+  morphoMarketSupply,
   morphoMarketSupplyCollateral,
+  morphoMarketWithdraw,
   morphoMarketWithdrawCollateral,
 } = await import("../../../../../vex-agent/tools/protocols/morpho/handlers/market-execute.js");
 
@@ -213,7 +219,7 @@ describe("dryRun previews the whole operation and signs nothing", () => {
     expect(data["direction"]).toBe("borrow");
     const market = section(data, "market");
     expect(market["marketId"]).toBe(MARKET_ID);
-    expect(section(market, "oracle")["vouching"]).toBe("chainlink-oracle-factory");
+    expect(section(market, "oracle")["vouching"]).toBe("verified-oracle-legs");
     const health = section(market, "healthFactor");
     expect(health["before"]).toBe("1.72");
     expect(health["after"]).toBe("1.31");
@@ -526,4 +532,12 @@ describe("a refusal before signing says so, and files nothing it cannot prove", 
     expect(evmClients).toHaveBeenCalledWith(8453, PRIVATE_KEY);
     expect(publicClient).not.toHaveBeenCalled();
   });
+});
+
+// The LENDER-side cases, handed this file's mock surface. See the header.
+registerMarketLenderCases({
+  morphoMarketSupply, morphoMarketSupplyCollateral, morphoMarketWithdraw, context,
+  payload, section, preview, resolveIntent, executeMarket, signingWallet,
+  marketPreview, marketIntent,
+  constants: { MARKET_ID, LOAN_AMOUNT_RAW, COLLATERAL_AMOUNT_RAW, USDC, WALLET },
 });

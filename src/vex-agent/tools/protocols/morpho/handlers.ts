@@ -22,7 +22,9 @@ import { morphoMarketQuote } from "./handlers/market-quote.js";
 import {
   morphoMarketBorrow,
   morphoMarketRepay,
+  morphoMarketSupply,
   morphoMarketSupplyCollateral,
+  morphoMarketWithdraw,
   morphoMarketWithdrawCollateral,
 } from "./handlers/market-execute.js";
 
@@ -59,6 +61,11 @@ export const MORPHO_HANDLERS: Record<string, ProtocolHandler> = {
   "morpho.market.withdrawCollateral": morphoMarketWithdrawCollateral,
   "morpho.market.borrow": morphoMarketBorrow,
   "morpho.market.repay": morphoMarketRepay,
+  // The LENDER'S side of the same market: supplying the loan asset to earn the
+  // borrow rate, and taking it back out. Same spine, same context, different
+  // token and a position that has no health factor at all.
+  "morpho.market.supply": morphoMarketSupply,
+  "morpho.market.withdraw": morphoMarketWithdraw,
   // The CLAIM lane. Full context like the other writes: it resolves the
   // session's signing wallet, and it takes no wallet parameter precisely so the
   // model cannot name one.

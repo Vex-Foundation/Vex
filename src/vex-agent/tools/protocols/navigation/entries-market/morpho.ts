@@ -6,9 +6,9 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
   summary:
-    "Morpho variable-rate lending across nine EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain, HyperEVM, Monad, Robinhood Chain), in two shapes: isolated Blue MARKETS screened by rate, size, utilization and liquidation threshold and read in full including bad debt and the oracle liquidations are decided against, and curated VAULTS (V1 MetaMorpho and V2) screened by deposits, net APY and curator fee and read in full including roles, timelocks, per-market allocations and withdrawal gating. Alongside them, two wallet-side reads: the incentive tokens a wallet can claim on top of its rate, and what a wallet holds together with the Morpho contracts it has already approved to move it. Alongside the reads, one PREVIEW: what a specific deposit into or withdrawal from a vault would mint, cost and require, priced without signing or sending anything. And on VAULTS ONLY, two EXECUTING tools that move real funds after a fresh preview: deposit assets for shares, and withdraw assets by burning shares. Everything else stays read-only: Vex cannot borrow, repay, move collateral or claim rewards on Morpho.",
+    "Morpho variable-rate lending across nine EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain, HyperEVM, Monad, Robinhood Chain), in two shapes: isolated Blue MARKETS screened by rate, size, utilization and liquidation threshold and read in full including bad debt and the oracle liquidations are decided against, and curated VAULTS (V1 MetaMorpho and V2) screened by deposits, net APY and curator fee and read in full including roles, timelocks, per-market allocations and withdrawal gating. Alongside them, two wallet-side reads: the incentive tokens a wallet can claim on top of its rate, and what a wallet holds together with the Morpho contracts it has already approved to move it. Alongside the reads, two PREVIEWS that sign nothing: what a specific deposit into or withdrawal from a vault would mint, cost and require, and what one operation on one Blue market would do to the position's health factor. And SEVEN EXECUTING tools that move real funds. On VAULTS, after a fresh preview: deposit assets for shares, and withdraw assets by burning shares. On a VOUCHED Blue MARKET, each after a fresh preview of its OWN direction: supply collateral, borrow against it, repay debt, and withdraw collateral. On REWARDS, needing no preview because a claim has no price or size to choose: claim the reward tokens the wallet has already earned. The one thing Vex deliberately does NOT do is combine two market operations atomically, because the atomic path would require granting an adapter a permanent standing authorization over the wallet's whole Morpho position.",
   whenToUse:
-    "Use when the user wants to lend, deposit or earn interest on an asset at a FLOATING rate, wants somewhere passive to park an asset under a professional curator, wants to know where borrowing is cheapest, or wants to inspect a lending market or a vault before entering. Route by who picks the venue: a VAULT is a managed deposit spread across many markets by a curator who takes a fee, a MARKET is one loan asset against one collateral asset that the user chooses themselves. Start with morpho.vaults.discover or morpho.markets.discover to screen, then the matching get tool. When the user asks about what they ALREADY hold, what they owe, or whether they are near liquidation, that is morpho.positions.get, not a screening tool; when they ask what has happened in a market or want an address audited, that is morpho.markets.activity. When they ask about unclaimed rewards or incentive tokens earned on top of the rate, that is morpho.rewards.get; when they ask what a wallet holds or which contracts it has approved to spend a token, that is morpho.wallet.balance, though a plain balance question with no approval angle belongs to wallet_balances instead. When the user names an AMOUNT and wants to know what depositing or withdrawing it would actually do, that is morpho.vault.quote, which prices the operation without performing it. When the user then tells Vex to go ahead, morpho.vault.deposit and morpho.vault.withdraw perform it on a VAULT, and each one requires a fresh morpho.vault.quote of the same operation first. BORROWING LIVES ON A MARKET, NOT A VAULT: morpho.market.quote prices supplying collateral, borrowing, repaying or withdrawing collateral on one market, and morpho.market.supplyCollateral, morpho.market.borrow, morpho.market.repay and morpho.market.withdrawCollateral perform them, each requiring a fresh quote of ITS OWN direction. Vex acts only on markets whose oracle it can vouch for and refuses anything that would leave the health factor below 1.25. There is still no tool for claiming rewards, and no atomic combination of market operations. The APY-labelling, health-factor, vault-gating and permissionless-market rules live in the Lending (Morpho) doctrine below.",
+    "Use when the user wants to lend, deposit or earn interest on an asset at a FLOATING rate, wants somewhere passive to park an asset under a professional curator, wants to know where borrowing is cheapest, or wants to inspect a lending market or a vault before entering. Route by who picks the venue: a VAULT is a managed deposit spread across many markets by a curator who takes a fee, a MARKET is one loan asset against one collateral asset that the user chooses themselves. Start with morpho.vaults.discover or morpho.markets.discover to screen, then the matching get tool. When the user asks about what they ALREADY hold, what they owe, or whether they are near liquidation, that is morpho.positions.get, not a screening tool; when they ask what has happened in a market or want an address audited, that is morpho.markets.activity. When they ask about unclaimed rewards or incentive tokens earned on top of the rate, that is morpho.rewards.get, and when they tell Vex to actually collect them that is morpho.rewards.claim, which needs no quote because a claim has no price and no size to choose; when they ask what a wallet holds or which contracts it has approved to spend a token, that is morpho.wallet.balance, though a plain balance question with no approval angle belongs to wallet_balances instead. When the user names an AMOUNT and wants to know what depositing or withdrawing it would actually do, that is morpho.vault.quote, which prices the operation without performing it. When the user then tells Vex to go ahead, morpho.vault.deposit and morpho.vault.withdraw perform it on a VAULT, and each one requires a fresh morpho.vault.quote of the same operation first. BORROWING LIVES ON A MARKET, NOT A VAULT: morpho.market.quote prices supplying collateral, borrowing, repaying or withdrawing collateral on one market, and morpho.market.supplyCollateral, morpho.market.borrow, morpho.market.repay and morpho.market.withdrawCollateral perform them, each requiring a fresh quote of ITS OWN direction. LENDING ALSO LIVES ON A MARKET, DIRECTLY: morpho.market.supply lends the loan asset into ONE market to earn its own borrow rate with no curator and no fee, and morpho.market.withdraw takes it back out, both quoted per direction like the rest. That is the DIRECT alternative to a vault, and the tradeoff is measured rather than assumed - the gross rate is the same because the vaults allocate into these same markets, so what a curator's fee buys is diversification and somebody reallocating when a market degrades, while a direct supply concentrates the position in one market's collateral, oracle and LLTV. A market supply is NOT collateral, earns interest, and moves NO health factor; a market withdrawal is bounded by the wallet's own supplied position AND by the market's free liquidity. Vex acts only on markets whose oracle it can vouch for and refuses to sign anything projected to leave the health factor below 1.25, which is a pre-signature buffer rather than an on-chain guarantee. The one thing there is no tool for is an ATOMIC combination of market operations: supply-then-borrow and repay-then-withdraw are each two separately quoted and separately consented operations, kept safe by their ORDER rather than by atomicity. The APY-labelling, health-factor, vault-gating and permissionless-market rules live in the Lending (Morpho) doctrine below.",
   preferInstead:
     "Use `pendle` when the user wants a FIXED rate locked to a maturity date - Morpho rates float and never expire. Use `solana.lend` for lending on Solana; Morpho here is EVM-only. Use `kyberswap` for ordinary spot swaps.",
   exampleQueries: [
@@ -36,6 +36,8 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
     "recent liquidations",
     "what rewards can I claim",
     "do I have unclaimed rewards",
+    "claim my morpho rewards",
+    "harvest my incentive tokens",
     "check my token balance and approvals",
     "do I have an unlimited allowance",
     "deposit into this morpho vault",
@@ -106,7 +108,8 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
       label: "Price a borrow or a collateral move before doing it",
       summary:
         "PRICE one operation on one Blue market without performing it: supplying collateral, borrowing against it, "
-        + "repaying debt or taking collateral back out. Answers the conditional question - what would this do to my "
+        + "repaying debt, taking collateral back out, LENDING the loan asset into the market, or taking what was "
+        + "lent back out. Answers the conditional question - what would this do to my "
         + "health factor, how close to liquidation would it leave me, can the market fund it, what would I have to "
         + "permit first. Signs nothing. Mandatory before the matching execute, and a quote of one direction never "
         + "authorizes another.",
@@ -143,6 +146,31 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
       ],
     },
     {
+      label: "Lend directly into one market instead of a curated vault",
+      summary:
+        "LEND REAL FUNDS into ONE Blue market and take them back out, after a fresh quote of the same direction. "
+        + "This is the LENDER'S side and it is not collateral: it earns the market's own borrow rate, it backs no "
+        + "loan, and it moves NO health factor. It is the direct alternative to a curated vault, and the choice is a "
+        + "fee against management: measured on Base, every curated USDC vault earns the same gross 4.13% because "
+        + "they allocate into the same markets, so a 0%-fee curator nets 4.13% while a 25%-fee one nets 3.08%, while "
+        + "supplying this market directly earns 4.13% with no fee at all. What the direct route gives up is "
+        + "diversification and a curator who reallocates when a market degrades. Supplying sends two transactions "
+        + "behind one confirmation, a permission then the supply; withdrawing is one direct call with no permission. "
+        + "A withdrawal is bounded BOTH by the wallet's own supplied position and by the market's free liquidity, "
+        + "and either bound is refused by name rather than quietly reduced.",
+      toolPrefixes: [
+        "morpho.market.supply",
+        "morpho.market.withdraw",
+      ],
+      hints: [
+        "lend usdc into this market directly",
+        "supply to this market instead of paying a curator fee",
+        "withdraw what i lent into this market",
+        "stop lending into this market and take the interest",
+        "earn the full rate on this market myself",
+      ],
+    },
+    {
       label: "Position and liquidation risk",
       summary:
         "Read one wallet's own Morpho holdings: what it lent, what it put up as collateral, what it owes, the health factor of each borrowing position and how far the collateral price can fall before it is liquidated.",
@@ -157,11 +185,11 @@ export const MORPHO_NAVIGATION: ProtocolNamespaceNavigation = {
       hints: ["recent liquidations on this market", "market transaction history", "who liquidated me", "is this lending market still being used"],
     },
     {
-      label: "Claimable reward campaigns",
+      label: "Reward campaigns, read and claimed",
       summary:
-        "Read the incentive tokens a wallet can claim on top of its lending rate, what is still accruing and not yet claimable, and which campaign and protocol produced each one. Claiming itself is not available in Vex.",
+        "Read the incentive tokens a wallet can claim on top of its lending rate, what is still accruing and not yet claimable, and which campaign and protocol produced each one. Then CLAIM them for real: one transaction sweeps every claimable row on one chain and can deliver several reward tokens at different scales, it needs no quote because a claim has no price and no size to choose, and it costs gas, which is worth saying before claiming a dust balance.",
       toolPrefixes: ["morpho.rewards"],
-      hints: ["what rewards can I claim", "do I have unclaimed rewards", "how much have I earned in incentives", "reward tokens waiting"],
+      hints: ["what rewards can I claim", "do I have unclaimed rewards", "how much have I earned in incentives", "reward tokens waiting", "claim my morpho rewards", "harvest my incentive tokens"],
     },
     {
       label: "Wallet holdings and Morpho approvals",

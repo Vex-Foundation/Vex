@@ -30,7 +30,9 @@ import {
   buildMorphoBorrowIntentParams,
   planMorphoBorrowLegs,
   MORPHO_BORROW_EFFECTS_VERSION,
+  type MorphoLegPlan,
 } from "@vex-agent/tools/protocols/morpho/handlers/signed-broadcast.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 import type {
   MorphoAllowancePlan,
   MorphoBorrowIntent,
@@ -79,7 +81,9 @@ function intentFor(
 function legFor(operation: MorphoBorrowOperation, amountRaw: string | null = "5000000"): MorphoBorrowLeg {
   const collateral = operation === "supply_collateral" || operation === "withdraw_collateral";
   return {
-    direction: operation === "supply_collateral" || operation === "repay" ? "in" : "out",
+    direction: operation === "supply_collateral" || operation === "repay" || operation === "supply"
+      ? "in"
+      : "out",
     tokenAddress: collateral ? CBBTC : USDC,
     tokenSymbol: collateral ? "cbBTC" : "USDC",
     decimals: collateral ? 8 : 6,
@@ -126,34 +130,49 @@ function plan(
     // Bundler3 for the two bundled operations, Blue itself for the two direct
     // ones (fork capture, Base 2026-08-17). The decoder must still bind to BLUE.
     verifiedTarget: over.verifiedTarget
-      ?? (operation === "supply_collateral" || operation === "repay" ? BUNDLER3 : BLUE),
+      ?? (operation === "supply_collateral" || operation === "repay" || operation === "supply"
+        ? BUNDLER3
+        : BLUE),
   });
+}
+
+/**
+ * The planned legs, read by position and failing BY NAME when the plan is
+ * shorter than the assertion expects. A missing leg is a real failure of the
+ * planner, and it has to read as one instead of as a TypeError on `undefined`.
+ */
+function firstLeg(legs: readonly MorphoLegPlan[]): MorphoLegPlan {
+  return definedValue(legs[0], "the first planned leg");
+}
+
+function lastLeg(legs: readonly MorphoLegPlan[]): MorphoLegPlan {
+  return definedValue(legs.at(-1), "the last planned leg");
 }
 
 describe("morpho borrow intent: one leg, on the side the operation moves", () => {
   it("records supply_collateral as a leg the wallet SENDS, in the COLLATERAL scale", () => {
     const legs = plan("supply_collateral");
     expect(legs).toHaveLength(1);
-    expect(legs[0]!.eventRole).toBe("lend_borrow_operate");
-    expect(legs[0]!.event.tokenIn).toEqual({
+    expect(firstLeg(legs).eventRole).toBe("lend_borrow_operate");
+    expect(firstLeg(legs).event.tokenIn).toEqual({
       tokenAddress: CBBTC.toLowerCase(),
       tokenSymbol: "cbBTC",
       tokenDecimals: 8,
       amountHuman: "0.05",
       amountRaw: "5000000",
     });
-    expect(legs[0]!.event.tokenOut).toBeUndefined();
+    expect(firstLeg(legs).event.tokenOut).toBeUndefined();
   });
 
   it("records withdraw_collateral on the RECEIVING side of the same token", () => {
     const legs = plan("withdraw_collateral");
-    expect(legs[0]!.event.tokenOut).toMatchObject({ tokenAddress: CBBTC.toLowerCase(), tokenDecimals: 8 });
-    expect(legs[0]!.event.tokenIn).toBeUndefined();
+    expect(firstLeg(legs).event.tokenOut).toMatchObject({ tokenAddress: CBBTC.toLowerCase(), tokenDecimals: 8 });
+    expect(firstLeg(legs).event.tokenIn).toBeUndefined();
   });
 
   it("records a borrow as RECEIVED and a repay as SENT, in the LOAN token's own scale", () => {
     const borrowed = plan("borrow", { leg: legFor("borrow", "500000000") });
-    expect(borrowed[0]!.event.tokenOut).toEqual({
+    expect(firstLeg(borrowed).event.tokenOut).toEqual({
       tokenAddress: USDC.toLowerCase(),
       tokenSymbol: "USDC",
       tokenDecimals: 6,
@@ -162,8 +181,8 @@ describe("morpho borrow intent: one leg, on the side the operation moves", () =>
     });
 
     const repaid = plan("repay", { leg: legFor("repay", "500000000") });
-    expect(repaid[0]!.event.tokenIn).toMatchObject({ tokenDecimals: 6, amountHuman: "500" });
-    expect(repaid[0]!.event.tokenOut).toBeUndefined();
+    expect(firstLeg(repaid).event.tokenIn).toMatchObject({ tokenDecimals: 6, amountHuman: "500" });
+    expect(firstLeg(repaid).event.tokenOut).toBeUndefined();
   });
 
   it("records a repay by SHARES with its token and scale but NO amount", () => {
@@ -171,7 +190,7 @@ describe("morpho borrow intent: one leg, on the side the operation moves", () =>
       intent: { repayMode: "shares", amountRaw: null, sharesRaw: 500_000_000_000_000n },
       leg: legFor("repay", null),
     });
-    expect(legs[0]!.event.tokenIn).toEqual({
+    expect(firstLeg(legs).event.tokenIn).toEqual({
       tokenAddress: USDC.toLowerCase(),
       tokenSymbol: "USDC",
       tokenDecimals: 6,
@@ -180,15 +199,15 @@ describe("morpho borrow intent: one leg, on the side the operation moves", () =>
 
   it("states the chain family and the chain id the market identity carries", () => {
     const legs = plan("borrow");
-    expect(legs[0]!.event.chainFamily).toBe("eip155");
-    expect(legs[0]!.event.chainId).toBe(8453);
-    expect(legs[0]!.event.kind).toBe("lend");
-    expect(legs[0]!.event.protocol).toBe("morpho");
+    expect(firstLeg(legs).event.chainFamily).toBe("eip155");
+    expect(firstLeg(legs).event.chainId).toBe(8453);
+    expect(firstLeg(legs).event.kind).toBe("lend");
+    expect(firstLeg(legs).event.protocol).toBe("morpho");
   });
 
   it("persists the three facts the settlement decoder must read the receipt against", () => {
     const legs = plan("repay", { leg: legFor("repay", null) });
-    expect(legs[0]!.event.routeProvenance).toMatchObject({
+    expect(firstLeg(legs).event.routeProvenance).toMatchObject({
       morphoBorrow: {
         operation: "repay",
         marketId: MARKET.marketId,
@@ -198,14 +217,14 @@ describe("morpho borrow intent: one leg, on the side the operation moves", () =>
   });
 
   it("leaves the operation leg with no transaction, because it is built after the approval lands", () => {
-    expect(plan("repay").at(-1)!.txParams).toBeNull();
+    expect(lastLeg(plan("repay")).txParams).toBeNull();
   });
 
   it("records the verified TARGET and the event EMITTER as the different contracts they are", () => {
     // Fork capture, Base 2026-08-17: a repay goes through Bundler3 while Blue
     // still emits the Repay event. A row that recorded Bundler3 as the emitter
     // would send the settlement decoder at a contract that emits nothing.
-    const bundled = plan("repay").at(-1)!.event.routeProvenance;
+    const bundled = lastLeg(plan("repay")).event.routeProvenance;
     expect(bundled).toMatchObject({
       morphoBorrow: { blueAddress: BLUE.toLowerCase() },
       settlementDecode: { routerAddress: BUNDLER3 },
@@ -213,7 +232,7 @@ describe("morpho borrow intent: one leg, on the side the operation moves", () =>
 
     // A borrow is a DIRECT Blue call, so the two coincide - and they coincide
     // because the target IS Blue, not because the code conflates them.
-    expect(plan("borrow").at(-1)!.event.routeProvenance).toMatchObject({
+    expect(lastLeg(plan("borrow")).event.routeProvenance).toMatchObject({
       morphoBorrow: { blueAddress: BLUE.toLowerCase() },
       settlementDecode: { routerAddress: BLUE },
     });
@@ -224,8 +243,8 @@ describe("morpho borrow intent: the approval predicates", () => {
   it("records an approval leg before the operation for a PULLING operation", () => {
     const legs = plan("repay", { allowancePlan: approvalPlan(USDC, 500_000_000n) });
     expect(legs.map((l) => l.eventRole)).toEqual(["allowance", "lend_borrow_operate"]);
-    expect(legs[0]!.event.tokenIn).toMatchObject({ tokenDecimals: 6, amountRaw: "500000000" });
-    expect(legs[0]!.txParams).toEqual({ to: USDC, data: "0xdeadbeef", value: 0n });
+    expect(firstLeg(legs).event.tokenIn).toMatchObject({ tokenDecimals: 6, amountRaw: "500000000" });
+    expect(firstLeg(legs).txParams).toEqual({ to: USDC, data: "0xdeadbeef", value: 0n });
   });
 
   it("REFUSES an approval attached to an operation that only receives", () => {
@@ -310,5 +329,89 @@ describe("morpho borrow intent_params: the versioned effects payload", () => {
     // note. This line failing to compile IS the assertion.
     const boundary: Record<string, unknown> = buildMorphoBorrowIntentParams(intentFor("borrow"), legFor("borrow"));
     expect(boundary.effectsVersion).toBe(MORPHO_BORROW_EFFECTS_VERSION);
+  });
+});
+
+/**
+ * THE LENDER'S SIDE IN THE LEDGER.
+ *
+ * Supplying a market's loan asset IS lending, so it files under the EXISTING
+ * `lend_deposit` / `lend_withdraw` roles a vault deposit uses, with no migration
+ * and no new vocabulary. The role answers "what did the agent do"; a role per
+ * venue-internal shape would make "show me everything I lent" return the wrong
+ * set forever.
+ *
+ * WHICH MAKES THE ROW'S OWN `intent_params` LOAD BEARING, because the role no
+ * longer says which venue was used. These cases pin that a market supply row and
+ * a vault deposit row remain distinguishable from each other by their intent
+ * params alone: the market row carries a versioned effects payload naming a Blue
+ * MARKET ID and an operation, and the vault row carries neither.
+ */
+describe("the market lender lane files under the vault lane's roles, and stays distinguishable", () => {
+  it("files a market SUPPLY under lend_deposit and a market WITHDRAW under lend_withdraw", () => {
+    expect(lastLeg(plan("supply")).eventRole).toBe("lend_deposit");
+    expect(lastLeg(plan("withdraw")).eventRole).toBe("lend_withdraw");
+  });
+
+  it("still files all four BORROWER-side operations under lend_borrow_operate", () => {
+    for (const operation of ["supply_collateral", "withdraw_collateral", "borrow", "repay"] as const) {
+      expect(lastLeg(plan(operation)).eventRole, operation).toBe("lend_borrow_operate");
+    }
+  });
+
+  it("names the supplied side as the SUPPLY leg, not collateral and not debt", () => {
+    // A market supply backs no debt and cannot be liquidated, and it is not
+    // money the wallet owes. Filing it under either of the borrower's two legs
+    // would corrupt every later query about the wallet's exposure.
+    const supplied = buildMorphoBorrowIntentParams(intentFor("supply"), legFor("supply"));
+    expect(supplied.effects[0]).toMatchObject({ leg: "supply", direction: "in", decimals: 6 });
+    const withdrawn = buildMorphoBorrowIntentParams(intentFor("withdraw"), legFor("withdraw"));
+    expect(withdrawn.effects[0]).toMatchObject({ leg: "supply", direction: "out", decimals: 6 });
+  });
+
+  it("moves the LOAN token, at the loan token's own scale", () => {
+    // Not the collateral token. A market pairing 8-decimal cbBTC against
+    // 6-decimal USDC would make a lender's amount a hundredfold wrong if the
+    // wrong side were recorded.
+    const supplied = buildMorphoBorrowIntentParams(intentFor("supply"), legFor("supply"));
+    expect(supplied.effects[0]?.tokenAddress).toBe(USDC.toLowerCase());
+    expect(supplied.effects[0]?.tokenSymbol).toBe("USDC");
+  });
+
+  it("is distinguishable from a vault deposit by its intent params alone", () => {
+    // The vault lane records the tool's own echoed params: a vault ADDRESS and a
+    // direction, and no effects payload. The market lane records a versioned
+    // effects payload anchored on a 64-hex MARKET ID. A reader with only the
+    // role and the intent params can still tell which venue moved the money.
+    const marketSupply: Record<string, unknown> =
+      buildMorphoBorrowIntentParams(intentFor("supply"), legFor("supply"));
+    const vaultDeposit: Record<string, unknown> = {
+      vaultAddress: "0x4200000000000000000000000000000000000006",
+      chain: "base",
+      direction: "deposit",
+      depositAmountRaw: "5000000",
+      slippageBps: 50,
+    };
+
+    expect(marketSupply.effectsVersion).toBe(MORPHO_BORROW_EFFECTS_VERSION);
+    expect(vaultDeposit.effectsVersion).toBeUndefined();
+    expect(marketSupply.operation).toBe("supply");
+    expect(vaultDeposit.operation).toBeUndefined();
+    expect(marketSupply.vaultAddress).toBeUndefined();
+    expect(vaultDeposit.vaultAddress).toBeDefined();
+
+    const market = definedValue(
+      (marketSupply.market as { marketId?: string } | undefined),
+      "the market block of a market supply's intent params",
+    );
+    expect(market.marketId).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("keeps the market lane's own route provenance on the row, which is what routes the decode", () => {
+    // The settlement lane routes on THIS block before it looks at the role, and
+    // it must: a Blue supply position is not an ERC-20 and mints no share token,
+    // so the vault's net-delta rule would decline it forever.
+    const provenance = lastLeg(plan("supply")).event.routeProvenance as Record<string, unknown>;
+    expect(provenance.morphoBorrow).toBeDefined();
   });
 });

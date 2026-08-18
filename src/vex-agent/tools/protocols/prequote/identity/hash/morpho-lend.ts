@@ -50,6 +50,15 @@ export interface LendDepositMatchInput {
   readonly amount: string;
   /** Approved price protection (integer bps string), default-normalized. */
   readonly slippageBps: string;
+  /**
+   * VAULT lane, the only one this material describes. Present so the hash
+   * dispatcher can tell a vault deposit from a Blue MARKET supply, which shares
+   * the `lend_deposit` kind. It is NOT hashed: adding it would shift every
+   * digest already recorded here, and the two materials cannot collide anyway
+   * (9 fields with a 40-hex vault in position 5 against 8 with a 64-hex market
+   * id). Optional so an omitted value still reads as the vault lane.
+   */
+  readonly lane?: "vault";
 }
 
 /**
@@ -74,6 +83,8 @@ export interface LendWithdrawMatchInput {
   readonly amount: string;
   /** Approved price protection (integer bps string), default-normalized. */
   readonly slippageBps: string;
+  /** VAULT lane. Not hashed - see `LendDepositMatchInput.lane`. */
+  readonly lane?: "vault";
 }
 
 /** Fixed-order material for both lend kinds. The `kind` tag leads it. */

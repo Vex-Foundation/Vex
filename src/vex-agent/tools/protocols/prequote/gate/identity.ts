@@ -262,13 +262,23 @@ export async function computeGateMatch(
   }
 
   if (gated.kind === "lend_deposit" || gated.kind === "lend_withdraw") {
-    // Morpho vault supply / redeem - their OWN identity path (E3b-2). Both bind
-    // the vault, the raw asset amount and the approved slippage, and the kind
-    // itself carries the direction, so a deposit quote cannot authorize a
-    // withdrawal execute even on the same vault for the same amount.
-    const identity = gated.kind === "lend_deposit"
-      ? buildMorphoLendDepositIdentity(sessionId, params, context)
-      : buildMorphoLendWithdrawIdentity(sessionId, params, context);
+    // TWO LANES UNDER ONE KIND. The VAULT lane (E3b-2) binds the vault address,
+    // the raw asset amount and the approved slippage; the MARKET lane binds the
+    // Blue market id instead, because supplying a loan asset into one market is
+    // lending too and reuses the kind. The registration's `lane` is what says
+    // which, and it must be read here rather than guessed from the params: a
+    // gate that inferred the lane from which key happened to be present would
+    // let a caller choose its own identity path.
+    const identity = gated.lane === "market"
+      ? buildMorphoBorrowIdentityFor(
+        gated.kind === "lend_deposit" ? "supply" : "withdraw",
+        sessionId,
+        params,
+        context,
+      )
+      : gated.kind === "lend_deposit"
+        ? buildMorphoLendDepositIdentity(sessionId, params, context)
+        : buildMorphoLendWithdrawIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 

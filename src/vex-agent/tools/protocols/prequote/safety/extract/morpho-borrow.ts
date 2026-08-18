@@ -1,6 +1,6 @@
 /**
  * Morpho Blue MARKET quote extraction (`morpho.market.quote`) - the preview that
- * authorizes one of the four borrow-lane executes (E3c).
+ * authorizes one of the six market-lane executes (E3c).
  *
  * THE DIRECTION IS READ FROM THE RESULT, NOT THE PARAMS, and that is the point.
  * The recorder must record the direction the quote ACTUALLY priced; reading it
@@ -32,7 +32,17 @@ import type { LegVerdict } from "./verdict.js";
 
 const MorphoMarketQuoteResultSchema = z.object({
   toolId: z.literal("morpho.market.quote"),
-  direction: z.enum(["supplyCollateral", "withdrawCollateral", "borrow", "repay"]),
+  direction: z.enum([
+    "supplyCollateral",
+    "withdrawCollateral",
+    "borrow",
+    "repay",
+    // The LENDER'S side. It records under the vault lane's kinds but through
+    // THIS extractor, because it is a Blue market quote and its identity is
+    // anchored on a market id rather than a vault address.
+    "supply",
+    "withdraw",
+  ]),
   market: z.object({ marketId: z.string() }).passthrough(),
   leg: z
     .object({

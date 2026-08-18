@@ -18,17 +18,40 @@
  *      Bundler3 for a deposit, the intent's OWN vault for a withdrawal.
  *   2. The outer selector is the one allowed for that shape.
  *   3. The outer transaction moves no native value.
- *   4. Every inner leg decodes, targets a contract holding a ROLE IN THIS
- *      INTENT, carries an allowlisted selector, moves no value, and is not
- *      marked `skipRevert` or given a reentrancy callback.
- *   5. The amounts, the vault, and the recipient inside the legs match the
- *      intent rather than merely resembling it.
- *   6. A deposit carries a `maxSharePrice` guard, and that guard is at or below
+ *   4. A deposit's bundle carries EXACTLY the captured legs, in EXACTLY the
+ *      captured order, every one of them on the pinned GeneralAdapter1.
+ *   5. Every inner leg decodes, carries an allowlisted selector, moves no
+ *      value, and is not marked `skipRevert` or given a reentrancy callback.
+ *   6. The amounts, the vault, the PULL DESTINATION and the recipient inside
+ *      the legs match the intent rather than merely resembling it.
+ *   7. A deposit carries a `maxSharePrice` guard, and that guard is at or below
  *      the ceiling the caller computed from the fresh share price and the
  *      declared slippage.
  *
- * The comparison in (6) is ABSOLUTE, not a percentage of anything, so it cannot
- * scale with trade size and hide a real loss (rules/90).
+ * WHY (4) IS A COUNT AND AN ORDER RATHER THAN A SET. An earlier version of this
+ * file accepted any non-empty list of individually allowlisted legs and asked
+ * only that SOME deposit had occurred. Each leg was legal in isolation and the
+ * bundle as a whole was not: TWO `erc20TransferFrom` legs plus one deposit is
+ * two pulls against one deposit, and a pre-existing allowance large enough to
+ * cover both (a state `./allowance-plan.ts` explicitly supports) makes the
+ * second pull succeed and strand its amount in the adapter. Reordering passed
+ * for the same reason. The captured build is two legs in one order, so that is
+ * the contract, matching the market decoder's shape in
+ * `./market-bundle-decoder.ts`.
+ *
+ * WHY THE PULL DESTINATION IS ASSERTED. `erc20TransferFrom(asset, receiver,
+ * amount)` moves the user's money, and the earlier version checked the token
+ * and the amount but never the RECEIVER. A leg pulling the right token in the
+ * right amount to the wrong address is a total loss of that amount, so the
+ * receiver is pinned to the GeneralAdapter1 the deposit leg then spends from.
+ *
+ * The comparison in (7) is a bound DERIVED FROM THE APPROVED SLIPPAGE and is
+ * the same bound the vault enforces on-chain through `maxSharePrice`. It is
+ * compared as an absolute share-price ceiling rather than as a percentage
+ * re-derived here, so the decoder cannot quietly authorise a worse price than
+ * the caller approved. It is not size-independent: a ceiling derived from a
+ * per-share price necessarily applies to whatever size is deposited, exactly as
+ * the on-chain guard does.
  */
 
 import { decodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
@@ -41,7 +64,6 @@ import {
   MORPHO_VAULT_WITHDRAW_CALL,
   allowedLegSelectors,
   findAllowedLeg,
-  type MorphoBundleTargetRole,
 } from "./allowlist.js";
 import type { MorphoBundleReport, MorphoDecodedLeg, MorphoVaultIntent } from "./types.js";
 
@@ -71,37 +93,24 @@ const REJECT_HINT =
   + "transaction comes back, report it rather than retrying, because a build that does not match the intent "
   + "does not become correct on a second attempt.";
 
-/** Every address that holds a role in THIS intent, lower-cased, role-tagged. */
-function intentRoles(intent: MorphoVaultIntent): Map<string, MorphoBundleTargetRole> {
-  const contracts = MORPHO_CONTRACTS[intent.chainId];
-  if (contracts === undefined) {
-    throw new VexError(
-      ErrorCodes.MORPHO_CONTRACT_UNAVAILABLE,
-      `Vex has no pinned Morpho contract addresses for chain ${intent.chainId}, so it cannot verify what a `
-      + "transaction built for that chain would touch.",
-      "Adding a chain means re-extracting the pinned registry into `src/tools/morpho/constants.ts` with dated "
-      + "provenance, never guessing a deployment.",
-    );
-  }
-  const roles = new Map<string, MorphoBundleTargetRole>();
-  // Order matters only for reporting: the intent-scoped entries are the ones a
-  // reader most needs named, and a later set would otherwise overwrite them.
-  if (contracts.bundler3 !== null) roles.set(contracts.bundler3.toLowerCase(), "bundler3");
-  if (contracts.generalAdapter1 !== null) roles.set(contracts.generalAdapter1.toLowerCase(), "generalAdapter1");
-  if (contracts.permit2 !== null) roles.set(contracts.permit2.toLowerCase(), "permit2");
-  roles.set(intent.vaultAddress.toLowerCase(), "vault");
-  roles.set(intent.assetAddress.toLowerCase(), "asset");
-  return roles;
-}
+/**
+ * The legs a captured vault deposit carries, in the order it carries them.
+ *
+ * PROVENANCE: `agents_dm/morpho-e3/fixtures/base-vault-bundles.json`, captured
+ * 2026-08-17 on Base. Both the V2 and the V1 deposit decode to exactly these
+ * two legs, in this order, both on GeneralAdapter1. A bundle of any other
+ * length or order is refused rather than read optimistically.
+ */
+const EXPECTED_DEPOSIT_LEGS = ["erc20TransferFrom", "erc4626Deposit"] as const;
 
-function requirePinned(intent: MorphoVaultIntent, role: "bundler3"): Address {
+function requirePinned(intent: MorphoVaultIntent, role: "bundler3" | "generalAdapter1"): Address {
   const address = MORPHO_CONTRACTS[intent.chainId]?.[role];
   if (address === null || address === undefined) {
     throw new VexError(
       ErrorCodes.MORPHO_CONTRACT_UNAVAILABLE,
       `The pinned registry has no ${role} address on chain ${intent.chainId}, so Vex cannot confirm that a `
-      + "bundled Morpho action would enter through the contract it is supposed to.",
-      "A bundled deposit is refused on a chain whose Bundler3 Vex has not pinned. Re-extract the registry to add one.",
+      + "bundled Morpho action would enter through, and move funds through, the contracts it is supposed to.",
+      `A bundled deposit is refused on a chain whose ${role} Vex has not pinned. Re-extract the registry to add one.`,
     );
   }
   return address;
@@ -178,6 +187,7 @@ function verifyDepositLeg(
   args: readonly unknown[],
   intent: MorphoVaultIntent,
   bounds: MorphoBundleBounds,
+  generalAdapter1: Address,
 ): LegVerification {
   if (functionName === "erc20TransferFrom") {
     const [asset, receiver, amount] = args as [Address, Address, bigint];
@@ -185,6 +195,12 @@ function verifyDepositLeg(
       addressMismatch("pulled token", asset.toLowerCase(), intent.assetAddress.toLowerCase());
     }
     if (amount !== intent.amountRaw) amountMismatch("pulled amount", amount, intent.amountRaw);
+    // The destination of the user's money. Checking the token and the amount
+    // while leaving this free would let a leg pull exactly the right asset in
+    // exactly the right size to an address that simply keeps it.
+    if (!isAddressEqual(receiver, generalAdapter1)) {
+      addressMismatch("pull destination", receiver.toLowerCase(), generalAdapter1.toLowerCase());
+    }
     return {
       summary:
         `pulls ${amount} raw units of the vault's asset ${asset.toLowerCase()} from the wallet into `
@@ -262,10 +278,16 @@ function verifyDeposit(
     );
   }
 
-  const roles = intentRoles(intent);
+  const generalAdapter1 = requirePinned(intent, "generalAdapter1");
   const calls = decodeOuterBundle(tx.data as Hex);
-  if (calls.length === 0) {
-    reject("Refusing a Morpho deposit: its Bundler3 bundle is empty, so it would deposit nothing.", REJECT_HINT);
+  if (calls.length !== EXPECTED_DEPOSIT_LEGS.length) {
+    reject(
+      `Refusing a Morpho deposit: its Bundler3 bundle carries ${calls.length} legs where the captured build for a `
+      + `vault deposit carries exactly ${EXPECTED_DEPOSIT_LEGS.length} `
+      + `(${EXPECTED_DEPOSIT_LEGS.join(", ")}). A leg count Vex has never observed is refused rather than read `
+      + "optimistically: an extra pull leg is a second debit of the wallet against a single deposit.",
+      REJECT_HINT,
+    );
   }
 
   const legs: MorphoDecodedLeg[] = [];
@@ -274,21 +296,30 @@ function verifyDeposit(
   let verifiedRecipient: string | null = null;
 
   calls.forEach((call, index) => {
-    const targetRole = roles.get(call.to.toLowerCase());
-    if (targetRole === undefined) {
+    if (!isAddressEqual(call.to, generalAdapter1)) {
       reject(
-        `Refusing a Morpho deposit: leg ${index} calls ${call.to.toLowerCase()}, a contract with no role in this `
-        + "operation. The only contracts a vault deposit may touch are the pinned Bundler3, GeneralAdapter1 and "
-        + "Permit2 for this chain, the vault named in the request, and that vault's own asset.",
+        `Refusing a Morpho deposit: leg ${index} calls ${call.to.toLowerCase()}, which is not the pinned `
+        + `GeneralAdapter1 ${generalAdapter1.toLowerCase()} for chain ${intent.chainId}. Every leg of every captured `
+        + "vault deposit targets the adapter and nothing else.",
         REJECT_HINT,
       );
     }
+    const targetRole = "generalAdapter1" as const;
     const legSelector = selectorOf(call.data);
     const allowedCall = findAllowedLeg(legSelector);
     if (allowedCall === undefined) {
       reject(
         `Refusing a Morpho deposit: leg ${index} carries the unknown selector ${legSelector}. Vex signs a vault `
         + `deposit only when every leg is one of: ${allowedLegSelectors().join("; ")}.`,
+        REJECT_HINT,
+      );
+    }
+    const expectedName = EXPECTED_DEPOSIT_LEGS[index];
+    if (allowedCall.functionName !== expectedName) {
+      reject(
+        `Refusing a Morpho deposit: leg ${index} is ${allowedCall.functionName} where the captured build has `
+        + `${expectedName}. The leg ORDER is part of the shape: it is what makes exactly one pull precede exactly `
+        + "one deposit, so a reordered or duplicated leg cannot debit the wallet twice.",
         REJECT_HINT,
       );
     }
@@ -331,7 +362,13 @@ function verifyDeposit(
         REJECT_HINT,
       );
     }
-    const verification = verifyDepositLeg(decoded.functionName, decoded.args ?? [], intent, bounds);
+    const verification = verifyDepositLeg(
+      decoded.functionName,
+      decoded.args ?? [],
+      intent,
+      bounds,
+      generalAdapter1,
+    );
     if (verification.maxSharePriceRaw !== undefined) maxSharePriceRaw = verification.maxSharePriceRaw;
     if (verification.verifiedAmountRaw !== undefined) verifiedAmountRaw = verification.verifiedAmountRaw;
     if (verification.verifiedRecipient !== undefined) verifiedRecipient = verification.verifiedRecipient;
@@ -349,6 +386,10 @@ function verifyDeposit(
     });
   });
 
+  // The leg count and leg order checked above already guarantee an
+  // `erc4626Deposit` at index 1, which is what sets all three. This narrows
+  // those values for the report and refuses rather than reporting a partial
+  // verdict if that invariant is ever broken by a future edit.
   if (maxSharePriceRaw === null || verifiedAmountRaw === null || verifiedRecipient === null) {
     reject(
       "Refusing a Morpho deposit: its bundle contains no leg that actually deposits into the vault, so nothing in "

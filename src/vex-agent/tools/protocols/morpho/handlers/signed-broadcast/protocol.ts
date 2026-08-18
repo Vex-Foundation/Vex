@@ -83,11 +83,12 @@ export const MORPHO_ACTIVITY_CHAIN_FAMILY: BridgeChainFamily = "eip155";
  * through this path - `agent_activity_kind_role_binding` would reject it, but
  * failing at the type boundary beats failing at the database.
  *
- * ── ONE ROLE FOR ALL FOUR BLUE MARKET OPERATIONS ────────────────────────────
+ * ── ONE ROLE FOR THE FOUR BORROWER-SIDE MARKET OPERATIONS ───────────────────
  *
  * `lend_borrow_operate` covers supply_collateral, withdraw_collateral, borrow
  * and repay, and the operation itself is a DELTA IN `intent_params` rather than
- * a role of its own. That is the Jupiter precedent verbatim
+ * a role of its own. The LENDER'S two (`supply`, `withdraw`) file under
+ * `lend_deposit` / `lend_withdraw` instead - see `morphoMarketOperationRole`. That is the Jupiter precedent verbatim
  * (`../../solana-jupiter/borrow-operate-params.ts`): one role, many shapes, and
  * the durable audit-facing description of what a specific call did lives in a
  * versioned, normalized effects payload - see `./borrow-operate-params.ts`.
@@ -99,8 +100,39 @@ export type MorphoActivityRole = Extract<
   "allowance" | "allowance_reset" | "lend_deposit" | "lend_withdraw" | "lend_borrow_operate"
 >;
 
-/** The one role every Blue market operation is filed under. There is no second. */
+/** The role the four BORROWER-side Blue market operations are filed under. */
 export const MORPHO_BORROW_OPERATE_ROLE = "lend_borrow_operate" as const;
+
+/**
+ * The role a Blue market operation is filed under, chosen from the operation.
+ *
+ * ── WHY THE LENDER'S TWO DO NOT USE `lend_borrow_operate` ───────────────────
+ *
+ * Because they are not borrow operations. Supplying a market's loan asset to
+ * earn its rate IS LENDING, the same act a vault deposit performs, and the role
+ * answers "what did the agent do" rather than "which venue-internal shape did
+ * the call have". Filing it under a borrow role would make "show me everything I
+ * lent" return the wrong set forever, and minting a `lend_market_supply` role
+ * would push a stored-data-contract change to AgentScan to describe an act the
+ * vocabulary already describes. So the EXISTING `lend_deposit` / `lend_withdraw`
+ * roles are reused, with no migration.
+ *
+ * WHAT KEEPS THE TWO LANES APART IN THE LEDGER is not the role: it is the row's
+ * own `route_provenance` (the `morphoBorrow` block, which only this lane writes)
+ * and its `intent_params`, which carry a versioned effects payload naming the
+ * market id and the operation. `sync/executed-amount-fallback/venue-dispatch.ts`
+ * routes on that provenance FIRST for exactly this reason, because a market
+ * supply mints no share token and would decline forever under the vault's
+ * net-delta rule.
+ */
+const ROLE_FOR_OPERATION: Readonly<Record<string, MorphoActivityRole>> = {
+  supply: "lend_deposit",
+  withdraw: "lend_withdraw",
+};
+
+export function morphoMarketOperationRole(operation: string): MorphoActivityRole {
+  return ROLE_FOR_OPERATION[operation] ?? MORPHO_BORROW_OPERATE_ROLE;
+}
 
 /**
  * The agent-facing slug for a chain id, resolved from Vex's own Morpho registry.

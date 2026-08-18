@@ -96,6 +96,13 @@ export interface MorphoMarketBuildRequest {
   readonly marketParams: MorphoMarketParamsTuple;
   /** The SDK's `AccrualPosition`, read fresh by the caller. Opaque here. */
   readonly positionData: unknown;
+  /**
+   * The SDK's own `MarketData`, read fresh by the caller. Required by the market
+   * SUPPLY builder, which throws without it, and unused by every other
+   * operation - so it is optional here and refused by name where it is needed
+   * and absent, rather than fabricated.
+   */
+  readonly marketData?: unknown;
   readonly slippageBps: number;
 }
 
@@ -104,7 +111,7 @@ export interface MorphoMarketBuiltOperation {
   /** The decoded, verified account of the bytes. Absent means it never got here. */
   readonly bundle: MorphoMarketBundleReport;
   /** Vex's own borrow share-price ceiling in RAY, `null` for a collateral supply. */
-  readonly maxBorrowSharePriceCeilingRaw: bigint | null;
+  readonly maxSharePriceCeilingRaw: bigint | null;
   /**
    * The loan-token amount the bundle pulls. Equals the intent amount except on a
    * shares repayment, where it is the over-pull the SDK sized.
@@ -225,6 +232,77 @@ function buildSupplyCollateral(
   };
 }
 
+/**
+ * The SUPPLIER'S SUPPLY: lend the LOAN asset into one Blue market directly.
+ *
+ * ── THE SDK CALL SIGNATURE IS NOT THE ONE THE OTHER BUILDERS USE ────────────
+ *
+ * `blue.supply({ amount, userAddress, marketData, slippageTolerance })` REQUIRES
+ * `marketData` and throws without it. That is a correction to the shape a reader
+ * would guess from `supplyCollateral` above, which needs none, and it was found
+ * by capture rather than by documentation
+ * (`agents_dm/morpho-e3/capture-market-supply-withdraw.ts`, 2026-08-18). The
+ * caller brings `positionData`; the market data is read here from the same
+ * handle, so the two cannot describe different markets.
+ *
+ * ── IT CARRIES A PRICE GUARD AND A COLLATERAL SUPPLY DOES NOT ───────────────
+ *
+ * Supplied assets buy SUPPLY SHARES, so the built leg carries a `maxSharePrice`
+ * the chain enforces, in RAY (500,000,000 raw USDC against a captured guard of
+ * 1,102,250,990,947,219,866,432). Vex derives its own ceiling with the SAME
+ * zero-slippage throwaway technique the repayment uses, and for the same reason:
+ * the SDK's price is in the SDK's units, and a ceiling computed in any other
+ * unit is not a comparison. Collateral, by contrast, buys nothing and has no
+ * price, which is why `buildSupplyCollateral` has no ceiling at all.
+ *
+ * ── WHAT IT PULLS AND WHAT IT APPROVES ARE THE SAME NUMBER ──────────────────
+ *
+ * A supply denominated in assets lends exactly the assets it names, so unlike a
+ * shares repayment there is no over-pull to size and nothing to widen: the
+ * capture's single requirement was one `erc20Approval` of exactly the operation
+ * amount to GeneralAdapter1, which is the owner's exact-amount policy met
+ * head-on.
+ */
+function buildSupply(client: MorphoActionClient, request: MorphoMarketBuildRequest): BuiltMarketOperation {
+  const { intent, slippageBps } = request;
+  const amount = requirePositiveAmount(intent);
+  const handle = blueHandle(client, request);
+  const marketData = request.marketData;
+  if (marketData === undefined) {
+    refuse(
+      "Refusing a Morpho market supply: no market data was read for it. The SDK's supply builder requires the "
+      + "market's own accrued state and throws without it, and Vex will not fabricate one.",
+      REBUILD_HINT,
+    );
+  }
+
+  // THE THROWAWAY, exactly as the repayment does it. Built only to read the
+  // SDK's own current supply share price in the SDK's own units. Never sent.
+  const atZero = handle.supply({
+    userAddress: intent.userAddress,
+    amount,
+    marketData: marketData as never,
+    slippageTolerance: 0n,
+  } as never);
+  const basePriceRaw = readBuiltArg(atZero.buildTx(), "maxSharePrice", "market supply");
+  const ceilingRaw = ceilingFrom(basePriceRaw, slippageBps);
+
+  const built = handle.supply({
+    userAddress: intent.userAddress,
+    amount,
+    marketData: marketData as never,
+    slippageTolerance: BigInt(slippageBps) * WAD_PER_BPS,
+  } as never);
+
+  return {
+    tx: built.buildTx() as MorphoBuiltTransaction,
+    transferBoundRaw: amount,
+    approvalAmountRaw: amount,
+    ceilingRaw,
+    built: built as never,
+  };
+}
+
 function buildRepay(client: MorphoActionClient, request: MorphoMarketBuildRequest): BuiltMarketOperation {
   const { intent, slippageBps } = request;
   const bySharesMode = intent.repayMode === "shares";
@@ -337,26 +415,37 @@ export async function buildMorphoMarketOperation(
 ): Promise<MorphoMarketBuiltOperation> {
   const { intent, marketParams } = request;
 
-  if (intent.operation !== "supply_collateral" && intent.operation !== "repay") {
+  const bundled = intent.operation === "supply_collateral"
+    || intent.operation === "repay"
+    || intent.operation === "supply";
+  if (!bundled) {
     refuse(
       `Refusing to build a Morpho ${intent.operation} here: it is a direct Morpho Blue call, not a bundle. Building `
       + "it through Bundler3 would require a standing GeneralAdapter1 authorization, which Vex never grants.",
-      "Build it with `buildMorphoDirectBorrow` instead.",
+      "Build it with `buildMorphoDirectBorrow` or `buildMorphoDirectWithdraw` instead.",
     );
   }
 
   const isRepay = intent.operation === "repay";
-  const outcome = isRepay ? buildRepay(client, request) : buildSupplyCollateral(client, request);
+  const outcome = isRepay
+    ? buildRepay(client, request)
+    : intent.operation === "supply"
+      ? buildSupply(client, request)
+      : buildSupplyCollateral(client, request);
   const { ceilingRaw } = outcome;
 
   const bundle = verifyMorphoMarketBundle(outcome.tx, intent, marketParams, {
     ...(intent.repayMode === "shares" ? { transferBoundRaw: outcome.transferBoundRaw } : {}),
-    ...(ceilingRaw === null ? {} : { maxBorrowSharePriceRaw: ceilingRaw }),
+    ...(ceilingRaw === null ? {} : { maxSharePriceRaw: ceilingRaw }),
   });
 
   // The approval is measured against what actually LEAVES the wallet, which on a
-  // shares repayment is the over-pull rather than the debt.
-  const pulledToken: Address = isRepay ? marketParams.loanToken : marketParams.collateralToken;
+  // shares repayment is the over-pull rather than the debt. Only a COLLATERAL
+  // supply pulls the collateral token; a repayment and a market supply both pull
+  // the loan one.
+  const pulledToken: Address = intent.operation === "supply_collateral"
+    ? marketParams.collateralToken
+    : marketParams.loanToken;
   const sdkRequirements = classifyMorphoRequirements(
     await outcome.built.getRequirements(),
     intent.market.chainId,
@@ -367,7 +456,7 @@ export async function buildMorphoMarketOperation(
   return {
     tx: outcome.tx,
     bundle,
-    maxBorrowSharePriceCeilingRaw: ceilingRaw,
+    maxSharePriceCeilingRaw: ceilingRaw,
     transferBoundRaw: outcome.transferBoundRaw,
     approvalAmountRaw: outcome.approvalAmountRaw,
     sdkRequirements,

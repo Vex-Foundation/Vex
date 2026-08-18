@@ -106,3 +106,20 @@ export const MORPHO_CHAINS_QUERY = `
 query VexMorphoChains {
   chains { id network currency blockTimeMs }
 }`;
+
+/**
+ * The CURATION check, deliberately the smallest document in this file.
+ *
+ * `listed` is Morpho's own statement that it curates this market. It is asked
+ * for on its own, uncached, at execution time, because a signing decision must
+ * not ride on a value fetched for some other purpose minutes earlier. Nothing
+ * else is requested: a narrow document is a cheap one against the complexity
+ * budget and it cannot fail because an unrelated field was removed.
+ */
+export const MORPHO_MARKET_CURATION_QUERY = `
+query VexMorphoMarketCuration($marketId: String!, $chainId: Int!) {
+  marketById(marketId: $marketId, chainId: $chainId) {
+    marketId
+    listed
+  }
+}`;

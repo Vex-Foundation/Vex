@@ -146,7 +146,7 @@ describe("morpho.market.quote states what a person needs to allow the execute", 
   it("carries the oracle vouching, the health-factor projection and its floor", async () => {
     const market = section(payload(await morphoMarketQuote(borrowQuote(), context())), "market");
 
-    expect(section(market, "oracle")["vouching"]).toBe("chainlink-oracle-factory");
+    expect(section(market, "oracle")["vouching"]).toBe("verified-oracle-legs");
     const health = section(market, "healthFactor");
     expect(health["before"]).toBe("1.72");
     expect(health["after"]).toBe("1.31");

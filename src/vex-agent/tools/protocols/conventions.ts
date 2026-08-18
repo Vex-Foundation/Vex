@@ -75,6 +75,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["amountRaw", "amount in RAW base units; description must name the decimals source"],
   ["depositAmountRaw", "multi-leg lend deposit, raw base units"],
   ["withdrawAmountRaw", "multi-leg lend withdrawal, raw base units"],
+  ["supplyAmountRaw", "lend supply into one Blue market (the lender's side), raw base units"],
   ["borrowAmountRaw", "multi-leg lend borrow, raw base units"],
   ["repayAmountRaw", "multi-leg lend repayment, raw base units"],
   // A Blue market pairs two tokens at two scales, so the collateral legs cannot
@@ -195,6 +196,15 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   //
   // The accepted set is ALWAYS declared as an `enum`, never left in prose.
   ["direction", "which way an operation moves value; the accepted set is declared as an `enum`"],
+
+  // -- Which SHAPE of option a screening read compares (morpho vaults) ---
+  //
+  // `route` selects which option sets a screening tool returns when the same
+  // goal can be reached through structurally different products - a curated
+  // vault versus supplying a market directly. It is not `direction` (that is
+  // which way value moves) and not `scope` (that is which halves of one
+  // compound read to cover). The accepted set is ALWAYS declared as an `enum`.
+  ["route", "which option SETS a screening read compares when one goal has structurally different products"],
 ]);
 
 /**

@@ -17,6 +17,8 @@ import { describe, expect, it } from "vitest";
 import type { Address } from "viem";
 
 import { VexError } from "../../../errors.js";
+import { definedValue } from "../../_test-value-guards.js";
+import { getMorphoActionClient, type MorphoActionClient } from "@tools/morpho/mutations/client.js";
 import {
   MORPHO_RAY,
   buildMorphoMarketOperation,
@@ -62,19 +64,28 @@ interface StubBuild {
   readonly args: Record<string, unknown>;
 }
 
-/** A stub `blue` handle that replays captured bytes for whatever slippage it is asked for. */
+/**
+ * The REAL Morpho action client with its `morpho` namespace alone replaced by a
+ * `blue` handle that replays captured bytes for whatever slippage it is asked for.
+ *
+ * A one-key object literal is not a `MorphoActionClient`, so a hand-built double
+ * could only be passed through a type escape - and an escaped double keeps
+ * compiling after the client's contract moves. The client's transport is never
+ * reached, because `client.morpho.blue(...)` is the only thing the builder calls.
+ * Same idiom as `gas-bound.test.ts`.
+ */
 function stubClient(options: {
   supply?: StubBuild;
   repayAtZero?: StubBuild;
   repayAtSlippage?: StubBuild;
   requirements?: readonly unknown[];
-}): never {
+}): MorphoActionClient {
   const requirements = options.requirements ?? [];
   const make = (build: StubBuild) => ({
     buildTx: () => ({ ...build.tx, action: { args: build.args } }),
     getRequirements: async () => requirements,
   });
-  return {
+  return Object.assign(getMorphoActionClient(BASE_CHAIN_ID), {
     morpho: {
       blue: () => ({
         supplyCollateral: () => make(options.supply ?? { tx: SUPPLY_COLLATERAL_TX, args: {} }),
@@ -85,7 +96,7 @@ function stubClient(options: {
           ),
       }),
     },
-  } as never;
+  });
 }
 
 function intentOf(overrides: Partial<MorphoBorrowIntent>): MorphoBorrowIntent {
@@ -155,7 +166,7 @@ describe("buildMorphoMarketOperation: collateral supply", () => {
     // the same number and there is nothing to widen.
     expect(built.approvalAmountRaw).toBe(CAPTURED_COLLATERAL_RAW);
     // A supply has no share-price guard, so none is invented for it.
-    expect(built.maxBorrowSharePriceCeilingRaw).toBeNull();
+    expect(built.maxSharePriceCeilingRaw).toBeNull();
     expect(built.bundle.operation).toBe("supply_collateral");
     // The approval is measured against the COLLATERAL token, not the loan token.
     expect(built.sdkRequirements[0]?.token).toBe(PARAMS.collateralToken.toLowerCase());
@@ -180,10 +191,11 @@ describe("buildMorphoMarketOperation: repayment denominated in assets", () => {
       requestOf(intent),
     );
 
-    expect(built.maxBorrowSharePriceCeilingRaw).toBe(ceilingAt(REPAY_ASSETS_BASE_PRICE, SLIPPAGE_BPS));
+    expect(built.maxSharePriceCeilingRaw).toBe(ceilingAt(REPAY_ASSETS_BASE_PRICE, SLIPPAGE_BPS));
     // The ceiling must sit ABOVE the guard the build actually carries, or the
     // decoder behind it would have refused.
-    expect(built.maxBorrowSharePriceCeilingRaw!).toBeGreaterThan(CAPTURED_REPAY_ASSETS_SHARE_PRICE);
+    expect(definedValue(built.maxSharePriceCeilingRaw, "the built ceiling"))
+      .toBeGreaterThan(CAPTURED_REPAY_ASSETS_SHARE_PRICE);
     expect(built.transferBoundRaw).toBe(CAPTURED_REPAY_ASSETS_RAW);
     // An ASSETS repayment pulls exactly what it repays, so its approval is that
     // same amount: only the SHARES path widens to the ceiling.

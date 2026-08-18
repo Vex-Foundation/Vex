@@ -55,6 +55,10 @@ const EXPECTED_TOOL_IDS = [
   "morpho.market.withdrawCollateral",
   "morpho.market.borrow",
   "morpho.market.repay",
+  // The LENDER'S side of a Blue market: the loan asset lent in to earn the
+  // market's borrow rate, and taken back out. Nineteen tools.
+  "morpho.market.supply",
+  "morpho.market.withdraw",
   "morpho.rewards.claim",
 ];
 
@@ -70,6 +74,10 @@ const MORPHO_EXECUTE_TOOL_IDS = [
   "morpho.market.withdrawCollateral",
   "morpho.market.borrow",
   "morpho.market.repay",
+  // The LENDER'S side of a Blue market: the loan asset lent in to earn the
+  // market's borrow rate, and taken back out. Both SPEND.
+  "morpho.market.supply",
+  "morpho.market.withdraw",
   "morpho.rewards.claim",
 ];
 
@@ -118,10 +126,20 @@ describe("morpho manifest", () => {
     // The direction split is the money-safety property: a shared kind would let
     // a deposit quote authorize a withdrawal execute on the same vault.
     expect(EXECUTE_GATE_TOOLS["morpho.vault.deposit"]).toEqual({
-      kind: "lend_deposit", family: "eip155", provider: "morpho",
+      kind: "lend_deposit", lane: "vault", family: "eip155", provider: "morpho",
     });
     expect(EXECUTE_GATE_TOOLS["morpho.vault.withdraw"]).toEqual({
-      kind: "lend_withdraw", family: "eip155", provider: "morpho",
+      kind: "lend_withdraw", lane: "vault", family: "eip155", provider: "morpho",
+    });
+    // The Blue MARKET lender executes share those two kinds, because supplying
+    // a loan asset IS lending. `lane` is what keeps them apart, and it must be
+    // on the registration AND on the match input for the hash to tell them
+    // apart at all.
+    expect(EXECUTE_GATE_TOOLS["morpho.market.supply"]).toEqual({
+      kind: "lend_deposit", lane: "market", family: "eip155", provider: "morpho",
+    });
+    expect(EXECUTE_GATE_TOOLS["morpho.market.withdraw"]).toEqual({
+      kind: "lend_withdraw", lane: "market", family: "eip155", provider: "morpho",
     });
     expect(PREQUOTE_QUOTE_TOOLS["morpho.vault.quote"]).toEqual({
       kind: "morpho-lend", family: "eip155", provider: "morpho",
@@ -213,6 +231,12 @@ describe("morpho manifest", () => {
       "morpho.market.withdrawCollateral",
       "morpho.market.borrow",
       "morpho.market.repay",
+      // The LENDER'S two return a settlement as well: a proven amount and a
+      // hash. The rate they earn is the MARKET'S, read from `morpho.market.get`
+      // or `morpho.markets.discover`, so quoting an APY basis on a settlement
+      // reply would attach a rate to a number that is not one.
+      "morpho.market.supply",
+      "morpho.market.withdraw",
     ];
     for (const tool of MORPHO_TOOLS) {
       if (NO_APY_TOOL_IDS.includes(tool.toolId)) continue;

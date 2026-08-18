@@ -1,6 +1,6 @@
 /**
  * Morpho Blue MARKET prequote recording (E3c) - `morpho.market.quote` records
- * ONE of the four borrow-lane kinds, decided from the direction the quote itself
+ * ONE of the six market-lane kinds, decided from the direction the quote itself
  * reports rather than from the raw params, so a quote that priced one operation
  * can never record another's authorization.
  *
@@ -59,7 +59,11 @@ export async function recordMorphoBorrowPrequote(
   // moves ONE token per operation, so the leg the wallet does not use carries
   // the market id rather than a second token: writing an unrelated address there
   // would read as a pair that does not exist.
-  const walletSends = extracted.direction === "supplyCollateral" || extracted.direction === "repay";
+  // Which way the wallet's own token moves. `supply` joins the two pulling
+  // borrower operations here: lending an asset into the market SENDS it.
+  const walletSends = extracted.direction === "supplyCollateral"
+    || extracted.direction === "repay"
+    || extracted.direction === "supply";
   const input: CreatePrequoteInput = {
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,

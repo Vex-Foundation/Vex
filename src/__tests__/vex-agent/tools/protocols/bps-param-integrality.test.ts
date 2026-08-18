@@ -256,7 +256,9 @@ describe("manifest bps declarations", () => {
     // full-debt repayment this tolerance becomes the on-chain share-price
     // ceiling AND the size of the approval the wallet grants, so a fractional
     // value would widen real spending authority.
-    expect(declared.length).toBe(39);
+    // +2 since the market LENDER lane: `morpho.market.supply` and
+    // `morpho.market.withdraw` take the same slippageBps for the same reason.
+    expect(declared.length).toBe(41);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
       new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
     );

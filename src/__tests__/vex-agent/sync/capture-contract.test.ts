@@ -135,7 +135,8 @@ describe("capture contract — structural coverage", () => {
     // agent_activity directly (migration 045); solana.lend.deposit/withdraw
     // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
     // staged Solana seam (migration 049); morpho.vault.deposit/withdraw (E3b-2)
-    // and the four morpho.market.* borrow-lane operations (E3c) do the same
+    // and the six morpho.market.* operations (E3c plus the lender's supply and
+    // withdraw) do the same
     // through morpho/handlers/signed-broadcast.ts; morpho.rewards.claim does the
     // same through signed-broadcast/claim-broadcast.ts, writing the one
     // `yield_claim` row a claim transaction can back — capture is intentionally
@@ -144,7 +145,9 @@ describe("capture contract — structural coverage", () => {
     expect(captureNone).toEqual([
       "khalani.bridge",
       "morpho.market.borrow", "morpho.market.repay",
-      "morpho.market.supplyCollateral", "morpho.market.withdrawCollateral",
+      "morpho.market.supply",
+      "morpho.market.supplyCollateral",
+      "morpho.market.withdraw", "morpho.market.withdrawCollateral",
       "morpho.rewards.claim",
       "morpho.vault.deposit", "morpho.vault.withdraw", "pendle.claim",
       "relay.bridge",

@@ -28,6 +28,7 @@ import {
   V2_WITHDRAW_TX,
   VAULT_V2,
 
+  pullLegWithReceiver,
   reencodeDepositBundle,
   tamper,
 } from "./bundle-fixtures.js";
@@ -122,7 +123,7 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
     );
   });
 
-  it("refuses a leg that targets a contract with no role in the intent", () => {
+  it("refuses a leg that targets anything but the pinned GeneralAdapter1", () => {
     // Re-encoded rather than string-patched: the deposit leg is moved onto an
     // unrelated contract with its arguments untouched, which is exactly the
     // attack the target check exists for.
@@ -133,7 +134,7 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
       "MORPHO_BUNDLE_REJECTED",
-      "no role in this operation",
+      "not the pinned generaladapter1",
     );
   });
 
@@ -160,7 +161,56 @@ describe("verifyMorphoVaultTransaction - refusals, each by name", () => {
     expectRejection(
       () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
       "MORPHO_BUNDLE_REJECTED",
-      "no leg that actually deposits",
+      "carries 1 legs where the captured build",
+    );
+  });
+
+  // ── The bundle-shape attacks. Every leg below is individually allowlisted,
+  // which is exactly why leg-by-leg checking alone was not enough: the harm is
+  // in the SHAPE of the list, not in any one entry.
+
+  it("refuses a SECOND pull leg, which would debit the wallet twice for one deposit", () => {
+    // The attack in full: two valid erc20TransferFrom legs plus the real
+    // deposit. Every leg passes on its own, and with a pre-existing allowance
+    // covering both pulls the second debit succeeds and strands its amount in
+    // the adapter. Refused on leg count before any of that can happen.
+    const tampered = reencodeDepositBundle((legs) => [legs[0], legs[0], legs[1]]);
+    expectRejection(
+      () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
+      "MORPHO_BUNDLE_REJECTED",
+      "carries 3 legs where the captured build",
+      "second debit of the wallet",
+    );
+  });
+
+  it("refuses the captured legs in the wrong order", () => {
+    const tampered = reencodeDepositBundle((legs) => [legs[1], legs[0]]);
+    expectRejection(
+      () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
+      "MORPHO_BUNDLE_REJECTED",
+      "the leg order is part of the shape",
+    );
+  });
+
+  it("refuses a pull whose destination is not the adapter that then deposits", () => {
+    // The right token, the right amount, the wrong address: a total loss of the
+    // deposit with nothing else in the bundle looking wrong.
+    const tampered = reencodeDepositBundle((legs) =>
+      pullLegWithReceiver(legs, "0x000000000000000000000000000000000000dEaD"));
+    expectRejection(
+      () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
+      "MORPHO_BUNDLE_REJECTED",
+      "pull destination",
+      "0x000000000000000000000000000000000000dead",
+    );
+  });
+
+  it("refuses an extra allowlisted leg appended to an otherwise correct bundle", () => {
+    const tampered = reencodeDepositBundle((legs) => [legs[0], legs[1], legs[1]]);
+    expectRejection(
+      () => verifyMorphoVaultTransaction(tampered, V2_DEPOSIT_INTENT, BOUNDS),
+      "MORPHO_BUNDLE_REJECTED",
+      "carries 3 legs where the captured build",
     );
   });
 

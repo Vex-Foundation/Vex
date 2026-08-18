@@ -63,6 +63,15 @@ export const MORPHO_VAULT_FIELD_GROUPS = [
 ] as const;
 export type MorphoVaultFieldGroup = (typeof MORPHO_VAULT_FIELD_GROUPS)[number];
 
+/**
+ * Which OPTION SETS a screening call returns.
+ *
+ * `curated` is the default and is exactly what this tool returned before the
+ * route existed, so no caller that never learned the key changed behaviour.
+ */
+export const MORPHO_VAULT_ROUTES = ["curated", "direct", "both"] as const;
+export type MorphoVaultRoute = (typeof MORPHO_VAULT_ROUTES)[number];
+
 /** Which generations a screening call will actually query. */
 export interface MorphoVaultsDiscoverQuery {
   versions: readonly ("v1" | "v2")[];
@@ -75,6 +84,12 @@ export interface MorphoVaultsDiscoverQuery {
   offset: number;
   listedOnly: boolean;
   fields: MorphoVaultFieldGroup[] | undefined;
+  route: MorphoVaultRoute;
+  /**
+   * The ONE asset the direct-supply comparison is for, and the chains to look
+   * for its markets on. Null at `route: "curated"`, where no market is queried.
+   */
+  direct: { assetAddress: string; chainIds: readonly number[] | undefined } | null;
   echo: Record<string, unknown>;
 }
 
@@ -136,6 +151,35 @@ function v1OnlyRejection<T>(param: string, what: string): MorphoParams<T> {
   );
 }
 
+/**
+ * The direct-supply comparison is PER ASSET, so it needs exactly one asset.
+ *
+ * `assetTokenAddress` is required rather than inferred from the vault rows that
+ * came back, and the reason is the same reject-by-name discipline the rest of
+ * this file runs on: inferring it would silently decide which asset the agent
+ * was comparing, and a multi-asset call would produce one ranked list mixing
+ * USDC markets with WETH markets under a single "best direct option".
+ */
+function readDirectScope(
+  route: MorphoVaultRoute,
+  assetAddresses: readonly string[] | undefined,
+  chainIds: readonly number[] | undefined,
+): MorphoParams<MorphoVaultsDiscoverQuery["direct"]> {
+  if (route === "curated") return { ok: true, value: null };
+  const assetAddress = assetAddresses?.length === 1 ? assetAddresses[0] : undefined;
+  if (assetAddress === undefined) {
+    return reject(
+      "assetTokenAddress",
+      `\`route: "${route}"\` compares supplying ONE asset directly against the curated vaults that hold it, so `
+      + "`assetTokenAddress` must name EXACTLY ONE asset contract address"
+      + (assetAddresses === undefined ? ", and none was supplied." : ` - ${assetAddresses.length} were supplied.`)
+      + " A comparison across several assets would rank a USDC market against a WETH vault, which is not a choice "
+      + "anyone can make. Send one address, or use `route: \"curated\"` to screen vaults without the comparison.",
+    );
+  }
+  return { ok: true, value: { assetAddress, chainIds } };
+}
+
 // eslint-disable-next-line complexity -- one flat parse per param; splitting it would hide the 1:1 mapping.
 export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParams<MorphoVaultsDiscoverQuery> {
   const version = readOptionalEnum(p["version"], "version", MORPHO_VAULT_VERSIONS);
@@ -174,6 +218,12 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
   if (!offset.ok) return offset;
   const fields = readFieldGroups(p["fields"]);
   if (!fields.ok) return fields;
+  const route = readOptionalEnum(p["route"], "route", MORPHO_VAULT_ROUTES);
+  if (!route.ok) return route;
+
+  const chosenRoute: MorphoVaultRoute = route.value ?? "curated";
+  const directScope = readDirectScope(chosenRoute, assetAddresses.value, chainIds.value);
+  if (!directScope.ok) return directScope;
 
   if (search !== undefined && versions.includes("v2")) {
     return v1OnlyRejection("search", "free-text search predicate");
@@ -235,6 +285,7 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
     listedOnly: listed,
     sort: chosenSort,
     order: order.value ?? "desc",
+    route: chosenRoute,
   };
   const optional: Array<[string, unknown]> = [
     ["chainIds", chainIds.value?.map((id) => String(id))],
@@ -265,6 +316,8 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
       offset: offset.value ?? 0,
       listedOnly: listed,
       fields: fields.value,
+      route: chosenRoute,
+      direct: directScope.value,
       echo,
     },
   };

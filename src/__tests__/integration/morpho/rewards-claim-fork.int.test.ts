@@ -34,6 +34,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createPublicClient,
+  createWalletClient,
   encodeAbiParameters,
   formatUnits,
   getAddress,
@@ -45,6 +46,11 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+
+import type {
+  ProtocolExecuteRequest,
+  ProtocolExecutionContext,
+} from "@vex-agent/tools/protocols/types.js";
 
 const FORK_RPC = process.env["VEX_MORPHO_FORK_RPC"];
 const describeFork = FORK_RPC === undefined ? describe.skip : describe;
@@ -77,6 +83,30 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", async (importOriginal) =>
 
 const ERC20 = [
   { name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+] as const;
+
+/**
+ * The wallet a hostile (or merely forgotten) `setClaimRecipient` would send the
+ * rewards to. The fork sets this redirect BEFORE the claim runs, so the claim
+ * has to defeat it on chain rather than in an assertion.
+ */
+const REDIRECT_TARGET = getAddress("0x000000000000000000000000000000000000dEaD");
+
+const DISTRIBUTOR_RECIPIENT_ABI = [
+  {
+    name: "setClaimRecipient",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "recipient", type: "address" }, { name: "token", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "claimRecipient",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }, { name: "token", type: "address" }],
+    outputs: [{ type: "address" }],
+  },
 ] as const;
 
 async function anvil(method: string, params: readonly unknown[]): Promise<void> {
@@ -113,8 +143,29 @@ function merklResponse(): unknown {
   }];
 }
 
+/** The dispatcher's own request shape, so a drift in it fails to compile here. */
+const CLAIM_REQUEST: ProtocolExecuteRequest = {
+  toolId: "morpho.rewards.claim",
+  params: { chain: "base" },
+};
+
 describeFork("morpho.rewards.claim through the product spine, on a Base fork", () => {
   const sessionId = `morpho-claim-fork-${Date.now()}`;
+
+  /**
+   * The context the dispatcher hands the runtime for an already-authorized
+   * call: a full-permission session whose approval has landed, which is the
+   * state this fork proof runs the claim in. Spelled in full rather than
+   * escaped, so the approval gate reads the same fields production gives it.
+   */
+  const claimContext = (): ProtocolExecutionContext => ({
+    sessionPermission: "full",
+    approved: true,
+    sessionId,
+    walletResolution: { source: "default" },
+    walletPolicy: { kind: "none" },
+  });
+
   let realFetch: typeof globalThis.fetch;
   let executionId: number;
   let txHash: string;
@@ -145,6 +196,37 @@ describeFork("morpho.rewards.claim through the product spine, on a Base fork", (
       return realFetch(input, init);
     }) as typeof fetch;
 
+    // THE REDIRECT, ARMED ON CHAIN BEFORE THE CLAIM RUNS.
+    //
+    // Merkl's Distributor resolves a plain `claim()`'s destination from its own
+    // `claimRecipient` state, so a `setClaimRecipient` executed at any earlier
+    // point permanently redirects every later claim. Vex signs
+    // `claimWithRecipient` with the destination bound in the calldata, which
+    // overrides that state whenever msg.sender is the user. Setting the trap
+    // here is what makes the balance assertions below a PROOF rather than an
+    // assumption: with the old plain `claim()` the rewards would land on
+    // REDIRECT_TARGET and the tool would report no credit.
+    const walletClient = createWalletClient({
+      account: privateKeyToAccount(PRIVATE_KEY), chain: base, transport: http(rpc),
+    });
+    const forkPublicClient = createPublicClient({ chain: base, transport: http(rpc) });
+    const redirectHash = await walletClient.writeContract({
+      address: DISTRIBUTOR as Address,
+      abi: DISTRIBUTOR_RECIPIENT_ABI,
+      functionName: "setClaimRecipient",
+      args: [REDIRECT_TARGET, WELL],
+    });
+    await forkPublicClient.waitForTransactionReceipt({ hash: redirectHash });
+
+    const armed = await forkPublicClient.readContract({
+      address: DISTRIBUTOR as Address,
+      abi: DISTRIBUTOR_RECIPIENT_ABI,
+      functionName: "claimRecipient",
+      args: [WALLET, WELL],
+    });
+    // The trap is real, on chain, before anything is claimed.
+    expect(getAddress(armed)).toBe(REDIRECT_TARGET);
+
     const { query } = await import("@vex-agent/db/client.js");
     await query("INSERT INTO sessions (id, title) VALUES ($1, $2) ON CONFLICT DO NOTHING", [sessionId, "morpho claim fork proof"]);
   }, 120_000);
@@ -153,14 +235,17 @@ describeFork("morpho.rewards.claim through the product spine, on a Base fork", (
     if (realFetch !== undefined) globalThis.fetch = realFetch;
   });
 
-  it("claims on-chain and returns the credit PROVEN from the receipt", async () => {
+  it("claims on-chain and returns the credit PROVEN from the receipt, DEFEATING a stored redirect", async () => {
     const publicClient = createPublicClient({ chain: base, transport: http(FORK_RPC as string) });
     const before = await publicClient.readContract({ address: WELL, abi: ERC20, functionName: "balanceOf", args: [WALLET] });
+    const redirectBefore = await publicClient.readContract({
+      address: WELL, abi: ERC20, functionName: "balanceOf", args: [REDIRECT_TARGET],
+    });
 
     const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
     const result = await executeProtocolTool(
-      { toolId: "morpho.rewards.claim", namespace: "morpho", params: { chain: "base" } } as never,
-      { sessionId, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } } as never,
+      CLAIM_REQUEST,
+      claimContext(),
     );
 
     expect(result.success, result.output).toBe(true);
@@ -180,6 +265,14 @@ describeFork("morpho.rewards.claim through the product spine, on a Base fork", (
 
     const after = await publicClient.readContract({ address: WELL, abi: ERC20, functionName: "balanceOf", args: [WALLET] });
     expect(after - before).toBe(CLAIM_AMOUNT);
+
+    // The armed redirect got NOTHING. This is the assertion the old plain
+    // `claim()` would have failed: the distributor would have paid the stored
+    // recipient in full while the tool reported no credit to the wallet.
+    const redirectAfter = await publicClient.readContract({
+      address: WELL, abi: ERC20, functionName: "balanceOf", args: [REDIRECT_TARGET],
+    });
+    expect(redirectAfter - redirectBefore).toBe(0n);
 
     executionId = data["executionId"] as number;
     txHash = data["txHash"] as string;
@@ -279,8 +372,8 @@ describeFork("morpho.rewards.claim through the product spine, on a Base fork", (
     // as a claim would book income that does not exist.
     const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
     const result = await executeProtocolTool(
-      { toolId: "morpho.rewards.claim", namespace: "morpho", params: { chain: "base" } } as never,
-      { sessionId, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } } as never,
+      CLAIM_REQUEST,
+      claimContext(),
     );
 
     expect(result.success).toBe(false);

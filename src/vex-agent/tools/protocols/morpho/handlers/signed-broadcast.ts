@@ -97,7 +97,7 @@ import type { MorphoBorrowIntent, MorphoBorrowLeg } from "@tools/morpho/mutation
 import { morphoOperationRole } from "./signed-broadcast/intent.js";
 import { buildMorphoBorrowIntentParams } from "./signed-broadcast/borrow-operate-params.js";
 import { recordMorphoPreBroadcastRefusal } from "./signed-broadcast/refusal.js";
-import { MORPHO_BORROW_OPERATE_ROLE } from "./signed-broadcast/protocol.js";
+import { morphoMarketOperationRole } from "./signed-broadcast/protocol.js";
 import {
   runMorphoExecution,
   type MorphoExecutionClients,
@@ -111,6 +111,7 @@ export {
   MORPHO_ACTIVITY_PROTOCOL,
   MORPHO_BORROW_OPERATE_ROLE,
   morphoActivityChainSlug,
+  morphoMarketOperationRole,
   type MorphoActivityRole,
 } from "./signed-broadcast/protocol.js";
 export {
@@ -252,7 +253,8 @@ export async function recordMorphoBorrowRefusal(
       intentParams: buildMorphoBorrowIntentParams(intent, leg),
       chainId: intent.market.chainId,
       walletAddress: intent.userAddress,
-      eventRole: MORPHO_BORROW_OPERATE_ROLE,
+      // The lender's two file under the vault lane's roles - see `./signed-broadcast/protocol.ts`.
+      eventRole: morphoMarketOperationRole(intent.operation),
       ...(leg.direction === "in" ? { tokenIn: legInput } : { tokenOut: legInput }),
     },
     failureCode,

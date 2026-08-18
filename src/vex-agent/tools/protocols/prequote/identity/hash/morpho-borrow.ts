@@ -1,8 +1,11 @@
 /**
- * Morpho Blue BORROW-lane identities: supplying and withdrawing collateral,
- * drawing debt, and repaying it (E3c, migration 081).
+ * Morpho Blue MARKET-lane identities: supplying and withdrawing collateral,
+ * drawing debt, repaying it (E3c, migration 081), and the LENDER'S side -
+ * supplying the loan asset into the market and taking it back out, which reuse
+ * the vault lane's `lend_deposit` / `lend_withdraw` kinds and are separated from
+ * it by the `lane` discriminator documented further down.
  *
- * FOUR KINDS, NOT ONE. The four operations run against the SAME market and the
+ * FOUR BORROW KINDS, NOT ONE. The four operations run against the SAME market and the
  * SAME wallet, and two of them can carry the same raw amount, so a shared kind
  * would let one operation's quote authorize another's execute as soon as the
  * remaining material agreed. The failure is not cosmetic: a collateral-supply
@@ -18,7 +21,7 @@
  * collateral, oracle, or LLTV. Binding only the token would let a quote taken
  * on a conservative market authorize an execute against a riskier one, which is
  * exactly the parameter a borrower is choosing between. The market id is bound
- * on all four kinds.
+ * on every kind in this file.
  *
  * THE MARKET ID IS ALSO WHAT MAKES THE RAW AMOUNT READABLE, which is why no
  * token address and no decimal count appear below. A raw base-unit amount is
@@ -26,13 +29,13 @@
  * the market id is the hash of the market's own params, so market id + kind
  * already determine the exact token the amount is denominated in and therefore
  * its scale. Binding the token as well would buy nothing and would cost
- * everything: the four executes take `marketId`, `chain`, one raw amount and
+ * everything: the six executes take `marketId`, `chain`, one raw amount and
  * `slippageBps` and NOTHING ELSE, so the gate would have to read the market from
  * chain to build an identity, and a gate that needs the network to decide is a
  * gate that fails open on a bad RPC. Every field below is readable from the
  * params of BOTH the quote and the execute, with no IO at all.
  *
- * SLIPPAGE IS BOUND on all four, mirroring the vault lane: it bounds a full-debt
+ * SLIPPAGE IS BOUND on all six, mirroring the vault lane: it bounds a full-debt
  * repayment's share price and its approval ceiling, so an execute that widened
  * what the quote priced must not collide with it.
  *
@@ -65,7 +68,7 @@ export function canonMarketId(value: string): string {
 /**
  * The fields every borrow-lane identity binds, in the order they are hashed.
  *
- * There is no `receiver`. None of the four executes takes one: withdrawn
+ * There is no `receiver`. None of the six executes takes one: withdrawn
  * collateral and borrowed assets land in the signing wallet by construction, and
  * `parseMorphoMarketExecuteParams` refuses a caller-supplied `walletAddress` by
  * name. A field that is always equal to `walletAddress` would document a knob
@@ -127,16 +130,53 @@ export interface LendRepayMatchInput extends MorphoBorrowLegBase {
   readonly repayFullDebt: boolean;
 }
 
+/**
+ * ── THE MARKET LANE'S SUPPLY AND WITHDRAW, UNDER THE VAULT LANE'S KINDS ──────
+ *
+ * Supplying a market's loan asset IS lending, so it files under the EXISTING
+ * `lend_deposit` / `lend_withdraw` kinds rather than minting two more: the kind
+ * answers "what did the agent do", and a per-venue-shape kind would make the
+ * agent's own history unqueryable across venues. No migration, no new
+ * vocabulary.
+ *
+ * WHICH MEANS THE KIND CAN NO LONGER DECIDE THE MATERIAL ON ITS OWN. A vault
+ * deposit and a market supply are DIFFERENT OPERATIONS on DIFFERENT contracts
+ * that now share a kind tag, so a `lane` discriminator carries the distinction
+ * into the identity and the hash dispatcher reads it. It is on the MATCH INPUT,
+ * not only on the registration, because the hash function is what has to tell
+ * the two apart.
+ *
+ * `lane` IS DELIBERATELY ABSENT FROM BOTH MATERIALS. Adding it to the vault
+ * material would shift every digest already recorded there for no safety gain,
+ * and it is not needed: the two materials cannot align. A vault deposit hashes 9
+ * space-joined fields with a 40-hex VAULT ADDRESS in position 5, while a market
+ * supply hashes 8 with a 64-hex MARKET ID in that position. Different arity and
+ * a different anchor shape mean no vault quote can produce a market supply's
+ * digest, or the reverse, whatever the amounts.
+ */
+export interface LendMarketSupplyMatchInput extends MorphoBorrowLegBase {
+  readonly kind: "lend_deposit";
+  readonly lane: "market";
+}
+
+export interface LendMarketWithdrawMatchInput extends MorphoBorrowLegBase {
+  readonly kind: "lend_withdraw";
+  readonly lane: "market";
+}
+
 export type MorphoBorrowMatchInput =
   | LendSupplyCollateralMatchInput
   | LendWithdrawCollateralMatchInput
   | LendBorrowMatchInput
-  | LendRepayMatchInput;
+  | LendRepayMatchInput
+  | LendMarketSupplyMatchInput
+  | LendMarketWithdrawMatchInput;
 
 /**
- * Fixed-order material for the four borrow-lane kinds. The `kind` tag leads it,
+ * Fixed-order material for the six market-lane kinds. The `kind` tag leads it,
  * and only the repayment carries a size MODE, because it is the only operation
- * that can name its size without an amount.
+ * that can name its size without an amount. `lane` is NOT part of the material -
+ * see the block above for why it does not need to be.
  */
 export function morphoBorrowHashMaterial(input: MorphoBorrowMatchInput): string {
   const head = [

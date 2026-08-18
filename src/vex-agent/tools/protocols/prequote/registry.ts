@@ -117,8 +117,27 @@ export type ExecuteGateRegistration =
   // `lend_deposit` / `lend_withdraw` prequote from `morpho.vault.quote` via the
   // dedicated lend identities (E3b-2). Distinct kinds make the direction
   // unmixable: a deposit quote cannot authorize a withdrawal execute.
-  | { readonly kind: "lend_deposit"; readonly family: PrequoteFamily; readonly provider: string }
-  | { readonly kind: "lend_withdraw"; readonly family: PrequoteFamily; readonly provider: string }
+  // ── THE LANE DISCRIMINATOR ────────────────────────────────────────────────
+  //
+  // These two kinds are shared by TWO different operations: a curated VAULT
+  // deposit/redeem, and a Blue MARKET supply/withdraw of the loan asset.
+  // Supplying a loan asset IS lending, so it reuses the kind rather than
+  // minting a venue-shape-specific one that would fragment the agent's own
+  // history. That makes the kind alone insufficient to build an identity, so
+  // every registration under these two kinds MUST name its `lane`, and the same
+  // discriminator travels on the match input into `computePrequoteMatchHash`.
+  | {
+    readonly kind: "lend_deposit";
+    readonly lane: "vault" | "market";
+    readonly family: PrequoteFamily;
+    readonly provider: string;
+  }
+  | {
+    readonly kind: "lend_withdraw";
+    readonly lane: "vault" | "market";
+    readonly family: PrequoteFamily;
+    readonly provider: string;
+  }
   // Morpho Blue market operations - their OWN kinds, one per operation, matched
   // against a `morpho.market.quote` of the SAME direction via the dedicated
   // borrow-lane identities (E3c, migration 081). Distinct kinds make the
@@ -163,8 +182,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "pendle.lp.remove": { kind: "lp_remove", family: "eip155", provider: "pendle" },
   // Morpho vault deposit / withdraw match their dedicated `lend_deposit` /
   // `lend_withdraw` prequotes from `morpho.vault.quote` (E3b-2).
-  "morpho.vault.deposit": { kind: "lend_deposit", family: "eip155", provider: "morpho" },
-  "morpho.vault.withdraw": { kind: "lend_withdraw", family: "eip155", provider: "morpho" },
+  "morpho.vault.deposit": { kind: "lend_deposit", lane: "vault", family: "eip155", provider: "morpho" },
+  "morpho.vault.withdraw": { kind: "lend_withdraw", lane: "vault", family: "eip155", provider: "morpho" },
   // Morpho Blue market operations match their dedicated borrow-lane prequotes
   // from `morpho.market.quote` (E3c). ONE kind each, and the mapping is the
   // whole safety property: the gate reads its row under the kind as a predicate,
@@ -178,4 +197,11 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // has no price, no slippage, no counterparty and no size, so there is no
   // figure a prequote could bind an approval to. It remains approval-gated.
   "morpho.market.repay": { kind: "lend_repay", family: "eip155", provider: "morpho" },
+  // The LENDER'S side of a Blue market, under the SAME kinds as the vault lane
+  // above and separated from it by `lane`. A vault-deposit quote therefore
+  // cannot authorize a market supply and the reverse is equally impossible: the
+  // gate builds a market identity here, whose material is a different length
+  // over a different anchor, so the digests cannot meet.
+  "morpho.market.supply": { kind: "lend_deposit", lane: "market", family: "eip155", provider: "morpho" },
+  "morpho.market.withdraw": { kind: "lend_withdraw", lane: "market", family: "eip155", provider: "morpho" },
 };

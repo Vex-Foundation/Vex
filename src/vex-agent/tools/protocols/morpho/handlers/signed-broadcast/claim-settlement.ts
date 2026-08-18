@@ -89,3 +89,35 @@ export function provenClaimCredit(
   }
   return credits;
 }
+
+/** Which ending the proven credits give the row anchored to `anchorToken`. */
+export type ClaimAnchorResolution =
+  | { readonly kind: "confirmed"; readonly provenAnchor: MorphoClaimExecutedCredit }
+  | { readonly kind: "anchor_unpaid" }
+  | { readonly kind: "no_credit" };
+
+/**
+ * Decide whether the anchored row may be confirmed, against the token IT NAMES.
+ *
+ * ONLY THE ANCHORED TOKEN MAY CONFIRM THE ROW. The row's `tokenOut` fixed the
+ * anchor's address, symbol and DECIMALS before the broadcast, and the confirm
+ * write carries amounts alone. An earlier version fell back to the first
+ * available credit when the anchor paid nothing, recording a different token's
+ * amount under the anchor's identity AND at the anchor's scale - `1047061` raw
+ * is 1.05 at six decimals and 0.00105 at nine. Rules/90 requires a raw amount to
+ * travel with the decimals needed to read it, so a credit that cannot be
+ * recorded at its own scale is not recorded at all.
+ *
+ * `anchor_unpaid` and `no_credit` are kept apart because they are different
+ * facts: the first is a real partial sweep this one-row ledger cannot express,
+ * the second is a claim that credited nothing.
+ */
+export function resolveClaimAnchor(
+  credits: readonly MorphoClaimExecutedCredit[],
+  anchorTokenAddress: string,
+): ClaimAnchorResolution {
+  const anchor = anchorTokenAddress.toLowerCase();
+  const provenAnchor = credits.find((credit) => credit.tokenAddress.toLowerCase() === anchor);
+  if (provenAnchor !== undefined) return { kind: "confirmed", provenAnchor };
+  return credits.length > 0 ? { kind: "anchor_unpaid" } : { kind: "no_credit" };
+}

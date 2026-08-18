@@ -60,7 +60,7 @@ import {
   MORPHO_CLAIM_ROLE,
   morphoActivityChainSlug,
 } from "./protocol.js";
-import { provenClaimCredit } from "./claim-settlement.js";
+import { provenClaimCredit, resolveClaimAnchor } from "./claim-settlement.js";
 
 /**
  * The sentence every surface owes when it shows the anchored amount. Stated
@@ -101,10 +101,12 @@ export type MorphoClaimBroadcastResult =
   | { readonly kind: "reverted"; readonly txHash: Hex; readonly executionId: number; readonly message: string }
   | {
       readonly kind: "unproven";
-      readonly reason: "ambiguous" | "no_credit";
+      readonly reason: "ambiguous" | "no_credit" | "anchor_unpaid";
       readonly txHash: Hex;
       readonly executionId: number;
       readonly message: string;
+      /** Present for `anchor_unpaid`: what the receipt DID prove was credited. */
+      readonly credits?: readonly MorphoClaimExecutedCredit[];
     };
 
 export const MORPHO_CLAIM_AMBIGUOUS_MESSAGE =
@@ -116,6 +118,30 @@ function noCreditMessage(txHash: Hex): string {
     `The claim mined successfully (tx ${txHash}) but credited no decodable token to the wallet, so nothing is `
     + "recorded as claimed. This is what an already-claimed or newly-superseded proof looks like. Do not retry; "
     + "the attempt is recorded as pending and resolves automatically."
+  );
+}
+
+/**
+ * The claim landed and paid SOMETHING, but not the token this row is keyed to.
+ *
+ * The tokens are the wallet's and nothing is lost; only the ledger row cannot
+ * carry them, because it names the anchor's decimals and a sibling's raw amount
+ * read at that scale would be a wrong number, not a rounded one.
+ */
+function anchorUnpaidMessage(
+  txHash: Hex,
+  anchor: MerklClaimLeaf,
+  credits: readonly MorphoClaimExecutedCredit[],
+): string {
+  const paid = credits
+    .map((credit) => `${credit.amountHuman} ${credit.tokenSymbol ?? credit.tokenAddress}`)
+    .join(", ");
+  return (
+    `The claim mined successfully (tx ${txHash}) and credited ${paid} to the wallet. Those tokens ARE yours and `
+    + `nothing was lost. The recorded row is keyed to ${anchor.tokenSymbol ?? anchor.tokenAddress}, which this `
+    + "transaction credited nothing of, most likely because that leaf had already been claimed or its proof was "
+    + "superseded. The row stays pending rather than recording one token's amount at another token's decimals. Do "
+    + "not retry to fix the record; re-read the rewards to see the current claimable balance."
   );
 }
 
@@ -291,9 +317,21 @@ export async function broadcastMorphoClaim(
   // Mined successfully. From here a bookkeeping throw must never read as the
   // claim having failed.
   const credits = provenClaimCredit(outcome.receipt.logs, plan.walletAddress, plan.leaves);
-  const provenAnchor = credits.find((credit) => credit.tokenAddress === anchor.tokenAddress) ?? credits[0];
+  // Only the anchored token may confirm this row; `./claim-settlement.ts` owns
+  // that rule and the reason for it.
+  const resolution = resolveClaimAnchor(credits, anchor.tokenAddress);
 
-  if (provenAnchor === undefined) {
+  if (resolution.kind === "anchor_unpaid") {
+    logger.warn("morpho.claim.anchor_unpaid", {
+      id: eventRow.id, toolId: plan.toolId, credited: credits.length,
+    });
+    await noteHandlerPendingReason(plan.toolId, eventRow.id, "settlement_undecodable");
+    return {
+      kind: "unproven", reason: "anchor_unpaid", txHash: outcome.txHash, executionId, credits,
+      message: anchorUnpaidMessage(outcome.txHash, anchor, credits),
+    };
+  }
+  if (resolution.kind === "no_credit") {
     logger.warn("morpho.claim.no_credit", { id: eventRow.id, toolId: plan.toolId });
     await noteHandlerPendingReason(plan.toolId, eventRow.id, "settlement_undecodable");
     return {
@@ -301,6 +339,7 @@ export async function broadcastMorphoClaim(
       message: noCreditMessage(outcome.txHash),
     };
   }
+  const provenAnchor = resolution.provenAnchor;
 
   await finalizeMorphoFailSoft(plan.toolId, () =>
     confirmActivityEvent(eventRow.id, {

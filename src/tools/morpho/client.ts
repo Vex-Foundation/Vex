@@ -50,10 +50,12 @@ import {
   parseRetryAfterSeconds,
   type GraphqlRequest,
 } from "./client/envelope.js";
+import { validateMorphoMarketCuration, type MorphoMarketCuration } from "./client/curation.js";
 import { mapMorphoGraphqlError, mapMorphoHttpError, mapMorphoTransportError } from "./errors.js";
 import {
   MORPHO_MARKETS_QUERY,
   MORPHO_MARKET_QUERY,
+  MORPHO_MARKET_CURATION_QUERY,
   MORPHO_CHAINS_QUERY,
 } from "./queries.js";
 import {
@@ -240,6 +242,46 @@ export class MorphoClient {
           lookback: query.lookback,
           includeSupplyingVaults: query.includeSupplyingVaults,
         }),
+      signal,
+    );
+  }
+
+  /**
+   * IS MORPHO CURATING THIS MARKET, asked live at execution time.
+   *
+   * UNCACHED ON PURPOSE (`ttlMs: 0`). Every other read here may serve a cached
+   * answer because a few seconds cannot mislead a screen. This one decides
+   * whether real funds enter a permissionless lending market, and the market
+   * gate's own rule is that the curation flag must be no older than the
+   * decision it supports. `ttlMs: 0` also skips the cache WRITE, so this call
+   * can never seed a stale answer for anything else.
+   *
+   * STRICTLY TYPED, unlike the `listed` that rides along on the display reads.
+   * Rules/90 splits the two: a display field a provider may legitimately send
+   * as null is read tolerantly, and a field a signing decision consumes is
+   * read strictly. A `listed` that is absent, null, or not a boolean is a
+   * refusal here, never a falsy "no" and never an optimistic "yes".
+   */
+  async getMarketCuration(
+    query: { readonly marketId: string; readonly chainId: number },
+    signal?: AbortSignal,
+  ): Promise<MorphoMarketCuration> {
+    return this.request(
+      {
+        query: MORPHO_MARKET_CURATION_QUERY,
+        operation: "marketById",
+        ttlMs: 0,
+        variables: {
+          marketId: requireMarketId(query.marketId),
+          chainId: requireQueryChainId(query.chainId),
+        },
+        notFound: () => morphoMarketNotFound(),
+      },
+      (body) => {
+        const curation = validateMorphoMarketCuration(body, query.marketId);
+        if (curation === null) throw morphoMarketNotFound();
+        return curation;
+      },
       signal,
     );
   }

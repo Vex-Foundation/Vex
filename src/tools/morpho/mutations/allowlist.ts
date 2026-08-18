@@ -153,6 +153,34 @@ export const MORPHO_ALLOWED_BUNDLE_LEGS: readonly MorphoAllowedCall[] = [
   allowed(generalAdapter1Abi as Abi, "morphoSupplyCollateral", ["generalAdapter1"]),
   allowed(generalAdapter1Abi as Abi, "morphoRepay", ["generalAdapter1"]),
   allowed(generalAdapter1Abi as Abi, "erc20Transfer", ["generalAdapter1"]),
+
+  // ── E3d: the MARKET SUPPLY lane, direct lending into one Blue market ──────
+  //
+  // PROVENANCE, per this file's own rule. Captured 2026-08-18 by
+  // `agents_dm/morpho-e3/capture-market-supply-withdraw.ts` against the real
+  // Base cbBTC/USDC market 0x9103c3b4...191836 on an Anvil fork, fixture
+  // `agents_dm/morpho-e3/fixtures/base-market-supply-withdraw.json`,
+  // `captures[0]`. Observed shape:
+  //
+  //   supply(assets) -> Bundler3.multicall (0x374f435d), 2 legs on
+  //                     GeneralAdapter1:
+  //                       0xd96ca0b9 erc20TransferFrom   (already above)
+  //                       0x5b866db6 morphoSupply
+  //                         (marketParams, assets, shares, maxSharePrice,
+  //                          onBehalf, data)
+  //
+  // In that capture `shares` was 0, `onBehalf` the user's own wallet, `data`
+  // empty, and the single requirement was exactly ONE erc20Approval of
+  // 500,000,000 to GeneralAdapter1 - the exact operation amount, so the owner's
+  // approval policy is satisfied without any widening.
+  //
+  // THE SUPPLIER'S WITHDRAWAL IS DELIBERATELY NOT HERE. `captures[1]` of the
+  // same fixture shows the SDK building it as a Bundler3 bundle whose one
+  // requirement is `blueAuthorization`, the standing GeneralAdapter1 grant the
+  // owner forbids. Vex encodes that operation as a DIRECT Morpho Blue call
+  // instead (`./borrow-engine.ts`), verified by `./blue-call-decoder.ts`, so
+  // `morphoWithdraw` (0x84d287ef) never appears in a bundle Vex signs.
+  allowed(generalAdapter1Abi as Abi, "morphoSupply", ["generalAdapter1"]),
 ];
 
 const LEG_BY_SELECTOR = new Map(

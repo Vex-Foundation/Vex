@@ -342,7 +342,19 @@ function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
   if (!row.walletAddress) {
     return { kind: "declined", reason: "amounts_undecodable", detail: "the row carries no wallet address" };
   }
-  if (row.eventRole === "lend_borrow_operate") return decodeMorphoBorrowRow(input, row.walletAddress);
+  // THE ROUTE IS DECIDED BY PROVENANCE FIRST, NOT BY THE ROLE ALONE. The Blue
+  // MARKET SUPPLY lane files under the `lend_deposit` / `lend_withdraw` roles
+  // (supplying a loan asset IS lending, and a role per venue-internal shape
+  // would make the agent's own history unqueryable), so a role test alone would
+  // send a market row into the vault's net-delta rule, which would then decline
+  // it forever: a Blue supply position is not an ERC-20 and mints no share
+  // token, so the share leg that rule requires does not exist. The `morphoBorrow`
+  // route-provenance block is what the writer persisted to say WHICH lane the
+  // row is, and it is the only thing that can say it.
+  const borrowProvenance = readMorphoBorrowRouteProvenance(row.routeProvenance);
+  if (row.eventRole === "lend_borrow_operate" || borrowProvenance !== null) {
+    return decodeMorphoBorrowRow(input, row.walletAddress);
+  }
   const decoded = decodeMorphoSettlement({
     logs: input.logs,
     walletAddress: row.walletAddress,

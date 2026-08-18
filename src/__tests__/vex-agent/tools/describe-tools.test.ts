@@ -56,34 +56,15 @@ import { makeTestContext } from "./_test-context.js";
 const SESSION = "describe-tools-suite";
 
 /**
- * Serialized worst LEGAL result budget: a bound-sized fetch of the catalog's
- * most expensive manifests PLUS a full round of displaced-id warnings. The
- * row-only budget is not the worst case (Codex arc-2 final) — a call into a
- * full session set also names every id it displaced.
+ * `DESCRIBE_RESULT_CHAR_BUDGET` is gone (owner decision, 2026-08-17). It was
+ * raised seven times across this project together with the discovery list
+ * budgets, which means it never tracked a real constraint - each raise simply
+ * restated the newest measurement. Do not reintroduce it.
  *
- * Measured 2026-08-04 by `probes/worst-legal-flow.ts`: 166,162 chars for the 40
- * most expensive manifests in the catalog with a full displacement warning. The
- * ratchet sits above that with headroom, and its job is to make a future
- * 37-param manifest fail HERE rather than silently blow the context envelope.
- *
- * Raised 185,000 -> 200,000 on 2026-08-14 (owner decision, morpho batch 3):
- * the morpho namespace ships six deliberately thorough lending manifests under
- * the owner's extensive-descriptions decree, and the old headroom was already
- * exhausted before the batch (184,583 measured without it, 192,740 with it).
- * The guard's job is unchanged - a runaway manifest still fails here first.
- *
- * Raised 200,000 -> 210,000 on 2026-08-17 (owner decision, morpho E3b-1):
- * morpho.vault.quote is the namespace's ninth extensive manifest; measured
- * worst-legal 202,695 after 1,946 chars of redundancy were already trimmed
- * without touching safety prose. Same guard, same job.
- *
- * Raised 210,000 -> 225,000 on 2026-08-17 (coordinator, applying the owner's
- * three identical prior rulings for morpho E3c): the five borrow-market
- * manifests measured 218,018 after a 9,844-char trim that relocated shared
- * safety facts into the once-per-turn doctrine instead of deleting them.
- * Same guard, same job.
+ * What actually bounds a describe_tools result is the runtime: the catalog's
+ * contents, `MAX_DESCRIBE_TOOL_IDS`, and `MAX_DISCOVERED_TOOLS_PER_SESSION`.
+ * The worst-legal test below asserts those bounds instead of prose length.
  */
-const DESCRIBE_RESULT_CHAR_BUDGET = 225_000;
 
 /** The env vars this suite pins, restored after every case. */
 const ENV_KEYS = [
@@ -332,8 +313,9 @@ describe("describe_tools — bounds are derived from the catalog, never chosen",
     expect(clean.sessionCapacity).toEqual({ used: 1, max: MAX_DISCOVERED_TOOLS_PER_SESSION });
   });
 
-  it("the worst LEGAL result — a bound-sized fetch plus a full round of displacement warnings — stays inside its budget", async () => {
-    recordDiscoveredTools(SESSION, catalogPool().slice(-MAX_DISCOVERED_TOOLS_PER_SESSION));
+  it("the worst LEGAL result — a bound-sized fetch plus a full round of displacement warnings — is bounded by the catalog and the id cap, not by prose length", async () => {
+    const earlier = catalogPool().slice(-MAX_DISCOVERED_TOOLS_PER_SESSION);
+    recordDiscoveredTools(SESSION, earlier);
     // The catalog's most expensive manifests, not an arbitrary slice.
     const bySize = [...PROTOCOL_TOOLS]
       .filter(isProtocolToolAvailable)
@@ -342,8 +324,20 @@ describe("describe_tools — bounds are derived from the catalog, never chosen",
       .slice(0, MAX_DESCRIBE_TOOL_IDS)
       .map((m) => m.toolId);
 
-    const result = await describe_(bySize);
-    expect(result.output.length).toBeLessThan(DESCRIBE_RESULT_CHAR_BUDGET);
+    const { payload } = await describeOk(bySize);
+    expect(bySize).toHaveLength(MAX_DESCRIBE_TOOL_IDS);
+    expect(payload.tools.map((t: { toolId: string }) => t.toolId).sort()).toEqual([...bySize].sort());
+    expect(payload.sessionCapacity).toEqual({
+      used: MAX_DISCOVERED_TOOLS_PER_SESSION,
+      max: MAX_DISCOVERED_TOOLS_PER_SESSION,
+    });
+
+    const displaced = earlier.filter((id) => !getDiscoveredToolIds(SESSION).includes(id));
+    expect(displaced.length).toBeGreaterThan(0);
+    const warningText = payload.warnings.join(" ");
+    for (const id of displaced) {
+      expect(warningText, `displaced id ${id} vanished with no signal`).toContain(id);
+    }
   });
 });
 

@@ -64,8 +64,12 @@ export interface MorphoBorrowMarketParams {
 
 /** One token movement, normalized. A Blue operation has exactly one. */
 export interface MorphoBorrowEffect {
-  /** Which side of the position moved. Derived from the operation, never supplied. */
-  readonly leg: "collateral" | "debt";
+  /**
+   * Which side of the position moved. Derived from the operation, never supplied.
+   * `supply` is the LENDER'S side: assets lent into the market, earning the
+   * borrowers' interest, backing no debt of the wallet's own.
+   */
+  readonly leg: "collateral" | "debt" | "supply";
   /** Relative to the WALLET: `in` = the wallet sends, `out` = the wallet receives. */
   readonly direction: "in" | "out";
   readonly tokenAddress: string;
@@ -98,12 +102,24 @@ export type MorphoBorrowIntentParams = {
   readonly effects: readonly MorphoBorrowEffect[];
 };
 
-/** Which side of the position each operation touches. Exhaustive by construction. */
-const OPERATION_LEG: Readonly<Record<MorphoBorrowOperation, "collateral" | "debt">> = {
+/**
+ * Which side of the position each operation touches. Exhaustive by construction.
+ *
+ * THE THIRD VALUE IS A THIRD SIDE, NOT A RE-USE OF EITHER. A Blue market
+ * position has three independent balances - collateral posted, debt owed, and
+ * assets SUPPLIED - and the supplier's side is the one whose owner is a lender
+ * rather than a borrower. Filing a market supply under `collateral` would claim
+ * it backs a debt (it does not, and it cannot be liquidated), and filing it
+ * under `debt` would invert who owes whom. Both would corrupt every later query
+ * that asks what a wallet's exposure on a market actually is.
+ */
+const OPERATION_LEG: Readonly<Record<MorphoBorrowOperation, "collateral" | "debt" | "supply">> = {
   supply_collateral: "collateral",
   withdraw_collateral: "collateral",
   borrow: "debt",
   repay: "debt",
+  supply: "supply",
+  withdraw: "supply",
 };
 
 function marketParams(market: MorphoMarketIdentity): MorphoBorrowMarketParams {

@@ -213,6 +213,13 @@ export async function readMorphoBluePosition(
     collateralRaw: position.collateral,
     borrowSharesRaw: position.borrowShares,
     borrowAssetsRaw: position.borrowAssets,
+    // THE SUPPLIER SIDE, read from the SAME accrued position. `supplyAssets` is
+    // a derived getter over `supplyShares` at the market's current accrued
+    // state, which is exactly what a withdrawal denominated in assets must be
+    // measured against: the share count alone cannot say how much the wallet may
+    // take out.
+    supplySharesRaw: position.supplyShares,
+    supplyAssetsRaw: position.supplyAssets,
     healthFactorWad: normalizeHealthFactor(position.healthFactor),
     // LTV carries no sentinel: it is simply absent on a position with no debt.
     // Normalised through its own expression rather than the health-factor

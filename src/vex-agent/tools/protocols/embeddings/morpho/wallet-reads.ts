@@ -46,7 +46,8 @@ export const MORPHO_WALLET_READ_DISCOVERY = {
       `anything is unclaimed. ` +
       `Returns each reward token with the amount claimable now, the amount still accruing, a rough dollar ` +
       `estimate, and which campaign produced it. ` +
-      `Reward tokens are separate assets whose price moves on its own, and Vex cannot claim yet. ` +
+      `Reward tokens are separate assets whose price moves on its own, and this answer is a reading rather than a ` +
+      `transaction. ` +
       `Example queries: what rewards can I claim, do I have unclaimed tokens, what have I earned in incentives.`,
     ),
     aliases: [

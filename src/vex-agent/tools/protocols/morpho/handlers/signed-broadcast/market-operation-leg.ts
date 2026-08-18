@@ -40,7 +40,7 @@ import logger from "@utils/logger.js";
 
 import { morphoFailureDetail } from "../shared.js";
 import { broadcastMorphoLeg, finalizeMorphoFailSoft, noteMorphoSettledBlockTime } from "./leg-broadcast.js";
-import { MORPHO_BORROW_OPERATE_ROLE } from "./protocol.js";
+import { morphoMarketOperationRole } from "./protocol.js";
 import {
   MORPHO_AMBIGUOUS_BROADCAST_MESSAGE,
   morphoUndecodableMessage,
@@ -49,7 +49,17 @@ import {
 } from "./outcome.js";
 import type { MorphoMarketExecutionContext } from "./market-context.js";
 
-const ROLE = MORPHO_BORROW_OPERATE_ROLE;
+/**
+ * The role THIS row was actually written under, which is not constant: the
+ * lender's supply and withdraw file under `lend_deposit` / `lend_withdraw` while
+ * the borrower's four file under `lend_borrow_operate`. It is reported back to
+ * the agent, so a hard-coded value would put a wrong label on a money-path
+ * result. `./protocol.ts` owns the mapping and `./borrow-intent.ts` writes the
+ * row from the same function.
+ */
+function roleOf(context: MorphoMarketExecutionContext) {
+  return morphoMarketOperationRole(context.intent.operation);
+}
 
 /** Rebuild the operation against current state, or refuse by name. */
 async function rebuild(context: MorphoMarketExecutionContext): Promise<{ to: Address; data: Hex; value: bigint }> {
@@ -98,7 +108,7 @@ export async function runMarketOperationLeg(
     return {
       kind: "refused",
       executionId: context.executionId,
-      role: ROLE,
+      role: roleOf(context),
       message: withResidual(
         `${toolId}: the ${context.operationLabel} was refused before anything was signed - `
         + `${morphoFailureDetail(err)}. No transaction was sent and no gas was spent on it.`,
@@ -127,7 +137,7 @@ export async function runMarketOperationLeg(
     return {
       kind: "refused",
       executionId: context.executionId,
-      role: ROLE,
+      role: roleOf(context),
       message: withResidual(
         `${toolId}: the ${context.operationLabel} was refused before anything was signed - `
         + `${morphoFailureDetail(err)}. No transaction was sent and no gas was spent on it.`,
@@ -145,7 +155,7 @@ export async function runMarketOperationLeg(
     return {
       kind: "unproven",
       executionId: context.executionId,
-      role: ROLE,
+      role: roleOf(context),
       reason: "ambiguous",
       txHash: outcome.txHash,
       message: withResidual(
@@ -166,7 +176,7 @@ export async function runMarketOperationLeg(
     return {
       kind: "reverted",
       executionId: context.executionId,
-      role: ROLE,
+      role: roleOf(context),
       txHash: outcome.txHash,
       message: withResidual(
         `${toolId}: the ${context.operationLabel} (${outcome.txHash}) reverted on-chain. No funds moved beyond the `
@@ -201,7 +211,7 @@ export async function runMarketOperationLeg(
     return {
       kind: "unproven",
       executionId: context.executionId,
-      role: ROLE,
+      role: roleOf(context),
       reason: "undecodable",
       txHash: outcome.txHash,
       message: withResidual(

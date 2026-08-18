@@ -16,10 +16,16 @@
  *
  * ── WHAT THIS SHAPE COVERS ──────────────────────────────────────────────────
  *
- * Two producers, one shape, checked identically:
+ * Three operations, one shape, checked identically:
  *
  *   - `borrow`, encoded by Vex itself in `./borrow-engine.ts`, because the SDK's
  *     bundled borrow would require a standing authorization the owner refused;
+ *   - `withdraw` of SUPPLIED loan assets, encoded by Vex for exactly the same
+ *     reason, measured rather than assumed: the SDK's own `blue.withdraw()`
+ *     builds a bundle whose single requirement is `blueAuthorization` (fixture
+ *     `agents_dm/morpho-e3/fixtures/base-market-supply-withdraw.json`,
+ *     captures[1]). The direct call was LANDED on an Anvil fork of Base on
+ *     2026-08-18 with no authorization granted at any point;
  *   - `withdrawCollateral`, which the Morpho SDK ALREADY emits as a direct Blue
  *     call for its own reasons (`msg.sender` must be `onBehalf`, so there is
  *     nothing for a bundler to do).
@@ -53,11 +59,24 @@ import type { MorphoBorrowIntent, MorphoBorrowOperation } from "./borrow-types.j
 const ALLOWED_BLUE_FUNCTIONS: Readonly<Record<MorphoBorrowOperation, string | null>> = {
   borrow: "borrow",
   withdraw_collateral: "withdrawCollateral",
+  // The SUPPLIER'S withdrawal, encoded by Vex for the same reason `borrow` is:
+  // the SDK's bundled build requires the standing `blueAuthorization` grant the
+  // owner refuses. Fixture `base-market-supply-withdraw.json`, captures[1].
+  withdraw: "withdraw",
   // Routed through Bundler3 and GeneralAdapter1 instead, so a direct Blue call
-  // for either of these is NOT a shape this lane produces and is refused.
+  // for any of these is NOT a shape this lane produces and is refused.
   supply_collateral: null,
   repay: null,
+  supply: null,
 };
+
+/**
+ * Operations whose call carries `(marketParams, assets, shares, onBehalf,
+ * receiver)`. `withdrawCollateral` is the odd one out with no `shares` word, so
+ * the positional read below is driven by this set rather than by a name test
+ * repeated at each argument.
+ */
+const CARRIES_SHARES_WORD: Readonly<Record<string, true>> = { borrow: true, withdraw: true };
 
 /** The decoder's account of a direct Blue call it ACCEPTED. */
 export interface MorphoBlueCallReport {
@@ -150,15 +169,17 @@ export function verifyMorphoBlueCall(
     );
   }
 
-  // Both allowed functions share the same leading shape:
+  // All three allowed functions share the same leading shape, and two of them
+  // are byte-identical in arity:
   //   borrow(marketParams, assets, shares, onBehalf, receiver)
+  //   withdraw(marketParams, assets, shares, onBehalf, receiver)
   //   withdrawCollateral(marketParams, assets, onBehalf, receiver)
   const [rawParams, ...rest] = decoded.args;
-  const isBorrow = decoded.functionName === "borrow";
+  const hasSharesWord = CARRIES_SHARES_WORD[decoded.functionName] === true;
   const assets = rest[0] as bigint;
-  const shares = isBorrow ? (rest[1] as bigint) : 0n;
-  const onBehalf = String(isBorrow ? rest[2] : rest[1]);
-  const receiver = String(isBorrow ? rest[3] : rest[2]);
+  const shares = hasSharesWord ? (rest[1] as bigint) : 0n;
+  const onBehalf = String(hasSharesWord ? rest[2] : rest[1]);
+  const receiver = String(hasSharesWord ? rest[3] : rest[2]);
 
   const callParams = rawParams as Record<string, unknown>;
   const mismatched: string[] = (["loanToken", "collateralToken", "oracle", "irm"] as const)
@@ -198,20 +219,27 @@ export function verifyMorphoBlueCall(
       NOTHING_SIGNED_HINT,
     );
   }
-  if (isBorrow && shares !== 0n) {
+  if (hasSharesWord && shares !== 0n) {
+    // The share KIND is named because the two are different balances: a borrow's
+    // shares are debt owed and a supplier's are assets lent.
+    const shareKind = decoded.functionName === "borrow" ? "borrow" : "supply";
     reject(
-      `Refusing the transaction: it names ${shares} borrow shares alongside an asset amount. A Blue borrow is `
-      + "denominated in one or the other, never both.",
+      `Refusing the transaction: it names ${shares} ${shareKind} shares alongside an asset amount. A Blue `
+      + `${decoded.functionName} is denominated in one or the other, never both.`,
       NOTHING_SIGNED_HINT,
     );
   }
 
-  const decimals = intent.operation === "borrow"
-    ? intent.market.loanDecimals
-    : intent.market.collateralDecimals;
-  const symbol = intent.operation === "borrow"
-    ? intent.market.loanSymbol ?? intent.market.loanToken.toLowerCase()
-    : intent.market.collateralSymbol ?? intent.market.collateralToken.toLowerCase();
+  // WHICH TOKEN THE AMOUNT IS DENOMINATED IN, and the trap this decides once:
+  // only `withdraw_collateral` moves the COLLATERAL token. The borrow and the
+  // SUPPLIER'S withdrawal both move the LOAN token, and the market this lane was
+  // proven against pairs 8-decimal cbBTC against 6-decimal USDC, so reading the
+  // wrong scale would misreport the size by a hundredfold.
+  const isCollateralLeg = intent.operation === "withdraw_collateral";
+  const decimals = isCollateralLeg ? intent.market.collateralDecimals : intent.market.loanDecimals;
+  const symbol = isCollateralLeg
+    ? intent.market.collateralSymbol ?? intent.market.collateralToken.toLowerCase()
+    : intent.market.loanSymbol ?? intent.market.loanToken.toLowerCase();
 
   return {
     shape: "direct-blue-call",

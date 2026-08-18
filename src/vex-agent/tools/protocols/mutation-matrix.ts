@@ -217,11 +217,15 @@ const entries: [string, MutationContract][] = [
   // projection pipeline must never also run; all four take `dryRun`, which
   // returns the full preview and signs nothing. `expectedType: "lend"` because
   // the borrow lane is the same lending domain as the vaults - the market
-  // operations move a position within it rather than trading a pair.
+  // operations move a position within it rather than trading a pair. The two
+  // LENDER-side entries below are the same contract again: `supply` and
+  // `withdraw` lend the market's loan asset in and take it back out.
   ["morpho.market.supplyCollateral",   { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.market.withdrawCollateral", { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.market.borrow",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["morpho.market.repay",              { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.supply",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.withdraw",           { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   // Morpho reward claim. `expectedType: "yield"` and NOT "lend", matching the
   // `yield` / `yield_claim` row the lane writes and matching `pendle.claim`
   // below: the type describes the OPERATION, and sweeping an already-earned

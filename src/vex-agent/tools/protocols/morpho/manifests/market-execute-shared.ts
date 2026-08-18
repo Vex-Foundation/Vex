@@ -1,17 +1,23 @@
 /**
- * The sentences the FOUR Morpho Blue market executes must say, written once.
+ * The sentences the SIX Morpho Blue market executes must say, written once.
  *
  * Same doctrine as `./vault-execute-shared.ts`: each of these is a safety claim
  * the owner's approval policy or rules/90 requires a mutating tool to make, not
  * stylistic boilerplate, and a copy edited in one manifest and not the other is
  * how two tools end up promising different things about the same mechanism.
  *
- * WHAT IS NOT SHARED IS THE CONSENT MODEL, deliberately. Two of the four
+ * WHAT IS NOT SHARED IS THE CONSENT MODEL, deliberately. Three of the six
  * operations PULL a token and are two transactions behind one consent; the other
- * two only RECEIVE and are a single direct Morpho Blue call with no approval at
- * any point. Averaging those into one sentence would either invent an approval
- * step for a borrow or hide one from a repayment, so each manifest states its
- * own shape and only the facts that genuinely apply to all four live here.
+ * three only RECEIVE and are a single direct Morpho Blue call with no approval
+ * at any point. Averaging those into one sentence would either invent an
+ * approval step for a borrow or hide one from a repayment, so each manifest
+ * states its own shape and only the facts that genuinely apply live here.
+ *
+ * THE HEALTH-FACTOR SENTENCE IS NOT SHARED EITHER, and that absence is load
+ * bearing. The two LENDER operations (`morpho.market.supply` and
+ * `morpho.market.withdraw`) have no health factor at all: they take on no debt
+ * and post no collateral. They say so with their own sentence below rather than
+ * inheriting a floor that does not apply to them.
  */
 
 import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "../../slippage-policy.js";
@@ -21,10 +27,21 @@ export const MORPHO_MARKET_QUOTE_FIRST_SENTENCE =
   "QUOTE FIRST: REFUSED without a fresh `morpho.market.quote` of THIS direction for exactly these params. A quote of "
   + "any other direction does not authorize it.";
 
-/** The floor, and the reason it is policy rather than advice. */
+/**
+ * The floor, and the reason it is policy rather than advice.
+ *
+ * IT IS A BUFFER, NOT A GUARANTEE, and the sentence has to say so. The calldata
+ * Vex signs is a plain Morpho Blue call with no floor encoded in it, so the only
+ * thing 1.25 binds is whether Vex signs at all. An oracle move between signing
+ * and inclusion can settle the position under 1.25 and still above Morpho's own
+ * liquidation threshold of 1, and a manifest that called this a guarantee would
+ * be selling a safety property the chain never agreed to.
+ */
 export const MORPHO_HEALTH_FLOOR_SENTENCE =
-  "REFUSED below a health factor of 1.25, projected fresh and re-checked immediately before signing. A `null` health "
-  + "factor means NO DEBT, not a failed read.";
+  "REFUSED below a health factor of 1.25, projected fresh and re-checked immediately before signing. That floor is a "
+  + "PRE-SIGNATURE BUFFER, not an on-chain guarantee: the signed call carries no floor, so an oracle move before "
+  + "inclusion can settle the position below 1.25 while still above Morpho's liquidation threshold of 1. A `null` "
+  + "health factor means NO DEBT, not a failed read.";
 
 /** Which markets Vex will act on at all. */
 export const MORPHO_ORACLE_VOUCHING_SENTENCE =
@@ -44,8 +61,10 @@ export const MORPHO_MARKET_LEDGER_SENTENCE =
 
 /** The atomicity Vex deliberately does not have. */
 export const MORPHO_NO_COMBO_SENTENCE =
-  "NOT ATOMIC with any other operation: Vex grants no standing authorization, so a supply-then-borrow is two separate "
-  + "calls and either can fail with the other landed. Each is gated on its own post-state.";
+  "NOT ATOMIC with any other operation: Vex grants no standing authorization, so a supply-then-borrow is two "
+  + "separately quoted and separately consented OPERATIONS, and either can fail with the other landed. What makes "
+  + "the in-between state safe is ORDERING - collateral in before debt out, debt down before collateral out - so a "
+  + "second leg that never lands leaves the position safer than it started.";
 
 /** The two operations that pull a token, stated once. */
 export const MORPHO_PULLING_CONSENT_SENTENCE =
@@ -68,6 +87,35 @@ export const MORPHO_MARKET_SLIPPAGE_PARAM =
   `Price protection in basis points (1 bps = 0.01%). Default ${VEX_DEFAULT_SLIPPAGE_BPS}, capped at `
   + `${VEX_MAX_SLIPPAGE_BPS}, and a higher value is REJECTED rather than clamped. It bounds a full-debt repayment's `
   + "share price and its approval ceiling; the other operations name their own exact amount and are unaffected.";
+
+/**
+ * WHAT SUPPLYING DIRECTLY ACTUALLY BUYS, from live measurement rather than from
+ * a brochure. Every curated USDC vault on Base earns the SAME gross rate because
+ * they allocate into the same markets; the only thing that separates them is the
+ * curator's performance fee. Stating the measured table is the difference
+ * between the agent making an informed choice and repeating "the vault is safer".
+ */
+export const MORPHO_LENDER_CHOICE_SENTENCE =
+  "DIRECT VERSUS CURATED, measured on Base: every curated USDC vault earns the SAME gross 4.13% because they "
+  + "allocate into the same markets, and only the curator's fee separates them (Gauntlet 0% leaves 4.13% net, "
+  + "Steakhouse Prime 5% leaves 3.92%, Spark 10% leaves 3.71%, Steakhouse USDC 25% leaves 3.08%). Supplying "
+  + "cbBTC/USDC DIRECTLY earns the full 4.13% with NO fee, and what you give up for it is diversification and "
+  + "management: the position is concentrated in ONE market's collateral, oracle and LLTV, and NOBODY REALLOCATES "
+  + "IT FOR YOU when that market degrades. Say both halves before recommending either.";
+
+/** Neither lender operation touches a borrower's health factor. Stated, not implied. */
+export const MORPHO_LENDER_NO_HEALTH_SENTENCE =
+  "THIS DOES NOT MOVE THE HEALTH FACTOR. Supplying and withdrawing the loan asset is the LENDER'S side of the "
+  + "market: it takes on no debt and posts no collateral, so it has no liquidation risk of its own and it changes "
+  + "nothing about any borrow position the same wallet may hold on the same market.";
+
+/** The two independent ceilings on a lender withdrawal, both refused by name. */
+export const MORPHO_LENDER_WITHDRAW_BOUNDS_SENTENCE =
+  "TWO INDEPENDENT LIMITS, each REFUSED BY NAME rather than silently clamped. First, YOUR OWN SUPPLIED POSITION: "
+  + "you cannot withdraw more than you have supplied plus the interest it accrued. Second, THE MARKET'S AVAILABLE "
+  + "LIQUIDITY: supplied assets that borrowers have already drawn are not there to withdraw, so a market that is "
+  + "fully utilised can refuse a withdrawal you are otherwise entitled to. That second limit is the real cost of "
+  + "lending directly, and it is not a failure of Vex: wait for a repayment or withdraw the part that is free.";
 
 export const MORPHO_MARKET_ID_PARAM =
   "The market's 0x-prefixed 64-hex id, from `morpho.markets.discover` or `morpho.positions.get`. A 40-hex value is a "

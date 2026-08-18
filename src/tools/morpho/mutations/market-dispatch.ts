@@ -1,17 +1,21 @@
 /**
  * The ONE place a Morpho Blue MARKET operation is turned into bytes.
  *
- * Four operations, two entirely different build shapes, and the dispatch between
+ * Six operations, two entirely different build shapes, and the dispatch between
  * them is a money-safety fact rather than a convenience:
  *
- *   supply_collateral, repay     Bundler3 multicall built by the SDK and
- *                                verified leg-by-leg. Both PULL a token, so both
- *                                carry an exact-amount approval.
- *   borrow, withdraw_collateral  DIRECT Morpho Blue calls. Routing either
- *                                through Bundler3 would require a standing
+ *   supply_collateral, repay,    Bundler3 multicall built by the SDK and
+ *   supply                       verified leg-by-leg. All three PULL a token, so
+ *                                all three carry an exact-amount approval.
+ *   borrow, withdraw_collateral, DIRECT Morpho Blue calls. Routing any of them
+ *   withdraw                     through Bundler3 would require a standing
  *                                GeneralAdapter1 authorization on Morpho, which
  *                                the owner's option-1 ruling forbids. They pull
  *                                nothing and carry no approval at all.
+ *
+ * The split does NOT follow "in versus out": the supplier's SUPPLY is bundled
+ * and the supplier's WITHDRAW is direct, because what decides it is which build
+ * demands a standing authorization, and only the withdrawal's does.
  *
  * ── WHY IT LIVES HERE AND NOT IN THE EXECUTION SPINE ────────────────────────
  *
@@ -33,7 +37,7 @@ import type { Address, Hex } from "viem";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { MorphoActionClient } from "./client.js";
-import { buildMorphoDirectBorrow } from "./borrow-engine.js";
+import { buildMorphoDirectBorrow, buildMorphoDirectWithdraw } from "./borrow-engine.js";
 import { verifyMorphoBlueCall, type MorphoBlueCallReport } from "./blue-call-decoder.js";
 import { buildMorphoMarketOperation } from "./build-market.js";
 import type { MorphoMarketBundleReport } from "./market-bundle-decoder.js";
@@ -85,6 +89,24 @@ export async function buildMorphoMarketTransaction(
     };
   }
 
+  if (intent.operation === "withdraw") {
+    // The SUPPLIER'S withdrawal, encoded by Vex for the same reason the borrow
+    // is: the SDK's own `blue.withdraw()` builds a bundle whose one requirement
+    // is the standing `blueAuthorization` grant the owner forbids (fixture
+    // `agents_dm/morpho-e3/fixtures/base-market-supply-withdraw.json`,
+    // captures[1]). Encoded here, then decoded back and proven, exactly like the
+    // borrow: Vex's own bytes get Vex's own scrutiny.
+    const built = buildMorphoDirectWithdraw(intent, market.marketParams);
+    const report = verifyMorphoBlueCall(built, intent, market.marketParams);
+    return {
+      txParams: { to: built.to, data: built.data, value: built.value },
+      pullAmountRaw: null,
+      approvalAmountRaw: null,
+      pullToken: null,
+      decoded: { shape: "direct-blue-call", report },
+    };
+  }
+
   if (intent.operation === "withdraw_collateral") {
     // ALSO a direct Blue call, but built by the SDK rather than by
     // `buildMorphoDirectBorrow`, which encodes the `borrow` selector and only
@@ -122,6 +144,11 @@ export async function buildMorphoMarketTransaction(
     // object the chain was read into rather than from a look-alike.
     marketParams: market.marketParams,
     positionData: await handle.getPositionData(intent.userAddress),
+    // Only the market SUPPLY builder needs it, and it is read from the SAME
+    // handle as the position so the two cannot describe different markets. Read
+    // conditionally rather than always: the other operations would pay an RPC
+    // round trip for an argument they never look at.
+    ...(intent.operation === "supply" ? { marketData: await handle.getMarketData() } : {}),
     slippageBps,
   });
   return {
@@ -132,9 +159,9 @@ export async function buildMorphoMarketTransaction(
     },
     pullAmountRaw: built.transferBoundRaw,
     approvalAmountRaw: built.approvalAmountRaw,
-    pullToken: intent.operation === "repay"
-      ? market.identity.loanToken
-      : market.identity.collateralToken,
+    pullToken: intent.operation === "supply_collateral"
+      ? market.identity.collateralToken
+      : market.identity.loanToken,
     decoded: { shape: "bundler3-multicall", report: built.bundle },
   };
 }

@@ -125,7 +125,7 @@ export function verifyMorphoMarketBundle(
   let pulledAmountRaw: bigint | null = null;
   let verifiedAmountRaw: bigint | null = null;
   let verifiedSharesRaw: bigint | null = null;
-  let maxBorrowSharePriceRaw: bigint | null = null;
+  let maxSharePriceRaw: bigint | null = null;
   let sweepRecipient: string | null = null;
 
   calls.forEach((call, index) => {
@@ -190,8 +190,8 @@ export function verifyMorphoMarketBundle(
     if (verification.pulledAmountRaw !== undefined) pulledAmountRaw = verification.pulledAmountRaw;
     if (verification.verifiedAmountRaw !== undefined) verifiedAmountRaw = verification.verifiedAmountRaw;
     if (verification.verifiedSharesRaw !== undefined) verifiedSharesRaw = verification.verifiedSharesRaw;
-    if (verification.maxBorrowSharePriceRaw !== undefined) {
-      maxBorrowSharePriceRaw = verification.maxBorrowSharePriceRaw;
+    if (verification.maxSharePriceRaw !== undefined) {
+      maxSharePriceRaw = verification.maxSharePriceRaw;
     }
     if (verification.sweepRecipient !== undefined) sweepRecipient = verification.sweepRecipient;
 
@@ -228,14 +228,18 @@ export function verifyMorphoMarketBundle(
     selector,
     functionName: MORPHO_BUNDLER_ENTRY_CALL.functionName,
     valueRaw: "0",
-    operation: intent.operation === "supply_collateral" ? "supply_collateral" : "repay",
+    // Narrowed from the bundle KIND rather than re-derived from the intent: the
+    // kind is what the leg shape was actually checked against, and a report that
+    // named a different operation than the one verified would be a second,
+    // softer account of the same fact.
+    operation: kind === "repay_assets" || kind === "repay_shares" ? "repay" : kind,
     legs,
     pulledToken: ctx.pullToken.toLowerCase(),
     pulledAmountRaw: (pulledAmountRaw as bigint).toString(),
     verifiedAmountRaw: verifiedAmountRaw === null ? null : (verifiedAmountRaw as bigint).toString(),
     verifiedSharesRaw: verifiedSharesRaw === null ? null : (verifiedSharesRaw as bigint).toString(),
-    maxBorrowSharePriceRaw:
-      maxBorrowSharePriceRaw === null ? null : (maxBorrowSharePriceRaw as bigint).toString(),
+    maxSharePriceRaw:
+      maxSharePriceRaw === null ? null : (maxSharePriceRaw as bigint).toString(),
     sweepRecipient,
   };
 }

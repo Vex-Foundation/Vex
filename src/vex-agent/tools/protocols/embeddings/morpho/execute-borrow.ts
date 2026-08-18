@@ -1,27 +1,34 @@
 /**
- * Retrieval metadata for the Morpho BORROW lane - the four operations that move
- * collateral and debt on a Blue market, plus the preview that prices them.
+ * Retrieval metadata for the Morpho MARKET lane - the six operations that move
+ * money on a Blue market, plus the preview that prices them. Four are the
+ * BORROWER'S side (collateral and debt) and two are the LENDER'S (supplying the
+ * loan asset into the market and taking it back out).
  *
  * The manifests at `morpho/manifests/market-{quote,supply-collateral,
- * withdraw-collateral,borrow,repay}.ts` reference these entries by `toolId`.
+ * withdraw-collateral,borrow,repay,supply,withdraw}.ts` reference these entries
+ * by `toolId`.
  *
  * ── THE COLLISION THIS FILE MANAGES ─────────────────────────────────────────
  *
  * Every other Morpho execute lane is about a VAULT: one asset in, shares out, a
  * curator picking the markets. This lane is about a POSITION on ONE market: two
  * tokens, a debt, a liquidation price. The vocabularies are genuinely disjoint
- * and the passages below keep them that way - nothing here says vault, curator,
- * shares, APY or yield, and nothing in `execute-writes.ts` says collateral,
- * borrow, debt, repay, health factor or liquidation.
+ * and the passages below keep them that way - nothing here says vault, curator or
+ * shares, and nothing in `execute-writes.ts` says collateral, borrow, debt,
+ * repay, health factor or liquidation. The two LENDER tools below sit closest to
+ * that boundary because a vault deposit answers a similar English sentence, and
+ * they hold the line with the word the user is actually choosing: DIRECTLY, into
+ * THIS market, with no curator and no fee.
  *
- * The sharper collision is INTERNAL, between these five. Four of them are
+ * The sharper collision is INTERNAL, between these seven. Six of them are
  * imperative and committing while `morpho.market.quote` is conditional, exactly
  * as `quote-reads.ts` separates itself from `execute-writes.ts`: the quote owns
  * "would", "preview", "simulate", "check before", "how close to liquidation
- * would this leave me", and none of the four executes uses a conditional
- * construction. The four are then separated from each other by DIRECTION and by
+ * would this leave me", and none of the six executes uses a conditional
+ * construction. The six are then separated from each other by DIRECTION and by
  * WHICH TOKEN moves, which is their only real difference: collateral in,
- * collateral out, debt taken on, debt paid down.
+ * collateral out, debt taken on, debt paid down, loan asset lent in, loan asset
+ * taken back out.
  *
  * ── WHAT IS DELIBERATELY NOT PROMISED ───────────────────────────────────────
  *
@@ -47,7 +54,7 @@ export const MORPHO_BORROW_EXECUTE_DISCOVERY = {
   "morpho.market.quote": {
     embeddingText: embeddingText(
       `Price one Morpho Blue market operation before anyone commits: what supplying collateral, borrowing, paying ` +
-      `debt down or pulling collateral back out would do to a position. ` +
+      `debt down, pulling collateral back out, lending into the market or taking what was lent back out would do. ` +
       `Use when the question is conditional and names an amount: what would this do to my health factor, how close ` +
       `to liquidation would it leave me, can this market fund it, what would I have to permit first. ` +
       `Answers with the health factor before and after, the free liquidity, and the decoded transaction. ` +
@@ -63,6 +70,7 @@ export const MORPHO_BORROW_EXECUTE_DISCOVERY = {
       "simulate repaying my debt",
       "can this market fund my loan",
       "dry run a borrow",
+      "price lending into this market",
     ],
     exampleIntents: [
       "what would borrowing 500 usdc do to my health factor",
@@ -70,6 +78,7 @@ export const MORPHO_BORROW_EXECUTE_DISCOVERY = {
       "how much can i safely borrow against this collateral",
       "simulate paying off my morpho loan",
       "would withdrawing this collateral put me at risk",
+      "what would i earn lending 1000 usdc into this market",
     ],
     chains: MORPHO_CHAINS_FOR_DISCOVERY,
   },
@@ -190,9 +199,77 @@ export const MORPHO_BORROW_EXECUTE_DISCOVERY = {
     ],
     chains: MORPHO_CHAINS_FOR_DISCOVERY,
   },
+  // ── THE LENDER'S SIDE ─────────────────────────────────────────────────────
+  //
+  // The hardest collision in this file, and it is not with the borrow tools: it
+  // is with `execute-writes.ts`, whose vault deposit answers almost the same
+  // English sentence ("earn on my usdc"). The two are kept apart by the word the
+  // user actually chooses between: DIRECTLY / this market / no curator / no fee
+  // here, versus curator / vault / spread across markets there. Nothing below
+  // says vault, curator or shares, and nothing below says collateral, health
+  // factor or liquidation either, because a lender has none of those.
+  "morpho.market.supply": {
+    embeddingText: embeddingText(
+      `Lend the wallet's own asset straight into ONE Morpho Blue market to earn its rate, for real and on chain, ` +
+      `with no manager in between and no fee taken out. ` +
+      `Use when the user tells Vex to put money to work in a specific market they picked: lend into this market, ` +
+      `supply usdc here directly, earn on this market myself. ` +
+      `Earns the full rate borrowers pay, and in exchange the money sits in that one market and nobody moves it if ` +
+      `that market goes bad. ` +
+      `Example queries: lend usdc into this market directly, supply here and skip the fee.`,
+    ),
+    aliases: [
+      "lend into this morpho market directly",
+      "supply usdc to this market myself",
+      "earn the full rate with no curator fee",
+      "put my stablecoins into this specific market",
+      "become a lender on this market",
+      "skip the curator and lend directly",
+      "supply the loan asset here",
+      "earn interest on this market directly",
+    ],
+    exampleIntents: [
+      "lend 1000 usdc into the cbbtc usdc market directly",
+      "supply to this market instead of paying a management fee",
+      "i picked this market myself, put my usdc in it",
+      "go ahead and lend into this market now",
+      "earn the borrow rate on this market directly",
+    ],
+    chains: MORPHO_CHAINS_FOR_DISCOVERY,
+  },
+
+  "morpho.market.withdraw": {
+    embeddingText: embeddingText(
+      `Take assets that were lent into ONE Morpho Blue market back out into the wallet, for real and on chain, ` +
+      `with the interest they earned. ` +
+      `Use when the user tells Vex to pull the lent money back: withdraw what i lent here, take my usdc back out ` +
+      `of this market, stop lending into it. ` +
+      `Limited by what the wallet actually lent and by how much of the market is not currently borrowed, so a busy ` +
+      `market can return less than the whole position until someone repays. ` +
+      `Example queries: withdraw what i lent to this market, take my usdc back out with the interest.`,
+    ),
+    aliases: [
+      "withdraw what i lent to this market",
+      "take my lent usdc back out",
+      "stop lending into this market",
+      "pull my money out of this market",
+      "redeem what i supplied here with interest",
+      "exit my lender position on this market",
+      "get the loan asset i supplied back",
+      "take out part of what i lent",
+    ],
+    exampleIntents: [
+      "withdraw the usdc i lent into this market",
+      "take my lender position out of this market now",
+      "pull out half of what i supplied here",
+      "stop lending into this market and take the interest",
+      "get back what i lent plus what it earned",
+    ],
+    chains: MORPHO_CHAINS_FOR_DISCOVERY,
+  },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 5;
+const EXPECTED_COUNT = 7;
 if (Object.keys(MORPHO_BORROW_EXECUTE_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `MORPHO_BORROW_EXECUTE_DISCOVERY has ${Object.keys(MORPHO_BORROW_EXECUTE_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

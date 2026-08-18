@@ -61,17 +61,46 @@ const VERIFIED_DISTRIBUTOR_CHAIN_IDS: ReadonlySet<number> = new Set([
 ]);
 
 /**
- * `claim(address[],address[],uint256[],bytes32[][])`.
+ * `claimWithRecipient(address[],address[],uint256[],bytes32[][],address[],bytes[])`.
  *
- * Every array is parallel and the contract requires equal lengths. `users[i]` is
- * who the leaf belongs to, NOT who pays gas: the distributor lets anyone submit
- * a proof on another wallet's behalf and pays the wallet in the leaf. That is
- * exactly why this lane asserts every `users[i]` is the session wallet before
- * signing - a claim built for someone else would be a gas donation.
+ * WHY NOT THE PLAIN `claim`. `users[i]` names who the leaf belongs to, not who
+ * pays gas, and it does NOT name who gets paid. The distributor resolves the
+ * destination from its OWN state. Verified 2026-08-17 against the deployed
+ * implementation behind the Base proxy (impl
+ * `0x64455a45d85d872bfd7f833e367686108d13d6e6`, matching
+ * `AngleProtocol/merkl-contracts` `Distributor.sol`), whose `_claim` reads:
+ *
+ *   if (msg.sender != user || recipient == address(0)) {
+ *       address userSetRecipient = claimRecipient[user][token];
+ *       if (userSetRecipient == address(0)) userSetRecipient = claimRecipient[user][address(0)];
+ *       if (userSetRecipient == address(0)) recipient = user;
+ *       else recipient = userSetRecipient;
+ *   }
+ *
+ * `claim(...)` allocates an all-zero `recipients` array, so it ALWAYS takes that
+ * branch. A `setClaimRecipient` executed at any earlier point permanently
+ * redirects every later plain claim, per token or, with `address(0)` as the
+ * token, for all of them. The old assertion could not see this: it proved
+ * `users[i]` was the session wallet, which is not the same claim as "the tokens
+ * arrive at the session wallet".
+ *
+ * `claimWithRecipient` closes it IN THE SIGNED BYTES rather than in a read that
+ * can go stale between check and inclusion. The caller's `recipients[i]` is
+ * honoured whenever `msg.sender == user` and the value is non-zero, and Vex
+ * signs from the session wallet with `users[i]` set to it, so the override
+ * always applies and overrides any stored recipient. Two conditions carry that
+ * guarantee and are both asserted below:
+ *
+ *   - `recipients[i]` must be the session wallet and must never be the zero
+ *     address, because zero silently falls back to the stored-state lookup.
+ *   - `datas[i]` must be empty. A non-empty value makes the distributor call
+ *     `IClaimRecipient(recipient).onClaim` and demand a magic return value.
+ *
+ * Every array is parallel and the contract requires equal lengths.
  */
 const MERKL_DISTRIBUTOR_ABI = [
   {
-    name: "claim",
+    name: "claimWithRecipient",
     type: "function",
     stateMutability: "nonpayable",
     inputs: [
@@ -79,8 +108,31 @@ const MERKL_DISTRIBUTOR_ABI = [
       { name: "tokens", type: "address[]" },
       { name: "amounts", type: "uint256[]" },
       { name: "proofs", type: "bytes32[][]" },
+      { name: "recipients", type: "address[]" },
+      { name: "datas", type: "bytes[]" },
     ],
     outputs: [],
+  },
+] as const;
+
+/**
+ * `claimRecipient(user, token)`, the stored redirect the override defeats.
+ *
+ * Read only to REPORT that a wallet was configured to pay somebody else, which
+ * is worth surfacing to the owner. It is deliberately not the defence: a read
+ * can be invalidated by a `setClaimRecipient` landing between the read and the
+ * claim's inclusion, and `claimWithRecipient` cannot.
+ */
+export const MERKL_CLAIM_RECIPIENT_ABI = [
+  {
+    name: "claimRecipient",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "token", type: "address" },
+    ],
+    outputs: [{ name: "", type: "address" }],
   },
 ] as const;
 
@@ -124,7 +176,10 @@ export function isMerklDistributor(address: string): boolean {
   return address.toLowerCase() === MERKL_DISTRIBUTOR_ADDRESS.toLowerCase();
 }
 
-/** Build `claim(...)` for one wallet's leaves. Encoding only; no assertions. */
+/**
+ * Build `claimWithRecipient(...)` for one wallet's leaves, with every recipient
+ * hard-bound to that wallet. Encoding only; no assertions.
+ */
 export function buildMerklClaimCalldata(
   distributor: Address,
   walletAddress: Address,
@@ -134,12 +189,14 @@ export function buildMerklClaimCalldata(
     to: distributor,
     data: encodeFunctionData({
       abi: MERKL_DISTRIBUTOR_ABI,
-      functionName: "claim",
+      functionName: "claimWithRecipient",
       args: [
         leaves.map(() => walletAddress),
         leaves.map((leaf) => getAddress(leaf.tokenAddress)),
         leaves.map((leaf) => BigInt(leaf.cumulativeAmountRaw)),
         leaves.map((leaf) => leaf.proof.map((node) => node as Hex)),
+        leaves.map(() => walletAddress),
+        leaves.map(() => "0x" as Hex),
       ],
     }),
     value: 0n,
@@ -153,6 +210,8 @@ export type MerklClaimAssertionFailure =
   | "not_a_claim_call"
   | "leaf_count_mismatch"
   | "user_not_wallet"
+  | "recipient_not_wallet"
+  | "recipient_hook_data_present"
   | "token_mismatch"
   | "amount_mismatch"
   | "proof_mismatch";
@@ -164,6 +223,8 @@ export interface MerklClaimAssertion {
 }
 
 const OK: MerklClaimAssertion = { ok: true, failure: null, detail: null };
+
+const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
 
 function refuse(failure: MerklClaimAssertionFailure, detail: string): MerklClaimAssertion {
   return { ok: false, failure, detail };
@@ -186,6 +247,11 @@ function refuse(failure: MerklClaimAssertionFailure, detail: string): MerklClaim
  *     sends ether sends it to a contract with no reason to return it.
  *   - every `users[i]` is THIS wallet. The distributor happily accepts a proof
  *     naming someone else and pays THEM while we pay the gas.
+ *   - every `recipients[i]` is THIS wallet, and no `datas[i]` is present. This
+ *     is the leg that makes the destination provable rather than assumed: see
+ *     the ABI's own note on `claimRecipient`. A zero recipient is refused here
+ *     for the same reason a wrong one is, because zero is not "unset, so pay
+ *     the user" - it is "fall back to whatever the contract was told earlier".
  *   - the tokens, amounts and proofs match the leaves the rewards read produced,
  *     element for element and in order. A reordered `amounts` array against an
  *     unreordered `tokens` array is a valid transaction that claims the wrong
@@ -211,16 +277,20 @@ export function assertMerklClaimCalldata(
   } catch {
     return refuse("not_a_claim_call", "the calldata does not decode as Merkl's claim function");
   }
-  if (decoded.functionName !== "claim") {
-    return refuse("not_a_claim_call", `the calldata calls ${decoded.functionName}, not claim`);
+  if (decoded.functionName !== "claimWithRecipient") {
+    return refuse("not_a_claim_call", `the calldata calls ${decoded.functionName}, not claimWithRecipient`);
   }
 
-  const [users, tokens, amounts, proofs] = decoded.args;
+  const [users, tokens, amounts, proofs, recipients, datas] = decoded.args;
   const expected = leaves.length;
-  if (users.length !== expected || tokens.length !== expected || amounts.length !== expected || proofs.length !== expected) {
+  if (
+    users.length !== expected || tokens.length !== expected || amounts.length !== expected
+    || proofs.length !== expected || recipients.length !== expected || datas.length !== expected
+  ) {
     return refuse(
       "leaf_count_mismatch",
-      `the call carries ${users.length}/${tokens.length}/${amounts.length}/${proofs.length} users/tokens/amounts/proofs `
+      `the call carries ${users.length}/${tokens.length}/${amounts.length}/${proofs.length}/${recipients.length}/`
+      + `${datas.length} users/tokens/amounts/proofs/recipients/datas `
       + `for ${expected} reward${expected === 1 ? "" : "s"}`,
     );
   }
@@ -231,11 +301,32 @@ export function assertMerklClaimCalldata(
     const token = tokens[index];
     const amount = amounts[index];
     const proof = proofs[index];
-    if (user === undefined || token === undefined || amount === undefined || proof === undefined) {
+    const recipient = recipients[index];
+    const data = datas[index];
+    if (
+      user === undefined || token === undefined || amount === undefined || proof === undefined
+      || recipient === undefined || data === undefined
+    ) {
       return refuse("leaf_count_mismatch", `entry ${index} is missing from the decoded call`);
     }
     if (user.toLowerCase() !== wallet) {
       return refuse("user_not_wallet", `entry ${index} claims for ${user.toLowerCase()}, not for ${wallet}`);
+    }
+    if (recipient.toLowerCase() !== wallet) {
+      return refuse(
+        "recipient_not_wallet",
+        `entry ${index} would pay ${recipient.toLowerCase()}, not ${wallet}`
+        + (recipient.toLowerCase() === ZERO_ADDRESS
+          ? ", and a zero recipient hands the destination back to whatever the distributor was told earlier"
+          : ""),
+      );
+    }
+    if (data !== "0x") {
+      return refuse(
+        "recipient_hook_data_present",
+        `entry ${index} carries ${(data.length - 2) / 2} bytes of recipient-hook data; Vex claims to a plain wallet `
+        + "and sends none",
+      );
     }
     if (token.toLowerCase() !== leaf.tokenAddress.toLowerCase()) {
       return refuse("token_mismatch", `entry ${index} names token ${token.toLowerCase()}, expected ${leaf.tokenAddress}`);

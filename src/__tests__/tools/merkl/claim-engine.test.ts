@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { getAddress, type Address } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 
 import { planMerklClaim } from "@tools/merkl/claim.js";
 import {
@@ -20,6 +20,7 @@ import {
   buildMerklClaimCalldata,
   isMerklDistributor,
   merklDistributorAddress,
+  type MerklClaimCalldata,
 } from "@tools/merkl/distributor.js";
 import type { MerklAttributedChainRewards, MerklAttributedReward } from "@tools/merkl/rewards.js";
 
@@ -180,8 +181,9 @@ describe("the pre-signature assertion", () => {
   });
 
   it("REFUSES a claim built for another wallet, which would pay them and bill us for gas", () => {
-    // The distributor accepts a proof naming anyone and pays the wallet in the
-    // leaf, not the sender. This is the assertion that makes that harmless.
+    // The distributor accepts a proof naming anyone, and who gets PAID is a
+    // separate question again (see the recipient tests below). This assertion
+    // is the one that stops Vex funding somebody else's claim.
     const foreign = buildMerklClaimCalldata(distributor, OTHER, leaves);
     const result = assertMerklClaimCalldata(foreign, WALLET, leaves);
     expect(result.failure).toBe("user_not_wallet");
@@ -207,5 +209,101 @@ describe("the pre-signature assertion", () => {
       index === 0 ? { ...leaf, proof: [`0x${"9".repeat(64)}`] } : leaf,
     );
     expect(assertMerklClaimCalldata(call, WALLET, tampered).failure).toBe("proof_mismatch");
+  });
+});
+
+/**
+ * WHO ACTUALLY GETS PAID, which `users[i]` does not answer.
+ *
+ * Verified against the deployed implementation behind the Base proxy on
+ * 2026-08-17: plain `claim(...)` passes an all-zero `recipients` array, and
+ * `_claim` then resolves the destination from `claimRecipient[user][token]`,
+ * falling back to `claimRecipient[user][address(0)]` and only then to the user.
+ * A `setClaimRecipient` executed at any earlier time therefore redirects every
+ * later plain claim. The lane signs `claimWithRecipient` so the destination is
+ * a field in the bytes, and these tests are what hold it there.
+ */
+describe("the destination is bound in the calldata, not inferred", () => {
+  const distributor = merklDistributorAddress(8453) as Address;
+  const leaves = planMerklClaim(chain([wellRow, usdcRow]), { morphoOnly: false }).leaves;
+
+  // Encoded from a local copy of the signature rather than the module's own
+  // ABI, so a test that passes proves the two agree instead of restating one.
+  const ABI = [
+    {
+      name: "claimWithRecipient",
+      type: "function",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "users", type: "address[]" },
+        { name: "tokens", type: "address[]" },
+        { name: "amounts", type: "uint256[]" },
+        { name: "proofs", type: "bytes32[][]" },
+        { name: "recipients", type: "address[]" },
+        { name: "datas", type: "bytes[]" },
+      ],
+      outputs: [],
+    },
+  ] as const;
+
+  function encode(recipients: readonly Address[], datas: readonly Hex[]): MerklClaimCalldata {
+    return {
+      to: distributor,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: ABI,
+        functionName: "claimWithRecipient",
+        args: [
+          leaves.map(() => WALLET),
+          leaves.map((leaf) => getAddress(leaf.tokenAddress)),
+          leaves.map((leaf) => BigInt(leaf.cumulativeAmountRaw)),
+          leaves.map((leaf) => leaf.proof.map((node) => node as Hex)),
+          recipients,
+          datas,
+        ],
+      }),
+    };
+  }
+
+  it("builds claimWithRecipient and binds EVERY recipient to the signing wallet", () => {
+    const built = buildMerklClaimCalldata(distributor, WALLET, leaves);
+    const decoded = decodeFunctionData({ abi: ABI, data: built.data });
+
+    expect(decoded.functionName).toBe("claimWithRecipient");
+    const [, , , , recipients, datas] = decoded.args;
+    expect(recipients).toHaveLength(leaves.length);
+    expect(recipients.every((r) => r.toLowerCase() === WALLET.toLowerCase())).toBe(true);
+    // Non-empty data would make the distributor call onClaim on the recipient.
+    expect(datas.every((d) => d === "0x")).toBe(true);
+  });
+
+  it("REFUSES a claim whose recipient was diverted to another address", () => {
+    const diverted = encode(leaves.map(() => OTHER), leaves.map(() => "0x" as Hex));
+    const result = assertMerklClaimCalldata(diverted, WALLET, leaves);
+
+    expect(result.failure).toBe("recipient_not_wallet");
+    expect(result.detail).toContain(OTHER.toLowerCase());
+  });
+
+  it("REFUSES a ZERO recipient, which hands the destination back to stored state", () => {
+    // The dangerous one, because zero LOOKS like "unset, so pay the user". In
+    // the contract it means "consult claimRecipient", which is exactly the
+    // redirect this whole change exists to defeat.
+    const zero = `0x${"0".repeat(40)}` as Address;
+    const result = assertMerklClaimCalldata(
+      encode(leaves.map(() => zero), leaves.map(() => "0x" as Hex)),
+      WALLET,
+      leaves,
+    );
+
+    expect(result.failure).toBe("recipient_not_wallet");
+    expect(result.detail).toContain("whatever the distributor was told earlier");
+  });
+
+  it("REFUSES recipient-hook data, which would call onClaim on the recipient", () => {
+    const withData = encode(leaves.map(() => WALLET), leaves.map(() => "0xdeadbeef" as Hex));
+    const result = assertMerklClaimCalldata(withData, WALLET, leaves);
+
+    expect(result.failure).toBe("recipient_hook_data_present");
   });
 });

@@ -304,13 +304,19 @@ const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
 
 /** Which Blue event proves each operation, and which way the wallet's own leg points. */
 const BORROW_OPERATION_EVIDENCE: Readonly<Record<MorphoBorrowOperation, {
-  readonly eventName: "SupplyCollateral" | "WithdrawCollateral" | "Borrow" | "Repay";
+  readonly eventName: "SupplyCollateral" | "WithdrawCollateral" | "Borrow" | "Repay" | "Supply" | "Withdraw";
   readonly direction: "in" | "out";
 }>> = {
   supply_collateral: { eventName: "SupplyCollateral", direction: "in" },
   withdraw_collateral: { eventName: "WithdrawCollateral", direction: "out" },
   borrow: { eventName: "Borrow", direction: "out" },
   repay: { eventName: "Repay", direction: "in" },
+  // The SUPPLIER SIDE. `Supply` and `Withdraw` are Blue's own events for lending
+  // the loan asset and taking it back, and they are DISTINCT events from
+  // `SupplyCollateral` / `WithdrawCollateral` - which is what lets one receipt
+  // that touched both sides of a market still prove exactly one of them.
+  supply: { eventName: "Supply", direction: "in" },
+  withdraw: { eventName: "Withdraw", direction: "out" },
 };
 
 /**
@@ -321,7 +327,9 @@ const BORROW_OPERATION_EVIDENCE: Readonly<Record<MorphoBorrowOperation, {
 const BLUE_MARKET_EVENT_ABI = blueAbi.filter(
   (entry): entry is Extract<typeof entry, { type: "event" }> =>
     entry.type === "event"
-    && (["SupplyCollateral", "WithdrawCollateral", "Borrow", "Repay"] as readonly string[]).includes(entry.name),
+    && (
+      ["SupplyCollateral", "WithdrawCollateral", "Borrow", "Repay", "Supply", "Withdraw"] as readonly string[]
+    ).includes(entry.name),
 );
 
 /** Build the `route_provenance` block a borrow row carries for its own later decode. */
@@ -344,9 +352,13 @@ export function morphoBorrowRouteProvenance(
  * wrong contract or the wrong market.
  */
 export function readMorphoBorrowRouteProvenance(
-  routeProvenance: Record<string, unknown> | null,
+  routeProvenance: Record<string, unknown> | null | undefined,
 ): MorphoBorrowDecodeProvenance | null {
-  if (routeProvenance === null) return null;
+  // ABSENT AND EMPTY ARE THE SAME ANSWER HERE. A row read through a projection
+  // that does not select `route_provenance` at all hands this `undefined`, and a
+  // decoder that dereferenced it would crash the whole fallback pass over one
+  // row rather than declining that row.
+  if (routeProvenance === null || routeProvenance === undefined) return null;
   const block = routeProvenance[MORPHO_BORROW_PROVENANCE_KEY];
   if (typeof block !== "object" || block === null) return null;
   const { operation, marketId, blueAddress } = block as Record<string, unknown>;

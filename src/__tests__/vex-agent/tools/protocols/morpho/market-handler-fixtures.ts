@@ -57,7 +57,7 @@ const POLICY = {
   marketId: MARKET_ID,
   irm: IRM,
   oracle: ORACLE,
-  oracleProvenance: "chainlink-oracle-factory",
+  oracleProvenance: "verified-oracle-legs",
   lltvRaw: "860000000000000000",
   lltvDecimal: "0.86",
   explanation: "This market's oracle was minted by the chain's pinned Morpho Chainlink oracle factory.",
@@ -80,11 +80,14 @@ const LEG_SHAPE: Readonly<Record<MorphoBorrowOperation, { direction: "in" | "out
   withdraw_collateral: { direction: "out", token: "collateral" },
   borrow: { direction: "out", token: "loan" },
   repay: { direction: "in", token: "loan" },
+  // The SUPPLIER side: the loan asset lent into the market and taken back out.
+  supply: { direction: "in", token: "loan" },
+  withdraw: { direction: "out", token: "loan" },
 };
 
 /** The operations that PULL a token, and therefore approve one. */
 function pullsFromWallet(operation: MorphoBorrowOperation): boolean {
-  return operation === "supply_collateral" || operation === "repay";
+  return operation === "supply_collateral" || operation === "repay" || operation === "supply";
 }
 
 export function defaultAmountRaw(operation: MorphoBorrowOperation): string {
