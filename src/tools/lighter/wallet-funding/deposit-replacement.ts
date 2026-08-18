@@ -1,10 +1,10 @@
-/** Exact, approval-bound proof for externally repriced Lighter deposit legs. */
+/** Exact identity and safety proof for externally repriced Lighter deposit legs. */
 
 import { encodeFunctionData, getAddress } from "viem";
 
 import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
-import { approvedFeeCeiling } from "./deposit-pre-sign.js";
+import { persistedFeeSafetyLimit } from "./deposit-pre-sign.js";
 import { buildLighterDepositCalldata } from "./deposit-calldata.js";
 import {
   LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
@@ -99,7 +99,7 @@ export function proveApprovedLighterDepositReplacement(input: {
     throw new Error(`Ethereum replacement changed the approved ${stage} calldata.`);
   }
 
-  const ceiling = approvedFeeCeiling(intent, stage);
+  const ceiling = persistedFeeSafetyLimit(intent, stage);
   if (
     replacement.maxFeePerGas === null
     || replacement.maxPriorityFeePerGas === null
@@ -108,7 +108,7 @@ export function proveApprovedLighterDepositReplacement(input: {
     || replacement.maxPriorityFeePerGas > ceiling.maxPriorityFeePerGas
     || replacement.gas * replacement.maxFeePerGas > ceiling.maxNetworkFeeWei
   ) {
-    throw new Error(`Ethereum replacement exceeds the approved ${stage} fee ceiling.`);
+    throw new Error(`Ethereum replacement exceeds the persisted ${stage} fee safety limit.`);
   }
 
   const observedAt = input.observedAt ?? new Date();

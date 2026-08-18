@@ -137,19 +137,9 @@ const LIGHTER_DEPOSIT_PREVIEW_KEYS = [
   "preflightMinimumTransferUnits",
   "preflightWalletBalanceUnits",
   "preflightWalletAllowanceUnits",
-  "preflightWalletNativeBalanceWei",
   "preflightEthereumBlockNumber",
   "preflightLighterBlockNumber",
   "preflightObservedAt",
-  "preflightApproveGasLimit",
-  "preflightDepositGasLimit",
-  "preflightMaxFeePerGasWei",
-  "preflightMaxPriorityFeePerGasWei",
-  "preflightApproveMaxFeeWei",
-  "preflightDepositMaxFeeWei",
-  "preflightTotalMaxFeeWei",
-  "preflightNativeReserveWei",
-  "preflightRequiredNativeBalanceWei",
   "approvalRequired",
   "summary",
   "scopeNote",
@@ -454,51 +444,16 @@ function validateLighterDepositFollowUp(
     !isPositiveIntegerString(criticalArgs.preflightMinimumTransferUnits) ||
     !isNonNegativeIntegerString(criticalArgs.preflightWalletBalanceUnits) ||
     !isNonNegativeIntegerString(criticalArgs.preflightWalletAllowanceUnits) ||
-    !isPositiveIntegerString(criticalArgs.preflightWalletNativeBalanceWei) ||
     !isPositiveIntegerString(criticalArgs.preflightEthereumBlockNumber) ||
     !isNonNegativeIntegerString(criticalArgs.preflightLighterBlockNumber) ||
     typeof criticalArgs.preflightObservedAt !== "string" ||
     !Number.isFinite(Date.parse(criticalArgs.preflightObservedAt)) ||
-    !isNonNegativeIntegerString(criticalArgs.preflightApproveGasLimit) ||
-    !isPositiveIntegerString(criticalArgs.preflightDepositGasLimit) ||
-    !isPositiveIntegerString(criticalArgs.preflightMaxFeePerGasWei) ||
-    !isNonNegativeIntegerString(criticalArgs.preflightMaxPriorityFeePerGasWei) ||
-    !isNonNegativeIntegerString(criticalArgs.preflightApproveMaxFeeWei) ||
-    !isPositiveIntegerString(criticalArgs.preflightDepositMaxFeeWei) ||
-    !isPositiveIntegerString(criticalArgs.preflightTotalMaxFeeWei) ||
-    !isPositiveIntegerString(criticalArgs.preflightNativeReserveWei) ||
-    !isPositiveIntegerString(criticalArgs.preflightRequiredNativeBalanceWei) ||
     typeof criticalArgs.approvalRequired !== "boolean" ||
     BigInt(criticalArgs.preflightWalletBalanceUnits) < BigInt(criticalArgs.amountUnits) ||
     BigInt(criticalArgs.preflightMinimumTransferUnits) > BigInt(criticalArgs.amountUnits) ||
     criticalArgs.approvalRequired !== (
       BigInt(criticalArgs.preflightWalletAllowanceUnits) < BigInt(criticalArgs.amountUnits)
     ) ||
-    (criticalArgs.approvalRequired
-      ? BigInt(criticalArgs.preflightApproveGasLimit) === 0n
-      : BigInt(criticalArgs.preflightApproveGasLimit) !== 0n) ||
-    BigInt(criticalArgs.preflightMaxPriorityFeePerGasWei)
-      > BigInt(criticalArgs.preflightMaxFeePerGasWei) ||
-    BigInt(criticalArgs.preflightApproveMaxFeeWei) !==
-      BigInt(criticalArgs.preflightApproveGasLimit)
-        * BigInt(criticalArgs.preflightMaxFeePerGasWei) ||
-    BigInt(criticalArgs.preflightDepositMaxFeeWei) !==
-      BigInt(criticalArgs.preflightDepositGasLimit)
-        * BigInt(criticalArgs.preflightMaxFeePerGasWei) ||
-    BigInt(criticalArgs.preflightTotalMaxFeeWei) !==
-      BigInt(criticalArgs.preflightApproveMaxFeeWei)
-        + BigInt(criticalArgs.preflightDepositMaxFeeWei) ||
-    BigInt(criticalArgs.preflightNativeReserveWei) !== (
-      BigInt(criticalArgs.preflightApproveMaxFeeWei)
-        > BigInt(criticalArgs.preflightDepositMaxFeeWei)
-        ? BigInt(criticalArgs.preflightApproveMaxFeeWei)
-        : BigInt(criticalArgs.preflightDepositMaxFeeWei)
-    ) ||
-    BigInt(criticalArgs.preflightRequiredNativeBalanceWei) !==
-      BigInt(criticalArgs.preflightTotalMaxFeeWei)
-        + BigInt(criticalArgs.preflightNativeReserveWei) ||
-    BigInt(criticalArgs.preflightWalletNativeBalanceWei)
-      < BigInt(criticalArgs.preflightRequiredNativeBalanceWei) ||
     typeof criticalArgs.summary !== "string" ||
     criticalArgs.summary.trim().length === 0 ||
     criticalArgs.summary.length > 600 ||

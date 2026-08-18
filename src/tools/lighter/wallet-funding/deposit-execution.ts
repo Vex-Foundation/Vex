@@ -25,7 +25,6 @@ import type {
 import { effectiveApproveTxHash } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard.js";
 import {
-  approvedFeeCeiling,
   type LighterDepositPreSignStage,
   type LighterDepositSignedFeeCeiling,
 } from "./deposit-pre-sign.js";
@@ -64,7 +63,7 @@ export interface LighterDepositExecutionDeps {
   readonly assertFreshPreSignPreflight: (
     intent: LighterOnboardingIntentRow,
     stage: LighterDepositPreSignStage,
-  ) => Promise<void>;
+  ) => Promise<LighterDepositSignedFeeCeiling>;
   /**
    * Run the ERC-20 approval leg if the deposit contract's allowance is short.
    * `onHashStaged` is called with the tx hash BEFORE broadcast so the caller
@@ -177,8 +176,6 @@ export async function executeApprovedLighterDeposit(input: {
 
   let amountUnits: bigint;
   let calldata: ReturnType<typeof buildLighterDepositCalldata>;
-  let approveFeeCeiling: LighterDepositSignedFeeCeiling;
-  let depositFeeCeiling: LighterDepositSignedFeeCeiling;
   try {
     if (!/^[1-9][0-9]*$/.test(intent.amountUnits)) {
       throw new Error("Deposit amount is not a positive integer.");
@@ -191,8 +188,6 @@ export async function executeApprovedLighterDeposit(input: {
       route: "perps",
       assetIndex: intent.assetIndex,
     });
-    approveFeeCeiling = approvedFeeCeiling(intent, "approve");
-    depositFeeCeiling = approvedFeeCeiling(intent, "deposit");
   } catch (err) {
     return { status: "failed", stage: "approve", reason: errText(err) };
   }
@@ -205,7 +200,7 @@ export async function executeApprovedLighterDeposit(input: {
   let confirmedApprovalBlockNumber: bigint | undefined;
   if (!resumingAfterConfirmedApproval) try {
     await deps.assertExecutionLease();
-    await deps.assertFreshPreSignPreflight(intent, "approve");
+    const approveFeeCeiling = await deps.assertFreshPreSignPreflight(intent, "approve");
     const approve = await deps.runApproveLegIfNeeded({
       walletAddress: intent.walletAddress,
       spender: intent.depositContract,
@@ -353,7 +348,7 @@ export async function executeApprovedLighterDeposit(input: {
   let depositEvidence: LighterDepositL1Evidence | null = null;
   try {
     await deps.assertExecutionLease();
-    await deps.assertFreshPreSignPreflight(intent, "deposit");
+    const depositFeeCeiling = await deps.assertFreshPreSignPreflight(intent, "deposit");
     const deposit = await deps.runDepositLeg({
       walletAddress: intent.walletAddress,
       to: calldata.to,

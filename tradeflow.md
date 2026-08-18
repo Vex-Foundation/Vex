@@ -593,6 +593,38 @@ and no transaction or order was signed or submitted. A live app walkthrough of
 the new funding-decision-to-card routing remains the acceptance proof for this
 slice.
 
+The tenth Phase 4 slice removes short-lived Ethereum gas quotes from Lighter
+deposit consent. The approval card is now bound to the exact deposit amount,
+selected wallet, settlement token, destination contract, and deposit-only
+scope; it no longer displays or records gas limits, per-gas prices, maximum
+network fees, native-fee reserves, or required ETH as approval fields.
+
+After approval, Vex re-reads the live public preflight beside each signer leg
+and signs with the current EIP-1559 fee estimate. Normal fee movement between
+the card and execution therefore does not invalidate consent. A four-times
+live-quote sanity boundary remains internal to the signer path only to reject
+abnormal provider values; it is derived after approval and is not shown on or
+bound into the card. Deposit amount, wallet, chain, gateway, asset, route, and
+the possible addition of an ERC-20 approval transaction remain fail-closed.
+
+The pristine approved-intent retry path now replaces stale public preflight
+evidence before issuing its fresh approval card. This repairs the observed
+case where fee movement stopped execution before signing or broadcast and the
+same no-transaction intent then remained unresolved. Any staged transaction
+hash or settlement evidence still blocks this retry and routes to
+reconciliation.
+
+Verification passed 107 focused approval/disclosure/execution/repository tests,
+the broader 368-test Lighter and shared staged-signer set, root type checking
+and production build, Electron type ratchet and process-boundary checks, all
+production bundles, artifact validation, migration mirroring, and all six
+packaged Lighter signer targets. The full root suite completed with 12,981
+passing tests; its 13 failures were unrelated existing live-network and
+manifest checks. The local shell remains below the repository's declared
+Node/pnpm versions. No wallet was unlocked and no transaction was signed or
+broadcast. A live approved deposit retry is still required as the acceptance
+proof for this slice.
+
 ### Managed onboarding UX status — 2026-08-17
 
 The normal-user entry path is implemented. Requests such as "set up my Lighter

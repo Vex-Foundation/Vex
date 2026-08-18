@@ -478,7 +478,7 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
   });
 
-  it("revalidates live fee exposure before lease acquisition and key resolution", async () => {
+  it("does not bind approval to an ordinary live fee change", async () => {
     mocks.readDepositPreflight.mockResolvedValueOnce({
       ...(await mocks.readDepositPreflight()),
       observedAt: new Date(),
@@ -491,8 +491,8 @@ describe("lighter.deposit execution lease", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("exceeds the user's approved ceiling");
-    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(result.output).toContain("owns this Ethereum wallet execution slot");
+    expect(mocks.acquireExecutionLease).toHaveBeenCalledTimes(1);
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
@@ -846,6 +846,10 @@ describe("lighter.deposit.prepare", () => {
     expect(mocks.renewPristineApproved).toHaveBeenCalledWith({
       intentId: gateClosedIntent.intentId,
       sessionId: "session-1",
+      preflight: expect.objectContaining({
+        amountUnits: "11000000",
+        maxFeePerGasWei: "20000000000",
+      }),
       expiresAt: expect.any(Date),
     });
     expect(result.preparedActionFollowUp).toMatchObject({
@@ -907,10 +911,11 @@ describe("lighter.deposit.prepare", () => {
       approvalPreview: {
         criticalArgs: {
           approvalRequired: false,
-          preflightApproveGasLimit: "0",
         },
       },
     });
+    expect(result.preparedActionFollowUp?.approvalPreview.criticalArgs)
+      .not.toHaveProperty("preflightApproveGasLimit");
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
-  approvedFeeCeiling,
   assertLighterDepositPreflightWithinApproval,
+  persistedFeeSafetyLimit,
+  runtimeFeeSafetyLimit,
 } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import type { LighterDepositPreflightSnapshot } from "@tools/lighter/wallet-funding/deposit-preflight.js";
 
@@ -154,9 +155,6 @@ describe("Lighter deposit pre-sign revalidation", () => {
 
   it.each([
     ["changed destination", { walletAddress: "0x1111111111111111111111111111111111111111" }],
-    ["higher gas", { approveGasLimit: "100001", approveMaxFeeWei: "1900019000000000" }],
-    ["higher per-gas fee", { maxFeePerGasWei: "20000000001" }],
-    ["higher leg maximum", { approveMaxFeeWei: "2000000000000001" }],
     ["older head", { ethereumBlockNumber: "23456788" }],
   ])("refuses %s", (_name, override) => {
     expect(() => assertLighterDepositPreflightWithinApproval({
@@ -165,6 +163,25 @@ describe("Lighter deposit pre-sign revalidation", () => {
       stage: "execution",
       now: NOW,
     })).toThrow(/revalidation refused/);
+  });
+
+  it("accepts ordinary live gas movement because fees are selected after approval", () => {
+    expect(() => assertLighterDepositPreflightWithinApproval({
+      intent: intent(),
+      fresh: fresh({
+        approveGasLimit: "110000",
+        depositGasLimit: "210000",
+        maxFeePerGasWei: "25000000000",
+        maxPriorityFeePerGasWei: "2500000000",
+        approveMaxFeeWei: "2750000000000000",
+        depositMaxFeeWei: "5250000000000000",
+        totalMaxFeeWei: "8000000000000000",
+        nativeReserveWei: "5250000000000000",
+        requiredNativeBalanceWei: "13250000000000000",
+      }),
+      stage: "execution",
+      now: NOW,
+    })).not.toThrow();
   });
 
   it("refuses stale refreshed evidence", () => {
@@ -176,8 +193,17 @@ describe("Lighter deposit pre-sign revalidation", () => {
     })).toThrow(/stale/);
   });
 
-  it("projects exact signer ceilings from the approved snapshot", () => {
-    expect(approvedFeeCeiling(intent(), "deposit")).toEqual({
+  it("derives a wide signer safety limit from the current live quote", () => {
+    expect(runtimeFeeSafetyLimit(fresh(), "deposit")).toEqual({
+      gasLimit: 190000n,
+      maxFeePerGas: 76000000000n,
+      maxPriorityFeePerGas: 7600000000n,
+      maxNetworkFeeWei: 14440000000000000n,
+    });
+  });
+
+  it("projects persisted safety data only for replacement verification", () => {
+    expect(persistedFeeSafetyLimit(intent(), "deposit")).toEqual({
       gasLimit: 200000n,
       maxFeePerGas: 20000000000n,
       maxPriorityFeePerGas: 2000000000n,

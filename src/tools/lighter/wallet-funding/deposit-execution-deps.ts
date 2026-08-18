@@ -39,7 +39,10 @@ import {
   LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE,
   readLighterDepositPreflight,
 } from "./deposit-preflight.js";
-import { assertLighterDepositPreflightWithinApproval } from "./deposit-pre-sign.js";
+import {
+  assertLighterDepositPreflightWithinApproval,
+  runtimeFeeSafetyLimit,
+} from "./deposit-pre-sign.js";
 import type { LighterDepositSignedFeeCeiling } from "./deposit-pre-sign.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
@@ -106,6 +109,7 @@ export function buildLighterDepositExecutionDeps(
         );
       }
       assertLighterDepositPreflightWithinApproval({ intent, fresh, stage });
+      return runtimeFeeSafetyLimit(fresh, stage === "deposit" ? "deposit" : "approve");
     },
 
     async runApproveLegIfNeeded({

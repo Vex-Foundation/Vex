@@ -176,7 +176,20 @@ function deps(overrides: Partial<LighterDepositExecutionDeps> = {}): LighterDepo
   return {
     depositFeePreflightComplete: () => true,
     assertExecutionLease: vi.fn().mockResolvedValue(undefined),
-    assertFreshPreSignPreflight: vi.fn().mockResolvedValue(undefined),
+    assertFreshPreSignPreflight: vi.fn().mockImplementation(async (_intent, stage) =>
+      stage === "deposit"
+        ? {
+            gasLimit: 210000n,
+            maxFeePerGas: 88000000000n,
+            maxPriorityFeePerGas: 8000000000n,
+            maxNetworkFeeWei: 18480000000000000n,
+          }
+        : {
+            gasLimit: 110000n,
+            maxFeePerGas: 84000000000n,
+            maxPriorityFeePerGas: 8000000000n,
+            maxNetworkFeeWei: 9240000000000000n,
+          }),
     runApproveLegIfNeeded: vi.fn(async ({ onHashStaged }) => {
       await onHashStaged(staged(APPROVE_HASH, 7));
       return { skipped: false as const, txHash: APPROVE_HASH, outcome: "confirmed" as const };
@@ -246,18 +259,18 @@ describe("executeApprovedLighterDeposit", () => {
     );
     expect(d.runApproveLegIfNeeded).toHaveBeenCalledWith(expect.objectContaining({
       feeCeiling: {
-        gasLimit: 100000n,
-        maxFeePerGas: 20000000000n,
-        maxPriorityFeePerGas: 2000000000n,
-        maxNetworkFeeWei: 2000000000000000n,
+        gasLimit: 110000n,
+        maxFeePerGas: 84000000000n,
+        maxPriorityFeePerGas: 8000000000n,
+        maxNetworkFeeWei: 9240000000000000n,
       },
     }));
     expect(d.runDepositLeg).toHaveBeenCalledWith(expect.objectContaining({
       feeCeiling: {
-        gasLimit: 200000n,
-        maxFeePerGas: 20000000000n,
-        maxPriorityFeePerGas: 2000000000n,
-        maxNetworkFeeWei: 4000000000000000n,
+        gasLimit: 210000n,
+        maxFeePerGas: 88000000000n,
+        maxPriorityFeePerGas: 8000000000n,
+        maxNetworkFeeWei: 18480000000000000n,
       },
     }));
     expect(d.assertFreshPreSignPreflight).toHaveBeenNthCalledWith(1, expect.anything(), "approve");

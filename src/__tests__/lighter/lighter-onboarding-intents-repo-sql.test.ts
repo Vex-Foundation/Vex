@@ -237,7 +237,7 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(params).toEqual(["core", ROW.wallet_address]);
   });
 
-  it("renews only a pristine approved deposit without changing its audit binding", async () => {
+  it("renews only a pristine approved deposit with fresh live preflight data", async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const approvedRow = {
       ...ROW,
@@ -254,6 +254,7 @@ describe("lighter onboarding intent creation SQL", () => {
     const result = await repo.renewPristineApprovedDepositIntentWith(client, {
       intentId: ROW.intent_id,
       sessionId: ROW.session_id,
+      preflight: INPUT.preflight,
       expiresAt,
     });
 
@@ -272,7 +273,37 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("lighter_tx_hash IS NULL");
     expect(sql).toContain("failure_reason IS NULL");
     expect(sql).not.toContain("approval_id =");
-    expect(params).toEqual([ROW.intent_id, ROW.session_id, expiresAt]);
+    expect(sql).toContain("preflight_max_fee_per_gas_wei = $16");
+    expect(params).toEqual([
+      ROW.intent_id,
+      ROW.session_id,
+      INPUT.preflight.walletAddress,
+      INPUT.preflight.settlementTokenAddress,
+      INPUT.preflight.settlementTokenSymbol,
+      INPUT.preflight.settlementTokenDecimals,
+      INPUT.preflight.minimumTransferUnits,
+      INPUT.preflight.walletBalanceUnits,
+      INPUT.preflight.walletAllowanceUnits,
+      INPUT.preflight.walletNativeBalanceWei,
+      INPUT.preflight.ethereumBlockNumber,
+      INPUT.preflight.lighterBlockNumber,
+      INPUT.preflight.observedAt,
+      INPUT.preflight.approveGasLimit,
+      INPUT.preflight.depositGasLimit,
+      INPUT.preflight.maxFeePerGasWei,
+      INPUT.preflight.maxPriorityFeePerGasWei,
+      INPUT.preflight.approveMaxFeeWei,
+      INPUT.preflight.depositMaxFeeWei,
+      INPUT.preflight.totalMaxFeeWei,
+      INPUT.preflight.nativeReserveWei,
+      INPUT.preflight.requiredNativeBalanceWei,
+      expiresAt,
+      INPUT.preflight.chainId,
+      INPUT.preflight.gatewayAddress,
+      INPUT.preflight.assetIndex,
+      INPUT.preflight.routeType,
+      INPUT.preflight.amountUnits,
+    ]);
   });
 
   it("renews a confirmed allowance only as a fresh deposit-only approval", async () => {

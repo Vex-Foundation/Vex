@@ -86,9 +86,9 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.routeLabel).toBe("perps");
     expect(d.environmentLabel).toBe("Lighter Core");
     expect(d.summary).toContain("Deposit 11.52 USDC");
-    expect(d.maximumNetworkFeeDisplay).toBe("0.006 ETH");
-    expect(d.requiredNativeBalanceDisplay).toBe("0.01 ETH");
-    expect(d.maxFeePerGasDisplay).toBe("20 gwei");
+    expect(d).not.toHaveProperty("maximumNetworkFeeDisplay");
+    expect(d).not.toHaveProperty("requiredNativeBalanceDisplay");
+    expect(d).not.toHaveProperty("maxFeePerGasDisplay");
   });
 
   it("states the deposit-only scope (no trade, no withdrawal)", () => {
@@ -98,12 +98,12 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.scopeNote).toMatch(/withdrawal/i);
   });
 
-  it("labels the account-creation and gas semantics", () => {
+  it("labels account creation without disclosing a stale gas quote", () => {
     const d = buildLighterDepositApprovalDisclosure(depositIntent());
     expect(d.createsAccountNote).toMatch(/first Lighter deposit/i);
-    expect(d.gasNote).toMatch(/ETH/);
-    expect(d.gasNote).toContain("Maximum Ethereum network-fee exposure");
-    expect(d.gasNote).toContain("approve gas limit 100000");
+    expect(d).not.toHaveProperty("gasNote");
+    expect(d).not.toHaveProperty("approveGasLimit");
+    expect(d).not.toHaveProperty("maxFeePerGasWei");
   });
 
   it("refuses a non-deposit capability", () => {

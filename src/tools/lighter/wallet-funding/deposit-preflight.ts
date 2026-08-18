@@ -2,8 +2,10 @@
  * Read-only Phase 2 preflight for an Ethereum-mainnet Lighter Core deposit.
  *
  * This module binds the selected wallet and requested amount to live Ethereum
- * balances/allowance, exact EIP-1559 fee ceilings, and Lighter's live
- * gateway/asset metadata. It owns no signer and cannot submit a transaction.
+ * balances/allowance, current EIP-1559 fee evidence, and Lighter's live
+ * gateway/asset metadata. Gas is not user-approval data; the signer refreshes
+ * it again after approval. This module owns no signer and cannot submit a
+ * transaction.
  */
 
 import {
@@ -74,7 +76,7 @@ const ERC20_PREFLIGHT_ABI = [
 const ETHEREUM_USDC_ALLOWANCE_STORAGE_SLOT = 10n;
 
 /**
- * Independent compile-time boundary for the verified fee, replacement, and
+ * Independent compile-time boundary for the verified fee-read, replacement, and
  * canonical-receipt enforcement path. These checks are permanent and cannot be
  * weakened by configuration.
  */
@@ -315,7 +317,7 @@ export function proveLighterDepositPreflight(
     || evidence.ethereum.maxPriorityFeePerGasWei < 0n
     || evidence.ethereum.maxPriorityFeePerGasWei > evidence.ethereum.maxFeePerGasWei
   ) {
-    throw preflightError("Ethereum returned invalid EIP-1559 fee ceilings.");
+    throw preflightError("Ethereum returned invalid EIP-1559 fee estimates.");
   }
 
   const approveGasLimit = approvalRequired
@@ -325,8 +327,9 @@ export function proveLighterDepositPreflight(
   const approveMaxFeeWei = approveGasLimit * evidence.ethereum.maxFeePerGasWei;
   const depositMaxFeeWei = depositGasLimit * evidence.ethereum.maxFeePerGasWei;
   const totalMaxFeeWei = approveMaxFeeWei + depositMaxFeeWei;
-  // Keep enough ETH beyond this plan's maximum for one comparable follow-up
-  // transaction. This reserve is explicit and approval-visible.
+  // Require enough ETH for the current two-leg estimate plus one comparable
+  // follow-up transaction. This is internal preparation evidence, not a fee
+  // quote shown on or bound into the user's approval card.
   const nativeReserveWei = approveMaxFeeWei > depositMaxFeeWei
     ? approveMaxFeeWei
     : depositMaxFeeWei;

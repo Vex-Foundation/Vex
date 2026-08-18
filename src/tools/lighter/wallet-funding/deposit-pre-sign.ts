@@ -1,9 +1,11 @@
 /**
- * Approval-bound revalidation for a Lighter deposit.
+ * Signer-adjacent revalidation for an approved Lighter deposit.
  *
  * This module is public-read only. It rejects changed identity, a newly
- * required approval leg, stale evidence, and any gas or EIP-1559 ceiling above
- * what the user approved. It owns no signer and cannot submit a transaction.
+ * required approval leg, and stale evidence. Gas is intentionally not part of
+ * the user approval: a fresh EIP-1559 estimate is selected beside the signer.
+ * A generous live-data-derived limit remains as a provider sanity boundary.
+ * This module owns no signer and cannot submit a transaction.
  */
 
 import { getAddress } from "viem";
@@ -12,6 +14,7 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 import type { LighterDepositPreflightSnapshot } from "./deposit-preflight.js";
 
 export const LIGHTER_DEPOSIT_PRE_SIGN_MAX_AGE_MS = 30_000;
+export const LIGHTER_DEPOSIT_RUNTIME_FEE_SANITY_MULTIPLIER = 4n;
 
 export type LighterDepositPreSignStage = "execution" | "approve" | "deposit";
 
@@ -81,13 +84,6 @@ export function assertLighterDepositPreflightWithinApproval(input: {
     throw revalidationError("Ethereum head moved behind the approved preflight block.");
   }
 
-  const approved = approvedFeeCeiling(intent, stage === "deposit" ? "deposit" : "approve");
-  const freshGasLimit = BigInt(
-    stage === "deposit" ? fresh.depositGasLimit : fresh.approveGasLimit,
-  );
-  const freshMaxFee = BigInt(
-    stage === "deposit" ? fresh.depositMaxFeeWei : fresh.approveMaxFeeWei,
-  );
   if (
     stage !== "deposit"
     && fresh.approvalRequired
@@ -97,17 +93,49 @@ export function assertLighterDepositPreflightWithinApproval(input: {
       "USDC allowance fell below the approved amount and would add an unapproved transaction.",
     );
   }
-  if (
-    freshGasLimit > approved.gasLimit
-    || BigInt(fresh.maxFeePerGasWei) > approved.maxFeePerGas
-    || BigInt(fresh.maxPriorityFeePerGasWei) > approved.maxPriorityFeePerGas
-    || freshMaxFee > approved.maxNetworkFeeWei
-  ) {
-    throw revalidationError("Live gas or fee exposure exceeds the user's approved ceiling.");
-  }
 }
 
-export function approvedFeeCeiling(
+/**
+ * Build a wide abnormal-value boundary from the signer-adjacent live quote.
+ * The transaction still signs with the current quote, not this upper bound.
+ */
+export function runtimeFeeSafetyLimit(
+  fresh: LighterDepositPreflightSnapshot,
+  stage: "approve" | "deposit",
+): LighterDepositSignedFeeCeiling {
+  const gasLimit = parseRequiredInteger(
+    stage === "approve" ? fresh.approveGasLimit : fresh.depositGasLimit,
+    `${stage} gas limit`,
+  );
+  const currentMaxFeePerGas = parseRequiredInteger(
+    fresh.maxFeePerGasWei,
+    "current maximum fee per gas",
+  );
+  const currentMaxPriorityFeePerGas = parseRequiredInteger(
+    fresh.maxPriorityFeePerGasWei,
+    "current maximum priority fee per gas",
+  );
+  const maxFeePerGas = currentMaxFeePerGas * LIGHTER_DEPOSIT_RUNTIME_FEE_SANITY_MULTIPLIER;
+  const maxPriorityFeePerGas = currentMaxPriorityFeePerGas
+    * LIGHTER_DEPOSIT_RUNTIME_FEE_SANITY_MULTIPLIER;
+  if (
+    (stage === "deposit" && gasLimit === 0n)
+    || currentMaxFeePerGas === 0n
+    || currentMaxPriorityFeePerGas > currentMaxFeePerGas
+    || maxPriorityFeePerGas > maxFeePerGas
+  ) {
+    throw revalidationError(`The live ${stage} fee estimate is inconsistent.`);
+  }
+  return {
+    gasLimit,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+    maxNetworkFeeWei: gasLimit * maxFeePerGas,
+  };
+}
+
+/** Historical boundary used only to validate an externally repriced tx. */
+export function persistedFeeSafetyLimit(
   intent: LighterDepositApprovedSnapshot,
   stage: "approve" | "deposit",
 ): LighterDepositSignedFeeCeiling {
@@ -137,14 +165,14 @@ export function approvedFeeCeiling(
     || maxPriorityFeePerGas > maxFeePerGas
     || maxNetworkFeeWei !== gasLimit * maxFeePerGas
   ) {
-    throw revalidationError(`The approved ${stage} fee ceiling is inconsistent.`);
+    throw revalidationError(`The persisted ${stage} fee safety data is inconsistent.`);
   }
   return { gasLimit, maxFeePerGas, maxPriorityFeePerGas, maxNetworkFeeWei };
 }
 
 function parseRequiredInteger(value: string | null, field: string): bigint {
   if (value === null || !/^(?:0|[1-9][0-9]*)$/.test(value)) {
-    throw revalidationError(`The approved ${field} is missing or invalid.`);
+    throw revalidationError(`The ${field} is missing or invalid.`);
   }
   return BigInt(value);
 }

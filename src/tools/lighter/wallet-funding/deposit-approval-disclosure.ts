@@ -12,7 +12,6 @@
 import { formatLighterIntegerAmount } from "@tools/lighter/order-preview.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
-import { formatEther, formatGwei } from "viem";
 import {
   LIGHTER_SETTLEMENT_ASSET,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
@@ -40,28 +39,14 @@ export interface LighterDepositApprovalDisclosure {
   readonly minimumTransferUnits: string;
   readonly walletBalanceUnits: string;
   readonly walletAllowanceUnits: string;
-  readonly walletNativeBalanceWei: string;
   readonly ethereumBlockNumber: string;
   readonly lighterBlockNumber: string;
   readonly preflightObservedAt: string;
-  readonly approveGasLimit: string;
-  readonly depositGasLimit: string;
-  readonly maxFeePerGasWei: string;
-  readonly maxPriorityFeePerGasWei: string;
-  readonly approveMaxFeeWei: string;
-  readonly depositMaxFeeWei: string;
-  readonly totalMaxFeeWei: string;
-  readonly nativeReserveWei: string;
-  readonly requiredNativeBalanceWei: string;
-  readonly maximumNetworkFeeDisplay: string;
-  readonly requiredNativeBalanceDisplay: string;
-  readonly maxFeePerGasDisplay: string;
   readonly creditAddress: string;
   readonly depositContract: string;
   readonly chainLabel: string;
   readonly routeLabel: string;
   readonly createsAccountNote: string;
-  readonly gasNote: string;
   readonly scopeNote: string;
   readonly summary: string;
 }
@@ -166,33 +151,15 @@ export function buildLighterDepositApprovalDisclosure(
     minimumTransferUnits: intent.preflightMinimumTransferUnits,
     walletBalanceUnits: intent.preflightWalletBalanceUnits,
     walletAllowanceUnits: intent.preflightWalletAllowanceUnits,
-    walletNativeBalanceWei: intent.preflightWalletNativeBalanceWei,
     ethereumBlockNumber: intent.preflightEthereumBlockNumber,
     lighterBlockNumber: intent.preflightLighterBlockNumber,
     preflightObservedAt: intent.preflightObservedAt.toISOString(),
-    approveGasLimit: intent.preflightApproveGasLimit,
-    depositGasLimit: intent.preflightDepositGasLimit,
-    maxFeePerGasWei: intent.preflightMaxFeePerGasWei,
-    maxPriorityFeePerGasWei: intent.preflightMaxPriorityFeePerGasWei,
-    approveMaxFeeWei: intent.preflightApproveMaxFeeWei,
-    depositMaxFeeWei: intent.preflightDepositMaxFeeWei,
-    totalMaxFeeWei: intent.preflightTotalMaxFeeWei,
-    nativeReserveWei: intent.preflightNativeReserveWei,
-    requiredNativeBalanceWei: intent.preflightRequiredNativeBalanceWei,
-    maximumNetworkFeeDisplay: `${formatEther(totalMaxFee)} ETH`,
-    requiredNativeBalanceDisplay: `${formatEther(requiredNativeBalance)} ETH`,
-    maxFeePerGasDisplay: `${formatGwei(maxFeePerGas)} gwei`,
     creditAddress: intent.depositTo,
     depositContract: intent.depositContract,
     chainLabel,
     routeLabel,
     createsAccountNote:
       "If this is your wallet's first Lighter deposit, it creates a new Lighter account owned by this wallet.",
-    gasNote:
-      `Maximum Ethereum network-fee exposure is ${formatEther(totalMaxFee)} ETH `
-      + `(approve gas limit ${approveGasLimit}, deposit gas limit ${depositGasLimit}, `
-      + `max fee ${formatGwei(maxFeePerGas)} gwei per gas). The wallet must retain `
-      + `${formatEther(requiredNativeBalance)} ETH including a ${formatEther(nativeReserve)} ETH safety reserve.`,
     scopeNote:
       "This approval authorizes only a deposit into your own Lighter account. It does not place any trade or authorize any withdrawal.",
     summary:
