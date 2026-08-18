@@ -538,7 +538,7 @@ describe("Lighter agent read handlers", () => {
     expect(data.tradingKeyRegistered).toBe(false);
     expect(data.plan).toMatchObject({
       ready: false,
-      legs: [{ kind: "register_trading_key" }],
+      legs: [{ kind: "reconcile_trading_access" }],
     });
     expect(data.userGuidance).not.toContain("they are ready to trade");
   });
@@ -633,8 +633,13 @@ describe("Lighter agent read handlers", () => {
       reason: "nonce_not_reservable",
       nonceReservable: false,
     });
-    expect(data.plan).toMatchObject({ ready: false });
+    expect(data.plan).toMatchObject({
+      ready: false,
+      legs: [{ kind: "reconcile_order_state" }],
+    });
     expect(data.userGuidance).not.toContain("they are ready to trade");
+    expect(data.userGuidance).toContain("lighter.order.status");
+    expect(data.userGuidance).toContain("Do not prepare a key registration");
   });
 
   it("routes key-registration status only through evidence-only reconciliation", async () => {

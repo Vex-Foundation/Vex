@@ -82,7 +82,10 @@ import {
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
-import { readLighterManagedTradingReadiness } from "../managed-trading-readiness.js";
+import {
+  readLighterManagedTradingReadiness,
+  type LighterManagedTradingReadiness,
+} from "../managed-trading-readiness.js";
 
 // Resolves the account index and, when one can be derived from the saved trading
 // key, a short-lived read-only auth token for an authenticated account read.
@@ -431,6 +434,30 @@ async function resolvePreviewApiKeyIndex(
   }
 }
 
+function managedReadinessRecoveryLeg(
+  readiness: LighterManagedTradingReadiness,
+): { readonly kind: string; readonly reason: string } {
+  if (readiness.reason === "active_managed_credential_missing") {
+    return {
+      kind: "register_trading_key",
+      reason: "Create and register locally encrypted Vex trading access before any order can be signed.",
+    };
+  }
+  if (
+    readiness.reason === "nonce_not_synchronized"
+    || readiness.reason === "nonce_not_reservable"
+  ) {
+    return {
+      kind: "reconcile_order_state",
+      reason: "Reconcile unresolved local order and nonce evidence before preparing another order or key registration.",
+    };
+  }
+  return {
+    kind: "reconcile_trading_access",
+    reason: "Reconcile the existing managed credential from durable vault and exact provider evidence; do not register a replacement key.",
+  };
+}
+
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.account.onboarding.status": async (params, context) => {
     const environment = readEnvironment(params);
@@ -491,6 +518,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
       const managedTradingAccessActive = status.tradingKeyRegistered
         && managedTradingReadiness?.ready === true;
+      const readinessRecoveryLeg = managedTradingReadiness?.ready === false
+        ? managedReadinessRecoveryLeg(managedTradingReadiness)
+        : null;
       const plan = !managedTradingAccessActive
         && !status.plan.legs.some((leg) => leg.kind === "register_trading_key")
         ? {
@@ -498,7 +528,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             ready: false,
             legs: [
               ...status.plan.legs,
-              {
+              readinessRecoveryLeg ?? {
                 kind: "register_trading_key",
                 reason: "Create and register locally encrypted Vex trading access before any order can be signed.",
               },
@@ -508,6 +538,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const needsFunding = BigInt(status.accountCollateralUnits) < requiredCollateralUnits;
       const userGuidance = plan.ready && managedTradingAccessActive
         ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
+        : managedTradingReadiness?.reason === "nonce_not_reservable"
+          ? "Run lighter.order.status without an intent id to reconcile every unresolved local order and nonce reservation for Core. Do not prepare a key registration or another order until the nonce is reservable."
+          : readinessRecoveryLeg?.kind === "reconcile_trading_access"
+            ? "Reconcile the existing managed trading-access lifecycle from durable and provider evidence. Do not prepare or register a replacement key while readiness verification is unresolved."
         : !depositAmountProvided && needsFunding
           ? `Ask exactly one setup question: \"How much USDC do you want to deposit? Lighter's minimum is ${LIGHTER_DEPOSIT_MIN_USDC} USDC.\" Then prepare the deposit in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
           : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
