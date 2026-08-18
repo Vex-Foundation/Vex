@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { closePool, execute, getPool } from "@vex-agent/db/client.js";
+import { closePool, execute, getPool, queryOne } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
@@ -116,6 +116,57 @@ d("lighter_onboarding_intents repo", () => {
     expect(intent.executionState).toBe("approval_pending");
     expect(intent.assetIndex).toBe(3);
     expect(intent.amountUnits).toBe("11000000");
+  });
+
+  it("atomically admits only one concurrent wallet when one deposit remains under the rolling cap", async () => {
+    const baseline = await queryOne<{ used_units: string }>(
+      `SELECT COALESCE(SUM(amount_units::numeric), 0)::text AS used_units
+         FROM lighter_onboarding_intents
+        WHERE capability = 'deposit'
+          AND amount_units IS NOT NULL
+          AND created_at >= NOW() - INTERVAL '24 hours'
+          AND approval_status NOT IN ('rejected', 'expired')
+          AND execution_state <> 'failed'`,
+    );
+    const amountUnits = "11000000";
+    const capUnits = (BigInt(baseline?.used_units ?? "0") + BigInt(amountUnits)).toString();
+    const sessionA = await newSession();
+    const sessionB = await newSession();
+    const walletA = walletForSession(sessionA);
+    const walletB = walletForSession(sessionB);
+    WALLET_ADDRESSES.add(walletA);
+    WALLET_ADDRESSES.add(walletB);
+
+    const create = (sessionId: string, walletAddress: string) =>
+      withSessionControlLock(sessionId, async (client) => {
+        await ensureLighterOnboardingWorkflowEnabledWith(client, "core", walletAddress);
+        return repo.createOrFindLiveDepositApprovalPendingWith(client, {
+          sessionId,
+          environment: "core",
+          walletAddress,
+          chainId: 1,
+          depositContract: CONTRACT,
+          depositTo: walletAddress,
+          assetIndex: 3,
+          routeType: 0,
+          amountUnits,
+          preflight: preflight(walletAddress, amountUnits),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          rolling24hCapUnits: capUnits,
+        });
+      });
+
+    const outcomes = await Promise.allSettled([
+      create(sessionA, walletA),
+      create(sessionB, walletB),
+    ]);
+    const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled");
+    const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(fulfilled[0]).toMatchObject({ value: { outcome: "created" } });
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason)
+      .toBeInstanceOf(repo.LighterDepositRolloutCapError);
   });
 
   it("walks the full deposit lifecycle through guarded CAS transitions", async () => {

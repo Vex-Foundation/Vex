@@ -40,6 +40,7 @@ wallet-funded onboarding flow.
 | `throttle.ts` | Per-process public REST throttle, small TTL cache, in-flight dedupe |
 | `client.ts` | REST client and singleton; `sendTx` exists only as a low-level signed-submit transport |
 | `wallet-funding/api-key-slots.ts` | Strict full-slot inspection and conservative unused-index selection for `4..254` |
+| `wallet-funding/deposit-rollout-policy.ts` | Privileged wallet allowlist, per-deposit cap, rolling-24-hour cap, and operator kill-switch policy for deposits |
 | `change-pub-key.ts` | Exact TxType 8 unsigned identity and fixed-width L1 ownership-message construction |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting validator for exact encrypted-vault credential and nonce scope |
@@ -52,7 +53,7 @@ wallet-funded onboarding flow.
 | `../../../vex-app/src/main/lighter/key-registration-credential.ts` | Privileged pending-key creation/recovery and public-only promotion to active |
 | `../../../vex-app/src/main/lighter/key-registration-signing.ts` | Selected-wallet EIP-191 signature plus official TxType 8 signer orchestration |
 | `../../../vex-app/src/main/lighter/key-registration-execution.ts` | Exact preflight, staged submit, evidence verification, and reconciliation owner |
-| `../../../vex-app/src/main/lighter/onboarding-release-gates.ts` | Independent default-closed deposit and key-registration operator gates |
+| `../../../vex-app/src/main/lighter/onboarding-release-gates.ts` | Installs the independent default-closed deposit, deposit-rollout, and key-registration operator boundaries |
 | `../../../vex-app/src/main/lighter/live-trading-release-gate.ts` | Privileged default-closed operator gate for approval-gated Lighter create |
 | `../../vex-agent/tools/protocols/lighter/key-registration-execution.ts` | Public-only dependency seam for registration execution and reconciliation |
 | `../../vex-agent/db/repos/lighter-key-registration-intents.ts` | Durable public registration identity and checked lifecycle transitions |
@@ -110,6 +111,29 @@ reachable from `lighter.order.create` only after an exact user approval and the
 privileged live-trading release gate are both present. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
+
+## Production Deposit Rollout Policy
+
+The deposit release gate and production rollout policy are independent. An
+operator must explicitly open both boundaries; exact user approval remains
+required as a third, separate condition.
+
+The privileged main process reads these values:
+
+- `VEX_LIGHTER_DEPOSIT_ROLLOUT_POLICY=allowlisted-v1`
+- `VEX_LIGHTER_DEPOSIT_KILL_SWITCH=clear-v1`
+- `VEX_LIGHTER_DEPOSIT_WALLET_ALLOWLIST` as comma-separated EVM addresses
+- `VEX_LIGHTER_DEPOSIT_MAX_USDC` as the positive per-deposit USDC cap
+- `VEX_LIGHTER_DEPOSIT_ROLLING_24H_MAX_USDC` as the positive aggregate cap
+
+Missing, malformed, truthy-but-inexact, empty, or internally inconsistent
+values fail closed. The rolling cap is enforced atomically in PostgreSQL across
+all wallets and processes before an intent reserves capacity, then checked
+again after exact approval and before live provider preflight, key resolution,
+or signing. Nonterminal deposit intents retain their reservation for the
+rolling 24-hour window; concurrent wallets cannot race past the aggregate cap.
+Policy failures return bounded reasons and never disclose the allowlist or raw
+environment configuration.
 
 ## Phase 3 Key Registration Boundary
 

@@ -205,6 +205,62 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(workflowSql).toContain("workflow_state = ANY($3)");
   });
 
+  it("serializes and reserves rolling 24-hour capacity before creating a new intent", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [{ used_units: "38000000" }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [WORKFLOW_ROW], rowCount: 1 }),
+    };
+
+    const result = await repo.createOrFindLiveDepositApprovalPendingWith(client, {
+      ...INPUT,
+      rolling24hCapUnits: "50000000",
+    });
+
+    expect(result).toMatchObject({ outcome: "created" });
+    expect(client.query.mock.calls[0]?.[0]).toContain("pg_advisory_xact_lock");
+    expect(client.query.mock.calls[1]?.[0]).toContain("execution_state NOT IN ('credited', 'failed')");
+    expect(client.query.mock.calls[2]?.[0]).toContain("INTERVAL '24 hours'");
+    expect(client.query.mock.calls[2]?.[1]).toEqual([null]);
+    expect(client.query.mock.calls[3]?.[0]).toContain("INSERT INTO lighter_onboarding_intents");
+  });
+
+  it("rejects a new reservation that would exceed the rolling cap before insert", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [{ used_units: "40000000" }], rowCount: 1 }),
+    };
+
+    await expect(repo.createOrFindLiveDepositApprovalPendingWith(client, {
+      ...INPUT,
+      rolling24hCapUnits: "50000000",
+    })).rejects.toBeInstanceOf(repo.LighterDepositRolloutCapError);
+
+    expect(client.query).toHaveBeenCalledTimes(3);
+    expect(client.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO"))).toBe(false);
+  });
+
+  it("rechecks an existing intent against other rolling usage without double counting itself", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ used_units: "39000000" }], rowCount: 1 }),
+    };
+
+    await repo.assertExistingDepositWithinRolling24hCapWith(client, {
+      intentId: ROW.intent_id,
+      amountUnits: ROW.amount_units,
+      capUnits: "50000000",
+    });
+
+    expect(client.query.mock.calls[1]?.[1]).toEqual([ROW.intent_id]);
+  });
+
   it("refuses to persist a preflight snapshot that differs from the durable intent", async () => {
     const client = { query: vi.fn() };
     await expect(repo.createOrFindLiveDepositApprovalPendingWith(client, {

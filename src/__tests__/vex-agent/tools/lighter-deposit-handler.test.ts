@@ -4,6 +4,7 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 import { validatePreparedActionFollowUp } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
+const MockLighterDepositRolloutCapError = vi.hoisted(() => class extends Error {});
 
 const mocks = vi.hoisted(() => ({
   createOrFind: vi.fn(),
@@ -33,9 +34,12 @@ const mocks = vi.hoisted(() => ({
   getOnboardingWorkflow: vi.fn(),
   readDepositPreflight: vi.fn(),
   feePreflightComplete: vi.fn(),
+  readRolloutDecision: vi.fn(),
+  assertRollingCap: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
+  LighterDepositRolloutCapError: MockLighterDepositRolloutCapError,
   createOrFindLiveDepositApprovalPendingWith: mocks.createOrFind,
   listUnresolvedDepositsForWallet: mocks.listUnresolvedDepositsForWallet,
   findByIntentId: mocks.findByIntentId,
@@ -51,6 +55,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
     mocks.supersedePristine(input),
   markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
     mocks.markAmbiguous(intentId, reason),
+  assertExistingDepositWithinRolling24hCapWith: (_client: unknown, input: unknown) =>
+    mocks.assertRollingCap(input),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
@@ -100,6 +106,11 @@ vi.mock("@tools/lighter/wallet-funding/release-gates.js", () => ({
   LIGHTER_DEPOSIT_RELEASE_GATE: {
     isEnabled: mocks.releaseGateEnabled,
   },
+}));
+
+vi.mock("@tools/lighter/wallet-funding/deposit-rollout-policy.js", () => ({
+  readLighterDepositRolloutDecision: (...args: unknown[]) =>
+    mocks.readRolloutDecision(...args),
 }));
 
 vi.mock("@vex-agent/sync/lighter-deposit-repair.js", () => ({
@@ -230,6 +241,14 @@ beforeEach(() => {
   mocks.setIntegrationEnabled.mockResolvedValue({ enabled: true });
   mocks.releaseGateEnabled.mockReturnValue(true);
   mocks.feePreflightComplete.mockReturnValue(true);
+  mocks.readRolloutDecision.mockReturnValue({
+    allowed: true,
+    source: "privileged_runtime",
+    reason: "allowed",
+    perDepositCapUnits: "50000000",
+    rolling24hCapUnits: "100000000",
+  });
+  mocks.assertRollingCap.mockResolvedValue(undefined);
   mocks.buildRepairDeps.mockReturnValue({ marker: "repair-deps" });
   mocks.repairDepositIntent.mockImplementation(async (row) => ({
     intentId: row.intentId,
@@ -465,6 +484,48 @@ describe("lighter.deposit execution lease", () => {
     expect(result.output).toContain("Nothing was signed");
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
     expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
+  });
+
+  it("honors the rollout kill switch before live revalidation, lease, or key resolution", async () => {
+    mocks.readRolloutDecision.mockReturnValueOnce({
+      allowed: false,
+      source: "privileged_runtime",
+      reason: "The privileged Lighter deposit kill switch is engaged.",
+      perDepositCapUnits: null,
+      rolling24hCapUnits: null,
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ status: "approval_recorded_rollout_closed" });
+    expect(result.output).toContain("kill switch is engaged");
+    expect(mocks.readDepositPreflight).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the atomic rolling cap before live revalidation or key resolution", async () => {
+    mocks.assertRollingCap.mockRejectedValueOnce(
+      new MockLighterDepositRolloutCapError(
+        "The requested deposit would exceed the current rolling 24-hour Lighter rollout cap.",
+      ),
+    );
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ status: "approval_recorded_rollout_closed" });
+    expect(result.output).toContain("rolling 24-hour");
+    expect(mocks.readDepositPreflight).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
   it("stops before lease acquisition and key resolution while fee preflight is incomplete", async () => {
@@ -715,6 +776,26 @@ describe("lighter.deposit execution lease", () => {
 });
 
 describe("lighter.deposit.prepare", () => {
+  it("fails closed before provider preflight when the wallet is outside the rollout", async () => {
+    mocks.readRolloutDecision.mockReturnValueOnce({
+      allowed: false,
+      source: "privileged_runtime",
+      reason: "This wallet is not in the current internal Lighter deposit rollout.",
+      perDepositCapUnits: "1000000",
+      rolling24hCapUnits: "5000000",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not in the current internal");
+    expect(mocks.readDepositPreflight).not.toHaveBeenCalled();
+    expect(mocks.createOrFind).not.toHaveBeenCalled();
+  });
+
   it("activates managed Lighter setup before preparing a deposit", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
     mocks.createOrFind.mockResolvedValue({
@@ -762,6 +843,7 @@ describe("lighter.deposit.prepare", () => {
         chainId: 1,
         assetIndex: 3,
         routeType: 0,
+        rolling24hCapUnits: "100000000",
         preflight: expect.objectContaining({
           ethereumBlockNumber: "23456789",
           walletBalanceUnits: "50000000",
