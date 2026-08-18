@@ -228,6 +228,21 @@ export interface LighterAccountOrdersResponse {
   [key: string]: unknown;
 }
 
+/**
+ * Authenticated `account_all_orders/{ACCOUNT_ID}` WebSocket evidence.
+ *
+ * The provider sends order IDs in both numeric and string form. Consumers must
+ * match the string `client_order_id`; JavaScript numbers cannot represent the
+ * full identifier range losslessly.
+ */
+export interface LighterAccountAllOrdersStreamMessage {
+  readonly type: "update/account_all_orders";
+  readonly channel: string;
+  readonly orders: Readonly<Record<string, readonly LighterAccountOrder[]>>;
+  readonly timestamp?: number;
+  readonly [key: string]: unknown;
+}
+
 export type LighterMarketType = "perp" | "spot";
 export type LighterMarketStatus = "inactive" | "active";
 

@@ -183,6 +183,16 @@ export interface MarkLighterOrderProviderOutcomeInput {
   readonly providerOutcomeJson: Record<string, unknown>;
 }
 
+export interface MarkLighterOrderStreamOutcomeInput {
+  readonly intentId: string;
+  readonly environment: LighterEnvironment;
+  readonly state: LighterProviderOutcomeExecutionState;
+  readonly source: Extract<LighterProviderOutcomeSource, "active_order" | "inactive_order">;
+  readonly providerOrderId: string;
+  readonly providerOrderStatus: string;
+  readonly providerOutcomeJson: Record<string, unknown>;
+}
+
 const SELECT_COLUMNS =
   "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
@@ -321,6 +331,39 @@ const MARK_PROVIDER_OUTCOME_SQL = `UPDATE lighter_order_execution_intents
    AND approval_status = 'approved'
    AND execution_state IN ('api_accepted','sequencer_pending')
    AND client_order_index IS NOT NULL
+ RETURNING ${SELECT_COLUMNS}`;
+
+/**
+ * Stream evidence may advance an order after the initial REST classification
+ * moved it to open/partially_filled. The guarded transition matrix prevents a
+ * delayed frame from downgrading durable progress or rewriting a terminal row.
+ */
+const MARK_STREAM_OUTCOME_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = $3,
+       provider_outcome_source = $4,
+       provider_order_id = $5,
+       provider_order_status = $6,
+       provider_outcome_json = $7::jsonb,
+       provider_outcome_checked_at = NOW(),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND environment = $2
+   AND approval_status = 'approved'
+   AND client_order_index IS NOT NULL
+   AND (
+     (
+       execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+       AND $3 IN ('sequencer_pending','open','partially_filled','filled','canceled','rejected')
+     )
+     OR (
+       execution_state = 'open'
+       AND $3 IN ('open','partially_filled','filled','canceled','rejected')
+     )
+     OR (
+       execution_state = 'partially_filled'
+       AND $3 IN ('partially_filled','filled','canceled','rejected')
+     )
+   )
  RETURNING ${SELECT_COLUMNS}`;
 
 const MARK_AMBIGUOUS_SQL = `UPDATE lighter_order_execution_intents
@@ -470,6 +513,21 @@ export async function markProviderOutcome(
   return row ? mapRow(row) : null;
 }
 
+export async function markStreamOutcome(
+  input: MarkLighterOrderStreamOutcomeInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(MARK_STREAM_OUTCOME_SQL, [
+    input.intentId,
+    input.environment,
+    providerOutcomeState(input.state),
+    providerOutcomeSource(input.source),
+    requiredSafeId(input.providerOrderId, "providerOrderId"),
+    requiredSafeText(input.providerOrderStatus, "providerOrderStatus"),
+    jsonb(assertProviderOutcomeJson(input.providerOutcomeJson)),
+  ]);
+  return row ? mapRow(row) : null;
+}
+
 export async function findByIntentId(
   sessionId: string,
   intentId: string,
@@ -495,6 +553,13 @@ export const LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES = [
   "ambiguous",
 ] as const;
 
+/** Orders that still need positive provider updates until they are terminal. */
+export const LIGHTER_ORDER_STREAM_WATCHABLE_STATES = [
+  ...LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES,
+  "open",
+  "partially_filled",
+] as const;
+
 /**
  * Deliberately session-independent: unresolved intents from an earlier app run
  * belong to a session that no longer exists, and repair must still see them.
@@ -511,6 +576,33 @@ export async function listUnresolved(
       ORDER BY created_at ASC
       LIMIT ${bounded}`,
     [environment ?? null],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Session-independent stream watch set. Open and partially-filled orders stay
+ * subscribed until a positive terminal provider event arrives.
+ */
+export async function listStreamWatchable(
+  environment?: LighterEnvironment,
+  accountIndex?: number,
+  limit = 100,
+): Promise<LighterOrderExecutionIntentRow[]> {
+  const bounded = Number.isInteger(limit) && limit > 0 && limit <= 500 ? limit : 100;
+  const exactAccountIndex = accountIndex === undefined
+    ? null
+    : requiredNonNegativeInt(accountIndex, "accountIndex");
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_order_execution_intents
+      WHERE execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous','open','partially_filled')
+        AND approval_status = 'approved'
+        AND client_order_index IS NOT NULL
+        AND ($1::text IS NULL OR environment = $1)
+        AND ($2::bigint IS NULL OR account_index = $2)
+      ORDER BY created_at ASC
+      LIMIT ${bounded}`,
+    [environment ?? null, exactAccountIndex],
   );
   return rows.map(mapRow);
 }

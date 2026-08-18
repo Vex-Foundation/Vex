@@ -6,6 +6,7 @@ import {
 } from "./constants.js";
 import type {
   LighterAccountOrdersResponse,
+  LighterAccountAllOrdersStreamMessage,
   LighterAccountResponse,
   LighterAccountsByL1AddressResponse,
   LighterAccountTradesResponse,
@@ -371,6 +372,18 @@ const accountOrdersResponseSchema = z
   })
   .passthrough();
 
+const accountAllOrdersStreamSchema = z
+  .object({
+    type: z.literal("update/account_all_orders"),
+    channel: z.string().min(1).max(160),
+    orders: z.record(
+      z.string().regex(/^\d+$/),
+      z.array(accountOrderSchema).max(2_000),
+    ),
+    timestamp: providerInteger.optional(),
+  })
+  .passthrough();
+
 const marketsResponseSchema = z
   .object({
     code: int,
@@ -489,6 +502,66 @@ export function validateLighterAccountTrades(raw: unknown): LighterAccountTrades
 
 export function validateLighterAccountOrders(raw: unknown): LighterAccountOrdersResponse {
   return parseOrThrow(accountOrdersResponseSchema, raw, "account orders");
+}
+
+/**
+ * Validate one authenticated account-wide order stream frame against the exact
+ * account used to mint the auth token. The market map and every embedded order
+ * must agree; a cross-account or cross-market frame is rejected before it can
+ * mutate durable execution state.
+ */
+export function validateLighterAccountAllOrdersStreamMessage(
+  raw: unknown,
+  expectedAccountIndex: number,
+): LighterAccountAllOrdersStreamMessage {
+  if (!Number.isSafeInteger(expectedAccountIndex) || expectedAccountIndex < 0) {
+    throw invalidStreamMessage("expected account index is invalid");
+  }
+  const parsed = parseOrThrow(
+    accountAllOrdersStreamSchema,
+    raw,
+    "account all orders stream",
+  );
+  if (parsed.channel !== `account_all_orders:${expectedAccountIndex}`) {
+    throw invalidStreamMessage("channel does not match the authenticated account");
+  }
+
+  let totalOrders = 0;
+  const clientOrderIds = new Set<string>();
+  for (const [marketIndexRaw, orders] of Object.entries(parsed.orders)) {
+    const marketIndex = Number(marketIndexRaw);
+    if (!Number.isSafeInteger(marketIndex) || marketIndex < 0) {
+      throw invalidStreamMessage("market map contains an invalid index");
+    }
+    totalOrders += orders.length;
+    if (totalOrders > 5_000) {
+      throw invalidStreamMessage("frame exceeds the bounded order count");
+    }
+    for (const order of orders) {
+      if (order.owner_account_index !== expectedAccountIndex) {
+        throw invalidStreamMessage("order owner does not match the authenticated account");
+      }
+      if (order.market_index !== marketIndex) {
+        throw invalidStreamMessage("order market does not match its market-map key");
+      }
+      if (order.status !== undefined && order.status.length > 80) {
+        throw invalidStreamMessage("order status exceeds the bounded length");
+      }
+      if (clientOrderIds.has(order.client_order_id)) {
+        throw invalidStreamMessage("frame contains a duplicate client order id");
+      }
+      clientOrderIds.add(order.client_order_id);
+    }
+  }
+  return parsed;
+}
+
+function invalidStreamMessage(detail: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    `Invalid Lighter account all orders stream response: ${detail}.`,
+    "The Lighter stream returned evidence outside the authenticated account scope.",
+  );
 }
 
 export function validateLighterMarketDetails(raw: unknown): LighterMarketDetailsResponse {

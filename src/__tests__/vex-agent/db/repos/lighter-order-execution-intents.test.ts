@@ -7,12 +7,20 @@ type QueryOneMock = Mock<
   (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
 >;
 
+type QueryMock = Mock<
+  (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
+>;
+
 let mockQueryOne: QueryOneMock;
+let mockQuery: QueryMock;
 let mockQueryOneWith: Mock<
   (client: unknown, sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
 >;
 
 function resetMocks() {
+  mockQuery = vi
+    .fn<(sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>>()
+    .mockResolvedValue([]);
   mockQueryOne = vi
     .fn<(sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>>()
     .mockResolvedValue(null);
@@ -23,6 +31,7 @@ function resetMocks() {
 resetMocks();
 
 vi.mock("@vex-agent/db/client.js", () => ({
+  query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
   queryOneWith: (client: unknown, sql: string, params?: unknown[]) => mockQueryOneWith(client, sql, params),
 }));
@@ -672,6 +681,70 @@ describe("lighter order execution intents repo", () => {
       providerOutcomeSource: "active_order",
       providerOutcomeCheckedAt: "2026-08-12T00:02:03.000Z",
     });
+  });
+
+  it("lists stream-watchable orders across restarts, including open and partial states", async () => {
+    mockQuery.mockResolvedValueOnce([
+      dbRow({
+        approval_status: "approved",
+        execution_state: "open",
+        client_order_index: "187649984473770",
+      }),
+    ]);
+
+    const rows = await repo.listStreamWatchable("rhc", 42, 250);
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("'open','partially_filled'");
+    expect(sql).toContain("approval_status = 'approved'");
+    expect(sql).toContain("client_order_index IS NOT NULL");
+    expect(sql).toContain("LIMIT 250");
+    expect(params).toEqual(["rhc", 42]);
+    expect(rows[0]).toMatchObject({ executionState: "open", accountIndex: 42 });
+  });
+
+  it("applies stream evidence through a monotonic nonterminal transition matrix", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "filled",
+      client_order_index: "187649984473770",
+      provider_order_id: "123",
+      provider_order_status: "filled",
+      provider_outcome_source: "inactive_order",
+      provider_outcome_json: {
+        source: "inactive_order",
+        transport: "account_all_orders_stream",
+      },
+      provider_outcome_checked_at: new Date("2026-08-12T00:02:04.000Z"),
+    }));
+
+    const outcome = await repo.markStreamOutcome({
+      intentId: "lighter-exec-1",
+      environment: "rhc",
+      state: "filled",
+      source: "inactive_order",
+      providerOrderId: "123",
+      providerOrderStatus: "filled",
+      providerOutcomeJson: {
+        source: "inactive_order",
+        transport: "account_all_orders_stream",
+      },
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("execution_state = 'open'");
+    expect(sql).toContain("execution_state = 'partially_filled'");
+    expect(sql).not.toContain("execution_state IN ('filled'");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "rhc",
+      "filled",
+      "inactive_order",
+      "123",
+      "filled",
+      expect.stringContaining("account_all_orders_stream"),
+    ]);
+    expect(outcome).toMatchObject({ executionState: "filled" });
   });
 
   it("marks in-flight submit outcomes ambiguous with bounded structural reasons", async () => {
