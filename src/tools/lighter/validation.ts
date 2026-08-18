@@ -23,6 +23,7 @@ import type {
   LighterStatusResponse,
   LighterSystemConfigResponse,
   LighterLayer1BasicInfoResponse,
+  LighterInfoResponse,
   LighterTxFromL1Response,
 } from "./types.js";
 
@@ -160,6 +161,12 @@ const statusSchema = z
   })
   .passthrough();
 
+const infoSchema = z
+  .object({
+    contract_address: z.string().min(1),
+  })
+  .passthrough();
+
 const systemConfigSchema = z
   .object({
     code: int,
@@ -205,6 +212,7 @@ const assetDetailsResponseSchema = z
       decimals: int,
       min_transfer_amount: numericString,
       l1_address: z.string().min(1),
+      margin_mode: z.enum(["enabled", "disabled"]).optional(),
     }).passthrough()),
   })
   .passthrough();
@@ -448,6 +456,10 @@ function parseOrThrow<T>(schema: z.ZodType<T>, raw: unknown, label: string): T {
 
 export function validateLighterStatus(raw: unknown): LighterStatusResponse {
   return parseOrThrow(statusSchema, raw, "status");
+}
+
+export function validateLighterInfo(raw: unknown): LighterInfoResponse {
+  return parseOrThrow(infoSchema, raw, "info");
 }
 
 export function validateLighterSystemConfig(raw: unknown): LighterSystemConfigResponse {

@@ -58,6 +58,7 @@ import type {
   LighterStatusResponse,
   LighterSystemConfigResponse,
   LighterLayer1BasicInfoResponse,
+  LighterInfoResponse,
   LighterTxFromL1Params,
   LighterTxFromL1Response,
 } from "./types.js";
@@ -79,6 +80,7 @@ import {
   validateLighterStatus,
   validateLighterSystemConfig,
   validateLighterLayer1BasicInfo,
+  validateLighterInfo,
   validateLighterTxFromL1,
 } from "./validation.js";
 import {
@@ -264,6 +266,10 @@ export class LighterClient {
 
   getStatus(environment: LighterEnvironment): Promise<LighterStatusResponse> {
     return this.request(environment, LIGHTER_ENDPOINT_PATHS.status, validateLighterStatus);
+  }
+
+  getInfo(environment: LighterEnvironment): Promise<LighterInfoResponse> {
+    return this.request(environment, LIGHTER_ENDPOINT_PATHS.info, validateLighterInfo);
   }
 
   getSystemConfig(environment: LighterEnvironment): Promise<LighterSystemConfigResponse> {

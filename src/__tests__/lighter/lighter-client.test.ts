@@ -157,6 +157,9 @@ describe("LighterClient URL selection", () => {
 
   it("reads public L1 deposit metadata and exact transaction evidence", async () => {
     mockOk({
+      contract_address: "0x1111111111111111111111111111111111111111",
+    });
+    mockOk({
       code: 200,
       l1_providers: [{ chainId: 1, networkId: 1, latestBlockNumber: 23456789 }],
       l1_providers_health: true,
@@ -195,6 +198,10 @@ describe("LighterClient URL selection", () => {
       committed_at: 0,
       verified_at: 0,
     });
+
+    const info = await client.getInfo("core");
+    expect(lastUrl().pathname).toBe("/info");
+    expect(info.contract_address).toBe("0x1111111111111111111111111111111111111111");
 
     const l1 = await client.getLayer1BasicInfo("core");
     expect(lastUrl().pathname).toBe("/api/v1/layer1BasicInfo");

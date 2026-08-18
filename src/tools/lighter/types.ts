@@ -13,6 +13,11 @@ export interface LighterStatusResponse {
   [key: string]: unknown;
 }
 
+export interface LighterInfoResponse {
+  contract_address: string;
+  [key: string]: unknown;
+}
+
 export interface LighterSystemConfigResponse {
   code: number;
   message?: string;
@@ -58,6 +63,7 @@ export interface LighterAssetDetail {
   decimals: number;
   min_transfer_amount: string;
   l1_address: string;
+  margin_mode?: "enabled" | "disabled";
   [key: string]: unknown;
 }
 

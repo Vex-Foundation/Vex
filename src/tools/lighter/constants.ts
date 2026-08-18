@@ -30,6 +30,7 @@ export const LIGHTER_ENDPOINTS: Record<LighterEnvironment, LighterEndpointConfig
 
 export const LIGHTER_ENDPOINT_PATHS = {
   status: "/",
+  info: "/info",
   systemConfig: "/api/v1/systemConfig",
   layer1BasicInfo: "/api/v1/layer1BasicInfo",
   assetDetails: "/api/v1/assetDetails",

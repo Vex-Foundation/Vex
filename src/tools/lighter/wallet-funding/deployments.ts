@@ -27,6 +27,8 @@ export interface LighterFundingDeployment {
   readonly expectedGatewayImplementation?: Address;
   readonly settlementTokenProxy: Address;
   readonly expectedSettlementTokenImplementation?: Address;
+  /** Verified nested `allowance[owner][spender]` mapping slot for state override. */
+  readonly settlementAllowanceStorageSlot: bigint;
   readonly settlementSymbol: LighterSettlementSymbol;
   readonly settlementDecimals: 6;
   readonly settlementAssetIndex: 3;
@@ -48,6 +50,7 @@ const CORE_FUNDING_DEPLOYMENT = defineDeployment({
   wsBaseUrl: LIGHTER_ENDPOINTS.core.wsUrl,
   gatewayProxy: getAddress("0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7"),
   settlementTokenProxy: getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+  settlementAllowanceStorageSlot: 10n,
   settlementSymbol: "USDC",
   settlementDecimals: 6,
   settlementAssetIndex: 3,
@@ -69,6 +72,7 @@ const RHC_FUNDING_DEPLOYMENT = defineDeployment({
   expectedGatewayImplementation: getAddress("0xE470e41Cacc197EA07f879577765A8c81234ED7B"),
   settlementTokenProxy: getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"),
   expectedSettlementTokenImplementation: getAddress("0x68184C449E1a8f34fA18d289737129FD27B66f8F"),
+  settlementAllowanceStorageSlot: 3n,
   settlementSymbol: "USDG",
   settlementDecimals: 6,
   settlementAssetIndex: 3,
