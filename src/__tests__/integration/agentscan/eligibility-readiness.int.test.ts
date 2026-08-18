@@ -317,33 +317,36 @@ describe("readiness — a confirmed row waits for the money it owes", () => {
   }
 
   /**
-   * The SQL mirror's `lend_borrow_operate` arm, against the row shape Morpho Blue
-   * and Jupiter /operate actually write: exactly ONE token populated, because a
-   * single operation either sends (supply_collateral, repay) or receives
-   * (withdraw_collateral, borrow). Demanding both legs held every such confirmed
-   * row for the full grace and then re-swept it forever for an amount that was
-   * never coming.
+   * The SQL mirror's LEND arm, against the row shape Morpho Blue and Jupiter
+   * /operate actually write: exactly ONE token populated, because a single
+   * operation either sends (supply, supply_collateral, repay) or receives
+   * (withdraw, withdraw_collateral, borrow). The VAULT shape of the same two
+   * roles populates both tokens and is covered by READINESS_CASES above.
+   * Demanding both legs held every such confirmed row for the full grace and
+   * then re-swept it forever for an amount that was never coming.
    */
-  for (const side of ["in", "out"] as const) {
-    it(`releases a confirmed single-leg lend_borrow_operate once its ${side} leg is whole`, async () => {
-      const id = await seedPending("lend", "lend_borrow_operate");
-      // Strip the side this operation does not move — the shape the handler writes.
-      const absent = side === "in" ? "token_out_address" : "token_in_address";
-      const presentAmount = side === "in" ? "executed_amount_in_raw" : "executed_amount_out_raw";
-      const absentAmount = side === "in" ? "executed_amount_out_raw" : "executed_amount_in_raw";
-      await setColumns(id, { [absent]: null });
-      expect(await enqueuedFor(id)).toBe(1);
+  for (const eventRole of ["lend_deposit", "lend_withdraw", "lend_borrow_operate"] as const) {
+    for (const side of ["in", "out"] as const) {
+      it(`releases a confirmed single-leg ${eventRole} once its ${side} leg is whole`, async () => {
+        const id = await seedPending("lend", eventRole);
+        // Strip the side this operation does not move - the shape the handler writes.
+        const absent = side === "in" ? "token_out_address" : "token_in_address";
+        const presentAmount = side === "in" ? "executed_amount_in_raw" : "executed_amount_out_raw";
+        const absentAmount = side === "in" ? "executed_amount_out_raw" : "executed_amount_in_raw";
+        await setColumns(id, { [absent]: null });
+        expect(await enqueuedFor(id)).toBe(1);
 
-      await confirmStatusOnly(id, "receipt_status_only_solana");
-      expect(await enqueuedFor(id)).toBe(1);
+        await confirmStatusOnly(id, "receipt_status_only_solana");
+        expect(await enqueuedFor(id)).toBe(1);
 
-      // The leg the row never declared must not release it either.
-      await setColumns(id, { [absentAmount]: "2000000" });
-      expect(await enqueuedFor(id)).toBe(1);
+        // The leg the row never declared must not release it either.
+        await setColumns(id, { [absentAmount]: "2000000" });
+        expect(await enqueuedFor(id)).toBe(1);
 
-      await setColumns(id, { [absentAmount]: null, [presentAmount]: "2000000" });
-      expect(await enqueuedFor(id)).toBe(2);
-    });
+        await setColumns(id, { [absentAmount]: null, [presentAmount]: "2000000" });
+        expect(await enqueuedFor(id)).toBe(2);
+      });
+    }
   }
 
   it("holds a confirmed bridge_deposit for its INPUT only", async () => {

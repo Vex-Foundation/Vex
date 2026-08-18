@@ -256,7 +256,9 @@ export class MorphoClient {
    * decision it supports. `ttlMs: 0` also skips the cache WRITE, so this call
    * can never seed a stale answer for anything else.
    *
-   * STRICTLY TYPED, unlike the `listed` that rides along on the display reads.
+   * STRICTLY TYPED, unlike the `listed` that rides along on the display reads,
+   * and BOUND TO THE MARKET IT IS ABOUT: a flag vouches for the market it names,
+   * so an answer describing another one is refused (`./client/curation.ts`).
    * Rules/90 splits the two: a display field a provider may legitimately send
    * as null is read tolerantly, and a field a signing decision consumes is
    * read strictly. A `listed` that is absent, null, or not a boolean is a
@@ -278,7 +280,7 @@ export class MorphoClient {
         notFound: () => morphoMarketNotFound(),
       },
       (body) => {
-        const curation = validateMorphoMarketCuration(body, query.marketId);
+        const curation = validateMorphoMarketCuration(body, query);
         if (curation === null) throw morphoMarketNotFound();
         return curation;
       },

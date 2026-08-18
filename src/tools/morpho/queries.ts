@@ -121,5 +121,6 @@ query VexMorphoMarketCuration($marketId: String!, $chainId: Int!) {
   marketById(marketId: $marketId, chainId: $chainId) {
     marketId
     listed
+    chain { id }
   }
 }`;

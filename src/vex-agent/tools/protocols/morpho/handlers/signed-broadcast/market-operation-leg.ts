@@ -29,7 +29,7 @@
 import { formatUnits } from "viem";
 import type { Address, Hex } from "viem";
 
-import { assertMorphoBorrowStillSafe } from "@tools/morpho/mutations.js";
+import { assertMorphoBorrowStillSafe, assertMorphoMarketExecutable } from "@tools/morpho/mutations.js";
 import { confirmActivityEvent, failActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import {
   decodeMorphoBorrowSettlement,
@@ -59,6 +59,33 @@ import type { MorphoMarketExecutionContext } from "./market-context.js";
  */
 function roleOf(context: MorphoMarketExecutionContext) {
   return morphoMarketOperationRole(context.intent.operation);
+}
+
+/**
+ * RE-RUN THE WHOLE MARKET GATE, immediately before the signature.
+ *
+ * Phase 1 gated the market before the approval was sent. On an
+ * approve-then-operate path that is one transaction and a confirmation earlier
+ * than this moment, and the gate's own claim is that curation and feed liveness
+ * are read AT EXECUTION TIME. Without this the claim was true of the approval
+ * and merely inherited by the operation: a market delisted, or a price feed gone
+ * silent, in the seconds between them would have been signed against on the
+ * strength of a check that had already expired.
+ *
+ * It re-reads the market's parameters from `context.market`, which phase 1 read
+ * off Blue and proved hash to the requested id, so what is re-asked here is the
+ * part that can change: does Morpho still curate it, is the oracle still one Vex
+ * accepts for THIS market, and is every price leg still answering.
+ */
+async function assertMorphoMarketStillExecutable(context: MorphoMarketExecutionContext): Promise<void> {
+  const { marketParams, identity } = context.market;
+  await assertMorphoMarketExecutable(context.clients.actionClient, identity.chainId, identity.marketId, {
+    loanToken: marketParams.loanToken,
+    collateralToken: marketParams.collateralToken,
+    oracle: marketParams.oracle,
+    irm: marketParams.irm,
+    lltv: marketParams.lltv,
+  });
 }
 
 /** Rebuild the operation against current state, or refuse by name. */
@@ -96,6 +123,7 @@ export async function runMarketOperationLeg(
   // throw below is PRE-SIGNATURE.
   let txParams: { to: Address; data: Hex; value: bigint };
   try {
+    await assertMorphoMarketStillExecutable(context);
     await assertMorphoBorrowStillSafe(context.clients.actionClient, context.market, context.intent);
     txParams = await rebuild(context);
   } catch (err) {

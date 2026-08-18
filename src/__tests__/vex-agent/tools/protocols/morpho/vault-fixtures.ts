@@ -916,4 +916,3 @@ export const MORPHO_VAULTS_V1_UNORDERED = {
     "maximumComplexity": 1000000
   }
 } as const;
-

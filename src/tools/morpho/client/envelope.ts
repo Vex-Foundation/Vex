@@ -73,4 +73,3 @@ export function parseRetryAfterSeconds(header: string | null | undefined): numbe
   if (!Number.isNaN(date)) return Math.max(0, Math.floor((date - Date.now()) / 1_000));
   return undefined;
 }
-

@@ -351,4 +351,3 @@ export async function broadcastMorphoClaim(
 
   return { kind: "confirmed", txHash: outcome.txHash, executionId, anchor: provenAnchor, credits };
 }
-

@@ -200,4 +200,3 @@ export function checkRange(
       + "Swap them or drop one.",
   };
 }
-

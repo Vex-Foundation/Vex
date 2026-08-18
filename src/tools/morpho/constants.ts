@@ -215,7 +215,15 @@ export const MORPHO_MARKET_POLICY_CONTRACTS: Readonly<Record<number, MorphoMarke
 export interface MorphoVouchedOracle {
   /** The oracle contract, checksummed. */
   readonly oracle: Address;
-  /** The Blue market id this oracle prices, lower-cased. */
+  /**
+   * The Blue market id this oracle prices, lower-cased.
+   *
+   * PART OF THE MATCH, not a label. The owner vouched for an oracle AS USED BY
+   * THIS MARKET, having read that market's collateral, feeds and scale; the same
+   * oracle contract reused by another market is a different claim nobody made.
+   * Matching on the address alone would have let one approval vouch for every
+   * curated market on the chain that happens to reuse the oracle.
+   */
   readonly marketId: string;
   /** Human label for that market, so the entry reads without a lookup. */
   readonly market: string;

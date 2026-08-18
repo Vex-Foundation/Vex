@@ -86,7 +86,11 @@ export const MORPHO_MARKET_DRY_RUN_PARAM =
 export const MORPHO_MARKET_SLIPPAGE_PARAM =
   `Price protection in basis points (1 bps = 0.01%). Default ${VEX_DEFAULT_SLIPPAGE_BPS}, capped at `
   + `${VEX_MAX_SLIPPAGE_BPS}, and a higher value is REJECTED rather than clamped. It bounds a full-debt repayment's `
-  + "share price and its approval ceiling; the other operations name their own exact amount and are unaffected.";
+  + "per-share price of the TWO operations that move shares: a market supply and a repayment. On each, Vex derives a "
+  + "`maxSharePrice` ceiling from it that the CHAIN enforces, so a worse price cannot mine; on a full-debt "
+  + "(shares-mode) repayment it also caps the approval. The other four - supply_collateral, withdraw, "
+  + "withdraw_collateral and borrow - are direct calls naming their own exact token amount, carry NO on-chain price "
+  + "guard, and are unaffected by this value.";
 
 /**
  * WHAT SUPPLYING DIRECTLY ACTUALLY BUYS, from live measurement rather than from

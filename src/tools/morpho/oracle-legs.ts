@@ -68,29 +68,50 @@
  * theirs to waive either. So an allowlisted oracle is still refused on an
  * uncurated market and still refused on a stale feed.
  *
- * They cover different failures and cannot substitute for one another:
+ * LAYER 1 IS THE TRUST ROOT, and the other two are not its equals. State this
+ * plainly, because an earlier revision of this comment implied three
+ * independent proofs standing side by side, and that overstates layers 2 and 3
+ * in the exact direction that gets funds lost:
  *
- *   - layer 1 is an OFF-CHAIN assertion, and this repository's own rules forbid
- *     an indexed value being the sole basis of a signing decision. It is also
- *     the only layer that can be wrong because an API is wrong;
- *   - layer 2 needs NO NETWORK AT ALL beyond one chain read, and it is what
- *     still stands if the API lies or is compromised;
- *   - layer 3 is the ONLY layer that sees the present moment. Curation is a
- *     judgement made once; a feed can rot the day after it is made.
+ *   - CURATION is the ONLY layer that can say a price source is LEGITIMATE.
+ *     Somebody looked at this market and vouched for its oracle. Nothing else
+ *     here does that;
+ *   - the FACTORY answer proves the oracle's IMPLEMENTATION and NOTHING about
+ *     which prices it reads. Its creation function is unrestricted, so a fresh
+ *     malicious oracle over attacker-chosen feeds answers `true` exactly like an
+ *     honest one. It cannot detect a malicious feed, and it never could;
+ *   - LIVENESS proves a source is ANSWERING and RECENT, not that it is honest.
+ *     A feed under an attacker's control is perfectly fresh.
+ *
+ * So layers 2 and 3 are MITIGATIONS, each for a failure the trust root cannot
+ * see: layer 2 catches an oracle running arbitrary code rather than reviewed
+ * arithmetic, including one an API compromise might otherwise sneak past, and
+ * layer 3 catches the decay curation cannot notice, because curation is a
+ * judgement made once and a feed can rot the day after it is made. Neither is a
+ * substitute for the root. If Morpho's curation answer is wrong or forged, a
+ * fresh malicious feed passes layers 2 and 3 without difficulty - which is why
+ * the curation read is uncached, asked at execution time, bound to the market id
+ * it is about, and re-asked immediately before signing.
  *
  * ── EXCHANGE-RATE ADAPTERS AND `updatedAt == 0` ─────────────────────────────
  *
- * A Lido or Ether.fi style adapter (wstETH/stETH, weETH/ETH and their class)
- * returns `updatedAt == 0` because it DERIVES its answer from live chain state
- * rather than from a pushed report. There is no round, so there is nothing to
- * be stale, and a staleness bound on it would be a bound on a number that
- * carries no time. Those pass layer 3 on a POSITIVE ANSWER ALONE.
+ * An exchange-rate adapter returns `updatedAt == 0` because it DERIVES its
+ * answer from live chain state rather than from a pushed report. There is no
+ * round, so there is nothing to be stale, and a staleness bound on it would be a
+ * bound on a number that carries no time. Those pass layer 3 on a POSITIVE
+ * ANSWER ALONE.
  *
- * That exemption is safe here only because layers 1 and 2 still apply to them:
- * the market is one Morpho curates and the oracle is the standard
- * implementation. It is deliberately not a hole an arbitrary contract can climb
- * through by returning a zero timestamp, because such a contract would have to
- * be inside a curated market behind a factory-minted oracle first.
+ * THAT EXEMPTION IS A RECOGNITION, NOT AN ASSUMPTION, and the correction is
+ * worth recording. This comment used to argue the exemption was safe because
+ * layers 1 and 2 stood behind it, and treated ANY zero timestamp as proof of an
+ * adapter. That does not hold: the factory's creation path takes caller-selected
+ * feeds, so it says nothing about what the feed underneath the oracle is, and a
+ * broken or uninitialised feed reports zero just as readily as a real adapter.
+ * The permitted sources are now an explicit, dated, empirically seeded set in
+ * `../mutations/market-policy/zero-round-feeds.ts`, and any other feed answering
+ * zero is refused by name. The same survey also showed the class is much wider
+ * than the wstETH/weETH ratios it was assumed to be: most of it is Pendle PT
+ * discount adapters and vault share-price readers.
  */
 
 /**

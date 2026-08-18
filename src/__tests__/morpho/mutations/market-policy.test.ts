@@ -45,6 +45,9 @@ import {
   getMorphoActionClient,
   type MorphoActionClient,
 } from "../../../tools/morpho/mutations/client.js";
+import {
+  MORPHO_ZERO_ROUND_FEEDS,
+} from "../../../tools/morpho/mutations/market-policy/zero-round-feeds.js";
 
 /** Base's real pinned values, so a drift in the constants table fails here. */
 const BASE = 8453;
@@ -59,6 +62,14 @@ const LLTV_86 = 860_000_000_000_000_000n;
 const ZERO = `0x${"0".repeat(40)}`;
 /** BTC / USD, the real BASE_FEED_1 of the cbBTC/USDC oracle, and on the list. */
 const VERIFIED_FEED = "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F";
+/**
+ * The one Base source Vex recognises as legitimately having NO ROUND: the
+ * uniBTC/USDC adapter, taken from the real table rather than invented, so
+ * dropping the entry fails this test instead of silently widening the gate.
+ */
+const RECOGNISED_ZERO_ROUND_FEED = MORPHO_ZERO_ROUND_FEEDS[BASE]?.[0]?.feed ?? ZERO;
+/** A positive answer with no round at all, as an exchange-rate adapter reports. */
+const NO_ROUND = [0n, 1_100_000_000_000_000_000n, 0n, 0n, 0n] as const;
 
 /**
  * A client that answers the factory question AND the oracle's own leg getters.
@@ -154,7 +165,7 @@ describe("Morpho Blue market policy", () => {
     expect((error as VexError).code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
     expect((error as VexError).message).toContain('FAILING PREDICATE "oracle"');
     expect((error as VexError).message).toContain("did not mint it");
-    expect((error as VexError).message).toContain("which is empty");
+    expect((error as VexError).message).toContain("allowlist for this chain is empty");
   });
 
   it("refuses a market that declares NO oracle at all, by its own name", async () => {
@@ -315,13 +326,57 @@ describe("Morpho oracle feed liveness", () => {
     expect(error?.message).toContain("did not answer latestRoundData");
   });
 
-  it("ADMITS an exchange-rate adapter reporting no round, on a positive answer alone", async () => {
-    // wstETH/stETH and weETH/ETH class: derived from live chain state, so
-    // updatedAt is structurally 0 and there is no round to be stale. Safe here
-    // only because layers 1 and 2 already established a curated market behind a
-    // factory-minted oracle.
+  it("ADMITS a RECOGNISED exchange-rate adapter reporting no round, on a positive answer alone", async () => {
+    // Derived from live chain state, so updatedAt is structurally 0 and there is
+    // no round to be stale. Admitted because the address is one Vex recognises,
+    // not because the timestamp was zero.
     const verdict = await assertMorphoMarketExecutable(
-      clientAnswering(true, { BASE_FEED_1: VERIFIED_FEED }, null, [0n, 1_100_000_000_000_000_000n, 0n, 0n, 0n]),
+      clientAnswering(true, { BASE_FEED_1: RECOGNISED_ZERO_ROUND_FEED }, null, NO_ROUND),
+      BASE, MARKET_ID, params(),
+    );
+    expect(verdict.oracleProvenance).toBe("curated-standard-live");
+  });
+
+  it("REFUSES an UNRECOGNISED feed reporting no round, naming the address", async () => {
+    // The hole this closes: a zero timestamp used to be read as proof of an
+    // exchange-rate adapter, on no evidence about the contract at all. A broken
+    // or uninitialised feed reports zero exactly the same way.
+    const stranger = "0x00000000000000000000000000000000deadfeed";
+    let error: VexError | null = null;
+    try {
+      await assertMorphoMarketExecutable(
+        clientAnswering(true, { BASE_FEED_1: stranger }, null, NO_ROUND), BASE, MARKET_ID, params(),
+      );
+    } catch (caught) {
+      error = caught as VexError;
+    }
+    expect(error?.code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
+    expect(error?.message).toContain('FAILING PREDICATE "oracle-feed-live"');
+    expect(error?.message).toContain("NO ROUND AT ALL");
+    expect(error?.message).toContain(stranger);
+  });
+
+  it("REFUSES a round dated in the FUTURE, which an age test alone reads as the freshest feed", async () => {
+    // Measured, not hypothetical: the sUSN/USDC feed on Ethereum reports its
+    // timestamp in nanoseconds, landing about 5.6e10 years ahead. `age > limit`
+    // passed it unremarked.
+    const ahead = now() + 3_600n;
+    let error: VexError | null = null;
+    try {
+      await assertMorphoMarketExecutable(
+        clientAnswering(true, {}, null, [1n, 6_400_000_000_000n, ahead, ahead, 1n]), BASE, MARKET_ID, params(),
+      );
+    } catch (caught) {
+      error = caught as VexError;
+    }
+    expect(error?.code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
+    expect(error?.message).toContain("in the FUTURE");
+  });
+
+  it("still ADMITS a round a few seconds ahead, which is block interval rather than a bad feed", async () => {
+    const slightlyAhead = now() + 10n;
+    const verdict = await assertMorphoMarketExecutable(
+      clientAnswering(true, {}, null, [1n, 6_400_000_000_000n, slightlyAhead, slightlyAhead, 1n]),
       BASE, MARKET_ID, params(),
     );
     expect(verdict.oracleProvenance).toBe("curated-standard-live");
@@ -516,8 +571,31 @@ describe("Morpho owner-vouched oracle allowlist", () => {
     expect(error.code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
     expect(error.message).toContain('FAILING PREDICATE "oracle"');
     // The message must not still claim the list is empty once it is not.
-    expect(error.message).not.toContain("which is empty");
-    expect(error.message).toContain("1 other oracle(s)");
+    expect(error.message).not.toContain("is empty");
+    expect(error.message).toContain("none of them for this market and this oracle together");
+  });
+
+  /**
+   * THE APPROVAL IS FOR ONE MARKET, NOT FOR AN ADDRESS.
+   *
+   * The owner read WBTC/USDC's collateral, feeds and scale and vouched for that.
+   * Morpho Blue lets any number of markets name the same oracle contract, so
+   * matching on the address alone turned one reviewed market into a standing
+   * approval for every curated Ethereum market that reuses it. Nobody made that
+   * claim, so the gate must not act on it.
+   */
+  it("BINDS THE VOUCH TO ITS MARKET: the same oracle on a DIFFERENT market is refused", async () => {
+    const anotherMarket = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const error = await assertMorphoMarketExecutable(
+      ethereumClient(), ETHEREUM, anotherMarket, vouchedParams(),
+    ).catch((caught: VexError) => caught) as VexError;
+
+    expect(error.code).toBe(ErrorCodes.MORPHO_MARKET_POLICY_VIOLATION);
+    expect(error.message).toContain('FAILING PREDICATE "oracle"');
+    // The refusal must say WHY, or the next reader concludes the entry is broken.
+    expect(error.message).toContain("for a different market");
+    expect(error.message).toContain(VOUCHED?.marketId ?? "");
+    expect(error.message).toContain("does not carry to this one");
   });
 
   it("holds a well-formed list: checksummed, unique, and only on chains Vex pins", () => {

@@ -119,4 +119,3 @@ export function projectAsset(asset: MorphoAsset | null): ProjectedAsset | null {
 export function toPercent(fraction: number | null): number | null {
   return fraction === null ? null : fraction * 100;
 }
-

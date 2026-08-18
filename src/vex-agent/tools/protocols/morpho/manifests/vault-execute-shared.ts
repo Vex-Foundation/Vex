@@ -48,11 +48,13 @@ export const MORPHO_GATING_SENTENCE =
   + "numbers look. Vex DISCLOSES gating rather than blocking on it, and reports it as UNKNOWN rather than absent when "
   + "the governance read did not answer. Say so before recommending the operation.";
 
-/** The absolute share bound, and what it is not. */
+/** The share bound, stated as what it actually is: the chain's own price guard. */
 export const MORPHO_SHARE_FLOOR_SENTENCE =
-  "PRICE PROTECTION: `slippageBps` sets an ABSOLUTE bound in shares for this one operation, not a percentage that "
-  + "grows with size. On a deposit it is the ceiling the transaction's own `maxSharePrice` guard enforces ON CHAIN, so "
-  + "a worse fill cannot mine. The settled shares are reported against that bound, with the plain quoted-vs-settled "
+  "PRICE PROTECTION: `slippageBps` sets a per-share PRICE bound, derived ONCE from this operation's quote and the "
+  + "approved basis points before any settlement is known. The share floor it implies is proportional to the size "
+  + "traded, exactly as the chain's own guard is. On a deposit it is the ceiling the transaction's own "
+  + "`maxSharePrice` guard enforces ON CHAIN, so a worse fill cannot mine. The settled shares are reported against "
+  + "that bound, with the plain quoted-vs-settled "
   + "difference beside it labelled accrual drift, which is the interest the vault earned between the two blocks and is "
   + "normal rather than a fault.";
 

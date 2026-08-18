@@ -29,7 +29,12 @@ supplying a market directly.
 
 **Execute.** Deposit to and withdraw from a curated vault. Supply and withdraw
 the loan asset of a market directly. Supply and withdraw collateral, borrow, and
-repay. Claim Merkl rewards. Every execution is quote-gated and consent-gated.
+repay. Claim Merkl rewards. Every execution is consent-gated. Every execution
+that moves a priced amount is also quote-gated: the vault pair and all six market
+operations register a prequote kind in `protocols/prequote/registry.ts`. The
+Merkl claim deliberately registers none, exactly like `pendle.claim`, because an
+income sweep has no price, no slippage, no counterparty and no size, so there is
+no figure a prequote could bind an approval to.
 
 **Chains.** The nine where Vex can both bridge to and swap on the chain:
 Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain, HyperEVM, Monad and
@@ -77,15 +82,21 @@ market can rot after listing, which only layer 3 sees.
 
 Exchange-rate adapters (the wstETH/stETH and weETH/ETH class) report
 `updatedAt == 0` because they derive from live chain state rather than a pushed
-round. They pass layer 3 on a positive answer alone, and remain subject to
-layers 1 and 2.
+round. A zero timestamp is NOT a blanket exemption from layer 3: the contract is
+a RECOGNIZED-ADAPTER allowance. Only a feed the code can positively identify as
+that class may pass on a positive answer alone; an unrecognized feed reporting
+zero is a feed whose age cannot be established, and it is refused rather than
+waved through. Layers 1 and 2 apply either way.
 
 `MORPHO_MANUAL_ORACLE_ALLOWLIST` in `src/tools/morpho/constants.ts` is the
 owner's escape hatch for a curated market whose oracle predates the factory. It
-short-circuits layer 2 ONLY; curation and liveness still apply to an allowlisted
-oracle. Each entry carries its evidence as a field, not a comment, so tests can
-assert on it. Adding an entry is a security-posture decision under rules/00 and
-needs explicit owner approval, never a builder's judgement.
+is MARKET-SCOPED and must stay that way: an entry admits one oracle for the one
+market triple it names, never that oracle wherever it appears, so an allowlisted
+oracle reused by a different market gets no free pass. It short-circuits layer 2
+ONLY; curation and liveness still apply to an allowlisted oracle. Each entry
+carries its evidence as a field, not a comment, so tests can assert on it. Adding
+an entry is a security-posture decision under rules/00 and needs explicit owner
+approval, never a builder's judgement.
 
 **Health factor floor 1.25 is a buffer, not a guarantee.** It is projected from
 post-accrual state and re-read immediately before signing, but the direct Blue
@@ -112,11 +123,16 @@ selector or an undecodable leg is a named refusal, never a pass-through. The
 selector allowlist is derived from the SDK's own ABIs at load time and each
 addition cites the fork capture that produced it.
 
-**Ambiguity is never terminalized.** A broadcast whose receipt cannot be read
-leaves its ledger row pending forever for the repair sweep, and the operation is
-never retried. A funded probe hit exactly this when an RPC refused
-`eth_getTransactionReceipt`: the approval landed, the deposit was never sent,
-and the honest output said so.
+**Ambiguity is never terminalized by the handler.** A broadcast whose receipt
+cannot be read, or whose amounts cannot be decoded, returns `unproven` and leaves
+its ledger row PENDING, and the operation is never retried. Pending is not
+permanent: the generic EVM repair sweep (`sync/agent-activity-repair.ts`) later
+re-reads the receipt and status-confirms the row from a definitive one even
+though it can decode no amounts, while the executed-amount fallback fills the
+money separately or declines it by name. What the handler refuses to do is
+manufacture a terminal verdict it cannot prove. A funded probe hit exactly this
+when an RPC refused `eth_getTransactionReceipt`: the approval landed, the deposit
+was never sent, and the honest output said so.
 
 ## Ledger contract
 
@@ -130,9 +146,19 @@ and the honest output said so.
 One venue, two kinds, because the ledger's kinds describe the OPERATION rather
 than the protocol: a Merkl sweep is income, not lending. A claim records one row
 per transaction because a unique `tx_hash` index deliberately allows exactly one
-activity row per broadcast; one token's proven credit is anchored on the leg and
-the full multi-token breakdown rides on the leg's route provenance. Market rows
-and vault rows share their roles and are distinguished by their intent params.
+activity row per broadcast. Exactly one token's credit is PROVEN from the
+receipt's own logs and anchored on the leg; the remaining tokens ride on the
+leg's route provenance as the PLANNED claim set Vex submitted, not as proven
+executed credits. Do not read the provenance breakdown as settlement evidence.
+Market rows and vault rows share their roles and are distinguished by their
+intent params.
+
+**Completeness.** `roleLegsIncomplete` and its SQL mirror require an executed leg
+from the LEND roles only where the row itself populated that token side. A vault
+deposit or withdrawal swaps asset for shares, populates both sides, and owes
+both. A direct-market supply or withdrawal moves ONE token, populates one side,
+and owes one. Demanding both would hold every correctly settled market row
+"incomplete" until the reporting grace expired.
 
 Migrations: `079` admits EVM lend rows and approval legs, `080` adds the vault
 prequote kinds, `081` adds the four per-operation borrow kinds. All expand-only.
@@ -143,7 +169,9 @@ contract does not carry, so the server sees only which leg is populated - and
 that cannot separate a collateral supply from a repayment, or a borrow from a
 collateral withdrawal. Counting by direction would book a repayment as new
 volume. Undercounting was chosen over overcounting, deliberately, and it is
-recorded as an open question on the server PR. Vault deposits do count.
+recorded as an open question on the server PR. The lender's rows do count, both
+the vault pair and the direct-market pair: they carry `lend_deposit` /
+`lend_withdraw`, whose direction alone is unambiguous.
 
 ## Deliberately absent
 

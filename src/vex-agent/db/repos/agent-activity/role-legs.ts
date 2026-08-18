@@ -85,13 +85,16 @@ export function isAmountBearingRole(role: AgentActivityEventRole): boolean {
  * chain, in another transaction, on the fill row).
  * `yield_py`/`yield_lp` require their second legs ONLY where the row itself
  * populated the second-leg tokens, exactly as migration 053's CHECK does.
- * `lend_borrow_operate` requires each FIRST leg on the same terms, for the same
- * reason: every Morpho Blue operation and every Jupiter /operate leg moves ONE
- * token (supply_collateral and repay send, withdraw_collateral and borrow
+ * The three LEND roles require each FIRST leg on the same terms, for the same
+ * reason: a vault deposit or withdrawal swaps asset for shares and populates
+ * BOTH token sides, so both are required, while every Morpho Blue direct-market
+ * operation and every Jupiter /operate leg moves ONE token (supply and
+ * supply_collateral and repay send, withdraw and withdraw_collateral and borrow
  * receive), so the row populates one side's token and leaves the other null.
- * Demanding both legs held every such confirmed row incomplete forever - the
- * full reporting grace on each, then re-swept by the executed-amount fallback
- * for an amount that was never coming.
+ * Reading the row's own tokens covers both shapes with one rule. Demanding both
+ * legs unconditionally held every one-sided confirmed row incomplete forever -
+ * the full reporting grace on each, then re-swept by the executed-amount
+ * fallback for an amount that was never coming.
  */
 export function roleLegsIncomplete(row: RoleLegRow): boolean {
   const role = row.eventRole;
@@ -100,7 +103,7 @@ export function roleLegsIncomplete(row: RoleLegRow): boolean {
   if (role === "yield_claim") return !row.executedAmountOutRaw;
   if (role === "bridge_deposit") return !row.executedAmountInRaw;
 
-  if (role === "lend_borrow_operate") {
+  if (role === "lend_deposit" || role === "lend_withdraw" || role === "lend_borrow_operate") {
     if (row.tokenInAddress && !row.executedAmountInRaw) return true;
     if (row.tokenOutAddress && !row.executedAmountOutRaw) return true;
     return false;
