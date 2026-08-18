@@ -130,11 +130,10 @@ describe("DexScreener feed + narrative byte budgets", () => {
   // characters, and one earlier window reached 3,390. Owner decision O9 forbids
   // truncating any of it, so the levers are `limit` and `updatedWithinSeconds`,
   // both agent-set and both documented on the tool.
-  it("profiles.recent, no params: still over the cap, and the excess is issuer text", async () => {
+  it("profiles.recent, bounded default: issuer text remains under the cap", async () => {
     const bytes = await outputBytes("dexscreener.profiles.recent");
-    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
-    // Was 40,089 B. The projection more than halves it without dropping a row.
-    expect(bytes).toBeLessThan(30_000);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
+    expect(bytes).toBeGreaterThan(12_000);
   });
 
   it("profiles.recent, limit 15: comfortably under the cap", async () => {
@@ -149,7 +148,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
     // row count, which is what `limit` is for. What this asserts is the SIZE of
     // the text: half the payload is issuer prose.
     const tenRows = await outputBytes("dexscreener.profiles.recent", { limit: 10 });
-    expect(withText - tenRows).toBeGreaterThan(8_000);
+    expect(withText - tenRows).toBeGreaterThan(5_000);
   });
 
   // ── attention: the merge, no longer silently cut ────────────────

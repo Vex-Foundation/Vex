@@ -107,7 +107,10 @@ function context(direction: "deposit" | "withdraw"): MorphoExecutionContext {
   // they are never read - and it is returned through the REAL exported type, so
   // a change to the context this leg depends on breaks these cases rather than
   // letting them keep passing against a private local shape.
-  return built as MorphoExecutionContext;
+  // The double cast is the deliberate test-double bridge the comment above
+  // describes; TS2352 rejects the direct cast because the mocked shape and the
+  // real context do not overlap.
+  return built as unknown as MorphoExecutionContext;
 }
 
 function delisted(): VexError {

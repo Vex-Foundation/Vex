@@ -72,6 +72,7 @@ async function call(toolId: string, params: Record<string, unknown>): Promise<Pa
 function withoutClock(payload: Payload): unknown {
   const copy: Record<string, unknown> = { ...payload };
   delete copy.asOfMs;
+  delete copy.sourceObservation;
   return copy;
 }
 

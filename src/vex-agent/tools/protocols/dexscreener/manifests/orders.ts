@@ -15,6 +15,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { DEXSCREENER_ORDERS_DISCOVERY } from "../../embeddings/dexscreener/orders.js";
 import { AD_FEED_PARAMS, FEED_DESCRIPTION_WINDOW_CLAUSE } from "./feed-list-params.js";
+import { SOURCE_OBSERVATION_CLAUSE } from "./pair-list-params.js";
 import { DEXSCREENER_CHAIN_PARAM } from "../chain-param.js";
 
 export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
@@ -27,7 +28,7 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
       + "(Unix epoch MILLISECONDS) — plus the token's boost-payment ledger (individual boost "
       + "purchases with amounts). This is a SPEND record: it shows what the project paid DEX "
       + "Screener for. Paying for promotion is not a quality or safety signal, and paying for none "
-      + "is not a warning.",
+      + "is not a warning." + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [
@@ -42,13 +43,17 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get latest DexScreener ad placements — type, duration, impressions. Monitor promotional "
-      + "activity across the platform. "
-      + FEED_DESCRIPTION_WINDOW_CLAUSE,
+      "Get latest PAID DexScreener ad placements. An ad is bought visibility, never demand, "
+      + "legitimacy, or safety. Field reality, measured live on 30 rows: adType was 'tokenAd' on "
+      + "30/30, adDurationHours null on 30/30, and adImpressionCount a constant 10000 - a package "
+      + "tier, NOT delivered reach. For one exact token's paid history use dexscreener.orders. "
+      + FEED_DESCRIPTION_WINDOW_CLAUSE + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [...AD_FEED_PARAMS],
-    exampleParams: { chainIds: "solana", placedWithinSeconds: 86400, sortBy: "adImpressionCount" },
+    // Not sortBy: "adImpressionCount" - measured a constant 10000 on 30/30 rows,
+    // so that sort is a guaranteed no-op and an example teaches harder than prose.
+    exampleParams: { chainIds: "solana", placedWithinSeconds: 86400, limit: 15 },
     discovery: DEXSCREENER_ORDERS_DISCOVERY["dexscreener.ads"],
   },
 ];

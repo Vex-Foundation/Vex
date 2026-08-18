@@ -185,6 +185,15 @@ function rejectionsFor(
       rejects: (row) => typeof row.pair.priceUsd !== "string" || row.pair.priceUsd === "",
     });
   }
+  if (filters.requireLiquidityUsd) {
+    // `liquidityUsd: null` is a legitimate provider state (pre-graduation
+    // bonding-curve pools report no reserves), so this flag drops UNKNOWN
+    // liquidity, with the drop counted - it never invents a zero.
+    rejections.push({
+      reason: "requireLiquidityUsd",
+      rejects: (row) => row.metrics.liquidityUsd === null,
+    });
+  }
   if (filters.onlyBoosted) {
     rejections.push({
       reason: "onlyBoosted",

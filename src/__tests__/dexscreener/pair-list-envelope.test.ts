@@ -79,17 +79,16 @@ describe("DexScreener pair-list provenance envelope", () => {
     vi.restoreAllMocks();
   });
 
-  // ── The silent default is gone ──────────────────────────────────
+  // ── Bounded defaults stay visible ───────────────────────────────
 
-  it("omitting `limit` returns EVERY row the provider returned", async () => {
+  it("the default search window is explicit and pageable", async () => {
     const data = await call("dexscreener.search", { query: "USDC" });
     expect(data.providerWindow.providerReturned).toBe(30);
-    expect(data.returned).toBe(30);
-    expect(data.pairs).toHaveLength(30);
+    expect(data.returned).toBe(5);
+    expect(data.pairs).toHaveLength(5);
     expect(data.totalMatched).toBe(30);
-    expect(data.hasMore).toBe(false);
-    // The old default would have produced 20 with no indication.
-    expect(data.filtersApplied.limit).toBeUndefined();
+    expect(data.hasMore).toBe(true);
+    expect(data.filtersApplied.limit).toBe(5);
   });
 
   it("`limit: 0` is rejected rather than meaning two different things", async () => {
@@ -126,7 +125,7 @@ describe("DexScreener pair-list provenance envelope", () => {
       query: "USDC",
       minLiquidityUsd: 1_000_000,
     });
-    expect(data.returned + totalDropped(data.droppedByFilter)).toBe(
+    expect(data.totalMatched + totalDropped(data.droppedByFilter)).toBe(
       data.providerWindow.providerReturned,
     );
   });
@@ -286,16 +285,30 @@ describe("DexScreener pair-list provenance envelope", () => {
   // ── tokenPairs cross-pool sanity ────────────────────────────────
 
   it("tokenPairs emits the cross-pool median and flags the outlier WITHOUT dropping it", async () => {
-    const data = await call("dexscreener.tokenPairs", { chain: "solana", tokenAddress: "BONK" });
-    expect(typeof data.priceUsdMedianAcrossPools).toBe("string");
+    const [witness] = tokenPairsBonk();
+    if (witness === undefined) throw new Error("fixture has no token pair");
+    const data = await call("dexscreener.tokenPairs", {
+      chain: "solana",
+      tokenAddress: witness.baseToken.address,
+      limit: 30,
+    });
+    expect(typeof data.requestedTokenPriceUsdMedianAcrossPools).toBe("string");
+    // The pre-batching alias `priceUsdMedianAcrossPools` is GONE: its name
+    // promised a base-token median while the value became the requested-token
+    // median, inviting a false outlier verdict on every quote-side pool.
+    expect("priceUsdMedianAcrossPools" in data).toBe(false);
     const outliers = data.pricePoolOutliers;
     expect(Array.isArray(outliers)).toBe(true);
     expect((outliers as unknown[]).length).toBeGreaterThan(0);
-    // Flagged, not suppressed: every provider row is still returned.
+    // The provider census remains 30; the visible default window is explicit.
+    expect(data.providerWindow.providerReturned).toBe(30);
     expect(data.returned).toBe(30);
+    expect(data.hasMore).toBe(false);
     const flagged = data.pairs.filter((row) => row.priceSanity === "outlier_vs_pool_median");
     expect(flagged.length).toBe((outliers as unknown[]).length);
     expect(data.pairs.every((row) => typeof row.priceSanity === "string")).toBe(true);
+    expect(data.pairs.every((row) => typeof row.requestedTokenSide === "string")).toBe(true);
+    expect(data.pairs.every((row) => "requestedTokenPriceUsd" in row)).toBe(true);
   });
 
   // ── tokens address reconciliation ───────────────────────────────
@@ -309,7 +322,13 @@ describe("DexScreener pair-list provenance envelope", () => {
     expect(data.requestedAddresses).toHaveLength(40);
     expect(data.resolvedAddresses).toHaveLength(30);
     expect(data.unresolvedAddresses).toHaveLength(10);
-    expect(data.addressCapApplied).toBe(true);
+    // Both batches COMPLETED here, so nothing is "unreached" — the 10 missing
+    // addresses were asked and not returned. (`addressCapApplied` is gone: it
+    // meant ">30 requested", which after batch-splitting was true on fully
+    // resolved calls — a cap Vex itself removed.)
+    expect(data.unreachedAddresses).toEqual([]);
+    expect(data.failedBatchCount).toBe(0);
+    expect(data.batchRequestCount).toBe(2);
   });
 
   it("pairs reports `found` so an empty list is not mistaken for a bad address", async () => {

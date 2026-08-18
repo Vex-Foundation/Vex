@@ -11,10 +11,12 @@ const {
   getJupiterTokensByTag,
   searchJupiterTokens,
 } = vi.hoisted(() => ({
-  getJupiterTokensByCategory: vi.fn(async () => []),
-  getJupiterRecentTokens: vi.fn(async () => []),
-  getJupiterTokensByTag: vi.fn(async () => []),
-  searchJupiterTokens: vi.fn(async () => []),
+  // Explicit element type: a bare `async () => []` infers `never[]`, which
+  // rejects every mockResolvedValueOnce that feeds a token fixture.
+  getJupiterTokensByCategory: vi.fn(async (): Promise<unknown[]> => []),
+  getJupiterRecentTokens: vi.fn(async (): Promise<unknown[]> => []),
+  getJupiterTokensByTag: vi.fn(async (): Promise<unknown[]> => []),
+  searchJupiterTokens: vi.fn(async (): Promise<unknown[]> => []),
 }));
 
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
@@ -101,6 +103,32 @@ describe("solana-jupiter handlers — tokens", () => {
     expect(getJupiterTokensByTag).not.toHaveBeenCalled();
   });
 
+  it("recent applies the advertised limit as a VISIBLE window, never silently", async () => {
+    // The pre-fix branch ignored `limit` entirely: a bare live call returned 30
+    // rows measuring 27,970 B against the 16,384 B tool-output cap.
+    getJupiterRecentTokens.mockResolvedValueOnce(
+      Array.from({ length: 30 }, (_, i) => ({
+        id: `mint-${i}`,
+        name: `Token ${i}`,
+        symbol: `T${i}`,
+        decimals: 9,
+      })),
+    );
+    const result = await trending({ category: "recent", limit: 5 });
+    expect(result.success).toBe(true);
+    const data = result.data as unknown as {
+      returned: number;
+      totalMatched: number;
+      hasMore: boolean;
+      tokens: { mint: string }[];
+    };
+    expect(data.returned).toBe(5);
+    expect(data.totalMatched).toBe(30);
+    expect(data.hasMore).toBe(true);
+    expect(data.tokens).toHaveLength(5);
+    expect(data.tokens[0]!.mint).toBe("mint-0");
+  });
+
   it("solana.tokens.trending routes 'lst' and 'verified' to the tag provider", async () => {
     for (const tag of ["lst", "verified"] as const) {
       getJupiterTokensByTag.mockClear();
@@ -174,7 +202,7 @@ describe("solana-jupiter handlers — tokens output redesign (W1-G)", () => {
     getJupiterTokensByCategory.mockResolvedValueOnce([rawToken()]);
     const result = await trending({ category: "toptrending", interval: "6h" });
     expect(result.success).toBe(true);
-    const tokens = result.data as unknown as { stats6h: unknown; stats1h: unknown }[];
+    const tokens = (result.data as unknown as { tokens: { stats6h: unknown; stats1h: unknown }[] }).tokens;
     expect(tokens[0]!.stats6h).not.toBeNull();
     expect(tokens[0]!.stats1h).toBeNull();
   });
@@ -182,7 +210,7 @@ describe("solana-jupiter handlers — tokens output redesign (W1-G)", () => {
   it("solana.tokens.trending honors an explicit statsInterval over the resolved interval", async () => {
     getJupiterTokensByCategory.mockResolvedValueOnce([rawToken()]);
     const result = await trending({ category: "toptrending", interval: "6h", statsInterval: "24h" });
-    const tokens = result.data as unknown as { stats6h: unknown; stats24h: unknown }[];
+    const tokens = (result.data as unknown as { tokens: { stats6h: unknown; stats24h: unknown }[] }).tokens;
     expect(tokens[0]!.stats24h).not.toBeNull();
     expect(tokens[0]!.stats6h).toBeNull();
   });
@@ -190,7 +218,7 @@ describe("solana-jupiter handlers — tokens output redesign (W1-G)", () => {
   it("solana.tokens.trending 'all' keeps every stats window", async () => {
     getJupiterTokensByCategory.mockResolvedValueOnce([rawToken()]);
     const result = await trending({ category: "toptrending", statsInterval: "all" });
-    const tokens = result.data as unknown as { stats5m: unknown; stats1h: unknown; stats6h: unknown; stats24h: unknown }[];
+    const tokens = (result.data as unknown as { tokens: { stats5m: unknown; stats1h: unknown; stats6h: unknown; stats24h: unknown }[] }).tokens;
     expect(tokens[0]!.stats5m).not.toBeNull();
     expect(tokens[0]!.stats1h).not.toBeNull();
     expect(tokens[0]!.stats6h).not.toBeNull();
@@ -243,7 +271,7 @@ describe("solana-jupiter handlers — tokens output redesign (W1-G)", () => {
       minLiquidity: 10_000,
     });
     expect(result.success).toBe(true);
-    const tokens = result.data as unknown as { mint: string }[];
+    const tokens = (result.data as unknown as { tokens: { mint: string }[] }).tokens;
     expect(tokens.map((t) => t.mint)).toEqual(["Passes"]);
   });
 

@@ -79,14 +79,18 @@ describe("DexScreener pair-list byte budgets", () => {
 
   // ── search — the primary tool of this family ────────────────────
 
-  it("search, lean default, 30 rows: under the 16,384 B context cap", async () => {
+  it("search, lean default window: under the 16,384 B context cap", async () => {
     const bytes = await outputBytes("dexscreener.search", { query: "USDC" });
     expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
-    expect(bytes).toBeGreaterThan(5_000);
+    expect(bytes).toBeGreaterThan(3_000);
   });
 
-  it("search, rich (fields=full), 30 rows: over the cap — which is why rich is opt-in", async () => {
-    const bytes = await outputBytes("dexscreener.search", { query: "USDC", fields: "full" });
+  it("search, rich 30-row window: over the cap — which is why rich is opt-in", async () => {
+    const bytes = await outputBytes("dexscreener.search", {
+      query: "USDC",
+      fields: "full",
+      limit: 30,
+    });
     expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeLessThan(60_000);
   });
@@ -97,7 +101,7 @@ describe("DexScreener pair-list byte budgets", () => {
     // The whole excess is one row's issuer-authored symbol. Delivered in full,
     // by owner decision, and flagged in externalContentFields.
     expect(adversarial - ordinary).toBeGreaterThan(8_000);
-    expect(adversarial).toBeLessThan(30_000);
+    expect(adversarial).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("search: excluding baseName from the lean set is worth more than 30 KB on the adversarial row", async () => {
@@ -112,7 +116,7 @@ describe("DexScreener pair-list byte budgets", () => {
   });
 
   it("search: an agent-set limit is the only thing that shrinks a row count", async () => {
-    const all = await outputBytes("dexscreener.search", { query: "USDC" });
+    const all = await outputBytes("dexscreener.search", { query: "USDC", limit: 30 });
     const five = await outputBytes("dexscreener.search", { query: "USDC", limit: 5 });
     expect(five).toBeLessThan(all / 2);
   });
@@ -136,20 +140,13 @@ describe("DexScreener pair-list byte budgets", () => {
     expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
-  // MEASURED AND ACCEPTED: `tokens` is the one tool in this family whose default
-  // call exceeds the cap, and the excess is the mandatory address echo — 40
-  // requested + 30 resolved + 10 unresolved addresses is ~3.6 KB. That echo is
-  // the ONLY thing standing between the agent and provider-side silent
-  // truncation (40 requested, 30 returned, HTTP 200), so it is not a candidate
-  // for removal. `limit` brings the call under the cap, and it is agent-set and
-  // disclosed rather than a hidden default.
-  it("tokens (40 requested, 30 returned), lean: over the cap, because of the address echo", async () => {
+  it("tokens keeps full address accounting and its default rows under the cap", async () => {
     const bytes = await outputBytes("dexscreener.tokens", {
       chain: "ethereum",
       tokenAddresses: tokensEthereum40().requestedAddresses,
     });
-    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
-    expect(bytes).toBeLessThan(20_000);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
+    expect(bytes).toBeGreaterThan(8_000);
   });
 
   it("tokens: an agent-set limit brings it under the cap without hiding an address", async () => {

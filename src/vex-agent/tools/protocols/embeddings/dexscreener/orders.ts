@@ -14,17 +14,33 @@ export const DEXSCREENER_ORDERS_DISCOVERY = {
   "dexscreener.orders": {
     embeddingText: embeddingText(
       `Check whether a token has paid promotional orders on DEX Screener — type, status, payment timestamp. ` +
-      `Use this when the user wants to know whether a token is being marketed, review a project's marketing history, or see how much money is being spent to promote a coin — a spend record, never a safety verdict. ` +
+      `Use this when the exact chain and token address are known, after a boost or ad lookup, to read that token's DexScreener promotion-order record. It is never evidence of demand, legitimacy, or contract safety. ` +
       `Example queries: is this token paying for promo, marketing campaign for this coin, paid promo history for token, has this project bought ads, promo orders for this token.`,
     ),
+    aliases: [
+      "promotion orders for this exact token",
+      "promotion orders",
+      "paid promo orders",
+      "token promotion record",
+    ],
+    exampleIntents: [
+      "promotion orders for this exact token",
+      "check promotion orders for this exact token",
+      "show this token's paid promo order status",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.ads": {
     embeddingText: embeddingText(
       `Get the latest ad placements running on DEX Screener — what tokens are paying for visibility right now, ad type, duration. ` +
-      `Use this when the user wants to see who is currently advertising on the platform, what new tokens are buying attention, or which projects are spending on visibility. ` +
+      `Use this when the user wants DexScreener's current ad-placement labels, then call dexscreener.orders for one selected exact token. An ad is paid visibility, not proof of demand, legitimacy, or safety. ` +
       `Example queries: who is advertising on dexscreener, latest token ads, current promo placements, what's being marketed right now, who's spending on ads.`,
     ),
+    aliases: ["token ad placements", "current dexscreener ads", "paid token ads"],
+    exampleIntents: [
+      "show current token ad placements",
+      "which tokens have paid ads on dexscreener",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

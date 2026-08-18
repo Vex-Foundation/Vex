@@ -8,10 +8,9 @@
  *
  *   - `assessNormalizedCandidates` (below) over watch candidates already
  *     normalized to the watched token, in exact decimal arithmetic;
- *   - `vex-agent/tools/protocols/dexscreener/pair-list/price-sanity.ts`, whose
- *     adapter adds only the pair-list projection shapes: the provider's raw
- *     base-token `priceUsdNumeric`, the per-row verdicts, and the exact-decimal
- *     median STRING the agent reads.
+ *   - `vex-agent/tools/protocols/dexscreener/pair-list/price-sanity.ts`, which
+ *     first reuses the same watched-token normalization and then adapts the
+ *     exact-decimal median, per-row verdicts, side, and price into pair rows.
  *
  * The rule lives here, in `src/tools`, so the low-level client layer does not
  * have to import a `vex-agent` protocol module: `vex-agent` may import
@@ -19,9 +18,8 @@
  *
  * WHY THE VALUE TYPE IS A PARAMETER. The two populations are not comparable in
  * the same arithmetic. The watch compares exact decimals because a money
- * threshold must not round; the pair-list assessor divides the provider's own
- * float to report "4,892x the median" in the agent-facing note. The population
- * rule is what they share, so the value algebra is the caller's.
+ * threshold must not round, and the pair-list assessor now uses that same exact
+ * arithmetic. The generic primitive remains parameterized for other populations.
  *
  * The threshold is a FIXED order of magnitude, not a percentage of the sample:
  * a band that widened with the spread would be widest exactly when the data is

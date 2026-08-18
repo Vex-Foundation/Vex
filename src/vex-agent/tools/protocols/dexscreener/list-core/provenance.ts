@@ -55,8 +55,9 @@ export const PROVIDER_FEED_WINDOW_NOTE =
   "DexScreener returns at most 30 rows per feed call and offers no pagination and no server-side "
   + "filter. This is the window it chose, not the full set of tokens carrying this signal — every "
   + "filter, sort and window in filtersApplied was applied by Vex to the rows below. These rows "
-  + "carry NO price, liquidity, volume or pool address: resolve those with dexscreener.tokenPairs "
-  + "using the chainId and tokenAddress on each row.";
+  + "carry NO price, liquidity, volume or pool address: resolve MANY rows in one call with "
+  + "dexscreener.tokens (chain + comma-separated addresses, up to 60), or one token's full pool "
+  + "list with dexscreener.tokenPairs.";
 
 /**
  * Narrative-level honesty. §4.4: nine candidate sorts were ruled out against the

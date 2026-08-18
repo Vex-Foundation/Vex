@@ -16,7 +16,7 @@ export const SOLANA_NAVIGATION: ProtocolNamespaceNavigation = {
     'discover_tools(query="solana prediction markets", namespace="solana")',
   ],
   aliases: ["jupiter", "solana swap", "solana lending", "solana prediction"],
-  discoveryHints: ["token mint search", "solana swap", "jupiter price", "lend rates", "prediction market"],
+  discoveryHints: ["token mint search", "fresh solana launches", "new solana tokens", "solana swap", "jupiter price", "lend rates", "prediction market"],
   facets: [
     {
       label: "Core token and price lookup",
