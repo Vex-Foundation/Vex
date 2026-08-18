@@ -16,6 +16,7 @@ import {
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
+import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
 import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
 import {
   defaultLighterTradingVaultCredentialId,
@@ -29,6 +30,7 @@ import {
   listUnlockedLighterTradingCredentialScopes,
 } from "../secrets/lighter-trading-credential.js";
 import { readLighterLiveTradingReleaseGateStatus } from "./live-trading-release-gate.js";
+import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 
 // Short-lived account-auth token lifetime for read-only reconciliation reads.
 const REPAIR_ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
@@ -111,10 +113,15 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     // one account is configured, instead of silently picking the lowest index.
     listScopes: (environment) => listUnlockedLighterTradingCredentialScopes(environment),
   });
+  const uninstallReadinessResolver = configureLighterManagedTradingReadinessResolver({
+    read: (environment, accountIndex) =>
+      resolveManagedLighterTradingReadiness(environment, accountIndex),
+  });
   return () => {
     uninstallRepairAuth();
     uninstallReadAuth();
     uninstallScopeResolver();
+    uninstallReadinessResolver();
     uninstallExecutionDeps();
     uninstallReleaseGate();
   };

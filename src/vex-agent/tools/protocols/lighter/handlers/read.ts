@@ -82,6 +82,7 @@ import {
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
+import { readLighterManagedTradingReadiness } from "../managed-trading-readiness.js";
 
 // Resolves the account index and, when one can be derived from the saved trading
 // key, a short-lived read-only auth token for an authenticated account read.
@@ -430,25 +431,6 @@ async function resolvePreviewApiKeyIndex(
   }
 }
 
-async function hasActiveManagedTradingCredential(
-  environment: LighterEnvironment,
-  accountIndex: number,
-): Promise<boolean> {
-  const savedScope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
-  if (savedScope === null) return false;
-  const response = await getLighterClient().getApiKeys(environment, {
-    accountIndex,
-    apiKeyIndex: savedScope.apiKeyIndex,
-  });
-  return response.code === 200 && response.api_keys.some((key) => {
-    const publicKey = key.public_key.startsWith("0x") ? key.public_key.slice(2) : key.public_key;
-    return key.account_index === accountIndex
-      && key.api_key_index === savedScope.apiKeyIndex
-      && publicKey.length > 0
-      && /[1-9a-f]/i.test(publicKey);
-  });
-}
-
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.account.onboarding.status": async (params, context) => {
     const environment = readEnvironment(params);
@@ -504,9 +486,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress,
         requiredCollateralUnits,
       });
-      const managedTradingAccessActive = status.accountIndex !== null
-        && status.tradingKeyRegistered
-        && await hasActiveManagedTradingCredential(environment.value, status.accountIndex);
+      const managedTradingReadiness = status.accountIndex === null
+        ? null
+        : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
+      const managedTradingAccessActive = status.tradingKeyRegistered
+        && managedTradingReadiness?.ready === true;
       const plan = !managedTradingAccessActive
         && !status.plan.legs.some((leg) => leg.kind === "register_trading_key")
         ? {
@@ -537,6 +521,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ...status,
         tradingKeyRegistered: managedTradingAccessActive,
         managedTradingAccessActive,
+        managedTradingReadiness,
         plan,
         depositAmountProvided,
         userGuidance,

@@ -136,6 +136,9 @@ const { configureLighterReadOnlyAccountAuthResolver } = await import(
 const { configureLighterKeyRegistrationExecutor } = await import(
   "@vex-agent/tools/protocols/lighter/key-registration-execution.js"
 );
+const { configureLighterManagedTradingReadinessResolver } = await import(
+  "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js"
+);
 const { validatePreparedActionFollowUp } = await import(
   "@vex-agent/tools/registry/prepared-action-follow-ups.js"
 );
@@ -458,6 +461,7 @@ beforeEach(() => {
     findSavedScope: () => null,
     findDefaultScope: () => null,
   });
+  configureLighterManagedTradingReadinessResolver(null);
   configureLighterReadOnlyAccountAuthResolver(null);
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
@@ -539,22 +543,18 @@ describe("Lighter agent read handlers", () => {
     expect(data.userGuidance).not.toContain("they are ready to trade");
   });
 
-  it("reports ready only when the saved local credential occupies its live slot", async () => {
-    configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
-        environment === "core" && accountIndex === 42
-          ? { environment, accountIndex, apiKeyIndex: 4 }
-          : null,
-    });
-    mocks.client.getApiKeys.mockResolvedValue({
-      code: 200,
-      api_keys: [{
-        account_index: 42,
-        api_key_index: 4,
-        nonce: 1,
-        public_key: "ab".repeat(40),
-        transaction_time: 1,
-      }],
+  it("reports ready only when the privileged managed readiness boundary passes", async () => {
+    configureLighterManagedTradingReadinessResolver({
+      read: vi.fn(async () => ({
+        ready: true,
+        reason: "ready",
+        activeManagedCredential: true,
+        durableActivation: true,
+        exactPublicKeyMatch: true,
+        clientCheckPassed: true,
+        nonceSynchronized: true,
+        nonceReservable: true,
+      })),
     });
     mocks.onboarding.resolveStatus.mockResolvedValue({
       environment: "core",
@@ -580,13 +580,61 @@ describe("Lighter agent read handlers", () => {
       walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
     });
 
-    expect(mocks.client.getApiKeys).toHaveBeenCalledWith("core", {
-      accountIndex: 42,
-      apiKeyIndex: 4,
-    });
     expect(data.managedTradingAccessActive).toBe(true);
+    expect(data.managedTradingReadiness).toMatchObject({
+      ready: true,
+      exactPublicKeyMatch: true,
+      clientCheckPassed: true,
+      nonceReservable: true,
+    });
     expect(data.plan).toMatchObject({ ready: true, legs: [] });
     expect(data.userGuidance).toContain("they are ready to trade");
+  });
+
+  it("routes an unresolved managed nonce to setup recovery instead of reporting ready", async () => {
+    configureLighterManagedTradingReadinessResolver({
+      read: vi.fn(async () => ({
+        ready: false,
+        reason: "nonce_not_reservable",
+        activeManagedCredential: true,
+        durableActivation: true,
+        exactPublicKeyMatch: true,
+        clientCheckPassed: true,
+        nonceSynchronized: true,
+        nonceReservable: false,
+      })),
+    });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "0",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "1000000",
+      plan: {
+        legs: [],
+        ready: true,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(data.managedTradingAccessActive).toBe(false);
+    expect(data.managedTradingReadiness).toMatchObject({
+      reason: "nonce_not_reservable",
+      nonceReservable: false,
+    });
+    expect(data.plan).toMatchObject({ ready: false });
+    expect(data.userGuidance).not.toContain("they are ready to trade");
   });
 
   it("routes key-registration status only through evidence-only reconciliation", async () => {
