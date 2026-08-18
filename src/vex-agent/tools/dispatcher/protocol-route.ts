@@ -19,6 +19,7 @@ import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   MutatingAliasRouteError,
   isMutatingProtocolAlias,
+  type ResolvedAliasTarget,
 } from "../mutating-aliases.js";
 import { revealUniswapPair } from "../registry/uniswap-reveal.js";
 import { revealDescribeTools } from "../registry/describe-tools-reveal.js";
@@ -240,9 +241,11 @@ export async function routeToolCall(
   // failure ToolResult — NO target is dispatched on an un-routable request.
   if (isMutatingProtocolAlias(call.name)) {
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
-    let target: ReturnType<typeof router>;
+    let target: ResolvedAliasTarget;
     try {
-      target = router(call.args, context.sessionId);
+      // A router may be async (`bridge` awaits the live Khalani chain registry
+      // to pick its venue); awaiting a sync router's plain return is a no-op.
+      target = await router(call.args, context.sessionId);
     } catch (err) {
       if (err instanceof MutatingAliasRouteError) {
         // Agent Scan plan §11.2: the ONE reveal case a router can determine

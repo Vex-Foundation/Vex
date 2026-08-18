@@ -76,6 +76,7 @@ function asNumber(field: string): z.ZodType<number> {
 /** Mirrors `typeof v === "boolean" ? v : undefined` (never throws). */
 const optionalBoolean: z.ZodType<boolean | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "boolean" ? v : undefined));
 
 // ---------------------------------------------------------------------------
@@ -137,11 +138,11 @@ export function validateTokenSearchResponse(raw: unknown): KyberTokenSearchRespo
 
 const honeypotFotFieldsSchema = z.object({
   // `typeof v === "boolean" ? v : false`
-  isHoneypot: z.unknown().transform((v) => (typeof v === "boolean" ? v : false)),
-  isFOT: z.unknown().transform((v) => (typeof v === "boolean" ? v : false)),
+  isHoneypot: z.unknown().optional().transform((v) => (typeof v === "boolean" ? v : false)),
+  isFOT: z.unknown().optional().transform((v) => (typeof v === "boolean" ? v : false)),
   // `typeof v === "number" ? v : 0` — ACCEPTS NaN (typeof NaN === "number"), so
   // this is NOT the strict number guard.
-  tax: z.unknown().transform((v) => (typeof v === "number" ? v : 0)),
+  tax: z.unknown().optional().transform((v) => (typeof v === "number" ? v : 0)),
 });
 
 export function validateHoneypotFotResponse(raw: unknown): HoneypotFotInfo {

@@ -36,6 +36,7 @@ import {
  */
 const tokenMetaSchema: z.ZodType<KhalaniOrder["fromTokenMeta"]> = z
   .unknown()
+  .optional()
   .transform((v) => {
     if (!isRecordValue(v)) return null;
     if (typeof v.symbol !== "string" || typeof v.decimals !== "number") return null;
@@ -49,6 +50,7 @@ const tokenMetaSchema: z.ZodType<KhalaniOrder["fromTokenMeta"]> = z
 
 const timestampsSchema: z.ZodType<Record<string, string> | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => {
     if (!isRecordValue(v)) return undefined;
     const result: Record<string, string> = {};
@@ -66,6 +68,7 @@ const timestampsSchema: z.ZodType<Record<string, string> | undefined> = z
 
 const providerStatusSchema: z.ZodType<KhalaniProviderStatus | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => {
     if (!isRecordValue(v)) return undefined;
     if (typeof v.provider !== "string" || typeof v.nativeStatus !== "string") return undefined;
@@ -97,9 +100,9 @@ const orderSchema: z.ZodType<KhalaniOrder> = z
       status: asString("order.status"),
       author: asString("order.author"),
       // recipient/refundTo/fillerAddress: string or null (non-string → null).
-      recipient: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
-      refundTo: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
-      fillerAddress: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
+      recipient: z.unknown().optional().transform((v) => (typeof v === "string" ? v : null)),
+      refundTo: z.unknown().optional().transform((v) => (typeof v === "string" ? v : null)),
+      fillerAddress: z.unknown().optional().transform((v) => (typeof v === "string" ? v : null)),
       depositTxHash: asString("order.depositTxHash"),
       externalOrderId: asOptionalString,
       createdAt: asString("order.createdAt"),
@@ -109,6 +112,7 @@ const orderSchema: z.ZodType<KhalaniOrder> = z
       // transactions: preserved raw record, else {}.
       transactions: z
         .unknown()
+        .optional()
         .transform((v) => (isRecordValue(v) ? v : {})),
       timestamps: timestampsSchema,
       providerStatus: providerStatusSchema,

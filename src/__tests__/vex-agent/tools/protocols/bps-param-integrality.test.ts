@@ -246,9 +246,21 @@ describe("manifest bps declarations", () => {
     // which reject above the 1000 bps cap rather than clamping like the rest.
     // +2 since W3: the two Relay bridge tools, whose slippageBps moved from a
     // manifest STRING (which the bps gate never inspected) to number+unit.
-    expect(declared.length).toBe(31);
+    // +1 since E3b-1: `morpho.vault.quote`. It is a READ tool and still belongs
+    // here, because the gate is about the VALUE, not the side effect: its
+    // tolerance becomes the on-chain `maxSharePrice` ceiling of a transaction
+    // the agent is about to be told to send, so a fractional value would
+    // silently widen the very guard the preview exists to report.
+    // +5 since E3c: the five Morpho BLUE MARKET tools. Same reason as the vault
+    // preview above - the value is what matters, not the side effect. On a
+    // full-debt repayment this tolerance becomes the on-chain share-price
+    // ceiling AND the size of the approval the wallet grants, so a fractional
+    // value would widen real spending authority.
+    // +2 since the market LENDER lane: `morpho.market.supply` and
+    // `morpho.market.withdraw` take the same slippageBps for the same reason.
+    expect(declared.length).toBe(41);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
     );
   });
 

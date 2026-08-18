@@ -28,6 +28,7 @@ import { asOptionalString, asString, linksSchema, parseOrThrow, strDefault } fro
 /** Tolerant boolean: anything that is not a boolean means "the feed did not say". */
 const asOptionalBoolean: z.ZodType<boolean | null> = z
   .unknown()
+  .optional()
   .transform((raw) => (typeof raw === "boolean" ? raw : null));
 
 const profileObjectSchema: z.ZodType<DexTokenProfile> = z

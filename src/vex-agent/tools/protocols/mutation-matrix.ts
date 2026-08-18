@@ -202,6 +202,36 @@ const entries: [string, MutationContract][] = [
   // flip above.
   ["solana.lend.deposit",      { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.lend.withdraw",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho vault supply / redeem (E3b-2). `capture: "none"` for the same reason
+  // as every row above it: the handler's durable truth is the `agent_activity`
+  // row written by `morpho/handlers/signed-broadcast.ts`, so the legacy
+  // projection pipeline must never also run for it. `previewSupport: true`
+  // because BOTH tools take `dryRun`, which returns the full preview (allowance
+  // plan included) and signs nothing, so the runtime skips approval and capture
+  // for it.
+  ["morpho.vault.deposit",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.vault.withdraw",    { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho Blue market operations (E3c). Same contract as the two vault rows
+  // above and for the same reasons: the durable truth is the `agent_activity`
+  // row written by `morpho/handlers/signed-broadcast.ts`, so the legacy
+  // projection pipeline must never also run; all four take `dryRun`, which
+  // returns the full preview and signs nothing. `expectedType: "lend"` because
+  // the borrow lane is the same lending domain as the vaults - the market
+  // operations move a position within it rather than trading a pair. The two
+  // LENDER-side entries below are the same contract again: `supply` and
+  // `withdraw` lend the market's loan asset in and take it back out.
+  ["morpho.market.supplyCollateral",   { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.withdrawCollateral", { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.borrow",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.repay",              { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.supply",             { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["morpho.market.withdraw",           { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Morpho reward claim. `expectedType: "yield"` and NOT "lend", matching the
+  // `yield` / `yield_claim` row the lane writes and matching `pendle.claim`
+  // below: the type describes the OPERATION, and sweeping an already-earned
+  // incentive balance is income wherever it was earned. Same `capture: "none"`
+  // and `previewSupport: true` as its siblings.
+  ["morpho.rewards.claim",             { kind: "audit", capture: "none", expectedType: "yield",  previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   // Jupiter Lend BORROW `/operate` (Agent Scan Phase 3 Batch 5, card B1) —
   // full lifecycle (create/deposit/withdraw/borrow/repay) on the SAME K2
   // staged `agent_activity` write path as the two Earn tools above —

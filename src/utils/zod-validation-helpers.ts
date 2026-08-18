@@ -29,16 +29,19 @@ export function zStringField(message: string): z.ZodType<string> {
 /** `asOptionalString`: a non-empty string, else `undefined` (never throws). */
 export const zOptionalString: z.ZodType<string | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "string" && v.length > 0 ? v : undefined));
 
 /** `asOptionalNumber`: a non-NaN number, else `undefined` (never throws). */
 export const zOptionalNumber: z.ZodType<number | undefined> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "number" && !Number.isNaN(v) ? v : undefined));
 
 /** `asStringArray`: an array filtered to its string elements, else `[]` (never throws). */
 export const zStringArray: z.ZodType<string[]> = z
   .unknown()
+  .optional()
   .transform((v) =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [],
   );

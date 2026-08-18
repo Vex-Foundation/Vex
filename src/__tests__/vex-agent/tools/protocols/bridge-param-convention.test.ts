@@ -28,6 +28,17 @@ vi.mock("@tools/relay/client.js", () => ({
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: () => "0x1111111111111111111111111111111111111111",
 }));
+// The bridge venue router reads the LIVE Khalani chain registry: Base and
+// Arbitrum are served here, Robinhood Chain is not, which is what makes the two
+// routes below a Khalani route and a Relay route respectively.
+vi.mock("@tools/khalani/client.js", () => ({
+  getKhalaniClient: () => ({
+    getChains: async () => [
+      { type: "eip155", id: 8453, name: "Base", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { type: "eip155", id: 42161, name: "Arbitrum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+    ],
+  }),
+}));
 
 import { PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
@@ -165,25 +176,25 @@ describe("W4a — the Relay default is materialized, and quote↔execute still c
 describe("Khalani — slippageBps is refused BY NAME, not dropped", () => {
   const KHALANI_ROUTE = { fromChain: "base", toChain: "arbitrum" };
 
-  it("refuses a Khalani-routed slippageBps and says no protection applies", () => {
-    const refusal = khalaniSlippageRejection("bridge_quote", { ...KHALANI_ROUTE, slippageBps: 100 });
+  it("refuses a Khalani-routed slippageBps and says no protection applies", async () => {
+    const refusal = await khalaniSlippageRejection("bridge_quote", { ...KHALANI_ROUTE, slippageBps: 100 });
     expect(refusal).not.toBeNull();
     expect(refusal).toContain("bridge_quote");
     expect(refusal).toContain(KHALANI_SLIPPAGE_UNSUPPORTED_REASON);
     expect(refusal).toMatch(/NO slippage protection applies/);
   });
 
-  it("refuses the STRING spelling too — the reason must not depend on the value's form", () => {
-    expect(khalaniSlippageRejection("bridge", { ...KHALANI_ROUTE, slippageBps: "100" })).not.toBeNull();
+  it("refuses the STRING spelling too - the reason must not depend on the value's form", async () => {
+    expect(await khalaniSlippageRejection("bridge", { ...KHALANI_ROUTE, slippageBps: "100" })).not.toBeNull();
   });
 
-  it("says nothing when no slippage was supplied", () => {
-    expect(khalaniSlippageRejection("bridge_quote", KHALANI_ROUTE)).toBeNull();
+  it("says nothing when no slippage was supplied", async () => {
+    expect(await khalaniSlippageRejection("bridge_quote", KHALANI_ROUTE)).toBeNull();
   });
 
-  it("leaves a RELAY-routed slippage alone (Relay does forward it)", () => {
+  it("leaves a RELAY-routed slippage alone (Relay does forward it)", async () => {
     expect(
-      khalaniSlippageRejection("bridge", { fromChain: "base", toChain: "robinhood", slippageBps: 100 }),
+      await khalaniSlippageRejection("bridge", { fromChain: "base", toChain: "robinhood", slippageBps: 100 }),
     ).toBeNull();
   });
 

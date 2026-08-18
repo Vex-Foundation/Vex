@@ -59,23 +59,25 @@ export function asNumber(field: string): z.ZodType<number> {
 /** `asOptionalString`: non-empty string else `null` (never throws). DexScreener returns null. */
 export const asOptionalString: z.ZodType<string | null> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "string" && v.length > 0 ? v : null));
 
 /** `asOptionalNumber`: non-NaN number else `null` (never throws). DexScreener returns null. */
 export const asOptionalNumber: z.ZodType<number | null> = z
   .unknown()
+  .optional()
   .transform((v) => (typeof v === "number" && !Number.isNaN(v) ? v : null));
 
 /** `typeof v === "string" ? v : def` (note: accepts empty string, unlike asString). */
 export const strDefault = (def: string): z.ZodType<string> =>
-  z.unknown().transform((v) => (typeof v === "string" ? v : def));
+  z.unknown().optional().transform((v) => (typeof v === "string" ? v : def));
 
 // ---------------------------------------------------------------------------
 // Links parser (shared by profiles + boosts; LENIENT — element-wise filter).
 // ---------------------------------------------------------------------------
 
 /** `parseLinks`: non-array → null; else `filter(isRecord).map(...)`. */
-export const linksSchema: z.ZodType<DexLink[] | null> = z.unknown().transform((raw) => {
+export const linksSchema: z.ZodType<DexLink[] | null> = z.unknown().optional().transform((raw) => {
   if (!Array.isArray(raw)) return null;
   return raw.filter(isRecord).map((item) => ({
     type: typeof item.type === "string" && item.type.length > 0 ? item.type : null,

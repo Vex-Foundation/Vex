@@ -1,6 +1,7 @@
 /**
- * The leg line on a swap/bridge card: "1.5 SOL → 240.31 USDC" with the app's
- * offline token marks, shown INSTEAD of raw JSON as the primary view.
+ * The leg line on a money card: "1.5 SOL → 240.31 USDC" for a two-sided act,
+ * or "↑ 0.2 USDC" for a one-sided one, with the app's offline token marks,
+ * shown INSTEAD of raw JSON as the primary view.
  *
  * Everything printed here was proven by `toolLegs.ts` (fail-closed parse) and
  * `lib/token-leg-display.ts` (brand gating + the strict decimal amount audit).
@@ -21,7 +22,13 @@
 
 import type { JSX } from "react";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
-import type { ToolLeg, ToolLegOutcome, ToolLegPair } from "./toolLegs.js";
+import type {
+  ToolLeg,
+  ToolLegDirection,
+  ToolLegOutcome,
+  ToolLegPair,
+  ToolSingleLeg,
+} from "./toolLegs.js";
 
 /** Prefix text per outcome; `null` ONLY for a proven, successful execution. */
 const OUTCOME_LABELS: Readonly<Record<ToolLegOutcome, string | null>> = {
@@ -100,6 +107,53 @@ export function ToolLegLine({ legs }: { readonly legs: ToolLegPair }): JSX.Eleme
         →
       </span>
       <Leg leg={legs.to} showAmount={showAmount} />
+    </span>
+  );
+}
+
+/**
+ * The wallet-relative arrow for a ONE-SIDED movement. Deliberately NOT the
+ * `→` of the pair line: that glyph reads as "this token became that token", and
+ * a Morpho Blue market operation has no second token to become. `↑` is money
+ * leaving the wallet, `↓` is money arriving, and the direction is also stated
+ * in words for assistive tech rather than left to the glyph alone.
+ */
+const DIRECTION_GLYPHS: Readonly<Record<ToolLegDirection, string>> = {
+  sent: "↑",
+  received: "↓",
+};
+
+const DIRECTION_LABELS: Readonly<Record<ToolLegDirection, string>> = {
+  sent: "Sent from wallet",
+  received: "Received into wallet",
+};
+
+/**
+ * The single-leg line: "↑ 0.2 USDC". Same outcome ladder, same brand-gated
+ * token and same audited amount as the pair line, so a preview, a failure or an
+ * unproven act is labelled here exactly as it is there.
+ */
+export function ToolSingleLegLine({
+  leg,
+}: {
+  readonly leg: ToolSingleLeg;
+}): JSX.Element {
+  const showAmount = leg.outcome !== "failed";
+  return (
+    <span
+      data-vex-tool-legs={leg.outcome}
+      data-vex-tool-leg-direction={leg.direction}
+      className="flex min-w-0 items-center gap-1.5 text-[12px]"
+    >
+      <OutcomeLabel outcome={leg.outcome} />
+      <span
+        role="img"
+        aria-label={DIRECTION_LABELS[leg.direction]}
+        className="shrink-0 text-[var(--vex-text-3)]"
+      >
+        {DIRECTION_GLYPHS[leg.direction]}
+      </span>
+      <Leg leg={leg.leg} showAmount={showAmount} />
     </span>
   );
 }

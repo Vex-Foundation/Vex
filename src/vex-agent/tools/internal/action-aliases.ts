@@ -400,7 +400,7 @@ export async function handleBridgeQuote(
   // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
   // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
   // it had bought price protection Khalani never offered.
-  const khalaniSlippage = khalaniSlippageRejection("bridge_quote", args);
+  const khalaniSlippage = await khalaniSlippageRejection("bridge_quote", args);
   if (khalaniSlippage !== null) return fail(khalaniSlippage);
 
   const parsed = BridgeQuoteArgs.safeParse(dropEmptyModelValues(args));
@@ -409,10 +409,12 @@ export async function handleBridgeQuote(
   }
   const a = parsed.data;
 
-  // Route the quote to the SAME venue the `bridge` execute alias uses (Relay when
-  // either side is Robinhood Chain, else Khalani), so the venue-bound bridge
-  // prequote gate collides between the quote and the execute.
-  if (resolveBridgeVenue(a.fromChain, a.toChain) === "relay") {
+  // Route the quote to the SAME venue the `bridge` execute alias uses (Khalani
+  // when its live registry serves BOTH sides, else Relay), so the venue-bound
+  // bridge prequote gate collides between the quote and the execute.
+  const venue = await resolveBridgeVenue(a.fromChain, a.toChain);
+  if (venue.venue === null) return fail(`bridge_quote: ${venue.refusal}`);
+  if (venue.venue === "relay") {
     const params: Record<string, unknown> = {
       fromChain: a.fromChain,
       fromToken: a.fromToken,

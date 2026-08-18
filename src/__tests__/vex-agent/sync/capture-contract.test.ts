@@ -134,11 +134,23 @@ describe("capture contract — structural coverage", () => {
     // khalani.bridge / relay.bridge record their full staged lifecycle in
     // agent_activity directly (migration 045); solana.lend.deposit/withdraw
     // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
-    // staged Solana seam (migration 049) — capture is intentionally off for
-    // exactly these five.
+    // staged Solana seam (migration 049); morpho.vault.deposit/withdraw (E3b-2)
+    // and the six morpho.market.* operations (E3c plus the lender's supply and
+    // withdraw) do the same
+    // through morpho/handlers/signed-broadcast.ts; morpho.rewards.claim does the
+    // same through signed-broadcast/claim-broadcast.ts, writing the one
+    // `yield_claim` row a claim transaction can back — capture is intentionally
+    // off for exactly these.
     const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
     expect(captureNone).toEqual([
-      "khalani.bridge", "pendle.claim", "relay.bridge",
+      "khalani.bridge",
+      "morpho.market.borrow", "morpho.market.repay",
+      "morpho.market.supply",
+      "morpho.market.supplyCollateral",
+      "morpho.market.withdraw", "morpho.market.withdrawCollateral",
+      "morpho.rewards.claim",
+      "morpho.vault.deposit", "morpho.vault.withdraw", "pendle.claim",
+      "relay.bridge",
       "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
     ]);
     for (const [toolId, c] of audit) {

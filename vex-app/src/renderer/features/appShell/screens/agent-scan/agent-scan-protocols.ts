@@ -19,6 +19,9 @@
  *   kyberswap · uniswap — EVM swap executors
  *   jupiter             — Solana swaps, Jupiter Lend, Jupiter predictions
  *   trench              — Trench Express launchpad trades (Robinhood Chain)
+ *   morpho              — EVM vault supply / redeem (`lend` rows); its handler
+ *                         writes `agent_activity` directly, same staged path as
+ *                         Jupiter Lend
  *   khalani · relay     — bridge executors
  *
  * DELIBERATELY ABSENT:
@@ -44,13 +47,14 @@ import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 
 /**
  * Executors that write `agent_activity` today, in the order the filter shows
- * them: swaps first, then the bridge providers.
+ * them: swaps first, then lending, then the bridge providers.
  */
 export const KNOWN_FEED_PROTOCOLS = [
   "kyberswap",
   "uniswap",
   "jupiter",
   "trench",
+  "morpho",
   "khalani",
   "relay",
 ] as const;

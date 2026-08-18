@@ -88,6 +88,7 @@ function asOptionalString(value: unknown): string | undefined {
  */
 const extraFeeSchema: z.ZodType<SwapExtraFee | undefined> = z
   .unknown()
+  .optional()
   .transform((v): SwapExtraFee | undefined => {
     if (!isRecord(v)) return undefined;
     return {

@@ -147,7 +147,6 @@ these clients in the current repo.)
 | Unichain | 130 | `unichain` |
 | HyperEVM | 999 | `hyperevm` |
 | Plasma | 9745 | `plasma` |
-| Etherlink | 42793 | `etherlink` |
 | Monad | 143 | `monad` |
 | MegaETH | 4326 | `megaeth` |
 | Robinhood Chain | 4663 | `robinhood` |
@@ -157,6 +156,8 @@ chain Vex cannot actually execute a swap on. Robinhood Chain is provisional per 
 docs ("initial observation period"); live aggregator + on-chain support verified 2026-07-13.
 Scroll (534352) and zkSync (324) were REMOVED from this registry (Agent Scan Phase 1) — both
 only ever had ZaaS/zap support in Vex, which is deleted.
+Etherlink (42793) was REMOVED on 2026-08-17 (owner decision): a swap venue with zero bridge
+reach, served by neither Khalani nor Relay, so funds could enter no route back out.
 
 **Aliases**: `eth`→ethereum, `arb`→arbitrum, `poly`/`matic`→polygon, `op`→optimism,
 `avax`→avalanche, `bera`→berachain. (`zk`/`era`→zksync removed with the chain.)

@@ -300,7 +300,7 @@ const transactionBodySchema = z
       .passthrough(),
     meta: z
       .object({
-        err: z.unknown(),
+        err: z.unknown().optional(),
         preTokenBalances: z.array(z.object({ accountIndex: z.number().int().min(0) }).passthrough()),
         innerInstructions: z
           .array(

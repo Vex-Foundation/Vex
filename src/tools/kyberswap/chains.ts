@@ -18,6 +18,11 @@ interface ChainEntry {
  * Agent Scan (plan §4.2): Scroll (534352) and zkSync (324) are DROPPED here —
  * both had `aggregator: false`, so ZaaS/zap was their ONLY KyberSwap feature.
  * Deleting zap tooling left them with zero executable Vex surface.
+ *
+ * Etherlink (42793) is DROPPED for the same shape of reason (owner decision
+ * 2026-08-17): a swap venue with zero bridge reach. Neither Khalani nor Relay
+ * serves it, so nothing could ever move funds on or off the chain - an
+ * aggregator route there was a position the agent could enter and not leave.
  */
 const CHAINS: readonly ChainEntry[] = [
   { slug: "ethereum",  chainId: 1,     name: "Ethereum",   aggregator: true },
@@ -35,7 +40,6 @@ const CHAINS: readonly ChainEntry[] = [
   { slug: "unichain",  chainId: 130,   name: "Unichain",   aggregator: true },
   { slug: "hyperevm",  chainId: 999,   name: "HyperEVM",   aggregator: true },
   { slug: "plasma",    chainId: 9745,  name: "Plasma",     aggregator: true },
-  { slug: "etherlink", chainId: 42793, name: "Etherlink",  aggregator: true },
   { slug: "monad",     chainId: 143,   name: "Monad",      aggregator: true },
   { slug: "megaeth",   chainId: 4326,  name: "MegaETH",    aggregator: true },
   // Robinhood Chain — aggregator only. Provisional per KyberSwap docs (declared

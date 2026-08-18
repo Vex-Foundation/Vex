@@ -32,6 +32,7 @@ import {
  */
 const optionalStringArray: z.ZodType<string[] | undefined> = z
   .unknown()
+  .optional()
   .transform((v) =>
     Array.isArray(v) ? v.filter((entry): entry is string => typeof entry === "string") : undefined,
   );
@@ -49,6 +50,7 @@ function quoteBlockSchema(prefix: string) {
       validBefore: asNumber(`${prefix}.validBefore`),
       quoteExpiresAt: z
         .unknown()
+        .optional()
         .transform((v) => (typeof v === "number" ? v : undefined)),
       estimatedGas: asOptionalString,
       tags: asStringArray,

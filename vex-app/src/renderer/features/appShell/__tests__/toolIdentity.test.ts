@@ -264,6 +264,43 @@ describe("resolveToolIdentity — generic wrappers", () => {
     });
   });
 
+  // All SIXTEEN Morpho ids (nine reads, two previews, and the five that move
+  // funds), pinned exactly like the Trench set above: a manifest nobody mirrors
+  // here must show up as a failing row rather than as a humanized guess. The
+  // camelCase Blue ids are load-bearing: lower-casing one would lose the map.
+  it.each([
+    ["morpho.markets.discover", "Morpho · Market list", "market"],
+    ["morpho.market.get", "Morpho · Market detail", "market"],
+    ["morpho.markets.activity", "Morpho · Market activity", "market"],
+    ["morpho.vaults.discover", "Morpho · Vault list", "market"],
+    ["morpho.vault.get", "Morpho · Vault detail", "market"],
+    ["morpho.rewards.get", "Morpho · Rewards", "market"],
+    ["morpho.positions.get", "Morpho · Positions", "wallet"],
+    ["morpho.wallet.balance", "Morpho · Wallet balance", "wallet"],
+    ["morpho.vault.quote", "Morpho · Vault quote", "tool"],
+    ["morpho.vault.deposit", "Morpho · Vault deposit", "tool"],
+    ["morpho.vault.withdraw", "Morpho · Vault withdrawal", "tool"],
+    ["morpho.market.quote", "Morpho · Market preview", "tool"],
+    ["morpho.market.supplyCollateral", "Morpho · Supply collateral", "tool"],
+    ["morpho.market.withdrawCollateral", "Morpho · Withdraw collateral", "tool"],
+    ["morpho.market.borrow", "Morpho · Borrow", "tool"],
+    ["morpho.market.repay", "Morpho · Repay", "tool"],
+  ])("titles the Morpho act %s as %s", (toolId, title, category) => {
+    expect(resolveToolIdentity("execute_tool", `{"toolId":"${toolId}"}`)).toEqual({
+      protocol: "morpho",
+      title,
+      category,
+    });
+  });
+
+  it("titles a Morpho act reached through the DOTTED lane identically", () => {
+    expect(resolveToolIdentity("morpho.vault.deposit", null)).toEqual({
+      protocol: "morpho",
+      title: "Morpho · Vault deposit",
+      category: "tool",
+    });
+  });
+
   it("falls back to the humanizer for an unmirrored trench id — venue proven, action not curated", () => {
     expect(resolveToolIdentity("execute_tool", '{"toolId":"trench.new_thing"}')).toEqual({
       protocol: "trench",

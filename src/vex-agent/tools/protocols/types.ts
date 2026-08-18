@@ -26,6 +26,7 @@ export type ProtocolNamespace =
   | "dexscreener"
   | "virtuals"
   | "pendle"
+  | "morpho"
   | "trench";
 
 /**

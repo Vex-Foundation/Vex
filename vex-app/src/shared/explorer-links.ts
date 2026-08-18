@@ -102,10 +102,6 @@ const EXPLORER_TX_BASE: ReadonlyMap<string, string> = new Map([
   ["plasma", "https://plasmascan.to/tx/"],
   ["eip155:9745", "https://plasmascan.to/tx/"],
   ["9745", "https://plasmascan.to/tx/"],
-  // Etherlink (42793).
-  ["etherlink", "https://explorer.etherlink.com/tx/"],
-  ["eip155:42793", "https://explorer.etherlink.com/tx/"],
-  ["42793", "https://explorer.etherlink.com/tx/"],
   // Monad (143).
   ["monad", "https://monadscan.com/tx/"],
   ["eip155:143", "https://monadscan.com/tx/"],
@@ -247,7 +243,6 @@ export const EXPLORER_EXTERNAL_ALLOW: readonly ExplorerAllowEntry[] = [
   { host: "app.roninchain.com", pathPrefix: "/tx/" },
   { host: "uniscan.xyz", pathPrefix: "/tx/" },
   { host: "plasmascan.to", pathPrefix: "/tx/" },
-  { host: "explorer.etherlink.com", pathPrefix: "/tx/" },
   { host: "monadscan.com", pathPrefix: "/tx/" },
   { host: "mega.etherscan.io", pathPrefix: "/tx/" },
   { host: "scrollscan.com", pathPrefix: "/tx/" },

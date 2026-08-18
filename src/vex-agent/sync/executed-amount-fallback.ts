@@ -150,7 +150,8 @@ export async function repairMissingExecutedAmounts(
     if (outcome === "filled") {
       filled++;
       // A SUCCESSFUL decode is just as final as a refusal, and it must be
-      // marked as such. A role whose contract wants BOTH legs (lend, prediction)
+      // marked as such. A role whose contract wants BOTH legs (prediction, and a
+      // lend row that declared both token sides)
       // stays `roleLegsIncomplete` when the chain only proves one of them, so
       // without this stamp the row remains a candidate, keeps its ordering key,
       // and is re-decoded from the same immutable receipt on every single pass -

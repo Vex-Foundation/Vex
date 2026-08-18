@@ -56,7 +56,7 @@ const settlementBodySchema = z
     meta: z
       .object({
         /** Only an explicit `null` is proof of success - the sweep's own rule, re-checked here. */
-        err: z.unknown(),
+        err: z.unknown().optional(),
         preTokenBalances: z.array(tokenBalanceSchema),
         postTokenBalances: z.array(tokenBalanceSchema),
       })

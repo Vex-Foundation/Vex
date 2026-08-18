@@ -48,13 +48,19 @@ describe("agent_activity — generic write path threads chain_family (K6 fix, mi
     expect(event.status).toBe("pending");
   });
 
-  it("kind='lend' WITHOUT chainFamily is REJECTED by the real kind/family binding CHECK (regression guard)", async () => {
+  it("kind='prediction' WITHOUT chainFamily is REJECTED by the real kind/family binding CHECK (regression guard)", async () => {
+    // Originally written with kind='lend'. Migration 079 widened the binding
+    // so a `lend` row may live on `eip155` (Morpho), which makes the omitted
+    // -chainFamily lend row legal. `prediction` is still Solana-pinned, so it
+    // is what now proves the same threading bug cannot come back: a caller
+    // that forgets `chainFamily` still gets the column default 'eip155' and
+    // is still rejected by the database.
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const { protocolExecutionId, sessionId, walletAddress } = await seedIntent("solana.lend.deposit");
 
     await expect(
       repo.createPendingActivityEvent({
-        protocolExecutionId, eventIndex: 0, eventRole: "lend_deposit", kind: "lend",
+        protocolExecutionId, eventIndex: 0, eventRole: "predict_buy", kind: "prediction",
         // chainFamily omitted — defaults to 'eip155' at the column level.
         protocol: "jupiter", chainId: SOLANA_SYNTHETIC_CHAIN_ID, walletAddress, sessionId,
         tokenIn: { tokenAddress: "USDC_MINT", amountRaw: "1000000" },

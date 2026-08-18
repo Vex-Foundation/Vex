@@ -248,3 +248,84 @@ describe("resolveToolOperation — Trench Express exact toolIds", () => {
     ).toBeNull();
   });
 });
+
+/**
+ * MORPHO — variable-rate lending, mirrored from
+ * `src/vex-agent/tools/protocols/morpho/manifests/` and verified against the
+ * funded probe of 2026-08-17 (`morpho.vault.deposit` settled a 0.2 USDC supply,
+ * `morpho.vault.withdraw` redeemed the shares back). All eleven ids are pinned:
+ * the nine reads carry no legs, the preview is a quote, and the two executing
+ * ids are mutating BUT both accept `dryRun`, whose rehearsal returns
+ * `success: true` and signs nothing — so a dry run may never claim an execution.
+ */
+describe("resolveToolOperation — Morpho exact toolIds", () => {
+  const operationFor = (toolId: string) =>
+    resolveToolOperation("execute_tool", "morpho", `{"toolId":"${toolId}"}`);
+
+  it.each([
+    "morpho.markets.discover",
+    "morpho.market.get",
+    "morpho.markets.activity",
+    "morpho.vaults.discover",
+    "morpho.vault.get",
+    "morpho.rewards.get",
+    "morpho.positions.get",
+    "morpho.wallet.balance",
+  ])("gives the read %s NO operation at all (no legs)", (toolId) => {
+    expect(operationFor(toolId)).toBeNull();
+  });
+
+  it("reads morpho.vault.quote as a read-only quote", () => {
+    expect(operationFor("morpho.vault.quote")).toBe("quote");
+  });
+
+  it("reads morpho.market.quote as a read-only quote", () => {
+    expect(operationFor("morpho.market.quote")).toBe("quote");
+  });
+
+  it.each([
+    "morpho.vault.deposit",
+    "morpho.vault.withdraw",
+    "morpho.market.supplyCollateral",
+    "morpho.market.withdrawCollateral",
+    "morpho.market.borrow",
+    "morpho.market.repay",
+  ])(
+    "reads %s as a mutating money operation",
+    (toolId) => {
+      expect(operationFor(toolId)).toBe("mutating");
+    },
+  );
+
+  it.each([
+    "morpho.vault.deposit",
+    "morpho.vault.withdraw",
+    "morpho.market.supplyCollateral",
+    "morpho.market.borrow",
+  ])(
+    "never lets a %s DRY RUN claim an execution",
+    (toolId) => {
+      expect(
+        resolveToolOperation(toolId, "morpho", '{"vaultAddress":"0xbeef","dryRun":true}'),
+      ).toBe("quote");
+      // An unreadable dryRun proves nothing and stays labelled.
+      expect(
+        resolveToolOperation(toolId, "morpho", '{"vaultAddress":"0xbeef","dryRun":"true"}'),
+      ).toBe("unproven");
+    },
+  );
+
+  it("does not admit a lookalike, a truncated payload, or an unproven venue", () => {
+    expect(operationFor("morpho.vault.deposit_v2")).toBe("unproven");
+    expect(
+      resolveToolOperation(
+        "execute_tool",
+        "morpho",
+        '{"toolId":"morpho.vault.deposit","params":{"depositAmountRaw":"2000',
+      ),
+    ).toBe("unproven");
+    expect(
+      resolveToolOperation("execute_tool", null, '{"toolId":"morpho.vault.deposit"}'),
+    ).toBeNull();
+  });
+});
