@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS,
+  LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT,
   repairLighterOrderIntent,
   repairUnresolvedLighterOrders,
+  repairUnresolvedLighterOrdersInBackground,
   type LighterOrderRepairDeps,
 } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -354,5 +356,62 @@ describe("Lighter order repair", () => {
     expect(deps.intents.listUnresolved).toHaveBeenCalledWith("rhc", 10);
     expect(reports).toHaveLength(2);
     expect(reports[0]!.resolution).toBe("nonce_reset_consumed");
+  });
+
+  it("keeps unattended recovery public, bounded, and free of account-auth reads", async () => {
+    const deps = {
+      ...makeDeps({
+        hasReadOnlyCredential: true,
+        nextNonce: 1250,
+        inactiveOrders: [{ client_order_id: "123456", status: "filled" }],
+      }),
+      resolvePrivilegedAccountAuth: vi.fn(async () => ({
+        token: "must-not-be-derived-in-background",
+        accountIndex: 42,
+      })),
+    };
+    deps.intents.listUnresolved.mockResolvedValueOnce([intentRow()]);
+
+    const sweep = await repairUnresolvedLighterOrdersInBackground(
+      { environment: "rhc", limit: 999 },
+      deps,
+    );
+
+    expect(deps.intents.listUnresolved).toHaveBeenCalledWith(
+      "rhc",
+      LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT,
+    );
+    expect(deps.resolvePrivilegedAccountAuth).not.toHaveBeenCalled();
+    expect(deps.client.getAccountActiveOrders).not.toHaveBeenCalled();
+    expect(deps.client.getAccountInactiveOrders).not.toHaveBeenCalled();
+    expect(deps.client.getAccountTrades).not.toHaveBeenCalled();
+    expect(sweep).toMatchObject({
+      examined: 1,
+      advanced: 1,
+      awaiting: 0,
+      degraded: 0,
+      errors: 0,
+    });
+    expect(sweep.reports[0]?.resolution).toBe("nonce_reset_consumed");
+  });
+
+  it("isolates one corrupt local intent so the rest of the background sweep continues", async () => {
+    const deps = makeDeps({ nextNonce: 1250 });
+    deps.intents.listUnresolved.mockResolvedValueOnce([intentRow(), intentRow()]);
+    deps.nonceState.find
+      .mockRejectedValueOnce(new Error("corrupt local row"))
+      .mockResolvedValueOnce(nonceRow());
+
+    const sweep = await repairUnresolvedLighterOrdersInBackground({}, deps);
+
+    expect(deps.client.getNextNonce).toHaveBeenCalledTimes(2);
+    expect(sweep).toMatchObject({
+      examined: 2,
+      advanced: 1,
+      awaiting: 0,
+      degraded: 0,
+      errors: 1,
+    });
+    expect(sweep.reports).toHaveLength(1);
   });
 });

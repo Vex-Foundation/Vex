@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   enqueueRun: vi.fn(),
   completeRun: vi.fn(),
   repairDeposits: vi.fn(),
+  repairOrders: vi.fn(),
 }));
 
 vi.mock("../../../vex-agent/sync/seed.js", () => ({
@@ -33,6 +34,9 @@ vi.mock("@vex-agent/db/repos/sync.js", () => ({
 vi.mock("../../../vex-agent/sync/lighter-deposit-repair.js", () => ({
   repairUnresolvedLighterDeposits: mocks.repairDeposits,
 }));
+vi.mock("@vex-agent/tools/protocols/lighter/order-repair.js", () => ({
+  repairUnresolvedLighterOrdersInBackground: mocks.repairOrders,
+}));
 vi.mock("@utils/logger.js", () => ({
   default: {
     info: vi.fn(),
@@ -53,6 +57,15 @@ const REPAIR_REPORT = {
   reports: [],
 };
 
+const ORDER_REPAIR_REPORT = {
+  examined: 3,
+  advanced: 1,
+  awaiting: 1,
+  degraded: 1,
+  errors: 0,
+  reports: [],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.seedSyncJobs.mockResolvedValue(undefined);
@@ -65,6 +78,7 @@ beforeEach(() => {
   });
   mocks.rearmPendingFastLanes.mockResolvedValue(undefined);
   mocks.repairDeposits.mockResolvedValue(REPAIR_REPORT);
+  mocks.repairOrders.mockResolvedValue(ORDER_REPAIR_REPORT);
   mocks.getAllJobs.mockResolvedValue([]);
   mocks.getLastCompletedRun.mockResolvedValue(null);
   mocks.enqueueRun.mockResolvedValue(91);
@@ -100,6 +114,40 @@ describe("Lighter deposit repair scheduling", () => {
     expect(mocks.completeRun).toHaveBeenCalledWith(
       91,
       expect.objectContaining({ periodic: true, examined: 2, advanced: 1 }),
+      1,
+    );
+  });
+});
+
+describe("Lighter order nonce-repair scheduling", () => {
+  it("runs a bounded public-evidence repair pass during startup", async () => {
+    await initSync();
+
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.repairOrders.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.fullBalanceSync.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("runs and records the periodic repair job when due", async () => {
+    mocks.getAllJobs.mockResolvedValueOnce([
+      {
+        id: 45,
+        namespace: "_global",
+        syncType: "lighter_order_repair",
+        strategy: "periodic",
+        intervalSeconds: 300,
+        enabled: true,
+      },
+    ]);
+
+    await syncTick();
+
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueRun).toHaveBeenCalledWith(45);
+    expect(mocks.completeRun).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({ periodic: true, examined: 3, advanced: 1 }),
       1,
     );
   });

@@ -117,6 +117,19 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const repairResult = await repairUnresolvedLighterDeposits();
         result = { ...repairResult };
         rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_order_repair") {
+        const { repairUnresolvedLighterOrdersInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/order-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOrdersInBackground();
+        result = {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        };
+        rowsAffected = repairResult.advanced;
       } else if (syncType === "bridge_activity_repair") {
         const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
         const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -241,6 +254,22 @@ export async function processNextRun(): Promise<boolean> {
       const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
       const repairResult = await repairUnresolvedLighterDeposits();
       await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
+    } else if (job.syncType === "lighter_order_repair") {
+      const { repairUnresolvedLighterOrdersInBackground } = await import(
+        "@vex-agent/tools/protocols/lighter/order-repair.js"
+      );
+      const repairResult = await repairUnresolvedLighterOrdersInBackground();
+      await syncRepo.completeRun(
+        run.id,
+        {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        },
+        repairResult.advanced,
+      );
     } else if (job.syncType === "bridge_activity_repair") {
       const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
       const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());

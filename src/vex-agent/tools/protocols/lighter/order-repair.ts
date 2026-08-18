@@ -48,6 +48,16 @@ import {
 /** Order expiry slack before an unconsumed nonce is treated as proof of death. */
 export const LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS = 10 * 60 * 1000;
 
+/**
+ * Keep the unattended sweep inside Lighter's documented request budget.
+ * Each row performs one public nextNonce read (weight 6), so five rows consume
+ * at most 30 weight per five-minute run. Authenticated order-history reads are
+ * intentionally excluded from the unattended path because inactive-orders is
+ * documented at weight 100; users can request the full evidence path through
+ * `lighter.order.status` when an outcome still needs classification.
+ */
+export const LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT = 5;
+
 /** Ambiguous reasons proving the signed transaction was never sent to Lighter. */
 const NEVER_SUBMITTED_AMBIGUOUS_REASONS: ReadonlySet<string> = new Set([
   "signing_failed_after_nonce_reservation",
@@ -82,6 +92,15 @@ export interface LighterOrderRepairReport {
   readonly liveNextNonce: number | null;
   readonly reservedNonce: string | null;
   readonly guidance: string;
+}
+
+export interface LighterOrderRepairSweepReport {
+  readonly examined: number;
+  readonly advanced: number;
+  readonly awaiting: number;
+  readonly degraded: number;
+  readonly errors: number;
+  readonly reports: readonly LighterOrderRepairReport[];
 }
 
 // Derives a short-lived READ-ONLY account auth token from a saved trading key so
@@ -145,6 +164,64 @@ export async function repairUnresolvedLighterOrders(
     reports.push(await repairLighterOrderIntent(intent, deps));
   }
   return reports;
+}
+
+/**
+ * Bounded unattended recovery for startup and periodic sync.
+ *
+ * This deliberately disables account-auth derivation and authenticated order
+ * history. It can still unblock a consumed nonce, release a transaction proven
+ * never submitted, or release an expired unconsumed create. It cannot classify
+ * a live order's terminal outcome; that remains the full, user-driven repair
+ * path above (and a future low-cost stream consumer).
+ *
+ * One malformed or temporarily unavailable intent must not prevent recovery of
+ * the other accounts in the sweep. Errors are counted without persisting raw
+ * provider responses or credential material.
+ */
+export async function repairUnresolvedLighterOrdersInBackground(
+  input: {
+    readonly environment?: LighterEnvironment;
+    readonly limit?: number;
+  } = {},
+  deps: LighterOrderRepairDeps = defaultLighterOrderRepairDeps(),
+): Promise<LighterOrderRepairSweepReport> {
+  const limit = Math.max(
+    1,
+    Math.min(input.limit ?? LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT, LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT),
+  );
+  const intents = await deps.intents.listUnresolved(input.environment, limit);
+  const backgroundDeps: LighterOrderRepairDeps = {
+    ...deps,
+    hasReadOnlyCredential: () => false,
+    resolvePrivilegedAccountAuth: undefined,
+  };
+  const reports: LighterOrderRepairReport[] = [];
+  let advanced = 0;
+  let awaiting = 0;
+  let degraded = 0;
+  let errors = 0;
+
+  for (const intent of intents) {
+    try {
+      const report = await repairLighterOrderIntent(intent, backgroundDeps);
+      reports.push(report);
+      if (isRepairAdvance(report.resolution)) advanced += 1;
+      else if (report.resolution === "awaiting_provider") awaiting += 1;
+      else if (report.resolution === "degraded") degraded += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+
+  return {
+    examined: intents.length,
+    advanced,
+    awaiting,
+    degraded,
+    errors,
+    reports,
+  };
 }
 
 export async function repairLighterOrderIntent(
@@ -489,6 +566,15 @@ function isUnresolvedState(
   return (
     lighterOrderExecutionIntentsRepo.LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES as readonly string[]
   ).includes(state);
+}
+
+function isRepairAdvance(resolution: LighterOrderRepairResolution): boolean {
+  return (
+    resolution === "provider_evidence"
+    || resolution === "nonce_reset_consumed"
+    || resolution === "nonce_released_never_submitted"
+    || resolution === "nonce_released_expired_unconsumed"
+  );
 }
 
 function baseReport(

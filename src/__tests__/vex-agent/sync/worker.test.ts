@@ -65,6 +65,19 @@ vi.mock("../../../vex-agent/sync/lighter-deposit-repair.js", () => ({
     mockRepairLighterDeposits(...args),
 }));
 
+const mockRepairLighterOrders = vi.fn().mockResolvedValue({
+  examined: 3,
+  advanced: 1,
+  awaiting: 1,
+  degraded: 1,
+  errors: 0,
+  reports: [],
+});
+vi.mock("@vex-agent/tools/protocols/lighter/order-repair.js", () => ({
+  repairUnresolvedLighterOrdersInBackground: (...args: unknown[]) =>
+    mockRepairLighterOrders(...args),
+}));
+
 const { drainPendingRuns, processNextRun } = await import("../../../vex-agent/sync/worker.js");
 
 describe("sync worker", () => {
@@ -146,6 +159,28 @@ describe("sync worker", () => {
       expect(mockCompleteRun).toHaveBeenCalledWith(
         8,
         expect.objectContaining({ examined: 2, advanced: 1 }),
+        1,
+      );
+    });
+
+    it("dispatches a recovered Lighter order nonce-repair run", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 18, syncJobId: 45, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: 45,
+        syncType: "lighter_order_repair",
+        namespace: "_global",
+        strategy: "periodic",
+      });
+
+      const result = await drainPendingRuns();
+
+      expect(result.processed).toBe(1);
+      expect(mockRepairLighterOrders).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(
+        18,
+        { examined: 3, advanced: 1, awaiting: 1, degraded: 1, errors: 0 },
         1,
       );
     });
@@ -280,6 +315,26 @@ describe("sync worker", () => {
       expect(mockCompleteRun).toHaveBeenCalledWith(
         9,
         expect.objectContaining({ examined: 2, advanced: 1 }),
+        1,
+      );
+    });
+
+    it("dispatches one pending Lighter order nonce-repair run", async () => {
+      mockClaimPendingRun.mockResolvedValueOnce({
+        id: 19, syncJobId: 45, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0,
+      });
+      mockGetJob.mockResolvedValueOnce({
+        id: 45,
+        syncType: "lighter_order_repair",
+        namespace: "_global",
+        strategy: "periodic",
+      });
+
+      expect(await processNextRun()).toBe(true);
+      expect(mockRepairLighterOrders).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(
+        19,
+        { examined: 3, advanced: 1, awaiting: 1, degraded: 1, errors: 0 },
         1,
       );
     });

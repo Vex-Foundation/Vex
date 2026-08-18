@@ -25,6 +25,12 @@ const SYNC_JOBS = [
   // local CAS updates. It never signs, sends, retries, or replaces a tx.
   { namespace: "_global", syncType: "lighter_deposit_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Lighter order nonce recovery — bounded public nextNonce reads only. The
+  // worker never derives account auth, unlocks the vault, signs, submits, or
+  // retries an order. Five rows per five-minute run stay within the documented
+  // request-weight budget; expensive account history remains user-driven.
+  { namespace: "_global", syncType: "lighter_order_repair", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
+
   // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
   // provider_order_id (Khalani/Relay), independently verifies fills before
   // confirming, never ages pending→failed. Lookup-only; see

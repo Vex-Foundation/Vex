@@ -77,4 +77,8 @@ describe("every seeded periodic sync type is reachable", () => {
   it("includes the evidence-only Lighter deposit repair sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_deposit_repair");
   });
+
+  it("includes the bounded public Lighter order repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
+  });
 });

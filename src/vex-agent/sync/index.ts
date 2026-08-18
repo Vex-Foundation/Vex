@@ -61,7 +61,30 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     });
   }
 
-  // 4. Re-arm fast lanes for rows that were in flight when the process died.
+  // 4. Reconcile unresolved Lighter order nonce reservations on startup. This
+  //    bounded background path uses public nextNonce evidence only: no vault
+  //    unlock, account-auth derivation, signing, submission, or blind retry.
+  try {
+    const { repairUnresolvedLighterOrdersInBackground } = await import(
+      "@vex-agent/tools/protocols/lighter/order-repair.js"
+    );
+    const lighterOrders = await repairUnresolvedLighterOrdersInBackground();
+    if (lighterOrders.examined > 0 || lighterOrders.errors > 0) {
+      logger.info("sync.init.lighter_order_repair", {
+        examined: lighterOrders.examined,
+        advanced: lighterOrders.advanced,
+        awaiting: lighterOrders.awaiting,
+        degraded: lighterOrders.degraded,
+        errors: lighterOrders.errors,
+      });
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_order_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // 5. Re-arm fast lanes for rows that were in flight when the process died.
   //    Before the snapshot: a crash-recovered row is exactly the kind the
   //    snapshot guard must see as still pending.
   try {
@@ -73,7 +96,7 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     });
   }
 
-  // 5. Authoritative startup full sync + snapshot
+  // 6. Authoritative startup full sync + snapshot
   try {
     const result = await fullBalanceSync({ snapshot: "always" });
     logger.info("sync.init.completed", {
@@ -151,6 +174,24 @@ export async function syncTick(): Promise<void> {
         await syncRepo.completeRun(
           runId,
           { ...repairResult, periodic: true },
+          repairResult.advanced,
+        );
+      } else if (job.syncType === "lighter_order_repair") {
+        const { repairUnresolvedLighterOrdersInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/order-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOrdersInBackground();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          {
+            examined: repairResult.examined,
+            advanced: repairResult.advanced,
+            awaiting: repairResult.awaiting,
+            degraded: repairResult.degraded,
+            errors: repairResult.errors,
+            periodic: true,
+          },
           repairResult.advanced,
         );
       } else if (job.syncType === "bridge_activity_repair") {
