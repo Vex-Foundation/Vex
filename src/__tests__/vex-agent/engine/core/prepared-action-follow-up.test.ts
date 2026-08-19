@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dispatchTool = vi.fn();
@@ -65,7 +66,13 @@ const { processTurnToolBatch } = await import(
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
+const LIGHTER_ONBOARDING_INTENT_ID =
+  "lighter-onboard-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
+const LIGHTER_KEY_PUBLIC_KEY = "ab".repeat(40);
+const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
+  .update(Buffer.from(LIGHTER_KEY_PUBLIC_KEY, "hex"))
+  .digest("hex");
 const trustedPreview = {
   toolName: "wallet_send_confirm",
   criticalArgs: {
@@ -137,6 +144,44 @@ function lighterPrepareResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function lighterRhcKeyRegistrationPrepareResult() {
+  return {
+    success: true,
+    output: "RHC key registration prepared",
+    actionKind: "approval_prepare",
+    preparedActionFollowUp: {
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.key.register",
+        params: { intentId: LIGHTER_ONBOARDING_INTENT_ID },
+      },
+      expiresAt: EXPIRES_AT,
+      approvalPreview: {
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs: {
+          toolId: "lighter.key.register",
+          intentId: LIGHTER_ONBOARDING_INTENT_ID,
+          environment: "rhc",
+          walletAddress: "0x1111111111111111111111111111111111111111",
+          ethereumChainId: 4663,
+          lighterChainId: 466324,
+          accountIndex: 10231,
+          apiKeyIndex: 6,
+          registrationNonce: "0",
+          publicKey: LIGHTER_KEY_PUBLIC_KEY,
+          publicKeyFingerprint: LIGHTER_KEY_FINGERPRINT,
+          vaultCredentialId: "lighter/rhc/account-10231/api-key-6",
+          summary: "Register this exact encrypted RHC trading key.",
+          authorityNote: "Registers one local credential; later actions stay separately gated.",
+          signatureNote: "Signs one exact human-readable EIP-191 message locally.",
+          scopeNote: "Does not authorize a deposit, order, transfer, or withdrawal.",
+        },
+      },
+    },
+  };
+}
+
 function context(permission: "restricted" | "full") {
   return {
     sessionId: "session-1",
@@ -191,6 +236,25 @@ async function runLighterInjectedPrepare(permission: "restricted" | "full") {
           },
         },
       ],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
+async function runLighterRhcKeyRegistrationPrepare() {
+  return processTurnToolBatch({
+    context: context("restricted"),
+    turnResult: {
+      content: "Preparing secure RHC trading access.",
+      reasoning: null,
+      toolCalls: [{
+        id: "lighter-key-prepare-call",
+        name: "lighter__key__register__prepare",
+        arguments: { environment: "rhc" },
+      }],
     },
     liveMessages: [],
     currentTokenCount: 0,
@@ -307,6 +371,54 @@ describe("prepared-action follow-up handoff", () => {
       content: "Preparing Lighter order.",
       executedCalls: [expect.objectContaining({ name: "lighter__order__create__prepare" })],
       executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
+    });
+  });
+
+  it("turns an exact RHC key-registration prepare into a separate trusted approval", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterRhcKeyRegistrationPrepareResult())
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterRhcKeyRegistrationPrepare();
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.key.register",
+        params: { intentId: LIGHTER_ONBOARDING_INTENT_ID },
+      },
+    });
+    expect(dispatchTool.mock.calls[1]![1]).not.toHaveProperty("modelOriginated", true);
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(expect.objectContaining({
+      trustedExpiresAt: EXPIRES_AT,
+      trustedPreview: expect.objectContaining({
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs: expect.objectContaining({
+          environment: "rhc",
+          ethereumChainId: 4663,
+          lighterChainId: 466324,
+          accountIndex: 10231,
+          vaultCredentialId: "lighter/rhc/account-10231/api-key-6",
+        }),
+      }),
+      toolCall: expect.objectContaining({ name: "execute_tool" }),
+    }));
+    expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
+      executedResults: [expect.objectContaining({
+        success: true,
+        output: "RHC key registration prepared",
+      })],
     });
   });
 
