@@ -24,6 +24,7 @@ import {
   getConfiguredLighterCoreWithdrawalExecutionDeps,
 } from "../withdrawal-execution.js";
 import { buildLighterCoreWithdrawalReadyForSignerPlan } from "../withdrawal-execution-plan.js";
+import { reconcileLighterCoreWithdrawal } from "../withdrawal-reconciliation.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { listLighterTradingCredentialScopes } from "../trading-credential-scope.js";
 
@@ -78,6 +79,40 @@ function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActi
 }
 
 export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.withdraw.status": async (params, context) => {
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail("Core withdrawal status requires a host session id.");
+    const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
+    let intent = intentId.length > 0
+      ? await withdrawalIntentsRepo.findByIntentId(sessionId, intentId)
+      : await withdrawalIntentsRepo.findLatestForSession(sessionId);
+    if (intent === null) return fail(intentId.length > 0
+      ? `No Core withdrawal intent ${intentId} exists in this session.`
+      : "No Core withdrawal intent exists in this session.");
+    if (!["destination_confirmed", "rejected", "failed", "refunded", "expired"].includes(intent.executionState)) {
+      if (intent.signerTxHash === null || intent.submissionStagedAt === null) {
+        return ok(withdrawalStatusPayload(intent));
+      }
+      const privilegedAuth = await resolveLighterReadOnlyAccountAuth("core", intent.accountIndex);
+      if (privilegedAuth === null) {
+        return fail("Unlock the local vault to derive bounded read-only Core reconciliation access. No transaction will be signed or retried.");
+      }
+      const ethereum = getUniswapDeployment(1);
+      if (ethereum === undefined) return fail("Ethereum mainnet deployment is unavailable for withdrawal reconciliation.");
+      try {
+        intent = await reconcileLighterCoreWithdrawal({
+          intent,
+          client: getLighterClient(),
+          privilegedAuth,
+          publicClient: getUniswapPublicClient(ethereum),
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
+    }
+    return ok(withdrawalStatusPayload(intent));
+  },
+
   "lighter.withdraw.prepare": async (params, context) => {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Core withdrawal preparation requires a host session id.");
@@ -243,3 +278,35 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 };
+
+function withdrawalStatusPayload(intent: LighterWithdrawalIntentRow): Record<string, unknown> {
+  return {
+    source: "vex_lighter_core_withdrawal_reconciliation",
+    intentId: intent.intentId,
+    environment: "core",
+    executionState: intent.executionState,
+    approvalStatus: intent.approvalStatus,
+    amountUnits: intent.amountUnits,
+    amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} USDC`,
+    destinationAddress: intent.destinationAddress,
+    signerTxHash: intent.signerTxHash,
+    submittedTxHash: intent.submittedTxHash,
+    providerTxStatus: intent.providerTxStatus,
+    withdrawalHistoryId: intent.withdrawalHistoryId,
+    withdrawalHistoryStatus: intent.withdrawalHistoryStatus,
+    pendingBalanceUnits: intent.pendingBalanceUnits,
+    claimMode: intent.claimMode,
+    destinationTxHash: intent.destinationTxHash,
+    destinationBlockNumber: intent.destinationBlockNumber,
+    destinationConfirmations: intent.destinationConfirmations,
+    lastCheckedAt: intent.lastCheckedAt,
+    final: intent.executionState === "destination_confirmed",
+    userGuidance: intent.executionState === "destination_confirmed"
+      ? "Tell the user exact Ethereum delivery is confirmed."
+      : intent.executionState === "claimable"
+        ? "Tell the user the USDC is claimable at the gateway; a separate wallet approval is required before paying Ethereum gas."
+        : intent.executionState === "ambiguous"
+          ? "Tell the user the outcome remains uncertain and must not be retried."
+          : "Tell the user the withdrawal is still progressing and API/history labels are not final Ethereum delivery.",
+  };
+}

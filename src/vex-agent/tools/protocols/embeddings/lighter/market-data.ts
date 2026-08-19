@@ -194,6 +194,18 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.withdraw.status": {
+    embeddingText: embeddingText(
+      `Check and reconcile a submitted Lighter Core secure USDC withdrawal without signing or retrying it. ` +
+      `Use when the withdrawal is pending, claimable, completed, ambiguous, or the user asks whether USDC reached Ethereum. ` +
+      `Final delivery requires exact TxType 13, history, gateway event, USDC transfer, canonical block, pending-balance, and confirmation evidence; provider labels alone are not final.`,
+    ),
+    aliases: ["lighter withdrawal status", "check usdc withdrawal", "is lighter withdrawal complete"],
+    exampleIntents: ["check my Lighter Core withdrawal", "did my USDC reach Ethereum"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
@@ -320,7 +332,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 25;
+const EXPECTED_COUNT = 26;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

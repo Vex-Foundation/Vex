@@ -457,6 +457,143 @@ export async function markAmbiguous(input: {
   return row === null ? null : mapRow(row);
 }
 
+export async function recordReconciliation(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly state:
+    | "l2_pending"
+    | "l2_executed"
+    | "secure_waiting"
+    | "claimable"
+    | "auto_claim_observed"
+    | "manual_claim_submitted"
+    | "destination_confirmed"
+    | "failed"
+    | "refunded"
+    | "ambiguous";
+  readonly providerTxStatus: number | null;
+  readonly providerTxEvidence: Record<string, unknown> | null;
+  readonly historyId?: string | null;
+  readonly historyStatus?: string | null;
+  readonly historyTimestamp?: number | null;
+  readonly historyEvidence?: Record<string, unknown> | null;
+  readonly pendingBalanceUnits?: string | null;
+  readonly ambiguousReason?: string | null;
+  readonly claimMode?: "auto" | "manual" | "legacy" | null;
+  readonly destinationTxHash?: string | null;
+  readonly destinationBlockNumber?: string | null;
+  readonly destinationBlockHash?: string | null;
+  readonly destinationConfirmations?: number | null;
+  readonly destinationEvidence?: Record<string, unknown> | null;
+  readonly settlementScanFromBlock?: string | null;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const historyId = input.historyId === undefined || input.historyId === null
+    ? null
+    : safeText(input.historyId, "history id");
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = $3,
+            provider_tx_status = $4,
+            provider_tx_evidence_json = $5::jsonb,
+            withdrawal_history_id = COALESCE(withdrawal_history_id, $6),
+            withdrawal_history_status = COALESCE($7, withdrawal_history_status),
+            withdrawal_history_timestamp = COALESCE($8, withdrawal_history_timestamp),
+            withdrawal_history_json = COALESCE($9::jsonb, withdrawal_history_json),
+            pending_balance_units = COALESCE($10, pending_balance_units),
+            ambiguous_reason = $11,
+            claim_mode = COALESCE($12, claim_mode),
+            destination_tx_hash = COALESCE($13, destination_tx_hash),
+            destination_block_number = COALESCE($14, destination_block_number),
+            destination_block_hash = COALESCE($15, destination_block_hash),
+            destination_confirmations = COALESCE($16, destination_confirmations),
+            destination_evidence_json = COALESCE($17::jsonb, destination_evidence_json),
+            settlement_scan_from_block = COALESCE($18, settlement_scan_from_block),
+            l2_executed_at = CASE WHEN $3 IN ('l2_executed','secure_waiting','claimable','auto_claim_observed','destination_confirmed')
+                                  THEN COALESCE(l2_executed_at, NOW()) ELSE l2_executed_at END,
+            claimable_at = CASE WHEN $3 = 'claimable' THEN COALESCE(claimable_at, NOW()) ELSE claimable_at END,
+            destination_confirmed_at = CASE WHEN $3 = 'destination_confirmed' THEN COALESCE(destination_confirmed_at, NOW()) ELSE destination_confirmed_at END,
+            last_checked_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND execution_state IN (
+          'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting',
+          'claimable','auto_claim_observed','manual_claim_prepared','manual_claim_approved',
+          'manual_claim_staged','manual_claim_submitted','ambiguous'
+        )
+        AND (
+          $3 = 'ambiguous'
+          OR $3 = 'destination_confirmed'
+          OR ($3 = 'manual_claim_submitted' AND execution_state IN (
+            'manual_claim_staged','manual_claim_submitted','ambiguous'
+          ))
+          OR ($3 = 'auto_claim_observed' AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting',
+            'claimable','auto_claim_observed','ambiguous'
+          ))
+          OR ($3 = 'claimable' AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting',
+            'claimable','ambiguous'
+          ))
+          OR ($3 = 'secure_waiting' AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting','ambiguous'
+          ))
+          OR ($3 = 'l2_executed' AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','l2_executed','ambiguous'
+          ))
+          OR ($3 = 'l2_pending' AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','ambiguous'
+          ))
+          OR ($3 IN ('failed','refunded') AND execution_state IN (
+            'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting','ambiguous'
+          ))
+        )
+        AND (withdrawal_history_id IS NULL OR $6 IS NULL OR withdrawal_history_id = $6)
+      RETURNING ${SELECT_COLUMNS}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.state,
+      input.providerTxStatus === null ? null : safeNonNegativeInteger(input.providerTxStatus, "provider tx status"),
+      input.providerTxEvidence === null ? null : jsonb(assertPublicEvidence(input.providerTxEvidence)),
+      historyId,
+      input.historyStatus ?? null,
+      input.historyTimestamp === null || input.historyTimestamp === undefined
+        ? null
+        : safeNonNegativeInteger(input.historyTimestamp, "history timestamp"),
+      input.historyEvidence === null || input.historyEvidence === undefined
+        ? null
+        : jsonb(assertPublicEvidence(input.historyEvidence)),
+      input.pendingBalanceUnits === null || input.pendingBalanceUnits === undefined
+        ? null
+        : decimal(input.pendingBalanceUnits, true, "pending balance"),
+      input.ambiguousReason === null || input.ambiguousReason === undefined
+        ? null
+        : safeText(input.ambiguousReason, "ambiguity reason"),
+      input.claimMode ?? null,
+      input.destinationTxHash === null || input.destinationTxHash === undefined
+        ? null
+        : safeText(input.destinationTxHash, "destination transaction hash"),
+      input.destinationBlockNumber === null || input.destinationBlockNumber === undefined
+        ? null
+        : decimal(input.destinationBlockNumber, true, "destination block"),
+      input.destinationBlockHash === null || input.destinationBlockHash === undefined
+        ? null
+        : safeText(input.destinationBlockHash, "destination block hash"),
+      input.destinationConfirmations === null || input.destinationConfirmations === undefined
+        ? null
+        : safeNonNegativeInteger(input.destinationConfirmations, "destination confirmations"),
+      input.destinationEvidence === null || input.destinationEvidence === undefined
+        ? null
+        : jsonb(assertPublicEvidence(input.destinationEvidence)),
+      input.settlementScanFromBlock === null || input.settlementScanFromBlock === undefined
+        ? null
+        : decimal(input.settlementScanFromBlock, true, "settlement scan block"),
+    ],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 function createParams(input: CreateLighterWithdrawalIntentInput): unknown[] {
   const preview = input.preview;
   const snapshot = preview.snapshot;
