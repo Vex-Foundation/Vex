@@ -117,6 +117,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const repairResult = await repairUnresolvedLighterDeposits();
         result = { ...repairResult };
         rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_withdrawal_repair") {
+        const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+        const repairResult = await repairUnresolvedLighterWithdrawals();
+        result = { ...repairResult };
+        rowsAffected = repairResult.advanced;
       } else if (syncType === "lighter_order_repair") {
         const { repairUnresolvedLighterOrdersInBackground } = await import(
           "@vex-agent/tools/protocols/lighter/order-repair.js"
@@ -253,6 +258,10 @@ export async function processNextRun(): Promise<boolean> {
     } else if (job.syncType === "lighter_deposit_repair") {
       const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
       const repairResult = await repairUnresolvedLighterDeposits();
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
+    } else if (job.syncType === "lighter_withdrawal_repair") {
+      const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+      const repairResult = await repairUnresolvedLighterWithdrawals();
       await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
     } else if (job.syncType === "lighter_order_repair") {
       const { repairUnresolvedLighterOrdersInBackground } = await import(

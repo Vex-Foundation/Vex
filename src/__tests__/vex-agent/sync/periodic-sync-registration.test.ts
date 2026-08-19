@@ -78,6 +78,10 @@ describe("every seeded periodic sync type is reachable", () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_deposit_repair");
   });
 
+  it("includes the evidence-only Lighter withdrawal repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_withdrawal_repair");
+  });
+
   it("includes the bounded public Lighter order repair sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
   });

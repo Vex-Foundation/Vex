@@ -5,7 +5,7 @@ import type {
   LighterTradingCredentialReadiness,
   LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
-import { queryOne, queryOneWith } from "../client.js";
+import { query, queryOne, queryOneWith } from "../client.js";
 import { jsonb } from "../params.js";
 
 export type LighterWithdrawalApprovalStatus =
@@ -247,6 +247,21 @@ export async function findLatestForSession(
     [sessionId],
   );
   return row === null ? null : mapRow(row);
+}
+
+export async function listReconciliationCandidates(limit = 5): Promise<LighterWithdrawalIntentRow[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) {
+    throw new Error("Core withdrawal reconciliation limit must be between 1 and 25.");
+  }
+  const result = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE signer_tx_hash IS NOT NULL
+        AND submission_staged_at IS NOT NULL
+        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+      ORDER BY COALESCE(last_checked_at, updated_at) ASC, created_at ASC
+      LIMIT $1`, [limit]);
+  return result.map(mapRow);
 }
 
 export async function markApprovalDecision(input: {

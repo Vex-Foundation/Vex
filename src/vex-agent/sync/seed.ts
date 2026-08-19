@@ -25,6 +25,11 @@ const SYNC_JOBS = [
   // local CAS updates. It never signs, sends, retries, or replaces a tx.
   { namespace: "_global", syncType: "lighter_deposit_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Core withdrawal repair — five oldest staged intents per minute. It derives
+  // bounded read authorization only when the local vault is already unlocked,
+  // reads exact L2/history/Ethereum evidence, and can never sign or submit.
+  { namespace: "_global", syncType: "lighter_withdrawal_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+
   // Lighter order nonce recovery — bounded public nextNonce reads only. The
   // worker never derives account auth, unlocks the vault, signs, submits, or
   // retries an order. Five rows per five-minute run stay within the documented

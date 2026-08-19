@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   completeRun: vi.fn(),
   repairDeposits: vi.fn(),
   repairOrders: vi.fn(),
+  repairWithdrawals: vi.fn(),
 }));
 
 vi.mock("../../../vex-agent/sync/seed.js", () => ({
@@ -33,6 +34,9 @@ vi.mock("@vex-agent/db/repos/sync.js", () => ({
 }));
 vi.mock("../../../vex-agent/sync/lighter-deposit-repair.js", () => ({
   repairUnresolvedLighterDeposits: mocks.repairDeposits,
+}));
+vi.mock("../../../vex-agent/sync/lighter-withdrawal-repair.js", () => ({
+  repairUnresolvedLighterWithdrawals: mocks.repairWithdrawals,
 }));
 vi.mock("@vex-agent/tools/protocols/lighter/order-repair.js", () => ({
   repairUnresolvedLighterOrdersInBackground: mocks.repairOrders,
@@ -79,10 +83,37 @@ beforeEach(() => {
   mocks.rearmPendingFastLanes.mockResolvedValue(undefined);
   mocks.repairDeposits.mockResolvedValue(REPAIR_REPORT);
   mocks.repairOrders.mockResolvedValue(ORDER_REPAIR_REPORT);
+  mocks.repairWithdrawals.mockResolvedValue({
+    examined: 2, advanced: 1, awaitingVault: 1, awaitingEvidence: 0, errors: 0,
+  });
   mocks.getAllJobs.mockResolvedValue([]);
   mocks.getLastCompletedRun.mockResolvedValue(null);
   mocks.enqueueRun.mockResolvedValue(91);
   mocks.completeRun.mockResolvedValue(undefined);
+});
+
+describe("Lighter withdrawal repair scheduling", () => {
+  it("runs evidence-only withdrawal repair during startup", async () => {
+    await initSync();
+    expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
+    expect(mocks.repairWithdrawals.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.fullBalanceSync.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("runs and records the periodic withdrawal repair when due", async () => {
+    mocks.getAllJobs.mockResolvedValueOnce([{
+      id: 46, namespace: "_global", syncType: "lighter_withdrawal_repair",
+      strategy: "periodic", intervalSeconds: 60, enabled: true,
+    }]);
+    await syncTick();
+    expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
+    expect(mocks.completeRun).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({ periodic: true, examined: 2, advanced: 1 }),
+      1,
+    );
+  });
 });
 
 describe("Lighter deposit repair scheduling", () => {

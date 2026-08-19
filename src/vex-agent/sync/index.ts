@@ -61,6 +61,20 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     });
   }
 
+  // Evidence-only Core withdrawal recovery. A locked vault is reported as an
+  // awaiting state; this path never unlocks it, signs, submits, or retries.
+  try {
+    const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+    const withdrawals = await repairUnresolvedLighterWithdrawals();
+    if (withdrawals.examined > 0 || withdrawals.errors > 0) {
+      logger.info("sync.init.lighter_withdrawal_repair", withdrawals);
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_withdrawal_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // 4. Reconcile unresolved Lighter order nonce reservations on startup. This
   //    bounded background path uses public nextNonce evidence only: no vault
   //    unlock, account-auth derivation, signing, submission, or blind retry.
@@ -176,6 +190,11 @@ export async function syncTick(): Promise<void> {
           { ...repairResult, periodic: true },
           repairResult.advanced,
         );
+      } else if (job.syncType === "lighter_withdrawal_repair") {
+        const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+        const repairResult = await repairUnresolvedLighterWithdrawals();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...repairResult, periodic: true }, repairResult.advanced);
       } else if (job.syncType === "lighter_order_repair") {
         const { repairUnresolvedLighterOrdersInBackground } = await import(
           "@vex-agent/tools/protocols/lighter/order-repair.js"

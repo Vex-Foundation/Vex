@@ -1,0 +1,65 @@
+/** Evidence-only startup/periodic repair for staged Core USDC withdrawals. */
+
+import { getLighterClient } from "@tools/lighter/client.js";
+import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import * as leasesRepo from "@vex-agent/db/repos/lighter-evm-execution-leases.js";
+import * as claimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
+import * as intentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import { reconcileLighterCoreWithdrawal } from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
+
+export interface LighterWithdrawalRepairReport {
+  readonly examined: number;
+  readonly advanced: number;
+  readonly awaitingVault: number;
+  readonly awaitingEvidence: number;
+  readonly errors: number;
+}
+
+export async function repairUnresolvedLighterWithdrawals(): Promise<LighterWithdrawalRepairReport> {
+  const candidates = await intentsRepo.listReconciliationCandidates(5);
+  const deployment = getUniswapDeployment(1);
+  if (deployment === undefined) throw new Error("Ethereum mainnet is unavailable for Core withdrawal repair.");
+  const publicClient = getUniswapPublicClient(deployment);
+  const client = getLighterClient();
+  let advanced = 0;
+  let awaitingVault = 0;
+  let awaitingEvidence = 0;
+  let errors = 0;
+  for (const original of candidates) {
+    try {
+      let intent = original;
+      const claim = await claimsRepo.findLatestForWithdrawal(intent.sessionId, intent.intentId);
+      if (claim?.state === "prepared" && Date.parse(claim.expiresAt) <= Date.now()) {
+        await withSessionControlLock(intent.sessionId, (db) => claimsRepo.expirePreparedWith(db, claim.claimId, intent.sessionId));
+        intent = await intentsRepo.findByIntentId(intent.sessionId, intent.intentId) ?? intent;
+      } else if (
+        claim?.state === "approved" && claim.txHash === null
+        && Date.now() - Date.parse(claim.updatedAt) >= 120_000
+      ) {
+        const lease = await leasesRepo.getLighterEvmExecutionLease(1, intent.walletAddress).catch(() => null);
+        if (lease === null || lease.expiresAt.getTime() <= Date.now()) {
+          await withSessionControlLock(intent.sessionId, (db) => claimsRepo.markUnsubmittedFailureWith(db, {
+            claimId: claim.claimId,
+            sessionId: intent.sessionId,
+            reason: "approved manual claim had no staged transaction after the execution lease window",
+          }));
+          intent = await intentsRepo.findByIntentId(intent.sessionId, intent.intentId) ?? intent;
+        }
+      }
+      const auth = await resolveLighterReadOnlyAccountAuth("core", intent.accountIndex);
+      if (auth === null) {
+        awaitingVault += 1;
+        continue;
+      }
+      const reconciled = await reconcileLighterCoreWithdrawal({ intent, client, privilegedAuth: auth, publicClient });
+      if (reconciled.executionState === intent.executionState) awaitingEvidence += 1;
+      else advanced += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+  return { examined: candidates.length, advanced, awaitingVault, awaitingEvidence, errors };
+}
