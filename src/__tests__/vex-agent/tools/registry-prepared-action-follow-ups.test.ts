@@ -122,7 +122,8 @@ function lighterDepositCandidate() {
   };
 }
 
-function lighterKeyRegistrationCandidate() {
+function lighterKeyRegistrationCandidate(environment: "core" | "rhc" = "core") {
+  const isCore = environment === "core";
   return {
     toolName: "execute_tool",
     args: {
@@ -136,16 +137,16 @@ function lighterKeyRegistrationCandidate() {
       criticalArgs: {
         toolId: "lighter.key.register",
         intentId: LIGHTER_DEPOSIT_INTENT_ID,
-        environment: "core",
+        environment,
         walletAddress: "0x1111111111111111111111111111111111111111",
-        ethereumChainId: 1,
-        lighterChainId: 304,
+        ethereumChainId: isCore ? 1 : 4663,
+        lighterChainId: isCore ? 304 : 466324,
         accountIndex: 42,
         apiKeyIndex: 6,
         registrationNonce: "0",
         publicKey: LIGHTER_KEY_PUBLIC_KEY,
         publicKeyFingerprint: LIGHTER_KEY_FINGERPRINT,
-        vaultCredentialId: "lighter/core/account-42/api-key-6",
+        vaultCredentialId: `lighter/${environment}/account-42/api-key-6`,
         summary: "Register this exact key.",
         authorityNote: "Registers one local credential; later actions stay separately gated.",
         signatureNote: "Signs one exact human-readable EIP-191 message locally.",
@@ -290,16 +291,35 @@ describe("prepared-action follow-up registry", () => {
     },
   );
 
-  it.each(["execute_tool", "lighter__key__register__prepare"])(
-    "allows %s to hand off an exact Lighter key-registration intent",
-    (sourceToolName) => {
-      const input = lighterKeyRegistrationCandidate();
+  it.each([
+    ["execute_tool", "core"],
+    ["lighter__key__register__prepare", "core"],
+    ["execute_tool", "rhc"],
+    ["lighter__key__register__prepare", "rhc"],
+  ] as const)(
+    "allows %s to hand off an exact %s Lighter key-registration intent",
+    (sourceToolName, environment) => {
+      const input = lighterKeyRegistrationCandidate(environment);
       expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({
         ok: true,
         followUp: input,
       });
     },
   );
+
+  it("rejects a cross-environment RHC key-registration approval tuple", () => {
+    const candidate = lighterKeyRegistrationCandidate("rhc");
+    expect(validatePreparedActionFollowUp("execute_tool", {
+      ...candidate,
+      approvalPreview: {
+        ...candidate.approvalPreview,
+        criticalArgs: {
+          ...candidate.approvalPreview.criticalArgs,
+          lighterChainId: 304,
+        },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
+  });
 
   it("rejects any altered Lighter key-registration approval field", () => {
     const overrides: Record<string, unknown>[] = [

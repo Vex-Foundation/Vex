@@ -225,8 +225,9 @@ function isScalar(value: unknown): value is ApprovalPreviewScalar {
  *
  * Maintainer decision: every prepare→execute mapping must be named here. The
  * registry currently allows wallet_send_prepare → wallet_send_confirm and the
- * protocol `execute_tool` handoffs for Lighter order-create and deposit intents.
- * Every other source/target pair fails closed as "unknown_mapping".
+ * protocol `execute_tool` handoffs for the explicitly registered Lighter
+ * order, deposit, key-registration, and withdrawal intents. Every other
+ * source/target pair fails closed as "unknown_mapping".
  */
 export function validatePreparedActionFollowUp(
   sourceToolName: string,
@@ -369,16 +370,20 @@ function validateLighterKeyRegistrationFollowUp(
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
   }
+  const environment = criticalArgs.environment;
+  if (environment !== "core" && environment !== "rhc") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const deployment = getLighterFundingDeployment(environment);
   const publicKey = criticalArgs.publicKey;
   const fingerprint = criticalArgs.publicKeyFingerprint;
   if (
     criticalArgs.toolId !== "lighter.key.register"
     || criticalArgs.intentId !== intentId
-    || criticalArgs.environment !== "core"
     || typeof criticalArgs.walletAddress !== "string"
     || !EVM_ADDRESS_RE.test(criticalArgs.walletAddress)
-    || criticalArgs.ethereumChainId !== 1
-    || criticalArgs.lighterChainId !== 304
+    || criticalArgs.ethereumChainId !== deployment.settlementChainId
+    || criticalArgs.lighterChainId !== deployment.lighterSignerChainId
     || typeof criticalArgs.accountIndex !== "number"
     || !Number.isSafeInteger(criticalArgs.accountIndex)
     || criticalArgs.accountIndex <= 0
@@ -396,7 +401,7 @@ function validateLighterKeyRegistrationFollowUp(
     || createHash("sha256").update(Buffer.from(publicKey, "hex")).digest("hex")
       !== fingerprint
     || criticalArgs.vaultCredentialId
-      !== `lighter/core/account-${criticalArgs.accountIndex}/api-key-${criticalArgs.apiKeyIndex}`
+      !== `lighter/${environment}/account-${criticalArgs.accountIndex}/api-key-${criticalArgs.apiKeyIndex}`
     || !isBoundedText(criticalArgs.summary)
     || !isBoundedText(criticalArgs.authorityNote)
     || !isBoundedText(criticalArgs.signatureNote)

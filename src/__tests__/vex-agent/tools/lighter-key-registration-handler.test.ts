@@ -321,6 +321,10 @@ describe("lighter.key.register.prepare", () => {
       accountIndex: 42,
       apiKeyIndex: 6,
     });
+    expect(validatePreparedActionFollowUp(
+      "lighter__key__register__prepare",
+      result.preparedActionFollowUp!,
+    )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
   });
 
   it("fails before reserving a slot when the privileged preparer is unavailable", async () => {
