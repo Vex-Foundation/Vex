@@ -13,8 +13,13 @@ import {
 } from "@tools/lighter/signer-adapter.js";
 import {
   buildLighterCancelOrderSigningInput,
+  buildLighterModifyOrderSigningInput,
   type LighterOrderLifecycleSignerAdapter,
 } from "@tools/lighter/signer-order-lifecycle.js";
+import {
+  decimalToLighterInteger,
+  formatLighterIntegerAmount,
+} from "@tools/lighter/order-preview.js";
 import {
   loadLighterTradingSecretMaterial,
   type LighterTradingSecretReader,
@@ -39,6 +44,7 @@ export interface LighterLifecycleOrderSnapshot {
   readonly filledBaseAmount: string;
   readonly filledQuoteAmount: string;
   readonly price: string;
+  readonly triggerPrice: string;
   readonly status: string;
   readonly side: string;
   readonly type: string;
@@ -56,6 +62,23 @@ export interface LighterCancelOnePreparation {
   readonly matchHash: string;
 }
 
+export interface LighterModifyOrderPreparation extends LighterCancelOnePreparation {
+  readonly requestedBaseAmount: string;
+  readonly requestedBaseAmountInteger: string;
+  readonly requestedPrice: string;
+  readonly requestedPriceInteger: string;
+  readonly sizeDecimals: number;
+  readonly priceDecimals: number;
+}
+
+type LighterLifecycleUnresolvedResult = {
+  readonly status: "sequencer_pending" | "ambiguous";
+  readonly intentId: string;
+  readonly signerTxHash: string | null;
+  readonly submittedTxHash: string | null;
+  readonly reason: string;
+};
+
 export type ExecuteApprovedLighterCancelOneResult =
   | {
       readonly status: "canceled";
@@ -68,13 +91,23 @@ export type ExecuteApprovedLighterCancelOneResult =
       readonly remainingAmount: string;
       readonly averageFillPrice: string | null;
     }
+  | LighterLifecycleUnresolvedResult;
+
+export type ExecuteApprovedLighterModifyOrderResult =
   | {
-      readonly status: "sequencer_pending" | "ambiguous";
+      readonly status: "modified" | "modified_then_terminal";
       readonly intentId: string;
-      readonly signerTxHash: string | null;
-      readonly submittedTxHash: string | null;
-      readonly reason: string;
-    };
+      readonly signerTxHash: string;
+      readonly submittedTxHash: string;
+      readonly providerOrderId: string;
+      readonly providerStatus: string;
+      readonly executedAmount: string;
+      readonly remainingAmount: string;
+      readonly averageFillPrice: string | null;
+      readonly effectiveBaseAmount: string;
+      readonly effectivePrice: string;
+    }
+  | LighterLifecycleUnresolvedResult;
 
 export interface LighterOrderLifecycleExecutionDeps {
   readonly secretReader: LighterTradingSecretReader;
@@ -82,7 +115,7 @@ export interface LighterOrderLifecycleExecutionDeps {
   readonly lifecycleSigner: LighterOrderLifecycleSignerAdapter;
   readonly client: Pick<
     LighterClient,
-    "getAccountActiveOrders" | "getAccountInactiveOrders" | "getApiKeys" | "getNextNonce" | "sendTx"
+    "getAccountActiveOrders" | "getAccountInactiveOrders" | "getApiKeys" | "getMarkets" | "getNextNonce" | "sendTx"
   >;
   readonly intents: Pick<
     typeof intentsRepo,
@@ -163,6 +196,102 @@ export async function prepareLighterCancelOne(input: {
       accountIndex: input.accountIndex,
       apiKeyIndex: input.apiKeyIndex,
       snapshot,
+    }),
+  };
+}
+
+export async function prepareLighterModifyOrder(input: {
+  readonly environment: LighterOrderLifecycleIntentRow["environment"];
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly marketIndex: number;
+  readonly providerOrderId: string;
+  readonly requestedBaseAmount: string;
+  readonly requestedPrice: string;
+  readonly sizeDecimals: number;
+  readonly priceDecimals: number;
+  readonly auth?: LighterPrivilegedAccountAuth;
+  readonly client?: Pick<LighterClient, "getAccountActiveOrders">;
+}): Promise<LighterModifyOrderPreparation> {
+  assertProviderOrderId(input.providerOrderId);
+  const requestedBaseAmountInteger = decimalToLighterInteger(
+    input.requestedBaseAmount,
+    input.sizeDecimals,
+    "totalBaseAmount",
+  );
+  const requestedPriceInteger = decimalToLighterInteger(
+    input.requestedPrice,
+    input.priceDecimals,
+    "price",
+  );
+  if (requestedBaseAmountInteger > (1n << 48n) - 1n) {
+    throw blocked("The requested total base amount exceeds Lighter's official order amount range.");
+  }
+  if (requestedPriceInteger > (1n << 32n) - 1n) {
+    throw blocked("The requested price exceeds Lighter's official order price range.");
+  }
+  const client = input.client ?? getLighterClient();
+  const response = await client.getAccountActiveOrders(input.environment, {
+    accountIndex: input.accountIndex,
+    marketId: input.marketIndex,
+  }, input.auth);
+  const order = findExactOrder(response.orders, input);
+  if (order === null || normalizeStatus(order.status) !== "open") {
+    throw blocked("The exact Lighter provider order is not active and open.");
+  }
+  const snapshot = lifecycleSnapshot(order);
+  if (normalizeStatus(snapshot.type) !== "limit") {
+    throw blocked("Only an active Lighter limit order can be modified.");
+  }
+  if (decimalToLighterInteger(snapshot.triggerPrice, input.priceDecimals, "provider trigger price", { allowZero: true }) !== 0n) {
+    throw blocked("Trigger orders cannot be modified in this production phase.");
+  }
+  const currentBaseAmountInteger = decimalToLighterInteger(
+    snapshot.initialBaseAmount,
+    input.sizeDecimals,
+    "provider initial base amount",
+  );
+  const filledBaseAmountInteger = decimalToLighterInteger(
+    snapshot.filledBaseAmount,
+    input.sizeDecimals,
+    "provider filled base amount",
+    { allowZero: true },
+  );
+  const currentPriceInteger = decimalToLighterInteger(snapshot.price, input.priceDecimals, "provider price");
+  if (requestedBaseAmountInteger < filledBaseAmountInteger) {
+    throw blocked("The requested total base amount is below the amount already filled.");
+  }
+  if (requestedBaseAmountInteger === filledBaseAmountInteger) {
+    throw blocked("The requested total base amount leaves no open amount; cancel the remainder instead.");
+  }
+  if (requestedBaseAmountInteger === currentBaseAmountInteger && requestedPriceInteger === currentPriceInteger) {
+    throw blocked("The requested amount and price are unchanged.");
+  }
+  const requestedBaseAmount = formatLighterIntegerAmount(requestedBaseAmountInteger, input.sizeDecimals);
+  const requestedPrice = formatLighterIntegerAmount(requestedPriceInteger, input.priceDecimals);
+  return {
+    environment: input.environment,
+    accountIndex: input.accountIndex,
+    apiKeyIndex: input.apiKeyIndex,
+    marketIndex: input.marketIndex,
+    providerOrderId: input.providerOrderId,
+    snapshot,
+    requestedBaseAmount,
+    requestedBaseAmountInteger: requestedBaseAmountInteger.toString(),
+    requestedPrice,
+    requestedPriceInteger: requestedPriceInteger.toString(),
+    sizeDecimals: input.sizeDecimals,
+    priceDecimals: input.priceDecimals,
+    matchHash: lifecycleMatchHash({
+      actionType: "modify",
+      environment: input.environment,
+      accountIndex: input.accountIndex,
+      apiKeyIndex: input.apiKeyIndex,
+      snapshot,
+      requestedBaseAmountInteger: requestedBaseAmountInteger.toString(),
+      requestedPriceInteger: requestedPriceInteger.toString(),
+      sizeDecimals: input.sizeDecimals,
+      priceDecimals: input.priceDecimals,
     }),
   };
 }
@@ -358,12 +487,222 @@ export async function executeApprovedLighterCancelOne(
   }
 }
 
+export async function executeApprovedLighterModifyOrder(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+): Promise<ExecuteApprovedLighterModifyOrderResult> {
+  assertModifyIntent(intent, deps.now());
+  const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  const authResult = await createLighterAccountAuthWithAdapter(
+    buildLighterAccountAuthSigningInputForScope({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      secret,
+      deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + AUTH_TTL_SECONDS,
+    }),
+    deps.authSigner,
+  );
+  const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
+  const markets = await deps.client.getMarkets(intent.environment, { filter: "all" });
+  const market = markets.order_books.find((candidate) => candidate.market_id === intent.marketIndex);
+  if (
+    market === undefined
+    || market.status !== "active"
+    || market.supported_size_decimals !== intent.providerSnapshotJson.marketSizeDecimals
+    || market.supported_price_decimals !== intent.providerSnapshotJson.marketPriceDecimals
+  ) {
+    throw blocked("The Lighter market precision or active status changed before modify submission.");
+  }
+  const active = await deps.client.getAccountActiveOrders(intent.environment, {
+    accountIndex: intent.accountIndex,
+    marketId: intent.marketIndex!,
+  }, auth);
+  const liveOrder = findExactOrder(active.orders, {
+    accountIndex: intent.accountIndex,
+    marketIndex: intent.marketIndex!,
+    providerOrderId: intent.providerOrderId!,
+  });
+  if (liveOrder === null || normalizeStatus(liveOrder.status) !== "open") {
+    throw blocked("The approved Lighter order is no longer active and open.");
+  }
+  const liveSnapshot = lifecycleSnapshot(liveOrder);
+  if (!sameSnapshot(intent.providerSnapshotJson, liveSnapshot)) {
+    throw blocked("The approved Lighter order changed before modify submission.");
+  }
+
+  const apiKeys = await deps.client.getApiKeys(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  });
+  const providerKey = apiKeys.api_keys.find((candidate) =>
+    candidate.account_index === intent.accountIndex && candidate.api_key_index === intent.apiKeyIndex);
+  if (providerKey === undefined || canonicalKey(providerKey.public_key) !== canonicalKey(authResult.publicKey)) {
+    throw blocked("The registered Lighter trading credential changed.");
+  }
+  const nextNonce = await deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  });
+  if (nextNonce.nonce !== providerKey.nonce) {
+    throw blocked("Lighter returned inconsistent nonce evidence.");
+  }
+  const evidence = {
+    kind: "lighter_modify_order_pre_submit_revalidation",
+    checkedAt: new Date(deps.now()).toISOString(),
+    order: liveSnapshot,
+    requestedBaseAmountInteger: intent.requestedBaseAmountInteger,
+    requestedPriceInteger: intent.requestedPriceInteger,
+    publicKey: canonicalKey(providerKey.public_key),
+    nextNonce: nextNonce.nonce,
+  };
+  const revalidated = await deps.intents.markPreSubmitRevalidated({
+    intentId: intent.intentId,
+    sessionId: intent.sessionId,
+    evidence,
+  });
+  if (revalidated === null) throw blocked("The modify intent could not persist revalidation.");
+  const observed = await deps.nonceState.recordExecutionObserved({
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    nonce: nextNonce.nonce,
+    publicKey: canonicalKey(providerKey.public_key),
+    transactionTime: providerKey.transaction_time,
+  });
+  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+
+  const reservationId = `lighter-lifecycle:${intent.intentId}`;
+  const reserved = await deps.transaction(async (client) => {
+    const nonce = await deps.nonceState.reserveObservedWith(client, {
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      reservationId,
+    });
+    if (nonce?.reservedNonce == null || nonce.reservationId !== reservationId) {
+      throw blocked("The live Lighter nonce could not be reserved.");
+    }
+    const attached = await deps.intents.attachNonceReservationWith(client, {
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+      reservationId,
+      nonceValue: nonce.reservedNonce,
+    });
+    if (attached === null) throw blocked("The modify intent could not attach its nonce reservation.");
+    return nonce.reservedNonce;
+  });
+
+  let signerTxHash: string | null = null;
+  try {
+    const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
+    const signed = await deps.lifecycleSigner.signModifyOrder(buildLighterModifyOrderSigningInput({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: reserved,
+      expiredAt: String(signerExpiryMs),
+      marketIndex: intent.marketIndex!,
+      providerOrderId: intent.providerOrderId!,
+      baseAmountInteger: intent.requestedBaseAmountInteger!,
+      priceInteger: intent.requestedPriceInteger!,
+      triggerPriceInteger: "0",
+      secret,
+    }));
+    signerTxHash = signed.txHash;
+    const signedRow = await deps.intents.markSigned({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+      reservationId,
+      signerTxHash: signed.txHash,
+      signerExpiryMs,
+    });
+    if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
+    const staged = await deps.intents.markSubmissionStaged({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+      signerTxHash: signed.txHash,
+    });
+    if (staged === null) return markAndReturnAmbiguous(deps, intent, "submission_stage_persist_failed", signed.txHash);
+
+    let response;
+    try {
+      response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
+    } catch {
+      return markAndReturnAmbiguous(deps, intent, "send_tx_transport_ambiguous", signed.txHash);
+    }
+    if (response.code !== 200 || response.tx_hash !== signed.txHash) {
+      return markAndReturnAmbiguous(deps, intent, "send_tx_acceptance_mismatch", signed.txHash);
+    }
+    const accepted = await deps.intents.markApiAccepted({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+      signerTxHash: signed.txHash,
+      submittedTxHash: response.tx_hash,
+      submitCode: response.code,
+      submitMessage: response.message ?? null,
+      predictedExecutionTimeMs: response.predicted_execution_time_ms,
+      volumeQuotaRemaining: response.volume_quota_remaining == null ? null : String(response.volume_quota_remaining),
+    });
+    if (accepted === null) return markAndReturnAmbiguous(deps, intent, "api_acceptance_persist_failed", signed.txHash);
+
+    for (let attempt = 0; attempt < MAX_RECONCILIATION_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await deps.wait(Math.min(2_000, 250 * (2 ** attempt)));
+      const [activeOrders, inactiveOrders] = await Promise.all([
+        deps.client.getAccountActiveOrders(intent.environment, { accountIndex: intent.accountIndex, marketId: intent.marketIndex! }, auth),
+        deps.client.getAccountInactiveOrders(intent.environment, { accountIndex: intent.accountIndex, marketId: intent.marketIndex!, limit: 100 }, auth),
+      ]);
+      const live = findExactOrder(activeOrders.orders, {
+        accountIndex: intent.accountIndex, marketIndex: intent.marketIndex!, providerOrderId: intent.providerOrderId!,
+      });
+      const terminal = findExactOrder(inactiveOrders.orders, {
+        accountIndex: intent.accountIndex, marketIndex: intent.marketIndex!, providerOrderId: intent.providerOrderId!,
+      });
+      const outcome = live ?? terminal;
+      if (outcome === null || !matchesRequestedModification(outcome, intent)) continue;
+      const snapshot = lifecycleSnapshot(outcome);
+      const status = live === null ? "modified_then_terminal" : "modified";
+      await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "completed", evidence: {
+        kind: "lighter_modify_order_outcome", order: snapshot, disposition: status,
+      } });
+      return {
+        status,
+        intentId: intent.intentId,
+        signerTxHash: signed.txHash,
+        submittedTxHash: response.tx_hash,
+        providerOrderId: intent.providerOrderId!,
+        providerStatus: snapshot.status,
+        executedAmount: snapshot.filledBaseAmount,
+        remainingAmount: snapshot.remainingBaseAmount,
+        averageFillPrice: averageFillPrice(snapshot.filledBaseAmount, snapshot.filledQuoteAmount),
+        effectiveBaseAmount: snapshot.initialBaseAmount,
+        effectivePrice: snapshot.price,
+      };
+    }
+    await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "sequencer_pending", evidence: {
+      kind: "lighter_modify_order_pending", providerOrderId: intent.providerOrderId,
+      requestedBaseAmountInteger: intent.requestedBaseAmountInteger,
+      requestedPriceInteger: intent.requestedPriceInteger,
+    } });
+    return {
+      status: "sequencer_pending",
+      intentId: intent.intentId,
+      signerTxHash: signed.txHash,
+      submittedTxHash: response.tx_hash,
+      reason: "Provider accepted the modify transaction; exact updated-order evidence is pending.",
+    };
+  } catch (error) {
+    if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });
+    throw error;
+  }
+}
+
 async function markAndReturnAmbiguous(
   deps: LighterOrderLifecycleExecutionDeps,
   intent: LighterOrderLifecycleIntentRow,
   reason: string,
   signerTxHash: string,
-): Promise<ExecuteApprovedLighterCancelOneResult> {
+): Promise<LighterLifecycleUnresolvedResult> {
   await deps.intents.markAmbiguous({ intentId: intent.intentId, reason });
   return { status: "ambiguous", intentId: intent.intentId, signerTxHash, submittedTxHash: null, reason };
 }
@@ -374,6 +713,15 @@ function assertCancelableIntent(intent: LighterOrderLifecycleIntentRow, nowMs: n
     || intent.executionState !== "approved" || intent.marketIndex === null || intent.providerOrderId === null
     || Date.parse(intent.expiresAt) <= nowMs
   ) throw blocked("The Lighter cancel intent is not approved, fresh, and exact.");
+}
+
+function assertModifyIntent(intent: LighterOrderLifecycleIntentRow, nowMs: number): void {
+  if (
+    intent.actionType !== "modify" || intent.approvalStatus !== "approved"
+    || intent.executionState !== "approved" || intent.marketIndex === null || intent.providerOrderId === null
+    || intent.requestedBaseAmountInteger === null || intent.requestedPriceInteger === null
+    || Date.parse(intent.expiresAt) <= nowMs
+  ) throw blocked("The Lighter modify intent is not approved, fresh, and exact.");
 }
 
 function findExactOrder(
@@ -400,6 +748,7 @@ export function lifecycleSnapshot(order: LighterAccountOrder): LighterLifecycleO
     filledBaseAmount: order.filled_base_amount ?? "0",
     filledQuoteAmount: order.filled_quote_amount ?? "0",
     price: order.price,
+    triggerPrice: typeof order.trigger_price === "string" ? order.trigger_price : "0",
     status: order.status ?? "",
     side: order.side ?? (order.is_ask === true ? "sell" : order.is_ask === false ? "buy" : ""),
     type: order.type ?? "",
@@ -413,7 +762,24 @@ export function lifecycleMatchHash(value: object): string {
 }
 
 function sameSnapshot(stored: Record<string, unknown>, live: LighterLifecycleOrderSnapshot): boolean {
-  return lifecycleMatchHash(stored) === lifecycleMatchHash(live);
+  return Object.entries(live).every(([key, value]) => stored[key] === value);
+}
+
+function matchesRequestedModification(
+  order: LighterAccountOrder,
+  intent: LighterOrderLifecycleIntentRow,
+): boolean {
+  const sizeDecimals = intent.providerSnapshotJson.marketSizeDecimals;
+  const priceDecimals = intent.providerSnapshotJson.marketPriceDecimals;
+  if (!Number.isInteger(sizeDecimals) || !Number.isInteger(priceDecimals)) return false;
+  try {
+    return decimalToLighterInteger(order.initial_base_amount, sizeDecimals as number, "provider modified amount").toString()
+      === intent.requestedBaseAmountInteger
+      && decimalToLighterInteger(order.price, priceDecimals as number, "provider modified price").toString()
+      === intent.requestedPriceInteger;
+  } catch {
+    return false;
+  }
 }
 
 function assertProviderOrderId(value: string): void {

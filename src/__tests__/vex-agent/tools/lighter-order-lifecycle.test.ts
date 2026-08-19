@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   executeApprovedLighterCancelOne,
+  executeApprovedLighterModifyOrder,
   lifecycleSnapshot,
   prepareLighterCancelOne,
+  prepareLighterModifyOrder,
   type LighterOrderLifecycleExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
@@ -115,12 +117,27 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
         txInfo: "signed-cancel",
         txHash: "hash-15",
       }),
-      signModifyOrder: vi.fn(),
+      signModifyOrder: vi.fn().mockResolvedValue({
+        kind: "lighter_order_lifecycle_signer_result",
+        operation: "modify_order",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        nonce: "9",
+        expiredAt: String(NOW + 60_000),
+        txType: 17,
+        txInfo: "signed-modify",
+        txHash: "hash-17",
+      }),
       signCancelAllOrders: vi.fn(),
     },
     client: {
       getAccountActiveOrders: active,
       getAccountInactiveOrders: vi.fn().mockResolvedValue({ code: 200, orders: [canceledOrder] }),
+      getMarkets: vi.fn().mockResolvedValue({
+        code: 200,
+        order_books: [{ market_id: 0, status: "active", supported_size_decimals: 4, supported_price_decimals: 2 }],
+      }),
       getApiKeys: vi.fn().mockResolvedValue({ code: 200, api_keys: [{
         account_index: 42, api_key_index: 7, nonce: 9, public_key: "b".repeat(80), transaction_time: NOW,
       }] }),
@@ -201,6 +218,113 @@ describe("Lighter cancel-one lifecycle", () => {
     });
     await expect(executeApprovedLighterCancelOne(intent(), dependencies)).rejects.toThrow(
       "changed before cancel submission",
+    );
+    expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+describe("Lighter modify-order lifecycle", () => {
+  it("prepares human amounts at live market precision and binds the original order", async () => {
+    const result = await prepareLighterModifyOrder({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      providerOrderId: openOrder.order_id,
+      requestedBaseAmount: "0.75",
+      requestedPrice: "51.25",
+      sizeDecimals: 4,
+      priceDecimals: 2,
+      auth: { token: "read-token", accountIndex: 42 },
+      client: { getAccountActiveOrders: vi.fn().mockResolvedValue({ code: 200, orders: [openOrder] }) },
+    });
+    expect(result).toMatchObject({
+      providerOrderId: openOrder.order_id,
+      requestedBaseAmount: "0.75",
+      requestedBaseAmountInteger: "7500",
+      requestedPrice: "51.25",
+      requestedPriceInteger: "5125",
+    });
+    expect(result.matchHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("refuses a new total amount below what is already filled", async () => {
+    await expect(prepareLighterModifyOrder({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      providerOrderId: openOrder.order_id,
+      requestedBaseAmount: "0.4",
+      requestedPrice: "51",
+      sizeDecimals: 4,
+      priceDecimals: 2,
+      client: { getAccountActiveOrders: vi.fn().mockResolvedValue({ code: 200, orders: [openOrder] }) },
+    })).rejects.toThrow("below the amount already filled");
+  });
+
+  it("submits once and completes only from exact updated provider evidence", async () => {
+    const modifiedOrder = {
+      ...openOrder,
+      initial_base_amount: "0.75",
+      remaining_base_amount: "0.25",
+      price: "51.25",
+    };
+    const dependencies = deps();
+    vi.mocked(dependencies.client.getAccountActiveOrders)
+      .mockReset()
+      .mockResolvedValueOnce({ code: 200, orders: [openOrder] })
+      .mockResolvedValue({ code: 200, orders: [modifiedOrder] });
+    vi.mocked(dependencies.client.getAccountInactiveOrders).mockResolvedValue({ code: 200, orders: [] });
+    vi.mocked(dependencies.client.sendTx).mockResolvedValue({
+      code: 200, tx_hash: "hash-17", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
+    });
+    const modifyIntent = intent({
+      actionType: "modify",
+      requestedBaseAmountInteger: "7500",
+      requestedPriceInteger: "5125",
+      providerSnapshotJson: {
+        ...lifecycleSnapshot(openOrder),
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+      },
+    });
+    const result = await executeApprovedLighterModifyOrder(modifyIntent, dependencies);
+    expect(result).toMatchObject({
+      status: "modified",
+      providerOrderId: openOrder.order_id,
+      effectiveBaseAmount: "0.75",
+      effectivePrice: "51.25",
+      executedAmount: "0.5",
+      remainingAmount: "0.25",
+    });
+    expect(dependencies.lifecycleSigner.signModifyOrder).toHaveBeenCalledWith(expect.objectContaining({
+      providerOrderId: openOrder.order_id,
+      baseAmountInteger: "7500",
+      priceInteger: "5125",
+    }));
+    expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a changed order before reserving a modify nonce", async () => {
+    const dependencies = deps();
+    vi.mocked(dependencies.client.getAccountActiveOrders).mockReset().mockResolvedValue({
+      code: 200,
+      orders: [{ ...openOrder, remaining_base_amount: "0.4" }],
+    });
+    const modifyIntent = intent({
+      actionType: "modify",
+      requestedBaseAmountInteger: "7500",
+      requestedPriceInteger: "5125",
+      providerSnapshotJson: {
+        ...lifecycleSnapshot(openOrder),
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+      },
+    });
+    await expect(executeApprovedLighterModifyOrder(modifyIntent, dependencies)).rejects.toThrow(
+      "changed before modify submission",
     );
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();

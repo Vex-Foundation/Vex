@@ -103,6 +103,28 @@ function lighterCancelCandidate() {
   };
 }
 
+function lighterModifyCandidate() {
+  const cancel = lighterCancelCandidate();
+  return {
+    ...cancel,
+    args: { toolId: "lighter.order.modify", params: { intentId: LIGHTER_LIFECYCLE_INTENT_ID } },
+    approvalPreview: {
+      toolName: "order.modify",
+      namespace: "lighter",
+      criticalArgs: {
+        ...cancel.approvalPreview.criticalArgs,
+        toolId: "lighter.order.modify",
+        actionType: "modify",
+        requestedBaseAmount: "0.75",
+        requestedBaseAmountInteger: "7500",
+        requestedPrice: "51.25",
+        requestedPriceInteger: "5125",
+        summary: "Modify exact Lighter order 1152921504606846975 on market 0 to total 0.75 at 51.25.",
+      },
+    },
+  };
+}
+
 function lighterDepositCandidate() {
   return {
     toolName: "execute_tool",
@@ -311,6 +333,28 @@ describe("prepared-action follow-up registry", () => {
       approvalPreview: {
         ...input.approvalPreview,
         criticalArgs: { ...input.approvalPreview.criticalArgs, providerOrderId: "1152921504606846976" },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
+  });
+
+  it.each(["execute_tool", "lighter__order__modify__prepare"])(
+    "allows %s to hand off an exact Lighter modify intent",
+    (sourceToolName) => {
+      const input = lighterModifyCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({ ok: true, followUp: input });
+    },
+  );
+
+  it("rejects an out-of-range Lighter modify amount", () => {
+    const input = lighterModifyCandidate();
+    expect(validatePreparedActionFollowUp("execute_tool", {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: {
+          ...input.approvalPreview.criticalArgs,
+          requestedBaseAmountInteger: (1n << 48n).toString(),
+        },
       },
     })).toEqual({ ok: false, reason: "invalid_contract" });
   });

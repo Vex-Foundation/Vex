@@ -69,6 +69,8 @@ describe("Lighter execution boundary", () => {
       "lighter.order.create",
       "lighter.order.cancel.prepare",
       "lighter.order.cancel",
+      "lighter.order.modify.prepare",
+      "lighter.order.modify",
     ]);
   });
 
@@ -98,7 +100,7 @@ describe("Lighter execution boundary", () => {
     expect(isLighterOrderTerminalExecutionState("filled")).toBe(true);
   });
 
-  it("names every permanent boundary that must close before create/cancel can submit", () => {
+  it("names every permanent boundary that must close before an order lifecycle action can submit", () => {
     expect(LIGHTER_ORDER_EXECUTION_REQUIRED_BOUNDARIES).toEqual([
       "fresh_matching_lighter_order_preview",
       "approval_disclosure_from_persisted_preview_and_live_reads",
@@ -111,7 +113,7 @@ describe("Lighter execution boundary", () => {
     ]);
   });
 
-  it("registers create and cancel only through approval-gated execution paths", () => {
+  it("registers create, cancel, and modify only through approval-gated execution paths", () => {
     const toolIds = new Set(LIGHTER_TOOLS.map((tool) => tool.toolId));
     const handlerIds = new Set(Object.keys(LIGHTER_HANDLERS));
     expect(toolIds.has("lighter.order.create.prepare")).toBe(true);
@@ -140,6 +142,10 @@ describe("Lighter execution boundary", () => {
       actionKind: LIGHTER_ORDER_WRITE_ACTION_KIND,
     });
     expect(handlerIds.has("lighter.order.cancel")).toBe(true);
+    expect(toolIds.has("lighter.order.modify.prepare")).toBe(true);
+    expect(handlerIds.has("lighter.order.modify.prepare")).toBe(true);
+    expect(toolIds.has("lighter.order.modify")).toBe(true);
+    expect(handlerIds.has("lighter.order.modify")).toBe(true);
   });
 
   it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks outside the execution pipeline", () => {

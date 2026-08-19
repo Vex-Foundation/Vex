@@ -154,12 +154,12 @@ export function buildLighterOrderPreview(
   assertExpiry(input.orderExpiry, nowMs);
   assertOrderCombination(input);
 
-  const baseAmountInteger = decimalToInteger(
+  const baseAmountInteger = decimalToLighterInteger(
     input.baseAmount,
     context.market.supported_size_decimals,
     "baseAmount",
   );
-  const priceInteger = decimalToInteger(
+  const priceInteger = decimalToLighterInteger(
     input.price,
     context.market.supported_price_decimals,
     "price",
@@ -167,18 +167,18 @@ export function buildLighterOrderPreview(
   const triggerPriceInteger =
     input.triggerPrice === undefined || input.triggerPrice === null
       ? null
-      : decimalToInteger(
+      : decimalToLighterInteger(
           input.triggerPrice,
           context.market.supported_price_decimals,
           "triggerPrice",
         );
-  const minBaseAmount = decimalToInteger(
+  const minBaseAmount = decimalToLighterInteger(
     context.market.min_base_amount,
     context.market.supported_size_decimals,
     "market min_base_amount",
     { allowZero: true },
   );
-  const minQuoteAmount = decimalToInteger(
+  const minQuoteAmount = decimalToLighterInteger(
     context.market.min_quote_amount,
     context.market.supported_quote_decimals,
     "market min_quote_amount",
@@ -420,7 +420,7 @@ function assertOrderCombination(input: LighterOrderPreviewInput): void {
   }
 }
 
-function decimalToInteger(
+export function decimalToLighterInteger(
   value: string,
   decimals: number,
   field: string,

@@ -105,6 +105,16 @@ describe("Lighter order lifecycle signer", () => {
     })).toThrow("outside the official signer range");
   });
 
+  it("enforces the official uint48 modify amount bound before signing", () => {
+    expect(() => buildLighterModifyOrderSigningInput({
+      ...scope,
+      marketIndex: 0,
+      providerOrderId: "123",
+      baseAmountInteger: (1n << 48n).toString(),
+      priceInteger: "1",
+    })).toThrow("outside the official signer range");
+  });
+
   it("rejects a helper response with the wrong lifecycle transaction type", async () => {
     const signer = createLighterOrderLifecycleSignerBinary({
       runner: async () => ({ ok: true, txType: 14, txInfo: "{}", txHash: "wrong" }),

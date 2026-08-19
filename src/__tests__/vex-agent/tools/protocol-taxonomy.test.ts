@@ -118,6 +118,8 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["lighter.deposit", "user_wallet_broadcast"],
     ["lighter.order.cancel.prepare", "approval_prepare"],
     ["lighter.order.cancel", "external_post"],
+    ["lighter.order.modify.prepare", "approval_prepare"],
+    ["lighter.order.modify", "external_post"],
     ["lighter.key.register.prepare", "approval_prepare"],
     ["lighter.key.register", "user_wallet_broadcast"],
     ["lighter.order.create.prepare", "approval_prepare"],

@@ -110,7 +110,7 @@ export function buildLighterModifyOrderSigningInput(input: {
   const scope = lifecycleScope(input);
   requireMarketIndex(input.marketIndex);
   requireDecimal("providerOrderId", input.providerOrderId, LIGHTER_PROVIDER_ORDER_INDEX_MAX, false);
-  requireDecimal("baseAmountInteger", input.baseAmountInteger, LIGHTER_SIGNER_INT64_MAX, false);
+  requireDecimal("baseAmountInteger", input.baseAmountInteger, LIGHTER_SIGNER_UINT48_MAX, false);
   requireDecimal("priceInteger", input.priceInteger, LIGHTER_SIGNER_UINT32_MAX, false);
   const triggerPriceInteger = input.triggerPriceInteger ?? "0";
   requireDecimal("triggerPriceInteger", triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, true);

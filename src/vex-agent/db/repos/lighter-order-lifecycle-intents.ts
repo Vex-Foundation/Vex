@@ -169,6 +169,25 @@ export async function findLiveTarget(input: {
   return row === null ? null : mapRow(row);
 }
 
+export async function findLiveOrderTarget(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly marketIndex: number;
+  readonly providerOrderId: string;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  requireProviderOrderId(input.providerOrderId);
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
+      WHERE environment = $1 AND account_index = $2
+        AND action_type IN ('cancel_one','modify')
+        AND market_index = $3 AND provider_order_id = $4
+        AND execution_state NOT IN ('completed','rejected','expired')
+      ORDER BY created_at DESC LIMIT 1`,
+    [input.environment, input.accountIndex, input.marketIndex, input.providerOrderId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 export async function markApprovalDecision(input: {
   readonly intentId: string;
   readonly decision: "approved" | "rejected" | "expired";

@@ -52,6 +52,20 @@ const PROVIDER_ORDER_ID_PARAM: ProtocolParamDef = {
   description: "Exact decimal provider order_id string from authenticated Lighter open orders. It is never converted to a JavaScript number.",
 };
 
+const MODIFY_TOTAL_BASE_AMOUNT_PARAM: ProtocolParamDef = {
+  key: "totalBaseAmount",
+  type: "string",
+  required: true,
+  description: "Replacement total order size in human market units. This is the new total size, not the remaining size, and cannot be below the amount already filled.",
+};
+
+const MODIFY_PRICE_PARAM: ProtocolParamDef = {
+  key: "price",
+  type: "string",
+  required: true,
+  description: "Replacement limit price in human market units, converted exactly using current Lighter market precision.",
+};
+
 const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
@@ -122,6 +136,30 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancel"],
+  },
+  {
+    toolId: "lighter.order.modify.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare a user approval for modifying one exact active Lighter limit order. Reads live market precision and authenticated order state, preserves the exact provider order_id string, treats totalBaseAmount as the replacement total size, refuses amounts below already-filled size, and binds old and requested values into a durable approval. It never loads a private key, reserves a nonce, signs, or submits.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, PROVIDER_ORDER_ID_PARAM, MODIFY_TOTAL_BASE_AMOUNT_PARAM, MODIFY_PRICE_PARAM],
+    exampleParams: { environment: "rhc", marketId: 0, orderId: "123456789", totalBaseAmount: "0.01", price: "2500" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.modify.prepare"],
+  },
+  {
+    toolId: "lighter.order.modify",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. It reports completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [LIFECYCLE_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-lifecycle-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.modify"],
   },
   {
     toolId: "lighter.withdraw.claim.prepare",

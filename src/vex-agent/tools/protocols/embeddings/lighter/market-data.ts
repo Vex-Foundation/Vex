@@ -195,6 +195,30 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.order.modify.prepare": {
+    embeddingText: embeddingText(
+      `Prepare an approval-gated modification for one exact active Lighter limit order. ` +
+      `Use when: the user identifies an open provider order id and explicitly requests a replacement total size and/or price. Vex reads live market precision and authenticated order state, refuses a total below already-filled size, and binds the original and requested values into a durable approval card. ` +
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+    ),
+    aliases: ["prepare lighter order modification", "change lighter limit price", "resize lighter order"],
+    exampleIntents: ["modify my Lighter order to 0.01 at 2500", "change this Lighter limit order price"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.order.modify": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact prepared Lighter order modification. ` +
+      `Use only when the trusted approval card from lighter.order.modify.prepare resumes. The privileged runtime revalidates exact order state, market precision, credential, and nonce; persists structural identity before one TxType 17 submission; never retries ambiguity; and reports completion only from exact updated provider evidence. ` +
+      `Direct model calls without the matching approval are refused.`,
+    ),
+    aliases: ["execute lighter modification", "approved order modify"],
+    exampleIntents: ["execute approved Lighter order modification"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.withdraw.prepare": {
     embeddingText: embeddingText(
       `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
@@ -386,7 +410,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 30;
+const EXPECTED_COUNT = 32;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

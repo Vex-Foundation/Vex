@@ -10,7 +10,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   getByApprovalId: (...args: unknown[]) => getAudit(...args),
 }));
 
-const { assertLighterCancelOneApprovalBinding } = await import(
+const { assertLighterCancelOneApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
   "@vex-agent/tools/protocols/lighter/order-lifecycle-approval-binding.js"
 );
 const { LIGHTER_ORDER_LIFECYCLE_HANDLERS } = await import(
@@ -73,6 +73,87 @@ beforeEach(() => {
     actionKind: "external_post",
     executionStatus: "dispatching",
     previewJson: { toolName: "order.cancel", namespace: "lighter", criticalArgs },
+  });
+});
+
+describe("Lighter modify-order approval binding", () => {
+  const modifyIntent = {
+    ...intent,
+    actionType: "modify",
+    requestedBaseAmountInteger: "7500",
+    requestedPriceInteger: "5125",
+    providerSnapshotJson: {
+      ...snapshot,
+      requestedBaseAmount: "0.75",
+      requestedPrice: "51.25",
+    },
+  };
+  const modifyCriticalArgs = {
+    ...criticalArgs,
+    toolId: "lighter.order.modify",
+    actionType: "modify",
+    requestedBaseAmount: "0.75",
+    requestedBaseAmountInteger: "7500",
+    requestedPrice: "51.25",
+    requestedPriceInteger: "5125",
+    summary: "Modify exact order.",
+  };
+
+  function useModifyApproval(): void {
+    getApproval.mockResolvedValueOnce({
+      status: "approved",
+      toolCall: {
+        command: "execute_tool",
+        args: { toolId: "lighter.order.modify", params: { intentId } },
+      },
+    });
+    getAudit.mockResolvedValueOnce({
+      sessionId: "session-1",
+      decision: "approved",
+      actionKind: "external_post",
+      executionStatus: "dispatching",
+      previewJson: { toolName: "order.modify", namespace: "lighter", criticalArgs: modifyCriticalArgs },
+    });
+  }
+
+  it("accepts only the exact original order and replacement values", async () => {
+    useModifyApproval();
+    await expect(assertLighterModifyOrderApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: modifyIntent as never,
+    })).resolves.toBeUndefined();
+  });
+
+  it("rejects an altered replacement price", async () => {
+    getApproval.mockResolvedValueOnce({
+      status: "approved",
+      toolCall: { command: "execute_tool", args: { toolId: "lighter.order.modify", params: { intentId } } },
+    });
+    getAudit.mockResolvedValueOnce({
+      sessionId: "session-1",
+      decision: "approved",
+      actionKind: "external_post",
+      executionStatus: "dispatching",
+      previewJson: {
+        toolName: "order.modify",
+        namespace: "lighter",
+        criticalArgs: { ...modifyCriticalArgs, requestedPriceInteger: "5126" },
+      },
+    });
+    await expect(assertLighterModifyOrderApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: modifyIntent as never,
+    })).rejects.toThrow("approval does not match the exact provider order and replacement values");
+  });
+
+  it("keeps direct modify calls behind the host approval gate", async () => {
+    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"]!(
+      { intentId },
+      { sessionId: "session-1" } as never,
+    );
+    expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
 });
 

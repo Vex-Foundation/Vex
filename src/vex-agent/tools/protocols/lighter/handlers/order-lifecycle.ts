@@ -20,10 +20,15 @@ import {
 } from "../trading-credential-scope.js";
 import {
   executeApprovedLighterCancelOne,
+  executeApprovedLighterModifyOrder,
   getConfiguredLighterOrderLifecycleExecutionDeps,
   prepareLighterCancelOne,
+  prepareLighterModifyOrder,
 } from "../order-lifecycle.js";
-import { assertLighterCancelOneApprovalBinding } from "../order-lifecycle-approval-binding.js";
+import {
+  assertLighterCancelOneApprovalBinding,
+  assertLighterModifyOrderApprovalBinding,
+} from "../order-lifecycle-approval-binding.js";
 
 const PREPARE_TTL_MS = 2 * 60_000;
 
@@ -60,15 +65,14 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
-    const existing = await intentsRepo.findLiveTarget({
+    const existing = await intentsRepo.findLiveOrderTarget({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
-      actionType: "cancel_one",
       marketIndex: marketId.value,
       providerOrderId: orderId.value,
     });
     if (existing !== null) {
-      if (existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
+      if (existing.actionType === "cancel_one" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
         return {
           ...ok(preparedPayload(existing, "approval_prepared_existing")),
           preparedActionFollowUp: cancelFollowUp(existing),
@@ -149,6 +153,149 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       return fail(error instanceof Error ? error.message : String(error));
     }
   },
+
+  "lighter.order.modify.prepare": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter order modification preparation requires a host session id.");
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params.marketId);
+    if (!marketId.ok) return fail(marketId.reason);
+    const orderId = readProviderOrderId(params.orderId);
+    if (!orderId.ok) return fail(orderId.reason);
+    const totalBaseAmount = readPositiveDecimal(params.totalBaseAmount, "totalBaseAmount");
+    if (!totalBaseAmount.ok) return fail(totalBaseAmount.reason);
+    const price = readPositiveDecimal(params.price, "price");
+    if (!price.ok) return fail(price.reason);
+    const accountIndex = readOptionalAccountIndex(params.accountIndex);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const scope = resolveScope(environment.value, accountIndex.value);
+    if (!scope.ok) return fail(scope.reason);
+    const readiness = evaluateLighterTradingCredentialReadiness({
+      ...scope.value,
+      vaultCredentialId: defaultLighterTradingVaultCredentialId(scope.value),
+    });
+    if (!readiness.ready) return fail("Managed Lighter trading access is not ready for this account.");
+    const client = getLighterClient();
+    const auth = await resolveLighterReadOnlyAccountAuth(environment.value, scope.value.accountIndex);
+    let prepared;
+    try {
+      const markets = await client.getMarkets(environment.value, { filter: "all" });
+      const market = markets.order_books.find((candidate) => candidate.market_id === marketId.value);
+      if (market === undefined || market.status !== "active") {
+        return fail("The exact Lighter market is not active in this environment.");
+      }
+      prepared = await prepareLighterModifyOrder({
+        environment: environment.value,
+        accountIndex: scope.value.accountIndex,
+        apiKeyIndex: scope.value.apiKeyIndex,
+        marketIndex: marketId.value,
+        providerOrderId: orderId.value,
+        requestedBaseAmount: totalBaseAmount.value,
+        requestedPrice: price.value,
+        sizeDecimals: market.supported_size_decimals,
+        priceDecimals: market.supported_price_decimals,
+        ...(auth === null ? {} : { auth }),
+        client,
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    const existing = await intentsRepo.findLiveOrderTarget({
+      environment: environment.value,
+      accountIndex: scope.value.accountIndex,
+      marketIndex: marketId.value,
+      providerOrderId: orderId.value,
+    });
+    if (existing !== null) {
+      if (existing.actionType === "modify" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
+        return {
+          ...ok(preparedPayload(existing, "approval_prepared_existing")),
+          preparedActionFollowUp: modifyFollowUp(existing),
+        };
+      }
+      return fail(`A live Lighter ${existing.actionType} action already exists for provider order ${orderId.value} in state ${existing.executionState}.`);
+    }
+    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
+    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
+      intentsRepo.createApprovalPendingWith(dbClient, {
+        intentId: `lighter-lifecycle-${randomUUID()}`,
+        sessionId: context.sessionId!,
+        matchHash: prepared.matchHash,
+        environment: prepared.environment,
+        accountIndex: prepared.accountIndex,
+        apiKeyIndex: prepared.apiKeyIndex,
+        actionType: "modify",
+        marketIndex: prepared.marketIndex,
+        providerOrderId: prepared.providerOrderId,
+        requestedBaseAmountInteger: prepared.requestedBaseAmountInteger,
+        requestedPriceInteger: prepared.requestedPriceInteger,
+        providerSnapshotJson: {
+          ...prepared.snapshot,
+          marketSizeDecimals: prepared.sizeDecimals,
+          marketPriceDecimals: prepared.priceDecimals,
+          requestedBaseAmount: prepared.requestedBaseAmount,
+          requestedPrice: prepared.requestedPrice,
+        },
+        credentialRefJson: readiness.reference,
+        expiresAt,
+      }),
+    );
+    if (created === null) return fail("The exact Lighter modification intent could not be persisted.");
+    return {
+      ...ok(preparedPayload(created, "approval_prepared")),
+      preparedActionFollowUp: modifyFollowUp(created),
+    };
+  },
+
+  "lighter.order.modify": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter order modification requires a host session id.");
+    const intentId = readIntentId(params.intentId);
+    if (!intentId.ok) return fail(intentId.reason);
+    if (!context.approved || !context.approvalId) {
+      return { success: false, output: "Lighter order modification requires its exact approved Vex approval card.", pendingApproval: true };
+    }
+    const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
+    if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
+    try {
+      await assertLighterModifyOrderApprovalBinding({
+        approvalId: context.approvalId,
+        sessionId: context.sessionId,
+        intent,
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    if (Date.parse(intent.expiresAt) <= Date.now()) {
+      await intentsRepo.markApprovalDecision({
+        intentId: intent.intentId,
+        decision: "expired",
+        approvalId: context.approvalId,
+        reason: "approved modification resumed after expiry",
+      });
+      return fail("The exact Lighter modification approval expired. Prepare it again from fresh provider state.");
+    }
+    const approved = await intentsRepo.markApprovalDecision({
+      intentId: intent.intentId,
+      decision: "approved",
+      approvalId: context.approvalId,
+      reason: "user approved exact Lighter provider order modification",
+    });
+    if (approved === null) return fail("The Lighter modification intent has already left approval-pending state.");
+    const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
+    if (deps === null) return fail("Privileged Lighter modification dependencies are unavailable. Nothing was signed or submitted.");
+    try {
+      const result = await executeApprovedLighterModifyOrder(approved, deps);
+      return ok({
+        source: "vex_lighter_order_modify",
+        ...result,
+        userGuidance: result.status === "modified" || result.status === "modified_then_terminal"
+          ? "Tell the user the exact provider order was modified and report effective amount, price, executed amount, remaining amount, average fill, and provider status."
+          : "Tell the user modification was submitted but is not yet proven final; reconcile before any retry.",
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  },
 };
 
 function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
@@ -181,6 +328,42 @@ function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionF
   };
 }
 
+function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+  const snapshot = intent.providerSnapshotJson;
+  const requestedBaseAmount = scalarString(snapshot.requestedBaseAmount);
+  const requestedPrice = scalarString(snapshot.requestedPrice);
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {
+    toolId: "lighter.order.modify",
+    intentId: intent.intentId,
+    actionType: "modify",
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    marketIndex: intent.marketIndex,
+    providerOrderId: intent.providerOrderId,
+    clientOrderId: scalarString(snapshot.clientOrderId),
+    side: scalarString(snapshot.side),
+    orderType: scalarString(snapshot.type),
+    timeInForce: scalarString(snapshot.timeInForce),
+    price: scalarString(snapshot.price),
+    initialBaseAmount: scalarString(snapshot.initialBaseAmount),
+    remainingBaseAmount: scalarString(snapshot.remainingBaseAmount),
+    filledBaseAmount: scalarString(snapshot.filledBaseAmount),
+    requestedBaseAmount,
+    requestedBaseAmountInteger: intent.requestedBaseAmountInteger,
+    requestedPrice,
+    requestedPriceInteger: intent.requestedPriceInteger,
+    matchHash: intent.matchHash,
+    summary: `Modify exact Lighter order ${intent.providerOrderId} on market ${intent.marketIndex} from total ${scalarString(snapshot.initialBaseAmount)} at ${scalarString(snapshot.price)} to total ${requestedBaseAmount} at ${requestedPrice}; ${scalarString(snapshot.filledBaseAmount)} has already filled.`,
+  };
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.order.modify", params: { intentId: intent.intentId } },
+    expiresAt: intent.expiresAt,
+    approvalPreview: { toolName: "order.modify", namespace: "lighter", criticalArgs },
+  };
+}
+
 function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string): Record<string, unknown> {
   return {
     source: "vex_lighter_order_lifecycle_intent",
@@ -194,7 +377,7 @@ function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string)
     approvalStatus: intent.approvalStatus,
     executionState: intent.executionState,
     expiresAt: intent.expiresAt,
-    message: "Exact Lighter order cancellation prepared; approve the trusted card before anything is signed or submitted.",
+    message: `Exact Lighter order ${intent.actionType === "modify" ? "modification" : "cancellation"} prepared; approve the trusted card before anything is signed or submitted.`,
   };
 }
 
@@ -240,6 +423,15 @@ function readIntentId(value: unknown): { ok: true; value: string } | { ok: false
   return typeof value === "string" && /^lighter-lifecycle-[0-9a-f-]{36}$/i.test(value)
     ? { ok: true, value }
     : { ok: false, reason: "intentId must be the exact prepared Lighter lifecycle intent id." };
+}
+
+function readPositiveDecimal(value: unknown, field: string): { ok: true; value: string } | { ok: false; reason: string } {
+  if (typeof value !== "string") return { ok: false, reason: `${field} must be a positive decimal string.` };
+  const trimmed = value.trim();
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(trimmed) || /^0(?:\.0+)?$/.test(trimmed)) {
+    return { ok: false, reason: `${field} must be a positive decimal string.` };
+  }
+  return { ok: true, value: trimmed };
 }
 
 function scalarString(value: unknown): string { return typeof value === "string" ? value : ""; }
