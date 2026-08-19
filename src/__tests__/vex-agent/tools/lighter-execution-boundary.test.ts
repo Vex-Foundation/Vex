@@ -71,6 +71,8 @@ describe("Lighter execution boundary", () => {
       "lighter.order.cancel",
       "lighter.order.modify.prepare",
       "lighter.order.modify",
+      "lighter.order.cancelAll.prepare",
+      "lighter.order.cancelAll",
     ]);
   });
 
@@ -146,6 +148,10 @@ describe("Lighter execution boundary", () => {
     expect(handlerIds.has("lighter.order.modify.prepare")).toBe(true);
     expect(toolIds.has("lighter.order.modify")).toBe(true);
     expect(handlerIds.has("lighter.order.modify")).toBe(true);
+    expect(toolIds.has("lighter.order.cancelAll.prepare")).toBe(true);
+    expect(handlerIds.has("lighter.order.cancelAll.prepare")).toBe(true);
+    expect(toolIds.has("lighter.order.cancelAll")).toBe(true);
+    expect(handlerIds.has("lighter.order.cancelAll")).toBe(true);
   });
 
   it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks outside the execution pipeline", () => {

@@ -219,6 +219,30 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.order.cancelAll.prepare": {
+    embeddingText: embeddingText(
+      `Prepare one explicit approval to immediately cancel every active Lighter order in one saved account across all markets. ` +
+      `Use when: the user clearly asks to cancel all open Lighter orders. Vex reads and binds the complete exact active-order set and refuses execution if any order changes before submission. ` +
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+    ),
+    aliases: ["prepare lighter cancel all", "cancel every lighter order", "clear lighter open orders"],
+    exampleIntents: ["cancel all my Lighter orders", "prepare to clear every open order on RHC Lighter"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.order.cancelAll": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact immediate account-wide Lighter cancellation. ` +
+      `Use only when the trusted approval card from lighter.order.cancelAll.prepare resumes. The privileged runtime requires the exact active set to remain unchanged, signs immediate TxType 16 once, never retries ambiguity, and reports completion only when no active orders remain and every approved order has exact terminal evidence. ` +
+      `Direct model calls without the matching approval are refused.`,
+    ),
+    aliases: ["execute lighter cancel all", "approved cancel every order"],
+    exampleIntents: ["execute approved Lighter cancel all"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.withdraw.prepare": {
     embeddingText: embeddingText(
       `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
@@ -410,7 +434,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 32;
+const EXPECTED_COUNT = 34;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

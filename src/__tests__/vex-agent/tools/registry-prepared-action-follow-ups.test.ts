@@ -125,6 +125,32 @@ function lighterModifyCandidate() {
   };
 }
 
+function lighterCancelAllCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.order.cancelAll", params: { intentId: LIGHTER_LIFECYCLE_INTENT_ID } },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "order.cancelAll",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.order.cancelAll",
+        intentId: LIGHTER_LIFECYCLE_INTENT_ID,
+        actionType: "cancel_all",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        orderCount: 2,
+        orderIdentities: "0:1152921504606846975,1:281474976710657",
+        timeInForce: 0,
+        cancelAtMs: "0",
+        matchHash: "c".repeat(64),
+        summary: "Immediately cancel exactly two active Lighter orders.",
+      },
+    },
+  };
+}
+
 function lighterDepositCandidate() {
   return {
     toolName: "execute_tool",
@@ -355,6 +381,25 @@ describe("prepared-action follow-up registry", () => {
           ...input.approvalPreview.criticalArgs,
           requestedBaseAmountInteger: (1n << 48n).toString(),
         },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
+  });
+
+  it.each(["execute_tool", "lighter__order__cancelAll__prepare"])(
+    "allows %s to hand off an exact Lighter cancel-all intent",
+    (sourceToolName) => {
+      const input = lighterCancelAllCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({ ok: true, followUp: input });
+    },
+  );
+
+  it("rejects a cancel-all approval with an altered order count", () => {
+    const input = lighterCancelAllCandidate();
+    expect(validatePreparedActionFollowUp("execute_tool", {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: { ...input.approvalPreview.criticalArgs, orderCount: 1 },
       },
     })).toEqual({ ok: false, reason: "invalid_contract" });
   });

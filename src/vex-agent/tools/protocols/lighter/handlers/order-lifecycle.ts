@@ -19,13 +19,16 @@ import {
   type LighterSavedTradingCredentialScope,
 } from "../trading-credential-scope.js";
 import {
+  executeApprovedLighterCancelAll,
   executeApprovedLighterCancelOne,
   executeApprovedLighterModifyOrder,
   getConfiguredLighterOrderLifecycleExecutionDeps,
+  prepareLighterCancelAll,
   prepareLighterCancelOne,
   prepareLighterModifyOrder,
 } from "../order-lifecycle.js";
 import {
+  assertLighterCancelAllApprovalBinding,
   assertLighterCancelOneApprovalBinding,
   assertLighterModifyOrderApprovalBinding,
 } from "../order-lifecycle-approval-binding.js";
@@ -64,6 +67,13 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
+    }
+    const accountWide = await intentsRepo.findLiveAccountWideCancel({
+      environment: environment.value,
+      accountIndex: scope.value.accountIndex,
+    });
+    if (accountWide !== null) {
+      return fail(`An account-wide Lighter cancellation already exists in state ${accountWide.executionState}.`);
     }
     const existing = await intentsRepo.findLiveOrderTarget({
       environment: environment.value,
@@ -200,6 +210,13 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
+    const accountWide = await intentsRepo.findLiveAccountWideCancel({
+      environment: environment.value,
+      accountIndex: scope.value.accountIndex,
+    });
+    if (accountWide !== null) {
+      return fail(`An account-wide Lighter cancellation already exists in state ${accountWide.executionState}.`);
+    }
     const existing = await intentsRepo.findLiveOrderTarget({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
@@ -296,6 +313,124 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       return fail(error instanceof Error ? error.message : String(error));
     }
   },
+
+  "lighter.order.cancelAll.prepare": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter account-wide cancellation preparation requires a host session id.");
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readOptionalAccountIndex(params.accountIndex);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const scope = resolveScope(environment.value, accountIndex.value);
+    if (!scope.ok) return fail(scope.reason);
+    const readiness = evaluateLighterTradingCredentialReadiness({
+      ...scope.value,
+      vaultCredentialId: defaultLighterTradingVaultCredentialId(scope.value),
+    });
+    if (!readiness.ready) return fail("Managed Lighter trading access is not ready for this account.");
+    const auth = await resolveLighterReadOnlyAccountAuth(environment.value, scope.value.accountIndex);
+    let prepared;
+    try {
+      prepared = await prepareLighterCancelAll({
+        environment: environment.value,
+        accountIndex: scope.value.accountIndex,
+        apiKeyIndex: scope.value.apiKeyIndex,
+        ...(auth === null ? {} : { auth }),
+        client: getLighterClient(),
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    const existing = await intentsRepo.findAnyLiveOrderMutation({
+      environment: environment.value,
+      accountIndex: scope.value.accountIndex,
+    });
+    if (existing !== null) {
+      if (existing.actionType === "cancel_all" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
+        return {
+          ...ok(preparedPayload(existing, "approval_prepared_existing")),
+          preparedActionFollowUp: cancelAllFollowUp(existing),
+        };
+      }
+      return fail(`A live Lighter ${existing.actionType} action already exists for this account in state ${existing.executionState}.`);
+    }
+    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
+    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
+      intentsRepo.createApprovalPendingWith(dbClient, {
+        intentId: `lighter-lifecycle-${randomUUID()}`,
+        sessionId: context.sessionId!,
+        matchHash: prepared.matchHash,
+        environment: prepared.environment,
+        accountIndex: prepared.accountIndex,
+        apiKeyIndex: prepared.apiKeyIndex,
+        actionType: "cancel_all",
+        marketIndex: null,
+        providerOrderId: null,
+        providerSnapshotJson: {
+          orders: prepared.orders,
+          orderCount: prepared.orders.length,
+          timeInForce: 0,
+          cancelAtMs: "0",
+        },
+        credentialRefJson: readiness.reference,
+        expiresAt,
+      }),
+    );
+    if (created === null) return fail("The exact Lighter cancel-all intent could not be persisted.");
+    return {
+      ...ok(preparedPayload(created, "approval_prepared")),
+      preparedActionFollowUp: cancelAllFollowUp(created),
+    };
+  },
+
+  "lighter.order.cancelAll": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter account-wide cancellation requires a host session id.");
+    const intentId = readIntentId(params.intentId);
+    if (!intentId.ok) return fail(intentId.reason);
+    if (!context.approved || !context.approvalId) {
+      return { success: false, output: "Lighter cancel-all requires its exact approved Vex approval card.", pendingApproval: true };
+    }
+    const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
+    if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
+    try {
+      await assertLighterCancelAllApprovalBinding({
+        approvalId: context.approvalId,
+        sessionId: context.sessionId,
+        intent,
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    if (Date.parse(intent.expiresAt) <= Date.now()) {
+      await intentsRepo.markApprovalDecision({
+        intentId: intent.intentId,
+        decision: "expired",
+        approvalId: context.approvalId,
+        reason: "approved cancel-all resumed after expiry",
+      });
+      return fail("The exact Lighter cancel-all approval expired. Prepare it again from fresh provider state.");
+    }
+    const approved = await intentsRepo.markApprovalDecision({
+      intentId: intent.intentId,
+      decision: "approved",
+      approvalId: context.approvalId,
+      reason: "user approved exact account-wide Lighter order cancellation",
+    });
+    if (approved === null) return fail("The Lighter cancel-all intent has already left approval-pending state.");
+    const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
+    if (deps === null) return fail("Privileged Lighter cancel-all dependencies are unavailable. Nothing was signed or submitted.");
+    try {
+      const result = await executeApprovedLighterCancelAll(approved, deps);
+      return ok({
+        source: "vex_lighter_order_cancel_all",
+        ...result,
+        userGuidance: result.status === "cancel_all_completed"
+          ? "Tell the user the account has no active orders and report each exact order's final status, executed amount, remaining amount, and average fill. Distinguish orders that filled before cancellation."
+          : "Tell the user cancel-all was submitted but the exact approved order set is not yet proven terminal; reconcile before any retry.",
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  },
 };
 
 function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
@@ -364,6 +499,32 @@ function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionF
   };
 }
 
+function cancelAllFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+  const orders = Array.isArray(intent.providerSnapshotJson.orders)
+    ? intent.providerSnapshotJson.orders as Record<string, unknown>[] : [];
+  const orderIdentities = orders.map((order) => `${order.marketIndex}:${order.orderId}`).join(",");
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {
+    toolId: "lighter.order.cancelAll",
+    intentId: intent.intentId,
+    actionType: "cancel_all",
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    orderCount: orders.length,
+    orderIdentities,
+    timeInForce: 0,
+    cancelAtMs: "0",
+    matchHash: intent.matchHash,
+    summary: `Immediately cancel every active Lighter order in account ${intent.accountIndex} on ${intent.environment}. This approval covers exactly ${orders.length} active order${orders.length === 1 ? "" : "s"}; it will be refused if that set changes.`,
+  };
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.order.cancelAll", params: { intentId: intent.intentId } },
+    expiresAt: intent.expiresAt,
+    approvalPreview: { toolName: "order.cancelAll", namespace: "lighter", criticalArgs },
+  };
+}
+
 function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string): Record<string, unknown> {
   return {
     source: "vex_lighter_order_lifecycle_intent",
@@ -377,7 +538,7 @@ function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string)
     approvalStatus: intent.approvalStatus,
     executionState: intent.executionState,
     expiresAt: intent.expiresAt,
-    message: `Exact Lighter order ${intent.actionType === "modify" ? "modification" : "cancellation"} prepared; approve the trusted card before anything is signed or submitted.`,
+    message: `Exact Lighter ${intent.actionType === "modify" ? "order modification" : intent.actionType === "cancel_all" ? "account-wide cancellation" : "order cancellation"} prepared; approve the trusted card before anything is signed or submitted.`,
   };
 }
 

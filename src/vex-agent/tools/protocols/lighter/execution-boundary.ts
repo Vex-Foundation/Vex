@@ -8,6 +8,8 @@ export const LIGHTER_ORDER_WRITE_TOOL_IDS = [
   "lighter.order.cancel",
   "lighter.order.modify.prepare",
   "lighter.order.modify",
+  "lighter.order.cancelAll.prepare",
+  "lighter.order.cancelAll",
 ] as const;
 
 export type LighterOrderWriteToolId = (typeof LIGHTER_ORDER_WRITE_TOOL_IDS)[number];

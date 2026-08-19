@@ -188,6 +188,35 @@ export async function findLiveOrderTarget(input: {
   return row === null ? null : mapRow(row);
 }
 
+export async function findLiveAccountWideCancel(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
+      WHERE environment = $1 AND account_index = $2 AND action_type = 'cancel_all'
+        AND execution_state NOT IN ('completed','rejected','expired')
+      ORDER BY created_at DESC LIMIT 1`,
+    [input.environment, input.accountIndex],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findAnyLiveOrderMutation(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
+      WHERE environment = $1 AND account_index = $2
+        AND action_type IN ('cancel_one','modify','cancel_all')
+        AND execution_state NOT IN ('completed','rejected','expired')
+      ORDER BY created_at ASC LIMIT 1`,
+    [input.environment, input.accountIndex],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 export async function markApprovalDecision(input: {
   readonly intentId: string;
   readonly decision: "approved" | "rejected" | "expired";

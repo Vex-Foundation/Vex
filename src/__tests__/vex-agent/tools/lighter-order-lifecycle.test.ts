@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  executeApprovedLighterCancelAll,
   executeApprovedLighterCancelOne,
   executeApprovedLighterModifyOrder,
   lifecycleSnapshot,
+  prepareLighterCancelAll,
   prepareLighterCancelOne,
   prepareLighterModifyOrder,
   type LighterOrderLifecycleExecutionDeps,
@@ -129,7 +131,18 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
         txInfo: "signed-modify",
         txHash: "hash-17",
       }),
-      signCancelAllOrders: vi.fn(),
+      signCancelAllOrders: vi.fn().mockResolvedValue({
+        kind: "lighter_order_lifecycle_signer_result",
+        operation: "cancel_all_orders",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        nonce: "9",
+        expiredAt: String(NOW + 60_000),
+        txType: 16,
+        txInfo: "signed-cancel-all",
+        txHash: "hash-16",
+      }),
     },
     client: {
       getAccountActiveOrders: active,
@@ -325,6 +338,88 @@ describe("Lighter modify-order lifecycle", () => {
     });
     await expect(executeApprovedLighterModifyOrder(modifyIntent, dependencies)).rejects.toThrow(
       "changed before modify submission",
+    );
+    expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+describe("Lighter cancel-all lifecycle", () => {
+  const secondOrder: LighterAccountOrder = {
+    ...openOrder,
+    order_id: "281474976710657",
+    client_order_id: "124",
+    client_order_index: 124,
+    market_index: 1,
+    initial_base_amount: "2",
+    remaining_base_amount: "2",
+    filled_base_amount: "0",
+    filled_quote_amount: "0",
+    price: "25",
+  };
+
+  it("prepares and hashes the complete exact active-order set", async () => {
+    const result = await prepareLighterCancelAll({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      auth: { token: "read-token", accountIndex: 42 },
+      client: { getAccountActiveOrders: vi.fn().mockResolvedValue({ code: 200, orders: [secondOrder, openOrder] }) },
+    });
+    expect(result.orders.map((order) => order.orderId)).toEqual([openOrder.order_id, secondOrder.order_id]);
+    expect(result.matchHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("submits immediate account-wide cancel once and proves every approved order terminal", async () => {
+    const dependencies = deps();
+    vi.mocked(dependencies.client.getAccountActiveOrders)
+      .mockReset()
+      .mockResolvedValueOnce({ code: 200, orders: [secondOrder, openOrder] })
+      .mockResolvedValue({ code: 200, orders: [] });
+    vi.mocked(dependencies.client.getAccountInactiveOrders).mockResolvedValue({
+      code: 200,
+      orders: [
+        { ...openOrder, status: "canceled" },
+        { ...secondOrder, status: "filled", remaining_base_amount: "0", filled_base_amount: "2", filled_quote_amount: "50" },
+      ],
+    });
+    vi.mocked(dependencies.client.sendTx).mockResolvedValue({
+      code: 200, tx_hash: "hash-16", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
+    });
+    const approvedOrders = [lifecycleSnapshot(openOrder), lifecycleSnapshot(secondOrder)];
+    const cancelAllIntent = intent({
+      actionType: "cancel_all",
+      marketIndex: null,
+      providerOrderId: null,
+      providerSnapshotJson: { orders: approvedOrders, orderCount: approvedOrders.length },
+    });
+    const result = await executeApprovedLighterCancelAll(cancelAllIntent, dependencies);
+    expect(result).toMatchObject({
+      status: "cancel_all_completed",
+      canceledOrderCount: 1,
+      filledBeforeCancelCount: 1,
+    });
+    expect(dependencies.lifecycleSigner.signCancelAllOrders).toHaveBeenCalledWith(expect.objectContaining({
+      timeInForce: 0,
+      cancelAtMs: "0",
+    }));
+    expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks when the account-wide active set changes before nonce reservation", async () => {
+    const dependencies = deps();
+    vi.mocked(dependencies.client.getAccountActiveOrders).mockReset().mockResolvedValue({
+      code: 200,
+      orders: [openOrder],
+    });
+    const cancelAllIntent = intent({
+      actionType: "cancel_all",
+      marketIndex: null,
+      providerOrderId: null,
+      providerSnapshotJson: { orders: [lifecycleSnapshot(openOrder), lifecycleSnapshot(secondOrder)], orderCount: 2 },
+    });
+    await expect(executeApprovedLighterCancelAll(cancelAllIntent, dependencies)).rejects.toThrow(
+      "active-order set changed",
     );
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();

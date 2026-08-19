@@ -34,6 +34,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.order.cancel",
   "lighter.order.modify.prepare",
   "lighter.order.modify",
+  "lighter.order.cancelAll.prepare",
+  "lighter.order.cancelAll",
   "lighter.withdraw.claim.prepare",
   "lighter.withdraw.claim",
   "lighter.withdraw.prepare",
@@ -104,6 +106,14 @@ describe("Lighter agent discovery surface", () => {
       mutating: true,
       actionKind: "external_post",
     });
+    expect(getProtocolManifest("lighter.order.cancelAll.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(getProtocolManifest("lighter.order.cancelAll")).toMatchObject({
+      mutating: true,
+      actionKind: "external_post",
+    });
     expect(getProtocolManifest("lighter.key.register.prepare")).toMatchObject({
       mutating: false,
       actionKind: "approval_prepare",
@@ -158,7 +168,7 @@ describe("Lighter agent discovery surface", () => {
 
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(false);
-      if (tool.toolId === "lighter.order.create" || tool.toolId === "lighter.order.cancel" || tool.toolId === "lighter.order.modify" || tool.toolId === "lighter.withdraw") {
+      if (tool.toolId === "lighter.order.create" || tool.toolId === "lighter.order.cancel" || tool.toolId === "lighter.order.modify" || tool.toolId === "lighter.order.cancelAll" || tool.toolId === "lighter.withdraw") {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("external_post");
         expect(tool.requiredParams).toContain("intentId");
@@ -178,6 +188,7 @@ describe("Lighter agent discovery surface", () => {
         tool.toolId === "lighter.order.create.prepare"
         || tool.toolId === "lighter.order.cancel.prepare"
         || tool.toolId === "lighter.order.modify.prepare"
+        || tool.toolId === "lighter.order.cancelAll.prepare"
         || tool.toolId === "lighter.withdraw.prepare"
         || tool.toolId === "lighter.withdraw.claim.prepare"
         || tool.toolId === "lighter.deposit.prepare"
@@ -207,6 +218,7 @@ describe("Lighter agent discovery surface", () => {
         tool.toolId === "lighter.order.create"
         || tool.toolId === "lighter.order.cancel"
         || tool.toolId === "lighter.order.modify"
+        || tool.toolId === "lighter.order.cancelAll"
         || tool.toolId === "lighter.withdraw"
         || tool.toolId === "lighter.key.register"
       ) {

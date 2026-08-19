@@ -10,7 +10,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   getByApprovalId: (...args: unknown[]) => getAudit(...args),
 }));
 
-const { assertLighterCancelOneApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
+const { assertLighterCancelAllApprovalBinding, assertLighterCancelOneApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
   "@vex-agent/tools/protocols/lighter/order-lifecycle-approval-binding.js"
 );
 const { LIGHTER_ORDER_LIFECYCLE_HANDLERS } = await import(
@@ -150,6 +150,78 @@ describe("Lighter modify-order approval binding", () => {
 
   it("keeps direct modify calls behind the host approval gate", async () => {
     const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"]!(
+      { intentId },
+      { sessionId: "session-1" } as never,
+    );
+    expect(result).toMatchObject({ success: false, pendingApproval: true });
+  });
+});
+
+describe("Lighter cancel-all approval binding", () => {
+  const orders = [
+    { marketIndex: 0, orderId: "1152921504606846975" },
+    { marketIndex: 1, orderId: "281474976710657" },
+  ];
+  const cancelAllIntent = {
+    ...intent,
+    actionType: "cancel_all",
+    marketIndex: null,
+    providerOrderId: null,
+    matchHash: "c".repeat(64),
+    providerSnapshotJson: { orders, orderCount: 2, timeInForce: 0, cancelAtMs: "0" },
+  };
+  const cancelAllCritical = {
+    toolId: "lighter.order.cancelAll",
+    intentId,
+    actionType: "cancel_all",
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    orderCount: 2,
+    orderIdentities: "0:1152921504606846975,1:281474976710657",
+    timeInForce: 0,
+    cancelAtMs: "0",
+    matchHash: "c".repeat(64),
+    summary: "Immediately cancel exactly two active orders.",
+  };
+
+  function useCancelAllApproval(critical = cancelAllCritical): void {
+    getApproval.mockResolvedValueOnce({
+      status: "approved",
+      toolCall: {
+        command: "execute_tool",
+        args: { toolId: "lighter.order.cancelAll", params: { intentId } },
+      },
+    });
+    getAudit.mockResolvedValueOnce({
+      sessionId: "session-1",
+      decision: "approved",
+      actionKind: "external_post",
+      executionStatus: "dispatching",
+      previewJson: { toolName: "order.cancelAll", namespace: "lighter", criticalArgs: critical },
+    });
+  }
+
+  it("accepts only the exact account-wide active-order set", async () => {
+    useCancelAllApproval();
+    await expect(assertLighterCancelAllApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: cancelAllIntent as never,
+    })).resolves.toBeUndefined();
+  });
+
+  it("rejects an altered account-wide order identity", async () => {
+    useCancelAllApproval({ ...cancelAllCritical, orderIdentities: "0:1152921504606846974,1:281474976710657" });
+    await expect(assertLighterCancelAllApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: cancelAllIntent as never,
+    })).rejects.toThrow("approval does not match the exact account-wide active-order set");
+  });
+
+  it("keeps direct cancel-all calls behind the host approval gate", async () => {
+    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"]!(
       { intentId },
       { sessionId: "session-1" } as never,
     );

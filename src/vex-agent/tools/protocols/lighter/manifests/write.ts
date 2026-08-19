@@ -162,6 +162,30 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.modify"],
   },
   {
+    toolId: "lighter.order.cancelAll.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare one explicit approval to immediately cancel every active order in a saved Lighter account across all markets. It reads the complete authenticated active-order set, preserves every exact string order identity and immutable order fact, refuses empty or unprovably large sets, and binds immediate account-wide TxType 16 semantics. It never loads a private key, reserves a nonce, signs, or submits.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM],
+    exampleParams: { environment: "rhc" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancelAll.prepare"],
+  },
+  {
+    toolId: "lighter.order.cancelAll",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. Completion requires zero active orders plus exact terminal evidence for every approved order, with fills reported separately.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [LIFECYCLE_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-lifecycle-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancelAll"],
+  },
+  {
     toolId: "lighter.withdraw.claim.prepare",
     namespace: "lighter",
     lifecycle: "active",

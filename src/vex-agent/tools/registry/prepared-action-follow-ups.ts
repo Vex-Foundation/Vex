@@ -70,6 +70,20 @@ export interface ValidatedLighterOrderModifyFollowUp {
   };
 }
 
+export interface ValidatedLighterOrderCancelAllFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.order.cancelAll";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "order.cancelAll";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export interface ValidatedLighterDepositFollowUp {
   readonly toolName: "execute_tool";
   readonly args: {
@@ -119,6 +133,7 @@ export type ValidatedPreparedActionFollowUp =
   | ValidatedLighterOrderCreateFollowUp
   | ValidatedLighterOrderCancelFollowUp
   | ValidatedLighterOrderModifyFollowUp
+  | ValidatedLighterOrderCancelAllFollowUp
   | ValidatedLighterDepositFollowUp
   | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterKeyRegistrationFollowUp;
@@ -143,6 +158,10 @@ const LIGHTER_ORDER_CANCEL_PREPARE_SOURCES = new Set([
 const LIGHTER_ORDER_MODIFY_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__order__modify__prepare",
+]);
+const LIGHTER_ORDER_CANCEL_ALL_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__order__cancelAll__prepare",
 ]);
 const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
   "execute_tool",
@@ -292,6 +311,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.order.modify"
   ) {
     return validateLighterOrderModifyFollowUp(candidate);
+  }
+  if (
+    LIGHTER_ORDER_CANCEL_ALL_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.order.cancelAll"
+  ) {
+    return validateLighterOrderCancelAllFollowUp(candidate);
   }
   if (
     LIGHTER_DEPOSIT_PREPARE_SOURCES.has(sourceToolName)
@@ -873,6 +899,67 @@ function validateLighterOrderModifyFollowUp(
       args: { toolId: "lighter.order.modify", params: { intentId } },
       expiresAt: candidate.expiresAt,
       approvalPreview: { toolName: "order.modify", namespace: "lighter", criticalArgs },
+    },
+  };
+}
+
+const LIGHTER_CANCEL_ALL_PREVIEW_KEYS = [
+  "toolId", "intentId", "actionType", "environment", "accountIndex", "apiKeyIndex",
+  "orderCount", "orderIdentities", "timeInForce", "cancelAtMs", "matchHash", "summary",
+] as const;
+
+function validateLighterOrderCancelAllFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(candidate.args).sort().join(",") !== "params,toolId" || candidate.args.toolId !== "lighter.order.cancelAll") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) return { ok: false, reason: "invalid_contract" };
+  const intentId = (params as Record<string, unknown>).intentId;
+  if (Object.keys(params as Record<string, unknown>).join(",") !== "intentId" || typeof intentId !== "string" || !LIGHTER_LIFECYCLE_INTENT_ID_RE.test(intentId)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "order.cancelAll" || preview.namespace !== "lighter") return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_CANCEL_ALL_PREVIEW_KEYS].sort().join(",")) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_CANCEL_ALL_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    criticalArgs[key] = value;
+  }
+  const identities = typeof criticalArgs.orderIdentities === "string"
+    ? criticalArgs.orderIdentities.split(",") : [];
+  const validIdentities = identities.length > 0 && identities.length <= 100 && identities.every((identity) => {
+    const match = /^(\d+):([1-9][0-9]*)$/.exec(identity);
+    if (match === null) return false;
+    const marketIndex = Number(match[1]);
+    return Number.isInteger(marketIndex) && marketIndex >= 0 && marketIndex <= 65_535
+      && BigInt(match[2]!) <= (1n << 60n) - 1n;
+  });
+  if (
+    criticalArgs.toolId !== "lighter.order.cancelAll" || criticalArgs.intentId !== intentId
+    || criticalArgs.actionType !== "cancel_all"
+    || (criticalArgs.environment !== "core" && criticalArgs.environment !== "rhc")
+    || typeof criticalArgs.accountIndex !== "number" || !Number.isSafeInteger(criticalArgs.accountIndex) || criticalArgs.accountIndex < 0
+    || typeof criticalArgs.apiKeyIndex !== "number" || !Number.isInteger(criticalArgs.apiKeyIndex) || criticalArgs.apiKeyIndex < 4 || criticalArgs.apiKeyIndex > 254
+    || typeof criticalArgs.orderCount !== "number" || !Number.isInteger(criticalArgs.orderCount)
+    || criticalArgs.orderCount !== identities.length || !validIdentities
+    || criticalArgs.timeInForce !== 0 || criticalArgs.cancelAtMs !== "0"
+    || typeof criticalArgs.matchHash !== "string" || !/^[0-9a-f]{64}$/.test(criticalArgs.matchHash)
+    || typeof criticalArgs.summary !== "string" || criticalArgs.summary.length < 1 || criticalArgs.summary.length > 600
+  ) return { ok: false, reason: "invalid_contract" };
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: { toolId: "lighter.order.cancelAll", params: { intentId } },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: "order.cancelAll", namespace: "lighter", criticalArgs },
     },
   };
 }
