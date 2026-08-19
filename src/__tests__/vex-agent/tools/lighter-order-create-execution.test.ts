@@ -384,6 +384,33 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
+  it("revalidates a spot market from the provider spot-detail array", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        getMarketDetails: vi.fn(async () => ({
+          code: 200,
+          order_book_details: [],
+          spot_order_book_details: [{ ...MARKET, market_type: "spot" }],
+        })),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    expect(d.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
+      marketId: PLAN.marketIndex,
+      filter: "all",
+    });
+    expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalled();
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("sequencer_pending");
+  });
+
   it("blocks when safe revalidation evidence cannot persist before vault access", async () => {
     const d = deps({
       intents: {

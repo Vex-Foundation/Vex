@@ -346,9 +346,10 @@ async function revalidateLiveOrderState(
       "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
     );
   }
-  const marketDetail = market.order_book_details.find(
-    (detail) => detail.market_id === plan.marketIndex,
-  );
+  const marketDetail = [
+    ...market.order_book_details,
+    ...market.spot_order_book_details,
+  ].find((detail) => detail.market_id === plan.marketIndex);
   if (marketDetail === undefined) {
     throw blockedBeforeSubmit(
       "Lighter did not return the approved market during post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
