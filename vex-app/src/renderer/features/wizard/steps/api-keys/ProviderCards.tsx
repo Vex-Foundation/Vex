@@ -281,29 +281,21 @@ export function LighterTradingCard({
       iconSlot={<VexIcon icon={KeyRoundIcon} size={18} aria-hidden />}
       name={title}
       status={managed ? { tone: "set", label: "MANAGED" } : status}
-      description={environment === "core"
-        ? "Vex creates, registers, and encrypts the trading key during wallet-funded onboarding."
-        : "One locally encrypted key for Lighter RHC previews, approvals, and trading."}
+      description="Vex creates, registers, and encrypts the trading key during wallet-funded onboarding."
       detail={
-        environment === "core" ? (
-          managed ? (
-            <>
-              Your Core credential was generated locally by Vex, registered
-              with Lighter after your approval, and is ready for approved
-              trading. Nothing needs to be copied from the Lighter dashboard.
-            </>
-          ) : (
-            <>
-              For normal Core setup, enable Lighter and complete wallet-funded
-              onboarding. Vex creates and registers the key locally after your
-              approval; you do not paste a private key from Lighter.
-            </>
-          )
+        managed ? (
+          <>
+            Your {environment === "rhc" ? "RHC" : "Core"} credential was
+            generated locally by Vex, registered with Lighter after your
+            approval, and is ready for approved trading. Nothing needs to be
+            copied from the Lighter dashboard.
+          </>
         ) : (
           <>
-            RHC automatic registration is not available yet. Existing RHC users
-            can import a trading API private key, which stays in the encrypted
-            local vault. Every order still requires explicit approval.
+            For normal {environment === "rhc" ? "RHC" : "Core"} setup, enable
+            Lighter and complete wallet-funded onboarding. Vex creates and
+            registers the key locally after your approval; you do not paste a
+            private key from Lighter.
           </>
         )
       }
@@ -344,27 +336,26 @@ export function LighterTradingCard({
             displayed here, and every trade still requires your approval.
           </p>
         </div>
-      ) : environment === "core" && configured ? (
+      ) : configured ? (
         <p
-          data-vex-lighter-external-credential="core"
+          data-vex-lighter-external-credential={environment}
           className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] p-4 text-xs text-[var(--color-text-muted)]"
         >
-          An externally managed Core trading key is saved in the encrypted
-          local vault. No key value is displayed.
+          An externally managed {environment === "rhc" ? "RHC" : "Core"}
+          trading key is saved in the encrypted local vault. No key value is
+          displayed.
         </p>
       ) : null}
 
-      {environment === "core" ? (
-        <details
-          data-vex-lighter-manual-credential="core"
-          className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-4 py-3"
-        >
-          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Advanced: manage an externally created Core key
-          </summary>
-          <div className="mt-4 space-y-3">{manualFields}</div>
-        </details>
-      ) : manualFields}
+      <details
+        data-vex-lighter-manual-credential={environment}
+        className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-4 py-3"
+      >
+        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Advanced: manage an externally created {environment === "rhc" ? "RHC" : "Core"} key
+        </summary>
+        <div className="mt-4 space-y-3">{manualFields}</div>
+      </details>
     </ProviderCard>
   );
 }

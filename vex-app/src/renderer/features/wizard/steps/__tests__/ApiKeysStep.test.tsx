@@ -333,6 +333,32 @@ describe("ApiKeysStep", () => {
     )?.hasAttribute("open")).toBe(false);
   });
 
+  it("shows a Vex-managed RHC credential without stale unavailable copy", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterRhcTradingConfigured: true,
+      lighterRhcManagedTradingScopes: [{ accountIndex: 1171, apiKeyIndex: 7 }],
+    })));
+
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    const managedStatus = container.querySelector(
+      '[data-vex-lighter-managed-credential="rhc"]',
+    );
+    expect(managedStatus).not.toBeNull();
+    expect(getByText("Managed by Vex")).toBeTruthy();
+    expect(managedStatus?.textContent ?? "").toContain("1171");
+    expect(managedStatus?.textContent ?? "").toContain("7");
+    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Nothing needs to be copied from the Lighter dashboard");
+    expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="rhc"]',
+    )?.hasAttribute("open")).toBe(false);
+  });
+
   it("routes normal Core setup to Vex onboarding and keeps manual import advanced", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
 
@@ -344,6 +370,22 @@ describe("ApiKeysStep", () => {
     expect(card?.textContent ?? "").toContain("Vex creates and registers the key locally");
     expect(card?.textContent ?? "").toContain("Advanced: manage an externally created Core key");
     expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
+  });
+
+  it("routes normal RHC setup to Vex onboarding and keeps manual import advanced", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    expect(card?.textContent ?? "").toContain("Vex creates and registers the key locally");
+    expect(card?.textContent ?? "").toContain("Advanced: manage an externally created RHC key");
+    expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="rhc"]',
+    )?.hasAttribute("open")).toBe(false);
   });
 
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
