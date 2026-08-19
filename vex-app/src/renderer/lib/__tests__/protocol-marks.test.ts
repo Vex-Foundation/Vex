@@ -6,8 +6,8 @@
  * asset is granted ONLY to a venue actually present in the curated map, every
  * other value degrades to a monogram, and nothing ever resolves to a remote
  * URL. The venue strings below are the complete vocabulary the tools emit
- * (`khalani`, `kyberswap`, `morpho`, `pendle`, `relay`, `trench`, `uniswap`,
- * `jupiter`, `dexscreener`, `polymarket`, plus the `solana`/`virtuals` toolId
+ * (`khalani`, `kyberswap`, `morpho`, `pendle`, `pools`, `relay`, `trench`,
+ * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, plus the `solana`/`virtuals` toolId
  * namespaces); `polymarket` and `solana` deliberately have no bundled asset
  * and MUST take the monogram rather than borrow another brand's mark —
  * `/protocols/jupiter.jpg` is Jupiter's mark, not Solana's.
@@ -29,6 +29,7 @@ describe("resolveProtocolMark — curated venues", () => {
     ["kyberswap", "/protocols/kyberswap.svg", "KyberSwap"],
     ["morpho", "/protocols/morpho.jpg", "Morpho"],
     ["pendle", "/protocols/pendle.jpg", "Pendle"],
+    ["pools", "/protocols/pools.jpg", "pools.fun"],
     ["relay", "/protocols/relay.png", "Relay"],
     ["trench", "/protocols/trench.jpg", "Trench Express"],
     ["uniswap", "/protocols/uniswap.png", "Uniswap"],
@@ -93,6 +94,7 @@ describe("resolveProtocolMark — fallbacks", () => {
       "kyberswap",
       "morpho",
       "pendle",
+      "pools",
       "relay",
       "trench",
       "uniswap",

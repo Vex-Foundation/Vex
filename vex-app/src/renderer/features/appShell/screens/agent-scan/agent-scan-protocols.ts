@@ -22,7 +22,13 @@
  *   morpho              — EVM vault supply / redeem (`lend` rows); its handler
  *                         writes `agent_activity` directly, same staged path as
  *                         Jupiter Lend
+ *   pools               — pools.fun launches and fee claims (Robinhood Chain)
  *   khalani · relay     — bridge executors
+ *
+ * `pools` joined the list in Phase 3, WITH the launch and claim executors that
+ * write its rows — deliberately not in Phase 2, when the namespace shipped as
+ * read-only tools and an option here could only ever have returned an empty
+ * feed. That is the same defect described below, and the timing is the fix.
  *
  * DELIBERATELY ABSENT:
  *  - `pendle` — still captured only into the LEGACY `proj_activity` table, so
@@ -55,6 +61,7 @@ export const KNOWN_FEED_PROTOCOLS = [
   "jupiter",
   "trench",
   "morpho",
+  "pools",
   "khalani",
   "relay",
 ] as const;

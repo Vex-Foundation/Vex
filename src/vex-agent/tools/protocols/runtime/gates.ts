@@ -195,7 +195,15 @@ export async function evaluatePrequoteGateDecision(
  * at `trench.launch_request_form` instead of enqueueing a second, weaker
  * consent surface for the same money.
  */
-const FORM_IS_THE_APPROVAL_TOOLS: ReadonlySet<string> = new Set(["trench.launch_execute"]);
+const FORM_IS_THE_APPROVAL_TOOLS: ReadonlySet<string> = new Set([
+  "trench.launch_execute",
+  // `pools.launch_execute` follows the same ruling on the same surface: the
+  // pools.fun launch form (`pools.launch_request_form`) is its consent surface,
+  // and the handler refuses a restricted session BY NAME with that remedy. The
+  // entry is here, next to Trench's, because the policy is the tool's and must
+  // not depend on which change registers the tool.
+  "pools.launch_execute",
+]);
 
 export function evaluateApprovalGate(
   manifest: ProtocolToolManifest,

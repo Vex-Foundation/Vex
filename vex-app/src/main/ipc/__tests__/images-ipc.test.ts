@@ -73,6 +73,7 @@ const IMAGE = {
   width: 320,
   height: 200,
   digest: "a".repeat(64),
+  onchainByteLength: 4096,
   uploadedAt: "2026-08-02T10:00:00.000Z",
 };
 
@@ -177,15 +178,18 @@ describe("upload", () => {
     expect(storeLockerImageFromFile).not.toHaveBeenCalled();
   });
 
-  it("refuses an oversized file with images.too_large and names both sizes", async () => {
+  it("refuses a file over the RESOURCE bound with images.too_large, naming both sizes", async () => {
     showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/home/u/huge.png"] });
     storeLockerImageFromFile.mockResolvedValue({
       ok: false,
-      rejection: { kind: "too_large", byteLength: 250_000, maxBytes: 20_000 },
+      rejection: { kind: "too_large", byteLength: 40_000_000, maxBytes: 26_214_400 },
     });
     const result = expectError(await call(CH.images.upload, {}), "images.too_large");
-    expect(result.error.message).toContain("250.0 KB");
-    expect(result.error.message).toContain("20.0 KB");
+    expect(result.error.message).toContain("40.0 MB");
+    expect(result.error.message).toContain("26.2 MB");
+    // The bound is about memory, not about launching. Saying otherwise would
+    // teach the user a product limit that does not exist on either launchpad.
+    expect(result.error.message).toContain("memory");
   });
 
   it("refuses wrong magic bytes with images.unsupported_format and says we do not convert", async () => {
@@ -322,33 +326,36 @@ describe("list", () => {
   });
 });
 
-// ── auto-downscale reporting ─────────────────────────────────────────────
+// ── on-chain copy reporting ──────────────────────────────────────────────
 
-describe("an optimized upload reports what changed", () => {
-  it("passes the optimization report through to the renderer", async () => {
+describe("an upload reports the Trench copy it derived", () => {
+  it("passes the variant report through to the renderer", async () => {
     showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/picked/holiday.jpg"] });
     storeLockerImageFromFile.mockResolvedValue({
       ok: true,
       image: IMAGE,
-      optimization: { originalByteLength: 3_000_000, storedByteLength: 14_000 },
+      onchainVariant: { originalByteLength: 3_000_000, variantByteLength: 14_000 },
     });
 
     const result = await call(CH.images.upload, {});
 
     expect(result).toEqual({
       ok: true,
-      data: { image: IMAGE, optimization: { originalByteLength: 3_000_000, storedByteLength: 14_000 } },
+      data: {
+        image: IMAGE,
+        onchainVariant: { originalByteLength: 3_000_000, variantByteLength: 14_000 },
+      },
     });
   });
 
-  it("OMITS the field entirely when the file was stored untouched", async () => {
+  it("OMITS the field entirely when the original is its own copy", async () => {
     showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/picked/small.png"] });
     storeLockerImageFromFile.mockResolvedValue({ ok: true, image: IMAGE });
 
     const result = await call(CH.images.upload, {});
 
-    // Presence is the claim "we changed your image" — it must not be made
-    // about bytes stored verbatim.
+    // Presence is the claim "a second copy was derived" — it must not be made
+    // about a file that needed none.
     expect(result).toEqual({ ok: true, data: { image: IMAGE } });
   });
 });

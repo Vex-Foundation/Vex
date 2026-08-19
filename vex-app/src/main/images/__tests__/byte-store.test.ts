@@ -66,6 +66,57 @@ describe("resolveImagePath — containment", () => {
   });
 });
 
+/**
+ * The Trench on-chain copy gets the SAME two gates as the original. It exists
+ * only when the ladder re-encoded, so it is a second file in the same
+ * directory, never a suffix a caller concatenates onto an id.
+ */
+describe("resolveOnchainVariantPath — the derived copy", () => {
+  it("lands in the locker directory, named from the id and marked as the copy", async () => {
+    const store = await loadStore();
+    const resolved = store.resolveOnchainVariantPath(VALID_ID);
+    expect(path.dirname(resolved)).toBe(path.resolve(store.LOCKER_IMAGES_DIR));
+    expect(path.basename(resolved)).toBe(`${VALID_ID}.onchain.bin`);
+    // Two distinct files: reading one must never reach the other.
+    expect(resolved).not.toBe(store.resolveImagePath(VALID_ID));
+  });
+
+  it("refuses a malformed id exactly as the original path does", async () => {
+    const store = await loadStore();
+    expect(() => store.resolveOnchainVariantPath("../../../etc/passwd")).toThrow(
+      store.LockerPathEscapeError,
+    );
+    await expect(
+      store.writeOnchainVariantBytes("../evil", new Uint8Array([1])),
+    ).rejects.toThrow(store.LockerPathEscapeError);
+  });
+
+  it("round-trips independently of the original, and both survive the other's delete", async () => {
+    const store = await loadStore();
+    const original = new Uint8Array([1, 2, 3]);
+    const copy = new Uint8Array([9, 8]);
+    await store.writeImageBytes(VALID_ID, original);
+    await store.writeOnchainVariantBytes(VALID_ID, copy);
+
+    expect(await store.readImageBytes(VALID_ID)).toEqual(original);
+    expect(await store.readOnchainVariantBytes(VALID_ID)).toEqual(copy);
+
+    await store.removeImageBytes(VALID_ID);
+    expect(await store.readImageBytes(VALID_ID)).toBeNull();
+    // Deleting one must not take the other with it - the locker's delete path
+    // removes both explicitly, and an implicit removal here would hide a bug.
+    expect(await store.readOnchainVariantBytes(VALID_ID)).toEqual(copy);
+
+    await store.removeOnchainVariantBytes(VALID_ID);
+    expect(await store.readOnchainVariantBytes(VALID_ID)).toBeNull();
+  });
+
+  it("treats removing an absent copy as a success, because most images have none", async () => {
+    const store = await loadStore();
+    await expect(store.removeOnchainVariantBytes(VALID_ID)).resolves.toBeUndefined();
+  });
+});
+
 describe("newLockerImageId", () => {
   it("mints ids that match the opaque contract", async () => {
     const store = await loadStore();

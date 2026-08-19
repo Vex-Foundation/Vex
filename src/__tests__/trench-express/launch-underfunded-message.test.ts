@@ -37,8 +37,10 @@ import { mainnet } from "viem/chains";
 
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resetLaunchImageOnchainByteResolver,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import {
   buildLaunchPlan,
   type BuildLaunchPlanInput,
@@ -132,9 +134,17 @@ function baseInput(client: PublicClient<Transport, Chain>): BuildLaunchPlanInput
 
 function mountImage(): void {
   registerLaunchImageByteResolver(async () => ({ bytes: IMAGE_BYTES, digest: "0xstoreddigest" }));
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "resolved",
+    bytes: IMAGE_BYTES,
+    digest: "0xstoreddigest",
+  }));
 }
 
-afterEach(resetLaunchImageByteResolver);
+afterEach(() => {
+  resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
+});
 
 describe("W2h — an under-funded launch produces the BALANCE message", () => {
   it("gates the balance BEFORE estimating gas — the estimate is never attempted", async () => {

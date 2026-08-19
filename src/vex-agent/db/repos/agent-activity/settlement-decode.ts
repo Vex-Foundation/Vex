@@ -88,6 +88,12 @@ export const settlementDecodeSchema = z.discriminatedUnion("decoder", [
   // own `token_in`/`token_out` columns and are not repeated here.
   routedVariant.extend({ decoder: z.literal("morpho") }),
   launchVariant.extend({ decoder: z.literal("trench_launch") }),
+  // A pools.fun gateway launch. Its OWN decoder rather than `trench_launch`:
+  // the events, the emitters and the attribution rule are different (identity
+  // binds through `GatewayLaunch.launcher`, because the factory names the
+  // gateway as creator on this path), so a lane that dispatched the trench
+  // decoder for it would read the wrong receipt shape and decline.
+  launchVariant.extend({ decoder: z.literal("pools_launch") }),
 ]);
 
 export type SettlementDecodeHint = z.infer<typeof settlementDecodeSchema>;

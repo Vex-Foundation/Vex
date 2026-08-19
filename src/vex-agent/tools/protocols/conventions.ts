@@ -96,6 +96,10 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["pageSize", "rows fetched per provider page; distinct from `limit`, which caps what is RETURNED after filtering"],
   ["dryRun", "preview switch, reserved by runtime/params.ts"],
   [
+    "includeClaimable",
+    "opt-in per-row claim SIMULATION on a launch list; off by default because it costs chain reads per row, and an unsimulated row reports null (NOT MEASURED) rather than zero",
+  ],
+  [
     "imageId",
     "opaque id of an image already in the user's locker; the agent can never create one, only name one a read tool listed",
   ],
@@ -205,6 +209,26 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // which way value moves) and not `scope` (that is which halves of one
   // compound read to cover). The accepted set is ALWAYS declared as an `enum`.
   ["route", "which option SETS a screening read compares when one goal has structurally different products"],
+
+  // Launchpad screening vocabulary (pools.fun). These are NEW deliberate keys,
+  // not pre-convention debt: each names a filter the provider serves server-side
+  // and has no canonical spelling to be renamed to. The screening family's older
+  // spellings (`sortBy`, `cursor`, `query`, `minMarketCapUsd`, `maxMarketCapUsd`)
+  // are NOT added here, because a dozen existing tools carry allowlist debt
+  // against them and canonicalizing one of them would silently retire a
+  // fleet-wide rename this task has no mandate to decide. `order` is NOT in this
+  // list: the screening block above ratified it, so the pools manifests use the
+  // canonical key with no waiver.
+  ["platform", "which launcher a multi-launchpad provider should answer for; never a chain"],
+  ["live", "restrict a list to the provider's live/recently-active feed"],
+  ["maxAgeHours", "keep only rows younger than N hours; the fresh-launch filter"],
+  ["minTxCount24h", "minimum trades in the last 24 hours"],
+  ["minVolUsd", "minimum traded volume in USD; pairs with volTimeframe, which names the window"],
+  ["volTimeframe", "the window a volume floor is measured over (1m/5m/1h/6h/24h)"],
+  ["deployerAddress", "the ACCOUNT that deployed a token; distinct from feeRecipientAddress"],
+  ["feeRecipientAddress", "the ACCOUNT a token's fee stream pays; on some launchpads it differs from the deployer"],
+  ["timeframe", "the base unit of one price candle (minute/hour/day)"],
+  ["aggregate", "how many timeframe units make one candle; the span is aggregate x timeframe"],
 ]);
 
 /**

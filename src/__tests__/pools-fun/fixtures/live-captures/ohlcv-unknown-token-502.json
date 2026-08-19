@@ -1,0 +1,8 @@
+{
+  "endpoint": "GET /discover/0x0000000000000000000000000000000000000001/ohlcv?timeframe=hour&limit=3&chain=robinhood",
+  "capturedAt": "2026-08-18T10:20:00.000Z",
+  "response": {
+    "error": "Upstream error resolving token pool"
+  },
+  "httpStatus": 502
+}

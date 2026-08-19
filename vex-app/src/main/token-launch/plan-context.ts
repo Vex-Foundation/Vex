@@ -55,6 +55,12 @@ export type TokenLaunchRefusal =
   /** The named image is not in the locker, or the locker could not be read. */
   | { readonly kind: "image_not_found"; readonly detail: string }
   | { readonly kind: "image_unavailable"; readonly detail: string }
+  /**
+   * The image is in the locker and pools.fun can launch it, but it has no copy
+   * inside Trench's on-chain budget. Distinct from `image_not_found` because
+   * the remedy is different: pick a smaller picture, or launch on pools.fun.
+   */
+  | { readonly kind: "image_over_onchain_budget"; readonly detail: string }
   /** The wallet cannot cover the value + gas this launch would need. */
   | { readonly kind: "insufficient_funds"; readonly detail: string }
   /**
@@ -95,6 +101,8 @@ export function refusalFromPlanCode(
       return { kind: "image_not_found", detail };
     case "image_store_unavailable":
       return { kind: "image_unavailable", detail };
+    case "image_over_onchain_budget":
+      return { kind: "image_over_onchain_budget", detail };
     case "insufficient_native_balance":
       return { kind: "insufficient_funds", detail };
     // A launch nobody can price is not an invalid REQUEST — the form may be

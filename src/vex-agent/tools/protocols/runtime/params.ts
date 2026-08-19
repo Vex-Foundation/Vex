@@ -380,6 +380,30 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  * content). The `unit` rejection additionally echoes the offending NUMBER,
  * which is inert by construction; see `checkBpsParam`.
  */
+/**
+ * The ONE way a `rejectedParams` explanation is looked up.
+ *
+ * `Object.hasOwn`, never a bare index. The key comes from the MODEL (it is the
+ * unknown parameter it just sent) and the table is an ordinary object literal,
+ * so `rejectedParams["constructor"]` resolves up the prototype chain to
+ * `function Object() { [native code] }` — which the caller then splices into
+ * the sentence it hands the agent. Reproduced through the real boundary with
+ * `constructor` and `toString`.
+ *
+ * Exported so the fleet-wide manifest suite can assert this exact accessor over
+ * every registered table, rather than re-deriving the rule and testing a copy
+ * of it.
+ */
+export function readRejectedParamReason(
+  manifest: Pick<ProtocolToolManifest, "rejectedParams">,
+  key: string,
+): string | undefined {
+  const table = manifest.rejectedParams;
+  if (table === undefined || !Object.hasOwn(table, key)) return undefined;
+  const reason = table[key];
+  return typeof reason === "string" && reason.trim().length > 0 ? reason : undefined;
+}
+
 export function validateProtocolParams(
   manifest: ProtocolToolManifest,
   params: Record<string, unknown>,
@@ -405,10 +429,17 @@ export function validateProtocolParams(
       // "unknown parameter" alone leaves it guessing which of eleven allowed
       // keys was meant. See BANNED_PARAM_KEYS in `conventions.ts`.
       const replacement = BANNED_PARAM_KEYS.get(key);
+      // A per-tool explanation for a key the TOOL cannot support, as opposed to
+      // a spelling the convention retired. Same purpose as the banned-key hint
+      // above and the same place in the message: the agent is about to pick
+      // another name off the allowed list, and a filter that is structurally
+      // impossible here needs to say WHY or it gets retried under a synonym.
+      const rejected = readRejectedParamReason(manifest, key);
       return {
         ok: false,
         reason:
           `Unknown parameter "${key}" for ${manifest.toolId}. `
+          + (rejected ? `${rejected} ` : "")
           + (replacement ? `Instead ${replacement}. ` : "")
           + `Allowed parameters: ${manifest.params.map((p) => p.key).join(", ") || "(none)"}.`,
       };

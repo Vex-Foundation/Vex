@@ -211,7 +211,9 @@ describe("getAgentScan row selection", () => {
     const { sql } = pageCall();
     expect(sql).toContain("aa.event_role = 'swap'");
     expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
-    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch')");
+    // `claim` joined the arm with migration 082: a creator-fee payout is its own
+    // kind, and a kind the feed does not admit is written and then invisible.
+    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch', 'claim')");
   });
 
   it("INCLUDES yield (migration 053) — a Pendle trade is a logical row, its approval legs are not", async () => {

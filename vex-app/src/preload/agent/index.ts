@@ -29,6 +29,7 @@ import { images } from "./images.js";
 import { portfolio } from "./portfolio.js";
 import { runtime } from "./runtime.js";
 import { sessions } from "./sessions.js";
+import { poolsLaunch } from "./pools-launch.js";
 import { tokenLaunch } from "./token-launch.js";
 import { usage } from "./usage.js";
 import { wallets } from "./wallets.js";
@@ -49,6 +50,7 @@ export const agentBridge = {
   memoryInspector,
   portfolio,
   images,
+  poolsLaunch,
   tokenLaunch,
   engine,
 } satisfies VexAgentBridge;

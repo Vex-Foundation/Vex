@@ -6,6 +6,13 @@
  * enormous payload. The bytes behind an `imageId` are immutable, so the query
  * never refetches.
  *
+ * THE THUMBNAIL IS THE TRENCH ON-CHAIN COPY, which is why an image that has no
+ * such copy shows none: the original may be megabytes, and rendering it would
+ * push that over IPC for every tile. Such an image is not broken - it launches
+ * fine on pools.fun - so the tile says POOLS ONLY rather than leaving the user
+ * with an empty square and no reason, and it does not ask main for a thumbnail
+ * it knows does not exist.
+ *
  * The thumbnail is `aria-hidden` and the tile is labelled by the image's own
  * label instead: a screen reader gains nothing from "image" and everything
  * from "moon.png, 12.4 KB". A thumbnail that fails to load leaves the tile in
@@ -31,7 +38,10 @@ export function ImageThumb({
   readonly onDelete: (imageId: string) => void;
   readonly deleting: boolean;
 }): JSX.Element {
-  const thumb = useLockerImageThumb(image.imageId);
+  // `null` when there is no on-chain copy: the hook is disabled rather than
+  // asked for something main would answer `images.not_found` to.
+  const hasOnchainCopy = image.onchainByteLength !== null;
+  const thumb = useLockerImageThumb(hasOnchainCopy ? image.imageId : null);
   const result = thumb.data;
   const dataUrl = result?.ok === true ? result.data.dataUrl : null;
 
@@ -49,9 +59,20 @@ export function ImageThumb({
           aria-hidden
           className="flex h-full w-full items-center justify-center font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]"
         >
-          {thumb.isLoading ? "…" : "—"}
+          {hasOnchainCopy && thumb.isLoading ? "…" : "—"}
         </span>
       )}
+
+      {/* Named on the tile, not only in a tooltip: the user finds out here or
+       * at the moment a Trench launch refuses, and the second is too late. */}
+      {!hasOnchainCopy ? (
+        <span
+          title="Too large for a Trench launch, which stores the image on-chain. Usable on pools.fun."
+          className="pointer-events-none absolute left-1 top-1 rounded-full bg-[var(--vex-surface-0)]/90 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]"
+        >
+          pools only
+        </span>
+      ) : null}
 
       {/* The label rides a bottom scrim rather than a solid bar so a light
        * image stays readable without hiding what the user chose. */}

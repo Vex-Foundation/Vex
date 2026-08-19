@@ -12,16 +12,23 @@
  * added), so "convert it for the user" is not an option that exists. Anything
  * we cannot positively identify is refused by name.
  *
- * Order matters: SIZE is checked before format. A 3 MB PDF should be told it
+ * WHAT IT VALIDATES IS THE ORIGINAL. Since the per-lane image decision
+ * (2026-08-19) the locker stores the user's bytes verbatim and Trench consumes
+ * a derived copy, so the ceiling here is the 25 MiB RESOURCE bound, not the
+ * 20 KB Trench on-chain budget. The dimension plausibility band is unchanged:
+ * a header that decodes to 0 or to something absurd is malformed, whatever
+ * lane it is destined for.
+ *
+ * Order matters: SIZE is checked before format. A 30 MB PDF should be told it
  * is too large, not lectured about its magic bytes — and refusing early means
- * the sniffers only ever walk a buffer already known to be ≤20 KB, so their
- * loops are bounded by the cap rather than by attacker-chosen length.
+ * the sniffers only ever walk a buffer already known to be within the resource
+ * bound, so their loops are bounded rather than attacker-chosen.
  */
 
 import {
   LOCKER_IMAGE_LABEL_MAX_LENGTH,
-  LOCKER_IMAGE_MAX_BYTES,
   LOCKER_IMAGE_MAX_DIMENSION,
+  LOCKER_IMAGE_MAX_SOURCE_BYTES,
   LOCKER_IMAGE_MIN_BYTES,
   LOCKER_IMAGE_MIN_DIMENSION,
   type LockerImageMime,
@@ -54,10 +61,10 @@ function reject(reason: string): LockerImageValidation {
 /** Validate raw file bytes against the full C2 matrix. */
 export function validateLockerImageBytes(bytes: Uint8Array): LockerImageValidation {
   const byteLength = bytes.byteLength;
-  if (byteLength > LOCKER_IMAGE_MAX_BYTES) {
+  if (byteLength > LOCKER_IMAGE_MAX_SOURCE_BYTES) {
     return {
       ok: false,
-      rejection: { kind: "too_large", byteLength, maxBytes: LOCKER_IMAGE_MAX_BYTES },
+      rejection: { kind: "too_large", byteLength, maxBytes: LOCKER_IMAGE_MAX_SOURCE_BYTES },
     };
   }
   if (byteLength < LOCKER_IMAGE_MIN_BYTES) {

@@ -16,7 +16,6 @@
  * there is no other guard behind it.
  */
 
-import type { PoolClient } from "pg";
 import type { Address } from "viem";
 
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
@@ -29,11 +28,8 @@ import {
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import type { LaunchAuthorization } from "../authorization.js";
 import { LaunchImageMissingError } from "@vex-agent/db/repos/launch-image-lock.js";
-import {
-  countMissionRunLaunches,
-  type AutonomousLaunchCeilings,
-} from "@vex-agent/engine/mission/launch-ceiling.js";
-import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from "@vex-agent/engine/types.js";
+import type { AutonomousLaunchCeilings } from "@vex-agent/engine/mission/launch-ceiling.js";
+import { checkMissionLaunchAuthority } from "../../../../shared/launch-mission-authority.js";
 import logger from "@utils/logger.js";
 import type { ValidatedLaunchRequest } from "../validate.js";
 
@@ -102,42 +98,15 @@ async function authorizeAndConsumeInTransaction(
     const isAutonomous = input.authorizationKind === "full_autonomy";
 
     if (isAutonomous && input.missionRunId !== null) {
-      // LIVENESS, NOT CEILINGS. The frozen contract read at plan time cannot
-      // drift, so this is deliberately NOT a second ceilings read — it asks the
-      // one question that IS time-sensitive: may this run still authorize new
-      // spending AT ALL? A user Stop landing during a long launch call stopped
-      // the runner but never the signature, because nothing in the tool path
-      // re-checked run status before signing.
-      //
-      // It runs inside the transaction that already holds the session control
-      // lock, next to the count CAS, so a Stop cannot land between the check and
-      // the consume. An unlocked read anywhere earlier would reopen that gap.
-      const refusal = await readRunAuthorityRefusal(client, input.missionRunId);
-      if (refusal !== null) {
-        return {
-          ok: false as const,
-          reason:
-            `Refusing to launch: mission run ${input.missionRunId} ${refusal} — it stopped, finished, or `
-            + "disappeared while this launch was being prepared, and only a live run can authorize new "
-            + "spending. Nothing was signed.",
-        };
-      }
-    }
-
-    if (isAutonomous && input.missionRunId !== null && input.ceilings !== null) {
-      const cap = input.ceilings.maxLaunchCount;
-      const used = await countMissionRunLaunches(client, input.missionRunId);
-      if (cap === null || used >= cap) {
-        return {
-          ok: false as const,
-          reason:
-            cap === null
-              ? "Refusing to launch: this mission has no maxLaunchCount set, and an absent cap is zero "
-                + "authority, not unlimited. Nothing was signed."
-              : `Refusing to launch: this mission has already used ${used} of its ${cap} authorized `
-                + "launches (launches still settling count too). Nothing was signed.",
-        };
-      }
+      // Run liveness AND the launch count, in the transaction that already holds
+      // the session control lock and is about to CAS-consume the intent. Shared
+      // with the pools.fun launch path (`shared/launch-mission-authority.ts`) so
+      // the two launchpads cannot answer "may this mission spend?" differently.
+      const authority = await checkMissionLaunchAuthority(client, {
+        missionRunId: input.missionRunId,
+        ceilings: input.ceilings,
+      });
+      if (!authority.ok) return { ok: false as const, reason: authority.reason };
     }
 
     await createWith(client, {
@@ -208,41 +177,4 @@ export async function settleLaunchFailure(
       error: err instanceof Error ? err.name : "unknown",
     });
   }
-}
-
-/**
- * Why this run may not authorize new spending, or `null` when it may.
- *
- * A VANISHED ROW FAILS CLOSED. The gate is not deciding whether the run
- * finished — it is deciding whether an authorizing contract is PRESENT at the
- * moment of signing, and a missing row is not an ambiguous status, it is the
- * absence of the thing that grants authority. "Not terminal" would be the
- * permissive reading of no evidence, which is exactly what a decoder that
- * cannot prove what it is looking at must never choose (rule 90).
- *
- * It also keeps the two checkpoints in agreement: the plan-time ceilings read
- * (`readMissionLaunchCeilings`) already refuses a nonexistent run, so treating
- * absence as passable HERE would make a row that disappeared BETWEEN the two
- * checks more trustworthy than one that was already gone at the first. There is
- * no `DELETE FROM mission_runs` and no cascade onto it in the repository, so
- * this branch is reachable only when something is already broken — which is
- * precisely the branch that should refuse rather than sign.
- */
-async function readRunAuthorityRefusal(
-  client: PoolClient,
-  missionRunId: string,
-): Promise<string | null> {
-  const result = await client.query<{ status: string }>(
-    `SELECT status FROM mission_runs WHERE id = $1`,
-    [missionRunId],
-  );
-  const status = result.rows[0]?.status ?? null;
-  if (status === null) return "no longer exists";
-  // ALLOWLIST, not denylist (Codex final-arc round 5): only an ACTIVE run may
-  // authorize a signature. A paused run must stop spending at the next safe
-  // checkpoint — pre-sign IS that checkpoint — and an unknown/corrupt status
-  // string is no evidence of authority. The DB value is untrusted text, so the
-  // sets are consulted as string sets rather than asserted into the union.
-  if ((TERMINAL_RUN_STATUSES as ReadonlySet<string>).has(status)) return `is ${status}`;
-  return (ACTIVE_RUN_STATUSES as ReadonlySet<string>).has(status) ? null : `is ${status}, not running`;
 }

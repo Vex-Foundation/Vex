@@ -231,7 +231,7 @@ const LOGICAL_ROW_PREDICATE = `(
           AND (
             aa.event_role = 'swap'
             OR aa.event_role = 'bridge_fill_expected'
-            OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch')
+            OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch', 'claim')
             OR (aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))
           )
         )`;

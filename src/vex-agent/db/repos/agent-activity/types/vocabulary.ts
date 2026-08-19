@@ -26,7 +26,15 @@ export type AgentActivityKind =
   | "prediction"
   | "wrap"
   | "yield"
-  | "launch";
+  | "launch"
+  /**
+   * A creator-fee CLAIM (migration 082, owner decision 2026-08-19). Its own
+   * kind rather than a launch: it signs its own transaction, pays two assets,
+   * spends nothing, and happens long after the launch it belongs to - so filing
+   * it under `launch` would put a payout inside every launch feed, filter and
+   * count. `pools_fee` stays on `launch`, because it IS the fee leg of one.
+   */
+  | "claim";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -116,7 +124,15 @@ export type AgentActivityEventRole =
   | "yield_claim"
   | "token_launch"
   | "trench_fee"
-  | "swap_fee";
+  | "swap_fee"
+  // Migration 082. `pools_fee` is Vex's integrator fee on a pools.fun launch and
+  // rides the `launch` arm - its own role rather than `trench_fee`, which names
+  // a different venue whose feeds and repair sweeps select on it.
+  // `pools_claim` is a creator fee claim: ONE row whose two OUTPUT legs are the
+  // launched token and the paired asset that `collectAndClaim` returns
+  // together, and it rides the `claim` KIND rather than `launch`.
+  | "pools_fee"
+  | "pools_claim";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

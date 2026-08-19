@@ -106,6 +106,7 @@ export const VEX_DOMAINS = [
   "market",
   "images",
   "tokenLaunch",
+  "poolsLaunch",
   "sessions",
   "preload",
   "internal",

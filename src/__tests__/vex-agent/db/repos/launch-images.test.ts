@@ -100,10 +100,32 @@ describe("reads are GLOBAL — an image belongs to the user, not a session", () 
     await repo.insertLaunchImage({
       imageId: IMAGE_ID, label: "rocket.png", byteLength: 8192,
       mime: "image/png", width: 512, height: 512, digest: "a".repeat(64),
+      onchainByteLength: 8192, onchainDigest: "a".repeat(64),
     });
     const [sql, params] = mockQueryOne.mock.calls[0]!;
     expect(sql).toContain("INSERT INTO launch_images");
-    expect(params).toHaveLength(7);
+    // Nine columns since migration 083: the seven original ones plus the
+    // Trench on-chain copy's length and digest. `uploaded_at` is still absent.
+    expect(params).toHaveLength(9);
+  });
+
+  it("carries the on-chain variant BOTH ways, including its absence", async () => {
+    // `null`/`null` is the pools-only image: a real, launchable picture with no
+    // copy inside Trench's calldata budget. It must survive the round trip as
+    // NULL rather than being coerced into a number the launch path would trust.
+    mockQueryOne.mockResolvedValue(
+      imageRow({ onchain_byte_length: null, onchain_digest: null }),
+    );
+    const row = await repo.getLaunchImage(IMAGE_ID);
+    expect(row?.onchainByteLength).toBeNull();
+    expect(row?.onchainDigest).toBeNull();
+
+    mockQueryOne.mockResolvedValue(
+      imageRow({ onchain_byte_length: 14_000, onchain_digest: "b".repeat(64) }),
+    );
+    const derived = await repo.getLaunchImage(IMAGE_ID);
+    expect(derived?.onchainByteLength).toBe(14_000);
+    expect(derived?.onchainDigest).toBe("b".repeat(64));
   });
 });
 

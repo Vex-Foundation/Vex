@@ -20,6 +20,7 @@ import { PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
 import { CANONICAL_CHAIN_SLUGS } from "@vex-agent/tools/protocols/conventions.js";
+import { readRejectedParamReason } from "@vex-agent/tools/protocols/runtime/params.js";
 import { listLocalChains } from "@tools/evm-chains/registry.js";
 import {
   isLinterOwnSource,
@@ -176,6 +177,50 @@ describe("W0 — manifest convention linter", () => {
     });
 
     expect(issues.filter((issue) => issue.rule === "enum-case-uniqueness")).toEqual([]);
+  });
+
+  // `rejectedParams` is read by the param boundary and its text is spliced into
+  // a message the agent reads, so the table itself is a contract — fleet-wide,
+  // not per-namespace. Each rule below closes a way the table can be wrong:
+  //
+  //  - a PROTOTYPE-inherited key (`constructor`, `toString`) is not data. The
+  //    boundary indexes this table with a MODEL-SUPPLIED key, so before the
+  //    `Object.hasOwn` guard landed, sending `constructor` put
+  //    "function Object() { [native code] }" into the rejection message.
+  //  - a non-string or empty value would splice `undefined`/nothing into that
+  //    same sentence, which is the generic-error failure the table exists to
+  //    prevent.
+  //  - a key that is ALSO a declared param advertises a filter as working and
+  //    explains it as impossible in the same manifest.
+  it("every rejectedParams table is own-key, string-valued, and disjoint from declared params", () => {
+    const problems: string[] = [];
+    for (const manifest of PROTOCOL_TOOLS) {
+      const table = manifest.rejectedParams;
+      if (table === undefined) continue;
+
+      // Asserted through the ACCESSOR the boundary itself uses, not a copy of
+      // its rule: every object literal inherits these keys, so what has to hold
+      // is that the lookup refuses them, not that the object lacks them.
+      for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+        if (readRejectedParamReason(manifest, key) !== undefined) {
+          problems.push(`${manifest.toolId}: "${key}" resolves to an explanation through the prototype chain`);
+        }
+      }
+
+      const declared = new Set(manifest.params.map((param) => param.key));
+      for (const key of Object.keys(table)) {
+        const value = table[key];
+        if (typeof value !== "string" || value.trim().length === 0) {
+          problems.push(`${manifest.toolId}.${key}: rejection reason must be a non-empty string`);
+        }
+        if (declared.has(key)) {
+          problems.push(
+            `${manifest.toolId}.${key}: declared as a real param AND listed as rejected — pick one`,
+          );
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 
   it("CANONICAL_CHAIN_SLUGS covers every locally-registered chain", () => {

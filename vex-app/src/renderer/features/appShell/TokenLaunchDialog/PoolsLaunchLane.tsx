@@ -1,0 +1,325 @@
+/**
+ * POOLS.FUN launch lane — the two-stage launch surface.
+ *
+ * ── WHY IT IS NOT THE TRENCH LANE ─────────────────────────────────────────
+ * Trench arms Deploy from a preview that refetches in the background. pools.fun
+ * cannot work that way: the launch goes through a gateway that returns calldata
+ * Vex must decode and verify before signing, and the token's final address is
+ * only known once the image and metadata are pinned. So the user explicitly asks
+ * for a preparation (STAGE 1), reads back a verified fingerprint, and only then
+ * authorizes exactly that (STAGE 2). The rule that keeps the two stages honest
+ * lives in `pools/machine.ts`: any edit voids the fingerprint.
+ *
+ * ── NOT YET WIRED, AND SAYING SO ──────────────────────────────────────────
+ * The main-process flow behind `PoolsLaunchBridge` is being built in parallel.
+ * Until it exists this lane receives NO bridge and renders its form with the
+ * preparation control disabled and an explicit note. That is deliberate: an
+ * enabled Deploy button with nothing behind it is worse than an honest
+ * "not available yet", and inventing the main-side call would have meant
+ * fabricating a money path. Passing a bridge is the only change needed to make
+ * this lane live.
+ *
+ * Glass: NONE written here — the chrome comes from `DialogContent`.
+ */
+
+import { useCallback, useEffect, useReducer, useRef, useState, type JSX } from "react";
+import { Button } from "../../../components/ui/button.js";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../../components/ui/dialog.js";
+import {
+  deployPoolsLaunch,
+  isPoolsLaunchAvailable,
+  preparePoolsLaunch,
+} from "../../../lib/api/pools-launch.js";
+import { LaunchPlatformChips, type LaunchPlatform } from "./LaunchPlatformChips.js";
+import type { LaunchLaneProps } from "./lane-props.js";
+import { DEPLOYED_AUTO_DISMISS_MS } from "./phase.js";
+import { FingerprintCard } from "./pools/FingerprintCard.js";
+import {
+  EMPTY_POOLS_LAUNCH_FORM,
+  poolsFormToPayload,
+  type PoolsLaunchFormValues,
+} from "./pools/form-values.js";
+import { PoolsLaunchForm } from "./pools/PoolsLaunchForm.js";
+import {
+  armedFingerprint,
+  canDismissPoolsLaunch,
+  isPoolsLaunchBusy,
+  poolsLaunchReducer,
+  POOLS_LAUNCH_INITIAL_STATE,
+} from "./pools/machine.js";
+
+export interface PoolsLaunchLaneProps extends LaunchLaneProps {
+  readonly platform: LaunchPlatform;
+  readonly onPlatformChange: (next: LaunchPlatform) => void;
+}
+
+export function PoolsLaunchLane({
+  open,
+  onOpenChange,
+  sessionId,
+  onBusyChange,
+  platform,
+  onPlatformChange,
+}: PoolsLaunchLaneProps): JSX.Element {
+  const [values, setValues] = useState<PoolsLaunchFormValues>(EMPTY_POOLS_LAUNCH_FORM);
+  const [state, dispatch] = useReducer(poolsLaunchReducer, POOLS_LAUNCH_INITIAL_STATE);
+
+  const wasOpenRef = useRef(open);
+  const onOpenChangeRef = useRef(onOpenChange);
+  const onBusyChangeRef = useRef(onBusyChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+    onBusyChangeRef.current = onBusyChange;
+  });
+
+  // A fresh open is a fresh consent: the form and the machine both reset, so no
+  // fingerprint prepared in a previous open can survive into a new decision.
+  useEffect(() => {
+    const reopened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!reopened) return;
+    setValues(EMPTY_POOLS_LAUNCH_FORM);
+    dispatch({ type: "reopened" });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || state.kind !== "done" || !state.autoDismiss) return;
+    const timer = setTimeout(() => {
+      onOpenChangeRef.current(false);
+    }, DEPLOYED_AUTO_DISMISS_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [open, state]);
+
+  // AN ARMED FINGERPRINT EXPIRES ON ITS OWN. Main refuses a stale one, but the
+  // user must not be left reading figures that are no longer authorizable and
+  // pressing a button that can only fail — so the arming is dropped here at the
+  // moment main would stop honouring it.
+  const armedUntil = state.kind === "authorizing" ? state.fingerprint.expiresAt : null;
+  useEffect(() => {
+    if (armedUntil === null) return;
+    const remaining = Date.parse(armedUntil) - Date.now();
+    // An unparseable or already-past expiry voids immediately rather than never:
+    // claiming less is the safe direction for an authorization window.
+    const timer = setTimeout(
+      () => {
+        dispatch({ type: "fingerprint_expired" });
+      },
+      Number.isFinite(remaining) ? Math.max(remaining, 0) : 0,
+    );
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [armedUntil]);
+
+  const busyForHost = state.kind === "deploying" || state.kind === "done";
+  useEffect(() => {
+    onBusyChangeRef.current?.(busyForHost);
+  }, [busyForHost]);
+  useEffect(
+    () => () => {
+      onBusyChangeRef.current?.(false);
+    },
+    [],
+  );
+
+  const payload = poolsFormToPayload(values);
+  const busy = isPoolsLaunchBusy(state);
+  const fingerprint = armedFingerprint(state);
+  const frozen = busy || state.kind === "done";
+
+  // EVERY edit voids a displayed fingerprint. Routed through the machine rather
+  // than handled here so the rule has exactly one implementation.
+  const onFormChange = useCallback((next: PoolsLaunchFormValues): void => {
+    setValues(next);
+    dispatch({ type: "form_changed" });
+  }, []);
+
+  const runPrepare = useCallback(async (): Promise<void> => {
+    if (payload === null || sessionId === null) return;
+    dispatch({ type: "prepare_started" });
+    const outcome = await preparePoolsLaunch({ sessionId, form: payload });
+    if (outcome.ok) {
+      dispatch({ type: "prepare_succeeded", fingerprint: outcome.data });
+      return;
+    }
+    dispatch({ type: "prepare_failed", message: outcome.error.message });
+  }, [payload, sessionId]);
+
+  const onSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault();
+      // STAGE 1 and STAGE 2 share the form's submit, and which one runs is
+      // decided by the machine's state alone — never by a field the user could
+      // put into a state the button does not reflect.
+      if (fingerprint === null) {
+        await runPrepare();
+        return;
+      }
+      if (sessionId === null) return;
+
+      dispatch({ type: "deploy_started" });
+      const outcome = await deployPoolsLaunch({
+        sessionId,
+        fingerprintId: fingerprint.fingerprintId,
+      });
+
+      if (outcome.ok) {
+        // Main's own sentence, verbatim. It names the token and the recipient,
+        // and the renderer appends nothing to a money outcome.
+        dispatch({
+          type: "deploy_succeeded",
+          message: outcome.data.message,
+          tone: "success",
+          autoDismiss: true,
+        });
+        return;
+      }
+
+      // Main's own sentence, and the fingerprint is voided either way. The wire
+      // code cannot distinguish "the fee moved" from "the verifier refused" —
+      // both map onto `internal.unexpected` by design — so the lane takes the
+      // fail-safe reading: prepare again and look at the new figures.
+      dispatch({ type: "deploy_refused", message: outcome.error.message });
+    },
+    [fingerprint, runPrepare, sessionId],
+  );
+
+  const requestClose = useCallback((): void => {
+    // A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE — same rule as the Trench lane.
+    if (!canDismissPoolsLaunch(state)) return;
+    onOpenChange(false);
+  }, [onOpenChange, state]);
+
+  const bridgeMounted = isPoolsLaunchAvailable();
+  const canPrepare =
+    bridgeMounted && payload !== null && sessionId !== null && !busy
+    && state.kind !== "done";
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}>
+      <DialogContent className="max-w-[640px]">
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+          <DialogHeader className="border-[var(--vex-line)]">
+            <DialogTitle className="text-[17px] font-semibold">
+              Launch a token
+            </DialogTitle>
+            <LaunchPlatformChips
+              value={platform}
+              onChange={onPlatformChange}
+              disabled={frozen}
+            />
+            <DialogDescription className="text-[11px] text-[var(--vex-text-3)]">
+              pools.fun · Robinhood Chain. The whole supply goes into a locked
+              SushiSwap V3 pool, so the token trades from its first block.
+              Deploying sends a real transaction and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogBody>
+            <PoolsLaunchForm values={values} onChange={onFormChange} disabled={frozen} />
+
+            {fingerprint !== null ? <FingerprintCard fingerprint={fingerprint} /> : null}
+
+            <StateNote state={state} bridgeMissing={!bridgeMounted} />
+          </DialogBody>
+
+          <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[12px] text-[var(--vex-text-2)]">
+              {fingerprint !== null
+                ? "Deploy authorizes exactly the figures above. Changing any field prepares them again."
+                : "Nothing is authorized until this launch has been prepared and checked."}
+            </p>
+            <span className="flex flex-row justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={requestClose}
+                disabled={state.kind === "deploying"}
+                className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+              >
+                {state.kind === "done" ? "Close" : "Cancel"}
+              </Button>
+              <Button type="submit" disabled={fingerprint === null ? !canPrepare : busy}>
+                {submitLabel(state, fingerprint !== null)}
+              </Button>
+            </span>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function submitLabel(
+  state: ReturnType<typeof poolsLaunchReducer>,
+  armed: boolean,
+): string {
+  if (state.kind === "verifying") return "Checking…";
+  if (state.kind === "deploying") return "Deploying…";
+  return armed ? "Deploy token" : "Prepare launch";
+}
+
+/**
+ * The one line that says where the launch stands. Main's own sentence is
+ * rendered verbatim in every refusal: it knows the numbers and the redaction
+ * rules, and this lane appends nothing to it.
+ */
+function StateNote({
+  state,
+  bridgeMissing,
+}: {
+  readonly state: ReturnType<typeof poolsLaunchReducer>;
+  readonly bridgeMissing: boolean;
+}): JSX.Element | null {
+  if (bridgeMissing) {
+    return (
+      <p className="text-[12px] leading-relaxed text-[var(--vex-warn-text)]" role="status">
+        Launching on pools.fun is not available in this build yet. You can fill
+        the form in, but Vex cannot prepare or deploy it.
+      </p>
+    );
+  }
+  if (state.kind === "re_review") {
+    return (
+      <div className="flex flex-col items-start gap-2" role="alert">
+        <p className="text-sm text-[var(--vex-warn-text)]">{state.message}</p>
+        <p className="text-[12px] leading-relaxed text-[var(--vex-text-2)]">
+          Those figures are no longer what Vex would sign. Prepare the launch
+          again and read the new ones before deploying.
+        </p>
+      </div>
+    );
+  }
+  if (state.kind === "refused") {
+    return (
+      <p className="text-sm text-destructive" role="alert">
+        {state.message}
+      </p>
+    );
+  }
+  if (state.kind === "done") {
+    return (
+      <p
+        className={
+          state.tone === "failure"
+            ? "text-sm break-all text-destructive"
+            : "text-sm break-all text-[var(--color-success)]"
+        }
+        role={state.tone === "failure" ? "alert" : "status"}
+      >
+        {state.message}
+      </p>
+    );
+  }
+  return null;
+}

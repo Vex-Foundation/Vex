@@ -49,6 +49,29 @@ const REVIEWED_NON_CHARGING_KEYS = new Map<string, string>([
   ["maxFeeRate", "user-set upper bound on the venue's own rate; pays nobody"],
 ]);
 
+/**
+ * Exemptions bound to ONE surface, spelled `<surface> :: <key>`.
+ *
+ * Deliberately narrower than {@link REVIEWED_NON_CHARGING_KEYS}, which exempts a
+ * spelling EVERYWHERE it appears. A key can be harmless on a read tool and an
+ * overcharge vector on the mutating tool that lands next to it a phase later, and
+ * a name-wide exemption would let the second one through silently. Use this list
+ * unless the spelling is genuinely never chargeable anywhere.
+ */
+const REVIEWED_NON_CHARGING_SITES = new Map<string, string>([
+  // A pools.fun SCREENING FILTER, on a read-only tool: it selects launchpad rows
+  // whose creator-fee stream is directed at the given wallet ("show me the
+  // tokens this person earns from"). It sets no fee, directs no payment, and
+  // reaches no signing path — the value goes into a provider query string and
+  // comes back as rows. The pools namespace charges nothing and has no mutating
+  // tool; when the launch family lands, its own params are NOT covered by this
+  // entry and must face this sweep on their own.
+  [
+    "protocol:pools.tokens :: feeRecipientAddress",
+    "read-only launchpad screening filter; sets no fee and directs no payment",
+  ],
+]);
+
 interface ParamSite {
   readonly surface: string;
   readonly key: string;
@@ -80,9 +103,50 @@ function collectAliasParamKeys(): ParamSite[] {
 
 function offendingSites(sites: readonly ParamSite[]): ParamSite[] {
   return sites.filter(
-    (site) => FEE_BEARING_KEY.test(site.key) && !REVIEWED_NON_CHARGING_KEYS.has(site.key),
+    (site) =>
+      FEE_BEARING_KEY.test(site.key)
+      && !REVIEWED_NON_CHARGING_KEYS.has(site.key)
+      && !REVIEWED_NON_CHARGING_SITES.has(`${site.surface} :: ${site.key}`),
   );
 }
+
+describe("the site-scoped exemption list cannot be widened by accident", () => {
+  // The exemption is only as safe as the claim that justifies it: "this is a
+  // read tool" is what makes a fee-shaped key harmless. If the manifest it
+  // names later becomes mutating — or stops existing, leaving a stale entry
+  // that silently covers nothing while looking like review — the exemption has
+  // to fail rather than keep vouching for something nobody re-read.
+  it("every entry names a live, read-only manifest and carries a reason", () => {
+    const problems: string[] = [];
+    for (const [site, reason] of REVIEWED_NON_CHARGING_SITES) {
+      if (reason.trim().length === 0) {
+        problems.push(`${site}: empty reason — an exemption without a stated reason is not a review`);
+        continue;
+      }
+      const [surface, key] = site.split(" :: ");
+      if (!surface?.startsWith("protocol:") || !key) {
+        problems.push(`${site}: not in the "protocol:<toolId> :: <paramKey>" form`);
+        continue;
+      }
+      const toolId = surface.slice("protocol:".length);
+      const manifest = PROTOCOL_TOOLS.find((tool) => tool.toolId === toolId);
+      if (!manifest) {
+        problems.push(`${site}: names no registered manifest — delete the stale entry`);
+        continue;
+      }
+      if (manifest.mutating || manifest.actionKind !== "read") {
+        problems.push(
+          `${site}: ${toolId} is mutating=${manifest.mutating} actionKind=${manifest.actionKind} — `
+          + "a fee-shaped param on a tool that can spend is exactly what this suite exists to catch",
+        );
+      }
+      if (!manifest.params.some((param) => param.key === key)) {
+        problems.push(`${site}: ${toolId} declares no param "${key}" — delete the stale entry`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});
 
 describe("no fee-bearing field originates from tool params", () => {
   it("sweeps a non-trivial number of param sites (the sweep itself must not silently go empty)", () => {

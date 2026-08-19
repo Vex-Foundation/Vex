@@ -35,7 +35,7 @@ const uploadMock = vi.fn();
 const deleteMock = vi.fn();
 const readThumbMock = vi.fn();
 
-function image(imageId: string, label: string) {
+function image(imageId: string, label: string, onchainByteLength: number | null = 4096) {
   return {
     imageId,
     label,
@@ -44,6 +44,7 @@ function image(imageId: string, label: string) {
     width: 320,
     height: 200,
     digest: "a".repeat(64),
+    onchainByteLength,
     uploadedAt: "2026-08-02T10:00:00.000Z",
   };
 }
@@ -106,7 +107,9 @@ describe("the empty locker", () => {
   it("explains WHY the card exists, not just that it is empty", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     renderCard();
-    const note = await screen.findByText(/a trench launch needs an image/i);
+    // Launchpad-neutral since the card serves both: an image is required on
+    // either, and naming only Trench would read as "not needed for the other".
+    const note = await screen.findByText(/a launch needs an image/i);
     expect(note.textContent).toMatch(/agent can't make one/i);
   });
 
@@ -229,26 +232,102 @@ describe("read failure", () => {
   });
 });
 
-describe("the merged Trench Express card", () => {
-  it("is named Trench Express and wears the venue's own mark", async () => {
+/**
+ * The card serves TWO launchpads now (owner decision, 2026-08-18). Its BookPanel
+ * section id stays `"trench"` because that is a persisted user preference, but
+ * the card itself is generic and carries the launchpad chips.
+ */
+describe("the merged launchpad card", () => {
+  it("is named for the launchpad role, and wears the SELECTED venue's own mark", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     const { container } = renderCard();
-    expect(await screen.findByLabelText("Trench Express")).toBeTruthy();
-    // The resolver owns which venue may wear which artwork — a card must never
-    // borrow another venue's mark.
+    expect(await screen.findByLabelText("Launchpad")).toBeTruthy();
+    // Trench is the default selection, and the resolver owns which venue may
+    // wear which artwork — a card must never borrow another venue's mark.
     expect(
       container.querySelector('[data-vex-protocol-mark="Trench Express"]'),
     ).not.toBeNull();
   });
 
+  it("offers both launchpads as an exclusive choice, and follows the pick", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    const { container } = renderCard();
+    await screen.findByLabelText("Launchpad");
+
+    const trench = screen.getByRole("radio", { name: "Trench" });
+    const pools = screen.getByRole("radio", { name: "pools.fun" });
+    expect(trench.getAttribute("aria-checked")).toBe("true");
+    expect(pools.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(pools);
+
+    expect(pools.getAttribute("aria-checked")).toBe("true");
+    expect(trench.getAttribute("aria-checked")).toBe("false");
+    // The card's mark follows the choice, so the venue about to receive real
+    // money is never misreported by a stale logo.
+    expect(container.querySelector('[data-vex-protocol-mark="pools.fun"]')).not.toBeNull();
+  });
+
   it("puts the launch opener INSIDE the card and opens the dialog", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     renderCard();
-    const card = await screen.findByLabelText("Trench Express");
+    const card = await screen.findByLabelText("Launchpad");
     const opener = screen.getByRole("button", { name: /launch a token/i });
     expect(card.contains(opener)).toBe(true);
     expect(screen.queryByTestId("launch-dialog")).toBeNull();
     fireEvent.click(opener);
     expect(screen.getByTestId("launch-dialog")).toBeTruthy();
+  });
+});
+
+/**
+ * The per-lane image budget (owner decision, 2026-08-19). The locker keeps the
+ * user's original; only Trench needs a small on-chain copy. The card has to say
+ * both things honestly: an upload that derived a copy did NOT degrade the
+ * original, and an image with no copy is pools-only rather than broken.
+ */
+describe("the on-chain copy, as the user is told about it", () => {
+  it("reports the copy WITHOUT claiming the original was optimized", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    uploadMock.mockResolvedValue({
+      ok: true,
+      data: {
+        image: A,
+        onchainVariant: { originalByteLength: 3_000_000, variantByteLength: 14_000 },
+      },
+    });
+    renderCard();
+    fireEvent.click(await screen.findByRole("button", { name: /add image/i }));
+
+    const notice = await screen.findByText(/full quality/i);
+    expect(notice.textContent).toContain("3000.0 KB");
+    expect(notice.textContent).toContain("14.0 KB");
+    expect(notice.textContent).toContain("square copy");
+    expect(notice.textContent).toContain("pools.fun uses your original");
+    // The old copy said "Optimized: X -> Y". It would now be a lie: nothing the
+    // user picked was replaced.
+    expect(notice.textContent).not.toMatch(/optimi[sz]ed/i);
+  });
+
+  it("says nothing at all when the original is already its own copy", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    uploadMock.mockResolvedValue({ ok: true, data: { image: A } });
+    renderCard();
+    fireEvent.click(await screen.findByRole("button", { name: /add image/i }));
+
+    await waitFor(() => expect(uploadMock).toHaveBeenCalled());
+    expect(screen.queryByText(/full quality/i)).toBeNull();
+  });
+
+  it("badges a copy-less image as pools-only, and does not ask for its thumbnail", async () => {
+    const poolsOnly = image("img_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "huge.png", null);
+    listMock.mockResolvedValue({ ok: true, data: { images: [poolsOnly] } });
+    renderCard();
+
+    expect(await screen.findByTitle(/usable on pools\.fun/i)).toBeTruthy();
+    // Asking main for a thumbnail it cannot build would answer not_found and
+    // read to the user as a broken image.
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+    expect(readThumbMock).not.toHaveBeenCalled();
   });
 });

@@ -33,6 +33,7 @@
  */
 
 export { classifyError, type ErrorCategory } from "./error-summary/classify.js";
+export { scrubProviderText } from "./error-summary/scrub.js";
 export {
   remediationFor,
   slippageRemediation,

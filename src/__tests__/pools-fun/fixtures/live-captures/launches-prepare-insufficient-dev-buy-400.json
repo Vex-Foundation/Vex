@@ -1,0 +1,23 @@
+{
+  "endpoint": "POST https://api.bankr.bot/pools-fun/launches/prepare (devBuyEth \"5\", a prebuy the wallet cannot afford)",
+  "capturedAt": "2026-08-19T09:07:46.000Z",
+  "httpStatus": 400,
+  "sanitization": "The Vex-controlled probe wallet 0x33eF...d2fA was replaced with 0x1111111111111111111111111111111111111111 in request.creatorAddress and request.feeRecipient.value. The response body contains no address and is verbatim.",
+  "request": {
+    "tokenName": "P4 Balance Probe",
+    "tokenSymbol": "P4BAL",
+    "pairedAsset": "weth",
+    "expectedDeploymentFeeWei": "1051674002092832",
+    "expectedGatewayVersion": 1,
+    "creatorAddress": "0x1111111111111111111111111111111111111111",
+    "feeRecipient": {
+      "type": "wallet",
+      "value": "0x1111111111111111111111111111111111111111"
+    },
+    "devBuyEth": "5"
+  },
+  "response": {
+    "error": "This wallet does not have enough paired asset for the dev buy.",
+    "code": "INSUFFICIENT_DEV_BUY_BALANCE"
+  }
+}

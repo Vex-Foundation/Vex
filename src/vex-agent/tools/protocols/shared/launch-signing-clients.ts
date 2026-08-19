@@ -1,8 +1,10 @@
 /**
  * Signing-client resolution for the launch execute leg.
  *
- * Split out because it owns ONE decision — when the private key may be
- * decrypted — and that decision deserves to be readable on its own. The launch
+ * SHARED by every launchpad's execute leg. It owns ONE decision — when the
+ * private key may be decrypted — and that decision must not have two
+ * implementations: it was written for Trench and moved here MOVE-ONLY when
+ * pools.fun's execute leg needed the same one. The launch
  * handler resolves the ADDRESS first (never decrypts) so that a failure before
  * this point still records the real wallet on its activity row; only once the
  * call may genuinely broadcast does it come here.
@@ -16,10 +18,10 @@ import type { Account, Chain, PublicClient, Transport, WalletClient } from "viem
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalEvmClients } from "@tools/evm-chains/evm-client.js";
-import { resolveSigningWallet, walletScopeErrorToResult } from "../../../../../internal/wallet/resolve.js";
-import type { ProtocolExecutionContext } from "../../../../types.js";
-import type { ToolResult } from "../../../../../types.js";
-import { fail } from "../../../../handler-helpers.js";
+import { resolveSigningWallet, walletScopeErrorToResult } from "../../internal/wallet/resolve.js";
+import type { ProtocolExecutionContext } from "../types.js";
+import type { ToolResult } from "../../types.js";
+import { fail } from "../handler-helpers.js";
 
 export interface LaunchSigningClients {
   readonly publicClient: PublicClient<Transport, Chain>;

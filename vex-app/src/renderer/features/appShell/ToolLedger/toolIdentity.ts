@@ -191,6 +191,19 @@ const TOOL_ID_PRESENTATION: Readonly<Record<string, ToolIdPresentation>> = {
   "trench.my_launches": { action: "My launches", category: "tool" },
   "trench.images": { action: "Image locker", category: "tool" },
 
+  // pools.fun (`tools/protocols/pools/manifests/`). The reads are market data;
+  // `my_launches`, the launch family and the fee claim mirror their Trench
+  // counterparts and are filed as plain tools rather than market data.
+  "pools.tokens": { action: "Token list", category: "market" },
+  "pools.search": { action: "Token search", category: "market" },
+  "pools.candles": { action: "Candles", category: "market" },
+  "pools.token": { action: "Token detail", category: "market" },
+  "pools.my_launches": { action: "My launches", category: "tool" },
+  "pools.launch_preview": { action: "Launch preview", category: "tool" },
+  "pools.launch_request_form": { action: "Launch form", category: "tool" },
+  "pools.launch_execute": { action: "Launch", category: "tool" },
+  "pools.claim_fees": { action: "Claim fees", category: "tool" },
+
   // Swap and bridge acts. There is deliberately no `relay.bridge.quote` /
   // `relay.bridge.execute`: Relay's mutating tool is the two-segment
   // `relay.bridge` and its quote is `relay.quote.get` — same for Khalani.

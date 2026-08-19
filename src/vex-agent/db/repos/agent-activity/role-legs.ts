@@ -69,6 +69,10 @@ const AMOUNT_BEARING_ROLES: ReadonlySet<AgentActivityEventRole> = new Set([
   "predict_sell",
   "predict_claim",
   "predict_close",
+  // A pools.fun creator-fee claim: it spends NOTHING and pays TWO assets, so it
+  // proves its outputs only - the same asymmetry `yield_claim` has, one leg
+  // wider (migration 082).
+  "pools_claim",
 ]);
 
 export function isAmountBearingRole(role: AgentActivityEventRole): boolean {
@@ -102,6 +106,14 @@ export function roleLegsIncomplete(row: RoleLegRow): boolean {
 
   if (role === "yield_claim") return !row.executedAmountOutRaw;
   if (role === "bridge_deposit") return !row.executedAmountInRaw;
+  // A claim is complete when BOTH payouts are proven. `collectAndClaim` returns
+  // the two amounts together, so a row carrying one and not the other has read
+  // half a settlement - and a zero is a proven amount, not a missing one, which
+  // is why the test is on the field's presence rather than on its value.
+  if (role === "pools_claim") {
+    if (!row.executedAmountOutRaw) return true;
+    return Boolean(row.tokenOut2Address) && !row.executedAmountOut2Raw;
+  }
 
   if (role === "lend_deposit" || role === "lend_withdraw" || role === "lend_borrow_operate") {
     if (row.tokenInAddress && !row.executedAmountInRaw) return true;

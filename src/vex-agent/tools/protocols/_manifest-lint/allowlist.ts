@@ -401,6 +401,38 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "pendle.yields", rule: "param-key", detail: "minImpliedApyPercent", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "pendle.yields", rule: "param-key", detail: "minLiquidityUsd", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "pendle.yields", rule: "param-key", detail: "underlyingSymbol", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
+  // pools.fun (2026-08-18). These six keys are the FLEET's existing screening
+  // spellings, carried here on purpose: `sortBy` has 14 rows above, `query` 5,
+  // `minMarketCapUsd` 5, `maxMarketCapUsd` 4, `cursor` 2, `order` 1. Spelling a
+  // new tool differently would have avoided six rows at the cost of making the
+  // list vocabulary inconsistent for the agent, and canonicalizing them would
+  // have silently retired a fleet-wide rename. They are deleted by the SAME
+  // rename wave as their siblings, not separately. Every other pools param key
+  // is new vocabulary and lives in CANONICAL_PARAM_KEYS instead.
+  // The launch FIELD vocabulary, shared verbatim with the trench launch tools
+  // (`name`, `symbol`, `prebuy` already carry rows there). Spelling a pools
+  // launch form differently from the trench one would make the desktop lane
+  // translate between two vocabularies for the same fields.
+  { subject: "pools.launch_preview", rule: "param-key", detail: "name", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_preview", rule: "param-key", detail: "pairedAsset", reason: "names WHICH asset the new pool trades against; no canonical key expresses a launch pair" },
+  { subject: "pools.launch_preview", rule: "param-key", detail: "prebuy", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_preview", rule: "param-key", detail: "symbol", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_request_form", rule: "param-key", detail: "name", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_request_form", rule: "param-key", detail: "pairedAsset", reason: "names WHICH asset the new pool trades against; no canonical key expresses a launch pair" },
+  { subject: "pools.launch_request_form", rule: "param-key", detail: "prebuy", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_request_form", rule: "param-key", detail: "symbol", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_execute", rule: "param-key", detail: "name", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_execute", rule: "param-key", detail: "pairedAsset", reason: "names WHICH asset the new pool trades against; no canonical key expresses a launch pair" },
+  { subject: "pools.launch_execute", rule: "param-key", detail: "prebuy", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.launch_execute", rule: "param-key", detail: "symbol", reason: "shared launch-form spelling, same as the trench launch tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.my_launches", rule: "param-key", detail: "cursor", reason: "fleet screening spelling shared with 2 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.search", rule: "param-key", detail: "cursor", reason: "fleet screening spelling shared with 2 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.search", rule: "param-key", detail: "query", reason: "fleet screening spelling shared with 5 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.tokens", rule: "param-key", detail: "cursor", reason: "fleet screening spelling shared with 2 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.tokens", rule: "param-key", detail: "query", reason: "fleet screening spelling shared with 5 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.tokens", rule: "param-key", detail: "maxMarketCapUsd", reason: "fleet screening spelling shared with 4 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.tokens", rule: "param-key", detail: "minMarketCapUsd", reason: "fleet screening spelling shared with 5 sibling tools; deleted by the rename waves (W5/W6)" },
+  { subject: "pools.tokens", rule: "param-key", detail: "sortBy", reason: "fleet screening spelling shared with 14 sibling tools; deleted by the rename waves (W5/W6)" },
   { subject: "relay.bridge", rule: "param-key", detail: "recipient", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "relay.quote.get", rule: "param-key", detail: "recipient", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.lend.borrowOperate", rule: "param-key", detail: "market", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },

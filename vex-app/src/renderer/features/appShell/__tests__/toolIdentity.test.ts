@@ -293,12 +293,44 @@ describe("resolveToolIdentity — generic wrappers", () => {
     });
   });
 
+  it.each([
+    ["pools.tokens", "pools.fun · Token list", "market"],
+    ["pools.search", "pools.fun · Token search", "market"],
+    ["pools.candles", "pools.fun · Candles", "market"],
+    ["pools.token", "pools.fun · Token detail", "market"],
+    ["pools.my_launches", "pools.fun · My launches", "tool"],
+    ["pools.launch_preview", "pools.fun · Launch preview", "tool"],
+    ["pools.launch_request_form", "pools.fun · Launch form", "tool"],
+    ["pools.launch_execute", "pools.fun · Launch", "tool"],
+    ["pools.claim_fees", "pools.fun · Claim fees", "tool"],
+  ])("titles the pools.fun act %s as %s", (toolId, title, category) => {
+    expect(resolveToolIdentity("execute_tool", `{"toolId":"${toolId}"}`)).toEqual({
+      protocol: "pools",
+      title,
+      category,
+    });
+  });
+
   it("titles a Morpho act reached through the DOTTED lane identically", () => {
     expect(resolveToolIdentity("morpho.vault.deposit", null)).toEqual({
       protocol: "morpho",
       title: "Morpho · Vault deposit",
       category: "tool",
     });
+  });
+
+  it("titles a DOTTED pools act the same way as the wrapped one", () => {
+    expect(resolveToolIdentity("pools.candles", null)).toEqual({
+      protocol: "pools",
+      title: "pools.fun · Candles",
+      category: "market",
+    });
+  });
+
+  it("gives NO venue to a pools lookalike namespace", () => {
+    const identity = resolveToolIdentity("execute_tool", '{"toolId":"poolsfun.tokens"}');
+    expect(identity.protocol).toBeNull();
+    expect(identity.title).toBe("Execute tool");
   });
 
   it("falls back to the humanizer for an unmirrored trench id — venue proven, action not curated", () => {
