@@ -6,9 +6,11 @@ import {
 } from "@tools/lighter/constants.js";
 import {
   LIGHTER_ORDER_SIDES,
-  LIGHTER_ORDER_TIME_IN_FORCE,
-  LIGHTER_ORDER_TYPES,
 } from "@tools/lighter/order-preview.js";
+import {
+  LIGHTER_PHASE_ONE_ORDER_TYPES,
+  LIGHTER_PHASE_ONE_TIME_IN_FORCE,
+} from "@tools/lighter/order-policy.js";
 import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 import {
@@ -175,23 +177,23 @@ const ORDER_PRICE_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Human price as a decimal string. For limit previews this is the limit price; for market previews it is the worst acceptable price. Vex converts it exactly using live Lighter price decimals.",
+    "Worst acceptable execution price for the IOC market order, as a human decimal string. Vex converts it exactly using live Lighter price decimals and revalidates the live opposite-side price after approval.",
 };
 
 const ORDER_TYPE_PARAM: ProtocolParamDef = {
   key: "orderType",
   type: "string",
-  enum: LIGHTER_ORDER_TYPES,
+  enum: LIGHTER_PHASE_ONE_ORDER_TYPES,
   description:
-    "Optional order type supported by this preview gate: limit or market. Defaults to limit for normal price-at-size preview requests. Conditional and TWAP order previews are intentionally refused in this wave.",
+    "Optional Phase 1 order type. The only enabled value is market, which is also the default. Resting limit and conditional orders are refused until their full lifecycle is supported.",
 };
 
 const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
   key: "timeInForce",
   type: "string",
-  enum: LIGHTER_ORDER_TIME_IN_FORCE,
+  enum: LIGHTER_PHASE_ONE_TIME_IN_FORCE,
   description:
-    "Optional Lighter time-in-force for the preview: good-till-time, immediate-or-cancel, or post-only. Defaults to good-till-time for normal limit previews. Market previews require immediate-or-cancel.",
+    "Optional Phase 1 time-in-force. The only enabled value is immediate-or-cancel, which is also the default. Good-till-time and post-only orders are refused until Vex can cancel and modify resting orders safely.",
 };
 
 const REDUCE_ONLY_PARAM: ProtocolParamDef = {
@@ -374,7 +376,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview for a future exact matching order. Use this directly when the user says a conversational request like 'show me a preview limit buy order of 0.001 ETH at 3000, expires 30 minutes from now'. Prefer marketSymbol over marketId when the user names an asset. Omit environment, accountIndex, apiKeyIndex, timeInForce, and reduceOnly unless the user explicitly overrides them; Vex defaults or resolves those from configured/live Lighter state. If buy/sell is missing, ask for that direction in plain language. Returns previewId, the persisted preview identity, exact integer and display amounts, live market context, risk notes, and approvalReady. Inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and a Lighter trading API key is needed before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Phase 1 Lighter IOC market-order preview for a future exact matching order. The price is the user's worst acceptable execution price. Prefer marketSymbol over marketId when the user names an asset. Omit accountIndex, apiKeyIndex, orderType, timeInForce, and reduceOnly unless the user explicitly overrides them; market and immediate-or-cancel are the only enabled values. If buy/sell is missing, ask for that direction in plain language. Returns previewId, the persisted preview identity, exact integer and display amounts, live market context, risk notes, and approvalReady. Inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and managed Lighter setup must finish before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -399,7 +401,8 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       side: "buy",
       baseAmountIn: "0.001",
       price: "3000",
-      orderType: "limit",
+      orderType: "market",
+      timeInForce: "immediate-or-cancel",
       orderExpiryOffsetMinutes: 30,
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],

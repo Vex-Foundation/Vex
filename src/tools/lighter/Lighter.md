@@ -109,6 +109,15 @@ the configured privileged execution path. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
+Phase 1 exposes only market orders with `immediate-or-cancel` time in force.
+The required price is the user's worst acceptable execution price, and Vex
+revalidates the live opposite-side price after approval before any credential
+or vault access. Resting limit, good-till-time, and post-only orders are refused
+at parameter parsing, approval preparation, execution-plan construction, and
+the privileged submit boundary until production-safe cancel and modify support
+is available. The lower-level signer keeps the provider's broader order-type
+encoding for future phases, but those modes are not reachable from the product.
+
 ## Production Deposit Boundary
 
 Deposit execution has no operator environment gate, allowlist, rollout cap, or

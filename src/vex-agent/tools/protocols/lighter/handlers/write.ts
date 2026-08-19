@@ -21,6 +21,7 @@ import {
 } from "../order-create-execution.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
+import { lighterPhaseOneOrderPolicyFailure } from "@tools/lighter/order-policy.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -164,6 +165,13 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
           ? `No fresh Lighter order preview ${previewId} found for ${environment.value} in this session. Run lighter.order.preview again.`
           : `No fresh Lighter order preview found for ${environment.value} in this session. Run lighter.order.preview first.`,
       );
+    }
+    const policyFailure = lighterPhaseOneOrderPolicyFailure(
+      preview.orderType,
+      preview.timeInForce,
+    );
+    if (policyFailure !== null) {
+      return fail(`${policyFailure} Run a fresh IOC market-order preview.`);
     }
     if (preview.apiKeyIndex === null) {
       return fail(

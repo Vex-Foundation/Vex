@@ -305,8 +305,8 @@ function previewRow() {
     side: "buy",
     baseAmountInteger: "10000",
     priceInteger: "300000",
-    orderType: "limit",
-    timeInForce: "good-till-time",
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
     reduceOnly: false,
     triggerPriceInteger: null,
     orderExpiryMs: 1893456000000,
@@ -339,8 +339,8 @@ function executionIntentRow(overrides: Record<string, unknown> = {}) {
     side: "buy",
     baseAmountInteger: "10000",
     priceInteger: "300000",
-    orderType: "limit",
-    timeInForce: "good-till-time",
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
     reduceOnly: false,
     triggerPriceInteger: null,
     orderExpiryMs: 1893456000000,
@@ -402,8 +402,8 @@ function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
       namespace: "lighter",
       criticalArgs: {
         orderSummary:
-          "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
-          + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+          "Buy 1 ETH at worst acceptable price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
+          + "immediate-or-cancel; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
         marketSymbol: "ETH",
         baseAmountDisplay: "1",
         priceDisplay: "3000",
@@ -418,8 +418,8 @@ function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
         side: "buy",
         baseAmountInteger: "10000",
         priceInteger: "300000",
-        orderType: "limit",
-        timeInForce: "good-till-time",
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
         reduceOnly: false,
         previewId: "lighter-preview-1",
         matchHash: "a".repeat(64),
@@ -1005,7 +1005,7 @@ describe("Lighter agent read handlers", () => {
           priceDisplay: "3000",
           notionalDisplay: "3000",
           orderExpiryIso: "2030-01-01T00:00:00.000Z",
-          orderSummary: expect.stringContaining("Buy 1 ETH at limit price 3000"),
+          orderSummary: expect.stringContaining("Buy 1 ETH at worst acceptable price 3000"),
         }),
       },
     });
@@ -1035,6 +1035,23 @@ describe("Lighter agent read handlers", () => {
     expect(String(data.userGuidance)).toContain(
       "do not ask them to type another approval command",
     );
+  });
+
+  it("refuses a legacy resting-order preview before creating an approval intent", async () => {
+    mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce({
+      ...previewRow(),
+      orderType: "limit",
+      timeInForce: "post-only",
+    });
+
+    const output = await callFail("lighter.order.create.prepare", {
+      environment: "rhc",
+    });
+
+    expect(output).toContain("Phase 1 permits market orders with immediate-or-cancel");
+    expect(output).toContain("Run a fresh IOC market-order preview");
+    expect(mocks.executionIntentsRepo.findLiveByPreview).not.toHaveBeenCalled();
+    expect(mocks.executionIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
   });
 
   it("re-emits the approval follow-up for an existing pending Lighter create intent", async () => {
@@ -1698,8 +1715,8 @@ describe("Lighter agent read handlers", () => {
       side: "buy",
       baseAmountIn: "0.25",
       price: "3499.99",
-      orderType: "limit",
-      timeInForce: "good-till-time",
+      orderType: "market",
+      timeInForce: "immediate-or-cancel",
       reduceOnly: false,
       orderExpiry: Date.now() + 10 * 60 * 1000,
       clientOrderIndexPolicy: "vex_assigned_uint48",
@@ -1735,12 +1752,12 @@ describe("Lighter agent read handlers", () => {
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
     expect(data.previewSummary).toMatchObject({
-      title: "Preview of your Lighter RHC limit-buy order",
+      title: "Preview of your Lighter RHC market-buy order",
       columns: ["Parameter", "Value", "Notes"],
       rows: expect.arrayContaining([
-        { parameter: "Side", value: "BUY", notes: "limit-buy order" },
+        { parameter: "Side", value: "BUY", notes: "market-buy order" },
         { parameter: "Amount", value: "0.25 ETH", notes: "Passes minimum: 0.001 ETH" },
-        { parameter: "Limit price", value: "$3,499.99 per ETH", notes: expect.any(String) },
+        { parameter: "Worst price", value: "$3,499.99 per ETH", notes: expect.any(String) },
         { parameter: "Quote notional", value: "$874.9975", notes: "0.25 ETH x $3,499.99" },
       ]),
       safety: expect.arrayContaining([
@@ -1756,6 +1773,27 @@ describe("Lighter agent read handlers", () => {
     expect((data.preview as Record<string, unknown>).symbol).toBe("ETH-USD");
     expect(((data.preview as Record<string, unknown>).baseAmount as Record<string, unknown>).integer).toBe("2500");
     expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
+  });
+
+  it.each([
+    { orderType: "limit", timeInForce: "good-till-time" },
+    { orderType: "limit", timeInForce: "post-only" },
+    { orderType: "market", timeInForce: "good-till-time" },
+  ])("refuses non-IOC Phase 1 preview policy before provider reads", async (orderPolicy) => {
+    const output = await callFail("lighter.order.preview", {
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      side: "buy",
+      baseAmountIn: "0.25",
+      price: "3499.99",
+      ...orderPolicy,
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("Phase 1 permits market orders with immediate-or-cancel");
+    expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
+    expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
   });
 
   it("creates an order preview from a relative expiry in minutes", async () => {
@@ -1788,8 +1826,8 @@ describe("Lighter agent read handlers", () => {
         side: "buy",
         baseAmountIn: "0.25",
         price: "3499.99",
-        orderType: "limit",
-        timeInForce: "good-till-time",
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
         reduceOnly: false,
         orderExpiryOffsetMinutes: 30,
       });
@@ -2232,8 +2270,8 @@ describe("Lighter agent read handlers", () => {
       side: "buy",
       baseAmountIn: "0.25",
       price: "3499.99",
-      orderType: "limit",
-      timeInForce: "good-till-time",
+      orderType: "market",
+      timeInForce: "immediate-or-cancel",
       reduceOnly: false,
       orderExpiry: Date.now() + 10 * 60 * 1000,
       clientOrderIndexPolicy: "vex_assigned_uint48",

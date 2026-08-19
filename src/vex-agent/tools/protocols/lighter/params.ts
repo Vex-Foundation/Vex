@@ -7,6 +7,7 @@ import {
   type LighterOrderTimeInForce,
   type LighterOrderType,
 } from "@tools/lighter/order-preview.js";
+import { lighterPhaseOneOrderPolicyFailure } from "@tools/lighter/order-policy.js";
 import {
   LIGHTER_DEFAULT_ENVIRONMENT,
   LIGHTER_CANDLE_RESOLUTIONS,
@@ -349,6 +350,14 @@ export function readLighterOrderPreviewParams(
   if (reduceOnly !== undefined && typeof reduceOnly !== "boolean") {
     return { ok: false, reason: "reduceOnly must be boolean." };
   }
+  const resolvedOrderType = (orderType.value ?? "market") as LighterOrderType;
+  const resolvedTimeInForce =
+    (timeInForce.value ?? "immediate-or-cancel") as LighterOrderTimeInForce;
+  const policyFailure = lighterPhaseOneOrderPolicyFailure(
+    resolvedOrderType,
+    resolvedTimeInForce,
+  );
+  if (policyFailure !== null) return { ok: false, reason: policyFailure };
   const clientOrderIndexPolicy =
     readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;
   return {
@@ -361,8 +370,8 @@ export function readLighterOrderPreviewParams(
       side: side.value as LighterOrderSide,
       baseAmount: baseAmount.value,
       price: price.value,
-      orderType: (orderType.value ?? "limit") as LighterOrderType,
-      timeInForce: (timeInForce.value ?? "good-till-time") as LighterOrderTimeInForce,
+      orderType: resolvedOrderType,
+      timeInForce: resolvedTimeInForce,
       reduceOnly: reduceOnly ?? false,
       orderExpiry: orderExpiry.value,
       clientOrderIndexPolicy,

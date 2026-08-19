@@ -230,11 +230,13 @@ function previewSummary(
   const minimums =
     `${formatAsset(preview.minimumChecks.minBaseAmountDisplay, baseSymbol)} base minimum; `
     + `${formatUsd(preview.minimumChecks.minQuoteAmountDisplay)} quote minimum`;
-  const marketNote = preview.marketData.priceComparison === "crossing_or_taker"
-    ? "The limit price is marketable against the current book if submitted."
-    : preview.marketData.priceComparison === "resting"
-      ? "This price would rest on the book unless the market moves to it."
-      : "Book comparison is unavailable from the current snapshot.";
+  const marketNote = preview.orderType === "market"
+    ? "Execution is refused if the live opposite-side price moves beyond this bound after approval."
+    : preview.marketData.priceComparison === "crossing_or_taker"
+      ? "The limit price is marketable against the current book if submitted."
+      : preview.marketData.priceComparison === "resting"
+        ? "This price would rest on the book unless the market moves to it."
+        : "Book comparison is unavailable from the current snapshot.";
   const position = preview.positionContext.verified
     ? `${preview.positionContext.positionSide}${preview.positionContext.marketPosition ? ` ${preview.positionContext.marketPosition}` : ""}`
     : "Not verified";
@@ -258,7 +260,7 @@ function previewSummary(
         notes: `Passes minimum: ${formatAsset(preview.minimumChecks.minBaseAmountDisplay, baseSymbol)}`,
       },
       {
-        parameter: "Limit price",
+        parameter: preview.orderType === "market" ? "Worst price" : "Limit price",
         value: `${price} per ${baseSymbol}`,
         notes: marketNote,
       },

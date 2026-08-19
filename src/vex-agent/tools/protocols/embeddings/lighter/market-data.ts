@@ -133,13 +133,13 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.preview": {
     embeddingText: embeddingText(
-      `Create a read-only Lighter order preview using live market detail, order book, and account data. ` +
-      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol. An unspecified conversational environment defaults to RHC; after onboarding selects Core or RHC, pass that exact environment and never switch it. Omit account index, API key index, time-in-force, and reduce-only unless explicit. For "30 minutes from now", pass orderExpiryOffsetMinutes. ` +
+      `Create a read-only Lighter Phase 1 IOC market-order preview using live market detail, order book, and account data. ` +
+      `Use when: the user asks to preview, preflight, check, or prepare an IOC market order without placing it. The price is the user's worst acceptable execution price. Resting limit, good-till-time, and post-only orders are unavailable until Vex supports safe cancel and modify. If they say "ETH", pass marketSymbol. An unspecified conversational environment defaults to RHC; after onboarding selects Core or RHC, pass that exact environment and never switch it. Omit account index, API key index, order type, time-in-force, and reduce-only unless explicit. For "30 minutes from now", pass orderExpiryOffsetMinutes. ` +
       `Returns preview id, match hash, integer amount/price, minimum checks, best bid/ask, position context, and risk notes. Never signs, submits, or calls sendTx. ` +
-      `Example queries: preview 0.001 ETH at 3000, preflight RHC limit buy.`,
+      `Example queries: preview an IOC market buy of 0.001 ETH with worst price 3000, preflight an RHC market buy.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
-    exampleIntents: ["show me a preview limit buy order of 0.001 ETH at 3000 expires 30 minutes from now", "preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
+    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "preview lighter market order", "preflight rhc market buy", "check core reduce-only market sell"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

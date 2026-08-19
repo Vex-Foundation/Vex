@@ -18,8 +18,8 @@ function intent(overrides: Partial<LighterOrderExecutionIntentRow> = {}): Lighte
     side: "buy",
     baseAmountInteger: "10000",
     priceInteger: "300000",
-    orderType: "limit",
-    timeInForce: "good-till-time",
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
     reduceOnly: false,
     triggerPriceInteger: null,
     orderExpiryMs: 1893456000000,
@@ -112,5 +112,16 @@ describe("Lighter order execution plan", () => {
         },
       }))
     ).toThrow("credential reference does not match");
+  });
+
+  it("refuses legacy resting-order intents before signer preparation", () => {
+    expect(() => buildLighterOrderReadyForSignerPlan(intent({
+      orderType: "limit",
+      timeInForce: "good-till-time",
+    }))).toThrow("Phase 1 permits market orders with immediate-or-cancel");
+    expect(() => buildLighterOrderReadyForSignerPlan(intent({
+      orderType: "limit",
+      timeInForce: "post-only",
+    }))).toThrow("cancel and modify them safely");
   });
 });

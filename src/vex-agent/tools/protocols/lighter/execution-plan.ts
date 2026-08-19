@@ -1,6 +1,7 @@
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
+import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 
 export interface LighterOrderReadyForSignerPlan {
   readonly intentId: string;
@@ -53,6 +54,7 @@ export function buildLighterOrderReadyForSignerPlan(
       `Lighter order execution intent ${intent.intentId} already has a nonce reservation.`,
     );
   }
+  assertLighterPhaseOneOrderPolicy(intent.orderType, intent.timeInForce);
   assertCredentialReferenceMatchesIntent(intent);
 
   return {

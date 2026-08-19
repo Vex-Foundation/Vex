@@ -31,6 +31,7 @@ import {
   stateFromInactiveLighterOrder,
 } from "./order-evidence.js";
 import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
+import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -140,6 +141,7 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, unsignedOrder, deps } = input;
+  assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
   await revalidateLiveOrderState(plan, deps);
   const providerCredential = await readLiveProviderCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(

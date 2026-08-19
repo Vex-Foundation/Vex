@@ -83,9 +83,9 @@ const APPROVED_PREVIEW = buildLighterOrderPreview({
   marketId: 0,
   side: "buy",
   baseAmount: "1",
-  price: "3000",
-  orderType: "limit",
-  timeInForce: "good-till-time",
+  price: "3002",
+  orderType: "market",
+  timeInForce: "immediate-or-cancel",
   reduceOnly: false,
   orderExpiry: ORDER_EXPIRY,
   clientOrderIndexPolicy: "vex_assigned_uint48",
@@ -102,8 +102,8 @@ const APPROVED_PREVIEW_ROW = {
   side: "buy" as const,
   baseAmountInteger: APPROVED_PREVIEW.identity.baseAmountInteger,
   priceInteger: APPROVED_PREVIEW.identity.priceInteger,
-  orderType: "limit" as const,
-  timeInForce: "good-till-time" as const,
+  orderType: "market" as const,
+  timeInForce: "immediate-or-cancel" as const,
   reduceOnly: false,
   triggerPriceInteger: null,
   orderExpiryMs: ORDER_EXPIRY,
@@ -126,9 +126,9 @@ const PLAN: LighterOrderReadyForSignerPlan = {
   marketIndex: 0,
   side: "buy",
   baseAmountInteger: "10000",
-  priceInteger: "300000",
-  orderType: "limit",
-  timeInForce: "good-till-time",
+  priceInteger: "300200",
+  orderType: "market",
+  timeInForce: "immediate-or-cancel",
   reduceOnly: false,
   triggerPriceInteger: null,
   orderExpiryMs: ORDER_EXPIRY,
@@ -360,13 +360,33 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("blocks changed live price behavior before provider credential or vault access", async () => {
+  it("blocks legacy resting-order plans at the privileged boundary", async () => {
+    const d = deps();
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: {
+        ...PLAN,
+        orderType: "limit",
+        timeInForce: "post-only",
+      },
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("Phase 1 permits market orders with immediate-or-cancel");
+
+    expect(d.previews.findFreshById).not.toHaveBeenCalled();
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("blocks a live price beyond the approved market-order worst price before vault access", async () => {
     const d = deps({
       client: {
         ...deps().client,
         getOrderBookOrders: vi.fn(async () => ({
           ...ORDER_BOOK,
-          asks: [{ ...first(ORDER_BOOK.asks), price: "2999.00" }],
+          asks: [{ ...first(ORDER_BOOK.asks), price: "3002.01" }],
         })),
       },
     });
@@ -375,7 +395,7 @@ describe("Lighter approved create execution pipeline", () => {
       plan: PLAN,
       unsignedOrder: UNSIGNED_ORDER,
       deps: d,
-    })).rejects.toThrow("changed between resting and taker behavior");
+    })).rejects.toThrow("moved beyond the approved market-order worst price");
 
     expect(d.client.getApiKeys).not.toHaveBeenCalled();
     expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
@@ -548,7 +568,7 @@ describe("Lighter approved create execution pipeline", () => {
         kind: "lighter_order_pre_submit_revalidation",
         previewId: PLAN.previewId,
         matchHash: PLAN.matchHash,
-        priceComparison: "resting",
+        priceComparison: "crossing_or_taker",
       }),
     });
     expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledWith(PLAN.credentialReference);
