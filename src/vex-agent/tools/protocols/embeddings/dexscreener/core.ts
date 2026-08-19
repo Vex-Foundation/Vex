@@ -18,6 +18,12 @@ export const DEXSCREENER_CORE_DISCOVERY = {
       `Filters narrow by chainIds, liquidity, and count; results stay in provider order. DexScreener covers indexed AMM pairs, not every possible market. ` +
       `Example queries: find pepe pair, search bonk, lookup this contract, where is shib trading on base, find a token on robinhood, search dex pairs.`,
     ),
+    // The namespace resolver's identity, stated at summary weight (2026-08-19):
+    // shared navigation-facet prose bleeds routing tokens into every tool it
+    // covers, which had left this tool's canonical query a one-point win over
+    // `tokenPairs`. Its own curated fields, not the shared prose, are what a
+    // resolver's dominance on "find a token by name or symbol" should rest on.
+    canonicalSummary: "Find a token by name or symbol and resolve it to an exact chain and contract address.",
     aliases: ["find token by name or symbol", "resolve ticker to token address", "token name lookup"],
     exampleIntents: [
       "find a token by name or symbol",
@@ -57,6 +63,15 @@ export const DEXSCREENER_CORE_DISCOVERY = {
       `Use this when the exact token address and chain are already known, including immediately after dexscreener.search resolves a name/symbol candidate. Compare only the AMM pools DexScreener indexes; shortlist liquidity here, then obtain a fresh executable quote from the actual venue before trading. ` +
       `Example queries: find best pool for pepe on solana, where is most liquidity for this coin, all pools for usdc on base, compare dexes for this token, deepest pool for sol/usdc, best market for this memecoin.`,
     ),
+    // Curated routing signal, added 2026-08-19: the params-dedupe rescore
+    // (morpho audit) removed the repeated-param-token edge this tool relied on,
+    // and its canonical query started losing to `dexscreener.tokens`, whose
+    // entry already carries aliases and intents. One token address -> pools is
+    // THIS tool's identity, so it states that in its own curated fields
+    // instead of leaning on parameter surface area.
+    exampleIntents: [
+      "compare indexed pools for one exact token address on a chain",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
