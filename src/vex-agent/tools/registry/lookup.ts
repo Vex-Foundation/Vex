@@ -14,6 +14,7 @@ import type { ToolDef } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 
 import { PROTOCOL_TOOLS } from "./protocol.js";
+import { LIGHTER_RHC_TOOLS } from "./lighter-rhc.js";
 import { KHALANI_INTERNAL_TOOLS } from "./khalani.js";
 import { ACTION_ALIAS_TOOLS } from "./action-aliases.js";
 import { WEB_TOOLS } from "./web.js";
@@ -34,6 +35,7 @@ import { PLAN_TOOLS } from "./plan.js";
 // structured entry point into protocol-specific capabilities.
 export const TOOLS: readonly ToolDef[] = [
   ...PROTOCOL_TOOLS,
+  ...LIGHTER_RHC_TOOLS,
   ...KHALANI_INTERNAL_TOOLS,
   ...ACTION_ALIAS_TOOLS,
   ...WEB_TOOLS,
