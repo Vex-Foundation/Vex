@@ -62,7 +62,7 @@ describe("market.get supplier list: both vault generations, each tagged", () => 
   });
 
   it("projects the version on every row and warns that a name is not an identity", () => {
-    const projected = projectMarketDetail(detail, false, "seven_days") as Record<string, unknown>;
+    const projected = projectMarketDetail(detail, "seven_days") as Record<string, unknown>;
     const suppliers = projected["supplyingVaults"] as Record<string, unknown>;
     const rows = suppliers["vaults"] as Array<Record<string, unknown>>;
     expect(rows.every((row) => row["version"] === "v1" || row["version"] === "v2")).toBe(true);

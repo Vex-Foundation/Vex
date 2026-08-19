@@ -141,7 +141,10 @@ function context(options: { approvalBlock: bigint | undefined; heads?: bigint[] 
     residual: null,
     priorLeg: options.approvalBlock === undefined ? undefined : { blockNumber: options.approvalBlock },
   };
-  return built as MorphoExecutionContext;
+  // Deliberate test-double bridge: viem clients and broadcast methods are
+  // mocked and never read here, so this reduced runtime shape cannot satisfy
+  // the complete production context structurally.
+  return built as unknown as MorphoExecutionContext;
 }
 
 beforeEach(() => {

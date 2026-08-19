@@ -155,4 +155,3 @@ export function readPaginatedCount(source: Record<string, unknown>, key: string)
   const pageInfo = block === null ? null : readRecord(block, "pageInfo");
   return pageInfo === null ? 0 : (readDisplayNumber(pageInfo["countTotal"]) ?? 0);
 }
-
