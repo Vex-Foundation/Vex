@@ -200,7 +200,7 @@ function preflightSnapshot(overrides: Record<string, unknown> = {}) {
     ethereumBlockNumber: "23456789",
     lighterBlockNumber: "23456780",
     gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
-    gatewayImplementationAddress: null,
+    gatewayImplementationAddress: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
     gatewayCodeHash: `0x${"1".repeat(64)}`,
     settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     settlementTokenImplementationAddress: null,

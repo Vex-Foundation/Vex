@@ -92,7 +92,7 @@ function fresh(overrides: Partial<LighterDepositPreflightSnapshot> = {}): Lighte
     ethereumBlockNumber: "23456790",
     lighterBlockNumber: "0",
     gatewayAddress: GATEWAY,
-    gatewayImplementationAddress: null,
+    gatewayImplementationAddress: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
     gatewayCodeHash: `0x${"1".repeat(64)}`,
     settlementTokenAddress: USDC,
     settlementTokenImplementationAddress: null,

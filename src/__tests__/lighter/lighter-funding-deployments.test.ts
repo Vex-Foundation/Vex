@@ -16,6 +16,7 @@ describe("Lighter funding deployments", () => {
       restBaseUrl: LIGHTER_ENDPOINTS.core.restBaseUrl,
       wsBaseUrl: LIGHTER_ENDPOINTS.core.wsUrl,
       gatewayProxy: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+      expectedGatewayImplementation: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
       settlementTokenProxy: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
       settlementAllowanceStorageSlot: 10n,
       settlementSymbol: "USDC",
