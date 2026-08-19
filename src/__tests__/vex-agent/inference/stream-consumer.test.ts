@@ -114,12 +114,11 @@ describe("runStreamingInference — accumulation equivalence", () => {
     expect(res).toEqual({ content: "answer", toolCalls: null, usage: ZERO_USAGE, reasoning: "think more", ...NO_PROVENANCE });
   });
 
-  it("reasoning-only: content is empty string, toolCalls null", async () => {
-    const res = await run([
+  it("reasoning-only: rejects instead of silently repeating the turn", async () => {
+    await expect(run([
       { type: "reasoning", reasoningText: "just thinking" },
       { type: "done" },
-    ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: "just thinking", ...NO_PROVENANCE });
+    ])).rejects.toThrow("Inference provider returned an empty response");
   });
 
   it("stream ends without a done chunk: still assembles", async () => {
@@ -178,6 +177,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
 
   it("keeps the LAST finish reason but the FIRST generation id across repeated done chunks", async () => {
     const res = await run([
+      { type: "content", text: "done" },
       { type: "done", finishReason: "tool_calls", generationId: "gen-first" },
       { type: "done", finishReason: "stop", generationId: "gen-second" },
     ]);
@@ -197,12 +197,11 @@ describe("runStreamingInference — accumulation equivalence", () => {
     ]);
   });
 
-  it("all tool args malformed → falls through to text semantics", async () => {
-    const res = await run([
+  it("all tool args malformed → rejects instead of silently repeating the turn", async () => {
+    await expect(run([
       { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c1", toolCallName: "t", toolCallArgsDelta: "not json" },
       { type: "done" },
-    ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
+    ])).rejects.toThrow("Inference provider returned an empty response");
   });
 
   it("partially malformed tool args → only valid calls survive (tool path)", async () => {
@@ -406,6 +405,19 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     expect(res.response).toBe(FALLBACK);
     expect(res.aborted).toBe(false);
     expect(res.usageObserved).toBe(true);
+    expect(chatCompletion).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an empty buffered fallback instead of restarting the turn loop", async () => {
+    const chatCompletion = vi.fn().mockResolvedValue({
+      ...FALLBACK,
+      content: "",
+    });
+    const provider = { id: "fake", chatCompletion } as unknown as InferenceProvider;
+
+    await expect(
+      runStreamingInference(provider, MSGS, TOOLS, CFG),
+    ).rejects.toThrow("Inference provider returned an empty response");
     expect(chatCompletion).toHaveBeenCalledTimes(1);
   });
 });

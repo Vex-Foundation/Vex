@@ -35,6 +35,7 @@ import type {
 } from "./types.js";
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
+import { assertActionableInferenceResponse } from "./response-validation.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -181,6 +182,7 @@ async function bufferedFallback(
     context,
     signal,
   );
+  assertActionableInferenceResponse(response);
   return { response, aborted: false, usageObserved: true };
 }
 
@@ -378,6 +380,12 @@ export async function runStreamingInference(
           generationId,
           servingProvider,
         };
+
+  // A normal, non-aborted completion must contain final text or at least one
+  // valid tool call. Without this guard the engine treats an empty completion
+  // as "keep iterating" and can silently repeat the same paid request until
+  // the broad 50-iteration / 10-minute runtime bound fires.
+  if (!aborted) assertActionableInferenceResponse(response);
 
   return { response, aborted, usageObserved };
 }

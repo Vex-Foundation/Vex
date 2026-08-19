@@ -95,6 +95,15 @@ function eventStream(chunks: unknown[]) {
   };
 }
 
+function healthyEventStream() {
+  return eventStream([
+    {
+      id: "gen-stream-1",
+      choices: [{ index: 0, delta: { content: "ok" }, finishReason: "stop" }],
+    },
+  ]);
+}
+
 function envelopeOf(callIndex: number): Record<string, unknown> {
   return sendMock.mock.calls[callIndex][0] as Record<string, unknown>;
 }
@@ -124,7 +133,7 @@ describe("routing-metadata opt-in — exactly the two conversational sends", () 
   });
 
   it("chatCompletionStream opts in", async () => {
-    sendMock.mockResolvedValueOnce(eventStream([]));
+    sendMock.mockResolvedValueOnce(healthyEventStream());
     await drain(
       new OpenRouterProvider().chatCompletionStream(MESSAGES, [], makeConfig()),
     );
@@ -197,7 +206,7 @@ describe("cancellation reaches chat.send on every path", () => {
   });
 
   it("chatCompletionStream forwards a signal that the caller can abort", async () => {
-    sendMock.mockResolvedValueOnce(eventStream([]));
+    sendMock.mockResolvedValueOnce(healthyEventStream());
     const controller = new AbortController();
     await drain(
       new OpenRouterProvider().chatCompletionStream(
