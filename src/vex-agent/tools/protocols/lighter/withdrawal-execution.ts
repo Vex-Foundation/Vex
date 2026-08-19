@@ -124,7 +124,7 @@ export async function executeApprovedLighterWithdrawal(input: {
   const revalidated = await deps.intents.markPreSubmitRevalidated({
     intentId: plan.intentId,
     sessionId: plan.sessionId,
-    evidence: fresh as unknown as Record<string, unknown>,
+    evidence: Object.fromEntries(Object.entries(fresh)),
   });
   if (revalidated === null) throw blocked(`The approved ${profile.sourceName} withdrawal could not persist fresh pre-submit evidence.`);
 

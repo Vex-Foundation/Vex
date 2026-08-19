@@ -375,14 +375,15 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "market-research",
     groupLabel: "Market Research",
     summary:
-      "Managed Lighter onboarding and trading for everyday users, plus Core and Robinhood Chain market data, account reads, and approval-gated order preview/create.",
+      "Managed Lighter onboarding, trading, and secure withdrawals for everyday users, plus Core and Robinhood Chain market data and account reads.",
     whenToUse:
-      "Use when the user asks Vex to set up Lighter, says they want to trade Lighter perps, asks about Lighter markets or their account, or wants to preview/place an order. Managed onboarding resolves the selected wallet, account, API-key slot, nonce, and local credential internally; the user supplies only the deposit amount and approvals. Order placement is always preview-first and approval-gated.",
+      "Use when the user asks Vex to set up Lighter, trade Lighter perps, inspect markets or their account, place an order, or withdraw Core USDC or RHC USDG to their selected wallet. Managed onboarding and withdrawals resolve wallet, account, credential, nonce, and fixed destination internally. Fund movement is always approval-gated.",
     preferInstead:
       "Use `dexscreener` for broad multi-chain DEX pair research. Lighter order execution never happens directly from a chat request: it requires a fresh preview, an approval preparation, and the user approving the card in the host UI.",
     exampleQueries: [
       'discover_tools(query="set up my lighter account", namespace="lighter")',
       'discover_tools(query="I want to trade perps on lighter", namespace="lighter")',
+      'discover_tools(query="withdraw USDG from lighter rhc", namespace="lighter")',
       'discover_tools(query="rhc order book depth", namespace="lighter")',
     ],
     aliases: ["lighter", "rhc lighter", "lighter core", "lighter market data", "lighter order book"],
@@ -395,6 +396,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       "lighter system status",
       "set up my lighter account",
       "get me ready for lighter perps",
+      "withdraw from lighter",
     ],
     facets: [
       {
@@ -465,6 +467,19 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
           "place lighter order",
           "prepare trade approval",
           "approval gated order",
+        ],
+      },
+      {
+        label: "Secure withdrawals and claims",
+        summary:
+          "Prepare, execute, and reconcile approval-gated Core USDC or RHC USDG withdrawals, including a separately approved gateway claim only when required.",
+        toolPrefixes: ["lighter.withdraw"],
+        hints: [
+          "withdraw from lighter",
+          "cash out lighter collateral",
+          "withdraw rhc usdg",
+          "check lighter withdrawal",
+          "claim pending lighter withdrawal",
         ],
       },
     ],

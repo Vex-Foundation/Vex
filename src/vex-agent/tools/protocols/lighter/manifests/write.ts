@@ -64,11 +64,11 @@ const WITHDRAW_INTENT_ID_PARAM: ProtocolParamDef = {
   description: "Session-scoped environment-bound withdrawal intent produced by lighter.withdraw.prepare.",
 };
 
-const CORE_CLAIM_ID_PARAM: ProtocolParamDef = {
+const WITHDRAW_CLAIM_ID_PARAM: ProtocolParamDef = {
   key: "claimId",
   type: "string",
   required: true,
-  description: "Session-scoped manual Core claim id produced by lighter.withdraw.claim.prepare.",
+  description: "Session-scoped environment-bound manual settlement claim id produced by lighter.withdraw.claim.prepare.",
 };
 
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
@@ -77,7 +77,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare a separate Ethereum wallet approval for one exact claimable Lighter Core USDC withdrawal. Requires the durable withdrawal to be exactly claimable, the selected wallet to equal the fixed owner, modern gateway pending balance to equal the one withdrawal amount, reviewed Core gateway implementation/code and enabled asset-3 USDC mapping, successful zero-value typed-call simulation, fresh EIP-1559 fees, and enough ETH for the disclosed hard fee ceiling. Persists a separate claim attempt and never signs or broadcasts.",
+      "Prepare a separate settlement-wallet approval for one exact claimable Core USDC or RHC USDG withdrawal. Use when reconciliation reports that exact withdrawal as claimable. It requires the selected wallet to equal the fixed owner, exact pending amount, reviewed environment-specific gateway implementation/code and enabled asset-3 token mapping, successful zero-value call simulation, fresh fees, and enough ETH for the disclosed hard fee ceiling. Returns a durable claim id, amount, settlement network, fee ceiling, expiry, and separate host approval card. It never signs or broadcasts.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [WITHDRAW_INTENT_ID_PARAM],
@@ -89,10 +89,10 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-resume target for one exact manual Lighter Core USDC claim on Ethereum mainnet. Refuses direct, cross-session, stale, changed-amount, changed-contract, changed-calldata, insufficient-ETH, or over-ceiling fee execution. The local wallet signs only withdrawPendingBalance(owner,3,amount) with value zero; Vex persists hash/from/nonce before one raw broadcast, accepts only exact fee-only replacements, never retries ambiguity, and requires exact gateway event, USDC transfer, canonical block, zero pending balance, and 12 confirmations before final delivery.",
+      "Execute one exact separately approved Lighter manual settlement claim for Core USDC or RHC USDG. Use when the trusted host approval from lighter.withdraw.claim.prepare resumes. It refuses direct, cross-session, stale, changed-amount, changed-contract, insufficient-ETH, or over-ceiling execution. The local wallet signs only the fixed-owner asset-3 claim with value zero; Vex persists hash, sender, and nonce before one broadcast, accepts only exact fee-only replacements, and never retries ambiguity. Returns the claim id, transaction hash, confirming or ambiguous state, receipt status when known, and reconciliation guidance. Real funds move only to the fixed owner after approval.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
-    params: [CORE_CLAIM_ID_PARAM],
+    params: [WITHDRAW_CLAIM_ID_PARAM],
     exampleParams: { claimId: "lighter-withdrawal-claim-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.claim"],
   },
@@ -101,7 +101,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare one exact approval-gated secure withdrawal from the selected wallet's uniquely owned Lighter account: Core USDC to the same wallet on Ethereum mainnet, or RHC USDG to the same wallet on Robinhood Chain mainnet. The environment is mandatory and cannot be inferred from the address. Uses only the matching saved local credential; never accepts a private key, API-key index, nonce, destination override, fast route, or alternate chain. Live preflight proves exact ownership, collateral safety, no unresolved withdrawal, current delay/minimum, fresh reviewed gateway/token identity, and zero modern pending balance. Preparation persists a public immutable intent and creates the trusted approval card; it never signs or calls sendTx.",
+      "Prepare one exact approval-gated secure withdrawal from the selected wallet's uniquely owned Lighter account: Core USDC to the same wallet on Ethereum mainnet, or RHC USDG to the same wallet on Robinhood Chain mainnet. Use when the user asks to withdraw or cash out Lighter collateral. The environment is mandatory and cannot be inferred from the address. It uses only the matching saved local credential and refuses destination, route, chain, nonce, ownership, margin, gateway, or unresolved-state ambiguity. Returns a durable intent id, exact amount and destination, settlement network, withdrawal delay, expiry, and trusted approval card. It never signs or submits.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, WITHDRAW_AMOUNT_PARAM],
@@ -113,7 +113,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-resume target for one exact prepared Core-USDC or RHC-USDG secure withdrawal. Direct calls, cross-environment fields, and mismatched approvals are refused. After approval, Vex reruns the full environment-specific live preflight, matches the local encrypted credential to the registered public key, reserves the shared account/API-key nonce atomically, signs only TxType 13 asset 3 route 0 with the reviewed signer domain (304 Core or 466324 RHC), persists signed and submission-staged identity before sendTx, and never blindly retries ambiguity. API acceptance is not delivery; reconciliation must prove exact L2 and destination-chain settlement.",
+      "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter.withdraw.prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval; API acceptance is not final delivery.",
     mutating: true,
     actionKind: "external_post",
     params: [WITHDRAW_INTENT_ID_PARAM],

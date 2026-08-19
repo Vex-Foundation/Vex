@@ -429,13 +429,13 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Reconcile one durable Lighter Core secure USDC withdrawal from exact evidence. Reads the submitted TxType 13 transaction, authenticated paginated withdrawal history, current Ethereum gateway pending balance, and—when Lighter supplies an L1 hash—the canonical receipt and block. It adopts only one exact amount/time/history identity and marks final delivery only after one matching Core WithdrawPending event, one exact gateway-to-owner USDC transfer, canonical block membership, zero pending balance, and 12 confirmations. Missing, contradictory, or ambiguous evidence never triggers a retry. Omit intentId to check the latest withdrawal in this session.",
+      "Reconcile one durable Core USDC or RHC USDG withdrawal from exact evidence. Use when a submitted withdrawal is pending, claimable, completed, ambiguous, or needs final-delivery proof. It reads the environment-specific TxType 13 transaction, authenticated paginated history, current gateway pending balance, and any canonical destination receipt and block. It adopts only one exact amount/time/history identity and marks delivery only after a matching gateway event, exact token transfer to the owner, canonical block membership, zero pending balance, and 12 confirmations. Returns durable execution, approval, history, claim, destination, confirmation, and next-action fields. Missing or contradictory evidence never triggers a retry; omit intentId for the latest session withdrawal.",
     mutating: false,
     actionKind: "read",
     params: [{
       key: "intentId",
       type: "string",
-      description: "Optional session-scoped Core withdrawal intent id from lighter.withdraw.prepare or lighter.withdraw.",
+      description: "Optional session-scoped Core or RHC withdrawal intent id from lighter.withdraw.prepare or lighter.withdraw.",
     }],
     exampleParams: {},
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.status"],

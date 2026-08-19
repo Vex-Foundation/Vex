@@ -159,6 +159,8 @@ describe("capture contract — structural coverage", () => {
       "lighter.deposit",
       "lighter.key.register",
       "lighter.order.create",
+      "lighter.withdraw",
+      "lighter.withdraw.claim",
       "pendle.lp.add",
       "pendle.lp.addKeepYt",
       "pendle.lp.remove",

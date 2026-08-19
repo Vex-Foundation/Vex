@@ -96,7 +96,7 @@ export async function reconcileLighterWithdrawal(input: {
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     providerTxStatus: l2.status,
-    providerTxEvidence: l2 as unknown as Record<string, unknown>,
+    providerTxEvidence: Object.fromEntries(Object.entries(l2)),
     historyId: historyRow?.id ?? null,
     historyStatus: historyRow?.status ?? null,
     historyTimestamp: historyRow?.timestamp ?? null,
@@ -332,6 +332,7 @@ async function reconcileDestinationTransaction(input: {
       tokenAddress: input.intent.settlementTokenAddress,
       amountUnits: BigInt(input.intent.amountUnits),
     });
+    const publicProof = Object.fromEntries(Object.entries(proof));
     if (input.pendingBalance !== 0n) {
       return persist(input.repo, {
         ...input.common,
@@ -347,7 +348,7 @@ async function reconcileDestinationTransaction(input: {
       destinationBlockNumber: proof.blockNumber,
       destinationBlockHash: proof.blockHash,
       destinationConfirmations: proof.confirmations,
-      destinationEvidence: proof as unknown as Record<string, unknown>,
+      destinationEvidence: publicProof,
     });
     if (input.claimMode === "manual") {
       const recorded = await input.claims.markReconciledOutcome({
@@ -355,7 +356,7 @@ async function reconcileDestinationTransaction(input: {
         withdrawalIntentId: input.intent.intentId,
         transactionHash: proof.transactionHash,
         outcome: "confirmed",
-        receipt: proof as unknown as Record<string, unknown>,
+        receipt: publicProof,
       });
       if (!recorded) throw invalid("Finalized manual claim delivery could not update its durable attempt.");
     }

@@ -224,6 +224,11 @@ const entries: [string, MutationContract][] = [
   // It must never also enter the legacy trade/activity projection pipeline.
   ["lighter.deposit",          { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["lighter.key.register",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Lighter withdrawals and separately approved settlement claims own their
+  // durable truth in the withdrawal intent/claim tables. Neither path may
+  // duplicate fund movement into the legacy activity projection pipeline.
+  ["lighter.withdraw",         { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["lighter.withdraw.claim",   { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────

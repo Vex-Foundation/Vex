@@ -100,6 +100,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["orderExpiry", "absolute order expiry in epoch milliseconds; the relative twin is orderExpiryOffsetMinutes"],
   ["previewId", "persisted preview identifier returned by a preview tool; binds a prepare call to that exact preview"],
   ["intentId", "prepared execution-intent identifier returned by its prepare tool; binds the approved execute call"],
+  ["claimId", "prepared settlement-claim identifier; distinct from its parent withdrawal intent and separately approval-bound"],
   ["filter", "closed provider-side category/status filter declared with an enum"],
   ["resolution", "candle or chart bucket size declared with an enum"],
   ["startTimestamp", "epoch-millisecond start bound for time-series reads"],

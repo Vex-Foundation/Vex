@@ -172,59 +172,66 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.withdraw.prepare": {
     embeddingText: embeddingText(
-      `Prepare an exact secure USDC withdrawal from the selected wallet's Lighter Core account to the same wallet on Ethereum mainnet. ` +
-      `Use when the user asks to withdraw, cash out, or move Core USDC back to their wallet. Pass only the human-decimal amount; Vex resolves the saved account and key scope and refuses destination, route, chain, ownership, margin, gateway, or unresolved-state ambiguity. ` +
-      `Creates a trusted approval card after live Core and Ethereum preflight. It signs and moves nothing during preparation.`,
+      `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
+      `Use when: the user asks to withdraw, cash out, or move Lighter collateral back to their wallet. Pass the explicit environment and human-decimal amount; Vex resolves the account and local credential and refuses destination, route, ownership, margin, gateway, or unresolved-state ambiguity. ` +
+      `Returns a durable intent and trusted approval card after live preflight; preparation signs and moves nothing. ` +
+      `Example queries: withdraw 2 USDC from Lighter Core, withdraw 5 USDG from Lighter RHC.`,
     ),
     aliases: ["withdraw from lighter", "lighter core withdrawal", "withdraw usdc", "cash out lighter"],
     exampleIntents: ["withdraw 2 USDC from Lighter Core", "move my Core collateral back to my wallet"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "ethereum", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "low",
   },
   "lighter.withdraw": {
     embeddingText: embeddingText(
-      `Execute one exact prepared Lighter Core secure USDC withdrawal only after its trusted approval resumes. ` +
-      `Direct calls are refused. The privileged path revalidates live Core and Ethereum evidence, uses the encrypted local managed key, reserves the shared nonce, signs constrained TxType 13, stages durable identity, and submits once. ` +
-      `API acceptance is not delivery; final status requires L2 and Ethereum settlement proof, and uncertain outcomes are never blindly retried.`,
+      `Execute one exact prepared Core USDC or RHC USDG secure withdrawal only after its trusted approval resumes. ` +
+      `Use when: the host approval created by lighter.withdraw.prepare has been approved; direct model calls are refused. Vex revalidates the selected environment, owner, collateral, gateway, local credential, and shared nonce, stages durable transaction identity, and submits once. ` +
+      `Returns submitted hashes and provider acceptance or an ambiguous state; final delivery still requires Lighter and destination-chain proof, and uncertain outcomes are never retried. ` +
+      `Example queries: execute the approved Lighter withdrawal, resume my approved RHC USDG withdrawal.`,
     ),
     aliases: ["approved lighter withdrawal", "execute core usdc withdrawal"],
     exampleIntents: ["execute the approved Lighter Core withdrawal"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "ethereum", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
   "lighter.withdraw.status": {
     embeddingText: embeddingText(
-      `Check and reconcile a submitted Lighter Core secure USDC withdrawal without signing or retrying it. ` +
-      `Use when the withdrawal is pending, claimable, completed, ambiguous, or the user asks whether USDC reached Ethereum. ` +
-      `Final delivery requires exact TxType 13, history, gateway event, USDC transfer, canonical block, pending-balance, and confirmation evidence; provider labels alone are not final.`,
+      `Check and reconcile a submitted Core USDC or RHC USDG withdrawal without signing, submitting, or retrying it. ` +
+      `Use when: the withdrawal is pending, claimable, completed, ambiguous, or the user asks whether funds reached Ethereum or Robinhood Chain. It joins the exact Lighter transaction and history with gateway balance, event, token transfer, canonical block, and confirmation evidence. ` +
+      `Returns durable execution, claim, destination, confirmation, and next-action state; provider labels alone are never final delivery. ` +
+      `Example queries: check my Lighter withdrawal, did my RHC USDG reach my wallet.`,
     ),
     aliases: ["lighter withdrawal status", "check usdc withdrawal", "is lighter withdrawal complete"],
     exampleIntents: ["check my Lighter Core withdrawal", "did my USDC reach Ethereum"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "ethereum", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
   "lighter.withdraw.claim.prepare": {
     embeddingText: embeddingText(
-      `Prepare a separate Ethereum wallet approval to claim one exact Lighter Core USDC withdrawal that reconciliation has proven claimable. ` +
-      `Use only after withdrawal status reports claimable. It rechecks the reviewed gateway, exact pending amount, fixed owner, typed zero-value calldata, simulation, ETH balance, and fresh EIP-1559 fee ceiling. It never signs or broadcasts.`,
+      `Prepare a separate wallet approval to claim one exact Core USDC or RHC USDG withdrawal that reconciliation has proven claimable. ` +
+      `Use when: lighter.withdraw.status reports the exact withdrawal as claimable. Vex rechecks the reviewed environment-specific gateway, fixed owner, exact pending amount, zero-value transaction data, simulation, ETH balance, and fresh network-fee ceiling. ` +
+      `Returns a durable claim id, amount, network, fee ceiling, expiry, and separate host approval card; it never signs or broadcasts. ` +
+      `Example queries: prepare my pending Lighter claim, claim my RHC USDG withdrawal.`,
     ),
     aliases: ["prepare lighter withdrawal claim", "claim core usdc", "manual lighter claim"],
     exampleIntents: ["prepare the claim for my Core USDC withdrawal", "claim my pending lighter USDC"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "ethereum", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
   "lighter.withdraw.claim": {
     embeddingText: embeddingText(
-      `Resume one separately approved Lighter Core manual USDC claim on Ethereum. ` +
-      `The privileged wallet path revalidates exact pending balance and contract identity, enforces the approved fee ceiling, stages the computed hash before one raw broadcast, and never retries ambiguity. Final delivery still requires exact event, transfer, canonical block, and 12 confirmations.`,
+      `Execute one separately approved Core USDC or RHC USDG gateway claim on its settlement network. ` +
+      `Use when: the host approval created by lighter.withdraw.claim.prepare resumes; direct model calls are refused. Vex revalidates the fixed owner, exact pending balance, reviewed contract identity, and approved network-fee ceiling, then stages the transaction hash before one broadcast and never retries ambiguity. ` +
+      `Returns the claim hash and confirming or ambiguous state; final delivery still requires exact event, transfer, canonical block, zero pending balance, and 12 confirmations. ` +
+      `Example queries: execute my approved Lighter claim, resume the approved RHC USDG claim.`,
     ),
     aliases: ["execute lighter withdrawal claim", "approved core usdc claim"],
     exampleIntents: ["execute the approved Core USDC claim"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "ethereum", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
