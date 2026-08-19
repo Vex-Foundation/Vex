@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
-import { query, queryOne, queryOneWith } from "../client.js";
+import { query, queryOne, queryOneWith, type Executor } from "../client.js";
 import { jsonb, jsonbByteLength } from "../params.js";
 
 export type LighterOrderLifecycleAction =
@@ -210,6 +210,30 @@ export async function attachNonceReservation(input: {
   readonly reservationId: string;
   readonly nonceValue: string;
 }): Promise<LighterOrderLifecycleIntentRow | null> {
+  return attachNonceReservationUsing(undefined, input);
+}
+
+export async function attachNonceReservationWith(
+  client: Executor,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly reservationId: string;
+    readonly nonceValue: string;
+  },
+): Promise<LighterOrderLifecycleIntentRow | null> {
+  return attachNonceReservationUsing(client, input);
+}
+
+async function attachNonceReservationUsing(
+  client: Executor | undefined,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly reservationId: string;
+    readonly nonceValue: string;
+  },
+): Promise<LighterOrderLifecycleIntentRow | null> {
   requireDecimal("nonceValue", input.nonceValue, true);
   return transition(
     `UPDATE lighter_order_lifecycle_intents
@@ -220,6 +244,7 @@ export async function attachNonceReservation(input: {
         AND nonce_reservation_id IS NULL AND nonce_value IS NULL
       RETURNING ${COLUMNS}`,
     [input.intentId, input.sessionId, input.reservationId, input.nonceValue],
+    client,
   );
 }
 
@@ -323,8 +348,14 @@ export async function listRepairable(limit = 100): Promise<LighterOrderLifecycle
   return rows.map(mapRow);
 }
 
-async function transition(sql: string, params: unknown[]): Promise<LighterOrderLifecycleIntentRow | null> {
-  const row = await queryOne<Record<string, unknown>>(sql, params);
+async function transition(
+  sql: string,
+  params: unknown[],
+  client?: Executor,
+): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = client === undefined
+    ? await queryOne<Record<string, unknown>>(sql, params)
+    : await queryOneWith<Record<string, unknown>>(client, sql, params);
   return row === null ? null : mapRow(row);
 }
 
