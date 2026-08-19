@@ -4,7 +4,7 @@ import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/l
 import { ErrorCodes, VexError } from "../../../errors.js";
 import { LIGHTER_SIGNER_CHAIN_IDS } from "../signer-adapter.js";
 import { defaultLighterTradingVaultCredentialId } from "../trading-credentials.js";
-import { LIGHTER_DEPOSIT_CHAIN_ID } from "./constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 
 export interface LighterKeyRegistrationApprovalDisclosure {
   readonly environmentLabel: string;
@@ -27,8 +27,9 @@ export interface LighterKeyRegistrationApprovalDisclosure {
 export function buildLighterKeyRegistrationApprovalDisclosure(
   intent: LighterKeyRegistrationReservationRow,
 ): LighterKeyRegistrationApprovalDisclosure {
-  if (intent.environment !== "core" || intent.chainId !== LIGHTER_DEPOSIT_CHAIN_ID) {
-    throw unavailable("Key registration is available on Lighter Core only in this release.");
+  const deployment = getLighterFundingDeployment(intent.environment);
+  if (intent.chainId !== deployment.settlementChainId) {
+    throw unavailable("The key-registration settlement chain does not match its environment.");
   }
   if (!/^0x[0-9a-fA-F]{40}$/.test(intent.walletAddress)) {
     throw unavailable("The key-registration wallet address is invalid.");
@@ -76,16 +77,18 @@ export function buildLighterKeyRegistrationApprovalDisclosure(
     + "withdrawal and every trade behind separate approval paths.";
   const signatureNote =
     "Your Vex wallet will sign Lighter's human-readable Register Lighter Account message locally. "
-    + "This is an off-chain EIP-191 signature and does not send an Ethereum transaction or charge gas.";
+    + "This is an off-chain EIP-191 signature and does not send a settlement-chain transaction or charge gas.";
   const scopeNote =
     "This approval authorizes only registering this exact public key at this exact account, API-key "
     + "index, and nonce. It does not authorize a deposit, order, transfer, or withdrawal.";
 
   return {
-    environmentLabel: "Lighter Core",
+    environmentLabel: intent.environment === "core" ? "Lighter Core" : "Lighter on Robinhood Chain",
     walletAddress: intent.walletAddress,
-    ethereumChainId: LIGHTER_DEPOSIT_CHAIN_ID,
-    lighterChainId: LIGHTER_SIGNER_CHAIN_IDS.core,
+    // Retain the established approval-contract field name for compatibility;
+    // on RHC this contains settlement chain 4663, not the Lighter signer domain.
+    ethereumChainId: deployment.settlementChainId,
+    lighterChainId: LIGHTER_SIGNER_CHAIN_IDS[intent.environment],
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
     registrationNonce,
@@ -97,7 +100,9 @@ export function buildLighterKeyRegistrationApprovalDisclosure(
     signatureNote,
     scopeNote,
     summary:
-      `Register encrypted Vex trading key ${publicKeyFingerprintDisplay} at Lighter Core `
+      `Register encrypted Vex trading key ${publicKeyFingerprintDisplay} at ${
+        intent.environment === "core" ? "Lighter Core" : "Lighter RHC"
+      } `
       + `account ${intent.accountIndex}, API-key index ${intent.apiKeyIndex}.`,
   };
 }

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import type { LighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import { selectAvailableLighterApiKeyIndex } from "@tools/lighter/wallet-funding/api-key-slots.js";
-import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import {
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
@@ -767,8 +767,11 @@ async function findAnyHeldReservationWith(
 }
 
 function assertReservationInput(input: ReserveLighterApiKeySlotInput, now: Date): void {
-  if (input.environment !== "core" || input.chainId !== LIGHTER_DEPOSIT_CHAIN_ID) {
-    throw new Error("Phase 3 key registration currently supports Lighter Core on Ethereum mainnet only.");
+  const deployment = getLighterFundingDeployment(input.environment);
+  if (input.chainId !== deployment.settlementChainId) {
+    throw new Error(
+      `Lighter ${input.environment} key registration requires settlement chain ${deployment.settlementChainId}.`,
+    );
   }
   if (!/^0x[0-9a-fA-F]{40}$/.test(input.walletAddress)) {
     throw new Error("Lighter API-key slot reservation requires a valid EVM wallet address.");

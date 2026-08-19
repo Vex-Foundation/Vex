@@ -145,7 +145,13 @@ describe("Lighter signer binary adapter", () => {
     });
   });
 
-  it("runs official CheckClient through a separate privileged surface", async () => {
+  it.each([
+    ["core", 304],
+    ["rhc", 466324],
+  ] as const)("runs official CheckClient for %s through a separate privileged surface", async (
+    environment,
+    chainId,
+  ) => {
     const calls: LighterSignerBinaryRunRequest[] = [];
     const checker = createLighterRegisteredKeyCheckerBinary({
       binaryPath: "/tmp/vex-lighter-signer-test",
@@ -156,7 +162,7 @@ describe("Lighter signer binary adapter", () => {
     });
 
     await expect(checker.check({
-      environment: "core",
+      environment,
       accountIndex: 42,
       apiKeyIndex: 7,
       secret: materialFromSecret(PRIVATE_KEY),
@@ -164,7 +170,7 @@ describe("Lighter signer binary adapter", () => {
     expect(calls[0]?.payload).toEqual({
       operation: "checkClient",
       privateKey: PRIVATE_KEY,
-      chainId: 304,
+      chainId,
       accountIndex: "42",
       apiKeyIndex: 7,
     });

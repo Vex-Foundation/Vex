@@ -234,6 +234,25 @@ func TestCheckClientRejectsMismatchedRegisteredPublicKey(t *testing.T) {
 	}
 }
 
+func TestRegistrationBaseURLBindsCoreAndRHCSignerDomains(t *testing.T) {
+	tests := []struct {
+		chainID uint32
+		wantURL string
+	}{
+		{chainID: lighterCoreChainID, wantURL: lighterCoreBaseURL},
+		{chainID: lighterRHCChainID, wantURL: lighterRHCBaseURL},
+	}
+	for _, test := range tests {
+		got, err := registrationBaseURL(test.chainID)
+		if err != nil || got != test.wantURL {
+			t.Fatalf("registrationBaseURL(%d) = %q, %v; want %q", test.chainID, got, err, test.wantURL)
+		}
+	}
+	if _, err := registrationBaseURL(4663); err == nil {
+		t.Fatal("settlement chain 4663 must not be accepted as a Lighter signer domain")
+	}
+}
+
 func TestReadRequestRejectsReservedAPIKeyIndexes(t *testing.T) {
 	_, err := readRequest(strings.NewReader(`{
 		"operation": "signCreateOrder",

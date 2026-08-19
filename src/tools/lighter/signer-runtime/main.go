@@ -24,6 +24,8 @@ const maxInputBytes = 32 * 1024
 const maxRegistrationNonce = int64(1<<48 - 1)
 const lighterCoreChainID = uint32(304)
 const lighterCoreBaseURL = "https://mainnet.zklighter.elliot.ai"
+const lighterRHCChainID = uint32(466324)
+const lighterRHCBaseURL = "https://api.rh.lighter.xyz"
 
 var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
@@ -148,8 +150,8 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, nil
 	}
 	if request.Operation == "checkClient" {
-		if request.ChainID != lighterCoreChainID {
-			return request, fmt.Errorf("invalid core chain id")
+		if !isSupportedRegistrationChainID(request.ChainID) {
+			return request, fmt.Errorf("invalid registration chain id")
 		}
 		return request, nil
 	}
@@ -158,8 +160,8 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		if err != nil || nonce > maxRegistrationNonce {
 			return request, fmt.Errorf("invalid nonce")
 		}
-		if request.ChainID != lighterCoreChainID {
-			return request, fmt.Errorf("invalid core chain id")
+		if !isSupportedRegistrationChainID(request.ChainID) {
+			return request, fmt.Errorf("invalid registration chain id")
 		}
 		if _, err := parsePositiveInt64(request.ExpiredAt, "expiry"); err != nil {
 			return request, fmt.Errorf("invalid expiry")
@@ -209,7 +211,26 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 }
 
 func checkClient(request signerRequest) (signerResponse, error) {
-	return checkClientAtBaseURL(request, lighterCoreBaseURL)
+	baseURL, err := registrationBaseURL(request.ChainID)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return checkClientAtBaseURL(request, baseURL)
+}
+
+func isSupportedRegistrationChainID(chainID uint32) bool {
+	return chainID == lighterCoreChainID || chainID == lighterRHCChainID
+}
+
+func registrationBaseURL(chainID uint32) (string, error) {
+	switch chainID {
+	case lighterCoreChainID:
+		return lighterCoreBaseURL, nil
+	case lighterRHCChainID:
+		return lighterRHCBaseURL, nil
+	default:
+		return "", fmt.Errorf("unsupported registration chain id")
+	}
 }
 
 func checkClientAtBaseURL(request signerRequest, baseURL string) (signerResponse, error) {

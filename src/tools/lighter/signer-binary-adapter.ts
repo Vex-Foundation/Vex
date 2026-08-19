@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { ErrorCodes, VexError } from "../../errors.js";
+import type { LighterEnvironment } from "./constants.js";
 import type {
   LighterChangePubKeySignerAdapter,
   LighterChangePubKeySignerResult,
@@ -120,7 +121,7 @@ export interface LighterApiKeyGenerator {
 }
 
 export interface LighterRegisteredKeyCheckInput {
-  readonly environment: "core";
+  readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly secret: LighterTradingSecretMaterial;
@@ -278,7 +279,7 @@ export function createLighterRegisteredKeyCheckerBinary(
         payload: {
           operation: "checkClient",
           privateKey: input.secret.privateKey,
-          chainId: LIGHTER_SIGNER_CHAIN_IDS.core,
+          chainId: LIGHTER_SIGNER_CHAIN_IDS[input.environment],
           accountIndex: String(input.accountIndex),
           apiKeyIndex: input.apiKeyIndex,
         },

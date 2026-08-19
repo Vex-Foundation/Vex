@@ -145,6 +145,39 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(client.query.mock.calls[3]?.[1]).toEqual(["core", WALLET, 6, 42]);
   });
 
+  it("reserves the same conservative slot range for an RHC account on settlement chain 4663", async () => {
+    const rhcInput: ReserveLighterApiKeySlotInput = {
+      ...INPUT,
+      environment: "rhc",
+      chainId: 4663,
+    };
+    const rhcRow = {
+      ...reservationRow(5),
+      environment: "rhc",
+      chain_id: 4663,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{
+            workflow_state: "account_resolved",
+            resolved_account_index: 42,
+            api_key_index: null,
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [rhcRow], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 }),
+    };
+
+    await expect(reserveLighterApiKeySlotWith(client as never, rhcInput)).resolves.toMatchObject({
+      outcome: "created",
+      reservation: { environment: "rhc", chainId: 4663, apiKeyIndex: 5 },
+    });
+    expect(client.query.mock.calls[3]?.[1]).toEqual(["rhc", WALLET, 5, 42]);
+  });
+
   it("returns the durable reservation when another session already owns the workflow slot", async () => {
     const client = {
       query: vi.fn()

@@ -58,6 +58,22 @@ describe("Lighter key-registration approval disclosure", () => {
     expect(disclosure.authorityNote).toContain("withdrawal");
   });
 
+  it("binds RHC settlement and signer domains without changing the credential scope", () => {
+    const disclosure = buildLighterKeyRegistrationApprovalDisclosure(intent({
+      environment: "rhc",
+      chainId: 4663,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-6",
+    }));
+
+    expect(disclosure).toMatchObject({
+      environmentLabel: "Lighter on Robinhood Chain",
+      ethereumChainId: 4663,
+      lighterChainId: 466324,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-6",
+    });
+    expect(disclosure.summary).toContain("Lighter RHC");
+  });
+
   it.each([
     { publicKey: "00".repeat(40) },
     { publicKeyFingerprint: "f".repeat(64) },
@@ -65,7 +81,7 @@ describe("Lighter key-registration approval disclosure", () => {
     { registrationNonce: null },
     { registrationNonce: "01" },
     { apiKeyIndex: 3 },
-    { environment: "rhc" as const },
+    { environment: "rhc" as const, chainId: 1 },
   ])("fails closed when persisted approval material is inconsistent: %o", (override) => {
     expect(() => buildLighterKeyRegistrationApprovalDisclosure(
       intent(override as Partial<LighterKeyRegistrationReservationRow>),

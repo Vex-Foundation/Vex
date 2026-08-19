@@ -16,8 +16,9 @@ const PUBLIC_KEY = "ab".repeat(40);
 const L1_SIGNATURE = `0x${"11".repeat(64)}1b`;
 const WALLET_ADDRESS = "0x1111111111111111111111111111111111111111";
 
-function signingInput() {
+function signingInput(environment: "core" | "rhc" = "core") {
   return buildLighterChangePubKeySigningInput({
+    environment,
     accountIndex: 42,
     apiKeyIndex: 7,
     nonce: "0",
@@ -101,6 +102,22 @@ describe("Lighter L2ChangePubKey signer boundary", () => {
     });
     expect(JSON.stringify(input)).not.toContain(L1_SIGNATURE);
     expect(JSON.stringify(result)).not.toContain("L1Sig");
+  });
+
+  it("uses the RHC signer domain while preserving the exact TxType 8 boundary", async () => {
+    const calls: LighterSignerBinaryRunRequest[] = [];
+    const input = signingInput("rhc");
+    const signer = createLighterChangePubKeySignerBinary({
+      runner: async (request) => {
+        calls.push(request);
+        return helperOutput({ messageToSign: input.messageToSign });
+      },
+    });
+
+    const result = await signLighterChangePubKeyWithAdapter(input, signer);
+    expect(result).toMatchObject({ environment: "rhc", txType: 8 });
+    expect(calls[0]?.payload).toMatchObject({ chainId: 466324 });
+    expect(calls[0]?.payload).not.toMatchObject({ chainId: 4663 });
   });
 
   it("rejects helper drift in the message, transaction fields, type, or hash", async () => {

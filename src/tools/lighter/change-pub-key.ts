@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 
 import { ErrorCodes, VexError } from "../../errors.js";
+import type { LighterEnvironment } from "./constants.js";
 import {
   LIGHTER_SIGNER_CHAIN_IDS,
   LIGHTER_SIGNER_UINT48_MAX,
@@ -16,8 +17,8 @@ const INT64_MAX = (1n << 63n) - 1n;
 
 export interface LighterChangePubKeySigningInput {
   readonly kind: "lighter_change_pub_key_signing_input";
-  readonly environment: "core";
-  readonly chainId: typeof LIGHTER_SIGNER_CHAIN_IDS.core;
+  readonly environment: LighterEnvironment;
+  readonly chainId: number;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly nonce: string;
@@ -31,7 +32,7 @@ export interface LighterChangePubKeySigningInput {
 
 export interface LighterChangePubKeySignerResult {
   readonly kind: "lighter_change_pub_key_signer_result";
-  readonly environment: "core";
+  readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly nonce: string;
@@ -81,6 +82,7 @@ export function buildLighterChangePubKeySignatureBody(input: {
 }
 
 export function buildLighterChangePubKeySigningInput(input: {
+  readonly environment?: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly nonce: string;
@@ -90,6 +92,7 @@ export function buildLighterChangePubKeySigningInput(input: {
   readonly l1Signature: string;
   readonly secret: LighterTradingSecretMaterial;
 }): LighterChangePubKeySigningInput {
+  const environment = input.environment ?? "core";
   const accountIndex = requireSafePositiveInteger("accountIndex", input.accountIndex);
   const apiKeyIndex = requireApiKeyIndex(input.apiKeyIndex);
   const nonce = requireDecimalInteger("nonce", input.nonce, LIGHTER_SIGNER_UINT48_MAX, true);
@@ -99,8 +102,8 @@ export function buildLighterChangePubKeySigningInput(input: {
   const l1Signature = normalizeL1Signature(input.l1Signature);
   const signingInput = {
     kind: "lighter_change_pub_key_signing_input",
-    environment: "core",
-    chainId: LIGHTER_SIGNER_CHAIN_IDS.core,
+    environment,
+    chainId: LIGHTER_SIGNER_CHAIN_IDS[environment],
     accountIndex,
     apiKeyIndex,
     nonce,

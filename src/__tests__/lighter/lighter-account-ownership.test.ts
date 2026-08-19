@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import {
+  readUniqueLighterCoreMasterAccount,
+  readUniqueLighterMasterAccount,
+} from "@tools/lighter/wallet-funding/account-ownership.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const OTHER_WALLET = "0xF0E6c8832d8A045a579c0DeB5C33e00c67dA5cBf";
@@ -38,6 +41,22 @@ describe("Lighter Core account ownership resolution", () => {
     expect(getAccountsByL1Address).toHaveBeenNthCalledWith(2, "core", {
       l1Address: WALLET,
       cursor: "page-2",
+    });
+  });
+
+  it("binds RHC ownership reads to the RHC account namespace", async () => {
+    const getAccountsByL1Address = vi.fn().mockResolvedValue(response([
+      { account_type: 0, index: 142, l1_address: WALLET },
+    ]));
+
+    await expect(readUniqueLighterMasterAccount(
+      { getAccountsByL1Address } as never,
+      "rhc",
+      WALLET,
+    )).resolves.toBe(142);
+    expect(getAccountsByL1Address).toHaveBeenCalledWith("rhc", {
+      l1Address: WALLET,
+      cursor: undefined,
     });
   });
 
