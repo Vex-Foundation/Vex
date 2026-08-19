@@ -77,6 +77,7 @@ export interface VexConfig {
     dexScreenerApiUrl: string;
     trenchExpressApiUrl: string;
     trenchExpressTestnetApiUrl: string;
+    poolsFunApiUrl: string;
     virtualsApiUrl: string;
     pendleApiUrl: string;
     kyberswapAggregatorUrl: string;
@@ -140,6 +141,7 @@ export function getDefaultConfig(): VexConfig {
       dexScreenerApiUrl: "https://api.dexscreener.com",
       trenchExpressApiUrl: "https://api.trench.express",
       trenchExpressTestnetApiUrl: "https://api-testnet.trench.express",
+      poolsFunApiUrl: "https://api.bankr.bot",
       virtualsApiUrl: "https://api.virtuals.io",
       pendleApiUrl: "https://api-v2.pendle.finance/core",
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",

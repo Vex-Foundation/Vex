@@ -317,6 +317,12 @@ describe("recoverStaleHashlessIntents", () => {
         // whose router takes no fee parameter: EVM-only, locally signed, owned
         // by no sweep, and definitively not-attempted when it is never signed.
         "swap_fee",
+        // Migration 079 (the pools.fun Vex fee). The same leg once more, on a
+        // launchpad with no Solana deployment: EVM-only, locally signed, owned
+        // by no sweep, and definitively not-attempted when it is never signed.
+        // `pools_claim` is deliberately ABSENT - a claim is the primary
+        // transaction of its own execution, not a dependent leg.
+        "pools_fee",
       ].sort(),
     );
   });
@@ -343,6 +349,8 @@ describe("recoverStaleHashlessIntents", () => {
       "token_launch", "trench_fee",
       // Uniswap has no Solana deployment — its fee leg is EVM-only too.
       "swap_fee",
+      // pools.fun is Robinhood Chain (4663) only, so its fee leg is EVM-only.
+      "pools_fee",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

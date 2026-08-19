@@ -13,6 +13,16 @@ import type { PoolClient } from "pg";
 export type TokenLaunchIntentOrigin = "user" | "agent_requested_form" | "agent";
 
 export type TokenLaunchIntentStatus =
+  /**
+   * ADVISORY, and NON-LIVE by construction (migration 079). A pools.fun preview
+   * writes one of these so Agent Scan can surface previews from intents rather
+   * than from hashless activity rows. It carries no authorization and no hash -
+   * the database refuses one that does - consumes no launch ceiling, takes no
+   * image lock, and CANNOT transition into signing: the signing path
+   * CAS-consumes an `authorization_id`, and a previewed row has none, so a real
+   * launch must start a fresh intent.
+   */
+  | "previewed"
   | "awaiting_user_form"
   | "authorized"
   | "consuming"
@@ -164,11 +174,38 @@ export interface TokenLaunchIntent {
    */
   authorizationJson: unknown;
   expiresAt: string;
+  /** Migration 079: which launchpad this intent belongs to. */
+  protocol: TokenLaunchIntentProtocol;
+  /** Migration 079: pools.fun fields, `null` on a Trench intent. */
+  pools: PoolsLaunchIntentFields | null;
   consumedAt: string | null;
   cancelledAt: string | null;
   broadcastAt: string | null;
   confirmedAt: string | null;
   createdAt: string;
+}
+
+/** The launchpad an intent belongs to (migration 079's discriminator). */
+export type TokenLaunchIntentProtocol = "trench" | "pools_fun";
+
+/**
+ * pools.fun launch fields.
+ *
+ * `pairedAsset` is the SYMBOLIC pair; `pairedAssetAddress` is the address the
+ * calldata verifier proved it maps to. Both are stored because the verifier's
+ * job is to show they agree, and a record keeping only one could not be audited
+ * afterwards.
+ */
+export interface PoolsLaunchIntentFields {
+  readonly pairedAsset: "weth" | "usdg";
+  readonly pairedAssetAddress?: string | null | undefined;
+  /** The RESOLVED recipient address, whatever choice produced it. */
+  readonly feeRecipientAddress?: string | null | undefined;
+  readonly metadataUri?: string | null | undefined;
+  readonly imageUrl?: string | null | undefined;
+  readonly predictedTokenAddress?: string | null | undefined;
+  readonly gatewayAddress?: string | null | undefined;
+  readonly deploymentFeeWei?: string | null | undefined;
 }
 
 export interface CreateTokenLaunchIntentInput {
@@ -182,7 +219,12 @@ export interface CreateTokenLaunchIntentInput {
    * narrowed to those two: defaulting it would make one of the two paths
    * silently wrong, and every other status must be reached by a CAS transition.
    */
-  status: Extract<TokenLaunchIntentStatus, "awaiting_user_form" | "authorized">;
+  /**
+   * The ENTRY state. `previewed` joins the two live entries because a pools.fun
+   * preview is created directly in it and never transitions out - see the
+   * status union.
+   */
+  status: Extract<TokenLaunchIntentStatus, "previewed" | "awaiting_user_form" | "authorized">;
   chainId: number;
   walletAddress: string;
   name: string;
@@ -216,6 +258,18 @@ export interface CreateTokenLaunchIntentInput {
    * that expires at a different moment from the form it resumes is how a turn
    * hangs or resumes against a form the user can still submit.
    */
+  /**
+   * WHICH LAUNCHPAD this intent belongs to (migration 079). Defaults to
+   * `"trench"` in the database, so an omitted value keeps every existing caller
+   * writing exactly the rows it wrote before.
+   */
+  protocol?: TokenLaunchIntentProtocol | undefined;
+  /**
+   * The pools.fun launch fields. All optional and all meaningless on a Trench
+   * intent, which has no pair (its curve is ETH by construction). The database
+   * requires `pairedAsset` on any `pools_fun` row.
+   */
+  pools?: PoolsLaunchIntentFields | undefined;
   expiresAt: string;
 }
 
@@ -251,7 +305,12 @@ export const SELECT_COLUMNS =
   "resume_closed_reason, " +
   "tx_hash, token_address, " +
   "failure_reason, authorization_json, expires_at, consumed_at, cancelled_at, broadcast_at, " +
-  "confirmed_at, created_at";
+  "confirmed_at, created_at, " +
+  // Migration 079. Selected for every reader so a pools intent can be READ back
+  // as a pools intent - a field that can be written but not read is half a
+  // feature, and Agent Scan needs `protocol` to surface previews distinctly.
+  "protocol, paired_asset, paired_asset_address, fee_recipient_address, " +
+  "metadata_uri, image_url, predicted_token_address, gateway_address, deployment_fee_wei";
 
 export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
   return {
@@ -282,6 +341,22 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     failureReason: (r.failure_reason as string | null) ?? null,
     authorizationJson: r.authorization_json ?? null,
     expiresAt: toIso(r.expires_at as string | Date),
+    protocol: (r.protocol as TokenLaunchIntentProtocol | null) ?? "trench",
+    // The whole pools block is null on a Trench intent rather than an object of
+    // nulls: "this launchpad has no such fields" and "these fields are empty"
+    // are different statements, and only the first is true here.
+    pools: r.paired_asset === null || r.paired_asset === undefined
+      ? null
+      : {
+        pairedAsset: r.paired_asset as "weth" | "usdg",
+        pairedAssetAddress: (r.paired_asset_address as string | null) ?? null,
+        feeRecipientAddress: (r.fee_recipient_address as string | null) ?? null,
+        metadataUri: (r.metadata_uri as string | null) ?? null,
+        imageUrl: (r.image_url as string | null) ?? null,
+        predictedTokenAddress: (r.predicted_token_address as string | null) ?? null,
+        gatewayAddress: (r.gateway_address as string | null) ?? null,
+        deploymentFeeWei: (r.deployment_fee_wei as string | null) ?? null,
+      },
     consumedAt: toIsoOrNull(r.consumed_at as string | Date | null),
     cancelledAt: toIsoOrNull(r.cancelled_at as string | Date | null),
     broadcastAt: toIsoOrNull(r.broadcast_at as string | Date | null),

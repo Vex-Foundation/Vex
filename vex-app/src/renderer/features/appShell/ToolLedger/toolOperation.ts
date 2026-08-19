@@ -33,7 +33,7 @@
  *    `toolId` shape — every other curated `execute_tool` act is `unproven` and
  *    is labelled.
  *  - The ONE exception is the CURATED EXACT-ID map below (`TOOL_ID_OPERATIONS`,
- *    Trench Express today). Those protocols have no top-level tool name of
+ *    Trench Express and pools.fun today). Those protocols have no top-level tool name of
  *    their own — the engine dispatches them by that exact `toolId` string — so
  *    the id is load-bearing ROUTING input, matched here whole against a set we
  *    wrote, never a shape inferred from attacker-chosen text. A name outside
@@ -79,7 +79,8 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * Curated EXACT `toolId` → operation, for protocols the engine addresses only
- * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * through `execute_tool` (Trench Express and pools.fun,
+ * `tools/protocols/{trench,pools}/manifests/`).
  * `null` means the act carries no money legs at all: a read, or a `local_write`
  * that drafts a row and spends nothing (`trench.launch_request_form`, which the
  * manifest marks `mutating: true` for APPROVAL-GATE reasons — no funds move, so
@@ -102,6 +103,23 @@ const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
   ["trench.launch_preview", "quote"],
   ["trench.trade_execute", "mutating"],
   ["trench.launch_execute", "mutating"],
+
+  // pools.fun (`tools/protocols/pools/manifests/`). The five reads carry no
+  // money legs at all; without these rows the fall-through would label each one
+  // "unproven" and draw a leg line under a market-data call.
+  ["pools.tokens", null],
+  ["pools.search", null],
+  ["pools.candles", null],
+  ["pools.token", null],
+  ["pools.my_launches", null],
+  // `launch_request_form` drafts a row and spends nothing, exactly like its
+  // Trench counterpart. `launch_preview` is ADVISORY: it prices a launch and
+  // writes a `previewed` intent row, but signs nothing, so it is a quote and
+  // must never render as an executed launch.
+  ["pools.launch_request_form", null],
+  ["pools.launch_preview", "quote"],
+  ["pools.launch_execute", "mutating"],
+  ["pools.claim_fees", "mutating"],
 
   // Swap and bridge acts, verified against the manifests. Relay's mutating tool
   // is the two-segment `relay.bridge` and its quote is `relay.quote.get`; same

@@ -101,6 +101,18 @@ export type VexDomain =
    */
   | "tokenLaunch"
   /**
+   * pools.fun launches and creator-fee claims (P3), over the two-stage
+   * `prepare`/`deploy` contract.
+   *
+   * It mints NO error code of its own. The runtime's named refusal kinds map
+   * onto codes that already exist — `validation.invalid_input`,
+   * `wallets.invalid_selection`, `wallet.insufficient_funds`, and
+   * `internal.unexpected` for the classes that are OUR read or OUR verifier
+   * refusing rather than the user's input. A domain is a routing and ownership
+   * label; the wire's code surface is unchanged.
+   */
+  | "poolsLaunch"
+  /**
    * Used by the read-only `sessions.getModel` handler (global runtime
    * model resolution). Existing sessions handlers
    * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep

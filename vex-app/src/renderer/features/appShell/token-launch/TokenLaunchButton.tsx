@@ -15,14 +15,22 @@
  */
 
 import { useState, type JSX } from "react";
-import { TokenLaunchDialog } from "../TokenLaunchDialog.js";
+import { TokenLaunchDialog, type LaunchPlatform } from "../TokenLaunchDialog.js";
 
 export function TokenLaunchButton({
   sessionId,
   className,
+  platform,
+  onPlatformChange,
 }: {
   readonly sessionId: string | null;
   readonly className?: string;
+  /**
+   * The launchpad the host's chips have selected. Omitted, the dialog owns the
+   * choice itself — this control stays usable on its own.
+   */
+  readonly platform?: LaunchPlatform;
+  readonly onPlatformChange?: (next: LaunchPlatform) => void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
 
@@ -43,6 +51,8 @@ export function TokenLaunchButton({
         onOpenChange={setOpen}
         sessionId={sessionId}
         origin="user"
+        platform={platform}
+        onPlatformChange={onPlatformChange}
       />
     </>
   );

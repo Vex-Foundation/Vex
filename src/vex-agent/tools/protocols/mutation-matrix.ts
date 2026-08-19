@@ -116,6 +116,28 @@ const entries: [string, MutationContract][] = [
   // `capture: "none"` and a placeholder `expectedType` — no `_tradeCapture`
   // ever exists for it.
   ["trench.launch_request_form", { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // pools.fun's two LOCAL-WRITE launch tools. Both are `mutating: true` because
+  // each writes a durable row, and neither signs anything: `launch_preview`
+  // records an advisory `previewed` intent (non-live by database CHECK - no
+  // authorization, no hash), and `launch_request_form` opens the app's form and
+  // parks the turn. `capture: "none"` on both, for the same reason the trench
+  // form row has it: there is no on-chain effect to capture.
+  ["pools.launch_preview",       { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pools.launch_request_form",  { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The pools.fun LAUNCH itself, shaped exactly like `trench.launch_execute`:
+  // the handler writes its `kind: "launch"` row directly across the staged
+  // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
+  // out of it, and `kind: "trade"` because a launch with a prebuy acquires a
+  // position - the launch and its prebuy are ONE transaction and ONE row. No
+  // dryRun: the read-only estimate is the separate `pools.launch_preview` tool.
+  ["pools.launch_execute",       { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The creator-fee claim. `capture: "none"` for the same reason as every other
+  // staged-write handler here: it writes its own row across the lifecycle, so
+  // the legacy proj_activity projection must not also run. `expectedType:
+  // "claim"` names the product it records - its own kind since migration 079,
+  // because a payout is not a launch. `previewSupport: true` because `dryRun` is
+  // a real read-only mode of THIS tool rather than a separate preview tool.
+  ["pools.claim_fees",           { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // Pendle PT / YT / PY (Batch B, migration 053) — flipped capture:"full" ->
   // "none" with the same staged `agent_activity` write path the Kyber/Uniswap/

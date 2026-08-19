@@ -27,6 +27,7 @@ import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { RuntimeBridge } from "./runtime.js";
 import type { SessionsBridge } from "./sessions.js";
+import type { PoolsLaunchBridge } from "./pools-launch.js";
 import type { TokenLaunchBridge } from "./token-launch.js";
 import type { UsageBridge } from "./usage.js";
 import type { WalletsBridge } from "./wallets.js";
@@ -45,6 +46,7 @@ export type { ImagesBridge } from "./images.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { RuntimeBridge } from "./runtime.js";
 export type { SessionsBridge } from "./sessions.js";
+export type { PoolsLaunchBridge } from "./pools-launch.js";
 export type { TokenLaunchBridge } from "./token-launch.js";
 export type { UsageBridge } from "./usage.js";
 export type { WalletsBridge } from "./wallets.js";
@@ -76,6 +78,12 @@ export interface VexAgentBridge {
    * snapshot and the agent-wake machinery.
    */
   readonly tokenLaunch: TokenLaunchBridge;
+  /**
+   * pools.fun launches and creator-fee claims (P3). Two stages: `prepare`
+   * verifies and returns an opaque fingerprint, `deploy` authorizes exactly
+   * that fingerprint.
+   */
+  readonly poolsLaunch: PoolsLaunchBridge;
   /**
    * Engine -> renderer push events (transcript spine, future runtime
    * deltas, etc.). The namespace mirrors `EV.engine.<topic>` so the

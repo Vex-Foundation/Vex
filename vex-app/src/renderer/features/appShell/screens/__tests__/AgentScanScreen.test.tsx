@@ -139,6 +139,8 @@ describe("AgentScanScreen — filters drive the query input", () => {
       "Uniswap",
       "Jupiter",
       "Trench Express",
+      // Joined in Phase 3, with the launch and claim executors that write it.
+      "pools.fun",
       "Khalani",
       "Relay",
     ]) {

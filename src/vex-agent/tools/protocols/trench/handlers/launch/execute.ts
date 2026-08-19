@@ -36,9 +36,10 @@ import { getAddress, type Address } from "viem";
 
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
-import { readMissionLaunchCeilings } from "@vex-agent/engine/mission/launch-ceiling.js";
-import type { AutonomousLaunchCeilings } from "@vex-agent/engine/mission/launch-ceiling.js";
-import { requireExecutionProvenance } from "../../../execution-provenance.js";
+import {
+  resolveLaunchAuthorizationVariant,
+  type LaunchVariantResult,
+} from "../../../shared/launch-authorization-variant.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../../internal/wallet/resolve.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
@@ -49,7 +50,7 @@ import type { LaunchExecuteDeps } from "./fee-seam.js";
 import { validateLaunchRequest } from "./validate.js";
 import { authorizeAndConsumeLaunch, settleLaunchFailure } from "./execute/authorize.js";
 import { broadcastLaunch } from "./execute/broadcast.js";
-import { openLaunchSigningClients } from "./execute/clients.js";
+import { openLaunchSigningClients } from "../../../shared/launch-signing-clients.js";
 
 const TOOL_ID = "trench.launch_execute";
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
@@ -178,107 +179,27 @@ export async function trenchLaunchExecuteHandler(
   });
 }
 
-interface ResolvedVariant {
-  readonly ok: true;
-  readonly kind: "full_autonomy" | "session_full";
-  readonly missionRunId: string | null;
-  /** Non-null ONLY for the autonomous path, where §C6/§C6b apply. */
-  readonly ceilings: AutonomousLaunchCeilings | null;
-}
-
 /**
  * Decide WHICH C0 variant authorizes this dispatch, from trusted host evidence.
  *
- * TWO agent-path branches, and the whole matrix (owner decrees 2026-08-02):
+ * THE MATRIX AND ITS RULINGS NOW LIVE IN ONE PLACE,
+ * `../../../shared/launch-authorization-variant.ts`, because pools.fun launches
+ * make exactly the same decision and a second copy of an authorization matrix is
+ * how two launch tools end up disagreeing about who may spend. This wrapper
+ * supplies the two tool ids that appear in the refusals and nothing else; the
+ * behaviour is unchanged.
  *
- *   MISSION RUN → `full_autonomy`. Mission evidence (a `missionId` or a
- *   `missionRunId` on the dispatch) puts the call on this path, which must
- *   prove COMPLETE provenance and both frozen ceilings or be refused. Partial
- *   provenance never falls through to the chat branch: a mission dispatch
- *   missing a field is a broken dispatch, and letting it borrow the chat basis
- *   would drop the ceilings mission spending exists to be bounded by.
- *
- *   FULL-PERMISSION CHAT → `session_full`. No mission, session permission
- *   `full`: the user set that permission and asked for the launch, which is the
- *   same consent basis every other mutating tool spends on in chat
- *   (`swap_execute`). This branch corrects a real refusal — a full-mode user
- *   got "requires trusted mission provenance" because the handler read an
- *   absent approval id as proof the call HAD to be a mission dispatch. The
- *   launch form is an OPTIONAL path here, not a gate. No ceilings apply:
- *   §C6/§C6b bound UNATTENDED spending against a host-authored contract.
- *
- *   RESTRICTED → refused BY NAME, pointing at `trench.launch_request_form`.
- *   THE FORM REPLACES THE APPROVAL CARD; a launch must never produce both, so
- *   `evaluateApprovalGate` exempts this tool by name
- *   (`protocols/runtime/gates.ts`) and the refusal is produced HERE, where the
- *   remedy can be named, instead of a card that shows tool arguments where the
- *   form would show the fee, the image and the total.
- *
- * THERE IS DELIBERATELY NO `approval_card` BRANCH. It was removed with that
- * ruling: with the card exempted, no dispatch can arrive here carrying an
- * `approvalId` for this tool, and a branch no path reaches is dead code that
- * reads like a live authorization route. `approval_card` REMAINS in the DB kind
- * vocabulary — historical rows carry it, and an audit vocabulary is not dead
- * because no new row will use it.
- *
- * THE `user_submit` VARIANT IS NOT DECIDED HERE AND NEVER REACHES THIS
- * FUNCTION. A launch the human deployed from the form is not an agent dispatch
- * at all — no tool call, no `ProtocolExecutionContext` — so it has its own
- * public entry, `./execute-user-submit.ts`, which authorizes against the
- * snapshot the user consented to. That is what the restricted refusal routes
- * the user to.
+ * The restricted refusal routes the user to `trench.launch_request_form`, whose
+ * Deploy click is handled by `./execute-user-submit.ts` - the `user_submit`
+ * variant is not decided here and never reaches this function.
  */
 async function resolveAuthorizationVariant(
   context: ProtocolExecutionContext,
-): Promise<ResolvedVariant | { ok: false; reason: string }> {
-  const hasMissionEvidence =
-    (context.missionId ?? "").trim().length > 0 || (context.missionRunId ?? "").trim().length > 0;
-
-  if (!hasMissionEvidence) {
-    if (context.sessionPermission !== "full") {
-      return {
-        ok: false,
-        reason:
-          `${TOOL_ID} refused: this session is in restricted permission. The launch form is this `
-          + "tool's consent surface — open it for the user by calling trench.launch_request_form, and "
-          + "their Deploy click authorizes the launch. Nothing was signed.",
-      };
-    }
-    return { ok: true, kind: "session_full", missionRunId: null, ceilings: null };
-  }
-
-  const provenance = requireExecutionProvenance(context);
-  if (!provenance.ok) return { ok: false, reason: provenance.reason };
-
-  if (context.sessionPermission !== "full") {
-    return {
-      ok: false,
-      reason:
-        `${TOOL_ID} refused: no approval authorized this launch and the session is not in full autonomy. `
-        + "Nothing was signed.",
-    };
-  }
-
-  // THE EXACT RUN, never "whichever run is active". The provenance already
-  // names the run the host bound to this dispatch; reading by mission alone let
-  // run A's launch be gated by run B's frozen snapshot — a different, possibly
-  // larger, ceiling than the one that authorized this call. The engine refuses
-  // by name when the run is missing, terminal, or not this mission's, and those
-  // reasons are surfaced verbatim rather than flattened into a generic error.
-  const read = await readMissionLaunchCeilings(
-    provenance.provenance.missionId,
-    provenance.provenance.missionRunId,
-  );
-  if (!read.ok) {
-    return { ok: false, reason: `${TOOL_ID} ${read.reason}` };
-  }
-
-  return {
-    ok: true,
-    kind: "full_autonomy",
-    missionRunId: provenance.provenance.missionRunId,
-    ceilings: read.ceilings,
-  };
+): Promise<LaunchVariantResult> {
+  return resolveLaunchAuthorizationVariant(context, {
+    toolId: TOOL_ID,
+    formToolId: "trench.launch_request_form",
+  });
 }
 
 /**

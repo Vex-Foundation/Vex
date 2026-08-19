@@ -122,6 +122,11 @@ export interface CreatePendingActivityEventInput {
    * so it carries `tokenOut2`; a pre-expiry redeem burns PT+YT→1 so it carries
    * `tokenIn2`). Populating both sides, or neither, is a shape no Pendle action
    * produces and the DB refuses it.
+   *
+   * Migration 079 admits ONE more role, on the OUTPUT side only: `pools_claim`.
+   * A pools.fun creator-fee claim spends nothing and `collectAndClaim` pays two
+   * assets in one call, so it carries `tokenOut2` and never `tokenIn2` - an
+   * input leg on a claim row would be evidence the decoder read the wrong thing.
    */
   tokenIn2?: AgentActivityLegInput;
   tokenOut2?: AgentActivityLegInput;

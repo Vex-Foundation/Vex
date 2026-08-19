@@ -13,13 +13,18 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   LaunchImageResolverUnavailableError,
   hasLaunchImageByteResolver,
+  hasLaunchImageOnchainByteResolver,
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
+  resetLaunchImageOnchainByteResolver,
   resolveLaunchImageBytes,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resolveLaunchImageOnchainBytes,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 
 afterEach(() => {
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
 });
 
 describe("launch image byte resolver", () => {
@@ -65,6 +70,64 @@ describe("launch image byte resolver", () => {
 
     expect(hasLaunchImageByteResolver()).toBe(false);
     await expect(resolveLaunchImageBytes("img_1")).rejects.toBeInstanceOf(
+      LaunchImageResolverUnavailableError,
+    );
+  });
+});
+
+/**
+ * The TRENCH lane (per-lane image decision, 2026-08-19). Same fail-closed
+ * contract, an INDEPENDENT slot, and a throw that names which seam is missing -
+ * a half-mounted app must not be misread as a broken locker.
+ */
+describe("launch image ON-CHAIN byte resolver", () => {
+  it("fails closed by name, and names ITS OWN seam", async () => {
+    expect(hasLaunchImageOnchainByteResolver()).toBe(false);
+    await expect(resolveLaunchImageOnchainBytes("img_1")).rejects.toBeInstanceOf(
+      LaunchImageResolverUnavailableError,
+    );
+    await expect(resolveLaunchImageOnchainBytes("img_1")).rejects.toThrow(
+      /no LaunchImageOnchainByteResolver is registered/,
+    );
+  });
+
+  it("is a SEPARATE slot: mounting the original lane does not satisfy it", async () => {
+    // One slot with a mode flag would let a half-finished bootstrap serve the
+    // pools originals - possibly megabytes - into Trench calldata.
+    registerLaunchImageByteResolver(async () => null);
+    expect(hasLaunchImageByteResolver()).toBe(true);
+    expect(hasLaunchImageOnchainByteResolver()).toBe(false);
+    await expect(resolveLaunchImageOnchainBytes("img_1")).rejects.toBeInstanceOf(
+      LaunchImageResolverUnavailableError,
+    );
+  });
+
+  it("passes through 'resolved', 'no_onchain_variant', and null unchanged", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    registerLaunchImageOnchainByteResolver(async (imageId) => {
+      if (imageId === "img_ok") return { kind: "resolved", bytes, digest: "a".repeat(64) };
+      if (imageId === "img_big") return { kind: "no_onchain_variant", originalByteLength: 2_104_822 };
+      return null;
+    });
+
+    await expect(resolveLaunchImageOnchainBytes("img_ok")).resolves.toEqual({
+      kind: "resolved",
+      bytes,
+      digest: "a".repeat(64),
+    });
+    await expect(resolveLaunchImageOnchainBytes("img_big")).resolves.toEqual({
+      kind: "no_onchain_variant",
+      originalByteLength: 2_104_822,
+    });
+    // `null` still means "no such image" and nothing else.
+    await expect(resolveLaunchImageOnchainBytes("img_missing")).resolves.toBeNull();
+  });
+
+  it("returns to failing closed after reset", async () => {
+    registerLaunchImageOnchainByteResolver(async () => null);
+    resetLaunchImageOnchainByteResolver();
+    expect(hasLaunchImageOnchainByteResolver()).toBe(false);
+    await expect(resolveLaunchImageOnchainBytes("img_1")).rejects.toBeInstanceOf(
       LaunchImageResolverUnavailableError,
     );
   });

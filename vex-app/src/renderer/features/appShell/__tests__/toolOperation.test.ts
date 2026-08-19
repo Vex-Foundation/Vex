@@ -248,3 +248,48 @@ describe("resolveToolOperation — Trench Express exact toolIds", () => {
     ).toBeNull();
   });
 });
+
+/**
+ * pools.fun is addressed by exact `toolId` too. Every id its manifests ship is
+ * pinned here: an unmirrored read would fall through to `unproven` and draw a
+ * money leg line under a market-data card, and an unmirrored launch would go the
+ * other way and claim less than it did.
+ */
+describe("resolveToolOperation — pools.fun exact toolIds", () => {
+  const operationFor = (toolId: string) =>
+    resolveToolOperation("execute_tool", "pools", `{"toolId":"${toolId}"}`);
+
+  it.each([
+    "pools.tokens",
+    "pools.search",
+    "pools.candles",
+    "pools.token",
+    "pools.my_launches",
+    // Drafts a row and spends nothing, exactly like its Trench counterpart.
+    "pools.launch_request_form",
+  ])("gives the read %s NO operation at all (no legs)", (toolId) => {
+    expect(
+      resolveToolOperation("execute_tool", "pools", `{"toolId":"${toolId}"}`),
+    ).toBeNull();
+    expect(resolveToolOperation(toolId, "pools", null)).toBeNull();
+  });
+
+  it("reads the ADVISORY launch preview as a quote, never as an executed launch", () => {
+    expect(operationFor("pools.launch_preview")).toBe("quote");
+    expect(resolveToolOperation("pools.launch_preview", "pools", null)).toBe("quote");
+  });
+
+  it.each(["pools.launch_execute", "pools.claim_fees"])(
+    "reads %s as a mutating money operation",
+    (toolId) => {
+      expect(operationFor(toolId)).toBe("mutating");
+    },
+  );
+
+  it("does not admit a pools lookalike, and gives an uncurated venue no legs", () => {
+    expect(operationFor("pools.launch_execute_v2")).toBe("unproven");
+    expect(
+      resolveToolOperation("execute_tool", null, '{"toolId":"pools.launch_execute"}'),
+    ).toBeNull();
+  });
+});

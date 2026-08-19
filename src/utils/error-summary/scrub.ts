@@ -228,6 +228,32 @@ export function scrub(text: string, urlReplacement: (match: string) => string): 
   return cleaned;
 }
 
+/**
+ * The one entry point a PROVIDER ADAPTER should use on untrusted provider text.
+ *
+ * `summarizeProtocolError` is for a thrown Error; this is for the case an
+ * adapter reaches first: a string lifted out of an HTTP error BODY (a JSON
+ * `error` field, a validation detail, an HTML fragment) that is about to be
+ * authored into a `VexError.hint`. Those strings never pass through the render
+ * lane, so before this existed each adapter either capped-without-scrubbing (the
+ * pools.fun 400/5xx path did exactly that, and a bearer-token canary in a
+ * provider `error` field reached the agent unredacted) or grew its own regex
+ * clone — the duplication this module's header already warns against.
+ *
+ * Same steps, same order, same fail-closed posture as the message lane: secret
+ * shapes redacted, HTML documents removed, nested bodies collapsed, every URL
+ * replaced, auth fragments stripped, control characters and newlines flattened,
+ * then a caller-chosen cap. `maxLength` is per-call because an adapter's budget
+ * is its own (a one-line route snippet is not a three-field validation report).
+ */
+export function scrubProviderText(text: string, maxLength: number): string | undefined {
+  // eslint-disable-next-line no-control-regex
+  const flattened = text.replace(/[\u0000-\u001F\u007F]+/g, " ");
+  const cleaned = scrub(flattened, redactEveryUrl).replace(/\s+/g, " ").trim();
+  if (cleaned.length === 0) return undefined;
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
+}
+
 /** Whitespace collapse + the hard cap, applied to message and hint JOINTLY. */
 export function collapseAndCap(combined: string): string {
   const cleaned = combined.replace(/\s+/g, " ").trim();

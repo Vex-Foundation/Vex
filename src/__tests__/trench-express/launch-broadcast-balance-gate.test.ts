@@ -20,8 +20,10 @@ import { type Address } from "viem";
 
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resetLaunchImageOnchainByteResolver,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import {
   buildLaunchPlan,
   LAUNCH_FEE_LEG_GAS_LIMIT,
@@ -95,10 +97,18 @@ function baseInput(over: Record<string, unknown> = {}) {
 
 function mountImage(): void {
   registerLaunchImageByteResolver(async () => ({ bytes: IMAGE_BYTES, digest: "0xstoreddigest" }));
+  // The Trench path consumes the ON-CHAIN copy. For an image already inside the
+  // budget both seams hand back the same bytes and digest, which is this case.
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "resolved",
+    bytes: IMAGE_BYTES,
+    digest: "0xstoreddigest",
+  }));
 }
 
 afterEach(() => {
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
   vi.restoreAllMocks();
 });
 

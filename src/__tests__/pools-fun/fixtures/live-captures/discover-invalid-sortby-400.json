@@ -1,0 +1,17 @@
+{
+  "endpoint": "GET /discover?platform=poolsfun&chain=robinhood&sortBy=trending",
+  "capturedAt": "2026-08-18T10:20:00.000Z",
+  "response": {
+    "error": "Invalid parameters",
+    "details": [
+      {
+        "code": "invalid_value",
+        "message": "Invalid option: expected one of \"marketCapUsd\"|\"vol1m\"|\"vol5m\"|\"vol1h\"|\"vol6h\"|\"vol24h\"|\"txCount24h\"|\"priceChange1m\"|\"priceChange5m\"|\"priceChange1h\"|\"priceChange6h\"|\"priceChange24h\"|\"lastTradeAt\"|\"deployedAt\"",
+        "path": [
+          "sortBy"
+        ]
+      }
+    ]
+  },
+  "httpStatus": 400
+}

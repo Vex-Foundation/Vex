@@ -237,6 +237,23 @@ describe("ToolActRow — friendly card presentation", () => {
     ).toBeNull();
   });
 
+  it("wears the pools.fun mark on a read act and draws no money legs", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "pools.tokens",
+          toolArgs: '{"platform":"poolsfun","limit":20}',
+          success: true,
+        }),
+      }),
+    );
+    expect(container.textContent).toContain("pools.fun · Token list");
+    expect(
+      container.querySelector('[data-vex-protocol-mark="pools.fun"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+  });
+
   it("labels a PENDING protocol act rather than showing it as done", () => {
     const { container } = render(
       createElement(ToolActRow, {

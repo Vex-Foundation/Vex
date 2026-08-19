@@ -52,9 +52,16 @@ const IMAGE_BYTES = new Uint8Array([1, 2, 3, 4]);
 const { launchImageDigest } = await import(
   "@vex-agent/tools/protocols/trench/handlers/launch/authorization.js"
 );
-vi.mock("@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js", () => ({
+vi.mock("@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js", () => ({
   LaunchImageResolverUnavailableError: class extends Error {},
   resolveLaunchImageBytes: async () => ({
+    bytes: IMAGE_BYTES,
+    digest: launchImageDigest(IMAGE_BYTES),
+  }),
+  // The Trench path reads the ON-CHAIN copy; this fixture's image is inside
+  // the budget, so it is its own copy.
+  resolveLaunchImageOnchainBytes: async () => ({
+    kind: "resolved",
     bytes: IMAGE_BYTES,
     digest: launchImageDigest(IMAGE_BYTES),
   }),

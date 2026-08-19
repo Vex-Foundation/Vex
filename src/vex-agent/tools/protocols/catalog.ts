@@ -41,6 +41,8 @@ import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
 import { TRENCH_TOOLS } from "./trench/manifest.js";
 import { TRENCH_HANDLERS } from "./trench/handlers.js";
+import { POOLS_TOOLS } from "./pools/manifest.js";
+import { POOLS_HANDLERS } from "./pools/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -54,6 +56,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "virtuals",
   "pendle",
   "trench",
+  "pools",
 ] as const;
 
 export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
@@ -88,6 +91,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
   { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
+  { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
 ];
 
 // ── Indices (built eagerly at module load) ───────────────────────
@@ -192,4 +196,7 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   dexscreener: "non_portfolio",
   virtuals: "non_portfolio",
   trench: "non_portfolio",
+  // Read-only launchpad intelligence; no tool here holds, moves, or reports a
+  // position, so nothing it returns belongs in portfolio capture.
+  pools: "non_portfolio",
 };

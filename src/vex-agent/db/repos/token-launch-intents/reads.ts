@@ -63,6 +63,38 @@ export async function getAwaitingForSession(
 }
 
 /**
+ * The `previewed` rows Agent Scan surfaces - launches the agent PRICED, never
+ * launches it made.
+ *
+ * They are surfaced from HERE rather than from hashless `agent_activity` rows
+ * (owner decision, P3): a preview has no transaction, and a money feed that
+ * carries rows without hashes has to invent a way to say "this one is not real".
+ * The intent table already says it, structurally - the database CHECK keeps a
+ * `previewed` row free of any authorization and any hash, so it can never be
+ * mistaken for a launch that happened.
+ *
+ * UNEXPIRED ONLY, for the same reason the awaiting-form query is: a preview
+ * quotes the gateway's deployment fee, that fee moves, and showing a lapsed
+ * estimate as current is worse than showing none.
+ *
+ * Newest first, bounded, and scoped to one session - this answers "what did this
+ * run consider", not "what has anyone ever considered".
+ */
+export async function listPreviewedForSession(
+  sessionId: string,
+  limit = 25,
+): Promise<TokenLaunchIntent[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM token_launch_intents
+      WHERE session_id = $1 AND status = 'previewed' AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [sessionId, limit],
+  );
+  return rows.map(mapRow);
+}
+
+/**
  * The expiry sweep's candidate set: forms whose window has LAPSED but whose row
  * still says it is waiting.
  *

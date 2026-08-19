@@ -15,8 +15,10 @@ import { toHex, type Address } from "viem";
 
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resetLaunchImageOnchainByteResolver,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import {
   buildLaunchPlan,
   LAUNCH_FEE_LEG_GAS_LIMIT,
@@ -90,13 +92,35 @@ function baseInput(over: Record<string, unknown> = {}) {
 
 afterEach(() => {
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
   vi.restoreAllMocks();
 });
 
+/**
+ * Mount BOTH lanes. The Trench plan reads the ON-CHAIN copy; for an image
+ * already inside the budget - which every fixture here is - the two lanes serve
+ * identical bytes and an identical digest, so the digest this plan binds is
+ * byte-for-byte the one it bound before the per-lane split.
+ */
 function mountImage(bytes: Uint8Array | null = IMAGE_BYTES) {
   registerLaunchImageByteResolver(async () =>
     bytes === null ? null : { bytes, digest: "0xstoreddigest" },
   );
+  registerLaunchImageOnchainByteResolver(async () =>
+    bytes === null ? null : { kind: "resolved", bytes, digest: "0xstoreddigest" },
+  );
+}
+
+/** An image that EXISTS but has no copy Trench can carry. */
+function mountImageWithoutOnchainCopy(originalByteLength: number) {
+  registerLaunchImageByteResolver(async () => ({
+    bytes: new Uint8Array(originalByteLength),
+    digest: "0xstoreddigest",
+  }));
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "no_onchain_variant",
+    originalByteLength,
+  }));
 }
 
 describe("the fee is planned BEFORE the ceiling but is NEVER in msg.value", () => {
@@ -234,6 +258,39 @@ describe("image refusals are DISTINCT failures", () => {
     if (result.ok) throw new Error("unreachable");
     expect(result.code).toBe("image_not_found");
     expect(result.reason).toMatch(/locker/i);
+  });
+
+  it("an image with no on-chain copy ⇒ image_over_onchain_budget, NOT image_not_found", async () => {
+    // The image is in the locker and the user can see it. Reporting it as
+    // missing would send them looking for a file that is on screen; the
+    // remedy here is a smaller picture, or a pools.fun launch.
+    mountImageWithoutOnchainCopy(2_104_822);
+    const result = await buildLaunchPlan(baseInput() as never);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.code).toBe("image_over_onchain_budget");
+    expect(result.reason).toMatch(/2104822/);
+    expect(result.reason).toMatch(/20480/);
+    expect(result.reason).toMatch(/pools\.fun/i);
+  });
+
+  it("refuses over-budget bytes app-side, now that the DB no longer bounds them", async () => {
+    // Migration 080 moved the 20 480 CHECK onto `onchain_byte_length`, so a
+    // resolver that hands back something larger has to be stopped HERE - this
+    // is the last gate before the bytes are encoded into an irreversible create.
+    const oversized = new Uint8Array(20_481);
+    registerLaunchImageByteResolver(async () => ({ bytes: oversized, digest: "0xd" }));
+    registerLaunchImageOnchainByteResolver(async () => ({
+      kind: "resolved",
+      bytes: oversized,
+      digest: "0xd",
+    }));
+
+    const result = await buildLaunchPlan(baseInput() as never);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.code).toBe("image_over_onchain_budget");
+    expect(result.reason).toMatch(/20481/);
   });
 
   it("binds the digest the LOCKER recorded, so a later swap is detectable", async () => {

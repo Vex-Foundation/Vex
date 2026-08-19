@@ -19,8 +19,10 @@ import { getAddress } from "viem";
 
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resetLaunchImageOnchainByteResolver,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import { TRENCH_CREATION_FEE_SLOT, TRENCH_CREATION_FEE_FIXTURE } from "@tools/trench-express/evm/creation-fee.js";
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 
@@ -98,7 +100,7 @@ function submitTimePublicClient() {
   } as never;
 }
 
-vi.mock("@vex-agent/tools/protocols/trench/handlers/launch/execute/clients.js", () => ({
+vi.mock("@vex-agent/tools/protocols/shared/launch-signing-clients.js", () => ({
   openLaunchSigningClients: () => ({
     ok: true,
     clients: { publicClient: submitTimePublicClient(), walletClient: {} },
@@ -120,6 +122,11 @@ const { buildLaunchPlan } = await import(
  */
 async function authorizedBinding(): Promise<Record<string, unknown>> {
   registerLaunchImageByteResolver(async () => ({ bytes: IMAGE_BYTES, digest: DIGEST }));
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "resolved",
+    bytes: IMAGE_BYTES,
+    digest: DIGEST,
+  }));
   const planned = await buildLaunchPlan({
     request: {
       name: "Vex x Trench",
@@ -154,10 +161,16 @@ beforeEach(async () => {
   derivedBinding = await authorizedBinding();
   reset();
   registerLaunchImageByteResolver(async () => ({ bytes: IMAGE_BYTES, digest: DIGEST }));
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "resolved",
+    bytes: IMAGE_BYTES,
+    digest: DIGEST,
+  }));
 });
 
 afterEach(() => {
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
 });
 
 describe("the exactly-once gate", () => {
@@ -257,6 +270,11 @@ describe("the record must agree with its own intent row", () => {
 describe("drift against the snapshot refuses and settles", () => {
   it("refuses when the locker image bytes changed — consent was for specific bytes", async () => {
     registerLaunchImageByteResolver(async () => ({
+      bytes: new Uint8Array([0x00, 0x01]),
+      digest: "0xDIFFERENTDIGEST",
+    }));
+    registerLaunchImageOnchainByteResolver(async () => ({
+      kind: "resolved",
       bytes: new Uint8Array([0x00, 0x01]),
       digest: "0xDIFFERENTDIGEST",
     }));

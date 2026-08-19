@@ -42,7 +42,7 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 
 **"Tokens" on the Runtime & Cost card are not crypto tokens.** They are the model's unit of text - roughly, words in and words out. That card is your AI bill, in dollars, on your own key.
 
-**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, and Trench Express launches and trades. **Pendle trades carry no Vex fee.** Three rules govern it:
+**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, Trench Express launches and trades, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
 
 - It is taken on the **input** - the asset you spend, not the one you receive. (The one exception: selling a Trench token, where the fee comes off the ETH you receive.)
 - It is charged **only after the operation succeeds**. A failed, reverted, or never-broadcast attempt is never charged. At very small sizes it rounds to zero and no fee is taken at all.
@@ -202,6 +202,7 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | Ethereum, Optimism, BSC, Base, Arbitrum, Mantle, Sonic, HyperEVM, Berachain, Monad, Plasma | Pendle yield trading (11 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
 | Robinhood Chain | Trench Express launches and curve trading |
+| Robinhood Chain | pools.fun launches, fee claims and launchpad research |
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
 
 ### ![Uniswap](/protocols/uniswap.png) Uniswap
@@ -232,6 +233,18 @@ A bonding-curve launchpad on Robinhood Chain, where a token's price is set by a 
 - The picture is stored inside the launch transaction, so its size is gas you pay. Vex optimizes and square-crops every image you add to the **Trench Photos** locker (the Trench Express card in the BOOK panel, which is also where "Launch a token" lives) and tells you the resulting size.
 - **My Launches**, inside the launch dialog, lists what you have launched. A launch that has been broadcast but not yet confirmed says "in flight - no token address yet" rather than pretending a token exists.
 - Trades on the curve go through the ordinary approval card and the ordinary price check. On a sell, if Vex cannot decode what you actually received, it takes **no fee at all** rather than charging a percentage of a guess.
+
+### ![pools.fun](/protocols/pools.jpg) pools.fun
+A second launchpad on Robinhood Chain, built a different way from Trench: there is no bonding curve and no graduation moment. At launch the whole token supply goes straight into a SushiSwap V3 pool and the position is locked there permanently, so the token trades in a real pool from its first block. Every pool charges a 1% fee of its own. Two launchers share this chain, so Vex always says which one a token came from, and it identifies tokens by address - symbols are not unique and copycats are common.
+
+- **Research** costs nothing: Vex browses and screens the launchpad, searches by name or symbol, pulls price candles, deep-reads a single token, and lists the launches made from your own wallet.
+- **Launching** uses the pools.fun gateway, and Vex never signs what the gateway hands it on trust. It decodes the transaction first and checks it line by line against what you asked for: the name and symbol, the paired asset, the deployment fee against the contract's own current bounds, the prebuy amount, and the destination. Anything that does not match is refused rather than signed.
+- **The launch form has two steps, and the second one is the approval.** Step one takes your inputs and comes back with the finished picture: the token address the launch will actually produce, the fee recipient resolved to a real address, and every cost broken out (deployment fee, your prebuy, the Vex fee, and a gas bound). Step two is the Deploy click, and it authorizes exactly that picture. If anything moves in between, such as the deployment fee changing, you are taken back to step one rather than deploying against numbers you never saw.
+- **Pairing and prebuy.** A token is paired with WETH or USDG. Tokenised stocks are not offered: they are not launchable on this factory today, and Vex hides an option it cannot honour. A prebuy, where you buy some of your own token in the same transaction, is optional.
+- **Who receives the trading fees.** When Vex launches on its own, the fee recipient is always your session wallet, and the agent has no way to name a different one. Only the form you fill in yourself can change it, to an address or an X username, and the resolved address is shown for you to confirm before Deploy.
+- **Claiming** collects the trading fees your locked position has earned. They arrive as two amounts, your own token and the asset it is paired with, and Vex simulates the claim first so the approval card shows both before you agree to it.
+- **Trading a pools.fun token needs no new venue.** Because the token sits in an ordinary Sushi V3 pool, Vex quotes and trades it through **KyberSwap** with the usual approval card, and researches the pool itself on **DexScreener**.
+- Prices, market caps and volumes from the launchpad's own feed are for reading, not for deciding - the number you approve always comes from the trading venue's quote.
 
 ### ![Relay](/protocols/relay.png) Relay bridge
 A bridge that needs no account or key of its own - that is all "keyless" means here. It still moves your money with your wallet's signature, and it still asks for your approval. Used for certain cross-chain moves.

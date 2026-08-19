@@ -30,9 +30,16 @@
  * Modules:
  *   - `constants.ts`       product-owner constants, the charge-base rationale,
  *                          and the recorded `trench_fee` event role
+ *   - `venue.ts`           Trench as the SHARED native-fee lane sees it
  *   - `fee-amount.ts`      which ETH leg the fee applies to + the exact split
  *   - `fee-transfer.ts`    the native treasury transfer (no ERC-20 branch)
  *   - `fee-disclosure.ts`  the one agent-facing disclosure shape
+ *
+ * The MECHANISM behind the last three now lives in
+ * `@tools/vex-fee/native-leg/`, shared with the other venues on this lane
+ * (owner decision 2026-08-18, taken when pools.fun would have become the fourth
+ * hand-written copy). What stayed here is what is genuinely Trench's: the rate,
+ * the charge-base union and its reasoning, the recorded role, and the prose.
  */
 
 export {
@@ -48,6 +55,8 @@ export {
   type TrenchFeeBaseInput,
   type VexFeeBpsSplit,
 } from "./fee-amount.js";
+
+export { TRENCH_FEE_VENUE } from "./venue.js";
 
 export { buildTrenchFeeTransfer, type TrenchFeeTransfer } from "./fee-transfer.js";
 

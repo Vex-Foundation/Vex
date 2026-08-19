@@ -28,16 +28,25 @@ import {
 
 // ── create ──────────────────────────────────────────────────────────────────
 
+// The pools columns (migration 079) are all nullable and `protocol` DEFAULTs to
+// 'trench' in the database, so a caller that supplies none of them writes
+// exactly the row it wrote before this existed.
 const INSERT_SQL = `INSERT INTO token_launch_intents (
   intent_id, session_id, origin, status, chain_id, wallet_address,
   name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals,
   authorization_id, authorization_kind, authorization_json, authorized_at,
-  tool_call_id, mission_run_id, expires_at
+  tool_call_id, mission_run_id, expires_at,
+  protocol, paired_asset, paired_asset_address, fee_recipient_address,
+  metadata_uri, image_url, predicted_token_address, gateway_address,
+  deployment_fee_wei
 ) VALUES (
   $1, $2, $3, $4, $5, $6,
   $7, $8, $9, $10::jsonb, $11, $12, $13,
   $14, $15, $16::jsonb, CASE WHEN $14::text IS NULL THEN NULL ELSE NOW() END,
-  $17, $18, $19
+  $17, $18, $19,
+  COALESCE($20, 'trench'), $21, $22, $23,
+  $24, $25, $26, $27,
+  $28
 ) RETURNING ${SELECT_COLUMNS}`;
 
 /**
@@ -88,6 +97,15 @@ export async function createWith(
     input.toolCallId ?? null,
     input.missionRunId ?? null,
     input.expiresAt,
+    input.protocol ?? null,
+    input.pools?.pairedAsset ?? null,
+    input.pools?.pairedAssetAddress ?? null,
+    input.pools?.feeRecipientAddress ?? null,
+    input.pools?.metadataUri ?? null,
+    input.pools?.imageUrl ?? null,
+    input.pools?.predictedTokenAddress ?? null,
+    input.pools?.gatewayAddress ?? null,
+    input.pools?.deploymentFeeWei ?? null,
   ]);
   const row = res.rows[0];
   if (row === undefined) {

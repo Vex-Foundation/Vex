@@ -1,0 +1,8 @@
+{
+  "endpoint": "GET /search?q=x (a route that does not exist)",
+  "capturedAt": "2026-08-18T10:20:00.000Z",
+  "httpStatus": 404,
+  "contentType": "text/html; charset=utf-8",
+  "bodyText": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot GET /search</pre>\n</body>\n</html>\n",
+  "note": "An unknown ROUTE answers with an HTML error page, not JSON. Pins the route-drift signal the error mapper keeps as a bounded single-line snippet."
+}

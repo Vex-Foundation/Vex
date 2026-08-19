@@ -119,13 +119,21 @@ describe("capture contract — structural coverage", () => {
     expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
-  it("no utility-kind tools are currently classified (Hyperliquid removal deleted the only one)", () => {
+  it("the utility kind holds exactly the local-write tools that sign nothing", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
     // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
     // `trench.launch_request_form` (migration 062) is the successor this
     // comment predicted: mutating (it drafts a launch-intent row and parks the
     // turn) but zero portfolio impact and no capture — signs nothing.
-    expect(getToolsByKind("utility").map(([id]) => id)).toEqual(["trench.launch_request_form"]);
+    // pools.fun adds two more of the same shape (migration 079): `launch_preview`
+    // records an advisory `previewed` intent that the database itself keeps
+    // non-live, and `launch_request_form` opens the app's form and parks the
+    // turn. Both are mutating because each writes a durable row; neither signs.
+    expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "pools.launch_preview",
+      "pools.launch_request_form",
+      "trench.launch_request_form",
+    ]);
   });
 
   it("every audit tool is now a staged agent_activity write path (Phase 2 bridges + W5/Batch5 lend + Batch B pendle.claim)", () => {

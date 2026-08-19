@@ -12,7 +12,9 @@
  *  - `byte-store.ts` is internal. Nothing outside this folder resolves a path
  *    into the locker directory; callers pass an opaque `imageId`.
  *  - raw bytes leave through exactly ONE door, `mountLaunchImageByteResolver`,
- *    into the signing path. Every other consumer (the sidebar card, the
+ *    into the signing path - two lanes behind that one door since the per-lane
+ *    image decision (2026-08-19): the stored ORIGINAL for pools.fun, and the
+ *    derived on-chain copy for Trench. Every other consumer (the sidebar card, the
  *    `trench.images` agent tool) sees metadata, or a `data:` URL the locker
  *    itself built.
  */
@@ -31,6 +33,7 @@ export {
 export {
   mountLaunchImageByteResolver,
   resolveLockerImageBytesForLaunch,
+  resolveLockerImageOnchainBytesForLaunch,
 } from "./byte-resolver.js";
 
 export {

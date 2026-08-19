@@ -78,6 +78,10 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   wrap: "wrap",
   yield: "yield",
   launch: "launch",
+  // Migration 079. A creator-fee claim renders as its OWN product: it pays two
+  // assets out from a token that already exists, so filing it as a launch would
+  // put a payout inside every launch view.
+  claim: "claim",
 };
 
 /** The activity half's row predicate, read from the source it is written in. */

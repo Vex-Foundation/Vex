@@ -61,6 +61,43 @@ trade's `type`/`tx`/`time`/amounts. Display-tolerant (missing/null → default):
 `description`, `links`, `imageCid`, `holders`, `stats24h`, `ruggedFlagged`,
 `creator`, `_id`, `maker`, and the entire wallet-stats object.
 
+## The launch image is ON-CHAIN, and that is the whole reason for the 20 KB budget
+
+Trench writes the image bytes INLINE in `create()` calldata (verified: a foreign
+launch carries a 1.7 KB WebP in its calldata; the Diamond ABI types the
+parameter as `bytes`). Every byte is gas the user pays, forever, on an
+irreversible transaction. **20,480 bytes** is the hard ceiling
+(`TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES` in `src/lib/token-metadata-limits.ts`);
+the desktop ladder targets 20,000 so no `>` / `>=` disagreement between modules
+can turn a landing into a failure.
+
+**This budget binds Trench only** (owner decision 2026-08-19). pools.fun hosts
+images off-chain and accepted a 2,104,822-byte PNG, measured. One locker now
+serves both launchpads, so it stores the user's ORIGINAL bytes verbatim and
+DERIVES a Trench copy:
+
+| locker state | what Trench does |
+|---|---|
+| original already ≤ the budget | it IS the on-chain copy; `onchain_digest = digest`, no second file |
+| ladder re-encoded it | the square ≤20 KB copy lives beside the original and carries its own digest |
+| ladder exhausted | `onchain_* IS NULL`; every Trench entry point refuses `image_over_onchain_budget` BY NAME and says pools.fun can still launch it |
+
+Consequences worth stating once:
+
+- the Trench handlers consume `resolveLaunchImageOnchainBytes`, a seam separate
+  from the pools lane's `resolveLaunchImageBytes`. Both fail closed, and the
+  throw names which one is unmounted;
+- **the C0 digest binding did not move.** It binds the digest of the bytes that
+  go on-chain, which is what it always bound - migration 080 backfilled every
+  pre-existing row with `onchain_* = byte_length/digest`, because those images
+  already fit and their stored bytes ARE the on-chain bytes;
+- the database no longer bounds the locker at 20,480, so
+  `trench/handlers/launch/plan.ts` asserts the ceiling itself before composing
+  calldata. That assertion is now the last gate, not a formality;
+- `trench.launch_preview` REFUSES a copy-less image instead of degrading to the
+  labelled empty-image estimate. A price for a launch that cannot happen answers
+  a question nobody asked.
+
 ## Deferred (NOT in P1)
 
 - **No throttle module.** DexScreener carries a token-bucket throttle; Trench
