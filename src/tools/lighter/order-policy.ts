@@ -9,7 +9,7 @@ export const LIGHTER_PHASE_ONE_TIME_IN_FORCE = ["immediate-or-cancel"] as const;
 
 const PHASE_ONE_ORDER_POLICY_REASON =
   "Lighter Phase 1 permits market orders with immediate-or-cancel time in force only. "
-  + "Resting limit, good-till-time, and post-only orders remain unavailable until Vex can cancel and modify them safely.";
+  + "Resting limit, good-till-time, and post-only orders remain unavailable until approval-gated cancel and modify both complete retained real-provider canaries.";
 
 export function lighterPhaseOneOrderPolicyFailure(
   orderType: LighterOrderType,

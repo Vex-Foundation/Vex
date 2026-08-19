@@ -1,10 +1,13 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-18**
+**Last updated: 2026-08-19**
 
 Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, wallet-funded account onboarding, local trading
-credential registration, and approval-gated order create. Phase 3 can reserve a
+credential registration, approval-gated order create, and Phase 2 order
+lifecycle management. Phase 2 adds exact approval-gated cancel-one, limit-order
+modify, immediate cancel-all, full reduce-only position close, authenticated
+order/trade/position streams, and evidence-only lifecycle repair. Phase 3 can reserve a
 free API-key slot, generate and encrypt the key locally, prepare a separate
 registration approval, sign the exact TxType 8 ownership transaction in the
 privileged main process, submit it through Lighter `sendTx`, and reconcile the
@@ -47,7 +50,8 @@ wallet-funded onboarding flow.
 | `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
 | `signer-adapter.ts` | Official Lighter signer adapter interface for canonical account auth and create-order signing; no provider submission |
 | `signer-binary-adapter.ts` | Privileged-process adapter that invokes the official signer helper with secrets over stdin only |
-| `signer-runtime/` | Pinned `lighter-go` helper for key generation, public derivation, TxType 8 signing, official `CheckClient`, account auth, and create-order signing |
+| `signer-runtime/` | Pinned `lighter-go` helper for key generation, public derivation, TxType 8 signing, official `CheckClient`, account auth, create-order signing, cancel-one, cancel-all, and modify signing |
+| `signer-order-lifecycle.ts` | Exact TxType 15 cancel-one, TxType 16 immediate cancel-all, and TxType 17 modify signer contracts |
 | `../../../vex-app/src/main/secrets/lighter-trading-credential.ts` | Main-process encrypted-vault import, status, removal, and reader boundary for Lighter trading private keys stored as non-env extra secrets |
 | `../../../vex-app/src/main/lighter/key-registration-credential.ts` | Privileged pending-key creation/recovery and public-only promotion to active |
 | `../../../vex-app/src/main/lighter/key-registration-signing.ts` | Selected-wallet EIP-191 signature plus official TxType 8 signer orchestration |
@@ -57,6 +61,9 @@ wallet-funded onboarding flow.
 | `../../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan |
 | `../../vex-agent/tools/protocols/lighter/order-create-execution.ts` | Approved-create pipeline for vault secret load, nonce reservation, local signing, submit metadata, `sendTx`, and API-acceptance persistence |
 | `../../vex-agent/db/repos/lighter-order-execution-intents.ts` | Durable approval, nonce, signed, submitted, API-accepted, and ambiguous state transitions |
+| `../../vex-agent/tools/protocols/lighter/order-lifecycle.ts` | Fresh preparation, exact approval-gated execution, and provider-evidence reconciliation for cancel, modify, cancel-all, and full position close |
+| `../../vex-agent/db/repos/lighter-order-lifecycle-intents.ts` | Durable lifecycle approval, nonce, staging, submission, outcome, and ambiguity state |
+| `../../../vex-app/src/main/lighter/order-stream.ts` | Privileged authenticated account orders/trades/positions supervisor with reconnect resnapshot |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
@@ -109,13 +116,16 @@ the configured privileged execution path. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
-Phase 1 exposes only market orders with `immediate-or-cancel` time in force.
+The order-create product surface exposes only market orders with
+`immediate-or-cancel` time in force.
 The required price is the user's worst acceptable execution price, and Vex
 revalidates the live opposite-side price after approval before any credential
 or vault access. Resting limit, good-till-time, and post-only orders are refused
 at parameter parsing, approval preparation, execution-plan construction, and
-the privileged submit boundary until production-safe cancel and modify support
-is available. The lower-level signer keeps the provider's broader order-type
+the privileged submit boundary. Phase 2 now provides production approval-gated
+cancel and modify machinery, but the create gate remains closed until retained
+real-provider canary evidence proves both operations end-to-end on a separately
+approved resting order. The lower-level signer keeps the provider's broader order-type
 encoding for future phases, but those modes are not reachable from the product.
 
 ## Production Deposit Boundary

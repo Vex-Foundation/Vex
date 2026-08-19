@@ -185,7 +185,7 @@ const ORDER_TYPE_PARAM: ProtocolParamDef = {
   type: "string",
   enum: LIGHTER_PHASE_ONE_ORDER_TYPES,
   description:
-    "Optional Phase 1 order type. The only enabled value is market, which is also the default. Resting limit and conditional orders are refused until their full lifecycle is supported.",
+    "Optional order type. The only enabled value is market, which is also the default. Resting limit and conditional order creation remains refused until approval-gated cancel and modify both complete retained real-provider canaries.",
 };
 
 const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
@@ -193,7 +193,7 @@ const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
   type: "string",
   enum: LIGHTER_PHASE_ONE_TIME_IN_FORCE,
   description:
-    "Optional Phase 1 time-in-force. The only enabled value is immediate-or-cancel, which is also the default. Good-till-time and post-only orders are refused until Vex can cancel and modify resting orders safely.",
+    "Optional time-in-force. The only enabled value is immediate-or-cancel, which is also the default. Good-till-time and post-only order creation remains refused until approval-gated cancel and modify both complete retained real-provider canaries.",
 };
 
 const REDUCE_ONLY_PARAM: ProtocolParamDef = {
