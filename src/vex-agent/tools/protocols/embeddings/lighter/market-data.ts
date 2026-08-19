@@ -406,13 +406,13 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.status": {
     embeddingText: embeddingText(
-      `Check and reconcile the true state of Vex-submitted Lighter orders from provider evidence and provable nonce facts. ` +
-      `Use when: an order create ended sequencer_pending or ambiguous, the user asks what happened to a Lighter order, or a new order is blocked by an unresolved nonce reservation. ` +
-      `Returns per-intent repair reports with state before and after, evidence source, nonce blockage, and wait-or-resolved guidance. It never signs, submits, retries, or cancels an order. ` +
-      `Example queries: what happened to my lighter order, is my rhc order stuck, unblock lighter nonce.`,
+      `Check and reconcile the true state of Vex-submitted Lighter create orders, cancels, modifications, cancel-all actions, and reduce-only position closes from exact order, trade, position, and nonce evidence. ` +
+      `Use when: any Lighter action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. ` +
+      `Returns per-intent state, exact fills and resulting position when available, nonce blockage, and safe guidance. It never signs, submits, retries, cancels, or modifies anything. ` +
+      `Example queries: what happened to my lighter close, is my rhc cancel stuck, check lighter modification, unblock lighter nonce.`,
     ),
-    aliases: ["lighter order status", "lighter order stuck", "lighter order repair", "lighter nonce blocked"],
-    exampleIntents: ["what happened to my lighter order", "is my rhc order stuck", "unblock the lighter nonce reservation"],
+    aliases: ["lighter order status", "lighter lifecycle status", "lighter close status", "lighter cancel stuck", "lighter order repair", "lighter nonce blocked"],
+    exampleIntents: ["what happened to my lighter close", "is my rhc cancel stuck", "check my lighter modification", "unblock the lighter nonce reservation"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

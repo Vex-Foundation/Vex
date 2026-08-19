@@ -40,6 +40,13 @@ const mocks = vi.hoisted(() => ({
     listUnresolved: vi.fn(),
     findByIntentIdAnySession: vi.fn(),
     markRepairResolved: vi.fn(),
+    listStreamWatchable: vi.fn(),
+    markStreamOutcome: vi.fn(),
+  },
+  lifecycleIntentsRepo: {
+    findByIntentIdAnySession: vi.fn(),
+    listStreamWatchable: vi.fn(),
+    markStreamEvidence: vi.fn(),
   },
   nonceStateRepo: {
     find: vi.fn(),
@@ -85,6 +92,8 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
   listUnresolved: mocks.executionIntentsRepo.listUnresolved,
   findByIntentIdAnySession: mocks.executionIntentsRepo.findByIntentIdAnySession,
   markRepairResolved: mocks.executionIntentsRepo.markRepairResolved,
+  listStreamWatchable: mocks.executionIntentsRepo.listStreamWatchable,
+  markStreamOutcome: mocks.executionIntentsRepo.markStreamOutcome,
   LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES: [
     "signed",
     "submitted",
@@ -92,6 +101,12 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
     "sequencer_pending",
     "ambiguous",
   ],
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({
+  findByIntentIdAnySession: mocks.lifecycleIntentsRepo.findByIntentIdAnySession,
+  listStreamWatchable: mocks.lifecycleIntentsRepo.listStreamWatchable,
+  markStreamEvidence: mocks.lifecycleIntentsRepo.markStreamEvidence,
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-nonce-state.js", () => ({
@@ -468,6 +483,7 @@ beforeEach(() => {
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
   mocks.onboarding.buildReaders.mockReturnValue({ marker: "onboarding-readers" });
+  mocks.lifecycleIntentsRepo.listStreamWatchable.mockResolvedValue([]);
 });
 
 describe("Lighter agent read handlers", () => {
@@ -1210,7 +1226,7 @@ describe("Lighter agent read handlers", () => {
 
     const data = await callJson("lighter.order.status", { environment: "rhc" });
 
-    expect(mocks.executionIntentsRepo.listUnresolved).toHaveBeenCalledWith("rhc", 10);
+    expect(mocks.executionIntentsRepo.listUnresolved).toHaveBeenCalledWith("rhc", 5);
     expect(data).toMatchObject({
       source: "vex_lighter_local_order_repair",
       environment: "rhc",
@@ -1263,6 +1279,49 @@ describe("Lighter agent read handlers", () => {
     );
     expect(mocks.executionIntentsRepo.markRepairResolved).not.toHaveBeenCalled();
     expect(mocks.nonceStateRepo.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("reports exact completed lifecycle close evidence through lighter.order.status", async () => {
+    mocks.executionIntentsRepo.findByIntentIdAnySession.mockResolvedValueOnce(null);
+    mocks.lifecycleIntentsRepo.findByIntentIdAnySession.mockResolvedValueOnce({
+      intentId: `lighter-lifecycle-${"a".repeat(32)}`,
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      executionState: "completed",
+      nonceValue: "9",
+      providerOutcomeJson: {
+        kind: "lighter_lifecycle_stream_evidence",
+        disposition: "closed",
+        closeOrder: {
+          status: "filled",
+          filledBaseAmount: "1.0000",
+          filledQuoteAmount: "50.000000",
+          remainingBaseAmount: "0",
+        },
+        resultingPosition: null,
+      },
+    });
+
+    const data = await callJson("lighter.order.status", {
+      environment: "rhc",
+      intentId: `lighter-lifecycle-${"a".repeat(32)}`,
+    });
+
+    expect(data.checkedIntents).toBe(1);
+    expect((data.reports as Record<string, unknown>[])[0]).toMatchObject({
+      kind: "lifecycle_action",
+      actionType: "close_position",
+      resolution: "already_terminal",
+      stateAfter: "completed",
+      executedAmount: "1.0000",
+      remainingAmount: "0",
+      averageFillPrice: "50",
+      providerStatus: "filled",
+    });
   });
 
   it("refuses approved Lighter create when the approval row targets another intent", async () => {

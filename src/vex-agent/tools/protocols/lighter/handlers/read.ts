@@ -43,6 +43,11 @@ import {
   repairUnresolvedLighterOrders,
 } from "../order-repair.js";
 import {
+  defaultLighterOrderLifecycleRepairDeps,
+  repairLighterOrderLifecycleIntent,
+  repairUnresolvedLighterOrderLifecycles,
+} from "../order-lifecycle-repair.js";
+import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
@@ -1355,24 +1360,51 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         : null;
 
     try {
-      const deps = defaultLighterOrderRepairDeps();
-      let reports;
+      const orderDeps = defaultLighterOrderRepairDeps();
+      const lifecycleDeps = defaultLighterOrderLifecycleRepairDeps();
+      let reports: Array<Record<string, unknown>>;
       if (intentId !== null) {
-        const intent = await deps.intents.findByIntentIdAnySession(intentId);
-        if (intent === null) {
-          return fail(`No Lighter order execution intent ${intentId} exists locally.`);
+        const intent = await orderDeps.intents.findByIntentIdAnySession(intentId);
+        if (intent !== null) {
+          if (intent.environment !== environment.value) {
+            return fail(`Lighter order intent ${intentId} belongs to ${intent.environment}, not ${environment.value}.`);
+          }
+          reports = [{ kind: "create_order", ...await repairLighterOrderIntent(intent, orderDeps) }];
+        } else {
+          const lifecycle = await lifecycleDeps.lifecycleIntents.findByIntentIdAnySession(intentId);
+          if (lifecycle === null) {
+            return fail(`No Lighter order or lifecycle intent ${intentId} exists locally.`);
+          }
+          if (lifecycle.environment !== environment.value) {
+            return fail(`Lighter lifecycle intent ${intentId} belongs to ${lifecycle.environment}, not ${environment.value}.`);
+          }
+          reports = [{
+            kind: "lifecycle_action",
+            ...await repairLighterOrderLifecycleIntent(lifecycle, lifecycleDeps),
+          }];
         }
-        reports = [await repairLighterOrderIntent(intent, deps)];
       } else {
-        reports = await repairUnresolvedLighterOrders(
-          { environment: environment.value, limit: 10 },
-          deps,
-        );
+        const [orders, lifecycles] = await Promise.all([
+          repairUnresolvedLighterOrders(
+            { environment: environment.value, limit: 5 },
+            orderDeps,
+          ),
+          repairUnresolvedLighterOrderLifecycles(
+            { environment: environment.value, limit: 5 },
+            lifecycleDeps,
+          ),
+        ]);
+        reports = [
+          ...orders.map((report) => ({ kind: "create_order", ...report })),
+          ...lifecycles.map((report) => ({ kind: "lifecycle_action", ...report })),
+        ];
       }
 
       const unresolved = reports.filter(
         (report) =>
-          report.resolution === "awaiting_provider" || report.resolution === "degraded",
+          report.resolution === "awaiting_provider"
+          || report.resolution === "degraded"
+          || report.resolution === "nonce_consumed_outcome_pending",
       ).length;
       return ok({
         source: "vex_lighter_local_order_repair",
@@ -1381,13 +1413,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         stillUnresolved: unresolved,
         reports,
         riskNotes: [
-          "Repair updates local order records from provider evidence and provable nonce facts only; it never signs, submits, or retries an order.",
-          "Never resubmit an order whose report says awaiting_provider; wait for the stated deadline and run this again.",
+          "Repair updates local create-order and lifecycle-action records from provider evidence and provable nonce facts only; it never signs, submits, retries, cancels, or modifies anything.",
+          "Never retry an action whose report is still unresolved; wait for the stated deadline and run this again.",
         ],
         message:
           reports.length === 0
-            ? `No unresolved Lighter order intents exist for ${environment.value}.`
-            : `Checked ${reports.length} Lighter order intent(s); ${unresolved} still unresolved.`,
+            ? `No unresolved Lighter order or lifecycle intents exist for ${environment.value}.`
+            : `Checked ${reports.length} Lighter order/lifecycle intent(s); ${unresolved} still unresolved.`,
       });
     } catch (err) {
       return fail(`Lighter order status unavailable (${failureDetail("lighter.order.status", err)})`);

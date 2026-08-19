@@ -1645,7 +1645,7 @@ function isTerminalOrderStatus(value: string | undefined): boolean {
   return isCanceledStatus(status) || status.startsWith("filled") || status.startsWith("expired") || status.startsWith("rejected");
 }
 
-function averageFillPrice(base: string, quote: string): string | null {
+export function averageFillPrice(base: string, quote: string): string | null {
   const baseParts = decimalParts(base);
   const quoteParts = decimalParts(quote);
   if (baseParts === null || quoteParts === null || baseParts.integer === 0n) return null;

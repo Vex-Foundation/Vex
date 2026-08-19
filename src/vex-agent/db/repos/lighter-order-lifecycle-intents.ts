@@ -150,6 +150,16 @@ export async function findByIntentId(
   return row === null ? null : mapRow(row);
 }
 
+export async function findByIntentIdAnySession(
+  intentId: string,
+): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents WHERE intent_id = $1`,
+    [intentId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 export async function findLiveTarget(input: {
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;

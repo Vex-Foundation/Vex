@@ -466,7 +466,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Check and reconcile the true state of Vex-submitted Lighter orders. Use when the user asks what happened to a Lighter order, an order create ended sequencer_pending or ambiguous, or a new order was refused because a nonce reservation is unresolved. Reads live nextNonce and, when a read-only token is configured, account orders and trades, then updates local order records from that evidence only: it can classify an order as open, filled, canceled, or rejected, and it releases a stuck nonce reservation only when the reserved nonce is provably spent, the signed transaction never left Vex, or the order expired unconsumed. Returns per-intent reports with state before/after, evidence source, nonce blockage, and explicit wait-or-resolved guidance. It never signs, submits, retries, or cancels an order and moves no funds.",
+      "Check and reconcile the true state of Vex-submitted Lighter create orders and lifecycle actions (cancel one, modify, cancel all, and reduce-only close). Use when an action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. Reads live nextNonce plus exact account order, trade, and position evidence, then updates durable records without signing or retrying. Close reports include executed amount, remaining order amount, average fill price, provider status, and resulting position when proven. A stuck nonce is released only when the signed transaction provably never left Vex or expired while its nonce remained unconsumed; a consumed nonce is unblocked without guessing the final action outcome. It never signs, submits, retries, cancels, modifies, or moves funds.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -475,7 +475,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
         key: "intentId",
         type: "string",
         description:
-          "Optional Lighter order execution intent id to check, from lighter.order.create.prepare or an earlier status report. Omit to check every unresolved local Lighter order intent for the environment.",
+          "Optional Lighter create-order or lifecycle intent id to check, from a prepare tool or earlier status report. Omit for a bounded check of unresolved local intents in the environment.",
       },
     ],
     exampleParams: { environment: "rhc" },
