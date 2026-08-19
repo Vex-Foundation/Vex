@@ -62,6 +62,7 @@ The curated shortcuts below run the SAME protocol code as the dotted toolIds the
 | Shortcut | Runs |
 | --- | --- |
 | \`lighter_rhc_onboarding_status\` | \`lighter.account.onboarding.status\` fixed to Robinhood Chain; complete wallet, funding, account, allowance, and managed-key readiness in one read |
+| \`lighter_core_onboarding_status\` | \`lighter.account.onboarding.status\` fixed to Core; complete wallet, funding, account, allowance, and managed-key readiness in one read |
 | \`token_find\` | \`khalani.tokens.search\` (canonical token resolver) |
 | \`token_check\` | \`kyberswap.tokens.check\` (EVM honeypot / fee-on-transfer) |
 | \`swap_quote\` / \`swap_execute\` | the chain's swap venue (EVM → \`kyberswap.swap.*\`, \`chain="solana"\` → \`solana.swap.*\`) |

@@ -36,7 +36,10 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   // session has produced a successful discover_tools result, which is exactly
   // when the follow-up fetch becomes meaningful.
   { label: "Protocol discovery", toolNames: ["discover_tools", "describe_tools"] },
-  { label: "Lighter RHC onboarding (complete live read)", toolNames: ["lighter_rhc_onboarding_status"] },
+  {
+    label: "Lighter onboarding (complete environment-fixed live reads)",
+    toolNames: ["lighter_rhc_onboarding_status", "lighter_core_onboarding_status"],
+  },
   { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   { label: "Token resolution", toolNames: ["token_find"] },
