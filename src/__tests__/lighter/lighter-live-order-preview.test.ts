@@ -117,7 +117,7 @@ async function choosePreviewParams(environment: LighterEnvironment): Promise<{
     });
     const accountIndex = accountIndexFromOrderBook(book);
     if (accountIndex === null) continue;
-    const livePrice = orderPrice(book.bids) ?? orderPrice(book.asks) ?? String(detail.lastTradePrice ?? "");
+    const livePrice = orderPrice(book.asks) ?? orderPrice(book.bids) ?? String(detail.lastTradePrice ?? "");
     const priceNumber = Number(livePrice);
     if (!Number.isFinite(priceNumber) || priceNumber <= 0) continue;
 
@@ -136,8 +136,8 @@ async function choosePreviewParams(environment: LighterEnvironment): Promise<{
         side: "buy",
         baseAmountIn: baseAmount,
         price,
-        orderType: "limit",
-        timeInForce: "good-till-time",
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
         reduceOnly: false,
         orderExpiry: Date.now() + 10 * 60 * 1000,
       },
@@ -191,6 +191,10 @@ describeLivePreview("Lighter live order preview through protocol runtime", () =>
       expect((preview.preview as Record<string, unknown>).riskNotes).toContain(
         "Preview only. No order was signed, submitted, placed, cancelled, deposited, withdrawn, or transferred.",
       );
+      expect(preview.preview).toEqual(expect.objectContaining({
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
+      }));
 
       const persisted = await lighterOrderPreviewsRepo.findLatestFreshByMatch(
         sessionId,
