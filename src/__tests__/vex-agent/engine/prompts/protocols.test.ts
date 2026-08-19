@@ -54,6 +54,96 @@ describe("buildProtocolsPrompt", () => {
     expect(routingLine).not.toContain("—");
   });
 
+  // pools.fun doctrine (P4). The integration shipped every layer except the
+  // system-prompt doctrine, so a cold model could see the namespace on the map
+  // and still not know that these tokens trade on `kyberswap`, that the preview
+  // cannot name an address, or who earns the fee stream. Each assertion below
+  // pins ONE measured or owner-decided fact, at the granularity the Trench and
+  // Morpho assertions elsewhere in this suite use.
+  describe("pools.fun doctrine", () => {
+    it("routes trading to kyberswap and states the namespace has no trade tool", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("## pools.fun Launchpad");
+      expect(prompt).toContain("TRADING IS DELIBERATELY NOT IN THIS NAMESPACE");
+      expect(prompt).toContain("13 of 13 sampled tokens routed");
+    });
+
+    // The two Robinhood launchpads must be distinguishable AT THE VENUE
+    // QUESTION: the Trench curve exception alone reads as "launchpad tokens on
+    // 4663 do not route", which is wrong for every pools.fun token.
+    it("contrasts the no-curve pools token against the Trench curve exception", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("pools.fun contrast, same chain");
+      expect(prompt).toContain("NO bonding curve and NO graduation");
+      expect(prompt).toContain("Never route a pools.fun token through `trench.trade_*`");
+      // The Trench exception it contrasts with must still be there.
+      expect(prompt).toContain("Trench exception, Robinhood Chain (4663)");
+    });
+
+    it("names the research gap: no holder count, no liquidity, dexscreener instead", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("NO holder count and NO liquidity figure ANYWHERE");
+      expect(prompt).toContain("indexed as sushiswap v3 on chain robinhood");
+      expect(prompt).toContain("pools.my_launches");
+    });
+
+    // The address is NOT knowable at preview time (image -> metadata link ->
+    // salt -> address) and the deployment fee moves; a model that promises
+    // either from a preview is stating a money fact it cannot support.
+    it("marks the launch preview advisory: no address, dynamic fee", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("`pools.launch_preview` is ADVISORY");
+      expect(prompt).toContain("Never promise a predicted address from a preview");
+      expect(prompt).toContain("THE DEPLOYMENT FEE IS DYNAMIC");
+    });
+
+    // Fee basis and destination are the two facts rule 90 says must never be
+    // model-chosen: 25 bps on the NATIVE value only, recipient pinned.
+    it("states the 25 bps native-only fee basis and the pinned fee recipient", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("25 bps of the NATIVE value the launch sends");
+      expect(prompt).toContain("USDG prebuy is an ERC-20 leg and is NOT in that basis");
+      expect(prompt).toContain("THE CREATOR FEE RECIPIENT IS PINNED");
+      expect(prompt).toContain("NO recipient parameter");
+    });
+
+    it("routes a restricted session to the launch form and mirrors the authority matrix", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("`pools.launch_request_form` is how you hand the launch DECISION");
+      expect(prompt).toContain("do not call it again while the form is open");
+      expect(prompt).toMatch(
+        /`pools\.launch_execute`[\s\S]*RESTRICTED session it refuses BY NAME - call `pools\.launch_request_form`/,
+      );
+      expect(prompt).toContain("HOST-authored launch ceilings");
+    });
+
+    // `alreadyCollected` is NOT the claimable total - the simulation is. That
+    // inversion is the one way this tool misreports money.
+    it("states dryRun claim semantics: both legs, and alreadyCollected is not the total", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("`pools.claim_fees`");
+      expect(prompt).toContain("`dryRun: true` FIRST");
+      expect(prompt).toContain("already-collected figures are fees the locker ALREADY holds and are NOT the claimable total");
+      expect(prompt).toContain("costs gas, so say so before claiming a dust balance");
+    });
+
+    it("the pools doctrine carries no em dash (owner decree 2026-08-05)", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      const start = prompt.indexOf("## pools.fun Launchpad");
+      expect(start).toBeGreaterThan(-1);
+      const section = prompt.substring(start, prompt.indexOf("## Virtuals Agent Tokens"));
+      expect(section).not.toContain("—");
+    });
+  });
+
   // Owner add-on (2026-07-23): the kyberswap entry's chain list must be
   // DERIVED from the live registry, never hand-written, so a future chain
   // add/drop in `@tools/kyberswap/chains.ts` flows into the prompt

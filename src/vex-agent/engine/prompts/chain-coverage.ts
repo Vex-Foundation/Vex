@@ -46,6 +46,12 @@ function venueLabels(chainId: number): string[] {
   const labels: string[] = ["swap"];
   if (morphoChainIds.has(chainId)) labels.push("lend");
   if (pendleChainIds.has(chainId)) labels.push("fixed yield");
+  // Robinhood Chain (4663) carries BOTH launchpads - Trench Express and
+  // pools.fun - so this one predicate already labels the chain correctly for
+  // both, and keying it on pools as well would only push a duplicate "launch"
+  // onto the same row. `TRENCH_CHAIN_ID` is read here as "the chain that has a
+  // launchpad", not as a Trench-only fact; the two products are told apart in
+  // the doctrine sections of `protocols.ts`, not in this venue table.
   if (chainId === TRENCH_CHAIN_ID) labels.push("launch");
   return labels;
 }
