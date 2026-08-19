@@ -9,7 +9,7 @@
  *
  * The database is mocked at the repo seam - the DDL and the constraint behaviour
  * are proven separately against real Postgres by
- * `agents_dm/pools-fun-live/migration-079-apply-proof.ts`, which is the only
+ * `agents_dm/pools-fun-live/migration-082-apply-proof.ts`, which is the only
  * place they CAN be proven. Here the question is what the handler asks the repo
  * to write.
  */

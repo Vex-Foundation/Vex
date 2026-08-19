@@ -25,6 +25,8 @@ const EMPTY: Omit<RoleLegRow, "eventRole"> = {
   executedAmountOutRaw: null,
   executedAmountIn2Raw: null,
   executedAmountOut2Raw: null,
+  tokenInAddress: null,
+  tokenOutAddress: null,
   tokenIn2Address: null,
   tokenOut2Address: null,
 };
@@ -42,9 +44,6 @@ const BOTH_LEG_ROLES: readonly AgentActivityEventRole[] = [
   "yield_pt",
   "yield_yt",
   "yield_sy",
-  "lend_deposit",
-  "lend_withdraw",
-  "lend_borrow_operate",
   "predict_buy",
   "predict_sell",
   "predict_claim",
@@ -90,6 +89,65 @@ describe("roleLegsIncomplete — the asymmetric roles", () => {
     expect(roleLegsIncomplete(row("yield_claim", { executedAmountOutRaw: "1" }))).toBe(false);
     expect(roleLegsIncomplete(row("yield_claim", { executedAmountInRaw: "1" }))).toBe(true);
   });
+});
+
+/**
+ * The three LEND roles read the row's OWN tokens instead of demanding a fixed
+ * pair, because the same role covers two honest row shapes. A Morpho VAULT
+ * deposit/withdrawal swaps asset for shares and populates both sides. Every
+ * Morpho Blue DIRECT-MARKET operation and every Jupiter /operate leg moves
+ * exactly ONE token: supply, supply_collateral and repay send it, withdraw,
+ * withdraw_collateral and borrow receive it, so the row populates that side's
+ * token and leaves the other null.
+ */
+const LEND_ROLES: readonly AgentActivityEventRole[] = [
+  "lend_deposit",
+  "lend_withdraw",
+  "lend_borrow_operate",
+];
+
+describe("roleLegsIncomplete - the lend roles follow the tokens the row populated", () => {
+  for (const role of LEND_ROLES) {
+    it(`${role} requires a leg only where the row populated its token`, () => {
+      // The SEND side (a market supply / supply_collateral / repay).
+      expect(roleLegsIncomplete(row(role, { tokenInAddress: "0xdai" }))).toBe(true);
+      expect(
+        roleLegsIncomplete(row(role, { tokenInAddress: "0xdai", executedAmountInRaw: "1000000" })),
+      ).toBe(false);
+
+      // The RECEIVE side (a market withdraw / withdraw_collateral / borrow).
+      expect(roleLegsIncomplete(row(role, { tokenOutAddress: "0xdai" }))).toBe(true);
+      expect(
+        roleLegsIncomplete(row(role, { tokenOutAddress: "0xdai", executedAmountOutRaw: "1000000" })),
+      ).toBe(false);
+
+      // The absent side must never hold a whole single-leg row incomplete.
+      expect(
+        roleLegsIncomplete(row(role, { tokenInAddress: "0xdai", executedAmountOutRaw: "1" })),
+      ).toBe(true);
+
+      // The VAULT shape: a row that populated both tokens still owes both legs.
+      expect(
+        roleLegsIncomplete(
+          row(role, {
+            tokenInAddress: "0xdai",
+            tokenOutAddress: "0xusdc",
+            executedAmountInRaw: "1",
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        roleLegsIncomplete(
+          row(role, {
+            tokenInAddress: "0xdai",
+            tokenOutAddress: "0xusdc",
+            executedAmountInRaw: "1",
+            executedAmountOutRaw: "2",
+          }),
+        ),
+      ).toBe(false);
+    });
+  }
 });
 
 describe("roleLegsIncomplete — the Option-C second legs", () => {

@@ -85,7 +85,7 @@ function rowWithSeparateCopy(): Record<string, unknown> {
   };
 }
 
-/** A metadata row where the original IS its own copy (the pre-080 shape). */
+/** A metadata row where the original IS its own copy (the pre-083 shape). */
 function rowThatIsItsOwnCopy(): Record<string, unknown> {
   return {
     ...rowWithSeparateCopy(),

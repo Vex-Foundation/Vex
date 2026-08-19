@@ -36,12 +36,12 @@
  * completed launch actually committed on-chain.
  *
  * `digest` is the sha256 of the STORED ORIGINAL bytes. `onchain_digest` is the
- * sha256 of the derived Trench copy (migration 080), which is what a Trench
+ * sha256 of the derived Trench copy (migration 083), which is what a Trench
  * launch actually writes on-chain. The execute leg re-reads the bytes main-side
  * and verifies the digest of the variant IT consumes against the one bound in
  * the authorization record (C0) before signing, so an image swapped between
  * authorization and execution cannot slip through. For every image that
- * predates 080 the two digests are equal by backfill, so that binding is
+ * predates 083 the two digests are equal by backfill, so that binding is
  * byte-for-byte what it always was.
  */
 
@@ -72,7 +72,7 @@ export interface LaunchImageRow {
   /** sha256 hex of the stored bytes. */
   digest: string;
   /**
-   * The TRENCH on-chain copy (migration 080), NULLABLE TOGETHER with
+   * The TRENCH on-chain copy (migration 083), NULLABLE TOGETHER with
    * {@link onchainDigest}.
    *
    * `byteLength`/`digest` above describe the ORIGINAL bytes the user picked,

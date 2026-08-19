@@ -210,7 +210,7 @@ export function buildActivityHalf(
         -- route, a price and a counterparty that a token creation never had —
         -- migration 051 records the cost of exactly that mistake, for wrap.
         WHEN kind = 'launch' THEN 'launch'
-        -- A creator-fee CLAIM is its own product (migration 079). It is not a
+        -- A creator-fee CLAIM is its own product (migration 082). It is not a
         -- launch: it pays two assets out, months later, from a token that
         -- already exists - and it is certainly not the ELSE arm's spot trade,
         -- which would state a route, a price and a counterparty it never had.

@@ -35,6 +35,7 @@ import {
   parseNarrativeListQuery,
 } from "../narrative-list/index.js";
 import { buildPairList, parsePairListQuery } from "../pair-list/index.js";
+import { sourceObservation } from "./source-observation.js";
 
 export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.trending": async (p) => {
@@ -43,14 +44,16 @@ export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const metas = await client.getMetasTrending();
-    return ok(
-      buildNarrativeList({
+    const asOfMs = Date.now();
+    return ok({
+      sourceObservation: sourceObservation(client, metas, asOfMs),
+      ...buildNarrativeList({
         endpoint: "/metas/trending/v1",
         providerMetas: metas,
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
-    );
+    });
   },
 
   "dexscreener.meta": async (p) => {
@@ -60,12 +63,16 @@ export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
     // `chainIds` IS allowed here, unlike on `trending`: measured live, one
     // narrative's 31 pools spanned six chains, so the filter has something to
     // match and "the cat meta on base" is an answerable question.
-    const parsed = parsePairListQuery(p, { sortBy: "liquidityUsd", allowChainFilter: true });
+    const parsed = parsePairListQuery(p, {
+      sortBy: "liquidityUsd",
+      allowChainFilter: true,
+      limit: 20,
+    });
     if (!parsed.ok) return fail(`dexscreener.meta: ${parsed.reason}`);
 
-    const asOfMs = Date.now();
     const client = getDexScreenerClient();
     const detail = await client.getMeta(slug);
+    const asOfMs = Date.now();
     // `null` is the tolerant validator's verdict on a body it could not read at
     // all. That IS an established cause — the provider answered and the payload
     // did not match the narrative shape — so it is reported as exactly that,
@@ -86,6 +93,7 @@ export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
 
     return ok({
       slug: detail.slug,
+      sourceObservation: sourceObservation(client, detail, asOfMs),
       name: detail.name,
       description: detail.description,
       // THREE DISTINCT NUMBERS where the provider offered two that could be

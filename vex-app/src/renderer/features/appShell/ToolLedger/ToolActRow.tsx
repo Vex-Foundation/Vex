@@ -35,10 +35,10 @@ import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
 import { ProtocolMark } from "./ProtocolMark.js";
-import { ToolLegLine } from "./ToolLegLine.js";
+import { ToolLegLine, ToolSingleLegLine } from "./ToolLegLine.js";
 import { formatToolDuration } from "./toolDuration.js";
 import { resolveToolIdentity } from "./toolIdentity.js";
-import { resolveToolLegs } from "./toolLegs.js";
+import { resolveToolLegs, resolveToolSingleLeg } from "./toolLegs.js";
 import { resolveToolOperation } from "./toolOperation.js";
 import { toolGlyph } from "./toolGlyph.js";
 
@@ -198,6 +198,24 @@ export function ToolActRow({
           ),
     [operation, act.toolArgs, act.output, act.success, act.displayStatus],
   );
+  // A ONE-SIDED movement - a Morpho Blue market supply/withdraw/borrow/repay
+  // moves exactly one token - is read only once the PAIR reader has declined,
+  // so a two-sided act can never be reported as half of itself. The single leg
+  // draws a wallet-relative arrow, never the pair line's `→` between two
+  // tokens: inventing a mirror leg would claim a movement that never happened.
+  const singleLeg = useMemo(
+    () =>
+      operation === null || legs !== null
+        ? null
+        : resolveToolSingleLeg(
+            act.toolArgs,
+            act.output,
+            act.success,
+            operation,
+            act.displayStatus,
+          ),
+    [operation, legs, act.toolArgs, act.output, act.success, act.displayStatus],
+  );
   return (
     <div
       // Semantic contract: every visible tool row keeps the role attr.
@@ -225,6 +243,7 @@ export function ToolActRow({
               {identity.title}
             </span>
             {legs !== null ? <ToolLegLine legs={legs} /> : null}
+            {singleLeg !== null ? <ToolSingleLegLine leg={singleLeg} /> : null}
           </span>
           <DurationChip durationMs={act.durationMs} />
           {/* Chevron stays even when stamped — it is the expand affordance. */}

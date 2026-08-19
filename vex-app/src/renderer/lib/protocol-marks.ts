@@ -16,7 +16,7 @@
  * network from the untrusted UI).
  *
  * The curated keys are the COMPLETE venue vocabulary the agent tools emit
- * today — `khalani`, `kyberswap`, `pendle`, `pools`, `relay`, `trench`,
+ * today — `khalani`, `kyberswap`, `morpho`, `pendle`, `pools`, `relay`, `trench`,
  * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, `solana`, `virtuals` (the
  * last two are protocol `toolId` namespaces surfaced by the transcript's tool
  * cards).
@@ -55,6 +55,7 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   jupiter: { label: "Jupiter", src: "/protocols/jupiter.jpg" },
   khalani: { label: "Khalani", src: "/protocols/khalani.svg" },
   kyberswap: { label: "KyberSwap", src: "/protocols/kyberswap.svg" },
+  morpho: { label: "Morpho", src: "/protocols/morpho.jpg" },
   pendle: { label: "Pendle", src: "/protocols/pendle.jpg" },
   pools: { label: "pools.fun", src: "/protocols/pools.jpg" },
   relay: { label: "Relay", src: "/protocols/relay.png" },

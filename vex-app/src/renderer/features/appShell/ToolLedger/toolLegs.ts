@@ -1,6 +1,14 @@
 /**
- * SWAP / BRIDGE LEG LINE — the "VEX → USDC" summary a friendly tool card shows
- * instead of raw JSON as its primary view.
+ * THE LEG LINE - the "VEX → USDC" summary a friendly tool card shows instead of
+ * raw JSON as its primary view.
+ *
+ * TWO ARITIES, because two different things happen in the world. A swap, a
+ * bridge and a Morpho VAULT supply/redeem move a token IN and a token OUT, and
+ * `resolveToolLegs` reads that pair. A Morpho Blue MARKET operation moves
+ * exactly ONE token in one direction, and `resolveToolSingleLeg` reads that.
+ * The single-leg shape exists so the renderer can never dress a one-sided
+ * movement up as a pair: a mirror leg invented to make the row look like a swap
+ * would be a claim about a movement that never happened.
  *
  * Reads the SANITIZED args/output strings the DTO carries. Both are untrusted.
  * `toolArgs` is capped at 2000 chars by `toolCallDisplaySchema`; the OUTPUT
@@ -75,6 +83,28 @@ export type ToolLegOutcome =
 export interface ToolLegPair {
   readonly from: ToolLeg;
   readonly to: ToolLeg;
+  readonly outcome: ToolLegOutcome;
+}
+
+/**
+ * Which way the ONE token of a single-leg act moved, relative to the wallet:
+ * `sent` = the wallet paid it out, `received` = the wallet took it in. There is
+ * no third value; an act whose direction cannot be proven has no leg at all.
+ */
+export type ToolLegDirection = "sent" | "received";
+
+/**
+ * A one-sided movement: exactly one token, in one direction, with the same
+ * outcome ladder a pair carries. This is the honest shape for a Morpho Blue
+ * MARKET operation (supply collateral, withdraw collateral, borrow, repay),
+ * which moves one token and nothing else. Writing a mirror leg to make such a
+ * row look like a swap would be a claim about a movement that never happened
+ * (`morpho/handlers/signed-broadcast/borrow-intent.ts`), so the renderer gets a
+ * distinct shape it must draw distinctly, rather than a half-filled pair.
+ */
+export interface ToolSingleLeg {
+  readonly leg: ToolLeg;
+  readonly direction: ToolLegDirection;
   readonly outcome: ToolLegOutcome;
 }
 
@@ -227,6 +257,57 @@ export function resolveToolLegs(
       token: tokenDisplay(toToken, null, null),
       amount: amountDisplay(readAmount(all, TO_AMOUNT_KEYS)),
     },
+    outcome,
+  };
+}
+
+/**
+ * Resolve the ONE-SIDED leg of a single-token act (a Morpho Blue market
+ * operation today), or `null` when it cannot be proven.
+ *
+ * Same untrusted inputs, same bounded parse, same outcome ladder and the same
+ * args-only rule for an unproven act as `resolveToolLegs` - every helper below
+ * is shared with the pair reader, not copied. Only the arity differs:
+ *
+ *  - the wallet SENDS       -> a from-side token key (`tokenIn`, …) alone;
+ *  - the wallet RECEIVES    -> a to-side token key (`tokenOut`, …) alone;
+ *  - BOTH sides present     -> `null`. That payload is a PAIR, and the caller
+ *    must render it as one; presenting half of a two-sided movement would
+ *    silently drop the other half of what happened.
+ *  - neither side present   -> `null`.
+ *
+ * The amount comes from the matching side's amount keys and still goes through
+ * `amountDisplay` with `trustedHuman: false`, so a raw base-unit integer prints
+ * a token with no number rather than a thousandfold lie.
+ */
+export function resolveToolSingleLeg(
+  toolArgs: string | null,
+  output: string | null,
+  success: boolean | null | undefined,
+  operation: ToolOperation,
+  displayStatus?: ToolDisplayStatus | null,
+): ToolSingleLeg | null {
+  const outcome = legOutcome(success, operation, displayStatus);
+  const argRecords = candidateRecords(toolArgs);
+  const all = readsOutput(outcome)
+    ? [...candidateRecords(output), ...argRecords]
+    : argRecords;
+
+  const sentToken = readString(all, FROM_TOKEN_KEYS);
+  const receivedToken = readString(all, TO_TOKEN_KEYS);
+  if ((sentToken === null) === (receivedToken === null)) return null;
+
+  const sent = sentToken !== null;
+  const token = sent ? sentToken : receivedToken;
+  if (token === null) return null; // unreachable; keeps the narrowing honest
+  const amountKeys = sent ? FROM_AMOUNT_KEYS : TO_AMOUNT_KEYS;
+
+  return {
+    leg: {
+      token: tokenDisplay(token, null, null),
+      amount: amountDisplay(readAmount(all, amountKeys)),
+    },
+    direction: sent ? "sent" : "received",
     outcome,
   };
 }

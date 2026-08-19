@@ -275,7 +275,7 @@ describe("image refusals are DISTINCT failures", () => {
   });
 
   it("refuses over-budget bytes app-side, now that the DB no longer bounds them", async () => {
-    // Migration 080 moved the 20 480 CHECK onto `onchain_byte_length`, so a
+    // Migration 083 moved the 20 480 CHECK onto `onchain_byte_length`, so a
     // resolver that hands back something larger has to be stopped HERE - this
     // is the last gate before the bytes are encoded into an irreversible create.
     const oversized = new Uint8Array(20_481);

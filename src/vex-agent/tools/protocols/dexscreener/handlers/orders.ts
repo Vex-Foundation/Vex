@@ -13,6 +13,7 @@ import type { ProtocolHandler } from "../../types.js";
 import { str, ok, fail } from "../../handler-helpers.js";
 import { missingRequired } from "./missing-params.js";
 import { resolveDexScreenerChain } from "../chain-param.js";
+import { sourceObservation } from "./source-observation.js";
 
 export const DEXSCREENER_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.orders": async (p) => {
@@ -26,11 +27,13 @@ export const DEXSCREENER_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     // boost-payment ledger for the same token. Both are spend signals, so
     // both are surfaced; the ledger used to be discarded entirely.
     const result = await client.getOrders(chain.slug, tokenAddress);
+    const asOfMs = Date.now();
     return ok({
       // Echoed under the param key the caller sent (`chain`), lowercased so it
       // agrees with the provider rows, which all carry a lowercase slug.
       chain: chain.slug.toLowerCase(),
       tokenAddress,
+      sourceObservation: sourceObservation(client, result, asOfMs),
       orderCount: result.orders.length,
       orders: result.orders,
       boostPaymentCount: result.boostPayments.length,

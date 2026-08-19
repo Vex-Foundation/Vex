@@ -97,7 +97,7 @@ describe("kyberswap handlers", () => {
 
   // ── Read-only handlers return data (no wallet needed) ────────────
 
-  it("kyberswap.chains returns chain list (19 aggregator chains, Scroll/zkSync dropped)", async () => {
+  it("kyberswap.chains returns chain list (18 aggregator chains, Scroll/zkSync/Etherlink dropped)", async () => {
     const result = await KYBERSWAP_HANDLERS["kyberswap.chains"]!(
       {},
       ctx({ sessionPermission: "restricted", approved: false }),
@@ -105,7 +105,7 @@ describe("kyberswap handlers", () => {
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(19);
+    expect(data.length).toBe(18);
     expect(data[0].slug).toBeDefined();
     expect(data[0].chainId).toBeDefined();
     expect(data[0].aggregator).toBeDefined();

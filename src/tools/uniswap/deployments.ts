@@ -149,7 +149,15 @@ const BASE: UniswapDeployment = {
     quoterV2: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://base-rpc.publicnode.com",
+  // NOT publicnode: `base-rpc.publicnode.com` refuses `eth_getTransactionReceipt`
+  // at the method level (-32602 "Archive requests require a personal token") even
+  // for a head-block transaction, so a swap sent through it can never be
+  // confirmed. Funded live probe, 2026-08-17. drpc rather than the official
+  // `mainnet.base.org` because that one rate limits at about five requests (5x
+  // 200 then 7x 429 in a 12-request burst, and it failed this repo's own
+  // live-RPC suite); `base.drpc.org` served a receipt from its own latest block
+  // and took 30 consecutive requests with no throttling.
+  defaultRpcUrl: "https://base.drpc.org",
 };
 
 // ── Arbitrum One (42161) ── verified 2026-07-05 (V2 allPairsLength=8683) ──
@@ -171,7 +179,11 @@ const ARBITRUM: UniswapDeployment = {
     quoterV2: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://arbitrum-one-rpc.publicnode.com",
+  // NOT publicnode, for the same reason as Base above: on 2026-08-17
+  // `arbitrum-one-rpc.publicnode.com` refused `eth_getTransactionReceipt` with
+  // the same -32602 method-level refusal. This endpoint was live-verified to
+  // serve a receipt for a transaction from its own latest block.
+  defaultRpcUrl: "https://arb1.arbitrum.io/rpc",
 };
 
 // ── Optimism (10) ── verified 2026-07-05 (V2 allPairsLength=5188) ──

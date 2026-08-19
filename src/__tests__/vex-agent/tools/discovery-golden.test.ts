@@ -39,6 +39,7 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
   { intent: "new token launches on trench", expectedAny: ["trench.tokens"] },
+  { intent: "newest tokens on robinhood", expectedAny: ["trench.tokens"] },
   { intent: "trench bonding curve tokens", expectedAny: ["trench.tokens"] },
   { intent: "preview a token launch cost on trench", expectedAny: ["trench.launch_preview"] },
   { intent: "trench launchpad trade tape", expectedAny: ["trench.trades", "trench.tokens"] },

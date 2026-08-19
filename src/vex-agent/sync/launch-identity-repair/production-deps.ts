@@ -134,7 +134,7 @@ async function classifyMissingLaunchReceipt(
  * complete enough to prove a receipt with.
  *
  * TWO SOURCES, AND ONE OF THEM IS UNTRUSTED. The pair, the recipient, the
- * predicted token and the gateway are COLUMNS (migration 079). The SALT is not:
+ * predicted token and the gateway are COLUMNS (migration 082). The SALT is not:
  * it lives inside the C0 `authorization_json` blob, which is storage and is read
  * here exactly the way the user-submit path reads it - as untrusted input,
  * shape-checked before any value is used. A blob of the wrong shape yields

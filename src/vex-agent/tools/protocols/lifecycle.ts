@@ -40,6 +40,7 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   dexscreener: "active",
   virtuals: "active",
   pendle: "active",
+  morpho: "active",
   trench: "active",
   pools: "active",
 };

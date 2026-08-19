@@ -15,7 +15,7 @@
  *     create a durable, replayable money-path artifact. Memory bounds it
  *     naturally.
  *  4. IT ADDS NO STORED STATE to the money path, which would be a fresh owner
- *     decision beyond the approved 079 package - and the durable record that
+ *     decision beyond the approved 082 package - and the durable record that
  *     MATTERS already exists: the intent row, written at stage 2 when an
  *     authorization is actually taken.
  *

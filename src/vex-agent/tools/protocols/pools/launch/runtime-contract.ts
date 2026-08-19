@@ -234,7 +234,7 @@ export interface PoolsClaimInputs {
 export interface PoolsClaimedFees {
   readonly tokenAddress: Address;
   readonly txHash: Hex;
-  /** ONE activity row carrying BOTH output legs (migration 079 `pools_claim`). */
+  /** ONE activity row carrying BOTH output legs (migration 082 `pools_claim`). */
   readonly activityId: number;
   readonly tokenLeg: PoolsAmount;
   readonly pairedLeg: PoolsAmount;

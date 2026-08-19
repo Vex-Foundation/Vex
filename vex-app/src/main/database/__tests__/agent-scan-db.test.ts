@@ -211,7 +211,7 @@ describe("getAgentScan row selection", () => {
     const { sql } = pageCall();
     expect(sql).toContain("aa.event_role = 'swap'");
     expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
-    // `claim` joined the arm with migration 079: a creator-fee payout is its own
+    // `claim` joined the arm with migration 082: a creator-fee payout is its own
     // kind, and a kind the feed does not admit is written and then invisible.
     expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch', 'claim')");
   });

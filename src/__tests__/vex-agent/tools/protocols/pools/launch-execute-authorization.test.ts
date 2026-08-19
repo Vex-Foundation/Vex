@@ -14,7 +14,7 @@
  *
  * The database is mocked at the repo seam - the DDL and the constraints are
  * proven separately against real Postgres by
- * `agents_dm/pools-fun-live/migration-079-apply-proof.ts`. Here the question is
+ * `agents_dm/pools-fun-live/migration-082-apply-proof.ts`. Here the question is
  * what the handler asks the repo to write, and when it refuses to ask at all.
  */
 

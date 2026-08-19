@@ -191,9 +191,9 @@ describe("an image that already fits is its own on-chain copy", () => {
     expect(written.onchainDigest).toBe(digestOf(FITTING_BYTES));
   });
 
-  it("is byte-for-byte what a pre-080 row was, so the C0 binding does not move", async () => {
+  it("is byte-for-byte what a pre-083 row was, so the C0 binding does not move", async () => {
     // Every image stored before the split satisfied the old 20 480 CHECK, and
-    // migration 080 backfilled `onchain_* = byte_length/digest` for exactly that
+    // migration 083 backfilled `onchain_* = byte_length/digest` for exactly that
     // reason. This asserts the live path produces the same shape for such a
     // file: the digest a Trench authorization binds is the digest of the stored
     // bytes, as it always was.
@@ -229,7 +229,7 @@ describe("an exhausted ladder is a pools-only image, not a refused upload", () =
     expect(outcome.onchainVariant).toBeUndefined();
 
     const written = insertLaunchImage.mock.calls[0]?.[0] as Record<string, unknown>;
-    // BOTH null, never half a variant: the pairing CHECK in migration 080 makes
+    // BOTH null, never half a variant: the pairing CHECK in migration 083 makes
     // that a database fact, and this is the writer that has to honour it.
     expect(written.onchainByteLength).toBeNull();
     expect(written.onchainDigest).toBeNull();

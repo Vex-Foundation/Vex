@@ -78,6 +78,15 @@ export const settlementDecodeSchema = z.discriminatedUnion("decoder", [
   routedVariant.extend({ decoder: z.literal("uniswap") }),
   routedVariant.extend({ decoder: z.literal("pendle") }),
   routedVariant.extend({ decoder: z.literal("trench_trade") }),
+  // Morpho vault lend (E3b-2). `routerAddress` is the target the HANDLER itself
+  // computed and its own bundle decoder accepted - the pinned Bundler3 on a
+  // deposit, the vault itself on a withdrawal, since a Morpho withdrawal is a
+  // direct vault call and not a bundle. Never a value echoed back from the SDK.
+  // No `declaredValueRaw`: every vault shape this lane builds carries zero
+  // native value, so recording one would describe a transaction Vex does not
+  // send. The vault's share token and the underlying asset are already the row's
+  // own `token_in`/`token_out` columns and are not repeated here.
+  routedVariant.extend({ decoder: z.literal("morpho") }),
   launchVariant.extend({ decoder: z.literal("trench_launch") }),
   // A pools.fun gateway launch. Its OWN decoder rather than `trench_launch`:
   // the events, the emitters and the attribution rule are different (identity

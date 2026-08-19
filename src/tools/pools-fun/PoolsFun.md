@@ -350,7 +350,7 @@ The 20,480-byte cap that used to bind every locker image was **ours, and it was
 Trench's**: Trench writes the image bytes inline in `create()` calldata, where
 every byte is gas on an irreversible transaction. Applying it here meant every
 pools.fun launch silently published a downscaled, square-cropped picture. Since
-migration 080 the locker stores the **original bytes verbatim** and derives a
+migration 083 the locker stores the **original bytes verbatim** and derives a
 separate Trench-only copy; `resolveLaunchImageBytes` (the seam this lane uses)
 returns the original, unchanged.
 
@@ -359,7 +359,7 @@ One ceiling remains and it is **a resource bound, not a product limit**:
 agreement -
 `vex-app/src/main/images/downscale.ts` (`DOWNSCALE_MAX_SOURCE_BYTES`, refused
 from `stat` before a byte is read), `LOCKER_IMAGE_MAX_SOURCE_BYTES` in the
-shared schema, and the `launch_images.byte_length` CHECK in migration 080. It
+shared schema, and the `launch_images.byte_length` CHECK in migration 083. It
 exists so a multi-gigabyte file picked in the dialog cannot exhaust memory. If
 a user needs a larger image on pools.fun, the honest answer is the `imageUrl`
 paste path below, not a wider read ceiling.

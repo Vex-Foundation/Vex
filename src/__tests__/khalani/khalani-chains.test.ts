@@ -96,6 +96,21 @@ describe("khalani chain helpers", () => {
         expect((err as { code: string }).code).toBe(ErrorCodes.KHALANI_UNSUPPORTED_CHAIN);
       }
     });
+
+    // Owner decision 2026-08-17: the registry WAS read here, so the chain is one
+    // Khalani does not serve - a retry cannot change that, and saying otherwise
+    // sent the agent back to spend turns on a chain that was never coming.
+    it("names the chain and Relay, with NO retry framing, for a chain the registry does not serve", () => {
+      try {
+        getChain(146, CHAINS); // sonic - an alias-table entry, absent from the live set
+        expect.unreachable("getChain must refuse");
+      } catch (err: unknown) {
+        const hint = (err as { hint: string }).hint;
+        expect(hint).toContain("Khalani does not serve sonic");
+        expect(hint).toContain("Relay");
+        expect(hint).not.toContain("retry this tool later");
+      }
+    });
   });
 
   describe("getChainRpcUrl", () => {

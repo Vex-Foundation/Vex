@@ -64,7 +64,7 @@ export const TOKEN_METADATA_LINK_LENGTH_MAX = 128;
  *
  * WHY IT LIVES HERE. Same reason as its text siblings above: three surfaces
  * need the same number and none of them may import the others. It is the
- * `launch_images.onchain_byte_length` CHECK (migration 080), the assertion the
+ * `launch_images.onchain_byte_length` CHECK (migration 083), the assertion the
  * launch plan runs before composing calldata, and the bound the desktop
  * variant report declares. The desktop ladder aims LOWER (20 000 with headroom,
  * `vex-app/src/shared/schemas/images.ts`); this is the ceiling nothing may

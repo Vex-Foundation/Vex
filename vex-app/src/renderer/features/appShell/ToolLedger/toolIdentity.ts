@@ -217,6 +217,37 @@ const TOOL_ID_PRESENTATION: Readonly<Record<string, ToolIdPresentation>> = {
   "relay.bridge": { action: "Bridge", category: "bridge" },
   "khalani.quote.get": { action: "Bridge quote", category: "bridge" },
   "khalani.bridge": { action: "Bridge", category: "bridge" },
+
+  // Morpho's sixteen acts - the nine reads, then the money acts. The
+  // humanizer would spell them "Markets discover" / "Vault withdraw"; these
+  // read the way the rest of the card voice does. The market and vault reads
+  // are `market` (research), the two wallet-scoped reads are `wallet`, and the
+  // vault and Blue-market money acts stay `tool` on purpose: none is a swap or
+  // a bridge, and borrowing either of those categories would hand a lending act
+  // the leg-line styling of a trade.
+  "morpho.markets.discover": { action: "Market list", category: "market" },
+  "morpho.market.get": { action: "Market detail", category: "market" },
+  "morpho.markets.activity": { action: "Market activity", category: "market" },
+  "morpho.vaults.discover": { action: "Vault list", category: "market" },
+  "morpho.vault.get": { action: "Vault detail", category: "market" },
+  "morpho.rewards.get": { action: "Rewards", category: "market" },
+  "morpho.positions.get": { action: "Positions", category: "wallet" },
+  "morpho.wallet.balance": { action: "Wallet balance", category: "wallet" },
+  "morpho.vault.quote": { action: "Vault quote", category: "tool" },
+  "morpho.vault.deposit": { action: "Vault deposit", category: "tool" },
+  "morpho.vault.withdraw": { action: "Vault withdrawal", category: "tool" },
+
+  // Morpho BLUE market acts. `morpho.market.quote` previews a market
+  // operation and is the market-side twin of `morpho.vault.quote`, so it takes
+  // the same `tool` category rather than the `market` (research) one that
+  // `morpho.market.get` uses: it is a money act's preview, not a market read.
+  // The four executes each move exactly ONE token in one direction, which is
+  // why they render a single leg rather than a pair (see `toolLegs.ts`).
+  "morpho.market.quote": { action: "Market preview", category: "tool" },
+  "morpho.market.supplyCollateral": { action: "Supply collateral", category: "tool" },
+  "morpho.market.withdrawCollateral": { action: "Withdraw collateral", category: "tool" },
+  "morpho.market.borrow": { action: "Borrow", category: "tool" },
+  "morpho.market.repay": { action: "Repay", category: "tool" },
 };
 
 /**

@@ -123,7 +123,7 @@ export interface CreatePendingActivityEventInput {
    * `tokenIn2`). Populating both sides, or neither, is a shape no Pendle action
    * produces and the DB refuses it.
    *
-   * Migration 079 admits ONE more role, on the OUTPUT side only: `pools_claim`.
+   * Migration 082 admits ONE more role, on the OUTPUT side only: `pools_claim`.
    * A pools.fun creator-fee claim spends nothing and `collectAndClaim` pays two
    * assets in one call, so it carries `tokenOut2` and never `tokenIn2` - an
    * input leg on a claim row would be evidence the decoder read the wrong thing.

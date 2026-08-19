@@ -317,7 +317,7 @@ describe("recoverStaleHashlessIntents", () => {
         // whose router takes no fee parameter: EVM-only, locally signed, owned
         // by no sweep, and definitively not-attempted when it is never signed.
         "swap_fee",
-        // Migration 079 (the pools.fun Vex fee). The same leg once more, on a
+        // Migration 082 (the pools.fun Vex fee). The same leg once more, on a
         // launchpad with no Solana deployment: EVM-only, locally signed, owned
         // by no sweep, and definitively not-attempted when it is never signed.
         // `pools_claim` is deliberately ABSENT - a claim is the primary

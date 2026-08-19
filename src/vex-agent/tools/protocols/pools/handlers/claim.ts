@@ -19,7 +19,7 @@
  * `{assetAddress, amountRaw, decimals}` and the decimals are READ from the
  * contracts.
  *
- * ONE ACTIVITY ROW, TWO OUTPUT LEGS, ITS OWN KIND (migration 079). A claim is
+ * ONE ACTIVITY ROW, TWO OUTPUT LEGS, ITS OWN KIND (migration 082). A claim is
  * one transaction that pays two assets - not two rows, and not one row that
  * forgets an asset. It carries NO input leg, because a claim spends nothing, and
  * it rides `kind = 'claim'` rather than `launch`: a payout filed under launches
@@ -243,7 +243,7 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
         {
           eventIndex: 0,
           eventRole: "pools_claim",
-          // ITS OWN KIND (migration 079, owner decision 2026-08-19). A claim is
+          // ITS OWN KIND (migration 082, owner decision 2026-08-19). A claim is
           // not a launch: it signs its own transaction long afterwards, spends
           // nothing, and pays two assets out.
           kind: "claim",

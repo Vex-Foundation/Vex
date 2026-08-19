@@ -65,7 +65,7 @@ export const TRENCH_ONCHAIN_IMAGE_MAX_BYTES = 20_000;
  * multi-gigabyte pick cannot be pulled into memory through the file picker or
  * written into a row. It is the same number as `DOWNSCALE_MAX_SOURCE_BYTES`
  * (which refuses from `stat`, before a byte is read) and as the
- * `launch_images.byte_length` CHECK in migration 080.
+ * `launch_images.byte_length` CHECK in migration 083.
  */
 export const LOCKER_IMAGE_MAX_SOURCE_BYTES = 26_214_400;
 

@@ -28,7 +28,7 @@ import {
 
 // ── create ──────────────────────────────────────────────────────────────────
 
-// The pools columns (migration 079) are all nullable and `protocol` DEFAULTs to
+// The pools columns (migration 082) are all nullable and `protocol` DEFAULTs to
 // 'trench' in the database, so a caller that supplies none of them writes
 // exactly the row it wrote before this existed.
 const INSERT_SQL = `INSERT INTO token_launch_intents (

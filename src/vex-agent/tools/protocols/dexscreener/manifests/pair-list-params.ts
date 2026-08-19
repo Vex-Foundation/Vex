@@ -14,7 +14,8 @@
  * below subtracts from, orders, or narrows at most 30 rows DexScreener already
  * chose, and an empty result never means "this does not exist".
  *
- * `limit` HAS NO DEFAULT. Omitting it returns every row the provider returned.
+ * Handler defaults are echoed in `filtersApplied.limit`; `hasMore` and `offset`
+ * expose the rest of the same provider window.
  *
  * This file is the public entry point and owns the per-TOOL compositions; the
  * vocabulary itself lives in `./pair-list-params/` (0R.16 facade split,
@@ -26,7 +27,6 @@
 import type { ProtocolParamDef } from "../../types.js";
 import {
   EXPLAIN_DROPS_PARAM,
-  PAIR_OMIT_FIELDS_PARAM,
   PAIR_SORT_PARAMS,
   PAIR_TIMEFRAME_PARAMS,
   PAIR_WINDOW_PARAMS,
@@ -40,6 +40,7 @@ import {
 
 export {
   PAIR_DESCRIPTION_WINDOW_CLAUSE,
+  SOURCE_OBSERVATION_CLAUSE,
   STRING_OR_ARRAY_CLAUSE,
   WINDOW_CLAUSE,
 } from "./pair-list-params/clauses.js";
@@ -67,7 +68,6 @@ export {
  */
 export const PAIR_LIST_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,
-  PAIR_OMIT_FIELDS_PARAM,
   ...PAIR_SORT_PARAMS,
   ...PAIR_TIMEFRAME_PARAMS,
   ...PAIR_VENUE_FILTER_PARAMS,
@@ -98,14 +98,15 @@ export const PAIR_LOOKUP_PARAMS: readonly ProtocolParamDef[] = [
 /**
  * A measured bare-call size, appended to `limit` on the surface it was measured on.
  *
- * CANONICAL SOURCE: `agents_dm/agentscan-phase4/persona-tests/call-records.json`,
- * the replay that measures what the ENGINE measures
+ * CANONICAL SOURCES: `agents_dm/agentscan-phase4/persona-tests/call-records.json`
+ * (search/tokenPairs) and the 2026-08-17 live blind-eval batch run (tokens) -
+ * both measure what the ENGINE measures
  * (`Buffer.byteLength(result.output, "utf8")`) —
  * not the persona scripts' whole-ToolResult count, which was ~2x inflated.
  *
- * Only these two pair surfaces exceeded the 16,384 B cap bare, so only these two
- * carry a number. Copying a figure onto a tool it was not measured on would be
- * the same class of error as asserting a provider cap nobody observed.
+ * Only surfaces measured to exceed the 16,384 B cap carry a number. Copying a
+ * figure onto a tool it was not measured on would be the same class of error as
+ * asserting a provider cap nobody observed.
  */
 function withBareCallByteCost(
   params: readonly ProtocolParamDef[],
@@ -116,9 +117,31 @@ function withBareCallByteCost(
   );
 }
 
-/** `search`, bare: measured 24,139 B — over the 16,384 B tool-output cap. */
+function paramsNamed(...keys: readonly string[]): ProtocolParamDef[] {
+  const wanted = new Set(keys);
+  return PAIR_LIST_PARAMS.filter((param) => wanted.has(param.key));
+}
+
+/**
+ * `dexscreener.search` is a resolver, not the full token-pool screener.
+ *
+ * Keep only output shaping plus the small set of filters that help disambiguate
+ * textual/address search results. The shared parser remains intentionally wider
+ * for backwards compatibility, but unsupported combinations are not taught to
+ * the agent through the public manifest.
+ */
 export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
-  PAIR_LIST_PARAMS,
+  paramsNamed(
+    "limit",
+    "offset",
+    "fields",
+    "quoteSymbols",
+    "minLiquidityUsd",
+    "minTurnoverRatio",
+    "requirePriceUsd",
+    "requireLiquidityUsd",
+    "explainDrops",
+  ),
   "MEASURED: one bare pair-notation query with no limit returned 24,139 B against the 16,384 B "
     + "tool-output cap. The widest queries genuinely overflow, and `limit` is what bounds them.",
 );
@@ -126,25 +149,32 @@ export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteC
 /**
  * `dexscreener.tokens` — one arbitrary pool per requested token address.
  *
- * Venue, label and quote-asset filters are omitted: each row is a DIFFERENT
- * token's single provider-chosen pool, so filtering the set by venue answers a
- * question nobody asked ("which of my holdings happens to have been quoted on
- * raydium"). Paging, sorting, projection and the economic thresholds all still
- * mean what they say across a portfolio.
+ * Each row represents a DIFFERENT requested token's provider-chosen pool.
+ * `sortBy`/`sortDir` are advertised: with a default row window in place, an
+ * unadvertised sort left the agent unable to choose WHICH holdings the window
+ * shows (measured: a 35-address portfolio paged blind through arbitrary
+ * provider order). A sort reorders and a window pages; every row stays
+ * reachable and accounted through totalMatched/hasMore/offset.
+ *
+ * Three screening params are advertised because the fresh-token flow LANDS
+ * here (feeds carry no market data, so candidates get resolved through this
+ * batch) and hiding them cost a measured 6-call detour for a one-call answer:
+ * `requireLiquidityUsd` and the two age bounds. Each drops rows only on
+ * request and every drop is counted in droppedByFilter - nothing is ever
+ * silently filtered. Threshold screeners (minLiquidityUsd etc.) stay
+ * unadvertised: a portfolio call has no reason to hide small holdings.
  */
 export const PAIR_BATCH_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,
-  PAIR_OMIT_FIELDS_PARAM,
   ...PAIR_SORT_PARAMS,
   ...PAIR_TIMEFRAME_PARAMS,
-  ...PAIR_THRESHOLD_FILTER_PARAMS,
-  EXPLAIN_DROPS_PARAM,
+  ...PAIR_AGE_FILTER_PARAMS,
+  ...PAIR_QUALITY_FILTER_PARAMS.filter((param) => param.key === "requireLiquidityUsd"),
 ];
 
-/** `tokens`, bare with 41 addresses: measured 17,822 B — over the cap. */
 export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
   PAIR_BATCH_PARAMS,
-  "MEASURED: 41 addresses with no limit returned 17,822 B against the 16,384 B tool-output cap. "
-    + "The mandatory address reconciliation is part of that cost and is never windowed, so `limit` "
-    + "shortens the ROWS while requestedAddresses/unresolvedAddresses stay complete.",
+  "MEASURED: 35 resolved addresses at the default lean projection returned 22,378 B against the "
+    + "16,384 B tool-output cap (live batch, 2026-08-17, engine byte measure) - about 23 rows fit "
+    + "one response, so a full 60-address batch needs offset paging regardless of limit.",
 );

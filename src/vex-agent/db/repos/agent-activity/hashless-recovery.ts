@@ -113,7 +113,7 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // was ambiguous, or the process died between intent creation and staging — is
   // definitively not-attempted, so it stays reapable here.
   "swap_fee",
-  // `pools_fee` (migration 079) is the same leg once more, on pools.fun. Note
+  // `pools_fee` (migration 082) is the same leg once more, on pools.fun. Note
   // that `pools_claim` is deliberately NOT here: a claim is the PRIMARY
   // transaction of its own execution, not a dependent leg that a failed parent
   // proves was never attempted.

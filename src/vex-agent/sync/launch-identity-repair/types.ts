@@ -18,7 +18,7 @@ export interface LaunchReceiptLookupInput {
   /** The creator to cross-check `TokenCreated` against — never a stranger's create in the same receipt. */
   readonly walletAddress: string;
   /**
-   * WHICH LAUNCHPAD this intent belongs to (migration 079).
+   * WHICH LAUNCHPAD this intent belongs to (migration 082).
    *
    * The two launchpads emit different events from different contracts and
    * attribute a launch differently — on the pools.fun gateway path the FACTORY

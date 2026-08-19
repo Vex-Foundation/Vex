@@ -88,7 +88,7 @@ Consequences worth stating once:
   from the pools lane's `resolveLaunchImageBytes`. Both fail closed, and the
   throw names which one is unmounted;
 - **the C0 digest binding did not move.** It binds the digest of the bytes that
-  go on-chain, which is what it always bound - migration 080 backfilled every
+  go on-chain, which is what it always bound - migration 083 backfilled every
   pre-existing row with `onchain_* = byte_length/digest`, because those images
   already fit and their stored bytes ARE the on-chain bytes;
 - the database no longer bounds the locker at 20,480, so

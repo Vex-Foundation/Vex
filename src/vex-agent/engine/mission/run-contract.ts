@@ -14,7 +14,7 @@ const ContractSnapshotSchema = z.object({
   version: z.literal(1),
   capturedAt: z.string(),
   missionPromptContext: z.string(),
-  frozenMission: z.unknown(),
+  frozenMission: z.unknown().optional(),
 });
 
 export type MissionRunContractSnapshot = z.infer<typeof ContractSnapshotSchema>;

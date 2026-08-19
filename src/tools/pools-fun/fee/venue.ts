@@ -39,7 +39,7 @@ export const POOLS_FEE_BPS = 25;
  */
 export const POOLS_FEE_LEG_GAS_LIMIT = gasLimitWithHeadroom(21_000n);
 
-/** The `agent_activity.event_role` a pools.fun fee leg is recorded under (migration 079). */
+/** The `agent_activity.event_role` a pools.fun fee leg is recorded under (migration 082). */
 export const POOLS_FEE_ACTIVITY_EVENT_ROLE = "pools_fee" as const;
 
 /** The only basis pools.fun charges on. */

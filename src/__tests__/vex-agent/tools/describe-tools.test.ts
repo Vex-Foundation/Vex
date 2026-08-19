@@ -56,17 +56,15 @@ import { makeTestContext } from "./_test-context.js";
 const SESSION = "describe-tools-suite";
 
 /**
- * Serialized worst LEGAL result budget: a bound-sized fetch of the catalog's
- * most expensive manifests PLUS a full round of displaced-id warnings. The
- * row-only budget is not the worst case (Codex arc-2 final) — a call into a
- * full session set also names every id it displaced.
+ * `DESCRIBE_RESULT_CHAR_BUDGET` is gone (owner decision, 2026-08-17). It was
+ * raised seven times across this project together with the discovery list
+ * budgets, which means it never tracked a real constraint - each raise simply
+ * restated the newest measurement. Do not reintroduce it.
  *
- * Measured 2026-08-04 by `probes/worst-legal-flow.ts`: 166,162 chars for the 40
- * most expensive manifests in the catalog with a full displacement warning. The
- * ratchet sits above that with headroom, and its job is to make a future
- * 37-param manifest fail HERE rather than silently blow the context envelope.
+ * What actually bounds a describe_tools result is the runtime: the catalog's
+ * contents, `MAX_DESCRIBE_TOOL_IDS`, and `MAX_DISCOVERED_TOOLS_PER_SESSION`.
+ * The worst-legal test below asserts those bounds instead of prose length.
  */
-const DESCRIBE_RESULT_CHAR_BUDGET = 185_000;
 
 /** The env vars this suite pins, restored after every case. */
 const ENV_KEYS = [
@@ -315,8 +313,9 @@ describe("describe_tools — bounds are derived from the catalog, never chosen",
     expect(clean.sessionCapacity).toEqual({ used: 1, max: MAX_DISCOVERED_TOOLS_PER_SESSION });
   });
 
-  it("the worst LEGAL result — a bound-sized fetch plus a full round of displacement warnings — stays inside its budget", async () => {
-    recordDiscoveredTools(SESSION, catalogPool().slice(-MAX_DISCOVERED_TOOLS_PER_SESSION));
+  it("the worst LEGAL result — a bound-sized fetch plus a full round of displacement warnings — is bounded by the catalog and the id cap, not by prose length", async () => {
+    const earlier = catalogPool().slice(-MAX_DISCOVERED_TOOLS_PER_SESSION);
+    recordDiscoveredTools(SESSION, earlier);
     // The catalog's most expensive manifests, not an arbitrary slice.
     const bySize = [...PROTOCOL_TOOLS]
       .filter(isProtocolToolAvailable)
@@ -325,8 +324,20 @@ describe("describe_tools — bounds are derived from the catalog, never chosen",
       .slice(0, MAX_DESCRIBE_TOOL_IDS)
       .map((m) => m.toolId);
 
-    const result = await describe_(bySize);
-    expect(result.output.length).toBeLessThan(DESCRIBE_RESULT_CHAR_BUDGET);
+    const { payload } = await describeOk(bySize);
+    expect(bySize).toHaveLength(MAX_DESCRIBE_TOOL_IDS);
+    expect(payload.tools.map((t: { toolId: string }) => t.toolId).sort()).toEqual([...bySize].sort());
+    expect(payload.sessionCapacity).toEqual({
+      used: MAX_DISCOVERED_TOOLS_PER_SESSION,
+      max: MAX_DISCOVERED_TOOLS_PER_SESSION,
+    });
+
+    const displaced = earlier.filter((id) => !getDiscoveredToolIds(SESSION).includes(id));
+    expect(displaced.length).toBeGreaterThan(0);
+    const warningText = payload.warnings.join(" ");
+    for (const id of displaced) {
+      expect(warningText, `displaced id ${id} vanished with no signal`).toContain(id);
+    }
   });
 });
 

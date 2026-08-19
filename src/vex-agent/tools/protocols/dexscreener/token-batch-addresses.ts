@@ -9,8 +9,9 @@
  * "batch-price up to 30 token addresses … use for portfolio pricing", so a
  * 40-holding portfolio was priced 30-deep and reported as complete.
  *
- * Vex cannot widen the provider's cap. It can refuse to pass silent truncation
- * on as a complete answer, which is what this echo does.
+ * Vex widens a tool call by splitting it into provider-safe batches of 30. This
+ * echo still reconciles every requested address after all batches complete,
+ * because a successful response can omit an individual unindexed token.
  *
  * MATCHING SIDE — deliberately strict
  *
@@ -31,10 +32,19 @@ import { PROVIDER_PAIR_CAP } from "./pair-list/index.js";
 export interface TokenBatchAddressEcho {
   requestedAddresses: string[];
   resolvedAddresses: string[];
-  /** Requested and NOT returned by the provider. Non-empty means truncation. */
+  /**
+   * Requested and NOT returned by a COMPLETED provider response. Non-empty means
+   * the provider answered without these addresses (likely unindexed). Addresses
+   * whose batch failed in transport are reported separately as
+   * `unreachedAddresses` by the handler; they were never asked, not refused.
+   * (The former `addressCapApplied` flag is gone: it meant "more than 30
+   * requested", which after batch-splitting was `true` on fully resolved calls
+   * - a cap Vex itself removed.)
+   */
   unresolvedAddresses: string[];
-  /** `true` when more addresses were requested than DexScreener will answer. */
-  addressCapApplied: boolean;
+  /** Number of upstream requests used after splitting at the provider cap. */
+  batchRequestCount: number;
+  maxAddressesPerRequest: number;
 }
 
 /** Split the comma-separated param exactly as it will be sent upstream. */
@@ -48,20 +58,24 @@ export function splitRequestedAddresses(tokenAddresses: string): string[] {
 export function reconcileTokenBatchAddresses(
   tokenAddresses: string,
   providerPairs: readonly DexPair[],
+  caseSensitiveAddress: boolean,
+  batchRequestCount = 1,
 ): TokenBatchAddressEcho {
   const requestedAddresses = splitRequestedAddresses(tokenAddresses);
+  const identity = (address: string): string =>
+    caseSensitiveAddress ? address : address.toLowerCase();
   const returnedBaseAddresses = new Set<string>();
   for (const pair of providerPairs) {
     const address = pair.baseToken?.address;
     if (typeof address === "string" && address !== "") {
-      returnedBaseAddresses.add(address.toLowerCase());
+      returnedBaseAddresses.add(identity(address));
     }
   }
 
   const resolvedAddresses: string[] = [];
   const unresolvedAddresses: string[] = [];
   for (const requested of requestedAddresses) {
-    if (returnedBaseAddresses.has(requested.toLowerCase())) resolvedAddresses.push(requested);
+    if (returnedBaseAddresses.has(identity(requested))) resolvedAddresses.push(requested);
     else unresolvedAddresses.push(requested);
   }
 
@@ -69,6 +83,40 @@ export function reconcileTokenBatchAddresses(
     requestedAddresses,
     resolvedAddresses,
     unresolvedAddresses,
-    addressCapApplied: requestedAddresses.length > PROVIDER_PAIR_CAP,
+    batchRequestCount,
+    maxAddressesPerRequest: PROVIDER_PAIR_CAP,
+  };
+}
+
+export interface PairBatchAddressEcho {
+  requestedPairAddresses: string[];
+  resolvedPairAddresses: string[];
+  unresolvedPairAddresses: string[];
+  found: boolean;
+}
+
+export function reconcilePairBatchAddresses(
+  pairAddresses: string,
+  providerPairs: readonly DexPair[],
+  caseSensitiveAddress: boolean,
+): PairBatchAddressEcho {
+  const requestedPairAddresses = splitRequestedAddresses(pairAddresses);
+  const identity = (address: string): string =>
+    caseSensitiveAddress ? address : address.toLowerCase();
+  const returned = new Set(
+    providerPairs.flatMap((pair) =>
+      typeof pair.pairAddress === "string" && pair.pairAddress !== ""
+        ? [identity(pair.pairAddress)]
+        : []),
+  );
+  const resolvedPairAddresses = requestedPairAddresses.filter((address) =>
+    returned.has(identity(address)));
+  const unresolvedPairAddresses = requestedPairAddresses.filter((address) =>
+    !returned.has(identity(address)));
+  return {
+    requestedPairAddresses,
+    resolvedPairAddresses,
+    unresolvedPairAddresses,
+    found: resolvedPairAddresses.length > 0,
   };
 }

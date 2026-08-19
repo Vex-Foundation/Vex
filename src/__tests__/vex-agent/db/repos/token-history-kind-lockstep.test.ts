@@ -66,7 +66,7 @@ const KIND_ADMISSION: Readonly<Record<string, string | null>> = {
   yield: "'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'",
   wrap: null,
   /**
-   * `claim` (migration 079) is NOT carried by the token history today, recorded
+   * `claim` (migration 082) is NOT carried by the token history today, recorded
    * here rather than fixed.
    *
    * A creator-fee claim genuinely touches two tokens, so it has a real claim to

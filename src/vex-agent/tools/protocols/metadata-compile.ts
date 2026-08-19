@@ -32,6 +32,7 @@ const NAMESPACE_SOURCE_CLASS: Record<string, SourceClass> = {
   dexscreener: "specialized_market",
   khalani: "protocol_native",
   kyberswap: "protocol_native",
+  morpho: "protocol_native",
   solana: "protocol_native",
 };
 

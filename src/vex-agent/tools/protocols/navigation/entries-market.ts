@@ -17,6 +17,7 @@ import { KHALANI_NAVIGATION } from "./entries-market/khalani.js";
 import { RELAY_NAVIGATION } from "./entries-market/relay.js";
 import { KYBERSWAP_NAVIGATION } from "./entries-market/kyberswap.js";
 import { UNISWAP_NAVIGATION } from "./entries-market/uniswap.js";
+import { MORPHO_NAVIGATION } from "./entries-market/morpho.js";
 import { PENDLE_NAVIGATION } from "./entries-market/pendle.js";
 import { SOLANA_NAVIGATION } from "./entries-market/solana.js";
 import { DEXSCREENER_NAVIGATION } from "./entries-market/dexscreener.js";
@@ -29,6 +30,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   RELAY_NAVIGATION,
   KYBERSWAP_NAVIGATION,
   UNISWAP_NAVIGATION,
+  MORPHO_NAVIGATION,
   PENDLE_NAVIGATION,
   SOLANA_NAVIGATION,
   DEXSCREENER_NAVIGATION,

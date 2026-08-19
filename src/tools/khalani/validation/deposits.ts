@@ -81,7 +81,7 @@ export function validateDepositPlan(raw: unknown): DepositPlan {
         token: asString("deposit.token"),
         chainId: asNumber("deposit.chainId"),
         memo: asOptionalString,
-        expiresAt: z.unknown().transform((v) => (typeof v === "number" ? v : undefined)),
+        expiresAt: z.unknown().optional().transform((v) => (typeof v === "number" ? v : undefined)),
       }),
       raw,
     );

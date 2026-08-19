@@ -75,8 +75,17 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["amountRaw", "amount in RAW base units; description must name the decimals source"],
   ["depositAmountRaw", "multi-leg lend deposit, raw base units"],
   ["withdrawAmountRaw", "multi-leg lend withdrawal, raw base units"],
+  ["supplyAmountRaw", "lend supply into one Blue market (the lender's side), raw base units"],
   ["borrowAmountRaw", "multi-leg lend borrow, raw base units"],
   ["repayAmountRaw", "multi-leg lend repayment, raw base units"],
+  // A Blue market pairs two tokens at two scales, so the collateral legs cannot
+  // share the loan legs' keys: one `amountRaw` across four operations would let
+  // a collateral-scaled number fund a borrow.
+  ["supplyCollateralAmountRaw", "Blue market collateral supply, raw base units of the COLLATERAL token"],
+  ["withdrawCollateralAmountRaw", "Blue market collateral withdrawal, raw base units of the COLLATERAL token"],
+  // Not an amount: it routes a repayment to the SHARES path, the only
+  // denomination that can close an accruing debt at zero.
+  ["repayFullDebt", "Blue market repayment: close the debt completely by burning its exact borrow shares"],
   ["slippageBps", "price protection in basis points; type number, unit bps"],
   [
     "minSellPriceSlippageBps",
@@ -94,13 +103,122 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
     "imageId",
     "opaque id of an image already in the user's locker; the agent can never create one, only name one a read tool listed",
   ],
+
+  // -- Screening vocabulary ---------------------------------------
+  //
+  // The shape every filtered read tool in the tree already has, spelled once
+  // here instead of accumulating per-tool allowlist debt. These are GENERIC:
+  // any screening tool that pages, ranks or projects rows uses these exact
+  // four keys, and a model that learned them on one tool composes them
+  // correctly on the next.
+  ["search", "free-text substring match over a row's name/symbol identifiers"],
+  ["sort", "ranking key; the accepted set is declared as an `enum`, never left in prose"],
+  ["order", "ranking direction, `asc` or `desc`; declared as an `enum`"],
+  ["offset", "row offset for paging; pairs with the reply's `nextOffset`"],
+  ["fields", "comma-separated row field GROUPS to keep, to bound a large result"],
+  ["listedOnly", "keep only rows the protocol itself lists/curates; excludes permissionless dust"],
+
+  // -- Lending-market reads (morpho, batch 1) ----------------------
+  //
+  // Domain range predicates. They are named rather than folded into a generic
+  // `filters` object on purpose: a declared key is type-checked, echoed in
+  // `filtersApplied` and rejected by name, which an opaque bag cannot be.
+  // `*Percent` and `*Usd` suffixes carry the UNIT in the key, per the rule that
+  // prose alone has already failed to prevent a unit hazard.
+  ["marketId", "a lending market's own 32-byte id; NOT a contract address"],
+  ["loanTokenAddress", "the borrowable asset's contract address on a lending-market read"],
+  ["collateralTokenAddress", "the collateral asset's contract address on a lending-market read"],
+  ["minSupplyUsd", "floor on total supplied value, in USD"],
+  ["maxSupplyUsd", "ceiling on total supplied value, in USD"],
+  ["minBorrowUsd", "floor on total borrowed value, in USD"],
+  ["maxBorrowUsd", "ceiling on total borrowed value, in USD"],
+  ["minUtilizationPercent", "floor on borrowed/supplied, as a PERCENT"],
+  ["maxUtilizationPercent", "ceiling on borrowed/supplied, as a PERCENT"],
+  ["minNetSupplyApyPercent", "floor on net (rewards-inclusive) supply APY, as a PERCENT"],
+  ["maxNetBorrowApyPercent", "ceiling on net (rewards-inclusive) borrow APY, as a PERCENT"],
+  ["minLltvPercent", "floor on the liquidation loan-to-value threshold, as a PERCENT"],
+  ["maxLltvPercent", "ceiling on the liquidation loan-to-value threshold, as a PERCENT"],
+  ["includeHistory", "add the averaged historical window to a detail read"],
+  ["lookback", "which averaging window `includeHistory` returns; declared as an `enum`"],
+  ["includeSupplyingVaults", "add the curated vaults that supply this market to a detail read"],
+
+  // -- Curated-vault reads (morpho, batch 2) -----------------------
+  //
+  // A vault is a MANAGED deposit: a curator spreads one asset across many
+  // markets and takes a fee. The keys below name that domain rather than the
+  // lending-market one, so the two lanes stay distinguishable to a model that
+  // learned either first.
+  ["vaultAddress", "a curated vault's contract address; NOT a market id"],
+  ["version", "which generation of a protocol's contracts to read; declared as an `enum`"],
+  ["assetTokenAddress", "contract address of the asset a vault holds and pays out in"],
+  ["assetSymbol", "symbol of the asset a vault holds; the address form is preferred where both exist"],
+  ["curatorAddress", "address of the party that decides where a curated vault's money goes"],
+  ["minTvlUsd", "floor on total deposits held, in USD"],
+  ["maxTvlUsd", "ceiling on total deposits held, in USD"],
+  ["minNetApyPercent", "floor on APY NET of the curator fee, as a PERCENT"],
+  ["maxCuratorCutPercent", "ceiling on the curator's cut of the yield, as a PERCENT"],
+  ["includeAllocations", "add the per-market allocation table to a vault detail read"],
+
+  // -- Position and activity reads (morpho, batch 3) ---------------
+  //
+  // The portfolio vocabulary: what an account already HOLDS, and what already
+  // HAPPENED. Distinct from the screening keys above, which describe a venue a
+  // user has not entered yet.
+  ["scope", "which halves of a compound read to cover; declared as an `enum`"],
+  ["maxHealthFactor", "ceiling on a lending position's collateral-to-liquidation-threshold RATIO, not a percent"],
+  ["includeVaultV2", "sweep for VaultV2 positions, which no per-user list query serves"],
+  ["marketIds", "a LIST of lending-market ids; the singular form is `marketId`"],
+  ["types", "a LIST of event kinds to keep on a history read; the accepted set is declared as an `enum`"],
+  ["since", "window start as a unix timestamp in SECONDS"],
+  ["until", "window end as a unix timestamp in SECONDS"],
+
+  // -- Reward and wallet reads (morpho, batch 4) -------------------
+  //
+  // One key, added deliberately. `morphoOnly` narrows a REWARD read to the
+  // campaigns proven to belong to Morpho. It is not a generic `filter` or an
+  // `onlyX` pattern invited for reuse: the distributor behind that read serves
+  // many protocols, a single claim takes a whole reward token row whatever
+  // produced it, and this key is the caller's explicit statement that it wants
+  // the narrower view and accepts the incompleteness. Naming the protocol in
+  // the key is what stops it being read as a generic switch.
+  ["morphoOnly", "narrow a multi-protocol reward read to campaigns attributed to Morpho alone"],
+
+  // -- Which way an operation moves (morpho vault quote, E3b-1) ----
+  //
+  // `direction` was never a convention DEFECT; it was simply never ratified,
+  // so the two pendle manifests that already ship it carried allowlist debt
+  // instead. Ratifying it here is what removes those two entries.
+  //
+  // It earns a key rather than being inferred from which amount param arrived,
+  // even though the amount key alone would determine it. On a money path the
+  // caller's STATED intent and the amount it sent are two independent facts,
+  // and a call that says withdraw while sending a deposit amount is a caller
+  // that has confused itself. Deriving the direction silently would resolve
+  // that confusion in the caller's favour and act on the amount; requiring both
+  // lets the mismatch be refused by name, which is rules/90's rule for a
+  // money-path parameter disagreement.
+  //
+  // The accepted set is ALWAYS declared as an `enum`, never left in prose.
+  ["direction", "which way an operation moves value; the accepted set is declared as an `enum`"],
+
+  // -- Which SHAPE of option a screening read compares (morpho vaults) ---
+  //
+  // `route` selects which option sets a screening tool returns when the same
+  // goal can be reached through structurally different products - a curated
+  // vault versus supplying a market directly. It is not `direction` (that is
+  // which way value moves) and not `scope` (that is which halves of one
+  // compound read to cover). The accepted set is ALWAYS declared as an `enum`.
+  ["route", "which option SETS a screening read compares when one goal has structurally different products"],
+
   // Launchpad screening vocabulary (pools.fun). These are NEW deliberate keys,
   // not pre-convention debt: each names a filter the provider serves server-side
   // and has no canonical spelling to be renamed to. The screening family's older
-  // spellings (`sortBy`, `order`, `cursor`, `query`, `minMarketCapUsd`,
-  // `maxMarketCapUsd`) are NOT added here, because a dozen existing tools carry
-  // allowlist debt against them and canonicalizing one of them would silently
-  // retire a fleet-wide rename this task has no mandate to decide.
+  // spellings (`sortBy`, `cursor`, `query`, `minMarketCapUsd`, `maxMarketCapUsd`)
+  // are NOT added here, because a dozen existing tools carry allowlist debt
+  // against them and canonicalizing one of them would silently retire a
+  // fleet-wide rename this task has no mandate to decide. `order` is NOT in this
+  // list: the screening block above ratified it, so the pools manifests use the
+  // canonical key with no waiver.
   ["platform", "which launcher a multi-launchpad provider should answer for; never a chain"],
   ["live", "restrict a list to the provider's live/recently-active feed"],
   ["maxAgeHours", "keep only rows younger than N hours; the fresh-launch filter"],

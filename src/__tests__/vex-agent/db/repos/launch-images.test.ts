@@ -104,7 +104,7 @@ describe("reads are GLOBAL — an image belongs to the user, not a session", () 
     });
     const [sql, params] = mockQueryOne.mock.calls[0]!;
     expect(sql).toContain("INSERT INTO launch_images");
-    // Nine columns since migration 080: the seven original ones plus the
+    // Nine columns since migration 083: the seven original ones plus the
     // Trench on-chain copy's length and digest. `uploaded_at` is still absent.
     expect(params).toHaveLength(9);
   });

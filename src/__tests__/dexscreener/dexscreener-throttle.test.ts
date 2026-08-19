@@ -64,6 +64,20 @@ describe("parseRetryAfterMs", () => {
 });
 
 describe("DexScreenerThrottle cache + dedupe", () => {
+  it("reports the original fetch time and cache age on cache hits", async () => {
+    const { throttle, state } = makeClockThrottle();
+    const fetcher = vi.fn(async () => ({ ok: true }));
+
+    const first = await throttle.runObserved("observed", "fast", 30_000, fetcher);
+    state.clock += 4_250;
+    const cached = await throttle.runObserved("observed", "fast", 30_000, fetcher);
+
+    expect(first).toMatchObject({ fetchedAtMs: 0, cacheHit: false, cacheAgeMs: 0 });
+    expect(cached).toMatchObject({ fetchedAtMs: 0, cacheHit: true, cacheAgeMs: 4_250 });
+    expect(cached.value).toBe(first.value);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("serves a fresh cache hit without re-fetching, re-fetches after TTL expiry", async () => {
     const { throttle, state } = makeClockThrottle();
     const fetcher = vi.fn(async () => "value");

@@ -14,7 +14,7 @@ export type TokenLaunchIntentOrigin = "user" | "agent_requested_form" | "agent";
 
 export type TokenLaunchIntentStatus =
   /**
-   * ADVISORY, and NON-LIVE by construction (migration 079). A pools.fun preview
+   * ADVISORY, and NON-LIVE by construction (migration 082). A pools.fun preview
    * writes one of these so Agent Scan can surface previews from intents rather
    * than from hashless activity rows. It carries no authorization and no hash -
    * the database refuses one that does - consumes no launch ceiling, takes no
@@ -174,9 +174,9 @@ export interface TokenLaunchIntent {
    */
   authorizationJson: unknown;
   expiresAt: string;
-  /** Migration 079: which launchpad this intent belongs to. */
+  /** Migration 082: which launchpad this intent belongs to. */
   protocol: TokenLaunchIntentProtocol;
-  /** Migration 079: pools.fun fields, `null` on a Trench intent. */
+  /** Migration 082: pools.fun fields, `null` on a Trench intent. */
   pools: PoolsLaunchIntentFields | null;
   consumedAt: string | null;
   cancelledAt: string | null;
@@ -185,7 +185,7 @@ export interface TokenLaunchIntent {
   createdAt: string;
 }
 
-/** The launchpad an intent belongs to (migration 079's discriminator). */
+/** The launchpad an intent belongs to (migration 082's discriminator). */
 export type TokenLaunchIntentProtocol = "trench" | "pools_fun";
 
 /**
@@ -259,7 +259,7 @@ export interface CreateTokenLaunchIntentInput {
    * hangs or resumes against a form the user can still submit.
    */
   /**
-   * WHICH LAUNCHPAD this intent belongs to (migration 079). Defaults to
+   * WHICH LAUNCHPAD this intent belongs to (migration 082). Defaults to
    * `"trench"` in the database, so an omitted value keeps every existing caller
    * writing exactly the rows it wrote before.
    */
@@ -306,7 +306,7 @@ export const SELECT_COLUMNS =
   "tx_hash, token_address, " +
   "failure_reason, authorization_json, expires_at, consumed_at, cancelled_at, broadcast_at, " +
   "confirmed_at, created_at, " +
-  // Migration 079. Selected for every reader so a pools intent can be READ back
+  // Migration 082. Selected for every reader so a pools intent can be READ back
   // as a pools intent - a field that can be written but not read is half a
   // feature, and Agent Scan needs `protocol` to surface previews distinctly.
   "protocol, paired_asset, paired_asset_address, fee_recipient_address, " +

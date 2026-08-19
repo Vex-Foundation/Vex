@@ -57,7 +57,7 @@ export const AGENT_ACTIVITY_KINDS = [
   "wrap",
   "yield",
   "launch",
-  // Migration 079 (owner decision 2026-08-19): a creator-fee CLAIM is its own
+  // Migration 082 (owner decision 2026-08-19): a creator-fee CLAIM is its own
   // kind, not a launch. It signs its own transaction long after the launch it
   // belongs to, spends nothing, and pays two assets out - so filing it under
   // `launch` would put a payout inside every launch feed, filter and count.
@@ -114,7 +114,7 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
  * takes no fee parameter (Uniswap), a separate transfer of the INPUT token that
  * runs after the swap confirms, admitted on the `swap` arm only.
  *
- * Migration 079 adds the two pools.fun roles on DIFFERENT arms.
+ * Migration 082 adds the two pools.fun roles on DIFFERENT arms.
  * `pools_fee` is Vex's integrator fee on a pools.fun launch and stays on the
  * `launch` arm — a separate role from `trench_fee` because that one names a
  * different venue and the Trench feeds and repair sweeps select on it, and it
@@ -122,7 +122,7 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
  * ONE row whose TWO output legs are the launched token and the paired asset
  * that `collectAndClaim` returns together, carried in the `*_out2_*` columns
  * migration 053 already added, and it rides its own `kind = 'claim'` (owner
- * decision 2026-08-19). That is the non-additive half of 079: every consumer
+ * decision 2026-08-19). That is the non-additive half of 082: every consumer
  * switching on `kind` was audited in the same change rather than left to fall
  * through.
  */

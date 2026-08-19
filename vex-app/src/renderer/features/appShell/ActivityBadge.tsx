@@ -210,7 +210,7 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // Migration 066 — the same fee leg again, on a swap venue whose router takes
   // no fee parameter.
   swap_fee: "FEE",
-  // Migration 079 — the same fee leg once more, on the pools.fun launchpad.
+  // Migration 082 — the same fee leg once more, on the pools.fun launchpad.
   pools_fee: "FEE",
   // A creator fee CLAIM, which pays out two assets in one transaction. The
   // badge names the act; the two legs are the row's own output legs.

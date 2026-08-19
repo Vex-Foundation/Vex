@@ -1,0 +1,209 @@
+/**
+ * Turning Merkl's raw reward rows into an ATTRIBUTED answer.
+ *
+ * Two facts about how Merkl works decide the whole shape of this module, and
+ * both were established by the live probe of 2026-08-14 rather than assumed.
+ *
+ * A CLAIM IS PER TOKEN, NOT PER CAMPAIGN. Merkl publishes one Merkle leaf per
+ * wallet per reward token, and the campaign `breakdowns` beneath it are an
+ * explanation of how that single leaf accrued. A wallet on Base carried one WELL
+ * row whose twelve breakdowns all pointed at a Morpho vault opportunity, and a
+ * separate USDC row whose breakdowns pointed at a Moonwell opportunity. Claiming
+ * takes the whole token row. So this module reports EVERY token row and labels
+ * the protocols inside it - splitting a row by protocol would describe a claim
+ * that Merkl cannot perform, and dropping the non-Morpho rows would hide money
+ * the same transaction would deliver.
+ *
+ * ATTRIBUTION IS A LOOKUP, AND IT CAN FAIL HONESTLY. A reward row names an
+ * opportunity id, not a protocol; `protocol.id` lives on the opportunity. When an
+ * opportunity cannot be fetched - the lookup cap bound, or Merkl refused - the
+ * slice is labelled UNRESOLVED and counted. It is never assumed to be Morpho and
+ * never quietly discarded. A row can also name NO campaign at all - the live
+ * smoke found the burn address holding eight such reward tokens on Base - and
+ * that is counted separately again. `attribution.complete` covers both, because
+ * "no Morpho rewards" and "we could not tell" are different answers and only one
+ * of them is safe to report.
+ */
+
+import { MERKL_MAX_OPPORTUNITY_LOOKUPS, MERKL_MORPHO_PROTOCOL_ID } from "./constants.js";
+import type { MerklClient } from "./client.js";
+import type { MerklReward, MerklUserRewards } from "./types.js";
+
+/** One protocol's share of a single reward token row. */
+export interface MerklRewardSource {
+  /** Merkl's protocol id, or `null` when the opportunity could not be resolved. */
+  protocolId: string | null;
+  protocolName: string | null;
+  /** True when this slice is Morpho's, proven by `protocol.id`, never inferred. */
+  isMorpho: boolean;
+  /** A representative opportunity name, for a human-readable label. */
+  opportunityName: string | null;
+  campaignCount: number;
+  claimableRaw: string;
+  pendingRaw: string;
+}
+
+/** One reward token a wallet holds a claim on, with its per-protocol sources. */
+export interface MerklAttributedReward extends MerklReward {
+  /** `amount - claimed`, computed in BigInt. What a claim would deliver now. */
+  claimableRaw: string;
+  sources: readonly MerklRewardSource[];
+  /** True when at least one resolved source on this row is Morpho's. */
+  hasMorphoSource: boolean;
+}
+
+export interface MerklAttribution {
+  resolvedOpportunities: number;
+  unresolvedOpportunities: number;
+  /**
+   * Reward rows that carried NO campaign breakdown at all, so there was nothing
+   * to attribute them by.
+   *
+   * Found by the live smoke of 2026-08-14: the burn address returned eight
+   * reward tokens on Base with empty `breakdowns`. Without this counter the
+   * answer read `complete: true` with zero Morpho rows, which invites exactly
+   * the wrong conclusion - "this wallet has no Morpho rewards" instead of "these
+   * rows say nothing about where they came from".
+   */
+  unattributableRewards: number;
+  /**
+   * False when anything could not be attributed, whether because an opportunity
+   * lookup failed or because a row named no campaign at all. A reader must be
+   * able to tell an unlabelled slice meaning "unknown" from one meaning "not
+   * Morpho".
+   */
+  complete: boolean;
+  /** True when the per-answer lookup cap bound. Disclosed, never silent. */
+  lookupCapReached: boolean;
+}
+
+export interface MerklAttributedChainRewards {
+  chainId: number;
+  chainName: string | null;
+  rewards: readonly MerklAttributedReward[];
+  attribution: MerklAttribution;
+}
+
+/** `amount - claimed`, floored at zero. Exact, through BigInt. */
+function claimable(amountRaw: string, claimedRaw: string): string {
+  const remaining = BigInt(amountRaw) - BigInt(claimedRaw);
+  return remaining > 0n ? remaining.toString() : "0";
+}
+
+interface SourceAccumulator {
+  protocolId: string | null;
+  protocolName: string | null;
+  opportunityName: string | null;
+  campaigns: Set<string>;
+  claimable: bigint;
+  pending: bigint;
+}
+
+/**
+ * Resolve every distinct opportunity referenced by the rewards, up to the
+ * per-answer cap, and attach per-protocol sources to each token row.
+ *
+ * Lookups are SEQUENTIAL. The client caches and de-duplicates, the cap is small,
+ * and a keyless shared endpoint is not the place to fan out concurrently for a
+ * label; the answer is not latency-critical.
+ */
+export async function attributeMerklRewards(
+  client: MerklClient,
+  page: MerklUserRewards,
+  signal?: AbortSignal,
+): Promise<MerklAttributedChainRewards> {
+  const distinct = new Set<string>();
+  for (const reward of page.rewards) {
+    for (const breakdown of reward.breakdowns) {
+      if (breakdown.opportunityId !== null) distinct.add(breakdown.opportunityId);
+    }
+  }
+
+  const wanted = [...distinct];
+  const lookupCapReached = wanted.length > MERKL_MAX_OPPORTUNITY_LOOKUPS;
+  const resolved = new Map<string, { protocolId: string | null; protocolName: string | null; name: string | null }>();
+
+  for (const opportunityId of wanted.slice(0, MERKL_MAX_OPPORTUNITY_LOOKUPS)) {
+    try {
+      const opportunity = await client.getOpportunity(opportunityId, signal);
+      resolved.set(opportunityId, {
+        protocolId: opportunity.protocolId,
+        protocolName: opportunity.protocolName,
+        name: opportunity.name,
+      });
+    } catch {
+      // A failed label must not fail the answer, and must not silently become an
+      // attribution: the slice stays unresolved and is counted as such below.
+    }
+  }
+
+  const rewards = page.rewards.map((reward) => buildAttributedReward(reward, resolved));
+  const unresolvedOpportunities = wanted.length - resolved.size;
+  const unattributableRewards = rewards.filter(
+    (reward) => !reward.sources.some((source) => source.protocolId !== null),
+  ).length;
+
+  return {
+    chainId: page.chainId,
+    chainName: page.chainName,
+    rewards,
+    attribution: {
+      resolvedOpportunities: resolved.size,
+      unresolvedOpportunities,
+      unattributableRewards,
+      complete: unresolvedOpportunities === 0 && unattributableRewards === 0,
+      lookupCapReached,
+    },
+  };
+}
+
+function buildAttributedReward(
+  reward: MerklReward,
+  resolved: ReadonlyMap<string, { protocolId: string | null; protocolName: string | null; name: string | null }>,
+): MerklAttributedReward {
+  const byProtocol = new Map<string, SourceAccumulator>();
+
+  for (const breakdown of reward.breakdowns) {
+    const lookup = breakdown.opportunityId === null ? undefined : resolved.get(breakdown.opportunityId);
+    const protocolId = lookup?.protocolId ?? null;
+    // A sentinel that cannot collide with any real protocolId. Written as the
+    // ESCAPE "\u0000" rather than a literal NUL byte: the literal made git
+    // classify this source file as binary, which hid every diff of it from
+    // review. Same runtime value, same collision-freedom, readable diffs.
+    const key = protocolId ?? "\u0000unresolved";
+    let bucket = byProtocol.get(key);
+    if (bucket === undefined) {
+      bucket = {
+        protocolId,
+        protocolName: lookup?.protocolName ?? null,
+        opportunityName: lookup?.name ?? null,
+        campaigns: new Set(),
+        claimable: 0n,
+        pending: 0n,
+      };
+      byProtocol.set(key, bucket);
+    }
+    bucket.campaigns.add(breakdown.campaignId);
+    bucket.claimable += BigInt(claimable(breakdown.amountRaw, breakdown.claimedRaw));
+    bucket.pending += BigInt(breakdown.pendingRaw);
+  }
+
+  const sources: MerklRewardSource[] = [...byProtocol.values()]
+    .map((bucket) => ({
+      protocolId: bucket.protocolId,
+      protocolName: bucket.protocolName,
+      isMorpho: bucket.protocolId === MERKL_MORPHO_PROTOCOL_ID,
+      opportunityName: bucket.opportunityName,
+      campaignCount: bucket.campaigns.size,
+      claimableRaw: bucket.claimable.toString(),
+      pendingRaw: bucket.pending.toString(),
+    }))
+    .sort((a, b) => (BigInt(b.claimableRaw) > BigInt(a.claimableRaw) ? 1 : -1));
+
+  return {
+    ...reward,
+    claimableRaw: claimable(reward.amountRaw, reward.claimedRaw),
+    sources,
+    hasMorphoSource: sources.some((source) => source.isMorpho),
+  };
+}

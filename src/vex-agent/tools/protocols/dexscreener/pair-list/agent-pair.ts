@@ -30,7 +30,7 @@ import { stripStructuralCharacters } from "../list-core/index.js";
 
 import type { PairFieldSelection } from "./agent-pair-fields.js";
 import type { PairRow, PairWindow } from "./pair-metrics.js";
-import type { PriceSanityVerdict } from "./price-sanity.js";
+import type { PriceSanityVerdict, RequestedTokenSide } from "./price-sanity.js";
 
 export interface AgentDexPair {
   // ── Lean set — always emitted ──────────────────────────────────
@@ -39,6 +39,7 @@ export interface AgentDexPair {
   pairAddress: string | null;
   baseAddress: string | null;
   baseSymbol: string | null;
+  quoteAddress: string | null;
   quoteSymbol: string | null;
   /** USD per 1 base token, exact decimal. Never float-parse for money. */
   priceUsd: string | null;
@@ -65,9 +66,15 @@ export interface AgentDexPair {
   /** `null` means the provider sent no labels — NOT "unknown". */
   labels: string[] | null;
 
+  /** Exact-address match location for `dexscreener.search`; textual queries are `unknown`. */
+  queryMatchSide?: "base" | "quote" | "pair" | "unknown";
+  /** How search matched this row; only exact token text/address matches resolve identity. */
+  queryMatchKind?: "address" | "symbol" | "name" | "pair" | "unknown";
+  /** Exact token identity selected by that match, or null when the side is ambiguous. */
+  queryMatchedTokenAddress?: string | null;
+
   // ── Rich set — opt in via `fields` / `includeAllWindows` ───────
   baseName?: string | null;
-  quoteAddress?: string | null;
   quoteName?: string | null;
   /** Price denominated in the QUOTE token (renames the provider's `priceNative`). */
   priceInQuoteToken?: string | null;
@@ -113,6 +120,10 @@ export interface AgentDexPair {
 
   /** Cross-pool price verdict. Emitted only by `dexscreener.tokenPairs`. */
   priceSanity?: PriceSanityVerdict;
+  /** Which pool side contains the token requested from `tokenPairs`. */
+  requestedTokenSide?: RequestedTokenSide;
+  /** Exact USD price of that requested token, normalized for either pool side. */
+  requestedTokenPriceUsd?: string | null;
 }
 
 function strOrNull(value: unknown): string | null {
@@ -137,6 +148,8 @@ export interface ProjectAgentPairOptions {
   /** Which window feeds `*Selected`. */
   readonly window: PairWindow;
   readonly priceSanity?: PriceSanityVerdict | null;
+  readonly requestedTokenSide?: RequestedTokenSide | null;
+  readonly requestedTokenPriceUsd?: string | null;
 }
 
 /**
@@ -158,6 +171,7 @@ export function projectAgentPair(row: PairRow, options: ProjectAgentPairOptions)
     pairAddress: strOrNull(pair.pairAddress),
     baseAddress: strOrNull(tokenField(pair.baseToken, "address")),
     baseSymbol: displayText(tokenField(pair.baseToken, "symbol")),
+    quoteAddress: strOrNull(tokenField(pair.quoteToken, "address")),
     quoteSymbol: displayText(tokenField(pair.quoteToken, "symbol")),
     priceUsd: strOrNull(pair.priceUsd),
     liquidityUsd: metrics.liquidityUsd,
@@ -170,9 +184,6 @@ export function projectAgentPair(row: PairRow, options: ProjectAgentPairOptions)
   };
 
   if (fields.has("baseName")) projected.baseName = displayText(tokenField(pair.baseToken, "name"));
-  if (fields.has("quoteAddress")) {
-    projected.quoteAddress = strOrNull(tokenField(pair.quoteToken, "address"));
-  }
   if (fields.has("quoteName")) {
     projected.quoteName = displayText(tokenField(pair.quoteToken, "name"));
   }
@@ -227,6 +238,10 @@ export function projectAgentPair(row: PairRow, options: ProjectAgentPairOptions)
   if (fields.has("turnoverRatioH6")) projected.turnoverRatioH6 = metrics.windows.h6.turnoverRatio;
 
   if (options.priceSanity) projected.priceSanity = options.priceSanity;
+  if (options.requestedTokenSide) {
+    projected.requestedTokenSide = options.requestedTokenSide;
+    projected.requestedTokenPriceUsd = options.requestedTokenPriceUsd ?? null;
+  }
 
   return projected;
 }
