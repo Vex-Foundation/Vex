@@ -28,6 +28,8 @@ export type { ExtractedPendleQuote } from "./extract/pendle-pt.js";
 export { extractPendlePyQuote } from "./extract/pendle-py.js";
 export type { ExtractedPendlePyQuote } from "./extract/pendle-py.js";
 export { extractPendleLpQuote } from "./extract/pendle-lp.js";
+export { extractMorphoLendQuote } from "./extract/morpho-lend.js";
+export type { ExtractedMorphoLendQuote } from "./extract/morpho-lend.js";
 export type { ExtractedPendleLpQuote } from "./extract/pendle-lp.js";
 
 /**

@@ -4,7 +4,8 @@
  * THE DEFECT THIS PINS. The activity half admits logical rows by `kind`, but
  * the kind↔role CHECK (migrations 050/063/066) also binds approval legs
  * (`allowance`, `allowance_reset`) to the swap/yield/launch arms and Vex fee
- * legs (`trench_fee` on swap+launch, `swap_fee` on swap) to the same kinds.
+ * legs (`trench_fee` on swap+launch, `swap_fee` on swap, `pools_fee` on launch)
+ * to the same kinds.
  * Admitting by `kind` alone rendered a Trench/Uniswap fee transfer as a
  * standalone "spot" trade in the agent-facing feed. The predicate must exclude
  * every leg role while keeping the logical rows (`event_role = 'swap'`,
@@ -53,7 +54,13 @@ function activityWhere(): string {
 }
 
 /** Every role the CHECK binds as a child leg of a logical row, never a row. */
-const LEG_ROLES = ["allowance", "allowance_reset", "trench_fee", "swap_fee"] as const;
+const LEG_ROLES = [
+  "allowance",
+  "allowance_reset",
+  "trench_fee",
+  "swap_fee",
+  "pools_fee",
+] as const;
 
 describe("transactions feed — leg-role exclusion", () => {
   it("the activity half excludes every leg role by name", async () => {

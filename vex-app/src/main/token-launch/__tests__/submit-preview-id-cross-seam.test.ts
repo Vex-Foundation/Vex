@@ -27,8 +27,10 @@ import { parseEther, toHex } from "viem";
 
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
-} from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+  resetLaunchImageOnchainByteResolver,
+} from "@vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import {
   TRENCH_CREATION_FEE_FIXTURE,
   TRENCH_CREATION_FEE_SLOT,
@@ -156,6 +158,14 @@ beforeEach(() => {
     bytes: IMAGE_BYTES,
     digest: "d".repeat(64),
   }));
+  // The Trench path consumes the ON-CHAIN copy since the per-lane image split.
+  // For a locker image already inside the budget the two seams hand back the
+  // same bytes and the same digest, which is what this fixture states.
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "resolved",
+    bytes: IMAGE_BYTES,
+    digest: "d".repeat(64),
+  }));
   planLaunchContext.mockImplementation(async (_sessionId: string, form: TokenLaunchForm) => ({
     ok: true,
     request: {
@@ -178,6 +188,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
   vi.clearAllMocks();
 });
 

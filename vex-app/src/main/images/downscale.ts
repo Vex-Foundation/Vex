@@ -1,13 +1,20 @@
 /**
- * Auto-downscale for the Trench Photos locker (C2).
+ * The TRENCH ON-CHAIN COPY ladder (C2).
  *
- * WHY THIS EXISTS, and why the cap does NOT move. The launchpad writes image
- * bytes INLINE in the `create()` calldata (verified: a foreign launch carries a
+ * WHY THIS EXISTS, and why the budget does NOT move. Trench writes image bytes
+ * INLINE in the `create()` calldata (verified: a foreign launch carries a
  * 1.7 KB WebP in its calldata; the Diamond ABI types the parameter as `bytes`).
  * Every byte is therefore gas the user pays, forever, on an irreversible
- * transaction. The 20 KB cap is a deliberate product decision about that cost,
- * not a storage limitation — so the fix for a 3 MB holiday photo is to
- * NORMALIZE it before storage, never to widen the cap.
+ * transaction. The 20 KB budget is a deliberate product decision about that
+ * cost, not a storage limitation.
+ *
+ * WHAT CHANGED ON 2026-08-19. This module used to decide what the locker
+ * STORED. It no longer does. The locker stores the user's original bytes
+ * verbatim - pools.fun hosts images off-chain and accepted a 2,104,822-byte
+ * PNG, measured, so downscaling every ingest silently degraded every pools
+ * launch. What this ladder produces now is a SECOND, derived copy that only
+ * Trench consumes. "Exhausted" is therefore no longer an upload refusal: it
+ * means the image is pools-only, and the Trench handlers say so by name.
  *
  * NO NEW DEPENDENCY. Electron's `nativeImage` is already in the runtime and
  * does resize + JPEG encode. This module is allowed to import `electron`
@@ -25,50 +32,54 @@
  * have composed around, would simply be gone.
  *
  * WHAT IT WILL NOT DO:
- *  - it never touches an image that already fits. A file within the cap and
- *    within the dimension bounds is stored BYTE-IDENTICAL — even a non-square
- *    one. Byte-identity outranks tile aesthetics for a file the user
- *    deliberately kept under the cap: re-encoding it would degrade it for no
- *    gain and would change the digest a launch authorization may already have
- *    been shown. The venue crops those on display, which is its call to make;
+ *  - it never touches an image that already fits. A file within the budget and
+ *    within the dimension bounds needs no second copy at all: the original IS
+ *    the on-chain copy, byte-identical — even a non-square one. Byte-identity
+ *    outranks tile aesthetics for a file the user deliberately kept under the
+ *    budget: re-encoding it would degrade it for no gain and would change the
+ *    digest a launch authorization may already have been shown. The venue crops
+ *    those on display, which is its call to make;
  *  - it never rasterizes a vector. `nativeImage` will not decode SVG, and that
  *    refusal is kept: silently turning a logo into a blurry JPEG is not an
  *    outcome the user asked for;
- *  - it never returns something over the cap. If even the smallest rung misses,
- *    it says so and the existing named refusal stands. Honest failure remains
- *    reachable.
+ *  - it never returns something over the budget. If even the smallest rung
+ *    misses, it says so, the image is stored with NO on-chain copy, and Trench
+ *    refuses it by name later. Honest failure remains reachable.
  */
 
 import { nativeImage } from "electron";
 import {
-  LOCKER_IMAGE_MAX_BYTES,
   LOCKER_IMAGE_MAX_DIMENSION,
+  LOCKER_IMAGE_MAX_SOURCE_BYTES,
   LOCKER_IMAGE_MIN_DIMENSION,
+  TRENCH_ONCHAIN_IMAGE_MAX_BYTES,
 } from "@shared/schemas/images.js";
 
 /**
  * Headroom under the cap.
  *
- * The rung that produces the stored bytes is chosen by measuring them, so this
- * is not a guess about encoder output — it is a margin against the shared cap
- * being the exact boundary a later validator compares with `>`. Landing on
- * 20_000 exactly would make the whole ladder depend on which comparison
- * operator a different module happens to use.
+ * The rung that produces the copy is chosen by measuring it, so this is not a
+ * guess about encoder output — it is a margin against the shared budget being
+ * the exact boundary a later validator compares with `>`. Landing on 20_000
+ * exactly would make the whole ladder depend on which comparison operator a
+ * different module happens to use.
  */
 const SAFETY_MARGIN_BYTES = 500;
 
-/** The byte budget a re-encoded image must come in under. */
-export const DOWNSCALE_TARGET_BYTES = LOCKER_IMAGE_MAX_BYTES - SAFETY_MARGIN_BYTES;
+/** The byte budget a re-encoded copy must come in under. */
+export const DOWNSCALE_TARGET_BYTES =
+  TRENCH_ONCHAIN_IMAGE_MAX_BYTES - SAFETY_MARGIN_BYTES;
 
 /**
- * The largest file we will read into memory to attempt an optimization.
+ * The largest file we will read into memory. 25 MiB.
  *
  * Above this, the refusal comes from `stat` without the bytes ever being read.
- * Auto-downscale means a picked file is no longer bounded by the 20 KB cap
- * before it is read, so SOME ceiling has to exist or a multi-gigabyte pick
- * becomes a memory-exhaustion path through the file picker.
+ * A picked file is not bounded by any product limit — pools.fun has none — so
+ * SOME ceiling has to exist or a multi-gigabyte pick becomes a
+ * memory-exhaustion path through the file picker. One definition, shared with
+ * the row's own CHECK: see {@link LOCKER_IMAGE_MAX_SOURCE_BYTES}.
  */
-export const DOWNSCALE_MAX_SOURCE_BYTES = 25 * 1024 * 1024;
+export const DOWNSCALE_MAX_SOURCE_BYTES = LOCKER_IMAGE_MAX_SOURCE_BYTES;
 
 /**
  * The ladder, widest first. `maxDimension` is the SIDE of the output square.
@@ -89,9 +100,9 @@ const LADDER: ReadonlyArray<{ readonly maxDimension: number; readonly quality: n
 ];
 
 export type DownscaleOutcome =
-  /** Already within budget: the ORIGINAL bytes, untouched. */
+  /** Already within budget: the original IS the copy, and no second file exists. */
   | { readonly kind: "unchanged"; readonly bytes: Uint8Array }
-  /** Re-encoded to JPEG. `bytes` is what must be stored, hashed and shown. */
+  /** Re-encoded to JPEG. `bytes` is the COPY - stored beside the original, not instead of it. */
   | {
       readonly kind: "optimized";
       readonly bytes: Uint8Array;
@@ -101,13 +112,13 @@ export type DownscaleOutcome =
     }
   /** `nativeImage` could not decode it — an SVG, a fake header, a corrupt file. */
   | { readonly kind: "undecodable" }
-  /** Every rung was still over budget. Pathological input; refuse honestly. */
+  /** Every rung was still over budget: no on-chain copy exists, and the image is pools-only. */
   | { readonly kind: "exhausted"; readonly smallestByteLength: number };
 
-/** Does this image already satisfy the locker's limits without being touched? */
+/** Is this image already its own on-chain copy, without being touched? */
 function alreadyFits(bytes: Uint8Array, width: number, height: number): boolean {
   return (
-    bytes.byteLength <= LOCKER_IMAGE_MAX_BYTES
+    bytes.byteLength <= TRENCH_ONCHAIN_IMAGE_MAX_BYTES
     && width <= LOCKER_IMAGE_MAX_DIMENSION
     && height <= LOCKER_IMAGE_MAX_DIMENSION
     && width >= LOCKER_IMAGE_MIN_DIMENSION
@@ -116,12 +127,13 @@ function alreadyFits(bytes: Uint8Array, width: number, height: number): boolean 
 }
 
 /**
- * Bring an image within the locker's byte budget, or explain why it cannot be.
+ * Derive the Trench on-chain copy, or explain why one cannot be derived.
  *
- * The returned bytes are the ONLY bytes any caller may store, hash, or display.
- * Hashing the original while storing a re-encode would put a digest in the
- * consent chain that does not describe what is on disk — and that digest is
- * what an on-chain authorization is compared against.
+ * On `optimized`, the returned bytes are the ONLY bytes any caller may store as
+ * the copy, hash as `onchain_digest`, or hand to a Trench launch. Hashing the
+ * original while committing a re-encode would put a digest in the consent chain
+ * that does not describe what goes on-chain — and that digest is what an
+ * on-chain authorization is compared against.
  */
 export function downscaleLockerImage(bytes: Uint8Array): DownscaleOutcome {
   const decoded = nativeImage.createFromBuffer(Buffer.from(bytes));

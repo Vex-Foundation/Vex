@@ -142,6 +142,10 @@ describe("result barrel surface", () => {
       "market",
       "images",
       "tokenLaunch",
+      // P3: a routing/ownership label only. `poolsLaunch` mints no error code
+      // of its own — its refusals map onto codes that already exist, so the
+      // VEX_ERROR_CODES pin above is deliberately unchanged.
+      "poolsLaunch",
       "sessions",
       "preload",
       "internal",

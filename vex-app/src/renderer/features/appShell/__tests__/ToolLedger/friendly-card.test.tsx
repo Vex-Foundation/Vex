@@ -237,6 +237,23 @@ describe("ToolActRow — friendly card presentation", () => {
     ).toBeNull();
   });
 
+  it("wears the pools.fun mark on a read act and draws no money legs", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "pools.tokens",
+          toolArgs: '{"platform":"poolsfun","limit":20}',
+          success: true,
+        }),
+      }),
+    );
+    expect(container.textContent).toContain("pools.fun · Token list");
+    expect(
+      container.querySelector('[data-vex-protocol-mark="pools.fun"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+  });
+
   it("labels a PENDING protocol act rather than showing it as done", () => {
     const { container } = render(
       createElement(ToolActRow, {
@@ -362,6 +379,141 @@ describe("ToolActRow — friendly card presentation", () => {
         act: act({
           toolName: "wallet_balances",
           toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+        }),
+      }),
+    );
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+  });
+
+  /**
+   * MORPHO lending, shaped against the funded probe of 2026-08-17. This is the
+   * LEGACY payload, from before the handler carried token keys: it names a
+   * VAULT and a raw amount, never a token, so the card draws no leg line at all.
+   * That is still the honest outcome for such a row - an invented
+   * "USDC → steakUSDC" pair would be a guessed amount at two different decimal
+   * scales, exactly what the money-path rule forbids. What the card must carry
+   * is the venue mark, the human title, and the raw summary in the expanded
+   * well. The CURRENT payload, which does carry the keys, is pinned below.
+   */
+  it("wears the Morpho mark and title on a settled vault deposit, without guessing legs", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "morpho.vault.deposit",
+          toolArgs:
+            '{"vaultAddress":"0xbeef0e0834849acc03f0089f01f4f1eeb06873c9","chain":"base","depositAmountRaw":"200000","slippageBps":100}',
+          output:
+            '{"toolId":"morpho.vault.deposit","status":"confirmed","summary":"morpho.vault.deposit: Deposited 0.2 USDC and received 0.192836490590443813 steakUSDC."}',
+          success: true,
+        }),
+      }),
+    );
+    expect(
+      container.querySelector('[data-vex-protocol-mark="Morpho"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Morpho · Vault deposit");
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Morpho · Vault deposit/ }));
+    expect(container.textContent).toContain("Deposited 0.2 USDC");
+  });
+
+  it("never renders a Morpho vault DRY RUN as an execution", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "morpho.vault.withdraw",
+          toolArgs: '{"vaultAddress":"0xbeef","chain":"base","dryRun":true}',
+          success: true,
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-tool-legs="executed"]')).toBeNull();
+    expect(container.textContent).toContain("Morpho · Vault withdrawal");
+  });
+
+  /**
+   * The live defect, closed. A settled vault deposit now emits `tokenIn` /
+   * `tokenOut` / `amountIn` / `amountOut` at the root of its output - key names
+   * the pair reader already knew - so it renders the two-sided line every other
+   * money act renders, with no reader change at all.
+   */
+  it("renders the two-sided leg line for a settled vault deposit that carries token keys", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "morpho.vault.deposit",
+          toolArgs: '{"vaultAddress":"0xbeef","chain":"base","depositAmountRaw":"200000"}',
+          output:
+            '{"toolId":"morpho.vault.deposit","status":"confirmed","tokenIn":"USDC","amountIn":"0.2","tokenOut":"steakUSDC","amountOut":"0.192836490590443813"}',
+          success: true,
+        }),
+      }),
+    );
+    expect(
+      container.querySelector('[data-vex-tool-legs="executed"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("0.2");
+    expect(container.textContent).toContain("STEAKUSDC");
+    // Two-sided movement, so the pair line's arrow is the honest glyph.
+    expect(container.querySelector("[data-vex-tool-leg-direction]")).toBeNull();
+  });
+
+  /**
+   * A Morpho BLUE market operation moves exactly ONE token. It must draw a
+   * wallet-relative arrow and a single token, never a `→` between two tokens:
+   * a mirror leg would claim a movement that never happened.
+   */
+  it.each([
+    ["morpho.market.supplyCollateral", '"tokenIn":"WETH","amountIn":"0.05"', "sent", "WETH"],
+    ["morpho.market.borrow", '"tokenOut":"USDC","amountOut":"120.5"', "received", "USDC"],
+  ])(
+    "draws a single wallet-relative leg for %s",
+    (toolName, legKeys, direction, tokenText) => {
+      const { container } = render(
+        createElement(ToolActRow, {
+          act: act({
+            toolName,
+            toolArgs: '{"marketId":"0xfeed","chain":"base"}',
+            output: `{"status":"confirmed",${legKeys}}`,
+            success: true,
+          }),
+        }),
+      );
+      const line = container.querySelector(
+        `[data-vex-tool-leg-direction="${direction}"]`,
+      );
+      expect(line).not.toBeNull();
+      expect(line?.getAttribute("data-vex-tool-legs")).toBe("executed");
+      expect(line?.textContent).toContain(tokenText);
+      expect(line?.textContent).not.toContain("→");
+    },
+  );
+
+  it("never lets a Morpho market DRY RUN render as an execution", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "morpho.market.repay",
+          toolArgs: '{"marketId":"0xfeed","dryRun":true}',
+          output: '{"tokenIn":"USDC","amountIn":"5.0"}',
+          success: true,
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-tool-legs="executed"]')).toBeNull();
+    expect(container.querySelector('[data-vex-tool-legs="quote"]')).not.toBeNull();
+    expect(container.textContent).toContain("Morpho · Repay");
+  });
+
+  it("draws NO leg at all for a Morpho market READ", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "morpho.market.get",
+          toolArgs: '{"marketId":"0xfeed"}',
+          output: '{"tokenIn":"WETH","amountIn":"0.05"}',
+          success: true,
         }),
       }),
     );

@@ -41,6 +41,13 @@
  * happen, so there is no token to lose. Everything short of that literal status
  * is ambiguity and stays pending.
  *
+ * WHERE THE PIECES LIVE. This file owns the SWEEP: which intents are claimed,
+ * what each answer is allowed to transition, and the order of the writes. How
+ * the chain is asked - and WHICH launchpad decoder answers, since the two
+ * launchpads attribute a launch through different events - lives in the
+ * same-named sibling folder (`./launch-identity-repair/`). The public entry
+ * point and every exported name are unchanged.
+ *
  * LOOKUP-ONLY AND SESSION-SAFE. The candidate query is global (its rows span
  * arbitrary sessions), but every WRITE goes back through the session-scoped CAS
  * writers in `db/repos/token-launch-intents.ts`, under
@@ -64,6 +71,24 @@ import {
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
+import { isReceiptNotFound } from "./launch-identity-repair/receipt-errors.js";
+import { readAuthorizedPoolsPlan } from "./launch-identity-repair/production-deps.js";
+import type {
+  LaunchIdentityRepairDeps,
+  LaunchReceiptOutcome,
+} from "./launch-identity-repair/types.js";
+
+// The public surface is UNCHANGED by the split: every existing importer of this
+// module keeps importing exactly what it did before. The implementation moved
+// into the same-named sibling folder, one responsibility per file.
+export { buildProductionLaunchRepairDeps } from "./launch-identity-repair/production-deps.js";
+export type {
+  AuthorizedPoolsLaunchPlan,
+  LaunchIdentityRepairDeps,
+  LaunchReceiptIdentity,
+  LaunchReceiptLookupInput,
+  LaunchReceiptOutcome,
+} from "./launch-identity-repair/types.js";
 
 /**
  * Bounded batch per sweep run, mirroring `REPAIR_BATCH_LIMIT`: the sweep does
@@ -76,85 +101,8 @@ import logger from "@utils/logger.js";
  */
 export const LAUNCH_REPAIR_BATCH_LIMIT = 25;
 
-export interface LaunchReceiptLookupInput {
-  readonly chainId: number;
-  readonly txHash: string;
-  /** The creator to cross-check `TokenCreated` against — never a stranger's create in the same receipt. */
-  readonly walletAddress: string;
-}
-
 /** Native ETH, the unit the prebuy was SPENT in. */
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000";
-
-/**
- * What a confirmed launch receipt proves.
- *
- * `tokenAddress` is the address decoded from `TokenCreated`. A lookup that CAN
- * read the receipt but CANNOT decode the event must return `null` for the whole
- * result rather than a result with an empty address — "the transaction settled"
- * without "and here is the token" is not enough to complete a launch identity,
- * and a half-answer here would be written to the durable index.
- */
-export interface LaunchReceiptIdentity {
-  readonly tokenAddress: string;
-}
-
-/**
- * The THREE answers the chain can give about a staged create, and the reason
- * this is a union rather than a nullable identity.
- *
- * A create that is later proven to have REVERTED emits no `TokenCreated`, so an
- * identity-or-nothing lookup reported it exactly like "not mined yet" — and the
- * intent stayed `broadcast_pending` forever, with the user's launch stuck in a
- * limbo the UI cannot explain. A PROVEN revert is terminal. Everything else
- * (`null`) is ambiguity, and ambiguity is never terminal.
- */
-export type LaunchReceiptOutcome =
-  | { readonly kind: "created"; readonly identity: LaunchReceiptIdentity }
-  | { readonly kind: "reverted" }
-  /**
-   * NO NODE CAN ACCOUNT FOR THIS HASH: no receipt, and another transaction from
-   * the same wallet has already used its nonce. The owner's live case — a launch
-   * hash still unknown to the RPC ~24 h after broadcast, reported by this sweep
-   * exactly like "not mined yet" and therefore re-checked forever.
-   *
-   * IT IS NOT A FAILURE AND IT IS NOT TERMINAL HERE. It establishes only that
-   * THIS hash has no receipt; a replacement reusing the nonce may have carried
-   * the same calldata and created the token, and correlating that is strictly
-   * more work than this sweep does.
-   *
-   * WHY THIS SWEEP DOES NOT TERMINALIZE IT. The `superseded_unproven` transition
-   * is CLAIM FENCED — `markSupersededUnproven` requires the pending lane's
-   * `evm_claim_token` — and the launch's sibling `agent_activity` row is already
-   * covered by that lane, which holds the claim and owns both A6 clocks. A
-   * second writer for one terminal transition is exactly the stale-over-fresh
-   * race the fence exists to prevent. So this sweep CLASSIFIES, and the lane
-   * TERMINALIZES.
-   */
-  | { readonly kind: "superseded" };
-
-export interface LaunchIdentityRepairDeps {
-  /**
-   * The ONLY dependency this sweep may have. Read-only: a receipt lookup that
-   * reports the mined status and, on success, decodes `TokenCreated`. Never a
-   * send/broadcast/sign capability.
-   *
-   * `null` means "no answer yet" — not yet mined, a transient RPC error, an
-   * unreadable receipt, or a SUCCESSFUL receipt with no decodable
-   * `TokenCreated`. All of those leave the intent `broadcast_pending`.
-   *
-   * THE NOT-YET-MINED CASE MAY ALSO THROW, and that is the ordinary shape: viem
-   * raises `TransactionReceiptNotFoundError` for a hash with no receipt, so the
-   * commonest healthy answer arrives as an exception. `lookupOutcome` classifies
-   * it — the sweep's control flow is the same quiet `null` either way, but the
-   * OBSERVABILITY differs: not-yet-mined is silent, everything else warns once.
-   * A launch broadcast four minutes ago is not an incident, and logging it as
-   * one every 30 s forever is what buried the real failures.
-   */
-  readonly resolveLaunchOutcome: (
-    input: LaunchReceiptLookupInput,
-  ) => Promise<LaunchReceiptOutcome | null>;
-}
 
 export interface LaunchIdentityRepairResult {
   readonly checked: number;
@@ -385,6 +333,8 @@ async function lookupOutcome(
       chainId: intent.chainId,
       txHash,
       walletAddress: intent.walletAddress,
+      protocol: intent.protocol,
+      poolsPlan: readAuthorizedPoolsPlan(intent),
     });
     if (outcome === null) return null;
     if (outcome.kind === "reverted" || outcome.kind === "superseded") return outcome;
@@ -406,119 +356,6 @@ async function lookupOutcome(
     });
     return null;
   }
-}
-
-/**
- * viem's `TransactionReceiptNotFoundError`, identified by its stable `name`.
- *
- * NEVER by its message: that string embeds the RPC URL, so a message match would
- * be both fragile and a reason to handle provider text where none is needed.
- * Classified HERE rather than inside the production dep so an INJECTED dep that
- * throws the same error behaves identically — otherwise the tests and production
- * would disagree about the sweep's noisiest path.
- */
-function isReceiptNotFound(err: unknown): boolean {
-  return err instanceof Error && err.name === "TransactionReceiptNotFoundError";
-}
-
-/**
- * The production wiring: a read-only receipt lookup on the launch venue's chain.
- *
- * READ-ONLY BY CONSTRUCTION. The only chain capability reached here is
- * `getTransactionReceipt`; no signer, no wallet client, no send. The decode is
- * the SAME `decodeLaunchReceipt` the handler's primary path uses, so the sweep
- * cannot disagree with the handler about which token a receipt proves.
- *
- * `reverted` is reported ONLY for the literal `"reverted"` status. viem's
- * formatter yields `null` for a status it does not recognise, and mapping
- * "not success" to "reverted" would turn an unreadable receipt into an
- * irreversible terminal failure.
- */
-export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
-  return {
-    resolveLaunchOutcome: async ({ chainId, txHash, walletAddress }) => {
-      const { getLocalChain } = await import("@tools/evm-chains/registry.js");
-      const chain = getLocalChain(chainId);
-      if (!chain) return null;
-      const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
-      const { decodeLaunchReceipt } = await import(
-        "@vex-agent/tools/protocols/trench/handlers/launch/settlement.js"
-      );
-      const { TRENCH_DIAMOND_ADDRESS } = await import("@tools/trench-express/constants.js");
-
-      const client = getLocalPublicClient(chain);
-
-      let receipt;
-      try {
-        receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
-      } catch (err) {
-        // NO RECEIPT. Before this, every such answer was the same quiet `null` —
-        // "not mined yet" — which is why the owner's launch was re-checked for a
-        // day without anyone learning that its nonce had already been consumed.
-        // Ask the SECOND question exactly when the first one misses.
-        if (!isReceiptNotFound(err)) throw err;
-        return await classifyMissingLaunchReceipt(client, txHash);
-      }
-
-      const status: unknown = receipt.status;
-      if (status === "reverted") return { kind: "reverted" };
-      if (status !== "success") return null;
-
-      const decoded = decodeLaunchReceipt({
-        logs: receipt.logs.map((log) => ({
-          address: log.address,
-          topics: log.topics as string[],
-          data: log.data,
-        })),
-        diamond: TRENCH_DIAMOND_ADDRESS as `0x${string}`,
-        wallet: walletAddress as `0x${string}`,
-        // The sweep never reads an AMOUNT off the chain — the authorized native
-        // prebuy comes from the intent. Only the identity is decoded here.
-        expectPrebuy: false,
-      });
-      return decoded === null ? null : { kind: "created", identity: { tokenAddress: decoded.tokenAddress } };
-    },
-  };
-}
-
-/**
- * A launch hash with NO receipt: is it waiting, or has its nonce already been
- * consumed by something else?
- *
- * The nonce is NOT on `token_launch_intents` (migration 062 stores only
- * `tx_hash`, `wallet_address`, `chain_id`), so it is read from the sibling
- * `agent_activity` row that `markActivityBroadcast` staged. That is a lookup, not
- * an inference, and a missing sender or nonce yields `null` — "still waiting" —
- * because supersession is never guessed.
- *
- * The whole check runs under the SAME whole-observation deadline the pending
- * lane uses, through the EIP-1193 `request` that actually honours a signal.
- */
-async function classifyMissingLaunchReceipt(
-  client: unknown,
-  txHash: string,
-): Promise<LaunchReceiptOutcome | null> {
-  const { asJsonRpcClient, observeEvmTransaction } = await import(
-    "./agent-activity-repair/observation.js"
-  );
-  const { findBroadcastSenderByTxHash } = await import("@vex-agent/db/repos/agent-activity.js");
-
-  const jsonRpc = asJsonRpcClient(client);
-  if (!jsonRpc) return null;
-  const sender = await findBroadcastSenderByTxHash(txHash);
-
-  const observation = await observeEvmTransaction(jsonRpc, {
-    chainId: 0, // unused by the observation; the client is already chain-bound
-    txHash,
-    fromAddress: sender?.fromAddress ?? null,
-    nonce: sender?.nonce ?? null,
-  });
-
-  // ONLY a proven supersession is reported. `in_mempool`, `unknown_to_node` and
-  // `rpc_error` all stay the quiet `null` this sweep's contract has always
-  // promised for "no answer yet" — none of them establishes anything about the
-  // launch, and this sweep must never terminalize on ambiguity.
-  return observation.kind === "nonce_superseded" ? { kind: "superseded" } : null;
 }
 
 function requireTxHash(intent: TokenLaunchIntent): string {

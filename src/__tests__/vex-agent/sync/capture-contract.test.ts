@@ -119,13 +119,21 @@ describe("capture contract — structural coverage", () => {
     expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
-  it("no utility-kind tools are currently classified (Hyperliquid removal deleted the only one)", () => {
+  it("the utility kind holds exactly the local-write tools that sign nothing", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
     // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
     // `trench.launch_request_form` (migration 062) is the successor this
     // comment predicted: mutating (it drafts a launch-intent row and parks the
     // turn) but zero portfolio impact and no capture — signs nothing.
-    expect(getToolsByKind("utility").map(([id]) => id)).toEqual(["trench.launch_request_form"]);
+    // pools.fun adds two more of the same shape (migration 082): `launch_preview`
+    // records an advisory `previewed` intent that the database itself keeps
+    // non-live, and `launch_request_form` opens the app's form and parks the
+    // turn. Both are mutating because each writes a durable row; neither signs.
+    expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "pools.launch_preview",
+      "pools.launch_request_form",
+      "trench.launch_request_form",
+    ]);
   });
 
   it("every audit tool is now a staged agent_activity write path (Phase 2 bridges + W5/Batch5 lend + Batch B pendle.claim)", () => {
@@ -134,11 +142,23 @@ describe("capture contract — structural coverage", () => {
     // khalani.bridge / relay.bridge record their full staged lifecycle in
     // agent_activity directly (migration 045); solana.lend.deposit/withdraw
     // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
-    // staged Solana seam (migration 049) — capture is intentionally off for
-    // exactly these five.
+    // staged Solana seam (migration 049); morpho.vault.deposit/withdraw (E3b-2)
+    // and the six morpho.market.* operations (E3c plus the lender's supply and
+    // withdraw) do the same
+    // through morpho/handlers/signed-broadcast.ts; morpho.rewards.claim does the
+    // same through signed-broadcast/claim-broadcast.ts, writing the one
+    // `yield_claim` row a claim transaction can back — capture is intentionally
+    // off for exactly these.
     const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
     expect(captureNone).toEqual([
-      "khalani.bridge", "pendle.claim", "relay.bridge",
+      "khalani.bridge",
+      "morpho.market.borrow", "morpho.market.repay",
+      "morpho.market.supply",
+      "morpho.market.supplyCollateral",
+      "morpho.market.withdraw", "morpho.market.withdrawCollateral",
+      "morpho.rewards.claim",
+      "morpho.vault.deposit", "morpho.vault.withdraw", "pendle.claim",
+      "relay.bridge",
       "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
     ]);
     for (const [toolId, c] of audit) {

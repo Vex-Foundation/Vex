@@ -28,10 +28,10 @@
  *    other direction.
  *
  * Text lives here, not at the three call sites, because it is one contract with
- * one reason to change; each site still chooses its own branch. Every string
- * stays well inside the repo boundary's 500-char `failure_reason` cap
- * (`agent-activity/validation.ts`), which truncates rather than rejects — a
- * longer one would be silently cut mid-sentence.
+ * one reason to change; each site still chooses its own branch. The repo
+ * boundary (`agent-activity/validation.ts`) redacts `failure_reason` and no
+ * longer truncates it, so length is bounded by writing a reason worth
+ * persisting rather than by a slice downstream.
  */
 
 import type { AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";

@@ -1,0 +1,8 @@
+{
+  "endpoint": "GET /discover?platform=poolsfun&chain=robinhood&sortBy=marketCapUsd&order=desc&limit=3&minMarketCap=999999999999",
+  "capturedAt": "2026-08-18T10:20:00.000Z",
+  "response": {
+    "results": [],
+    "nextCursor": null
+  }
+}

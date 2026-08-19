@@ -1,13 +1,12 @@
 /**
  * Inventory wallet resolution — the GLOBAL configured wallet allow-list
- * (EVM + Solana), shared by every main-process read that aggregates across
- * "all of the user's wallets" rather than one session's scope.
+ * (EVM + Solana), shared by the main-process history reads that aggregate
+ * across "all of the user's wallets" rather than one session's scope.
  *
- * Extracted from `portfolio-db.ts`'s `resolveAddresses` (the `scope:
- * "global"` branch) so `token-history-db.ts` can resolve the SAME allow-list
- * without duplicating the config read. Addresses are returned RAW (no
- * lowercasing) — the engine stores checksum/base58 addresses verbatim, and
- * every SELECT that consumes this list joins against that raw form.
+ * `listInventoryWalletEntries` is the one-entry-per-wallet view used for
+ * membership and counting. `resolveInventoryWalletAddressLookupVariants` is
+ * deliberately different: it builds the exact-string variants history tables
+ * may contain, without changing the logical inventory or weakening Solana identity.
  */
 
 import { listWallets, type WalletInventoryEntry } from "@vex-lib/wallet.js";
@@ -18,11 +17,30 @@ export function listInventoryWalletEntries(): readonly WalletInventoryEntry[] {
 }
 
 /**
- * Deduped raw addresses across the whole configured inventory. Callers that
- * need per-entry membership checks (e.g. the WP-L2 single-wallet narrowing
- * in `portfolio-db.ts`) should use `listInventoryWalletEntries` directly
- * instead — this helper is for the common "just the address allow-list" case.
+ * Indexed lookup variants across the whole configured inventory.
+ *
+ * A shape-valid EVM address contributes its stored form AND lowercase.
+ * Producers in this repository legitimately use both: wallet inventory is checksummed,
+ * while receipt/intent writers commonly canonicalize to lowercase. Binding
+ * both exact values keeps `wallet_address = ANY(...)` indexable and makes a
+ * new producer casing choice unable to hide the user's own history.
+ *
+ * Solana base58 remains exact and case-sensitive. An invalid EVM-shaped value
+ * also remains exact (fail closed); it is never broadened by lowercasing.
+ * Callers that need logical wallet counts or per-entry membership checks must
+ * use `listInventoryWalletEntries` instead, because this function returns DB
+ * lookup variants rather than one element per wallet.
  */
-export function resolveInventoryWalletAddresses(): readonly string[] {
-  return [...new Set(listInventoryWalletEntries().map((entry) => entry.address))];
+export function resolveInventoryWalletAddressLookupVariants(): readonly string[] {
+  const addresses: string[] = [];
+  for (const entry of listWallets("evm")) {
+    addresses.push(entry.address);
+    if (/^0x[0-9a-fA-F]{40}$/.test(entry.address)) {
+      addresses.push(entry.address.toLowerCase());
+    }
+  }
+  for (const entry of listWallets("solana")) {
+    addresses.push(entry.address);
+  }
+  return [...new Set(addresses)];
 }

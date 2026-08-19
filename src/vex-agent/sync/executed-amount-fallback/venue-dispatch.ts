@@ -37,6 +37,11 @@
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
 import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
+import {
+  decodeMorphoBorrowSettlement,
+  decodeMorphoSettlement,
+  readMorphoBorrowRouteProvenance,
+} from "../morpho-settlement-decoder.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
 import { getAddress, type Address } from "viem";
 import {
@@ -98,6 +103,7 @@ export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<Ve
   const protocol = input.row.protocol?.toLowerCase() ?? "";
   if (protocol === "kyberswap") return decodeKyberRow(input);
   if (protocol === "trench") return decodeTrenchRow(input);
+  if (protocol === "morpho") return decodeMorphoRow(input);
   if ((protocol === "relay" || protocol === "khalani") && input.row.eventRole === "bridge_deposit") {
     return decodeBridgeDepositRow(input);
   }
@@ -311,6 +317,106 @@ async function decodeTrenchRow(input: VenueDecodeInput): Promise<VenueDecodeResu
       executedAmountInRaw: decoded.tokensInRaw.toString(),
       executedAmountOutRaw: decoded.ethOutRaw.toString(),
     },
+  };
+}
+
+/**
+ * A Morpho vault lend confirmed without amounts. The venue's own decoder owns
+ * what the logs mean (`sync/morpho-settlement-decoder.ts`); this branch only
+ * resolves its inputs from the row's validated columns.
+ *
+ * No chain read is needed and none is taken, so this branch never DEFERS. A
+ * Morpho settlement is provable from the receipt's own Transfer logs alone: both
+ * legs are ERC-20 movements of the wallet itself, neither operation carries
+ * native value, and the row already records the tokens and the amounts that
+ * bound them. The persisted `routerAddress` hint is deliberately not consulted
+ * either - the decode is wallet-relative rather than router-relative, so binding
+ * it to the target would add a condition without adding proof.
+ *
+ * The `allowance` and `allowance_reset` rows a Morpho execution also writes
+ * reach here too, and the decoder declines them by role: an approval moves
+ * nothing, so no net delta could confirm one.
+ */
+function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
+  const { row } = input;
+  if (!row.walletAddress) {
+    return { kind: "declined", reason: "amounts_undecodable", detail: "the row carries no wallet address" };
+  }
+  // THE ROUTE IS DECIDED BY PROVENANCE FIRST, NOT BY THE ROLE ALONE. The Blue
+  // MARKET SUPPLY lane files under the `lend_deposit` / `lend_withdraw` roles
+  // (supplying a loan asset IS lending, and a role per venue-internal shape
+  // would make the agent's own history unqueryable), so a role test alone would
+  // send a market row into the vault's net-delta rule, which would then decline
+  // it forever: a Blue supply position is not an ERC-20 and mints no share
+  // token, so the share leg that rule requires does not exist. The `morphoBorrow`
+  // route-provenance block is what the writer persisted to say WHICH lane the
+  // row is, and it is the only thing that can say it.
+  const borrowProvenance = readMorphoBorrowRouteProvenance(row.routeProvenance);
+  if (row.eventRole === "lend_borrow_operate" || borrowProvenance !== null) {
+    return decodeMorphoBorrowRow(input, row.walletAddress);
+  }
+  const decoded = decodeMorphoSettlement({
+    logs: input.logs,
+    walletAddress: row.walletAddress,
+    eventRole: row.eventRole,
+    tokenInAddress: row.tokenInAddress,
+    tokenOutAddress: row.tokenOutAddress,
+    amountInRaw: row.amountInRaw,
+    amountOutRaw: row.amountOutRaw,
+  });
+  if (decoded === null) {
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: `the receipt does not prove both legs of this morpho ${row.eventRole} within its recorded bounds`,
+    };
+  }
+  return {
+    kind: "decoded",
+    amounts: {
+      executedAmountInRaw: decoded.executedAmountInRaw,
+      executedAmountOutRaw: decoded.executedAmountOutRaw,
+    },
+  };
+}
+
+/**
+ * A Morpho BLUE MARKET operation (`lend_borrow_operate`). A DIFFERENT rule from
+ * the vault rows above, routed here rather than folded into them, because the
+ * two prove their amounts from different evidence - the vault lane from net
+ * wallet deltas, this one from Blue's own market events. The decoder module owns
+ * why; this branch only resolves inputs.
+ *
+ * ITS INPUTS COME FROM THE ROW'S OWN `route_provenance`, which the writer
+ * persisted at intent time: the operation, the market id and the Blue
+ * deployment. The `settlementDecode` hint is not enough here - it names one
+ * verified router and this decode needs the market and the operation as well,
+ * neither of which is a column. A row without that block declines by name rather
+ * than being read against a guessed market.
+ *
+ * EXACTLY ONE EXECUTED LEG IS RECORDED, and that is the honest shape: a Blue
+ * market operation moves one token in one direction, so a second executed
+ * amount would be a claim about a movement that never happened.
+ *
+ * Takes no chain read, so it never DEFERS - same reason as the vault branch.
+ */
+function decodeMorphoBorrowRow(input: VenueDecodeInput, walletAddress: string): VenueDecodeResult {
+  const { row } = input;
+  const decoded = decodeMorphoBorrowSettlement({
+    logs: input.logs,
+    walletAddress,
+    provenance: readMorphoBorrowRouteProvenance(row.routeProvenance),
+    amountInRaw: row.amountInRaw,
+    amountOutRaw: row.amountOutRaw,
+  });
+  if (decoded.kind === "declined") {
+    return { kind: "declined", reason: "amounts_undecodable", detail: decoded.reason };
+  }
+  return {
+    kind: "decoded",
+    amounts: decoded.direction === "in"
+      ? { executedAmountInRaw: decoded.executedAmountRaw }
+      : { executedAmountOutRaw: decoded.executedAmountRaw },
   };
 }
 

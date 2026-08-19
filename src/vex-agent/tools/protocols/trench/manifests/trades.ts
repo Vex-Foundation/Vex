@@ -11,7 +11,7 @@ export const TRENCH_TRADES_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "trench",
     lifecycle: "active",
     description:
-      "Show the recent trade tape for ONE Trench Express token on Robinhood Chain (4663): each fill carries direction (buy/sell), display-grade in/out amounts, USD volume, price, transaction hash, timestamp, and maker. Sourced from an undocumented launchpad endpoint, so the output flags its provisional nature. ETH curve only. Read-only.",
+      "Show the recent trade tape for ONE Trench Express token on Robinhood Chain (4663): each fill carries direction (buy/sell), display-grade in/out amounts, USD volume, price, transaction hash, timestamp (ms epoch, newest first within a page), and maker. TRAP: an empty tape (count: 0) means no fills were recorded for that address - a brand-new token with no trades and a mistyped address are indistinguishable here, so verify the address via trench.search or trench.tokens before reading absence as youth. Sourced from an undocumented launchpad endpoint, so the output flags its provisional nature. ETH curve only. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

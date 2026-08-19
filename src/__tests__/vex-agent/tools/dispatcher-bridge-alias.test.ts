@@ -14,6 +14,17 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The venue router reads the LIVE Khalani chain registry, so it is mocked here
+// (Ethereum + Base served) and this file never touches the network for it.
+vi.mock("@tools/khalani/client.js", () => ({
+  getKhalaniClient: () => ({
+    getChains: async () => [
+      { type: "eip155", id: 1, name: "Ethereum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { type: "eip155", id: 8453, name: "Base", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+    ],
+  }),
+}));
+
 const markAutoRetryUnsafe = vi.fn().mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   markAutoRetryUnsafe: (...a: unknown[]) => markAutoRetryUnsafe(...a),
@@ -267,13 +278,17 @@ describe("bridge alias — path-identity with direct execute_tool", () => {
   });
 });
 
-describe("bridge alias — mission auto-retry-unsafe stamp uses the TARGET manifest", () => {
-  it("stamps the mission run UNSAFE before dispatch (target manifest mutating:true)", async () => {
+describe("bridge alias - mission auto-retry-unsafe stamp is conservative", () => {
+  it("stamps the mission run UNSAFE before dispatch", async () => {
     getProtocolManifest.mockReturnValue({ mutating: true, actionKind: "user_wallet_broadcast" });
     await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b7" }, ctx({ missionRunId: "run-1" }));
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
-    // The stamp predicate resolved the TARGET toolId, not the alias name.
-    expect(getProtocolManifest).toHaveBeenCalledWith("khalani.bridge");
+    // The stamp no longer resolves the TARGET manifest for THIS alias: since
+    // the venue depends on the live Khalani chain registry, `bridge` is the one
+    // ASYNC router, and the classification site is synchronous. It falls back
+    // to the alias's own registry `mutating` flag, exactly as an un-routable
+    // call does. The stamped VALUE is unchanged - both bridge targets are
+    // mutating - and the fallback can only ever over-stamp, never miss one.
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
   });
 

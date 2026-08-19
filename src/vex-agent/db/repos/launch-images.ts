@@ -8,7 +8,7 @@
  * `src/vex-agent`, where no locker service seam exists — can read the metadata
  * through an ordinary DB repo like any other read tool, instead of inventing a
  * new `ProtocolExecutionContext` seam. The BYTE path is the separate C2b
- * resolver (`tools/protocols/trench/launch-image-byte-resolver.ts`).
+ * resolver (`tools/protocols/shared/launch-image-byte-resolver.ts`).
  *
  * GLOBAL and PERSISTENT: an image belongs to the USER, not to an intent or a
  * session. Every read here is therefore unscoped — the deliberate asymmetry with
@@ -35,10 +35,14 @@
  * `ON DELETE SET NULL` would silently erase the audit trail of which image a
  * completed launch actually committed on-chain.
  *
- * `digest` is the sha256 of the STORED bytes. The execute leg re-reads the bytes
- * main-side and verifies this digest against the one bound in the authorization
- * record (C0) before signing, so an image swapped between authorization and
- * execution cannot slip through.
+ * `digest` is the sha256 of the STORED ORIGINAL bytes. `onchain_digest` is the
+ * sha256 of the derived Trench copy (migration 083), which is what a Trench
+ * launch actually writes on-chain. The execute leg re-reads the bytes main-side
+ * and verifies the digest of the variant IT consumes against the one bound in
+ * the authorization record (C0) before signing, so an image swapped between
+ * authorization and execution cannot slip through. For every image that
+ * predates 083 the two digests are equal by backfill, so that binding is
+ * byte-for-byte what it always was.
  */
 
 import { query, queryOne, withTransaction } from "../client.js";
@@ -67,6 +71,23 @@ export interface LaunchImageRow {
   height: number;
   /** sha256 hex of the stored bytes. */
   digest: string;
+  /**
+   * The TRENCH on-chain copy (migration 083), NULLABLE TOGETHER with
+   * {@link onchainDigest}.
+   *
+   * `byteLength`/`digest` above describe the ORIGINAL bytes the user picked,
+   * which is what a pools.fun launch uploads. Trench writes the image inline in
+   * `create()` calldata, so it needs a copy under the gas ceiling; the desktop
+   * ladder derives one at ingest. Both fields NULL means no copy could be
+   * derived: the image is pools-only, and the Trench handlers refuse it by name.
+   *
+   * When `onchainDigest === digest` the original IS its own on-chain copy and
+   * there is no second byte file. That equality is the whole encoding of "no
+   * second file", so callers compare it rather than storing a third flag.
+   */
+  onchainByteLength: number | null;
+  /** sha256 hex of the on-chain copy. Bound into the C0 authorization. */
+  onchainDigest: string | null;
   uploadedAt: string;
 }
 
@@ -90,7 +111,8 @@ export type DeleteLaunchImageResult =
     };
 
 const SELECT_COLUMNS =
-  "image_id, label, byte_length, mime, width, height, digest, uploaded_at";
+  "image_id, label, byte_length, mime, width, height, digest, "
+  + "onchain_byte_length, onchain_digest, uploaded_at";
 
 function mapRow(r: Record<string, unknown>): LaunchImageRow {
   return {
@@ -101,6 +123,14 @@ function mapRow(r: Record<string, unknown>): LaunchImageRow {
     width: Number(r.width),
     height: Number(r.height),
     digest: r.digest as string,
+    onchainByteLength:
+      r.onchain_byte_length === null || r.onchain_byte_length === undefined
+        ? null
+        : Number(r.onchain_byte_length),
+    onchainDigest:
+      r.onchain_digest === null || r.onchain_digest === undefined
+        ? null
+        : (r.onchain_digest as string),
     uploadedAt:
       r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : String(r.uploaded_at),
   };
@@ -117,19 +147,21 @@ function mapLiveIntent(r: Record<string, unknown>): LiveIntentReference {
 /**
  * Insert a locker image's metadata row.
  *
- * The table's CHECKs (20 KB byte cap, MIME allowlist, positive dimensions) are a
- * BACKSTOP, not the validator: a violation surfaces here as a raw Postgres error
- * with no useful message for the user. The main-side upload path validates
- * first — magic-byte sniff, MIME allowlist, header-read dimensions, size cap —
- * and this constraint exists so a row can never claim a shape the launch path
- * would refuse.
+ * The table's CHECKs (the 25 MiB resource bound, the 20 KB on-chain-copy cap,
+ * the MIME allowlist, positive dimensions) are a BACKSTOP, not the validator: a
+ * violation surfaces here as a raw Postgres error with no useful message for the
+ * user. The main-side upload path validates first — magic-byte sniff, MIME
+ * allowlist, header-read dimensions, size ceiling — and these constraints exist
+ * so a row can never claim a shape the launch path would refuse.
  */
 export async function insertLaunchImage(
   input: InsertLaunchImageInput,
 ): Promise<LaunchImageRow> {
   const row = await queryOne<Record<string, unknown>>(
-    `INSERT INTO launch_images (image_id, label, byte_length, mime, width, height, digest)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO launch_images
+       (image_id, label, byte_length, mime, width, height, digest,
+        onchain_byte_length, onchain_digest)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING ${SELECT_COLUMNS}`,
     [
       input.imageId,
@@ -139,6 +171,8 @@ export async function insertLaunchImage(
       input.width,
       input.height,
       input.digest,
+      input.onchainByteLength,
+      input.onchainDigest,
     ],
   );
   if (!row) throw new Error("launch_images: insertLaunchImage returned no row");

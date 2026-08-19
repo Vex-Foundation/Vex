@@ -26,6 +26,8 @@ export const SOLANA_CORE_DISCOVERY = {
   },
 
   "solana.tokens.search": {
+    aliases: ["solana token lookup", "spl token search", "resolve solana mint"],
+    exampleIntents: ["find a solana token by name", "mint address for a sol ticker"],
     embeddingText: embeddingText(
       `Look up a Solana SPL token by name, ticker, symbol, or mint address. ` +
       `Use this when the user names a sol coin (BONK, JUP, that new memecoin) and you need the mint address, decimals, or verification status before swapping. ` +
@@ -36,6 +38,8 @@ export const SOLANA_CORE_DISCOVERY = {
   },
 
   "solana.tokens.trending": {
+    aliases: ["fresh solana tokens", "new solana launches", "solana trending tokens", "recent solana mints"],
+    exampleIntents: ["freshly launched solana tokens", "brand new pump.fun launches", "what is trending on solana"],
     embeddingText: embeddingText(
       `Find trending and popular tokens on Solana — top traded SPL tokens, top trending memes, recently launched solana tokens, popular liquid staking tokens (LSTs), verified tokens with the most attention, or tokenized stocks (e.g. Ondo, Remora). ` +
       `Use this when the user wants to see what's pumping on sol, what's hot on solana, top sol memes, new solana launches, popular spl tokens, or tokenized equities on solana. ` +

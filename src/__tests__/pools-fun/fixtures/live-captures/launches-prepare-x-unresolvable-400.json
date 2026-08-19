@@ -1,0 +1,8 @@
+{
+  "endpoint": "POST https://api.bankr.bot/pools-fun/launches/prepare (feeRecipient {type:\"x\", value:\"vexdotfun\"})",
+  "capturedAt": "2026-08-19T08:50:50.075Z",
+  "httpStatus": 400,
+  "response": {
+    "error": "Could not resolve the x fee recipient. Check it and try again."
+  }
+}

@@ -30,7 +30,7 @@
 
 import { useState, type JSX } from "react";
 import type { VexError } from "@shared/ipc/result.js";
-import type { ImageOptimization } from "@shared/schemas/images.js";
+import type { ImageOnchainVariant } from "@shared/schemas/images.js";
 import { PlusIcon, VexIcon } from "../../../components/icons/index.js";
 import {
   useDeleteLockerImage,
@@ -40,6 +40,10 @@ import {
 import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
 import { TokenLaunchButton } from "../token-launch/TokenLaunchButton.js";
+import {
+  LaunchPlatformChips,
+  type LaunchPlatform,
+} from "../TokenLaunchDialog/LaunchPlatformChips.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { ImageThumb } from "./image-locker/ImageThumb.js";
 
@@ -56,8 +60,14 @@ export function ImageLockerCard({
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
+  // Which launchpad the next launch goes to. Owned HERE because the choice has
+  // to be visible while the user picks a picture, not only after the dialog
+  // opens. Not persisted: a launchpad is a per-launch decision, and reviving
+  // yesterday's choice under a Launch button is how a token lands on the wrong
+  // one.
+  const [platform, setPlatform] = useState<LaunchPlatform>("trench");
   // The last thing the user should still be looking at: a refusal, or the
-  // report that their picture was optimized. Cleared whenever a new attempt
+  // report that a Trench copy was prepared. Cleared whenever a new attempt
   // starts, so a stale message never sits under a fresh upload.
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -73,11 +83,11 @@ export function ImageLockerCard({
           setNotice(uploadNotice(outcome.error));
           return;
         }
-        // An oversized picture is now OPTIMIZED rather than refused. Say so —
-        // silently altering a user's image and showing nothing would leave them
-        // to discover the change from a thumbnail that looks softer than the
-        // file they picked.
-        setNotice(optimizationNotice(outcome.data.optimization));
+        // The original is stored untouched, but a SECOND, smaller copy may have
+        // been prepared for Trench. Say so - the thumbnail grid renders that
+        // copy, so a user who is shown a softer, square tile would otherwise
+        // conclude Vex quietly degraded the file they picked.
+        setNotice(onchainVariantNotice(outcome.data.onchainVariant));
       },
     });
   }
@@ -108,8 +118,8 @@ export function ImageLockerCard({
 
   return (
     <PortfolioCard
-      eyebrow="Trench Express"
-      leading={<ProtocolMark mark={resolveProtocolMark("trench")} size={16} />}
+      eyebrow="Launchpad"
+      leading={<ProtocolMark mark={resolveProtocolMark(platform)} size={16} />}
       trailing={images.length > 0 ? `${images.length}` : undefined}
     >
       {query.isLoading ? (
@@ -118,7 +128,7 @@ export function ImageLockerCard({
         <CardStateNote tone="warn">Couldn&apos;t read your image locker.</CardStateNote>
       ) : images.length === 0 ? (
         <CardStateNote>
-          A Trench launch needs an image, and the agent can&apos;t make one. Add one
+          A launch needs an image, and the agent can&apos;t make one. Add one
           here so a mission can launch without you.
         </CardStateNote>
       ) : (
@@ -151,9 +161,15 @@ export function ImageLockerCard({
       </button>
 
       {/* The ONLY way a user reaches the launch dialog, now inside the card
-          that holds the image every launch needs. */}
-      <div className="mt-2.5 border-t border-[var(--vex-line)] pt-2.5">
-        <TokenLaunchButton sessionId={sessionId} />
+          that holds the image every launch needs. The chips sit beside it so
+          the launchpad is chosen where the picture is. */}
+      <div className="mt-2.5 flex flex-col gap-2 border-t border-[var(--vex-line)] pt-2.5">
+        <LaunchPlatformChips value={platform} onChange={setPlatform} />
+        <TokenLaunchButton
+          sessionId={sessionId}
+          platform={platform}
+          onPlatformChange={setPlatform}
+        />
       </div>
     </PortfolioCard>
   );
@@ -170,23 +186,32 @@ function uploadNotice(error: VexError): string | null {
 }
 
 /**
- * The optimization report, in the same place a refusal would appear.
+ * The on-chain-copy report, in the same place a refusal would appear.
  *
- * Absent optimization means the file was stored EXACTLY as picked, and that
- * deserves no message at all — an upload that changed nothing is just an
- * upload. Sizes are shown as measured, so the user can see what was traded.
+ * WHAT IT MUST NOT SAY ANY MORE is that the picture was optimized. Since the
+ * per-lane decision the ORIGINAL is stored at full quality and is exactly what
+ * a pools.fun launch publishes; what the ladder produced is an additional
+ * small square COPY that only Trench uses. Reporting that as "optimized" would
+ * tell the user their file was degraded when it was not.
  *
- * THE CROP IS NAMED. Optimizing always squares the image (Trench renders 1:1
- * tiles), and that is a visible change to the user's picture. Reporting only
- * the byte reduction would let them find the missing edges in the thumbnail
- * and wonder what else happened silently.
+ * Absent report means no copy had to be made - the file was already inside the
+ * Trench budget and is its own copy - and that deserves no message at all.
+ *
+ * THE CROP IS NAMED, because the thumbnail grid renders that copy: a user who
+ * sees a square tile of a wide photo would otherwise be left wondering what
+ * happened to the edges.
+ *
+ * THE GAS SENTENCE NAMES TRENCH, because it is only true there. A Trench launch
+ * carries the image bytes inside the transaction; pools.fun hosts its metadata
+ * off-chain, so the same picture costs no gas on that launchpad.
  */
-function optimizationNotice(optimization: ImageOptimization | undefined): string | null {
-  if (optimization === undefined) return null;
+function onchainVariantNotice(variant: ImageOnchainVariant | undefined): string | null {
+  if (variant === undefined) return null;
   return (
-    `Optimized: ${formatKb(optimization.originalByteLength)} → ` +
-    `${formatKb(optimization.storedByteLength)}, cropped to square. The image is stored ` +
-    `inside the launch transaction, so its size is gas you pay.`
+    `Stored at full quality (${formatKb(variant.originalByteLength)}). For Trench ` +
+    `launches Vex also prepared a ${formatKb(variant.variantByteLength)} square copy, ` +
+    `because a Trench launch carries the image inside the transaction and its size ` +
+    `is gas you pay. pools.fun uses your original.`
   );
 }
 

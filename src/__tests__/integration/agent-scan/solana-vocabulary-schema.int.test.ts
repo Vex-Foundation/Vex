@@ -143,12 +143,16 @@ describe("migration 049 — lend/prediction vocabulary", () => {
     );
   });
 
-  it("kind/family binding (R1): lend/prediction rows must be chain_family='solana' AND chain_id=20011000000", async () => {
+  it("kind/family binding (R1): prediction rows must be chain_family='solana' AND chain_id=20011000000", async () => {
+    // Migration 079 widened this binding so that `lend` may ALSO live on
+    // `eip155` (Morpho). `prediction` stays Solana-pinned and is therefore
+    // what still proves the family half of the binding here; the widened
+    // lend half is owned by evm-lend-vocabulary-schema.int.test.ts.
     const wrongFamily = await seedIntent();
     await expectReject(() =>
       execute(
         `INSERT INTO agent_activity (protocol_execution_id, event_index, event_role, kind, protocol, chain_id, wallet_address, chain_family)
-         VALUES ($1, 0, 'lend_deposit', 'lend', 'jupiter', $2, $3, 'eip155')`,
+         VALUES ($1, 0, 'predict_buy', 'prediction', 'jupiter', $2, $3, 'eip155')`,
         [wrongFamily.protocolExecutionId, SOLANA_CHAIN_ID, WALLET],
       ),
     );

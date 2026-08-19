@@ -19,7 +19,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  LOCKER_IMAGE_MAX_BYTES,
+  LOCKER_IMAGE_MAX_SOURCE_BYTES,
   LOCKER_IMAGE_MIN_BYTES,
 } from "@shared/schemas/images.js";
 import {
@@ -135,31 +135,38 @@ describe("validateLockerImageBytes — the allowlist", () => {
 
 // ── Refusals: size ────────────────────────────────────────────────────────
 
-describe("validateLockerImageBytes — the size cap", () => {
-  it("accepts a file exactly at the cap", () => {
-    const bytes = pngFixture(8, 8, LOCKER_IMAGE_MAX_BYTES - 33);
-    expect(bytes.byteLength).toBe(LOCKER_IMAGE_MAX_BYTES);
+/**
+ * THE CEILING HERE IS THE RESOURCE BOUND, not Trench's 20 KB on-chain budget.
+ * Since the per-lane decision (2026-08-19) this validator runs on the ORIGINAL
+ * the locker stores, and the original is what pools.fun publishes - a lane with
+ * no size limit of ours. The Trench budget is enforced on the DERIVED copy, on
+ * the launch path.
+ */
+describe("validateLockerImageBytes — the resource bound", () => {
+  it("accepts a file exactly at the bound", () => {
+    const bytes = pngFixture(8, 8, LOCKER_IMAGE_MAX_SOURCE_BYTES - 33);
+    expect(bytes.byteLength).toBe(LOCKER_IMAGE_MAX_SOURCE_BYTES);
     expect(rejectionKind(bytes)).toBe("accepted");
   });
 
-  it("refuses a file one byte over the cap", () => {
-    const bytes = pngFixture(8, 8, LOCKER_IMAGE_MAX_BYTES - 32);
-    expect(bytes.byteLength).toBe(LOCKER_IMAGE_MAX_BYTES + 1);
+  it("refuses a file one byte over the bound", () => {
+    const bytes = pngFixture(8, 8, LOCKER_IMAGE_MAX_SOURCE_BYTES - 32);
+    expect(bytes.byteLength).toBe(LOCKER_IMAGE_MAX_SOURCE_BYTES + 1);
     expect(rejectionKind(bytes)).toBe("too_large");
   });
 
   it("reports both numbers on an oversized refusal, so the message can be specific", () => {
-    const outcome = validateLockerImageBytes(pngFixture(8, 8, LOCKER_IMAGE_MAX_BYTES));
+    const outcome = validateLockerImageBytes(pngFixture(8, 8, LOCKER_IMAGE_MAX_SOURCE_BYTES));
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.rejection).toMatchObject({
       kind: "too_large",
-      maxBytes: LOCKER_IMAGE_MAX_BYTES,
+      maxBytes: LOCKER_IMAGE_MAX_SOURCE_BYTES,
     });
   });
 
   it("checks size BEFORE sniffing, so a huge non-image is not mis-blamed on its format", () => {
-    const bytes = new Uint8Array(LOCKER_IMAGE_MAX_BYTES + 1);
+    const bytes = new Uint8Array(LOCKER_IMAGE_MAX_SOURCE_BYTES + 1);
     bytes.set(new TextEncoder().encode("%PDF-1.7"), 0);
     expect(rejectionKind(bytes)).toBe("too_large");
   });

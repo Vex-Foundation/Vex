@@ -90,8 +90,10 @@ export type {
 export type {
   CreateTokenLaunchIntentInput,
   LaunchAuthorizationKind,
+  PoolsLaunchIntentFields,
   TokenLaunchIntent,
   TokenLaunchIntentOrigin,
+  TokenLaunchIntentProtocol,
   TokenLaunchIntentStatus,
   UserFormContinuationCloseReason,
 } from "./token-launch-intents/types.js";
@@ -133,4 +135,6 @@ export {
 
 // The identity sweep's fair, self-rotating candidate claim (a read AND a
 // scheduling stamp — see the module for the starvation it fixes).
+export { listPreviewedForSession } from "./token-launch-intents/reads.js";
+
 export { claimBroadcastPendingForSweep } from "./token-launch-intents/sweep-claim.js";

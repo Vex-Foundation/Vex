@@ -92,7 +92,7 @@ export class MutatingAliasRouteError extends Error {
 export type MutatingAliasRouter = (
   args: Record<string, unknown>,
   sessionId: string | undefined,
-) => ResolvedAliasTarget;
+) => ResolvedAliasTarget | Promise<ResolvedAliasTarget>;
 
 // ── swap_execute — EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
 
@@ -322,13 +322,19 @@ type BridgeArgs = z.infer<typeof BridgeArgs>;
 
 /**
  * Resolve the `bridge` alias to `khalani.bridge` OR `relay.bridge` + translated
- * params, per the bridge VENUE ROUTER (Relay whenever either side is Robinhood
- * Chain, which Khalani doesn't cover; Khalani primary otherwise). Throws
- * `MutatingAliasRouteError` on invalid args. The dedicated dispatcher branch
- * routes the result through `executeProtocolTool`, which runs the bridge prequote
- * gate (kind 'bridge', venue-bound) → approval gate → capture.
+ * params, per the bridge VENUE ROUTER (Khalani when its LIVE chain registry
+ * serves both sides, else Relay - the chain-aware default fallback). Throws
+ * `MutatingAliasRouteError` on invalid args or when no venue can be named
+ * honestly. The dedicated dispatcher branch routes the result through
+ * `executeProtocolTool`, which runs the bridge prequote gate (kind 'bridge',
+ * venue-bound) → approval gate → capture.
+ *
+ * ASYNC because the venue now depends on the live Khalani chain registry
+ * (24h-cached). It is the only async router; the classification-only call site
+ * (`dispatcher/mutating-targets.ts`) cannot await and falls back to the alias's
+ * conservative registry flag, which is the same answer either target would give.
  */
-function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
+async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAliasTarget> {
   // Fee params and the refund destination are rejected BY NAME before anything
   // else, so an attempted overcharge or refund redirection reads as an explicit
   // refusal rather than a generic unknown-key error. `.strict()` below would
@@ -344,7 +350,7 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
   // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
   // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
   // it had bought price protection Khalani never offered.
-  const khalaniSlippage = khalaniSlippageRejection("bridge", args);
+  const khalaniSlippage = await khalaniSlippageRejection("bridge", args);
   if (khalaniSlippage !== null) throw new MutatingAliasRouteError(khalaniSlippage);
 
   const parsed = BridgeArgs.safeParse(args);
@@ -357,7 +363,9 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
   }
   const a: BridgeArgs = parsed.data;
 
-  if (resolveBridgeVenue(a.fromChain, a.toChain) === "relay") {
+  const venue = await resolveBridgeVenue(a.fromChain, a.toChain);
+  if (venue.venue === null) throw new MutatingAliasRouteError(`bridge: ${venue.refusal}`);
+  if (venue.venue === "relay") {
     // Relay params — no referrer/fee/filler/fromAddress surface (Khalani-only).
     const params: Record<string, unknown> = {
       fromChain: a.fromChain,

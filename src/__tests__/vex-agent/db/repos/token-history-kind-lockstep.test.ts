@@ -65,6 +65,19 @@ const KIND_ADMISSION: Readonly<Record<string, string | null>> = {
   launch: "aa.kind IN ('lend', 'prediction', 'launch')",
   yield: "'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'",
   wrap: null,
+  /**
+   * `claim` (migration 082) is NOT carried by the token history today, recorded
+   * here rather than fixed.
+   *
+   * A creator-fee claim genuinely touches two tokens, so it has a real claim to
+   * a place in both their histories - but this view's row predicate admits by
+   * kind and its `product_type` CASE has no arm for one, and adding both is a
+   * product decision about what a two-asset payout renders as in a per-token
+   * ledger. Left as a declared gap, exactly as `wrap` is, instead of a silent
+   * one: the claim IS visible in the Agent Scan feed and in the transactions
+   * feed, which is where a user looks for it.
+   */
+  claim: null,
 };
 
 /** The row-inclusion predicate of the agent_activity half. */

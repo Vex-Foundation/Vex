@@ -31,6 +31,8 @@ import {
   lpToPtHashMaterial,
   lpTransferHashMaterial,
 } from "./hash/pendle-lp.js";
+import { morphoBorrowHashMaterial } from "./hash/morpho-borrow.js";
+import { lendHashMaterial } from "./hash/morpho-lend.js";
 import { redeemHashMaterial, ptRolloverHashMaterial } from "./hash/pendle-pt.js";
 import { mintHashMaterial, redeemPyHashMaterial } from "./hash/pendle-py.js";
 import { syHashMaterial } from "./hash/pendle-sy.js";
@@ -45,6 +47,15 @@ import type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+import type {
+  LendBorrowMatchInput,
+  LendMarketSupplyMatchInput,
+  LendMarketWithdrawMatchInput,
+  LendRepayMatchInput,
+  LendSupplyCollateralMatchInput,
+  LendWithdrawCollateralMatchInput,
+} from "./hash/morpho-borrow.js";
+import type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 import type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 import type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
 import type { SyMintMatchInput, SyRedeemMatchInput } from "./hash/pendle-sy.js";
@@ -59,6 +70,16 @@ export type {
   LpToPtMatchInput,
   LpTransferMatchInput,
 } from "./hash/pendle-lp.js";
+export type {
+  LendBorrowMatchInput,
+  LendMarketSupplyMatchInput,
+  LendMarketWithdrawMatchInput,
+  LendRepayMatchInput,
+  LendSupplyCollateralMatchInput,
+  LendWithdrawCollateralMatchInput,
+  MorphoBorrowMatchInput,
+} from "./hash/morpho-borrow.js";
+export type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash/morpho-lend.js";
 export type { PtRolloverMatchInput, RedeemMatchInput } from "./hash/pendle-pt.js";
 export type { MintMatchInput, RedeemPyMatchInput } from "./hash/pendle-py.js";
 export type { SyMintMatchInput, SyRedeemMatchInput } from "./hash/pendle-sy.js";
@@ -85,7 +106,15 @@ export type PrequoteMatchInput =
   | LpAddKeepYtMatchInput
   | PtRolloverMatchInput
   | LpTransferMatchInput
-  | LpToPtMatchInput;
+  | LpToPtMatchInput
+  | LendDepositMatchInput
+  | LendWithdrawMatchInput
+  | LendMarketSupplyMatchInput
+  | LendMarketWithdrawMatchInput
+  | LendSupplyCollateralMatchInput
+  | LendWithdrawCollateralMatchInput
+  | LendBorrowMatchInput
+  | LendRepayMatchInput;
 
 /**
  * Deterministic sha256-hex match-hash over the trade identity. Identical at
@@ -165,6 +194,29 @@ export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
       break;
     case "lp_to_pt":
       material = lpToPtHashMaterial(input);
+      break;
+    case "lend_deposit":
+    case "lend_withdraw":
+      // TWO KINDS, TWO LANES. A Morpho VAULT deposit/redeem (E3b-2) and a Blue
+      // MARKET supply/withdraw share these kind tags, because supplying a loan
+      // asset IS lending and a per-venue-shape kind would fragment the agent's
+      // own history. The kind therefore no longer decides the material on its
+      // own: `lane` does, and it is carried on the match input rather than only
+      // on the registration precisely so this dispatch can read it. The vault
+      // material is UNCHANGED and `lane` is in neither material - see
+      // `hash/morpho-borrow.ts` for why the two can never collide anyway.
+      material = input.lane === "market"
+        ? morphoBorrowHashMaterial(input)
+        : lendHashMaterial(input);
+      break;
+    case "lend_supply_collateral":
+    case "lend_withdraw_collateral":
+    case "lend_borrow":
+    case "lend_repay":
+      // Morpho Blue borrow lane (E3c). One material function, four kind tags:
+      // the tag is what keeps a collateral-supply quote from authorizing a
+      // borrow execute on the same market, which is why it leads the material.
+      material = morphoBorrowHashMaterial(input);
       break;
   }
   return createHash("sha256").update(material).digest("hex");

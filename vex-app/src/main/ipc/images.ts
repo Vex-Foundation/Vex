@@ -34,7 +34,7 @@ import {
   imagesReadThumbResultSchema,
   imagesUploadInputSchema,
   imagesUploadResultSchema,
-  LOCKER_IMAGE_MAX_BYTES,
+  LOCKER_IMAGE_MAX_SOURCE_BYTES,
   type ImagesDeleteResult,
   type ImagesListResult,
   type ImagesReadThumbResult,
@@ -98,10 +98,10 @@ function rejectionError(
       code: "images.too_large",
       domain: "images",
       message:
-        `Vex tried to optimize that image and could not get it under ` +
-        `${formatKb(rejection.maxBytes)} (best attempt: ${formatKb(rejection.byteLength)}). ` +
-        `The image is stored inside the launch transaction itself, so its size is gas you ` +
-        `pay. Try a smaller or simpler picture.`,
+        `That file is ${formatMb(rejection.byteLength)}, over the ` +
+        `${formatMb(rejection.maxBytes)} the image locker will read. That ceiling is ` +
+        `about memory, not about launching: neither launchpad imposes a size limit of ` +
+        `its own on what you store. Pick a smaller file.`,
       retryable: false,
       userActionable: true,
       redacted: true,
@@ -124,8 +124,8 @@ function rejectionError(
     domain: "images",
     message:
       `Vex could not accept that file: ${rejection.reason}. Use a JPEG, PNG, or ` +
-      `WebP under ${formatKb(LOCKER_IMAGE_MAX_BYTES)}. Vex does not convert images, ` +
-      `so the file has to already be one of those.`,
+      `WebP under ${formatMb(LOCKER_IMAGE_MAX_SOURCE_BYTES)}. Vex does not convert ` +
+      `images, so the file has to already be one of those.`,
     retryable: false,
     userActionable: true,
     redacted: true,
@@ -133,8 +133,8 @@ function rejectionError(
   });
 }
 
-function formatKb(bytes: number): string {
-  return `${(bytes / 1000).toFixed(1)} KB`;
+function formatMb(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
 /**
@@ -243,14 +243,17 @@ function registerImagesUploadHandler(): () => void {
       log.info(
         `[ipc:vex:images:upload] ok mime=${outcome.image.mime} ` +
           `bytes=${outcome.image.byteLength} ` +
-          `optimized=${String(outcome.optimization !== undefined)} ` +
+          `onchainBytes=${outcome.image.onchainByteLength ?? "none"} ` +
+          `derivedCopy=${String(outcome.onchainVariant !== undefined)} ` +
           `correlationId=${ctx.requestId}`,
       );
-      // The optimization report rides along only when the ladder actually ran.
+      // The variant report rides along only when the ladder actually ran; an
+      // original that is its own copy, and an image with no copy at all, are
+      // both read from `image.onchainByteLength` instead.
       return ok(
-        outcome.optimization === undefined
+        outcome.onchainVariant === undefined
           ? { image: outcome.image }
-          : { image: outcome.image, optimization: outcome.optimization },
+          : { image: outcome.image, onchainVariant: outcome.onchainVariant },
       );
     },
   });

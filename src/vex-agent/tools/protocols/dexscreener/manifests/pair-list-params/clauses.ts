@@ -38,3 +38,19 @@ export const PAIR_DESCRIPTION_WINDOW_CLAUSE =
   "Every filter, sort and window is applied by Vex to at most 30 provider-chosen rows per call. "
   + "DexScreener offers no server-side filter, sort, limit or pagination, and there is no way to "
   + "widen the window.";
+
+/**
+ * The freshness envelope every DexScreener handler emits, described once for
+ * all 14 tools. An envelope the manifest never names is discoverable only by
+ * paying for a call - and the undocumented half of the old block admitted a
+ * derivation that read "fresh" when the truth was "unknown".
+ */
+export const SOURCE_OBSERVATION_CLAUSE =
+  "Every response carries sourceObservation: observed (true = the transport was measured; the "
+  + "age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), "
+  + "localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the "
+  + "local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's "
+  + "CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about "
+  + "1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of "
+  + "data age, never a worst case (null means unknown, never fresh). Batched or merged calls "
+  + "report the stalest completed fetch. Nothing here is real-time.";

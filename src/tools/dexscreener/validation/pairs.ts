@@ -66,7 +66,7 @@ function parseQuoteToken(raw: unknown): DexQuoteToken {
  * kept; buys/sells fall back to 0 when not a number (typeof check accepts
  * NaN/Infinity). Non-record entries are SKIPPED (not added).
  */
-const txnCountsSchema: z.ZodType<Record<string, DexTxnCounts>> = z.unknown().transform((raw) => {
+const txnCountsSchema: z.ZodType<Record<string, DexTxnCounts>> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return {};
   const result: Record<string, DexTxnCounts> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -84,7 +84,7 @@ const txnCountsSchema: z.ZodType<Record<string, DexTxnCounts>> = z.unknown().tra
  * `parseNumberRecord`: non-record root → {}. Keeps only `typeof === "number"`
  * values (accepts NaN/Infinity). Non-number values skipped.
  */
-const numberRecordSchema: z.ZodType<Record<string, number>> = z.unknown().transform((raw) => {
+const numberRecordSchema: z.ZodType<Record<string, number>> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return {};
   const result: Record<string, number> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -100,7 +100,7 @@ const numberRecordSchema: z.ZodType<Record<string, number>> = z.unknown().transf
  * : null`. Differs from `numberRecordSchema` which returns {} on non-record;
  * here a non-record root → null.
  */
-const priceChangeSchema: z.ZodType<Record<string, number> | null> = z.unknown().transform((raw) => {
+const priceChangeSchema: z.ZodType<Record<string, number> | null> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return null;
   const result: Record<string, number> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -112,7 +112,7 @@ const priceChangeSchema: z.ZodType<Record<string, number> | null> = z.unknown().
 });
 
 /** `parseLiquidity`: non-record → null; usd optional-number; base/quote → 0 default. */
-const liquiditySchema: z.ZodType<DexLiquidity | null> = z.unknown().transform((raw) => {
+const liquiditySchema: z.ZodType<DexLiquidity | null> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return null;
   return {
     usd: typeof raw.usd === "number" && !Number.isNaN(raw.usd) ? raw.usd : null,
@@ -122,7 +122,7 @@ const liquiditySchema: z.ZodType<DexLiquidity | null> = z.unknown().transform((r
 });
 
 /** `parseInfo`: non-record → null; websites/socials element-wise filtered records, else null. */
-const infoSchema: z.ZodType<DexPairInfo | null> = z.unknown().transform((raw) => {
+const infoSchema: z.ZodType<DexPairInfo | null> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return null;
   return {
     imageUrl: typeof raw.imageUrl === "string" && raw.imageUrl.length > 0 ? raw.imageUrl : null,
@@ -139,13 +139,13 @@ const infoSchema: z.ZodType<DexPairInfo | null> = z.unknown().transform((raw) =>
 });
 
 /** `parseBoosts`: non-record → null; active → 0 default. */
-const boostsSchema: z.ZodType<DexBoosts | null> = z.unknown().transform((raw) => {
+const boostsSchema: z.ZodType<DexBoosts | null> = z.unknown().optional().transform((raw) => {
   if (!isRecord(raw)) return null;
   return { active: typeof raw.active === "number" ? raw.active : 0 };
 });
 
 /** `parseLabels`: non-array → null; else element-wise string filter. */
-const labelsSchema: z.ZodType<string[] | null> = z.unknown().transform((raw) =>
+const labelsSchema: z.ZodType<string[] | null> = z.unknown().optional().transform((raw) =>
   Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : null,
 );
 
@@ -160,8 +160,8 @@ const pairObjectSchema: z.ZodType<DexPair> = z
     url: asString("pair.url"),
     pairAddress: asString("pair.pairAddress"),
     labels: labelsSchema,
-    baseToken: z.unknown().transform((v) => parseBaseToken(v)),
-    quoteToken: z.unknown().transform((v) => parseQuoteToken(v)),
+    baseToken: z.unknown().optional().transform((v) => parseBaseToken(v)),
+    quoteToken: z.unknown().optional().transform((v) => parseQuoteToken(v)),
     priceNative: asString("pair.priceNative"),
     priceUsd: asOptionalString,
     txns: txnCountsSchema,

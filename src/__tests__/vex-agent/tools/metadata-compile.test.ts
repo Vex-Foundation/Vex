@@ -177,7 +177,7 @@ describe("compileToolDiscoveryMetadata", () => {
   });
 
   it("chains from discovery passes through compile", () => {
-    // Lexical recall on rare chain names (Plasma, Etherlink, Berachain)
+    // Lexical recall on rare chain names (Plasma, Berachain, Sonic)
     // depends on `chains` reaching `buildSearchFields` after compile.
     const manifest = makeManifest({
       discovery: { chains: ["Ethereum", "Plasma", "Berachain"] },

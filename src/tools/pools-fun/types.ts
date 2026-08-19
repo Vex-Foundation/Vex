@@ -1,0 +1,288 @@
+/**
+ * pools.fun (api.bankr.bot) wire types.
+ *
+ * Every field is grounded in captured bytes (`src/__tests__/pools-fun/fixtures/
+ * live-captures/`), not in provider docs - there are none. The tolerant-reader
+ * split (rule 90) is encoded in the optionality: identity and provenance fields
+ * are required, every display number is nullable.
+ *
+ * TRAPS proven live and baked into these types:
+ * - `decimals` and `totalSupply` are NULL on every `platform=poolsfun` row and
+ *   PRESENT on `platform=sushi` rows (18 / a raw string). A reader that assumes
+ *   either shape breaks on half the market, and neither value is trusted for a
+ *   financial decision - decimals are read on-chain.
+ * - `poolId` is a 20-byte ADDRESS on pools.fun and sushi rows (it is the Sushi
+ *   V3 pool). The same key is a 32-byte Uniswap-V4 pool id on the Bankr/Doppler
+ *   rows the API returns when `platform` is omitted, which is one more reason
+ *   the client never omits it.
+ * - `pairedAsset` is `weth` | `usdg` | `stock`; a `stock` row also carries
+ *   `pairedStock: {address, symbol}` (measured live on AAPL Cat).
+ * - Prices, volumes, market cap and price changes are DISPLAY-GRADE floats with
+ *   no decimals metadata. They never reach a trade decision; kyberswap quotes
+ *   are the financial truth.
+ */
+
+import type { PoolsPlatform, PoolsRowPlatform } from "./constants.js";
+
+/** The stock a `pairedAsset: "stock"` row is paired against. */
+export interface PoolsPairedStock {
+  address: string;
+  symbol: string;
+}
+
+/**
+ * One `/discover` row.
+ *
+ * `tokenAddress`, `poolId`, `platform`, `pairedAsset` and `deployedAt` are the
+ * identity/provenance set and are strict. `decimals` and `totalSupply` are kept
+ * on the type because the wire carries them, but they are display-tolerant and
+ * are deliberately NOT projected into any tool output.
+ */
+export interface PoolsToken {
+  tokenAddress: string;
+  poolId: string;
+  /** Pinned: a validated row is always a Robinhood row (see `validation/token.ts`). */
+  chain: "robinhood";
+  /** A row's launcher is never the `all` SELECTOR - see `PoolsRowPlatform`. */
+  platform: PoolsRowPlatform;
+  pairedAsset: string;
+  pairedStock: PoolsPairedStock | null;
+  name: string | null;
+  symbol: string | null;
+  /** Null on every pools.fun row; 18 on sushi rows. Never a financial input. */
+  decimals: number | null;
+  /** Raw string on sushi rows, null on pools.fun rows. Never a financial input. */
+  totalSupply: string | null;
+  imageUri: string | null;
+  deployerAddress: string | null;
+  deployerXUsername: string | null;
+  feeRecipientAddress: string | null;
+  feeRecipientXUsername: string | null;
+  tweetUrl: string | null;
+  websiteUrl: string | null;
+  /** ISO timestamp of the launch. Strict - it is what `maxAgeHours` is read against. */
+  deployedAt: string;
+  lastTradeAt: string | null;
+  lastPriceEth: number | null;
+  lastPriceUsd: number | null;
+  marketCapUsd: number | null;
+  vol1m: number | null;
+  vol5m: number | null;
+  vol1h: number | null;
+  vol6h: number | null;
+  vol24h: number | null;
+  txCount24h: number | null;
+  priceChange1m: number | null;
+  priceChange5m: number | null;
+  priceChange1h: number | null;
+  priceChange6h: number | null;
+  priceChange24h: number | null;
+}
+
+/** A `/discover` page: rows plus the opaque cursor for the next one. */
+export interface PoolsDiscoverPage {
+  results: PoolsToken[];
+  /** `null` on the last page (and on an empty result). */
+  nextCursor: string | null;
+}
+
+/**
+ * One candle, already lifted out of the wire's positional array.
+ *
+ * The wire sends `[unixSeconds, open, high, low, close, volumeUsd]`. A
+ * positional array reaching the agent is a misread waiting to happen, so the
+ * validator names the members here and nothing downstream sees the tuple.
+ */
+export interface PoolsCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volumeUsd: number;
+}
+
+/** `/discover/{token}/ohlcv` response. */
+export interface PoolsCandles {
+  candles: PoolsCandle[];
+  pool: { address: string; network: "robinhood" } | null;
+  pair: { baseSymbol: string | null; quoteSymbol: string | null } | null;
+}
+
+// -- Launch preparation (gateway path) -------------------------------
+
+/**
+ * The identities the launchpad will resolve a fee recipient FROM.
+ *
+ * The provider names these four itself, in the zod error it answers a wrong
+ * `type` with (probed 2026-08-19). Vex only ever sends two of them: `wallet` for
+ * an address, `x` for a handle a human typed into the manual form. `farcaster`
+ * and `ens` are recorded because they are part of the measured contract, not
+ * because anything sends them.
+ */
+export type PoolsFeeRecipientType = "x" | "farcaster" | "ens" | "wallet";
+
+/**
+ * The fee recipient AS THE REQUEST CARRIES IT.
+ *
+ * CHANGED UNDER US on/before 2026-08-19: this field used to be a bare string and
+ * is now this object. A bare string is answered HTTP 400 `feeRecipient: Invalid
+ * input: expected object, received string`, which made every Vex launch fail -
+ * Vex always states the recipient explicitly (owner decision 3), so there was no
+ * path that avoided it. See `agents_dm/pools-fun-live/artifacts/
+ * fee-recipient-shape-probe.json` for the enumerated sweep that recovered the
+ * schema.
+ */
+export interface PoolsPrepareFeeRecipient {
+  readonly type: PoolsFeeRecipientType;
+  /** An address for `wallet`, a handle for `x` - whatever `type` names. */
+  readonly value: string;
+}
+
+/**
+ * The fee recipient AS THE RESPONSE RETURNS IT: the launchpad's resolution.
+ *
+ * `address` is FINANCIALLY CONSUMED - it is what the verifier's point 4 holds
+ * the signed tuple to, and on the X-handle path it is the only statement of
+ * where the fee stream goes - so it is strict. `display` is a truncated label
+ * for a UI (`"0x33eF…d2fA"`) and is tolerated absent, per the module's
+ * tolerant-reader split.
+ */
+export interface PoolsResolvedFeeRecipient {
+  readonly address: string;
+  readonly display: string | null;
+}
+
+/**
+ * The paired asset AS THE PREPARE RESPONSE RETURNS IT - an object, where the
+ * request sends a bare string name (`"weth"` / `"usdg"`).
+ *
+ * NOTHING CONSUMES THIS. Which asset the launch actually pairs against is proven
+ * from the decoded TUPLE against the caller's expectation (verifier point 5), so
+ * this block is informational only and every field but the address is display-
+ * tolerant. It is typed because the validator must not throw on it, which is
+ * what it did while this was declared a string.
+ */
+export interface PoolsPreparedPairedAsset {
+  readonly address: string;
+  readonly kind: string | null;
+  readonly symbol: string | null;
+  readonly decimals: number | null;
+}
+
+/**
+ * The prepare request, as the provider actually accepts it.
+ *
+ * `imageUrl` is the field that WORKS. `image` is accepted with HTTP 200 and
+ * silently dropped - the pinned metadata simply has no image key, which is what
+ * left the first funded launch rendering blank (probed 2026-08-18, six shapes,
+ * only this one landed). The wire name and the metadata key deliberately
+ * differ: the backend rewrites this URL into an `ipfs://` CID under `image`.
+ */
+export interface PoolsPrepareRequest {
+  readonly tokenName: string;
+  readonly pairedAsset: string;
+  readonly expectedDeploymentFeeWei: string;
+  readonly expectedGatewayVersion: number;
+  readonly creatorAddress: string;
+  readonly tokenSymbol?: string | undefined;
+  readonly imageUrl?: string | undefined;
+  readonly tweetUrl?: string | undefined;
+  readonly websiteUrl?: string | undefined;
+  /** The identity to pay, as `{type, value}`. See `PoolsPrepareFeeRecipient`. */
+  readonly feeRecipient?: PoolsPrepareFeeRecipient | undefined;
+  readonly pairedStockAddress?: string | undefined;
+  readonly devBuyEth?: string | undefined;
+  readonly devBuyAmount?: string | undefined;
+}
+
+/**
+ * The prepare response: ready-to-sign `Gateway.launch(tuple)` calldata plus the
+ * mirrored fields the verifier cross-checks the decoded tuple against.
+ *
+ * NOTHING here is trusted. Every field is re-proven against the decoded
+ * calldata and against the chain before signing - that is the entire point of
+ * the verifier, and it is why these are typed as data to check rather than
+ * values to use.
+ */
+export interface PoolsPrepareResponse {
+  /** `true` means the quote is stale and the whole prepare must be redone. */
+  readonly requiresReprepare: boolean;
+  readonly to: string;
+  readonly data: string;
+  /**
+   * The native value to send, NORMALISED to a decimal wei string.
+   *
+   * The wire sends this one amount HEX-encoded (`"0x3bc7def507320"`) while every
+   * other amount on this response is decimal - the provider builds it with a
+   * transaction serialiser. The validator normalises rather than propagating
+   * that split: a hex string sitting beside decimal wei figures in a refusal
+   * message is exactly the misread rule 90 forbids.
+   */
+  readonly value: string;
+  readonly predictedTokenAddress: string;
+  readonly predictedPoolAddress: string;
+  readonly salt: string;
+  readonly metadataUri: string;
+  readonly devBuyMinOut: string;
+  readonly devBuyAmountIn: string;
+  readonly deploymentFeeWei: string;
+  readonly nativeDevBuyWei: string;
+  readonly deadline: string;
+  /** Informational; the pair that is PROVEN is the tuple's. See the interface. */
+  readonly pairedAsset: PoolsPreparedPairedAsset;
+  readonly tokenSymbol: string;
+  /** The RESOLVED recipient - an `x` request comes back as the address it named. */
+  readonly feeRecipient: PoolsResolvedFeeRecipient;
+}
+
+/** `/pools-fun/launches/config` - the gateway fee, which is DYNAMIC. */
+export interface PoolsLaunchConfig {
+  readonly deploymentFeeWei: string;
+  readonly gatewayVersion: number;
+}
+
+/** `/pools-fun/launches/upload-image` - the multipart upload's answer. */
+export interface PoolsImageUpload {
+  readonly url: string;
+}
+
+/** `/pools-fun/launches/dev-buy-quote` - an indicative prebuy fill at initial FDV. */
+export interface PoolsDevBuyQuote {
+  readonly devBuyAmountIn: string;
+  readonly devBuyAmountOut: string;
+  readonly totalSupply: string;
+}
+
+// -- Request param types ---------------------------------------------
+
+/**
+ * `/discover` params. `platform` is REQUIRED on purpose: the provider's default
+ * (no param) is a different launchpad entirely, so the trap is made structurally
+ * impossible rather than documented.
+ */
+export interface PoolsDiscoverParams {
+  platform: PoolsPlatform;
+  sortBy?: string;
+  order?: string;
+  limit?: number;
+  cursor?: string;
+  query?: string;
+  live?: boolean;
+  minMarketCapUsd?: number;
+  maxMarketCapUsd?: number;
+  minVolUsd?: number;
+  volTimeframe?: string;
+  minTxCount24h?: number;
+  maxAgeHours?: number;
+  deployerAddress?: string;
+  feeRecipientAddress?: string;
+}
+
+/** `/discover/{token}/ohlcv` params. */
+export interface PoolsCandlesParams {
+  tokenAddress: string;
+  timeframe: string;
+  aggregate?: number;
+  limit?: number;
+}

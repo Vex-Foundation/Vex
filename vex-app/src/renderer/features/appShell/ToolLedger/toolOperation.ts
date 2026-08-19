@@ -33,7 +33,7 @@
  *    `toolId` shape — every other curated `execute_tool` act is `unproven` and
  *    is labelled.
  *  - The ONE exception is the CURATED EXACT-ID map below (`TOOL_ID_OPERATIONS`,
- *    Trench Express today). Those protocols have no top-level tool name of
+ *    Trench Express and pools.fun today). Those protocols have no top-level tool name of
  *    their own — the engine dispatches them by that exact `toolId` string — so
  *    the id is load-bearing ROUTING input, matched here whole against a set we
  *    wrote, never a shape inferred from attacker-chosen text. A name outside
@@ -79,7 +79,9 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * Curated EXACT `toolId` → operation, for protocols the engine addresses only
- * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`,
+ * Morpho, `tools/protocols/morpho/manifests/`, and pools.fun,
+ * `tools/protocols/pools/manifests/`).
  * `null` means the act carries no money legs at all: a read, or a `local_write`
  * that drafts a row and spends nothing (`trench.launch_request_form`, which the
  * manifest marks `mutating: true` for APPROVAL-GATE reasons — no funds move, so
@@ -103,6 +105,23 @@ const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
   ["trench.trade_execute", "mutating"],
   ["trench.launch_execute", "mutating"],
 
+  // pools.fun (`tools/protocols/pools/manifests/`). The five reads carry no
+  // money legs at all; without these rows the fall-through would label each one
+  // "unproven" and draw a leg line under a market-data call.
+  ["pools.tokens", null],
+  ["pools.search", null],
+  ["pools.candles", null],
+  ["pools.token", null],
+  ["pools.my_launches", null],
+  // `launch_request_form` drafts a row and spends nothing, exactly like its
+  // Trench counterpart. `launch_preview` is ADVISORY: it prices a launch and
+  // writes a `previewed` intent row, but signs nothing, so it is a quote and
+  // must never render as an executed launch.
+  ["pools.launch_request_form", null],
+  ["pools.launch_preview", "quote"],
+  ["pools.launch_execute", "mutating"],
+  ["pools.claim_fees", "mutating"],
+
   // Swap and bridge acts, verified against the manifests. Relay's mutating tool
   // is the two-segment `relay.bridge` and its quote is `relay.quote.get`; same
   // for Khalani. Pendle's mutating ids are deliberately NOT listed: their leg
@@ -118,6 +137,39 @@ const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
   ["relay.bridge", "mutating"],
   ["khalani.quote.get", "quote"],
   ["khalani.bridge", "mutating"],
+
+  // Morpho lending, verified against `tools/protocols/morpho/manifests/*` and
+  // the funded probe of 2026-08-17. The nine reads move nothing and carry no
+  // legs. `morpho.vault.quote` is the read-only preview of a supply/redeem.
+  // The two executing ids are the vault supply and redeem the probe settled on
+  // Base; BOTH take `dryRun` (mutation-matrix `previewSupport: true`), whose
+  // preview returns `success: true` and signs nothing, so their `mutating`
+  // verdict is routed through `mutatingUnlessDryRun` exactly like the bridges.
+  // Without these rows both executions fell through to the fail-closed
+  // `unproven` label, which under-claimed a settled deposit.
+  ["morpho.markets.discover", null],
+  ["morpho.market.get", null],
+  ["morpho.markets.activity", null],
+  ["morpho.vaults.discover", null],
+  ["morpho.vault.get", null],
+  ["morpho.rewards.get", null],
+  ["morpho.positions.get", null],
+  ["morpho.wallet.balance", null],
+  ["morpho.vault.quote", "quote"],
+  ["morpho.vault.deposit", "mutating"],
+  ["morpho.vault.withdraw", "mutating"],
+
+  // Morpho BLUE market acts. `morpho.market.quote` is the read-only preview of
+  // a market operation and signs nothing. The four executes each move exactly
+  // one token: the wallet SENDS on `supplyCollateral` / `repay` and RECEIVES on
+  // `withdrawCollateral` / `borrow`. Their `mutating` verdict is routed through
+  // `mutatingUnlessDryRun` like every other one here, so a rehearsal that
+  // returns `success: true` without signing can never claim an execution.
+  ["morpho.market.quote", "quote"],
+  ["morpho.market.supplyCollateral", "mutating"],
+  ["morpho.market.withdrawCollateral", "mutating"],
+  ["morpho.market.borrow", "mutating"],
+  ["morpho.market.repay", "mutating"],
 ]);
 
 /**

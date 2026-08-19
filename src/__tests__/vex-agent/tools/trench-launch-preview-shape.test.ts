@@ -20,9 +20,11 @@ import * as walletResolve from "../../../vex-agent/tools/internal/wallet/resolve
 import * as evmClient from "@tools/evm-chains/evm-client.js";
 import {
   registerLaunchImageByteResolver,
+  registerLaunchImageOnchainByteResolver,
   resetLaunchImageByteResolver,
+  resetLaunchImageOnchainByteResolver,
   type LaunchImageBytes,
-} from "../../../vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
+} from "../../../vex-agent/tools/protocols/shared/launch-image-byte-resolver.js";
 import { launchImageDigest } from "../../../vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
 import { validateLaunchRequest } from "../../../vex-agent/tools/protocols/trench/handlers/launch/validate.js";
 import { composeLaunchMsgValue } from "../../../vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
@@ -98,11 +100,29 @@ function lockerSpelling(bytes: Uint8Array): string {
 function stageImage(bytes: Uint8Array = IMAGE_BYTES, digest?: string): void {
   const resolved: LaunchImageBytes = { bytes, digest: digest ?? lockerSpelling(bytes) };
   registerLaunchImageByteResolver(async (id) => (id === "img_1" ? resolved : null));
+  // The preview prices the ON-CHAIN copy. Every fixture here is an image
+  // already inside the budget, so both lanes serve the same bytes.
+  registerLaunchImageOnchainByteResolver(async (id) =>
+    id === "img_1" ? { kind: "resolved", ...resolved } : null,
+  );
+}
+
+/** An image that EXISTS but has no copy Trench can carry. */
+function stageImageWithoutOnchainCopy(originalByteLength: number): void {
+  registerLaunchImageByteResolver(async () => ({
+    bytes: new Uint8Array(originalByteLength),
+    digest: "f".repeat(64),
+  }));
+  registerLaunchImageOnchainByteResolver(async () => ({
+    kind: "no_onchain_variant",
+    originalByteLength,
+  }));
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
   resetLaunchImageByteResolver();
+  resetLaunchImageOnchainByteResolver();
 });
 
 describe("trench.launch_preview output shape (characterization)", () => {
@@ -245,7 +265,25 @@ describe("trench.launch_preview image pricing (U1)", () => {
       READ_CTX,
     );
     expect(res.success).toBe(false);
-    expect(res.output).toMatch(/no LaunchImageByteResolver is registered/);
+    // The throw NAMES the seam that is missing: the preview prices the
+    // on-chain copy, so it is that lane whose absence it reports.
+    expect(res.output).toMatch(/no LaunchImageOnchainByteResolver is registered/);
+  });
+
+  it("REFUSES an image with no on-chain copy rather than pricing an empty one", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImageWithoutOnchainCopy(2_104_822);
+
+    const res = await TRENCH_HANDLERS["trench.launch_preview"]!(
+      { name: "My Token", symbol: "MYT", imageId: "img_1" },
+      READ_CTX,
+    );
+    // NOT a labelled empty-image degrade: a launch would refuse this image
+    // outright, so an under-estimate would answer a question nobody asked.
+    expect(res.success).toBe(false);
+    expect(res.output).toMatch(/2104822/);
+    expect(res.output).toMatch(/pools\.fun/i);
   });
 
   it("rejects by name when imageByteLength contradicts the resolved bytes", async () => {

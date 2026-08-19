@@ -15,6 +15,7 @@ import {
   classifyRateClass,
   parseRetryAfterMs,
 } from "./throttle.js";
+import type { DexScreenerObserved } from "./throttle.js";
 import type {
   DexAd,
   DexBoostFeed,
@@ -82,6 +83,34 @@ export interface DexScreenerRequestOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface DexScreenerObservation {
+  /** When the provider generated the payload: local fetch time minus the upstream Age, when known. */
+  readonly providerFetchedAtMs: number;
+  /** Whether THIS client served the value from its own URL cache. */
+  readonly cacheHit: boolean;
+  /**
+   * Age of the value in THIS client's cache only. The upstream CDN's age is
+   * `upstreamAgeMs`; summing the two is the reader's call, never pre-added here
+   * - a pre-summed value next to `upstreamAgeMs` double-counts staleness.
+   */
+  readonly cacheAgeMs: number;
+  readonly upstreamAgeMs: number | null;
+  readonly upstreamAgeKnown: boolean;
+}
+
+interface DexScreenerValidatedResponse<T> {
+  readonly value: T;
+  readonly upstreamAgeMs: number | null;
+}
+
+/** Parse the RFC Age response header without treating malformed values as fresh. */
+function parseUpstreamAgeMs(response: Response): number | null {
+  const raw = response.headers?.get?.("age");
+  if (raw === null || raw === undefined || !/^\d+$/.test(raw.trim())) return null;
+  const seconds = Number(raw);
+  return Number.isSafeInteger(seconds) ? seconds * 1_000 : null;
+}
+
 /** Whether these options ask for anything at all. A guard, so no `!` is needed. */
 function boundsTheWait(
   options?: DexScreenerRequestOptions,
@@ -147,6 +176,7 @@ async function awaitWithinCallerBounds<T>(
 
 export class DexScreenerClient {
   private readonly throttle: DexScreenerThrottle;
+  private readonly observations = new WeakMap<object, DexScreenerObservation>();
 
   constructor(private readonly baseUrl: string) {
     // Per-process throttle + cache shared by every consumer of this client.
@@ -177,7 +207,7 @@ export class DexScreenerClient {
     // The normalized request URL (path + ordered query) is the cache/dedupe key.
     try {
       // The shared request carries NO caller policy - see the options doc.
-      const shared = this.throttle.run(url, rateClass, ttlMs, async () => {
+      const shared = this.throttle.runObserved(url, rateClass, ttlMs, async () => {
         const response = await fetchWithTimeout(url, { headers: REQUEST_HEADERS });
 
         if (!response.ok) {
@@ -193,14 +223,38 @@ export class DexScreenerClient {
         }
 
         const raw = await readJson(response);
-        return validator(raw);
+        return {
+          value: validator(raw),
+          upstreamAgeMs: parseUpstreamAgeMs(response),
+        } satisfies DexScreenerValidatedResponse<T>;
       });
-      return await (boundsTheWait(options)
+      const observed: DexScreenerObserved<DexScreenerValidatedResponse<T>> = await (
+        boundsTheWait(options)
         ? awaitWithinCallerBounds(shared, options)
-        : shared);
+        : shared
+      );
+      const value = observed.value.value;
+      const upstreamAgeMs = observed.value.upstreamAgeMs;
+      if (typeof value === "object" && value !== null) {
+        this.observations.set(value, {
+          providerFetchedAtMs: Math.max(0, observed.fetchedAtMs - (upstreamAgeMs ?? 0)),
+          cacheHit: observed.cacheHit,
+          cacheAgeMs: observed.cacheAgeMs,
+          upstreamAgeMs,
+          upstreamAgeKnown: upstreamAgeMs !== null,
+        });
+      }
+      return value;
     } catch (err) {
       mapTransportError(err);
     }
+  }
+
+  /** Metadata for a value returned by this client; `null` for test doubles. */
+  observationFor(value: unknown): DexScreenerObservation | null {
+    return typeof value === "object" && value !== null
+      ? this.observations.get(value) ?? null
+      : null;
   }
 
   // ── Core DEX data ───────────────────────────────────────────────

@@ -45,6 +45,7 @@ import {
   toTakeoverFeedRow,
   type FeedListQueryDefaults,
 } from "../feed-list/index.js";
+import { combinedSourceObservation, sourceObservation } from "./source-observation.js";
 
 /** Both profile feeds: they carry `updatedAt` + `cto` and no boost units. */
 const PROFILE_FEED: FeedListQueryDefaults = {
@@ -53,6 +54,7 @@ const PROFILE_FEED: FeedListQueryDefaults = {
   supportsBoostFilter: false,
   sortKeys: ["relevance", "eventAgeSeconds"],
   sortBy: "relevance",
+  limit: 20,
 };
 
 /**
@@ -65,6 +67,12 @@ const BOOST_FEED: FeedListQueryDefaults = {
   supportsBoostFilter: true,
   sortKeys: ["relevance", "boostCount", "boostCountTotal"],
   sortBy: "relevance",
+  limit: null,
+};
+
+const TOP_BOOST_FEED: FeedListQueryDefaults = {
+  ...BOOST_FEED,
+  sortBy: "boostCountTotal",
 };
 
 const TAKEOVER_FEED: FeedListQueryDefaults = {
@@ -73,6 +81,7 @@ const TAKEOVER_FEED: FeedListQueryDefaults = {
   supportsBoostFilter: false,
   sortKeys: ["relevance", "eventAgeSeconds"],
   sortBy: "relevance",
+  limit: null,
 };
 
 const AD_FEED: FeedListQueryDefaults = {
@@ -81,6 +90,7 @@ const AD_FEED: FeedListQueryDefaults = {
   supportsBoostFilter: false,
   sortKeys: ["relevance", "eventAgeSeconds", "adImpressionCount"],
   sortBy: "relevance",
+  limit: null,
 };
 
 /**
@@ -94,6 +104,7 @@ const ATTENTION_FEED: FeedListQueryDefaults = {
   supportsBoostFilter: true,
   sortKeys: ["relevance", "boostCount", "boostCountTotal"],
   sortBy: "boostCountTotal",
+  limit: null,
 };
 
 export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
@@ -103,14 +114,16 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const profiles = await client.getProfiles();
-    return ok(
-      buildFeedList({
+    const asOfMs = Date.now();
+    return ok({
+      sourceObservation: sourceObservation(client, profiles, asOfMs),
+      ...buildFeedList({
         endpoint: "/token-profiles/latest/v1",
         providerRows: profiles.map(toProfileFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
-    );
+    });
   },
 
   "dexscreener.profiles.recent": async (p) => {
@@ -119,14 +132,16 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const profiles = await client.getProfilesRecentUpdates();
-    return ok(
-      buildFeedList({
+    const asOfMs = Date.now();
+    return ok({
+      sourceObservation: sourceObservation(client, profiles, asOfMs),
+      ...buildFeedList({
         endpoint: "/token-profiles/recent-updates/v1",
         providerRows: profiles.map(toProfileFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
-    );
+    });
   },
 
   // `boostCount` is null on every row of the `top` feed and populated on `latest`;
@@ -138,30 +153,34 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const feed = await client.getBoosts();
+    const asOfMs = Date.now();
     return ok({
       skippedRows: feed.skipped,
+      sourceObservation: sourceObservation(client, feed, asOfMs),
       ...buildFeedList({
         endpoint: "/token-boosts/latest/v1",
         providerRows: feed.boosts.map(toBoostFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
     });
   },
 
   "dexscreener.boosts.top": async (p) => {
-    const parsed = parseFeedListQuery(p, BOOST_FEED);
+    const parsed = parseFeedListQuery(p, TOP_BOOST_FEED);
     if (!parsed.ok) return fail(`dexscreener.boosts.top: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const feed = await client.getTopBoosts();
+    const asOfMs = Date.now();
     return ok({
       skippedRows: feed.skipped,
+      sourceObservation: sourceObservation(client, feed, asOfMs),
       ...buildFeedList({
         endpoint: "/token-boosts/top/v1",
         providerRows: feed.boosts.map(toBoostFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
     });
   },
@@ -172,14 +191,16 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const takeovers = await client.getCommunityTakeovers();
-    return ok(
-      buildFeedList({
+    const asOfMs = Date.now();
+    return ok({
+      sourceObservation: sourceObservation(client, takeovers, asOfMs),
+      ...buildFeedList({
         endpoint: "/community-takeovers/latest/v1",
         providerRows: takeovers.map(toTakeoverFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
-    );
+    });
   },
 
   "dexscreener.attention": async (p) => {
@@ -192,17 +213,19 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
       client.getProfiles(),
       client.getBoosts(),
     ]);
+    const asOfMs = Date.now();
     const merged = mergeAttentionRows(profiles, boostFeed.boosts);
 
     return ok({
       skippedBoostRows: boostFeed.skipped,
+      sourceObservation: combinedSourceObservation(client, [profiles, boostFeed], asOfMs),
       ...buildFeedList({
         // Synthetic: two endpoints, one window. Named as the merge rather than as
         // either half, so `providerReturned` is not read as one endpoint's cap.
         endpoint: "/token-profiles/latest/v1 + /token-boosts/latest/v1 (merged by Vex)",
         providerRows: merged.map(toAttentionFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
     });
   },
@@ -213,13 +236,15 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
     const client = getDexScreenerClient();
     const ads = await client.getAds();
-    return ok(
-      buildFeedList({
+    const asOfMs = Date.now();
+    return ok({
+      sourceObservation: sourceObservation(client, ads, asOfMs),
+      ...buildFeedList({
         endpoint: "/ads/latest/v1",
         providerRows: ads.map(toAdFeedRow),
         query: parsed.query,
-        asOfMs: Date.now(),
+        asOfMs,
       }),
-    );
+    });
   },
 };

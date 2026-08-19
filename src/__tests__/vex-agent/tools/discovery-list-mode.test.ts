@@ -15,38 +15,17 @@ import {
 } from "../../../vex-agent/tools/protocols/catalog.js";
 
 /**
- * Measured budgets (2026-07-30). solana has the most tools (34) at 17.6k chars;
- * pendle has fewer tools but the longest prose (29 rows, 22.9k). Both are far
- * below the full-schema equivalent of the same namespace (38k / 53k), which is
- * the point of list mode. These are ratchets against silent prose growth.
- */
-/**
- * Raised 20,000 → 21,000 ONCE in round 3, measured on 2026-08-03. Both parts of
- * the delta:
+ * No character-budget ceilings live here any more (owner decision, 2026-08-17).
+ * `SOLANA_LIST_CHAR_BUDGET` and `ANY_LIST_CHAR_BUDGET` were raised seven times
+ * across this project, which means they never tracked a real constraint - each
+ * raise just restated the latest measurement. Do not reintroduce one.
  *
- *   17.6k  the 2026-07-30 measurement this ratchet was set from
- *   19,490 W7's row shape alone (`actionKind` + `requiredParams` on all 34
- *          solana rows) — measured by re-running this listing against the
- *          pre-round-3 solana manifests, so NONE of it is prose growth; the
- *          same change cost pendle 22.9k → 25.1k above.
- *   20,036 + W5a/W5c prose: `solana.lend.borrowOperate` now documents its
- *          same-direction ban (previously enforced by the handler and written
- *          down nowhere, so an agent could not predict the rejection), and
- *          `solana.predict.profile` no longer claims it works "for ANY wallet"
- *          when session scope rejects exactly that.
- *
- * 21,000 restores roughly the same headroom-to-measurement ratio the pendle
- * budget above carries. Still a ratchet against silent prose growth.
+ * The real guards are the runtime bounds (`MAX_DESCRIBE_TOOL_IDS`,
+ * `MAX_DISCOVERY_LIMIT`, `MAX_DISCOVERED_TOOLS_PER_SESSION`) plus the
+ * comparative assertion below: a lean listing must be smaller than the same
+ * namespace's full-schema listing, which is the actual invariant of list mode
+ * and needs no magic number.
  */
-const SOLANA_LIST_CHAR_BUDGET = 21_000;
-/**
- * Raised 25,000 → 27,500 in W7 (SPEC §1.7): a list row now also carries
- * `actionKind` and `requiredParams`, which is what makes a listed tool
- * callable-shaped instead of a name the agent had to re-discover. Measured
- * cost on the worst case (pendle, 29 rows): 22.9k → 25.1k. Still a ratchet
- * against prose growth, and still far below the same namespace's full schema.
- */
-const ANY_LIST_CHAR_BUDGET = 27_500;
 
 describe("discover_tools namespace list mode", () => {
   const ENV_KEYS = [
@@ -127,20 +106,16 @@ describe("discover_tools namespace list mode", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it("keeps the biggest-by-tool-count namespace (solana) inside its measured budget", async () => {
-    const result = await discoverProtocolCapabilities({ list: true, namespace: "solana" });
-    const serialized = JSON.stringify(result);
-    expect(
-      serialized.length,
-      `solana lean list serialized to ${serialized.length} chars`,
-    ).toBeLessThan(SOLANA_LIST_CHAR_BUDGET);
+  it("keeps the biggest-by-tool-count namespace (solana) leaner than its full schema", async () => {
+    const lean = JSON.stringify(await discoverProtocolCapabilities({ list: true, namespace: "solana" }));
+    const full = JSON.stringify(await discoverProtocolCapabilities({ namespace: "solana", limit: 999 }));
+    expect(lean.length, `solana: lean ${lean.length} vs full ${full.length}`).toBeLessThan(full.length);
   });
 
-  it("keeps EVERY namespace listing inside the budget and far below its full-schema cost", async () => {
+  it("keeps EVERY namespace listing below its full-schema cost", async () => {
     for (const namespace of PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST) {
       const lean = JSON.stringify(await discoverProtocolCapabilities({ list: true, namespace }));
       const full = JSON.stringify(await discoverProtocolCapabilities({ namespace, limit: 999 }));
-      expect(lean.length, `${namespace} lean list is ${lean.length} chars`).toBeLessThan(ANY_LIST_CHAR_BUDGET);
       expect(lean.length, `${namespace}: lean ${lean.length} vs full ${full.length}`).toBeLessThan(full.length);
     }
   });

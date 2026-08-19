@@ -27,7 +27,9 @@ export type ProtocolNamespace =
   | "lighter"
   | "virtuals"
   | "pendle"
-  | "trench";
+  | "morpho"
+  | "trench"
+  | "pools";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -141,6 +143,24 @@ export interface ProtocolToolManifest {
   namespace: ProtocolNamespace;
   /** Lifecycle state — see {@link ToolLifecycle}. */
   lifecycle: ToolLifecycle;
+  /**
+   * Params this tool structurally CANNOT support, each mapped to the reason,
+   * so the strict boundary can answer a plausible-but-wrong key with the fact
+   * instead of a bare "unknown parameter".
+   *
+   * These keys are deliberately NOT declared in `params`: declaring them would
+   * advertise them in the tool schema as if they worked. The boundary
+   * (`runtime/params.ts`) rejects any undeclared key BEFORE a handler runs, so
+   * a handler-side check for them is unreachable in production — this is where
+   * the explanation has to live to be seen at all.
+   *
+   * Use it for a filter a model will reasonably reach for because a sibling
+   * venue has it. The pools.fun case is `status`/`graduated`: every other
+   * launchpad in the tree has a bonding-curve stage, pools.fun has none, and
+   * "unknown parameter" would send the agent to try `graduated` next instead of
+   * telling it that `maxAgeHours` is the filter it actually wants.
+   */
+  rejectedParams?: Readonly<Record<string, string>>;
   /** Human-readable description for LLM */
   description: string;
   /** Whether this tool modifies state */

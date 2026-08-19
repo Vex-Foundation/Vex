@@ -1,0 +1,46 @@
+{
+  "endpoint": "GET /discover?chain=robinhood&platform=poolsfun&deployer=0x1111111111111111111111111111111111111111",
+  "capturedAt": "2026-08-18T12:51:03.000Z",
+  "sanitization": "The launching wallet is a Vex-controlled probe wallet, which this folder's README forbids committing. Its address was replaced CONSISTENTLY (query and every row field) with 0x1111111111111111111111111111111111111111. Nothing else was edited, and the property this capture pins is untouched: deployerAddress equals the wallet the deployer filter asked for, and is NOT the gateway contract 0x3AB42e7dd316aF8854033bc216C657eD34961164.",
+  "response": {
+    "results": [
+      {
+        "tokenAddress": "0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb",
+        "poolId": "0x272aa7644b0a3338f3d64dae4b28202ea04b2d63",
+        "chain": "robinhood",
+        "name": "Vex Flamingo",
+        "symbol": "VEXFLAM",
+        "decimals": null,
+        "imageUri": null,
+        "totalSupply": null,
+        "deployerAddress": "0x1111111111111111111111111111111111111111",
+        "deployerXUsername": null,
+        "deployerXProfileImageUrl": null,
+        "feeRecipientAddress": "0x1111111111111111111111111111111111111111",
+        "feeRecipientXUsername": null,
+        "feeRecipientXProfileImageUrl": null,
+        "tweetUrl": null,
+        "websiteUrl": null,
+        "deployedAt": "2026-08-18T11:43:43.000Z",
+        "lastPriceEth": 2.623423728e-09,
+        "lastPriceUsd": 4.9766746880566655e-06,
+        "marketCapUsd": 4976.674688056665,
+        "lastTradeAt": "2026-08-18T11:43:43.000Z",
+        "vol1m": 0,
+        "vol5m": 0,
+        "vol1h": 0,
+        "vol6h": 0.5702160324359999,
+        "vol24h": 0.5702160324359999,
+        "txCount24h": 1,
+        "priceChange1m": 0,
+        "priceChange5m": 0,
+        "priceChange1h": 0,
+        "priceChange6h": 0,
+        "priceChange24h": 0,
+        "pairedAsset": "weth",
+        "platform": "poolsfun"
+      }
+    ],
+    "nextCursor": null
+  }
+}

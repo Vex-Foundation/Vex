@@ -122,14 +122,19 @@ describe("abortPlannedEvents", () => {
     expect(params[1]).toBe(1);
   });
 
-  it("sanitizes failure_reason the same way failActivityEvent does (redact + 500-char cap)", async () => {
-    const longReason = "not attempted: earlier swap reverted — ".repeat(30); // > 500 chars
+  // THE LENGTH CAP WAS REMOVED, THE REDACTION WAS NOT (funded live audit,
+  // 2026-08-18). The old 500-char slice cut a Morpho failure exactly where its
+  // standing-allowance disclosure and remediation began, so the ledger and the
+  // repair sweeps read a sentence stopping mid-word. `failure_reason` is TEXT,
+  // and agent-facing content is never truncated; secrets are still stripped.
+  it("sanitizes failure_reason the same way failActivityEvent does: redacted, and NEVER truncated", async () => {
+    const longReason = "not attempted: earlier swap reverted - ".repeat(30); // > 500 chars
     await repo.abortPlannedEvents(7, 0, longReason);
 
     const params = lastParams();
     const boundReason = params[2] as string;
-    expect(boundReason.length).toBeLessThanOrEqual(520);
-    expect(boundReason.endsWith("…[truncated]")).toBe(true);
+    expect(boundReason).toBe(`not attempted: ${longReason}`);
+    expect(boundReason).not.toContain("[truncated]");
   });
 
   it("returns every finalized row, mapped", async () => {

@@ -79,6 +79,11 @@ function refuse(refusal: TokenLaunchRefusal, correlationId: string): Result<neve
         return "images.not_found";
       case "image_unavailable":
         return "images.store_unavailable";
+      // The EXISTING `images.too_large` code, not a new one: it already means
+      // exactly this, and the detail carries the plan's own prose naming the
+      // budget, the reason it exists, and that pools.fun can still launch it.
+      case "image_over_onchain_budget":
+        return "images.too_large";
       case "insufficient_funds":
         return "wallet.insufficient_funds";
       // No `tokenLaunch.refused` code exists on the shared surface, and minting

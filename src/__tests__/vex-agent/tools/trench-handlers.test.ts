@@ -79,6 +79,10 @@ describe("trench.tokens handler", () => {
     const data = parse(res.output);
     expect(data.count).toBe(1);
     expect((data.tokens as Array<{ token: string }>)[0]!.token).toBe("0xA");
+    // Age must be PROVABLE from the row: the pre-fix projector dropped the
+    // provider's required `time`, leaving "sort by newest" ordinal only — a
+    // blind eval ranked a 10.8-day-old token first with no way to see it.
+    expect((data.tokens as Array<{ launchedAtMs: number }>)[0]!.launchedAtMs).toBe(1_700_000_000_000);
   });
 
   it("drops rug-flagged tokens by default and echoes the census", async () => {

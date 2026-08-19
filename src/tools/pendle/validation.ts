@@ -102,7 +102,7 @@ function normalizeMarket(raw: unknown): PendleMarket | null {
   };
 }
 
-const marketsEnvelope = z.object({ markets: z.unknown() }).passthrough();
+const marketsEnvelope = z.object({ markets: z.unknown().optional() }).passthrough();
 
 /** `GET /v1/{chainId}/markets/active` → active markets. Non-`{markets:array}` → []. */
 export function validateMarkets(raw: unknown): PendleMarket[] {
@@ -184,7 +184,7 @@ function normalizeMarketPosition(raw: unknown): PendleMarketPosition | null {
   };
 }
 
-const positionsEnvelope = z.object({ positions: z.unknown() }).passthrough();
+const positionsEnvelope = z.object({ positions: z.unknown().optional() }).passthrough();
 
 /** `GET /v1/dashboard/positions/database/{wallet}` → per-chain positions. */
 export function validatePositions(raw: unknown): PendleUserPositions[] {
@@ -250,7 +250,7 @@ function normalizeRoute(raw: unknown): PendleConvertRoute | null {
 }
 
 const convertEnvelope = z
-  .object({ action: z.unknown(), routes: z.unknown() })
+  .object({ action: z.unknown().optional(), routes: z.unknown().optional() })
   .passthrough();
 
 /**
@@ -281,7 +281,7 @@ export function validateConvert(raw: unknown): PendleConvertResponse | null {
 
 // ── redeem-interests-and-rewards (income-sweep claim, FLAT response) ─────────
 
-const claimEnvelope = z.object({ tx: z.unknown() }).passthrough();
+const claimEnvelope = z.object({ tx: z.unknown().optional() }).passthrough();
 
 /**
  * `GET /v1/sdk/{chainId}/redeem-interests-and-rewards` → a flat claim tx.

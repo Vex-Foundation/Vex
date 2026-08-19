@@ -83,7 +83,6 @@ describe("explorerTxUrl", () => {
       ["ronin", 2020, "https://app.roninchain.com/tx/"],
       ["unichain", 130, "https://uniscan.xyz/tx/"],
       ["plasma", 9745, "https://plasmascan.to/tx/"],
-      ["etherlink", 42793, "https://explorer.etherlink.com/tx/"],
       ["monad", 143, "https://monadscan.com/tx/"],
       ["megaeth", 4326, "https://mega.etherscan.io/tx/"],
       ["scroll", 534352, "https://scrollscan.com/tx/"],

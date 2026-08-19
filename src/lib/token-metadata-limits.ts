@@ -50,3 +50,24 @@ export const TOKEN_METADATA_LINKS_MAX = 4;
  * on-chain immutably, so the cap is Vex's own and applies on all three surfaces.
  */
 export const TOKEN_METADATA_LINK_LENGTH_MAX = 128;
+
+/**
+ * The hard ceiling on the image bytes Trench writes ON-CHAIN, in `create()`
+ * calldata. 20 KiB.
+ *
+ * TRENCH-ONLY, and that is the point (owner decision 2026-08-19). pools.fun
+ * hosts images off-chain on its own backend - it accepted a 2,104,822-byte PNG,
+ * measured - so this number must never be applied to a pools launch or to the
+ * locker itself. The locker stores what the user picked; the desktop ladder
+ * derives a copy under this ceiling for Trench, and an image with no such copy
+ * is refused BY NAME on the Trench path only.
+ *
+ * WHY IT LIVES HERE. Same reason as its text siblings above: three surfaces
+ * need the same number and none of them may import the others. It is the
+ * `launch_images.onchain_byte_length` CHECK (migration 083), the assertion the
+ * launch plan runs before composing calldata, and the bound the desktop
+ * variant report declares. The desktop ladder aims LOWER (20 000 with headroom,
+ * `vex-app/src/shared/schemas/images.ts`); this is the ceiling nothing may
+ * cross, not the budget the ladder targets.
+ */
+export const TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES = 20_480;

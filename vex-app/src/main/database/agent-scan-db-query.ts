@@ -38,6 +38,7 @@ import {
   EVENT_ROLE_MAX_LENGTH,
 } from "@shared/agent-activity-vocabulary.js";
 import { TOKEN_SYMBOL_MAX_LENGTH } from "@shared/token-symbol-sanitizer.js";
+import { AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE } from "./agent-activity-logical-row.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -191,62 +192,16 @@ export interface AgentScanQueryArgs {
 const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 /**
- * Which rows are their execution's LOGICAL row (owner decision): the swap row,
- * a bridge's `bridge_fill_expected` marker, and every row of the kinds that
- * have no sub-events at all. `wrap` is included FROM DAY ONE — migration
- * 051:129-135 warns that all three pre-existing surfaces map it through
- * `ELSE 'spot'` or omit it, so a wrap is written correctly and is then either
- * invisible or displayed as a spot trade. This feed does neither.
- *
- * `launch` (migration 062) joins FROM DAY ONE for the same reason. A Trench
- * token creation is one transaction with one `token_launch` row, so it is its
- * own logical row; its prebuy is a LEG of that row, deliberately not a second
- * `swap` row for the same tx hash. Omitting `launch` here would make the whole
- * launch capability invisible in Agent Scan — the one surface the owner asked
- * every action to appear on.
- *
- * `yield` (migration 053) joins for the third time on the same evidence: every
- * Pendle mutation writes a receipt-truth `kind = 'yield'` row and every one of
- * them was invisible here. Each yield role is one on-chain tx, so each is its
- * own logical row — spelled as the kind MINUS the two approval roles rather
- * than as a role list, so a seventh yield role added by a later migration is
- * visible on the day it is written.
- *
- * Excluded: `allowance` / `allowance_reset` (approval plumbing) and a bridge's
- * deposit/fee/observed-fill/refund legs — all of which ride the logical row's
- * `legs` array instead of appearing as their own ledger entries.
- *
- * Also excluded, on EVERY kind: the three Vex-fee leg roles (OWNER REVISION
- * 2026-08-05, supersedes the earlier "the fee leg renders as its own row
- * everywhere except the agent view"). A `trench_fee` on a launch execution is
- * stored with `kind = 'launch'`, so the kind arm above used to admit it and the
- * feed rendered a bare "LAUNCH-FEE 0.0000031675 ETH → —" entry above the launch
- * it belonged to. The charge is not a separate user action; it surfaces on its
- * parent's row through the `vexFee*` fields projected by VEX_FEE_LATERALS below.
- * `event_role` is NOT NULL (migration 044:59), so the leading NOT IN can never
- * make the whole predicate NULL and swallow a row.
- */
-const LOGICAL_ROW_PREDICATE = `(
-          aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')
-          AND (
-            aa.event_role = 'swap'
-            OR aa.event_role = 'bridge_fill_expected'
-            OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch')
-            OR (aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))
-          )
-        )`;
-
-/**
  * THE VEX FEE FROM ITS SEPARATE LEG, projected onto the logical row (R1 Step 2b)
  * — a READ projection that writes nothing, so the documented
  * `SUM(usd_vex_fee_est) WHERE status='confirmed'` revenue invariant is
  * byte-unaffected.
  *
  * Since the OWNER REVISION of 2026-08-05 no fee leg is its own ledger entry here
- * (see `LOGICAL_ROW_PREDICATE`), so this is the ONLY place the charge is visible on
- * this surface and it projects unconditionally. The former "and only if that leg
- * is not already its own row" guard was the exact predicate that is now false for
- * every fee role, and is deleted rather than kept as a tautology.
+ * (see `AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE`), so this is the ONLY place the
+ * charge is visible on this surface and it projects unconditionally. The former
+ * "and only if that leg is not already its own row" guard was the exact predicate
+ * that is now false for every fee role, and is deleted rather than kept as a tautology.
  *
  * A9 — a confirmed fee whose PARENT FAILED stays visible: the sibling arm gates
  * on `fee.status = 'confirmed'` only, never on `aa.status`, so the failed launch
@@ -269,7 +224,7 @@ const VEX_FEE_LATERALS = `
           FROM agent_activity fee
          WHERE fee.protocol_execution_id = aa.protocol_execution_id
            AND fee.id        <> aa.id
-           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee')
+           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')
            AND fee.status     = 'confirmed'
          ORDER BY fee.event_index ASC
          LIMIT 1
@@ -417,7 +372,7 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
       FROM agent_activity aa
       ${VEX_FEE_LATERALS}
       WHERE aa.wallet_address = ANY($${walletsParam}::text[])
-        AND ${LOGICAL_ROW_PREDICATE}
+        AND ${AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE}
         ${predicates.join("\n        ")}
       ORDER BY aa.created_at DESC, aa.id DESC
       LIMIT $${limitParam}`;

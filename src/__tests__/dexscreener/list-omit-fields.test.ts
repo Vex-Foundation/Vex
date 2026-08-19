@@ -192,11 +192,11 @@ describe("omitFields — the pair family refuses every name, on purpose", () => 
 });
 
 describe("omitFields — declaration", () => {
-  it("is declared with the same key and the same type on every list family", () => {
+  it("is advertised only where subtractive projection removes real prose", () => {
     const declaring = DEXSCREENER_TOOLS.filter((tool) =>
       tool.params.some((param) => param.key === "omitFields"),
     );
-    expect(declaring.length).toBeGreaterThan(5);
+    expect(declaring.length).toBeGreaterThan(0);
     for (const tool of declaring) {
       const param = tool.params.find((p) => p.key === "omitFields");
       expect(param?.type).toBe("string");
@@ -205,11 +205,16 @@ describe("omitFields — declaration", () => {
     }
   });
 
-  it("the pair family's param text carries the pinned empty-allowlist rationale", () => {
-    const search = DEXSCREENER_TOOLS.find((tool) => tool.toolId === "dexscreener.search");
-    const param = search?.params.find((p) => p.key === "omitFields");
-    expect(param).toBeDefined();
-    expect(param?.description).toMatch(/already opt-in/i);
-    expect(param?.description).toMatch(/identity/i);
+  it("does not advertise the pair family's deliberately empty allowlist", () => {
+    for (const toolId of [
+      "dexscreener.search",
+      "dexscreener.pairs",
+      "dexscreener.tokens",
+      "dexscreener.tokenPairs",
+      "dexscreener.meta",
+    ]) {
+      const tool = DEXSCREENER_TOOLS.find((candidate) => candidate.toolId === toolId);
+      expect(tool?.params.map((param) => param.key)).not.toContain("omitFields");
+    }
   });
 });

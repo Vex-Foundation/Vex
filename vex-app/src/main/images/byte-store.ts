@@ -19,6 +19,15 @@
  * recorded in the metadata row after magic-byte validation; giving the file a
  * `.png`/`.jpg` name would invite some later reader to trust the extension
  * over the validation that actually happened.
+ *
+ * TWO FILES PER IMAGE, AT MOST. Since the per-lane image decision
+ * (2026-08-19) the ORIGINAL is stored verbatim and Trench consumes a derived
+ * copy under its on-chain budget. When the original already fits, it IS the
+ * copy and only one file exists. When the ladder re-encodes, the copy lands
+ * beside the original as `<imageId>.onchain.bin`. Both live behind their own
+ * named functions rather than a suffix a caller concatenates, so the id
+ * pattern and the containment check gate the variant exactly as they gate the
+ * original.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -63,8 +72,23 @@ export function digestOf(bytes: Uint8Array): string {
  * quietly reading or deleting an arbitrary file.
  */
 export function resolveImagePath(imageId: string): string {
+  return resolveStoredPath(imageId, ".bin");
+}
+
+/**
+ * The Trench on-chain copy's file. Same two gates, same directory.
+ *
+ * Only exists when the ladder actually re-encoded: an original that already
+ * fits IS its own copy, and the metadata row says so by carrying the same
+ * digest in both places.
+ */
+export function resolveOnchainVariantPath(imageId: string): string {
+  return resolveStoredPath(imageId, ".onchain.bin");
+}
+
+function resolveStoredPath(imageId: string, suffix: string): string {
   if (!LOCKER_IMAGE_ID_PATTERN.test(imageId)) throw new LockerPathEscapeError();
-  const resolved = path.resolve(LOCKER_IMAGES_DIR, `${imageId}.bin`);
+  const resolved = path.resolve(LOCKER_IMAGES_DIR, `${imageId}${suffix}`);
   if (path.dirname(resolved) !== path.resolve(LOCKER_IMAGES_DIR)) {
     throw new LockerPathEscapeError();
   }
@@ -77,7 +101,18 @@ async function ensureDir(): Promise<void> {
 
 /** Write validated bytes for a fresh id. */
 export async function writeImageBytes(imageId: string, bytes: Uint8Array): Promise<void> {
-  const target = resolveImagePath(imageId);
+  await writeAt(resolveImagePath(imageId), bytes);
+}
+
+/** Write the derived Trench on-chain copy beside the original. */
+export async function writeOnchainVariantBytes(
+  imageId: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  await writeAt(resolveOnchainVariantPath(imageId), bytes);
+}
+
+async function writeAt(target: string, bytes: Uint8Array): Promise<void> {
   await ensureDir();
   await writeFile(target, bytes);
 }
@@ -89,7 +124,17 @@ export async function writeImageBytes(imageId: string, bytes: Uint8Array): Promi
  * to the user as "that image does not exist".
  */
 export async function readImageBytes(imageId: string): Promise<Uint8Array | null> {
-  const target = resolveImagePath(imageId);
+  return readAt(resolveImagePath(imageId));
+}
+
+/** Read the derived Trench on-chain copy. Same `null` contract as the original. */
+export async function readOnchainVariantBytes(
+  imageId: string,
+): Promise<Uint8Array | null> {
+  return readAt(resolveOnchainVariantPath(imageId));
+}
+
+async function readAt(target: string): Promise<Uint8Array | null> {
   try {
     return new Uint8Array(await readFile(target));
   } catch (cause) {
@@ -101,6 +146,15 @@ export async function readImageBytes(imageId: string): Promise<Uint8Array | null
 /** Remove stored bytes. Idempotent: deleting an absent file is a success. */
 export async function removeImageBytes(imageId: string): Promise<void> {
   await rm(resolveImagePath(imageId), { force: true });
+}
+
+/**
+ * Remove the derived copy. Idempotent, and an image whose original was its own
+ * copy simply has no such file — which is why this is a separate, silent
+ * removal rather than a failure the deletion path would have to interpret.
+ */
+export async function removeOnchainVariantBytes(imageId: string): Promise<void> {
+  await rm(resolveOnchainVariantPath(imageId), { force: true });
 }
 
 function isMissingFile(cause: unknown): boolean {

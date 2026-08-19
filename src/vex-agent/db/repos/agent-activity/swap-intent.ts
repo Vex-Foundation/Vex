@@ -60,7 +60,7 @@
  * binding` CHECK rejects `kind IN ('lend','prediction')` with any other family.
  *
  * Sanitization at the repo boundary (finding 9/C5): `failure_reason` passes
- * `redact()` + a hard 500-char cap here, ALWAYS — callers cannot bypass it by
+ * `redact()` here, ALWAYS — callers cannot bypass it by
  * pre-sanitizing. `intentParams` sanitization (secret-shape scrub + 8KiB cap)
  * lives in `executions.ts`'s `createExecutionIntent` (the actual
  * `protocol_executions.params` boundary, shared with Hyperliquid).
@@ -122,6 +122,11 @@ export interface CreatePendingActivityEventInput {
    * so it carries `tokenOut2`; a pre-expiry redeem burns PT+YT→1 so it carries
    * `tokenIn2`). Populating both sides, or neither, is a shape no Pendle action
    * produces and the DB refuses it.
+   *
+   * Migration 082 admits ONE more role, on the OUTPUT side only: `pools_claim`.
+   * A pools.fun creator-fee claim spends nothing and `collectAndClaim` pays two
+   * assets in one call, so it carries `tokenOut2` and never `tokenIn2` - an
+   * input leg on a claim row would be evidence the decoder read the wrong thing.
    */
   tokenIn2?: AgentActivityLegInput;
   tokenOut2?: AgentActivityLegInput;
@@ -346,7 +351,7 @@ export async function createAgentActivityIntent(
  * A pre-broadcast route/validation failure: create AND finalize a hashless
  * `definitively_failed` `swap` event in one step — there was never a signed
  * payload to broadcast, so no CAS staging is needed. `failureReason` is
- * sanitized here (redact + 500-char cap) regardless of what the caller
+ * sanitized here (redacted, never truncated) regardless of what the caller
  * passed. Accepts an optional shared `client` — see
  * `createAgentActivityPreBroadcastFailure` below for the atomic-with-intent-
  * creation entry point most callers want.

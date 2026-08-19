@@ -86,7 +86,26 @@ function buildTokenResearchMapSection(): string {
   );
   lines.push("");
   lines.push(
-    "- `dexscreener.*` — FIRST STOP for any token that already trades in an AMM pool, on any chain: search by name, symbol or contract address, then read the pair's liquidity, 24h volume, momentum and age, and list every pool for the token so you can pick the deepest. It also separates ORGANIC attention (the official trending narratives and their tokens) from PAID attention (boosted and promoted tokens) — buying visibility is not a quality signal, so never report a boost as demand. Research only; it never executes.",
+    "- `dexscreener.*` — source of truth for AMM pairs DexScreener indexes and for DexScreener's own profile, CTO, boost, ad and order labels. It is NOT contract-safety evidence, canonical token identity from a name/ticker, proof of complete market coverage, or an executable quote. A missing row means DexScreener did not return an indexed row in that provider window, not that no market exists.",
+  );
+  lines.push(
+    "  Route by the identity you already have: exact token address + chain -> `dexscreener.tokenPairs`; name/symbol -> `dexscreener.search`, select an exact chain + contract address from the result, then `dexscreener.tokenPairs`; exact pool address + chain -> `dexscreener.pairs`; multiple token addresses on one chain -> `dexscreener.tokens`. Never identify a token from ticker text alone.",
+  );
+  lines.push(
+    "  For narratives call `dexscreener.trending`, then `dexscreener.meta` with the selected narrative slug. Both endpoints are live but undocumented, and their ordering is influenced by engagement and paid promotion; do not call it organic or genuine. Profiles are metadata-update feeds, not token-creation feeds. A CTO row is only DexScreener's provider label, not proof that control changed. For promotion use `dexscreener.boosts`/`dexscreener.boosts.top`, `dexscreener.ads`, then `dexscreener.orders` for one exact token. Promotion is never demand, legitimacy, or safety.",
+  );
+  lines.push(
+    "  Before any trade, use the chain's dedicated contract-safety surface when available, then request a fresh executable quote from the venue that would execute. DexScreener market data can shortlist a pool; it must never be reused as the execution price.",
+  );
+  // The fresh-Solana clause names `solana.tokens.trending`, so it sits behind
+  // the SAME env gate as the solana paragraph below — a prompt must never
+  // recommend a tool the registry hides (prompt-safety-and-env-a2 pins this).
+  lines.push(
+    "  FRESHNESS LAG (measured 2026-08-17): DexScreener reads are edge-cached about 30s and are never real-time; its DISCOVERY lag for brand-new tokens is minutes to hours (youngest reachable pool measured ~16 min on Solana, ~7 h on Robinhood), because launch -> indexing -> profile -> feed window all sit in front of it. For fresh-token discovery route by chain instead: "
+    + (isProtocolNamespaceAvailable("solana")
+      ? "fresh Solana -> `solana.tokens.trending` category=recent (measured: tokens 10-175 s old, createdAt on every row proves age); "
+      : "")
+    + "fresh Robinhood -> `trench.tokens` status=curve sort=time (launchpad registry, ~2 s cache, launchedAtMs proves age) - COVERAGE: only tokens launched on Trench Express, never other Robinhood pools. Use DexScreener afterwards, for depth, price sanity and risk once the pool is indexed.",
   );
 
   // Env-gated: `solana.*` needs JUPITER_API_KEY. Same predicate the registry,

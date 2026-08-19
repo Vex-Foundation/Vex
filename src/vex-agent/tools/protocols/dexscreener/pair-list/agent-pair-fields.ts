@@ -38,6 +38,7 @@ export const LEAN_PAIR_FIELDS = [
   "pairAddress",
   "baseAddress",
   "baseSymbol",
+  "quoteAddress",
   "quoteSymbol",
   "priceUsd",
   "liquidityUsd",
@@ -79,7 +80,6 @@ export const WINDOWED_RICH_PAIR_FIELDS: readonly string[] = WINDOWED_RICH_FIELD_
 /** Opt-in fields that are not per-window. */
 const FLAT_RICH_PAIR_FIELDS = [
   "baseName",
-  "quoteAddress",
   "quoteName",
   "priceInQuoteToken",
   "liquidityBaseTokens",

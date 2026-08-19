@@ -201,14 +201,15 @@ describe("DexScreener identity params accept a string OR a string array", () => 
       tokenAddresses: asArray,
     });
 
-    // Same bytes upstream — the normalizer feeds the client, not just the echo.
-    expect(getTokens.mock.calls[0]?.[1]).toBe(getTokens.mock.calls[1]?.[1]);
+    // Same chunk sequence upstream — the normalizer feeds the client, not just the echo.
+    expect(getTokens.mock.calls.slice(0, 2).map((call) => call[1])).toEqual(
+      getTokens.mock.calls.slice(2, 4).map((call) => call[1]),
+    );
     // Same reconciliation, with the caller's address CASING preserved.
     for (const key of ["requestedAddresses", "resolvedAddresses", "unresolvedAddresses"]) {
       expect(fromArray[key], key).toEqual(fromString[key]);
     }
     expect(fromArray.requestedAddresses).toEqual(asArray);
-    expect(fromArray.addressCapApplied).toBe(fromString.addressCapApplied);
   });
 
   it("tokens: a mixed-case address is never folded on either spelling", async () => {

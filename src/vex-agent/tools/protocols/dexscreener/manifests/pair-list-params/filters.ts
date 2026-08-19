@@ -67,7 +67,11 @@ export const PAIR_THRESHOLD_FILTER_PARAMS: readonly ProtocolParamDef[] = [
     description:
       "Keep rows whose turnoverRatioH24 (24h volume divided by USD liquidity) is at least this. The cheapest real "
       + "defence against fabricated depth: a genuine Ethereum WETH/USDC pool measured about 0.22, "
-      + "an impostor reporting $1.63B measured 0.00013. Rows where either input is missing are "
+      + "an impostor reporting $1.63B measured 0.00013. INVERSION ON DEEP POOLS: the canonical "
+      + "$20M PEPE/WETH pool measured 0.018 - deep blue-chip pools legitimately sit far below "
+      + "thresholds that catch impostors, so this filter can delete exactly the genuine token. "
+      + "Pair it with explainDrops and read droppedByFilter before concluding anything from an "
+      + "empty result. Rows where either input is missing are "
       + "dropped and counted in droppedByFilter. 0 is a genuine no-op.",
   },
   { key: "maxTurnoverRatio", type: "number", description: "Keep rows whose turnoverRatioH24 is at or below this." },
@@ -152,7 +156,10 @@ export const PAIR_AGE_FILTER_PARAMS: readonly ProtocolParamDef[] = [
       + "pairCreatedAt is absent on about 9% of rows and those rows are EXCLUDED and counted in "
       + "droppedByFilter.unknownAge. How fresh a pool you can reach at all depends on the entry "
       + "point: arriving via dexscreener.profiles.recent, a 5-minute-old pool has been observed "
-      + "(4 samples — a proven floor, not a typical value), whereas dexscreener.search returns "
+      + "(4 samples - a proven floor, not a typical value) - and the window's HORIZON is just as "
+      + "bounded: one live 30-row window's oldest reachable row measured about 85 minutes, so a "
+      + "feed sweep is a sample of a narrow live window, never a survey of 'the last N hours' - "
+      + "whereas dexscreener.search returns "
       + "established pools by its own relevance and will not surface them. DexScreener publishes "
       + "no new-pair stream and every response is edge-cached about 30s, so nothing here is "
       + "real-time. And there is no category field anywhere in this API: pair age, turnover, venue "
@@ -187,6 +194,20 @@ export const PAIR_QUALITY_FILTER_PARAMS: readonly ProtocolParamDef[] = [
     key: "requirePriceUsd",
     type: "boolean",
     description: "Keep only rows that carry a USD price.",
+  },
+  {
+    key: "requireLiquidityUsd",
+    type: "boolean",
+    description:
+      // The measured batch ran on Solana, but the chain name stays out of this
+      // text: a param field carrying a chain name inflates this namespace's
+      // lexical score for that chain's OWN tools (measured: "solana token
+      // search" pushed solana.tokens out of the discovery top-3).
+      "Keep only rows that carry a USD liquidity figure. Pre-graduation bonding-curve pools "
+      + "(measured: every pumpfun row in a live 20-row batch, 9 of 20) legitimately report "
+      + "liquidityUsd: null - null means UNKNOWN reserves, not zero - and turnoverRatioH24 is null "
+      + "with it, so liquidity-based sorting and the turnover defence are unavailable on exactly "
+      + "those rows. Dropped rows are counted in droppedByFilter.requireLiquidityUsd.",
   },
   {
     key: "onlyBoosted",

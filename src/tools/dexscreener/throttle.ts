@@ -83,7 +83,15 @@ export function parseRetryAfterMs(header: string | null | undefined, fallbackMs 
 
 interface CacheEntry {
   value: unknown;
+  fetchedAtMs: number;
   expiresAt: number;
+}
+
+export interface DexScreenerObserved<T> {
+  readonly value: T;
+  readonly fetchedAtMs: number;
+  readonly cacheHit: boolean;
+  readonly cacheAgeMs: number;
 }
 
 interface ThrottleDeps {
@@ -149,7 +157,7 @@ class TokenBucket {
 export class DexScreenerThrottle {
   private readonly buckets: Record<DexRateClass, TokenBucket>;
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly inFlight = new Map<string, Promise<DexScreenerObserved<unknown>>>();
   private readonly deps: ThrottleDeps;
   private readonly maxCacheEntries: number;
 
@@ -176,21 +184,38 @@ export class DexScreenerThrottle {
     ttlMs: number,
     fetcher: () => Promise<T>,
   ): Promise<T> {
+    return (await this.runObserved(key, rateClass, ttlMs, fetcher)).value;
+  }
+
+  /** The same request path, with truthful cache/fetch provenance. */
+  async runObserved<T>(
+    key: string,
+    rateClass: DexRateClass,
+    ttlMs: number,
+    fetcher: () => Promise<T>,
+  ): Promise<DexScreenerObserved<T>> {
+    const now = this.deps.now();
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > this.deps.now()) {
-      return cached.value as T;
+    if (cached && cached.expiresAt > now) {
+      return {
+        value: cached.value as T,
+        fetchedAtMs: cached.fetchedAtMs,
+        cacheHit: true,
+        cacheAgeMs: Math.max(0, now - cached.fetchedAtMs),
+      };
     }
 
     const existing = this.inFlight.get(key);
     if (existing) {
-      return existing as Promise<T>;
+      return existing as Promise<DexScreenerObserved<T>>;
     }
 
     const promise = (async () => {
       await this.buckets[rateClass].acquire();
       const value = await fetcher();
-      this.setCache(key, value, ttlMs);
-      return value;
+      const fetchedAtMs = this.deps.now();
+      this.setCache(key, value, fetchedAtMs, ttlMs);
+      return { value, fetchedAtMs, cacheHit: false, cacheAgeMs: 0 };
     })();
 
     this.inFlight.set(key, promise);
@@ -206,10 +231,10 @@ export class DexScreenerThrottle {
     this.buckets[rateClass].penalize(retryAfterMs);
   }
 
-  private setCache(key: string, value: unknown, ttlMs: number): void {
+  private setCache(key: string, value: unknown, fetchedAtMs: number, ttlMs: number): void {
     // Refresh insertion order so a re-cached key is treated as newest.
     this.cache.delete(key);
-    this.cache.set(key, { value, expiresAt: this.deps.now() + ttlMs });
+    this.cache.set(key, { value, fetchedAtMs, expiresAt: fetchedAtMs + ttlMs });
     while (this.cache.size > this.maxCacheEntries) {
       const oldest = this.cache.keys().next().value;
       if (oldest === undefined) break;

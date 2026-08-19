@@ -38,7 +38,7 @@ export interface TokenWatchPriceCandidate {
  * specific: an EVM address is case-insensitive (its mixed case is a checksum),
  * while a base58 mint is case-SENSITIVE and two spellings are two mints.
  */
-function poolSide(
+export function watchedTokenPoolSide(
   pair: DexPair,
   matches: (candidate: string | null | undefined) => boolean,
 ): TokenWatchPoolSide | null {
@@ -61,7 +61,7 @@ export function normalizePoolToWatchedToken(
   pair: DexPair,
   matches: (candidate: string | null | undefined) => boolean,
 ): TokenWatchPriceCandidate | null {
-  const side = poolSide(pair, matches);
+  const side = watchedTokenPoolSide(pair, matches);
   if (side === null) return null;
 
   const priceUsd = parseBoundedDecimal(pair.priceUsd);

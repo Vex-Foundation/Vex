@@ -45,7 +45,6 @@ const KYBER_CHAINS: ReadonlyArray<readonly [slug: string, chainId: number]> = [
   ["unichain", 130],
   ["hyperevm", 999],
   ["plasma", 9745],
-  ["etherlink", 42793],
   ["monad", 143],
   ["megaeth", 4326],
   ["scroll", 534352],

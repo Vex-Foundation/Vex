@@ -14,9 +14,8 @@
  * taxonomy the legacy arms were minted with. One arm also means one cursor and
  * no `sourceRank` tie-break — see `agent-scan-feed.ts`'s header.
  *
- * ROW SELECTION — one row per LOGICAL activity (owner decision): the swap row,
- * a bridge's `bridge_fill_expected` marker, and every `lend`/`prediction`/
- * `wrap` row (those kinds have no sub-events — one role per on-chain tx).
+ * ROW SELECTION — one row per LOGICAL activity (owner decision), selected by
+ * the shared positive role allow-list in `agent-activity-logical-row.ts`.
  * `wrap` is here FROM DAY ONE: migration 051:129-135 warns that all three
  * pre-existing agent-visible SQL surfaces either omit it or fold it into
  * `'spot'`, so a wrap is written correctly and then either invisible or
@@ -25,9 +24,9 @@
  * they are never their own ledger entries, so a bridge appears ONCE.
  *
  * SECURITY — the read is GLOBAL, so the wallet allow-list is the only thing
- * bounding it. `resolveInventoryWalletAddresses()` (the same resolution
- * `portfolio-db.ts` uses for `scope: "global"` and `token-history-db.ts` uses
- * outright) is applied UNCONDITIONALLY as `$1`, before any optional predicate.
+ * bounding it. `resolveInventoryWalletAddressLookupVariants()` supplies exact indexed
+ * lookup variants (raw + lowercase for shape-valid EVM, raw only for Solana)
+ * and is applied UNCONDITIONALLY as `$1`, before any optional predicate.
  * The renderer never supplies an address. `filters.sessionId` adds an `AND` on
  * top; there is no code path in which it replaces the wallet predicate, so it
  * can only ever NARROW the result set. An empty inventory returns the empty
@@ -66,7 +65,7 @@ import {
   type AgentScanDto,
   type AgentScanReadInput,
 } from "@shared/schemas/agent-scan-feed.js";
-import { resolveInventoryWalletAddresses } from "./inventory-wallets.js";
+import { resolveInventoryWalletAddressLookupVariants } from "./inventory-wallets.js";
 import { log } from "../logger/index.js";
 import { mapAgentScanRow } from "./agent-scan-db-mappers.js";
 import {
@@ -89,7 +88,7 @@ export async function getAgentScan(
   input: AgentScanReadInput,
   correlationId: string,
 ): Promise<Result<AgentScanDto, VexError>> {
-  const wallets = resolveInventoryWalletAddresses();
+  const wallets = resolveInventoryWalletAddressLookupVariants();
 
   // Fail closed: no configured wallets → the empty available page, before any SQL.
   if (wallets.length === 0) {

@@ -122,14 +122,28 @@ function scoreManifest(
   let score = 0;
   const matchedTokens = new Set<string>();
   const whyMatched = new Set<string>();
+  // Param fields come in pairs per parameter, so a tool's score would grow
+  // with its parameter COUNT: a filler token appearing in N descriptions
+  // scored N times (audit 2026-08-18: adding six filters to
+  // morpho.markets.discover raised it above khalani.quote on "bridge usdc to
+  // base" at 176 vs 129). A query token is therefore credited at most ONCE
+  // across the whole params family, and the phrase bonus at most once too.
+  // Other tags keep per-field stacking on purpose - their field counts encode
+  // curated signal (aliases, intents), not surface area.
+  const creditedParamTokens = new Set<string>();
+  let paramPhraseCredited = false;
 
   for (const field of buildSearchFields(manifest)) {
     const normalizedField = normalizeText(field.value);
     if (normalizedField.length === 0) continue;
+    const isParamField = field.tag === "params";
 
     let fieldHit = false;
     if (normalizedField.includes(normalizedQuery)) {
-      score += field.weight * 6;
+      if (!isParamField || !paramPhraseCredited) {
+        score += field.weight * 6;
+        if (isParamField) paramPhraseCredited = true;
+      }
       for (const token of queryTokens) matchedTokens.add(token);
       fieldHit = true;
     }
@@ -139,7 +153,14 @@ function scoreManifest(
     for (const token of queryTokens) {
       if (fieldTokens.has(token)) {
         matchedTokens.add(token);
-        tokenMatches += 1;
+        if (isParamField) {
+          if (!creditedParamTokens.has(token)) {
+            creditedParamTokens.add(token);
+            tokenMatches += 1;
+          }
+        } else {
+          tokenMatches += 1;
+        }
       }
     }
     if (tokenMatches > 0) {

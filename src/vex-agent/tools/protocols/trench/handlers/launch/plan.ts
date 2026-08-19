@@ -37,8 +37,9 @@ import { checkNativeValueAuthorizedForCall } from "@tools/evm-chains/native-valu
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
   LaunchImageResolverUnavailableError,
-  resolveLaunchImageBytes,
-} from "../../launch-image-byte-resolver.js";
+  resolveLaunchImageOnchainBytes,
+} from "../../../shared/launch-image-byte-resolver.js";
+import { TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES } from "../../../../../../lib/token-metadata-limits.js";
 import type { Permission } from "@vex-agent/engine/types.js";
 import {
   enforceAutonomousLaunchCeilings,
@@ -86,6 +87,13 @@ export interface BuildLaunchPlanInput {
 export type LaunchPlanRefusalCode =
   | "image_store_unavailable"
   | "image_not_found"
+  /**
+   * The image is in the locker and launchable on pools.fun, but has no copy
+   * small enough for Trench's calldata. A DISTINCT code from `image_not_found`
+   * on purpose: "your picture is missing" is false here and sends the user
+   * looking for a file that is on screen in front of them.
+   */
+  | "image_over_onchain_budget"
   | "fee_unreadable"
   | "ceiling_not_set"
   | "value_ceiling_exceeded"
@@ -219,12 +227,23 @@ export async function buildLaunchPlan(
   let imageBytes: Uint8Array;
   let imageDigest: string;
   try {
-    const resolved = await resolveLaunchImageBytes(request.imageId);
+    const resolved = await resolveLaunchImageOnchainBytes(request.imageId);
     if (resolved === null) {
       return refuse(
         "image_not_found",
         `Refusing to launch: no image with id "${request.imageId}" is in the Trench Photos locker. `
           + "Upload one on the right, or name an image that is already there.",
+      );
+    }
+    if (resolved.kind === "no_onchain_variant") {
+      return refuse(
+        "image_over_onchain_budget",
+        `Refusing to launch: image "${request.imageId}" (${resolved.originalByteLength} bytes) exceeds `
+          + `Trench's ${TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES}-byte on-chain budget and could not be `
+          + "optimized down to it. A Trench launch writes the image inside the transaction, so that "
+          + "budget is a gas ceiling, not a storage limit. The image is still in the locker and a "
+          + "pools.fun launch can use it, because pools.fun hosts images off-chain. For Trench, add a "
+          + "smaller or simpler picture.",
       );
     }
     imageBytes = resolved.bytes;
@@ -234,6 +253,24 @@ export async function buildLaunchPlan(
       return refuse("image_store_unavailable", err.message);
     }
     throw err;
+  }
+
+  // 3b. THE CEILING IS ASSERTED HERE, not left to the database.
+  //
+  // Before the per-lane image decision (2026-08-19) `launch_images` itself
+  // refused a row over 20 480 bytes, so nothing this side could receive one.
+  // That CHECK now guards `onchain_byte_length` and the table holds originals of
+  // any size, so the last place that can stop over-budget bytes from being
+  // encoded into an irreversible `create()` is this line. A resolver bug, a
+  // hand-edited row, or a future variant path that forgets its budget all land
+  // here rather than on-chain.
+  if (imageBytes.byteLength > TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES) {
+    return refuse(
+      "image_over_onchain_budget",
+      `Refusing to launch: the on-chain copy of image "${request.imageId}" is `
+        + `${imageBytes.byteLength} bytes, over Trench's ${TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES}-byte `
+        + "calldata budget. Nothing was signed.",
+    );
   }
 
   // 4. Compose the value. Throws rather than returns on a nonsensical fee or

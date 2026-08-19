@@ -61,8 +61,8 @@ import { resolveSelectedAddressForRead } from "../../../internal/wallet/resolve.
 import { formatWeiAsGwei } from "../../amount-display.js";
 import {
   LaunchImageResolverUnavailableError,
-  resolveLaunchImageBytes,
-} from "../launch-image-byte-resolver.js";
+  resolveLaunchImageOnchainBytes,
+} from "../../shared/launch-image-byte-resolver.js";
 import { composeLaunchMsgValue, launchImageDigestMatches } from "./launch/authorization.js";
 import { parsePrebuy } from "./launch/validate.js";
 import { rejectForbiddenTokenMetadataText } from "../../../../../lib/token-metadata-text-policy.js";
@@ -72,6 +72,7 @@ import {
   TOKEN_METADATA_DESCRIPTION_MAX as DESCRIPTION_MAX,
   TOKEN_METADATA_LINKS_MAX as LINKS_MAX,
   TOKEN_METADATA_LINK_LENGTH_MAX as LINK_LEN_MAX,
+  TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES,
 } from "../../../../../lib/token-metadata-limits.js";
 import { LAUNCH_FEE_LEG_GAS_LIMIT, readNativeBalance } from "./launch/plan.js";
 import type { ProtocolExecutionContext } from "../../types.js";
@@ -92,8 +93,12 @@ const TRENCH_CREATION_FEE_WEI = 1_000_000_000_000_000n; // 0.001 ETH
 // from the ONE definition in `lib/token-metadata-limits.ts` that the execution
 // path and the IPC form schema also import. A looser cap here would let a
 // preview succeed for a name the real launch cannot carry.
-/** Practical on-chain image cap: ~20 KB before the create reverts at the block gas limit. */
-const IMAGE_BYTES_MAX = 20_000;
+/**
+ * Practical on-chain image cap: ~20 KB before the create reverts at the block
+ * gas limit. TRENCH-ONLY - the locker itself holds originals of any size, and
+ * pools.fun hosts them off-chain. See `lib/token-metadata-limits.ts`.
+ */
+const IMAGE_BYTES_MAX = TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES;
 
 const IMAGE_NUMERIC_PARAMS: NumericParamSpecs = {
   imageByteLength: { domain: "nonNegative", integer: true, min: 0, max: IMAGE_BYTES_MAX },
@@ -211,9 +216,9 @@ type ImagePricingOutcome = ImagePricing | { readonly kind: "refusal"; readonly r
 async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePricingOutcome> {
   if (validated.imageId === null) return { kind: "empty_fallback", reason: "no_image_id" };
 
-  let resolved: Awaited<ReturnType<typeof resolveLaunchImageBytes>>;
+  let resolved: Awaited<ReturnType<typeof resolveLaunchImageOnchainBytes>>;
   try {
-    resolved = await resolveLaunchImageBytes(validated.imageId);
+    resolved = await resolveLaunchImageOnchainBytes(validated.imageId);
   } catch (err) {
     if (err instanceof LaunchImageResolverUnavailableError) {
       return { kind: "refusal", reason: err.message };
@@ -222,6 +227,20 @@ async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePri
   }
 
   if (resolved === null) return { kind: "empty_fallback", reason: "image_not_found" };
+  // NOT a labelled degrade. An empty-image estimate for an image Trench can
+  // never carry would answer a question the caller did not ask: the launch does
+  // not refuse for lack of a price, it refuses because this image has no
+  // on-chain copy, and only saying so leads anywhere.
+  if (resolved.kind === "no_onchain_variant") {
+    return {
+      kind: "refusal",
+      reason:
+        `Image "${validated.imageId}" is ${resolved.originalByteLength} bytes and has no copy within `
+        + `Trench's ${TOKEN_METADATA_IMAGE_ONCHAIN_MAX_BYTES}-byte on-chain budget, so a Trench launch `
+        + "would refuse it and there is nothing to price. The image is still in the locker; pools.fun "
+        + "hosts images off-chain and can launch it. For Trench, use a smaller or simpler picture.",
+    };
+  }
   if (!launchImageDigestMatches(resolved.bytes, resolved.digest)) {
     return { kind: "empty_fallback", reason: "image_digest_mismatch" };
   }

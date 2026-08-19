@@ -151,9 +151,26 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Every return path maps the raw token array through the concise projector
     // (P0-3c) so default-limit trending stays under the overflow threshold.
+    //
+    // The recent and tag endpoints take NO server-side limit, so `limit` is
+    // applied here as a VISIBLE window: the pre-fix recent branch ignored the
+    // advertised `limit` entirely and a bare live call measured 27,970 B
+    // against the 16,384 B tool-output cap. Windowing is accounted, never
+    // silent — `totalMatched`/`hasMore` expose what the window holds back.
+    const windowed = (tokens: readonly unknown[]): {
+      returned: number;
+      totalMatched: number;
+      hasMore: boolean;
+      tokens: readonly unknown[];
+    } => ({
+      returned: Math.min(tokens.length, limit),
+      totalMatched: tokens.length,
+      hasMore: tokens.length > limit,
+      tokens: tokens.slice(0, limit),
+    });
     if (category === "recent") {
       const tokens = filterJupiterTokensByThreshold(await getJupiterRecentTokens(), filters);
-      return ok(projectJupiterTokens(tokens, { statsInterval }));
+      return ok(windowed(projectJupiterTokens(tokens, { statsInterval })));
     }
     // Casts are safe: membership was validated by the Sets above (recent + tags
     // handled here; unknown categories already failed), so `category` is one of
@@ -163,12 +180,14 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
         await getJupiterTokensByTag(category as JupiterTokenTag),
         filters,
       );
-      return ok(projectJupiterTokens(tokens, { statsInterval }));
+      return ok(windowed(projectJupiterTokens(tokens, { statsInterval })));
     }
     const tokens = filterJupiterTokensByThreshold(
       await getJupiterTokensByCategory({ category: category as JupiterTokenCategory, interval, limit }),
       filters,
     );
-    return ok(projectJupiterTokens(tokens, { statsInterval }));
+    // The category endpoint got `limit` server-side; the same envelope keeps
+    // the output contract identical across every branch.
+    return ok(windowed(projectJupiterTokens(tokens, { statsInterval })));
   },
 };

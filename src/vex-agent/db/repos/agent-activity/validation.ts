@@ -88,15 +88,23 @@ export function assertFailureCode(code: string): asserts code is AgentActivityFa
 
 /**
  * Repo-boundary sanitization for `failure_reason` (finding 9/C5) — applied
- * UNCONDITIONALLY inside every function that writes this column, so a
- * caller cannot bypass it by skipping its own redaction. Two-tier `redact()`
- * (hard-redacts secret shapes, masks addresses/hashes) then a hard 500-char
- * cap — raw provider/RPC text NEVER reaches this column.
+ * UNCONDITIONALLY inside every function that writes this column, so a caller
+ * cannot bypass it by skipping its own redaction. Two-tier `redact()`
+ * hard-redacts secret shapes and masks addresses/hashes, so raw provider/RPC
+ * text NEVER reaches this column.
+ *
+ * THE 500-CHARACTER CAP THAT USED TO FOLLOW IT IS GONE (funded live audit,
+ * 2026-08-18). Redaction and length are different guarantees, and only the first
+ * one is a safety property. The cap cut a real Morpho failure exactly where the
+ * money-relevant half began: the caller was told a 0.1 USDC allowance was left
+ * standing to GeneralAdapter1 and how to revoke it, while the durable row - the
+ * one the ledger, the repair sweeps and agentscan read - stopped mid-word before
+ * the disclosure. `agent_activity.failure_reason` is TEXT (migration 044), so
+ * nothing about the column ever required the cut, and CLAUDE.md is explicit that
+ * agent-facing content is never truncated: the reader needs the WHOLE context.
+ * A reason is bounded at its source, by writing a reason worth persisting, not
+ * by a slice at the write boundary.
  */
-const MAX_FAILURE_REASON_CHARS = 500;
 export function sanitizeFailureReason(reason: string): string {
-  const redacted = redact(reason).text;
-  return redacted.length > MAX_FAILURE_REASON_CHARS
-    ? `${redacted.slice(0, MAX_FAILURE_REASON_CHARS)}…[truncated]`
-    : redacted;
+  return redact(reason).text;
 }

@@ -336,12 +336,155 @@ export const ErrorCodes = {
   PENDLE_UNSAFE_TX: "PENDLE_UNSAFE_TX",
   PENDLE_MARKET_NOT_FOUND: "PENDLE_MARKET_NOT_FOUND",
 
+  // Morpho (EVM variable-rate lending - keyless GraphQL read client, batch 1)
+  MORPHO_API_ERROR: "MORPHO_API_ERROR",
+  MORPHO_RATE_LIMITED: "MORPHO_RATE_LIMITED",
+  MORPHO_TIMEOUT: "MORPHO_TIMEOUT",
+  MORPHO_INVALID_RESPONSE: "MORPHO_INVALID_RESPONSE",
+  MORPHO_MARKET_NOT_FOUND: "MORPHO_MARKET_NOT_FOUND",
+  /**
+   * Named vault does not exist on the named chain, or exists in the OTHER
+   * generation. Distinct from a schema refusal: Morpho answers both with HTTP
+   * 200 and an `errors[]` array, and an agent that cannot tell "wrong address"
+   * from "our query broke" retries the wrong one.
+   */
+  MORPHO_VAULT_NOT_FOUND: "MORPHO_VAULT_NOT_FOUND",
+  MORPHO_UNSUPPORTED_CHAIN: "MORPHO_UNSUPPORTED_CHAIN",
+  /**
+   * The client's own budget or circuit breaker refused BEFORE any request left
+   * the process. Distinct from `MORPHO_RATE_LIMITED`, which is Morpho's own
+   * verdict: one is our restraint, the other is their refusal, and an agent that
+   * cannot tell them apart cannot report what happened.
+   */
+  MORPHO_BUDGET_EXHAUSTED: "MORPHO_BUDGET_EXHAUSTED",
+  /**
+   * An on-chain read (batch 4 wallet balances and allowances) failed at the RPC
+   * rather than at Morpho's API. Distinct from `MORPHO_API_ERROR` because the
+   * remediation differs completely: an RPC fault is a transport the caller can
+   * retry or point elsewhere, while an API refusal is Morpho's verdict on the
+   * query. A single code for both would tell the agent to retry a query that
+   * can never succeed, or to give up on a node that is merely busy.
+   */
+  MORPHO_RPC_ERROR: "MORPHO_RPC_ERROR",
+  /**
+   * The pinned Morpho contract registry has no address for the named contract on
+   * the named chain (live gap on 2026-08-14: Permit2 is absent for Monad and
+   * HyperEVM). Refused BY NAME rather than guessed - an allowance read against a
+   * wrong spender reports "no approval" for a contract that is not the one the
+   * user would ever approve, which is a false safety signal on a money path.
+   */
+  MORPHO_CONTRACT_UNAVAILABLE: "MORPHO_CONTRACT_UNAVAILABLE",
+  /**
+   * A transaction the Morpho SDK built did not survive Vex's own leg-by-leg
+   * decode: an entry point that is not the pinned Bundler3 or the intent's own
+   * vault, a selector outside the closed allowlist, an inner call to a contract
+   * outside the intent's own role set, a value transfer nobody asked for, an
+   * amount outside the intent's bounds, or a leg that could not be decoded at
+   * all. Rules/90: opaque calldata is decoded and checked against a bound we
+   * computed ourselves before anything is signed, and an undecodable leg is a
+   * refusal rather than a pass-through.
+   */
+  MORPHO_BUNDLE_REJECTED: "MORPHO_BUNDLE_REJECTED",
+  /**
+   * The approval a Morpho operation would perform is outside the owner's FINAL
+   * approval policy (2026-08-17, which replaced the earlier Permit2 one): ONE
+   * plain ERC-20 `approve()` for EXACTLY the operation's amount, to the chain's
+   * pinned GeneralAdapter1, and no signature path of any kind. An approval
+   * naming another spender (Permit2 included), another token or another amount
+   * is refused BY NAME rather than quietly presented as a step.
+   *
+   * Also raised when Vex's own on-chain allowance read and the SDK's requirement
+   * list DISAGREE about whether the adapter can already move these funds. One
+   * owner of that fact, and a disagreement is refused rather than resolved by
+   * picking a side.
+   */
+  MORPHO_APPROVAL_POLICY_VIOLATION: "MORPHO_APPROVAL_POLICY_VIOLATION",
+  /**
+   * The node PROVED that the operation reverts against current state, before
+   * anything was signed. A definitive provider refusal, distinct from the
+   * ambiguous one below: retrying this one immediately produces the same answer.
+   */
+  MORPHO_PREFLIGHT_REVERTED: "MORPHO_PREFLIGHT_REVERTED",
+  /**
+   * The pre-broadcast simulation could not be completed, so whether the
+   * operation would succeed is UNKNOWN. Deliberately NOT collapsed into
+   * `MORPHO_PREFLIGHT_REVERTED`: inventing a provider refusal that never
+   * happened is the failure rules/90 names, and a money path that cannot prove
+   * a transaction would land declines to spend the gas finding out.
+   */
+  MORPHO_PREFLIGHT_UNPROVEN: "MORPHO_PREFLIGHT_UNPROVEN",
+  /**
+   * The Blue MARKET itself is outside the set Vex will operate on: its IRM is
+   * not the chain's pinned AdaptiveCurveIRM, or its oracle could not be shown to
+   * come from the chain's pinned Morpho Chainlink oracle factory.
+   *
+   * Morpho Blue is PERMISSIONLESS: anyone can create a market naming any oracle
+   * and any IRM, and a market's id is just the hash of those parameters. An
+   * attacker-authored oracle can report whatever price makes the borrower
+   * liquidatable, so entering a market by id alone is entering a contract whose
+   * price feed nobody vouched for. The refusal names the exact failing
+   * predicate, because "unsupported market" tells an agent nothing it can act
+   * on.
+   */
+  MORPHO_MARKET_POLICY_VIOLATION: "MORPHO_MARKET_POLICY_VIOLATION",
+  /**
+   * The VAULT is outside the set Vex will put funds INTO: Morpho does not list
+   * it, or the curation answer could not be shown to be about it.
+   *
+   * The vault counterpart of `MORPHO_MARKET_POLICY_VIOLATION`, and deliberately
+   * a distinct code because it binds in ONE DIRECTION ONLY. A deposit into an
+   * uncurated vault is refused; a WITHDRAWAL from one never is. Delisting is
+   * exactly the moment a depositor most needs to leave, and a gate that locked
+   * them in would turn a curator's judgement into a trap. Anything mapping this
+   * code onto an exit path is a bug.
+   */
+  MORPHO_VAULT_POLICY_VIOLATION: "MORPHO_VAULT_POLICY_VIOLATION",
+  /**
+   * The operation would leave the position's health factor BELOW Vex's policy
+   * floor, so it is refused before anything is signed.
+   *
+   * Morpho Blue has NO CLOSE FACTOR: the moment a position crosses a health
+   * factor of 1.0 it can be liquidated IN FULL, with a liquidation incentive of
+   * up to 15%. There is no partial-liquidation cushion to fall back on, which is
+   * why the floor sits well above 1.0 rather than just above it. The message
+   * carries the projected number and the floor, so the agent can size a smaller
+   * operation rather than guess.
+   */
+  MORPHO_HEALTH_FACTOR_FLOOR: "MORPHO_HEALTH_FACTOR_FLOOR",
+  /**
+   * The market does not currently hold enough loan-asset liquidity to fund the
+   * borrow. Distinct from the health-factor floor: the position is healthy
+   * enough, the market simply has less free liquidity than the request
+   * (`totalSupplyAssets - totalBorrowAssets`). Named separately so the agent
+   * borrows less rather than adding collateral that would not help.
+   */
+  MORPHO_MARKET_LIQUIDITY: "MORPHO_MARKET_LIQUIDITY",
+
+  // Merkl (reward distribution API behind Morpho's campaigns - keyless, batch 4)
+  MERKL_API_ERROR: "MERKL_API_ERROR",
+  MERKL_RATE_LIMITED: "MERKL_RATE_LIMITED",
+  MERKL_TIMEOUT: "MERKL_TIMEOUT",
+  MERKL_INVALID_RESPONSE: "MERKL_INVALID_RESPONSE",
+  MERKL_UNSUPPORTED_CHAIN: "MERKL_UNSUPPORTED_CHAIN",
+  /**
+   * Vex's own budget or breaker refused before a request left the process. Same
+   * distinction as `MORPHO_BUDGET_EXHAUSTED`: our restraint, not Merkl's verdict.
+   */
+  MERKL_BUDGET_EXHAUSTED: "MERKL_BUDGET_EXHAUSTED",
+
   // Trench Express (RBC 4663 launchpad — read-only client, P1)
   TRENCH_API_ERROR: "TRENCH_API_ERROR",
   TRENCH_TIMEOUT: "TRENCH_TIMEOUT",
   TRENCH_INVALID_RESPONSE: "TRENCH_INVALID_RESPONSE",
   TRENCH_INVALID_REQUEST: "TRENCH_INVALID_REQUEST",
   TRENCH_NOT_FOUND: "TRENCH_NOT_FOUND",
+
+  // pools.fun (Robinhood Chain 4663 launchpad on api.bankr.bot - read client)
+  POOLS_API_ERROR: "POOLS_API_ERROR",
+  POOLS_TIMEOUT: "POOLS_TIMEOUT",
+  POOLS_INVALID_RESPONSE: "POOLS_INVALID_RESPONSE",
+  POOLS_INVALID_REQUEST: "POOLS_INVALID_REQUEST",
+  POOLS_NOT_FOUND: "POOLS_NOT_FOUND",
 
   // AgentScan wallet-binding handshake (Sprint 3)
   AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED: "AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED",

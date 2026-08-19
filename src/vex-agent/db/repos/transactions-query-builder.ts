@@ -60,7 +60,7 @@ const VEX_FEE_LATERALS = `
         FROM agent_activity fee
        WHERE fee.protocol_execution_id = agent_activity.protocol_execution_id
          AND fee.id        <> agent_activity.id
-         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee')
+         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')
          AND fee.status     = 'confirmed'
        ORDER BY fee.event_index ASC
        LIMIT 1
@@ -166,22 +166,23 @@ export function buildActivityHalf(
   // losses. The vocabulary-lockstep test beside this file now fails the build
   // when a migration adds a kind these feeds do not know.
   activityConds.push(
-    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR event_role = 'bridge_fill_expected')",
+    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR event_role = 'bridge_fill_expected')",
   );
   // LEG roles are not feed rows. The kind↔role CHECK (migrations 050/063/066)
   // admits approval legs on the swap/yield/launch arms and Vex fee legs
-  // (`trench_fee`, `swap_fee`) on swap/launch — all of them children of the
+  // (`trench_fee`, `swap_fee`, `pools_fee`) on swap/launch — all of them children of the
   // logical row above, not sibling trades. Admitting by `kind` alone rendered
   // a Trench/Uniswap fee transfer as a standalone "spot" trade. `bridge_fee`
   // needs no entry here: its whole `kind = 'bridge'` arm is already admitted
   // only through `event_role = 'bridge_fill_expected'`.
   activityConds.push(
-    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee')",
+    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee')",
   );
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,
   // 'lend' → lend rows, 'prediction' → prediction rows, 'wrap' → wrap rows,
-  // 'yield' → yield rows, 'launch' → launch rows. Any OTHER productType
+  // 'yield' → yield rows, 'launch' → launch rows, 'claim' → creator-fee
+  // claims. Any OTHER productType
   // (perps/order) has no agent_activity representation → exclude the half
   // entirely (no param bind needed).
   if (productType === "spot") activityConds.push("kind = 'swap'");
@@ -191,6 +192,7 @@ export function buildActivityHalf(
   else if (productType === "wrap") activityConds.push("kind = 'wrap'");
   else if (productType === "yield") activityConds.push("kind = 'yield'");
   else if (productType === "launch") activityConds.push("kind = 'launch'");
+  else if (productType === "claim") activityConds.push("kind = 'claim'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
 
@@ -208,6 +210,11 @@ export function buildActivityHalf(
         -- route, a price and a counterparty that a token creation never had —
         -- migration 051 records the cost of exactly that mistake, for wrap.
         WHEN kind = 'launch' THEN 'launch'
+        -- A creator-fee CLAIM is its own product (migration 082). It is not a
+        -- launch: it pays two assets out, months later, from a token that
+        -- already exists - and it is certainly not the ELSE arm's spot trade,
+        -- which would state a route, a price and a counterparty it never had.
+        WHEN kind = 'claim' THEN 'claim'
         WHEN kind = 'wrap' THEN 'wrap'
         -- Pendle (migration 053) is its OWN product. The ELSE arm would state
         -- a route, a price and a counterparty that a py.mint (1 -> 2) or a

@@ -386,6 +386,30 @@ export const CH = {
     getAwaiting: "vex:tokenLaunch:getAwaiting",
   },
 
+  /**
+   * pools.fun launches and creator-fee claims (domain `poolsLaunch`).
+   *
+   * TWO STAGES, and the split is the contract. `prepare` uploads the image,
+   * calls the gateway's prepare endpoint and runs the full calldata verifier; it
+   * signs nothing and returns an opaque `fingerprintId` beside the figures the
+   * user must read. `deploy` takes ONLY that id, re-verifies, and authorizes
+   * exactly the calldata and value the fingerprint names. The renderer therefore
+   * cannot alter a launch between the screen the user approved and the signature
+   * — it has no field with which to try.
+   *
+   * `claimPreview` simulates `collectAndClaim` and reports BOTH payout legs;
+   * `claim` executes it as one activity carrying two output legs.
+   */
+  poolsLaunch: {
+    prepare: "vex:poolsLaunch:prepare",
+    deploy: "vex:poolsLaunch:deploy",
+    cancel: "vex:poolsLaunch:cancel",
+    myLaunches: "vex:poolsLaunch:myLaunches",
+    getAwaiting: "vex:poolsLaunch:getAwaiting",
+    claimPreview: "vex:poolsLaunch:claimPreview",
+    claim: "vex:poolsLaunch:claim",
+  },
+
   // Cancellation
   cancel: "vex:cancel",
 } as const;

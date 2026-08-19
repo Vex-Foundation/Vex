@@ -80,13 +80,22 @@ beforeEach(() => {
   executeProtocolTool.mockClear();
 });
 
+/**
+ * The SYNC routers only. `bridge` is async (its venue depends on the live
+ * Khalani chain registry) and is not exercised here; narrowing the return type
+ * at this seam keeps these swap cases readable without an await per assertion.
+ */
 function mutatingRouter(name: string): (args: Record<string, unknown>, sessionId: string | undefined) => {
   toolId: string;
   params: Record<string, unknown>;
 } {
   const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[name];
   if (!router) throw new Error(`no mutating alias router named ${name}`);
-  return router;
+  return (args, sessionId) => {
+    const target = router(args, sessionId);
+    if (target instanceof Promise) throw new Error(`${name} is an async router; await it directly`);
+    return target;
+  };
 }
 
 const routeSwapExecute = mutatingRouter("swap_execute");

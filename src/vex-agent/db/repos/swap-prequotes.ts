@@ -45,6 +45,32 @@ export type PrequoteFamily = "eip155" | "solana";
 //   - 'pt_rollover'             : PT(marketA) → PT(marketB).
 //   - 'lp_transfer'             : LP(marketA) → LP(marketB).
 //   - 'lp_to_pt'                : LP → PT.
+//
+// E3b-2 adds the two Morpho vault lend directions (DB CHECK widened by migration
+// 080). Same rule: `swap` is not reusable (an ordinary DEX quote would authorize
+// a protocol write), and the two DIRECTIONS get one kind each, exactly as
+// 'lp_add' / 'lp_remove' do, so a deposit quote can never authorize a withdraw
+// execute when the rest of the material agrees.
+//   - 'lend_deposit'  : Morpho vault supply   (asset -> vault shares).
+//   - 'lend_withdraw' : Morpho vault withdraw (vault shares -> asset).
+// The names match the `event_role` vocabulary migration 079 uses on the
+// `agent_activity` `lend` arm.
+//
+// E3c adds the four Morpho Blue BORROW-lane operations (DB CHECK widened by
+// migration 081). ONE KIND PER OPERATION, not one shared borrow kind: the four
+// run against the same market id and the same wallet, and two of them can carry
+// the same raw amount, so a shared kind would let a collateral-supply quote
+// authorize a BORROW execute. Same reasoning as 054's lp_add/lp_remove split
+// and 080's lend_deposit/lend_withdraw split.
+//   - 'lend_supply_collateral'   : collateral token -> market position.
+//   - 'lend_withdraw_collateral' : market position -> collateral token.
+//   - 'lend_borrow'              : loan token drawn as debt.
+//   - 'lend_repay'               : loan token returned against debt.
+// There is NO authorization kind: the borrow leg calls Morpho Blue directly
+// with `msg.sender == onBehalf`, so no `setAuthorization` is ever granted. All
+// four report under the EXISTING 'lend_borrow_operate' `event_role`; the gate
+// needs per-operation resolution, the ledger reads the lane as one activity.
+//
 // The TS union and the SQL CHECK are held in lockstep by
 // `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
 export type PrequoteKind =
@@ -61,7 +87,13 @@ export type PrequoteKind =
   | "lp_add_keep_yt"
   | "pt_rollover"
   | "lp_transfer"
-  | "lp_to_pt";
+  | "lp_to_pt"
+  | "lend_deposit"
+  | "lend_withdraw"
+  | "lend_supply_collateral"
+  | "lend_withdraw_collateral"
+  | "lend_borrow"
+  | "lend_repay";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
 export interface SwapPrequote {

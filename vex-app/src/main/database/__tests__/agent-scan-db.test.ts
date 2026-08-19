@@ -47,8 +47,12 @@ vi.mock("@vex-lib/wallet.js", () => ({ listWallets: mocks.listWallets }));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { getAgentScan } = await import("../agent-scan-db.js");
+const { AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE } = await import(
+  "../agent-activity-logical-row.js"
+);
 
 const WALLET_EVM = "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa";
+const WALLET_EVM_LOWER = WALLET_EVM.toLowerCase();
 const WALLET_SOL = "So11111111111111111111111111111111111111112";
 const SESSION = "11111111-2222-4333-8444-555555555555";
 
@@ -167,7 +171,7 @@ describe("getAgentScan scope", () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql, params } = pageCall();
     expect(sql).toContain("aa.wallet_address = ANY($1::text[])");
-    expect(params[0]).toEqual([WALLET_EVM, WALLET_SOL]);
+    expect(params[0]).toEqual([WALLET_EVM, WALLET_EVM_LOWER, WALLET_SOL]);
   });
 
   it("NEVER drops the wallet predicate, whatever filters are supplied", async () => {
@@ -183,7 +187,7 @@ describe("getAgentScan scope", () => {
     }, CORRELATION_ID);
     const { sql, params } = pageCall();
     expect(sql).toContain("aa.wallet_address = ANY($1::text[])");
-    expect(params[0]).toEqual([WALLET_EVM, WALLET_SOL]);
+    expect(params[0]).toEqual([WALLET_EVM, WALLET_EVM_LOWER, WALLET_SOL]);
   });
 
   it("makes sessionId NARROW the scope — an AND on top of the wallet filter", async () => {
@@ -194,7 +198,7 @@ describe("getAgentScan scope", () => {
     expect(params).toContain(SESSION);
     // The wallet allow-list is still the FIRST bound parameter — the session
     // filter was added, not substituted.
-    expect(params[0]).toEqual([WALLET_EVM, WALLET_SOL]);
+    expect(params[0]).toEqual([WALLET_EVM, WALLET_EVM_LOWER, WALLET_SOL]);
   });
 
   it("omits the session predicate entirely when no sessionId is supplied", async () => {
@@ -206,37 +210,50 @@ describe("getAgentScan scope", () => {
 // ── Row selection ─────────────────────────────────────────────────────────
 
 describe("getAgentScan row selection", () => {
-  it("selects the logical row of each kind and INCLUDES wrap (migration 051)", async () => {
+  it("selects user actions by a positive role allow-list", async () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();
-    expect(sql).toContain("aa.event_role = 'swap'");
-    expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
-    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch')");
+    expect(sql).toContain("aa.event_role IN (");
+    for (const role of [
+      "swap",
+      "bridge_fill_expected",
+      "lend_deposit",
+      "lend_withdraw",
+      "lend_borrow_operate",
+      "wrap",
+      "unwrap",
+      "token_launch",
+      "pools_claim",
+    ]) {
+      expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).toContain(`'${role}'`);
+    }
   });
 
-  it("INCLUDES yield (migration 053) — a Pendle trade is a logical row, its approval legs are not", async () => {
-    // The regression this pins: every Pendle mutation writes a receipt-truth
-    // `kind = 'yield'` row and none of them reached this feed. Spelled as the
-    // kind minus the approval roles so a SEVENTH yield role added later is
-    // visible the day it is written — a role allow-list would silently omit it.
-    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
-    expect(pageCall().sql).toContain(
-      "(aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))",
-    );
+  it("includes every current yield action but excludes approval plumbing", () => {
+    for (const role of [
+      "yield_pt",
+      "yield_yt",
+      "yield_py",
+      "yield_lp",
+      "yield_sy",
+      "yield_claim",
+    ]) {
+      expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).toContain(`'${role}'`);
+    }
+    expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).not.toContain("'allowance'");
+    expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).not.toContain("'allowance_reset'");
   });
 
   // OWNER REVISION 2026-08-05, superseding "the fee leg renders as its own row
   // everywhere except the agent view". Live evidence: the feed rendered
   // "LAUNCH-FEE 0.0000031675 ETH → —" above "LAUNCH 0.001267 ETH → 105721 PUSSY"
   // — the same charge, at 25 bps of the launch, presented as a second user
-  // action. A `trench_fee` leg is stored with `kind = 'launch'`, so the kind arm
-  // admitted it; the exclusion is spelled on the ROLE, ahead of every arm, so no
-  // kind can readmit a fee leg.
-  it("EXCLUDES the Vex-fee legs from the feed on every kind (owner revision 2026-08-05)", async () => {
-    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
-    expect(pageCall().sql).toContain(
-      "aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')",
-    );
+  // action. The positive ROLE allow-list makes both known and future technical
+  // legs fail closed instead of inheriting visibility from their kind.
+  it("fails closed for fee and unknown technical roles", () => {
+    for (const role of ["bridge_fee", "swap_fee", "trench_fee", "pools_fee"]) {
+      expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).not.toContain(`'${role}'`);
+    }
   });
 
   it("projects the fee leg onto its parent UNCONDITIONALLY — no fee leg is its own row now", async () => {
@@ -245,7 +262,9 @@ describe("getAgentScan row selection", () => {
     // charge completely; its removal is what keeps the money visible.
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();
-    expect(sql).toContain("fee.event_role IN ('bridge_fee','swap_fee','trench_fee')");
+    expect(sql).toContain(
+      "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')",
+    );
     expect(sql).toContain("fee.status     = 'confirmed'");
     // The deleted guard was the logical-row predicate applied to the `fee`
     // alias — the only place this SQL ever spoke of `fee.kind`.
