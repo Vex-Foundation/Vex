@@ -53,7 +53,7 @@ const PROVIDER_ORDER_ID_PARAM: ProtocolParamDef = {
 };
 
 const MODIFY_TOTAL_BASE_AMOUNT_PARAM: ProtocolParamDef = {
-  key: "totalBaseAmount",
+  key: "totalBaseAmountIn",
   type: "string",
   required: true,
   description: "Replacement total order size in human market units. This is the new total size, not the remaining size, and cannot be below the amount already filled.",
@@ -67,8 +67,9 @@ const MODIFY_PRICE_PARAM: ProtocolParamDef = {
 };
 
 const MAX_SLIPPAGE_BPS_PARAM: ProtocolParamDef = {
-  key: "maxSlippageBps",
+  key: "slippageBps",
   type: "number",
+  unit: "bps",
   required: true,
   description: "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
 };
@@ -125,7 +126,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare a user approval for canceling one exact active Lighter order. Reads authenticated provider state for the selected Core or RHC account, matches the exact string order_id and market, and persists immutable side, price, remaining amount, fills, status, credential scope, and expiry. Returns a trusted approval card; it never loads a private key, reserves a nonce, signs, submits, or treats absence as cancellation.",
+      "Prepare a user approval for canceling one exact active Lighter order. Use when the user wants to cancel a specific order returned by authenticated Lighter open orders. Reads provider state for the selected Core or RHC account, matches the exact string order_id and market, and persists immutable side, price, remaining amount, fills, status, credential scope, and expiry. Returns a trusted approval card; it never loads a private key, reserves a nonce, signs, submits, or treats absence as cancellation.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, PROVIDER_ORDER_ID_PARAM],
@@ -137,7 +138,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. It reports canceled only from exact provider inactive-order evidence and includes executed, remaining, and average-fill amounts.",
+      "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
     params: [LIFECYCLE_INTENT_ID_PARAM],
@@ -149,11 +150,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare a user approval for modifying one exact active Lighter limit order. Reads live market precision and authenticated order state, preserves the exact provider order_id string, treats totalBaseAmount as the replacement total size, refuses amounts below already-filled size, and binds old and requested values into a durable approval. It never loads a private key, reserves a nonce, signs, or submits.",
+      "Prepare a user approval for modifying one exact active Lighter limit order. Use when the user wants to replace the total size and price of a specific open limit order. Reads live market precision and authenticated order state, preserves the exact provider order_id string, treats totalBaseAmountIn as the replacement total size, refuses amounts below already-filled size, and binds old and requested values into a durable approval. Returns the durable intent and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, PROVIDER_ORDER_ID_PARAM, MODIFY_TOTAL_BASE_AMOUNT_PARAM, MODIFY_PRICE_PARAM],
-    exampleParams: { environment: "rhc", marketId: 0, orderId: "123456789", totalBaseAmount: "0.01", price: "2500" },
+    exampleParams: { environment: "rhc", marketId: 0, orderId: "123456789", totalBaseAmountIn: "0.01", price: "2500" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.modify.prepare"],
   },
   {
@@ -161,7 +162,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. It reports completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes.",
+      "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
     params: [LIFECYCLE_INTENT_ID_PARAM],
@@ -173,7 +174,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare one explicit approval to immediately cancel every active order in a saved Lighter account across all markets. It reads the complete authenticated active-order set, preserves every exact string order identity and immutable order fact, refuses empty or unprovably large sets, and binds immediate account-wide TxType 16 semantics. It never loads a private key, reserves a nonce, signs, or submits.",
+      "Prepare one explicit approval to immediately cancel every active order in a saved Lighter account across all markets. Use when the user explicitly wants all open orders in that account canceled. It reads the complete authenticated active-order set, preserves every exact string order identity and immutable order fact, refuses empty or unprovably large sets, and binds immediate account-wide TxType 16 semantics. Returns the durable intent and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM],
@@ -185,7 +186,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. Completion requires zero active orders plus exact terminal evidence for every approved order, with fills reported separately.",
+      "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. Returns completion only after zero active orders plus exact terminal evidence for every approved order, with fills reported separately; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
     params: [LIFECYCLE_INTENT_ID_PARAM],
@@ -197,11 +198,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. It never loads a private key, reserves a nonce, signs, or submits.",
+      "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. Use when the user wants to close the full current position, not place a separate directional order. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, MAX_SLIPPAGE_BPS_PARAM],
-    exampleParams: { environment: "rhc", marketId: 0, maxSlippageBps: 100 },
+    exampleParams: { environment: "rhc", marketId: 0, slippageBps: 100 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.position.close.prepare"],
   },
   {
@@ -209,7 +210,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. It reports exact fill and resulting position, including partial closes without automatic resubmission.",
+      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. Returns the exact fill and resulting position, including partial closes without automatic resubmission, or a pending or ambiguous state when final evidence is unavailable.",
     mutating: true,
     actionKind: "external_post",
     params: [LIFECYCLE_INTENT_ID_PARAM],

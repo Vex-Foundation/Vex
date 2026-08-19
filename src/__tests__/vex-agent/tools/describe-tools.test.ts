@@ -96,6 +96,10 @@ const largestNamespaceSize = () => Math.max(
   ...PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.map((ns) => availableToolIds(ns).length),
 );
 
+const largestNamespace = () => PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.reduce((largest, candidate) =>
+  availableToolIds(candidate).length > availableToolIds(largest).length ? candidate : largest,
+);
+
 /** Every advertised, available toolId, longest namespace first — the bound-filling pool. */
 function catalogPool(): string[] {
   return PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.flatMap(availableToolIds);
@@ -268,15 +272,16 @@ describe("describe_tools — bounds are derived from the catalog, never chosen",
   });
 
   it("fetches a WHOLE namespace in one call and records every tool of it", async () => {
-    // The case that silently dropped 10 of solana's 34 at the old 24-slot cap.
-    const solana = availableToolIds("solana");
-    expect(solana).toHaveLength(largestNamespaceSize());
+    // Protects whichever namespace is currently largest from the old silent
+    // truncation failure without baking a particular protocol into the bound.
+    const namespace = availableToolIds(largestNamespace());
+    expect(namespace).toHaveLength(largestNamespaceSize());
 
-    const { result, payload } = await describeOk(solana);
+    const { result, payload } = await describeOk(namespace);
     expect(result.success).toBe(true);
-    expect(payload.count).toBe(solana.length);
-    expect(payload.tools.map((t: { toolId: string }) => t.toolId).sort()).toEqual([...solana].sort());
-    expect([...getDiscoveredToolIds(SESSION)].sort()).toEqual([...solana].sort());
+    expect(payload.count).toBe(namespace.length);
+    expect(payload.tools.map((t: { toolId: string }) => t.toolId).sort()).toEqual([...namespace].sort());
+    expect([...getDiscoveredToolIds(SESSION)].sort()).toEqual([...namespace].sort());
   });
 
   it("a bound-sized call into a FULL session set still keeps all of its own results", async () => {

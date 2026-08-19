@@ -521,7 +521,7 @@ function assertBoundedNonSecretEvidence(value: Record<string, unknown>): void {
   if (jsonbByteLength(value) > 64 * 1024) {
     throw new Error("lighter_order_lifecycle_intents: provider snapshot is too large");
   }
-  const encoded = JSON.stringify(value).toLowerCase();
+  const encoded = jsonb(value).toLowerCase();
   if (/(private.?key|seed.?phrase|mnemonic|auth.?token|txinfo|signature)/.test(encoded)) {
     throw new Error("lighter_order_lifecycle_intents: provider snapshot contains forbidden signed or secret material");
   }

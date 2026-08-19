@@ -175,7 +175,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!marketId.ok) return fail(marketId.reason);
     const orderId = readProviderOrderId(params.orderId);
     if (!orderId.ok) return fail(orderId.reason);
-    const totalBaseAmount = readPositiveDecimal(params.totalBaseAmount, "totalBaseAmount");
+    const totalBaseAmount = readPositiveDecimal(params.totalBaseAmountIn, "totalBaseAmountIn");
     if (!totalBaseAmount.ok) return fail(totalBaseAmount.reason);
     const price = readPositiveDecimal(params.price, "price");
     if (!price.ok) return fail(price.reason);
@@ -441,7 +441,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!environment.ok) return fail(environment.reason);
     const marketId = readMarketId(params.marketId);
     if (!marketId.ok) return fail(marketId.reason);
-    const maxSlippageBps = readSlippageBps(params.maxSlippageBps);
+    const maxSlippageBps = readSlippageBps(params.slippageBps);
     if (!maxSlippageBps.ok) return fail(maxSlippageBps.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);

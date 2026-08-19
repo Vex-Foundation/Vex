@@ -1391,11 +1391,13 @@ function readStoredCloseContext(intent: LighterOrderLifecycleIntentRow): {
   const priceDecimals = intent.providerSnapshotJson.marketPriceDecimals;
   if (
     raw === null || typeof raw !== "object" || Array.isArray(raw)
-    || !Number.isInteger(sizeDecimals) || !Number.isInteger(priceDecimals)
+    || typeof sizeDecimals !== "number" || !Number.isInteger(sizeDecimals)
+    || typeof priceDecimals !== "number" || !Number.isInteger(priceDecimals)
   ) throw blocked("The approved close-position snapshot is malformed.");
   const position = raw as Record<string, unknown>;
   if (
-    position.marketIndex !== intent.marketIndex || typeof position.symbol !== "string"
+    typeof position.marketIndex !== "number" || !Number.isInteger(position.marketIndex)
+    || position.marketIndex !== intent.marketIndex || typeof position.symbol !== "string"
     || (position.sign !== 1 && position.sign !== -1)
     || (position.side !== "long" && position.side !== "short")
     || typeof position.position !== "string" || typeof position.averageEntryPrice !== "string"
@@ -1403,9 +1405,19 @@ function readStoredCloseContext(intent: LighterOrderLifecycleIntentRow): {
     || typeof position.liquidationPrice !== "string"
   ) throw blocked("The approved close-position snapshot is malformed.");
   return {
-    position: position as unknown as LighterPositionSnapshot,
-    sizeDecimals: sizeDecimals as number,
-    priceDecimals: priceDecimals as number,
+    position: {
+      marketIndex: position.marketIndex,
+      symbol: position.symbol,
+      sign: position.sign,
+      side: position.side,
+      position: position.position,
+      averageEntryPrice: position.averageEntryPrice,
+      positionValue: position.positionValue,
+      unrealizedPnl: position.unrealizedPnl,
+      liquidationPrice: position.liquidationPrice,
+    },
+    sizeDecimals,
+    priceDecimals,
   };
 }
 
@@ -1579,11 +1591,14 @@ function matchesRequestedModification(
 ): boolean {
   const sizeDecimals = intent.providerSnapshotJson.marketSizeDecimals;
   const priceDecimals = intent.providerSnapshotJson.marketPriceDecimals;
-  if (!Number.isInteger(sizeDecimals) || !Number.isInteger(priceDecimals)) return false;
+  if (
+    typeof sizeDecimals !== "number" || !Number.isInteger(sizeDecimals)
+    || typeof priceDecimals !== "number" || !Number.isInteger(priceDecimals)
+  ) return false;
   try {
-    return decimalToLighterInteger(order.initial_base_amount, sizeDecimals as number, "provider modified amount").toString()
+    return decimalToLighterInteger(order.initial_base_amount, sizeDecimals, "provider modified amount").toString()
       === intent.requestedBaseAmountInteger
-      && decimalToLighterInteger(order.price, priceDecimals as number, "provider modified price").toString()
+      && decimalToLighterInteger(order.price, priceDecimals, "provider modified price").toString()
       === intent.requestedPriceInteger;
   } catch {
     return false;
@@ -1609,12 +1624,37 @@ function readStoredCancelAllOrders(snapshot: Record<string, unknown>): LighterLi
       || typeof record.ownerAccountIndex !== "number" || !Number.isSafeInteger(record.ownerAccountIndex)
       || typeof record.reduceOnly !== "boolean"
     ) throw blocked("The approved cancel-all order snapshot is malformed.");
-    assertProviderOrderId(record.orderId as string);
-    return record as unknown as LighterLifecycleOrderSnapshot;
+    const snapshot: LighterLifecycleOrderSnapshot = {
+      orderId: requireSnapshotString(record, "orderId"),
+      clientOrderId: requireSnapshotString(record, "clientOrderId"),
+      marketIndex: record.marketIndex,
+      ownerAccountIndex: record.ownerAccountIndex,
+      initialBaseAmount: requireSnapshotString(record, "initialBaseAmount"),
+      remainingBaseAmount: requireSnapshotString(record, "remainingBaseAmount"),
+      filledBaseAmount: requireSnapshotString(record, "filledBaseAmount"),
+      filledQuoteAmount: requireSnapshotString(record, "filledQuoteAmount"),
+      price: requireSnapshotString(record, "price"),
+      triggerPrice: requireSnapshotString(record, "triggerPrice"),
+      status: requireSnapshotString(record, "status"),
+      side: requireSnapshotString(record, "side"),
+      type: requireSnapshotString(record, "type"),
+      timeInForce: requireSnapshotString(record, "timeInForce"),
+      reduceOnly: record.reduceOnly,
+    };
+    assertProviderOrderId(snapshot.orderId);
+    return snapshot;
   }).sort(compareLifecycleOrders);
   const identities = new Set(orders.map((order) => `${order.marketIndex}:${order.orderId}`));
   if (identities.size !== orders.length) throw blocked("The approved cancel-all order snapshot has duplicate identities.");
   return orders;
+}
+
+function requireSnapshotString(record: Record<string, unknown>, field: string): string {
+  const value = record[field];
+  if (typeof value !== "string") {
+    throw blocked("The approved cancel-all order snapshot is malformed.");
+  }
+  return value;
 }
 
 function compareLifecycleOrders(left: LighterLifecycleOrderSnapshot, right: LighterLifecycleOrderSnapshot): number {
