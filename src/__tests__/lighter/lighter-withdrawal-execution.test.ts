@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import type { LighterCoreWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/core-preflight.js";
+import type { LighterRhcWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/rhc-preflight.js";
 import {
   executeApprovedLighterCoreWithdrawal,
+  executeApprovedLighterWithdrawal,
   type ExecuteApprovedLighterCoreWithdrawalDeps,
 } from "@vex-agent/tools/protocols/lighter/withdrawal-execution.js";
 import type { LighterCoreWithdrawalReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/withdrawal-execution-plan.js";
+import type { LighterWithdrawalReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/withdrawal-execution-plan.js";
 
 const NOW = 1_893_456_000_000;
 const PUBLIC_KEY = "b".repeat(80);
@@ -226,5 +229,70 @@ describe("approved Core withdrawal execution", () => {
       .rejects.toThrow("no longer matches");
     expect(events).not.toContain("secret_read");
     expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+describe("approved RHC withdrawal execution", () => {
+  it("uses only the RHC auth, nonce, signer, endpoint, and settlement identity", async () => {
+    const events: string[] = [];
+    const rhcPlan: LighterWithdrawalReadyForSignerPlan = {
+      ...plan(), intentId: "lighter-rhc-withdrawal-1", environment: "rhc",
+      endpoint: "https://api.rh.lighter.xyz", signingChainId: 466324,
+      settlementChainId: 4663,
+      settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+      gatewayImplementation: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+      credentialReference: { ...plan().credentialReference, environment: "rhc",
+        vaultCredentialId: "lighter/rhc/account-737810/api-key-4" },
+      nonceScope: { environment: "rhc", accountIndex: 737_810, apiKeyIndex: 4 },
+    };
+    const corePreflight = preflight();
+    const rhcPreflight: LighterRhcWithdrawalPreflightSnapshot = {
+      ...corePreflight, environment: "rhc", endpoint: rhcPlan.endpoint,
+      signingChainId: 466324, settlementChainId: 4663,
+      settlementNetworkName: "Robinhood Chain mainnet", assetSymbol: "USDG",
+      settlementTokenAddress: rhcPlan.settlementTokenAddress,
+      gatewayAddress: rhcPlan.gatewayAddress,
+      gatewayImplementationAddress: rhcPlan.gatewayImplementation,
+      legacyPendingBalanceUnits: "0",
+    };
+    const base = deps(events);
+    const d: ExecuteApprovedLighterCoreWithdrawalDeps = {
+      ...base,
+      readPreflight: vi.fn(async () => rhcPreflight),
+      authSigner: {
+        ...base.authSigner,
+        createAccountAuth: vi.fn(async (input) => ({
+          kind: "lighter_account_auth_signer_result", environment: "rhc",
+          accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex,
+          deadlineUnixSeconds: input.deadlineUnixSeconds,
+          authToken: `${input.deadlineUnixSeconds}:${input.accountIndex}:${input.apiKeyIndex}:${"c".repeat(128)}`,
+          publicKey: PUBLIC_KEY,
+        })),
+      },
+      withdrawalSigner: {
+        source: "official_lighter_signer",
+        signWithdraw: vi.fn(async (input) => {
+          events.push("withdraw_signed");
+          expect(input).toMatchObject({ environment: "rhc", chainId: 466324, assetIndex: 3, routeType: 0 });
+          const result = { kind: "lighter_rhc_withdrawal_signer_result" as const,
+            environment: "rhc" as const, accountIndex: input.accountIndex,
+            apiKeyIndex: input.apiKeyIndex, nonce: input.nonce, expiredAt: input.expiredAt,
+            assetIndex: 3 as const, routeType: 0 as const, amountUnits: input.amountUnits,
+            matchHash: input.matchHash, txType: 13 as const, txHash: "lighter-tx-hash" };
+          return Object.defineProperty(result, "txInfo", { value: "opaque-rhc-payload", enumerable: false });
+        }),
+      },
+      client: {
+        sendTx: vi.fn(async (environment) => {
+          expect(environment).toBe("rhc");
+          events.push("sendtx");
+          return { code: 200, tx_hash: "lighter-tx-hash", predicted_execution_time_ms: 100 };
+        }),
+      },
+    };
+    const result = await executeApprovedLighterWithdrawal({ plan: rhcPlan, deps: d });
+    expect(result).toMatchObject({ status: "submitted", executionState: "api_accepted" });
+    expect(result.message).toContain("RHC USDG");
   });
 });

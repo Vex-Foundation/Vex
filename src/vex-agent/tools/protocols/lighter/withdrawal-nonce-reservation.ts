@@ -2,7 +2,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
 import { withTransaction } from "@vex-agent/db/client.js";
 import * as nonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as withdrawalIntentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
-import type { LighterCoreWithdrawalReadyForSignerPlan } from "./withdrawal-execution-plan.js";
+import type { LighterWithdrawalReadyForSignerPlan } from "./withdrawal-execution-plan.js";
 
 export interface LighterWithdrawalNonceReservation {
   readonly reservationId: string;
@@ -10,7 +10,7 @@ export interface LighterWithdrawalNonceReservation {
 }
 
 export async function reserveLighterWithdrawalNonceForSigning(
-  plan: LighterCoreWithdrawalReadyForSignerPlan,
+  plan: LighterWithdrawalReadyForSignerPlan,
   deps: {
     readonly transaction: typeof withTransaction;
     readonly nonceState: Pick<typeof nonceStateRepo, "reserveObservedWith">;
@@ -24,7 +24,7 @@ export async function reserveLighterWithdrawalNonceForSigning(
   return deps.transaction(async (client) => {
     const reservationId = `lighter-withdrawal:${plan.intentId}`;
     const reserved = await deps.nonceState.reserveObservedWith(client, {
-      environment: "core",
+      environment: plan.environment,
       accountIndex: plan.accountIndex,
       apiKeyIndex: plan.apiKeyIndex,
       reservationId,
@@ -35,7 +35,7 @@ export async function reserveLighterWithdrawalNonceForSigning(
       || reserved.reservationId !== reservationId
       || reserved.reservedNonce === null
     ) {
-      throw blocked("No reconciled Core nonce is available for this withdrawal.");
+      throw blocked(`No reconciled ${plan.environment} nonce is available for this withdrawal.`);
     }
     const attached = await deps.intents.attachNonceReservationWith(client, {
       intentId: plan.intentId,
@@ -45,7 +45,7 @@ export async function reserveLighterWithdrawalNonceForSigning(
       reservationId,
       nonceValue: reserved.reservedNonce,
     });
-    if (attached === null) throw blocked("The Core withdrawal could not atomically attach its nonce reservation.");
+    if (attached === null) throw blocked(`The ${plan.environment} withdrawal could not atomically attach its nonce reservation.`);
     return { reservationId, nonceValue: reserved.reservedNonce };
   });
 }

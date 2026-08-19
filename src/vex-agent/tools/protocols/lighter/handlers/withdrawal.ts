@@ -8,6 +8,9 @@ import {
 } from "@tools/lighter/trading-credentials.js";
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI, readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
 import { buildLighterCoreWithdrawalPreview } from "@tools/lighter/withdrawal/core-preview.js";
+import { readLighterRhcWithdrawalPreflight } from "@tools/lighter/withdrawal/rhc-preflight.js";
+import { buildLighterRhcWithdrawalPreview } from "@tools/lighter/withdrawal/rhc-preview.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import {
   assertLighterCoreClaimPreflightWithinApproval,
   buildLighterCoreClaimPreview,
@@ -24,70 +27,36 @@ import * as withdrawalClaimsRepo from "@vex-agent/db/repos/lighter-withdrawal-cl
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
-import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
+import type { PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
-import { assertLighterCoreWithdrawalApprovalBinding } from "../withdrawal-approval-binding.js";
+import {
+  assertLighterWithdrawalApprovalBinding,
+  buildLighterWithdrawalCriticalArgs,
+} from "../withdrawal-approval-binding.js";
 import {
   assertLighterCoreClaimApprovalBinding,
   buildLighterCoreClaimCriticalArgs,
 } from "../withdrawal-claim-approval-binding.js";
 import {
-  executeApprovedLighterCoreWithdrawal,
+  executeApprovedLighterWithdrawal,
   getConfiguredLighterCoreWithdrawalExecutionDeps,
 } from "../withdrawal-execution.js";
-import { buildLighterCoreWithdrawalReadyForSignerPlan } from "../withdrawal-execution-plan.js";
-import { reconcileLighterCoreWithdrawal } from "../withdrawal-reconciliation.js";
+import { buildLighterWithdrawalReadyForSignerPlan } from "../withdrawal-execution-plan.js";
+import { reconcileLighterWithdrawal } from "../withdrawal-reconciliation.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { listLighterTradingCredentialScopes } from "../trading-credential-scope.js";
 
 function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActionFollowUp {
-  const observedAtMs = Date.parse(intent.preflightObservedAt);
-  const amountDisplay = `${formatUnits(BigInt(intent.amountUnits), 6)} USDC`;
-  const criticalArgs: Record<string, ApprovalPreviewScalar> = {
-    toolId: "lighter.withdraw",
-    intentId: intent.intentId,
-    previewId: intent.previewId,
-    matchHash: intent.matchHash,
-    environment: "core",
-    operationClass: "secure_l2_withdrawal",
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    walletAddress: intent.walletAddress,
-    destinationAddress: intent.destinationAddress,
-    signingChainId: 304,
-    settlementChainId: 1,
-    settlementNetworkName: "Ethereum mainnet",
-    assetIndex: 3,
-    assetSymbol: "USDC",
-    assetDecimals: 6,
-    settlementTokenAddress: intent.settlementTokenAddress,
-    routeType: 0,
-    route: "secure",
-    amountUnits: intent.amountUnits,
-    amountDisplay,
-    minimumWithdrawalUnits: intent.minimumWithdrawalUnits,
-    availableBalanceUnits: intent.availableBalanceUnits,
-    collateralUnits: intent.collateralUnits,
-    initialMarginUnits: intent.initialMarginUnits,
-    pendingOrderCount: intent.pendingOrderCount,
-    openPositionCount: intent.openPositionCount,
-    activeOrderCount: intent.activeOrderCount,
-    withdrawalDelaySeconds: intent.withdrawalDelaySeconds,
-    estimatedClaimableAt: new Date(observedAtMs + intent.withdrawalDelaySeconds * 1_000).toISOString(),
-    gatewayAddress: intent.gatewayAddress,
-    gatewayImplementation: intent.gatewayImplementation,
-    gatewayCodeHash: intent.gatewayCodeHash,
-    settlementTokenCodeHash: intent.settlementTokenCodeHash,
-    preflightObservedAt: intent.preflightObservedAt,
-    summary: `Withdraw ${amountDisplay} from Lighter Core to ${intent.destinationAddress} on Ethereum mainnet using the secure route.`,
-    scopeNote: "This approval submits the L2 withdrawal only. Any later manual Ethereum claim requires a separate wallet approval and network fee.",
-  };
   return {
     toolName: "execute_tool",
     args: { toolId: "lighter.withdraw", params: { intentId: intent.intentId } },
     expiresAt: intent.expiresAt,
-    approvalPreview: { toolName: "withdraw", namespace: "lighter", criticalArgs },
+    approvalPreview: {
+      toolName: "withdraw",
+      namespace: "lighter",
+      criticalArgs: buildLighterWithdrawalCriticalArgs(intent),
+    },
   };
 }
 
@@ -113,6 +82,9 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     if (!sessionId || intentId.length === 0) return fail("Manual Core claim preparation requires a session-scoped withdrawal intent id.");
     const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
     if (intent === null) return fail(`No Core withdrawal intent ${intentId} exists in this session.`);
+    if (intent.environment !== "core") {
+      return fail("RHC manual claims are not enabled by the Core Ethereum claim path.");
+    }
     if (intent.executionState !== "claimable" || intent.pendingBalanceUnits !== intent.amountUnits) {
       return fail(`Core withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
     }
@@ -300,14 +272,15 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
 
   "lighter.withdraw.status": async (params, context) => {
     const sessionId = context.sessionId;
-    if (!sessionId) return fail("Core withdrawal status requires a host session id.");
+    if (!sessionId) return fail("Lighter withdrawal status requires a host session id.");
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
     let intent = intentId.length > 0
       ? await withdrawalIntentsRepo.findByIntentId(sessionId, intentId)
       : await withdrawalIntentsRepo.findLatestForSession(sessionId);
     if (intent === null) return fail(intentId.length > 0
-      ? `No Core withdrawal intent ${intentId} exists in this session.`
-      : "No Core withdrawal intent exists in this session.");
+      ? `No Lighter withdrawal intent ${intentId} exists in this session.`
+      : "No Lighter withdrawal intent exists in this session.");
+    const profile = getLighterSecureWithdrawalProfile(intent.environment);
     let claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
     if (
       intent.executionState === "manual_claim_prepared"
@@ -323,18 +296,18 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       if (intent.signerTxHash === null || intent.submissionStagedAt === null) {
         return ok(withdrawalStatusPayload(intent, claimAttempt));
       }
-      const privilegedAuth = await resolveLighterReadOnlyAccountAuth("core", intent.accountIndex);
+      const privilegedAuth = await resolveLighterReadOnlyAccountAuth(intent.environment, intent.accountIndex);
       if (privilegedAuth === null) {
-        return fail("Unlock the local vault to derive bounded read-only Core reconciliation access. No transaction will be signed or retried.");
+        return fail(`Unlock the local vault to derive bounded read-only ${profile.sourceName} reconciliation access. No transaction will be signed or retried.`);
       }
-      const ethereum = getUniswapDeployment(1);
-      if (ethereum === undefined) return fail("Ethereum mainnet deployment is unavailable for withdrawal reconciliation.");
+      const settlement = getUniswapDeployment(profile.settlementChainId);
+      if (settlement === undefined) return fail(`${profile.settlementNetworkName} deployment is unavailable for withdrawal reconciliation.`);
       try {
-        intent = await reconcileLighterCoreWithdrawal({
+        intent = await reconcileLighterWithdrawal({
           intent,
           client: getLighterClient(),
           privilegedAuth,
-          publicClient: getUniswapPublicClient(ethereum),
+          publicClient: getUniswapPublicClient(settlement),
         });
       } catch (error) {
         return fail(error instanceof Error ? error.message : String(error));
@@ -346,12 +319,14 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
 
   "lighter.withdraw.prepare": async (params, context) => {
     const sessionId = context.sessionId;
-    if (!sessionId) return fail("Core withdrawal preparation requires a host session id.");
-    if (params.environment !== undefined && params.environment !== "core") {
-      return fail("Core USDC withdrawal supports environment=core only.");
+    if (!sessionId) return fail("Lighter withdrawal preparation requires a host session id.");
+    if (params.environment !== "core" && params.environment !== "rhc") {
+      return fail("Secure withdrawal requires an explicit environment: core for USDC or rhc for USDG.");
     }
+    const environment = params.environment;
+    const profile = getLighterSecureWithdrawalProfile(environment);
     const amountRaw = params.amountIn;
-    if (typeof amountRaw !== "string") return fail('amountIn must be an exact USDC decimal string, for example "2".');
+    if (typeof amountRaw !== "string") return fail(`amountIn must be an exact ${profile.assetSymbol} decimal string, for example "2".`);
     let amountUnits: bigint;
     try {
       amountUnits = decimalToBaseUnits(amountRaw, 6);
@@ -366,12 +341,12 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(error);
     }
     const client = getLighterClient();
-    const scopes = listLighterTradingCredentialScopes("core");
+    const scopes = listLighterTradingCredentialScopes(environment);
     const distinctScopes = [...new Map(scopes.map((scope) => [`${scope.accountIndex}:${scope.apiKeyIndex}`, scope])).values()];
     const owned: typeof distinctScopes = [];
     for (const scope of distinctScopes) {
       try {
-        const account = await client.getAccount("core", { by: "index", value: scope.accountIndex });
+        const account = await client.getAccount(environment, { by: "index", value: scope.accountIndex });
         if (account.accounts.some((row) =>
           (row.index ?? row.account_index) === scope.accountIndex
           && typeof row.l1_address === "string"
@@ -379,43 +354,49 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           owned.push(scope);
         }
       } catch {
-        return fail("Core account ownership could not be proven for every saved managed credential. No withdrawal was prepared.");
+        return fail(`${profile.sourceName} account ownership could not be proven for every saved managed credential. No withdrawal was prepared.`);
       }
     }
     if (owned.length !== 1 || owned[0] === undefined) {
       return fail(
         owned.length === 0
-          ? "The selected wallet has no uniquely proven managed Lighter Core trading account."
-          : "The selected wallet has multiple managed Core credential scopes; Vex will not guess which signer scope to use.",
+          ? `The selected wallet has no uniquely proven managed ${profile.productName} trading account.`
+          : `The selected wallet has multiple managed ${profile.sourceName} credential scopes; Vex will not guess which signer scope to use.`,
       );
     }
     const scope = owned[0];
-    const privilegedAuth = await resolveLighterReadOnlyAccountAuth("core", scope.accountIndex);
+    const privilegedAuth = await resolveLighterReadOnlyAccountAuth(environment, scope.accountIndex);
     if (privilegedAuth === null) {
-      return fail("The local vault must be unlocked so Vex can derive bounded read-only Core account authorization. No withdrawal was prepared.");
+      return fail(`The local vault must be unlocked so Vex can derive bounded read-only ${profile.sourceName} account authorization. No withdrawal was prepared.`);
     }
     const readiness = evaluateLighterTradingCredentialReadiness({
-      environment: "core",
+      environment,
       accountIndex: scope.accountIndex,
       apiKeyIndex: scope.apiKeyIndex,
       vaultCredentialId: defaultLighterTradingVaultCredentialId(scope),
     });
-    if (!readiness.ready) return fail("Managed Core signing access is not ready. No withdrawal was prepared.");
-    const ethereum = getUniswapDeployment(1);
-    if (ethereum === undefined) return fail("Ethereum mainnet deployment is unavailable. No withdrawal was prepared.");
+    if (!readiness.ready) return fail(`Managed ${profile.sourceName} signing access is not ready. No withdrawal was prepared.`);
+    const settlement = getUniswapDeployment(profile.settlementChainId);
+    if (settlement === undefined) return fail(`${profile.settlementNetworkName} deployment is unavailable. No withdrawal was prepared.`);
 
     let preview;
     try {
-      const snapshot = await readLighterCoreWithdrawalPreflight({
+      const preflightInput = {
         walletAddress,
         accountIndex: scope.accountIndex,
         apiKeyIndex: scope.apiKeyIndex,
         amountUnits,
         client,
         privilegedAuth,
-        publicClient: getUniswapPublicClient(ethereum),
-      });
-      preview = buildLighterCoreWithdrawalPreview({ sessionId, snapshot });
+        publicClient: getUniswapPublicClient(settlement),
+      };
+      if (environment === "core") {
+        const snapshot = await readLighterCoreWithdrawalPreflight(preflightInput);
+        preview = buildLighterCoreWithdrawalPreview({ sessionId, snapshot });
+      } else {
+        const snapshot = await readLighterRhcWithdrawalPreflight(preflightInput);
+        preview = buildLighterRhcWithdrawalPreview({ sessionId, snapshot });
+      }
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
@@ -429,10 +410,10 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           credentialReadiness: readiness,
         }));
     } catch {
-      return fail("Vex could not safely reserve the durable Core withdrawal intent. No withdrawal was prepared.");
+      return fail(`Vex could not safely reserve the durable ${profile.sourceName} withdrawal intent. No withdrawal was prepared.`);
     }
     if (outcome.outcome === "live_conflict") {
-      return fail(`Core account ${scope.accountIndex} already has unresolved withdrawal intent ${outcome.intent.intentId} in state ${outcome.intent.executionState}. Reconcile it before any new withdrawal.`);
+      return fail(`${profile.sourceName} account ${scope.accountIndex} already has unresolved withdrawal intent ${outcome.intent.intentId} in state ${outcome.intent.executionState}. Reconcile it before any new withdrawal.`);
     }
     const intent = outcome.intent;
     if (
@@ -440,21 +421,21 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       || intent.executionState !== "approval_pending"
       || Date.parse(intent.expiresAt) <= Date.now()
     ) {
-      return fail(`Core withdrawal intent ${intent.intentId} is no longer approval-pending. Prepare a fresh withdrawal.`);
+      return fail(`${profile.sourceName} withdrawal intent ${intent.intentId} is no longer approval-pending. Prepare a fresh withdrawal.`);
     }
     return {
       ...ok({
-        source: "vex_lighter_core_withdrawal_intent",
+        source: `vex_lighter_${environment}_withdrawal_intent`,
         status: outcome.outcome === "created" ? "approval_prepared" : "approval_prepared_existing",
-        message: "Exact Core USDC secure withdrawal prepared; review the trusted approval card.",
+        message: `Exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal prepared; review the trusted approval card.`,
         intentId: intent.intentId,
         previewId: intent.previewId,
         matchHash: intent.matchHash,
-        environment: "core",
+        environment,
         amountUnits: intent.amountUnits,
-        amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} USDC`,
+        amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`,
         destinationAddress: intent.destinationAddress,
-        settlementNetwork: "Ethereum mainnet",
+        settlementNetwork: profile.settlementNetworkName,
         route: "secure",
         withdrawalDelaySeconds: intent.withdrawalDelaySeconds,
         expiresAt: intent.expiresAt,
@@ -467,41 +448,42 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.withdraw": async (params, context) => {
     const sessionId = context.sessionId;
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
-    if (!sessionId || intentId.length === 0) return fail("Core withdrawal requires a session-scoped prepared intent id.");
+    if (!sessionId || intentId.length === 0) return fail("Lighter withdrawal requires a session-scoped prepared intent id.");
     if (!context.approved || !context.approvalId) {
-      return { success: false, output: "Core withdrawal requires the matching approved Vex approval card.", pendingApproval: true };
+      return { success: false, output: "Lighter withdrawal requires the matching approved Vex approval card.", pendingApproval: true };
     }
     const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
-    if (intent === null) return fail(`No Core withdrawal intent ${intentId} exists in this session.`);
+    if (intent === null) return fail(`No Lighter withdrawal intent ${intentId} exists in this session.`);
+    const profile = getLighterSecureWithdrawalProfile(intent.environment);
     try {
-      await assertLighterCoreWithdrawalApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
+      await assertLighterWithdrawalApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await withdrawalIntentsRepo.markApprovalDecision({
         intentId, sessionId, approvalId: context.approvalId, decision: "expired",
-        reason: "approved resume observed expired Core withdrawal intent",
+        reason: `approved resume observed expired ${intent.environment} withdrawal intent`,
       });
-      return fail(`Core withdrawal intent ${intentId} expired before execution.`);
+      return fail(`${profile.sourceName} withdrawal intent ${intentId} expired before execution.`);
     }
     const approved = await withdrawalIntentsRepo.markApprovalDecision({
       intentId, sessionId, approvalId: context.approvalId, decision: "approved",
-      reason: "user approved exact Core USDC secure withdrawal",
+      reason: `user approved exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal`,
     });
-    if (approved === null) return fail(`Core withdrawal intent ${intentId} has already left approval_pending.`);
+    if (approved === null) return fail(`${profile.sourceName} withdrawal intent ${intentId} has already left approval_pending.`);
     const deps = getConfiguredLighterCoreWithdrawalExecutionDeps();
-    if (deps === null) return fail("Privileged Core withdrawal execution is unavailable. Nothing was signed or submitted.");
+    if (deps === null) return fail(`Privileged ${profile.sourceName} withdrawal execution is unavailable. Nothing was signed or submitted.`);
     try {
-      const result = await executeApprovedLighterCoreWithdrawal({
-        plan: buildLighterCoreWithdrawalReadyForSignerPlan(approved),
+      const result = await executeApprovedLighterWithdrawal({
+        plan: buildLighterWithdrawalReadyForSignerPlan(approved),
         deps,
       });
       return ok({
-        source: "vex_lighter_core_withdrawal_execution",
+        source: `vex_lighter_${approved.environment}_withdrawal_execution`,
         ...result,
         userGuidance: result.status === "submitted"
-          ? "Tell the user the Core withdrawal was submitted and is awaiting L2 plus Ethereum settlement proof; API acceptance is not final delivery."
+          ? `Tell the user the ${profile.sourceName} withdrawal was submitted and is awaiting L2 plus ${profile.settlementNetworkName} settlement proof; API acceptance is not final delivery.`
           : "Tell the user the outcome is uncertain and Vex will reconcile it before any retry.",
       });
     } catch (error) {
@@ -523,14 +505,16 @@ function withdrawalStatusPayload(
   intent: LighterWithdrawalIntentRow,
   claim?: withdrawalClaimsRepo.LighterWithdrawalClaimAttemptRow | null,
 ): Record<string, unknown> {
+  const profile = getLighterSecureWithdrawalProfile(intent.environment);
   return {
-    source: "vex_lighter_core_withdrawal_reconciliation",
+    source: `vex_lighter_${intent.environment}_withdrawal_reconciliation`,
     intentId: intent.intentId,
-    environment: "core",
+    environment: intent.environment,
     executionState: intent.executionState,
     approvalStatus: intent.approvalStatus,
     amountUnits: intent.amountUnits,
-    amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} USDC`,
+    amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`,
+    settlementNetwork: profile.settlementNetworkName,
     destinationAddress: intent.destinationAddress,
     signerTxHash: intent.signerTxHash,
     submittedTxHash: intent.submittedTxHash,
@@ -550,11 +534,11 @@ function withdrawalStatusPayload(
     lastCheckedAt: intent.lastCheckedAt,
     final: intent.executionState === "destination_confirmed",
     userGuidance: intent.executionState === "destination_confirmed"
-      ? "Tell the user exact Ethereum delivery is confirmed."
+      ? `Tell the user exact ${profile.settlementNetworkName} delivery is confirmed.`
       : intent.executionState === "claimable"
-        ? "Tell the user the USDC is claimable at the gateway; a separate wallet approval is required before paying Ethereum gas."
+        ? `Tell the user the ${profile.assetSymbol} is claimable at the gateway; a separate wallet approval is required before paying ${profile.settlementNetworkName} gas.`
         : intent.executionState === "ambiguous"
           ? "Tell the user the outcome remains uncertain and must not be retried."
-          : "Tell the user the withdrawal is still progressing and API/history labels are not final Ethereum delivery.",
+          : `Tell the user the withdrawal is still progressing and API/history labels are not final ${profile.settlementNetworkName} delivery.`,
   };
 }

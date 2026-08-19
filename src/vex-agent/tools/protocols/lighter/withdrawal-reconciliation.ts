@@ -14,6 +14,7 @@ import {
   proveLighterCoreWithdrawalSettlement,
 } from "@tools/lighter/withdrawal/settlement-proof.js";
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import type { LighterWithdrawHistoryItem } from "@tools/lighter/types.js";
 import * as intentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import * as claimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
@@ -37,26 +38,43 @@ export async function reconcileLighterCoreWithdrawal(input: {
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
   readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
 }): Promise<LighterWithdrawalIntentRow> {
+  if (input.intent.environment !== "core") {
+    throw invalid("The withdrawal intent is not a Core withdrawal.");
+  }
+  return reconcileLighterWithdrawal(input);
+}
+
+export async function reconcileLighterWithdrawal(input: {
+  readonly intent: LighterWithdrawalIntentRow;
+  readonly client: Pick<LighterClient, "getTx" | "getWithdrawHistory">;
+  readonly privilegedAuth: LighterPrivilegedAccountAuth;
+  readonly publicClient: PublicClient;
+  readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
+  readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
+}): Promise<LighterWithdrawalIntentRow> {
   const repo = input.intents ?? intentsRepo;
   const intent = input.intent;
+  const profile = getLighterSecureWithdrawalProfile(intent.environment);
   if (
-    intent.environment !== "core"
+    intent.signingChainId !== profile.signingChainId
+    || intent.settlementChainId !== profile.settlementChainId
+    || intent.assetSymbol !== profile.assetSymbol
     || intent.signerTxHash === null
     || intent.nonceValue === null
     || intent.submissionStagedAt === null
-  ) throw invalid("Core withdrawal has no staged signed transaction identity to reconcile.");
+  ) throw invalid(`${profile.sourceName} withdrawal has no valid staged signed transaction identity to reconcile.`);
   if (input.privilegedAuth.accountIndex !== intent.accountIndex) {
-    throw invalid("Read-only Core authorization does not match the withdrawal account.");
+    throw invalid(`Read-only ${profile.sourceName} authorization does not match the withdrawal account.`);
   }
 
   const [tx, history, pendingBalance, settlement] = await Promise.all([
-    input.client.getTx("core", { by: "hash", value: intent.signerTxHash }),
-    readAllHistory(input.client, intent.accountIndex, input.privilegedAuth),
+    input.client.getTx(intent.environment, { by: "hash", value: intent.signerTxHash }),
+    readAllHistory(input.client, intent.environment, intent.accountIndex, input.privilegedAuth),
     input.publicClient.readContract({
       address: intent.gatewayAddress as `0x${string}`,
       abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
       functionName: "getPendingBalance",
-      args: [intent.destinationAddress as `0x${string}`, 3],
+      args: [intent.destinationAddress as `0x${string}`, profile.assetIndex],
     }),
     scanSettlement(input.publicClient, intent),
   ]);
@@ -371,15 +389,15 @@ async function scanSettlement(
 ): Promise<{ readonly transactionHashes: readonly Hex[]; readonly nextFromBlock: bigint }> {
   const storedInitial = intent.settlementScanFromBlock ?? intent.preflightJson.settlementBlockNumber;
   if (typeof storedInitial !== "string" || !/^\d+$/.test(storedInitial)) {
-    throw invalid("Stored Ethereum settlement scan cursor is invalid.");
+    throw invalid(`Stored ${intent.settlementNetworkName} settlement scan cursor is invalid.`);
   }
   const initial = BigInt(storedInitial);
   const latest = await publicClient.getBlockNumber();
-  if (initial > latest + 1n) throw invalid("Stored Ethereum settlement scan cursor is ahead of the chain head.");
+  if (initial > latest + 1n) throw invalid(`Stored ${intent.settlementNetworkName} settlement scan cursor is ahead of the chain head.`);
   const matches = new Set<Hex>();
   if (intent.destinationTxHash !== null) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(intent.destinationTxHash)) {
-      throw invalid("Stored Ethereum destination transaction hash is invalid.");
+      throw invalid(`Stored ${intent.settlementNetworkName} destination transaction hash is invalid.`);
     }
     matches.add(intent.destinationTxHash as Hex);
   }
@@ -387,7 +405,7 @@ async function scanSettlement(
   let pages = 0;
   while (fromBlock <= latest) {
     if (pages >= MAX_SETTLEMENT_SCAN_PAGES) {
-      throw invalid("Ethereum settlement scan exceeded its bounded block range.");
+      throw invalid(`${intent.settlementNetworkName} settlement scan exceeded its bounded block range.`);
     }
     const toBlock = minBigInt(latest, fromBlock + SETTLEMENT_SCAN_PAGE_BLOCKS - 1n);
     const logs = await publicClient.getLogs({
@@ -400,7 +418,7 @@ async function scanSettlement(
     });
     for (const log of logs) {
       if (
-        log.args.assetIndex === 3
+        log.args.assetIndex === intent.assetIndex
         && log.args.baseAmount === BigInt(intent.amountUnits)
         && log.transactionHash !== null
       ) matches.add(log.transactionHash);
@@ -421,6 +439,7 @@ function minBigInt(a: bigint, b: bigint): bigint {
 
 async function readAllHistory(
   client: Pick<LighterClient, "getWithdrawHistory">,
+  environment: "core" | "rhc",
   accountIndex: number,
   auth: LighterPrivilegedAccountAuth,
 ): Promise<readonly LighterWithdrawHistoryItem[]> {
@@ -428,16 +447,16 @@ async function readAllHistory(
   const seen = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
-    const response = await client.getWithdrawHistory("core", { accountIndex, cursor, filter: "all" }, auth);
-    if (response.code !== 200) throw invalid("Authenticated Core withdrawal history is unavailable.");
+    const response = await client.getWithdrawHistory(environment, { accountIndex, cursor, filter: "all" }, auth);
+    if (response.code !== 200) throw invalid(`Authenticated ${environment.toUpperCase()} withdrawal history is unavailable.`);
     rows.push(...response.withdraws);
     const next = response.cursor.trim();
     if (next.length === 0) return rows;
-    if (seen.has(next)) throw invalid("Core withdrawal history repeated a pagination cursor.");
+    if (seen.has(next)) throw invalid(`${environment.toUpperCase()} withdrawal history repeated a pagination cursor.`);
     seen.add(next);
     cursor = next;
   }
-  throw invalid("Core withdrawal history exceeded the bounded pagination limit.");
+  throw invalid(`${environment.toUpperCase()} withdrawal history exceeded the bounded pagination limit.`);
 }
 
 function preserveProvenProgress(
@@ -457,7 +476,7 @@ async function persist(
   input: ReconciliationInput,
 ): Promise<LighterWithdrawalIntentRow> {
   const row = await repo.recordReconciliation(input);
-  if (row === null) throw invalid("Core withdrawal reconciliation could not persist its monotonic state.");
+  if (row === null) throw invalid("Lighter withdrawal reconciliation could not persist its monotonic state.");
   return row;
 }
 

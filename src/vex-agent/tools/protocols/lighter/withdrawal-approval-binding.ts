@@ -16,7 +16,46 @@ export const LIGHTER_WITHDRAWAL_CRITICAL_ARG_KEYS = [
   "settlementTokenCodeHash", "preflightObservedAt", "summary", "scopeNote",
 ] as const;
 
+export function buildLighterWithdrawalCriticalArgs(
+  intent: LighterWithdrawalIntentRow,
+): Record<string, string | number> {
+  const observedAtMs = Date.parse(intent.preflightObservedAt);
+  const amountDisplay = `${formatUnits(BigInt(intent.amountUnits), intent.assetDecimals)} ${intent.assetSymbol}`;
+  return {
+    toolId: "lighter.withdraw", intentId: intent.intentId, previewId: intent.previewId,
+    matchHash: intent.matchHash, environment: intent.environment,
+    operationClass: "secure_l2_withdrawal", accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex, walletAddress: intent.walletAddress,
+    destinationAddress: intent.destinationAddress, signingChainId: intent.signingChainId,
+    settlementChainId: intent.settlementChainId,
+    settlementNetworkName: intent.settlementNetworkName, assetIndex: intent.assetIndex,
+    assetSymbol: intent.assetSymbol, assetDecimals: intent.assetDecimals,
+    settlementTokenAddress: intent.settlementTokenAddress, routeType: intent.routeType,
+    route: "secure", amountUnits: intent.amountUnits, amountDisplay,
+    minimumWithdrawalUnits: intent.minimumWithdrawalUnits,
+    availableBalanceUnits: intent.availableBalanceUnits, collateralUnits: intent.collateralUnits,
+    initialMarginUnits: intent.initialMarginUnits, pendingOrderCount: intent.pendingOrderCount,
+    openPositionCount: intent.openPositionCount, activeOrderCount: intent.activeOrderCount,
+    withdrawalDelaySeconds: intent.withdrawalDelaySeconds,
+    estimatedClaimableAt: new Date(observedAtMs + intent.withdrawalDelaySeconds * 1_000).toISOString(),
+    gatewayAddress: intent.gatewayAddress, gatewayImplementation: intent.gatewayImplementation,
+    gatewayCodeHash: intent.gatewayCodeHash,
+    settlementTokenCodeHash: intent.settlementTokenCodeHash,
+    preflightObservedAt: intent.preflightObservedAt,
+    summary: `Withdraw ${amountDisplay} from Lighter ${intent.environment.toUpperCase()} to ${intent.destinationAddress} on ${intent.settlementNetworkName} using the secure route.`,
+    scopeNote: `This approval submits the L2 withdrawal only. Any later manual ${intent.settlementNetworkName} claim requires a separate wallet approval and network fee.`,
+  };
+}
+
 export async function assertLighterCoreWithdrawalApprovalBinding(input: {
+  readonly approvalId: string;
+  readonly sessionId: string;
+  readonly intent: LighterWithdrawalIntentRow;
+}): Promise<void> {
+  return assertLighterWithdrawalApprovalBinding(input);
+}
+
+export async function assertLighterWithdrawalApprovalBinding(input: {
   readonly approvalId: string;
   readonly sessionId: string;
   readonly intent: LighterWithdrawalIntentRow;
@@ -55,44 +94,8 @@ function previewMatches(preview: Record<string, unknown>, intent: LighterWithdra
     args === null
     || Object.keys(args).sort().join(",") !== [...LIGHTER_WITHDRAWAL_CRITICAL_ARG_KEYS].sort().join(",")
   ) return false;
-  const observedAtMs = Date.parse(intent.preflightObservedAt);
-  return args.toolId === "lighter.withdraw"
-    && args.intentId === intent.intentId
-    && args.previewId === intent.previewId
-    && args.matchHash === intent.matchHash
-    && args.environment === "core"
-    && args.operationClass === "secure_l2_withdrawal"
-    && args.accountIndex === intent.accountIndex
-    && args.apiKeyIndex === intent.apiKeyIndex
-    && args.walletAddress === intent.walletAddress
-    && args.destinationAddress === intent.destinationAddress
-    && args.signingChainId === 304
-    && args.settlementChainId === 1
-    && args.settlementNetworkName === "Ethereum mainnet"
-    && args.assetIndex === 3
-    && args.assetSymbol === "USDC"
-    && args.assetDecimals === 6
-    && args.settlementTokenAddress === intent.settlementTokenAddress
-    && args.routeType === 0
-    && args.route === "secure"
-    && args.amountUnits === intent.amountUnits
-    && args.amountDisplay === `${formatUnits(BigInt(intent.amountUnits), 6)} USDC`
-    && args.minimumWithdrawalUnits === intent.minimumWithdrawalUnits
-    && args.availableBalanceUnits === intent.availableBalanceUnits
-    && args.collateralUnits === intent.collateralUnits
-    && args.initialMarginUnits === intent.initialMarginUnits
-    && args.pendingOrderCount === intent.pendingOrderCount
-    && args.openPositionCount === intent.openPositionCount
-    && args.activeOrderCount === intent.activeOrderCount
-    && args.withdrawalDelaySeconds === intent.withdrawalDelaySeconds
-    && args.estimatedClaimableAt === new Date(observedAtMs + intent.withdrawalDelaySeconds * 1_000).toISOString()
-    && args.gatewayAddress === intent.gatewayAddress
-    && args.gatewayImplementation === intent.gatewayImplementation
-    && args.gatewayCodeHash === intent.gatewayCodeHash
-    && args.settlementTokenCodeHash === intent.settlementTokenCodeHash
-    && args.preflightObservedAt === intent.preflightObservedAt
-    && nonEmpty(args.summary)
-    && nonEmpty(args.scopeNote);
+  const expected = buildLighterWithdrawalCriticalArgs(intent);
+  return LIGHTER_WITHDRAWAL_CRITICAL_ARG_KEYS.every((key) => args[key] === expected[key]);
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -101,14 +104,10 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function nonEmpty(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
 function refusal(): VexError {
   return new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
-    "Approved Core withdrawal refused because the trusted approval record does not exactly match the durable withdrawal intent. Nothing was signed or submitted.",
-    "Open the matching approval card or prepare a fresh Core USDC withdrawal.",
+    "Approved Lighter withdrawal refused because the trusted approval record does not exactly match the durable environment-scoped withdrawal intent. Nothing was signed or submitted.",
+    "Open the matching approval card or prepare a fresh exact withdrawal for the selected Lighter environment.",
   );
 }

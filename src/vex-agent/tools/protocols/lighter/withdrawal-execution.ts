@@ -5,15 +5,17 @@ import {
   type LighterSignerAdapter,
 } from "@tools/lighter/signer-adapter.js";
 import {
-  buildLighterCoreWithdrawalSigningInput,
-  signLighterCoreWithdrawalWithAdapter,
-  type LighterCoreWithdrawalSignerAdapter,
+  buildLighterWithdrawalSigningInput,
+  signLighterWithdrawalWithAdapter,
+  type LighterWithdrawalSignerAdapter,
 } from "@tools/lighter/signer-withdrawal.js";
 import {
   loadLighterTradingSecretMaterial,
   type LighterTradingSecretReader,
 } from "@tools/lighter/trading-secret.js";
 import type { LighterCoreWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/core-preflight.js";
+import type { LighterRhcWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/rhc-preflight.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import * as nonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as withdrawalIntentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
@@ -21,7 +23,10 @@ import {
   reserveLighterWithdrawalNonceForSigning,
   type LighterWithdrawalNonceReservation,
 } from "./withdrawal-nonce-reservation.js";
-import type { LighterCoreWithdrawalReadyForSignerPlan } from "./withdrawal-execution-plan.js";
+import type {
+  LighterCoreWithdrawalReadyForSignerPlan,
+  LighterWithdrawalReadyForSignerPlan,
+} from "./withdrawal-execution-plan.js";
 
 const ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_LEAD_MS = 2 * 60_000;
@@ -29,14 +34,14 @@ const SIGNER_EXPIRY_LEAD_MS = 2 * 60_000;
 export interface ExecuteApprovedLighterCoreWithdrawalDeps {
   readonly secretReader: LighterTradingSecretReader;
   readonly authSigner: LighterSignerAdapter;
-  readonly withdrawalSigner: LighterCoreWithdrawalSignerAdapter;
+  readonly withdrawalSigner: LighterWithdrawalSignerAdapter;
   readonly client: Pick<LighterClient, "sendTx">;
   readonly readPreflight: (
-    plan: LighterCoreWithdrawalReadyForSignerPlan,
-  ) => Promise<LighterCoreWithdrawalPreflightSnapshot>;
+    plan: LighterWithdrawalReadyForSignerPlan,
+  ) => Promise<LighterCoreWithdrawalPreflightSnapshot | LighterRhcWithdrawalPreflightSnapshot>;
   readonly nonceState: Pick<typeof nonceStateRepo, "recordExecutionObserved">;
   readonly reserveNonce: (
-    plan: LighterCoreWithdrawalReadyForSignerPlan,
+    plan: LighterWithdrawalReadyForSignerPlan,
   ) => Promise<LighterWithdrawalNonceReservation>;
   readonly intents: Pick<
     typeof withdrawalIntentsRepo,
@@ -88,7 +93,7 @@ export function getConfiguredLighterCoreWithdrawalExecutionDeps(): ExecuteApprov
 export function defaultLighterCoreWithdrawalExecutionDeps(input: {
   readonly secretReader: LighterTradingSecretReader;
   readonly authSigner: LighterSignerAdapter;
-  readonly withdrawalSigner: LighterCoreWithdrawalSignerAdapter;
+  readonly withdrawalSigner: LighterWithdrawalSignerAdapter;
   readonly client: Pick<LighterClient, "sendTx">;
   readonly readPreflight: ExecuteApprovedLighterCoreWithdrawalDeps["readPreflight"];
 }): ExecuteApprovedLighterCoreWithdrawalDeps {
@@ -105,7 +110,15 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
   readonly plan: LighterCoreWithdrawalReadyForSignerPlan;
   readonly deps: ExecuteApprovedLighterCoreWithdrawalDeps;
 }): Promise<ExecuteApprovedLighterCoreWithdrawalResult> {
+  return executeApprovedLighterWithdrawal(input);
+}
+
+export async function executeApprovedLighterWithdrawal(input: {
+  readonly plan: LighterWithdrawalReadyForSignerPlan;
+  readonly deps: ExecuteApprovedLighterCoreWithdrawalDeps;
+}): Promise<ExecuteApprovedLighterCoreWithdrawalResult> {
   const { plan, deps } = input;
+  const profile = getLighterSecureWithdrawalProfile(plan.environment);
   const fresh = await deps.readPreflight(plan);
   assertFreshPreflightMatchesApprovedPlan(plan, fresh);
   const revalidated = await deps.intents.markPreSubmitRevalidated({
@@ -113,12 +126,12 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
     sessionId: plan.sessionId,
     evidence: fresh as unknown as Record<string, unknown>,
   });
-  if (revalidated === null) throw blocked("The approved Core withdrawal could not persist fresh pre-submit evidence.");
+  if (revalidated === null) throw blocked(`The approved ${profile.sourceName} withdrawal could not persist fresh pre-submit evidence.`);
 
   const secret = await loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader);
   const auth = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
-      environment: "core",
+      environment: plan.environment,
       accountIndex: plan.accountIndex,
       apiKeyIndex: plan.apiKeyIndex,
       secret,
@@ -127,10 +140,10 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
     deps.authSigner,
   );
   if (canonicalPublicKey(auth.publicKey) !== canonicalPublicKey(fresh.registeredPublicKey)) {
-    throw blocked("The locally encrypted Core credential does not match the live registered public key.");
+    throw blocked(`The locally encrypted ${profile.sourceName} credential does not match the live registered public key.`);
   }
   const observed = await deps.nonceState.recordExecutionObserved({
-    environment: "core",
+    environment: plan.environment,
     accountIndex: plan.accountIndex,
     apiKeyIndex: plan.apiKeyIndex,
     nonce: Number(fresh.nextNonce),
@@ -138,15 +151,16 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
     transactionTime: Number(fresh.keyTransactionTime),
   });
   if (observed === null) {
-    throw blocked("The live Core nonce cannot advance past an unresolved local transaction reservation.");
+    throw blocked(`The live ${profile.sourceName} nonce cannot advance past an unresolved local transaction reservation.`);
   }
 
   const reservation = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
   try {
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_LEAD_MS;
-    const signed = await signLighterCoreWithdrawalWithAdapter(
-      buildLighterCoreWithdrawalSigningInput({
+    const signed = await signLighterWithdrawalWithAdapter(
+      buildLighterWithdrawalSigningInput({
+        environment: plan.environment,
         accountIndex: plan.accountIndex,
         apiKeyIndex: plan.apiKeyIndex,
         nonce: reservation.nonceValue,
@@ -178,7 +192,7 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
-      response = await deps.client.sendTx("core", { txType: 13, txInfo: signed.txInfo });
+      response = await deps.client.sendTx(plan.environment, { txType: 13, txInfo: signed.txInfo });
     } catch {
       return await ambiguous(deps, plan, "sendtx_outcome_unknown", signed.txHash);
     }
@@ -208,7 +222,7 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
       volumeQuotaRemaining: response.volume_quota_remaining === undefined
         ? null
         : String(response.volume_quota_remaining),
-      message: "The exact Core USDC secure withdrawal was accepted by Lighter and is awaiting L2 and Ethereum settlement proof.",
+      message: `The exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal was accepted by Lighter and is awaiting L2 and ${profile.settlementNetworkName} settlement proof.`,
     };
   } catch (error) {
     await ambiguous(deps, plan, "failure_after_nonce_reservation", signerTxHash);
@@ -217,21 +231,23 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
 }
 
 export function assertFreshPreflightMatchesApprovedPlan(
-  plan: LighterCoreWithdrawalReadyForSignerPlan,
-  fresh: LighterCoreWithdrawalPreflightSnapshot,
+  plan: LighterWithdrawalReadyForSignerPlan,
+  fresh: LighterCoreWithdrawalPreflightSnapshot | LighterRhcWithdrawalPreflightSnapshot,
 ): void {
+  const profile = getLighterSecureWithdrawalProfile(plan.environment);
   if (
-    fresh.environment !== "core"
+    fresh.environment !== plan.environment
     || fresh.operationClass !== "secure_l2_withdrawal"
-    || fresh.signingChainId !== 304
-    || fresh.settlementChainId !== 1
+    || fresh.signingChainId !== profile.signingChainId
+    || fresh.settlementChainId !== profile.settlementChainId
     || fresh.accountIndex !== plan.accountIndex
     || fresh.apiKeyIndex !== plan.apiKeyIndex
     || fresh.walletAddress.toLowerCase() !== plan.walletAddress.toLowerCase()
     || fresh.destinationAddress.toLowerCase() !== plan.destinationAddress.toLowerCase()
-    || fresh.assetIndex !== 3
-    || fresh.assetDecimals !== 6
-    || fresh.routeType !== 0
+    || fresh.assetIndex !== profile.assetIndex
+    || fresh.assetSymbol !== profile.assetSymbol
+    || fresh.assetDecimals !== profile.assetDecimals
+    || fresh.routeType !== profile.routeType
     || fresh.amountUnits !== plan.amountUnits
     || fresh.settlementTokenAddress.toLowerCase() !== plan.settlementTokenAddress.toLowerCase()
     || fresh.gatewayAddress.toLowerCase() !== plan.gatewayAddress.toLowerCase()
@@ -241,13 +257,13 @@ export function assertFreshPreflightMatchesApprovedPlan(
     || fresh.pendingBalanceUnits !== "0"
     || fresh.nonterminalWithdrawalCount !== 0
   ) {
-    throw blocked("Fresh Core account or Ethereum evidence no longer matches the approved withdrawal.");
+    throw blocked(`Fresh ${profile.sourceName} account or ${profile.settlementNetworkName} evidence no longer matches the approved withdrawal.`);
   }
 }
 
 async function ambiguous(
   deps: ExecuteApprovedLighterCoreWithdrawalDeps,
-  plan: LighterCoreWithdrawalReadyForSignerPlan,
+  plan: LighterWithdrawalReadyForSignerPlan,
   reason: string,
   signerTxHash: string | null,
 ): Promise<Extract<ExecuteApprovedLighterCoreWithdrawalResult, { status: "ambiguous" }>> {
@@ -258,13 +274,13 @@ async function ambiguous(
     executionState: "ambiguous",
     signerTxHash,
     reason,
-    message: "The Core withdrawal outcome is uncertain. Vex will reconcile the exact transaction hash and will not retry blindly.",
+    message: `The ${plan.environment.toUpperCase()} withdrawal outcome is uncertain. Vex will reconcile the exact transaction hash and will not retry blindly.`,
   };
 }
 
 function canonicalPublicKey(value: string): string {
   const canonical = value.trim().toLowerCase().replace(/^0x/, "");
-  if (!/^[0-9a-f]{80}$/.test(canonical)) throw blocked("Core returned an invalid registered public key.");
+  if (!/^[0-9a-f]{80}$/.test(canonical)) throw blocked("Lighter returned an invalid registered public key.");
   return canonical;
 }
 
@@ -272,7 +288,7 @@ function blocked(message: string): VexError {
   return new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     message,
-    "No retry is permitted without reconciling the durable Core withdrawal intent.",
+    "No retry is permitted without reconciling the durable environment-scoped withdrawal intent.",
   );
 }
 

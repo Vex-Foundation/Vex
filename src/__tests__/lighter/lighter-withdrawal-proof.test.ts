@@ -18,7 +18,10 @@ import {
   proveLighterCoreWithdrawalSettlement,
 } from "@tools/lighter/withdrawal/settlement-proof.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
-import { reconcileLighterCoreWithdrawal } from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
+import {
+  reconcileLighterCoreWithdrawal,
+  reconcileLighterWithdrawal,
+} from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
 
 const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
@@ -121,6 +124,11 @@ function intent(
     intentId: "intent-1",
     sessionId: "session-1",
     environment: "core",
+    signingChainId: 304,
+    settlementChainId: 1,
+    settlementNetworkName: "Ethereum mainnet",
+    assetIndex: 3,
+    assetSymbol: "USDC",
     accountIndex: 737810,
     apiKeyIndex: 4,
     amountUnits: "2000000",
@@ -351,6 +359,57 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
     expect(d.recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
       state: "claimable",
       destinationConfirmations: 12,
+    }));
+  });
+});
+
+describe("RHC withdrawal exact settlement isolation", () => {
+  it("queries only RHC history and proves the reviewed USDG gateway transfer", async () => {
+    const rhcGateway = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
+    const usdg = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+    const gatewayTopics = encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
+      eventName: "WithdrawPending", args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n } });
+    const transferTopics = encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_ERC20_ABI,
+      eventName: "Transfer", args: { from: rhcGateway, to: OWNER, value: 2_000_000n } });
+    const rhcReceipt = {
+      ...receipt(),
+      to: rhcGateway,
+      logs: [
+        { ...receipt().logs[0]!, address: rhcGateway, topics: gatewayTopics },
+        { ...receipt().logs[1]!, address: usdg, topics: transferTopics },
+      ],
+    } as TransactionReceipt;
+    const current = {
+      ...intent(), environment: "rhc" as const, signingChainId: 466324 as const,
+      settlementChainId: 4663 as const, settlementNetworkName: "Robinhood Chain mainnet" as const,
+      assetSymbol: "USDG" as const, gatewayAddress: rhcGateway, settlementTokenAddress: usdg,
+    };
+    const getTx = vi.fn(async (environment: string) => {
+      expect(environment).toBe("rhc");
+      return l2Tx();
+    });
+    const getWithdrawHistory = vi.fn(async (environment: string) => {
+      expect(environment).toBe("rhc");
+      return { code: 200, withdraws: [history()], cursor: "" };
+    });
+    const recordReconciliation = vi.fn(async (write: { state: LighterWithdrawalIntentRow["executionState"] }) => ({
+      ...current, executionState: write.state,
+    }));
+    const reconciled = await reconcileLighterWithdrawal({
+      intent: current,
+      client: { getTx, getWithdrawHistory } as never,
+      privilegedAuth: { accountIndex: 737810 },
+      publicClient: {
+        readContract: vi.fn(async () => 0n), getBlockNumber: vi.fn(async () => 111n),
+        getLogs: vi.fn(async () => [{ args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n }, transactionHash: TX_HASH }]),
+        getTransactionReceipt: vi.fn(async () => rhcReceipt),
+        getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
+      } as never,
+      intents: { recordReconciliation } as never,
+    });
+    expect(reconciled.executionState).toBe("destination_confirmed");
+    expect(recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
+      state: "destination_confirmed", claimMode: "auto", destinationTxHash: TX_HASH,
     }));
   });
 });

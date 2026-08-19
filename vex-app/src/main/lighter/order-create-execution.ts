@@ -4,10 +4,11 @@ import {
   createLighterAccountAuthWithAdapter,
 } from "@tools/lighter/signer-adapter.js";
 import {
-  createLighterCoreWithdrawalSignerBinary,
   createLighterSignerBinaryAdapter,
+  createLighterWithdrawalSignerBinary,
 } from "@tools/lighter/signer-binary-adapter.js";
 import { readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
+import { readLighterRhcWithdrawalPreflight } from "@tools/lighter/withdrawal/rhc-preflight.js";
 import { loadLighterTradingSecretMaterial } from "@tools/lighter/trading-secret.js";
 import {
   configureLighterCreateOrderExecutionDeps,
@@ -73,7 +74,7 @@ export async function deriveLighterReadOnlyAccountAuth(
 export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
   const signer = createLighterSignerBinaryAdapter();
-  const withdrawalSigner = createLighterCoreWithdrawalSignerBinary();
+  const withdrawalSigner = createLighterWithdrawalSignerBinary();
   const lighterClient = getLighterClient();
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
@@ -97,27 +98,30 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
         if (privilegedAuth === null) {
           throw new VexError(
             ErrorCodes.LIGHTER_INVALID_REQUEST,
-            "Core withdrawal revalidation could not derive bounded read-only account authorization.",
+            `${plan.environment.toUpperCase()} withdrawal revalidation could not derive bounded read-only account authorization.`,
             "Unlock the local vault and retry from a fresh approval. No withdrawal was signed.",
           );
         }
-        const ethereum = getUniswapDeployment(1);
-        if (ethereum === undefined) {
+        const settlement = getUniswapDeployment(plan.settlementChainId);
+        if (settlement === undefined) {
           throw new VexError(
             ErrorCodes.LIGHTER_INVALID_REQUEST,
-            "Ethereum mainnet deployment is unavailable for Core withdrawal revalidation.",
+            `${plan.environment.toUpperCase()} settlement deployment is unavailable for withdrawal revalidation.`,
             "No withdrawal was signed.",
           );
         }
-        return readLighterCoreWithdrawalPreflight({
+        const preflightInput = {
           walletAddress: plan.walletAddress,
           accountIndex: plan.accountIndex,
           apiKeyIndex: plan.apiKeyIndex,
           amountUnits: BigInt(plan.amountUnits),
           client: lighterClient,
           privilegedAuth,
-          publicClient: getUniswapPublicClient(ethereum),
-        });
+          publicClient: getUniswapPublicClient(settlement),
+        };
+        return plan.environment === "core"
+          ? readLighterCoreWithdrawalPreflight(preflightInput)
+          : readLighterRhcWithdrawalPreflight(preflightInput);
       },
     }),
   );
