@@ -108,6 +108,27 @@ describe("shared launch input reading", () => {
   });
 });
 
+/**
+ * The image requirement introduced after the PPV incident (2026-08-19) lands on
+ * `pools.launch_execute` ONLY. These two tools must keep accepting a launch with
+ * no image, for different reasons: the preview is advisory and takes no image
+ * lock, and the form is where the USER picks the image, so demanding one before
+ * showing them the form would defeat the consent surface.
+ */
+describe("the image requirement does NOT reach the preview or the form", () => {
+  it("previews a launch with no imageId", async () => {
+    const res = await preview(VALID);
+    expect(res.success).toBe(true);
+    expect(res.output).not.toContain("requires a picture");
+  });
+
+  it("requests the form with no imageId", async () => {
+    const res = await requestForm(VALID);
+    expect(res.success).toBe(true);
+    expect(res.output).not.toContain("requires a picture");
+  });
+});
+
 describe("pools.launch_preview stays advisory and non-live", () => {
   it("writes a previewed pools_fun intent with NO authorization, hash or image lock", async () => {
     const res = await preview(VALID);

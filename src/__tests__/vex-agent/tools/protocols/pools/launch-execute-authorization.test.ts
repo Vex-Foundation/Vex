@@ -66,7 +66,18 @@ const PREBUY_WEI = 10_000_000_000_000_000n;
 const DEV_BUY_OUT = 112_657_539_798_287_513_447_808n;
 const BLOCK = 39_620_464n;
 
-const VALID_PARAMS = { name: "Vex Flamingo", symbol: "VEXFLAM", pairedAsset: "weth", prebuy: "0.01" };
+// A VALID agent launch now carries an image. It did not until 2026-08-19, and
+// that is exactly how PPV was launched blank: `imageId` was optional, the model
+// omitted it, and the pinned metadata came back with no image key. The locker id
+// is part of the valid shape here so no test in this suite can drift back to
+// describing an imageless launch as the normal one.
+const VALID_PARAMS = {
+  name: "Vex Flamingo",
+  symbol: "VEXFLAM",
+  pairedAsset: "weth",
+  prebuy: "0.01",
+  imageId: "img-1",
+};
 
 /** The tuple the provider would return. Every test tampers with exactly one thing. */
 function tuple(over: Partial<PoolsLaunchTuple> = {}): PoolsLaunchTuple {
@@ -186,6 +197,14 @@ beforeEach(() => {
   }));
   vi.spyOn(getPoolsFunClient(), "prepareLaunch").mockImplementation(async () => response);
 
+  // The locker leg of the happy path, now that every valid agent launch has an
+  // image: a real PNG resolves and the launchpad accepts the upload. Individual
+  // tests still re-register their own resolver to prove the refusals.
+  registerLaunchImageByteResolver(async () => ({ bytes: PNG_BYTES, digest: "0xdeadbeef" }));
+  vi.spyOn(getPoolsFunClient(), "uploadLaunchImage").mockResolvedValue({
+    url: "https://example.test/flamingo.png",
+  });
+
   // The metadata document the launch pins, read over a public gateway.
   vi.spyOn(http, "fetchWithTimeout").mockResolvedValue({
     ok: true,
@@ -303,6 +322,62 @@ describe("a verified launch is authorized over the exact bytes that were verifie
     await execute();
     const binding = (written[0]!.authorizationJson as { binding: Record<string, string> }).binding;
     expect(binding.feeRecipient).toBe(WALLET);
+  });
+});
+
+/**
+ * THE PPV INCIDENT (2026-08-19). The agent called `pools.launch_execute` with no
+ * `imageId`, the launch succeeded, and the token renders blank on pools.fun
+ * forever - an irreversible on-chain outcome. The param was optional and both the
+ * manifest and the system prompt only WARNED about it; prose did not stop it.
+ *
+ * The product rule is now Trench's: a launch through the AGENT requires an image,
+ * enforced in OUR handler rather than assumed from the provider's contract (the
+ * launchpad itself is happy to pin imageless metadata, which is what made this
+ * possible). The user's own manual form keeps the image optional, matching the
+ * pools.fun site where a human may choose to launch without one.
+ */
+describe("the agent path REQUIRES a locker image", () => {
+  it("refuses BY NAME when imageId is absent, before anything is authorized", async () => {
+    const { imageId: _omitted, ...noImage } = VALID_PARAMS;
+    const result = await execute(noImage);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("requires a picture");
+    // The remedy has to be actionable: the locker is SHARED between the two
+    // launchpads, so the tool that lists it is `trench.images`.
+    expect(result.output).toContain("trench.images");
+    // Nothing may exist after this refusal - no intent row, no authorization,
+    // no broadcast. A refusal that had already written one would be a leak.
+    expect(written).toHaveLength(0);
+    expect(broadcastCalls).toHaveLength(0);
+  });
+
+  it("refuses an imageId that is only whitespace, rather than treating it as given", async () => {
+    const result = await execute({ ...VALID_PARAMS, imageId: "   " });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("requires a picture");
+    expect(written).toHaveLength(0);
+  });
+
+  it("proceeds to authorization when a valid imageId is supplied", async () => {
+    const result = await execute();
+    expect(result.success).toBe(true);
+    expect(written).toHaveLength(1);
+    expect(
+      (written[0]!.authorizationJson as { binding: Record<string, string> }).binding.imageId,
+    ).toBe("img-1");
+  });
+
+  // An UNKNOWN id keeps its own refusal: "you named one that is not there" is a
+  // different fact from "you named none", and collapsing them would send the
+  // agent to the wrong remedy.
+  it("keeps the distinct not-found refusal for an id the locker does not hold", async () => {
+    registerLaunchImageByteResolver(async () => null);
+    const result = await execute({ ...VALID_PARAMS, imageId: "img_gone" });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("img_gone");
+    expect(result.output).not.toContain("requires a picture");
   });
 });
 

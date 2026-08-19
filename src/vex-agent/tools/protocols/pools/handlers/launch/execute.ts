@@ -95,7 +95,9 @@ export async function poolsLaunchExecuteHandler(
   }
 
   // 1. Boundary.
-  const validated = readPoolsLaunchInputs(params);
+  // `requireImage` is set HERE and nowhere else: this is the only leg that
+  // signs, and an imageless launch is irreversible (the PPV incident).
+  const validated = readPoolsLaunchInputs(params, { requireImage: true });
   if (!validated.ok) return fail(validated.reason);
   const inputs = validated.value;
 

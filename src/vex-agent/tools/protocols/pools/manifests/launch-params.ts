@@ -55,7 +55,7 @@ export const POOLS_LAUNCH_FIELD_PARAMS: readonly ProtocolParamDef[] = [
     key: "imageId",
     type: "string",
     description:
-      "Identifier of a picture the user already staged in the app's image locker. The agent can never create one, only name one a read tool listed. Without an image the token launches and renders blank on pools.fun forever.",
+      "Identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools.launch_execute REQUIRES it.",
   },
   {
     key: "prebuy",
@@ -64,3 +64,31 @@ export const POOLS_LAUNCH_FIELD_PARAMS: readonly ProtocolParamDef[] = [
       "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
   },
 ];
+
+/**
+ * The SAME vocabulary, with `imageId` promoted to required - the execute tool's
+ * params and nothing else's.
+ *
+ * Derived from the array above rather than hand-written, because two hand-kept
+ * param lists are how the executing tool starts describing a different launch
+ * from the one the preview priced. Only the image entry differs, and the reason
+ * it does is the PPV incident (2026-08-19): the agent launched a token with no
+ * image, the launchpad pinned metadata with no image key, and the token renders
+ * blank on pools.fun forever. An optional param plus a warning did not stop it.
+ *
+ * The preview keeps it optional (advisory, takes no image lock) and the form
+ * keeps it optional (the USER picks the image there, and the form is the consent
+ * surface). The desktop manual form is unchanged and still allows no image at
+ * all, matching the pools.fun site, where a human may launch without one.
+ */
+export const POOLS_LAUNCH_EXECUTE_PARAMS: readonly ProtocolParamDef[] =
+  POOLS_LAUNCH_FIELD_PARAMS.map((param) =>
+    param.key === "imageId"
+      ? {
+          ...param,
+          required: true,
+          description:
+            "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
+        }
+      : param,
+  );

@@ -83,7 +83,42 @@ function readText(
   return { ok: true, value };
 }
 
-export function readPoolsLaunchInputs(params: Record<string, unknown>): PoolsLaunchInputsResult {
+/**
+ * How the three launch tools differ at this boundary, and the ONLY way they do.
+ *
+ * `requireImage` is set by `pools.launch_execute` alone. The PPV incident
+ * (2026-08-19) is why it exists: the model omitted `imageId`, the launchpad
+ * happily pinned metadata with no image key, and the token renders blank on
+ * pools.fun forever. An optional param and a warning in the description did not
+ * prevent it, so the AGENT path now refuses instead of warning - the same product
+ * rule Trench enforces, in OUR handler rather than assumed from the provider.
+ *
+ * The preview stays imageless-friendly because it is advisory and takes no image
+ * lock, the form stays imageless-friendly because the USER picks the image there
+ * and the form is the consent surface, and the desktop manual form keeps the
+ * image optional to match the pools.fun site, where a human may launch without
+ * one. This flag is the whole difference; nothing else about the read changes.
+ */
+export interface PoolsLaunchInputsOptions {
+  readonly requireImage?: boolean;
+}
+
+/**
+ * The refusal an imageless agent launch gets. Exported so the tests pin the
+ * words the agent actually reads, and so the remedy stays one string: the locker
+ * is SHARED by both launchpads, so `trench.images` is the tool that lists it.
+ */
+export const MISSING_IMAGE_REASON =
+  "A pools.fun launch through the agent requires a picture from the image locker, and this call had no "
+  + "\"imageId\". Nothing was launched. List the staged images with trench.images (the locker is shared by both "
+  + "launchpads) and pass the id of the one the user wants, or ask the user to stage one on the image card if "
+  + "the locker is empty. You can never create or supply an image yourself, and a token launched without one "
+  + "renders blank on pools.fun forever, which cannot be undone.";
+
+export function readPoolsLaunchInputs(
+  params: Record<string, unknown>,
+  options: PoolsLaunchInputsOptions = {},
+): PoolsLaunchInputsResult {
   const name = readText(params, "name", MAX_NAME_LENGTH);
   if (!name.ok) return name;
   const symbol = readText(params, "symbol", MAX_SYMBOL_LENGTH);
@@ -101,7 +136,11 @@ export function readPoolsLaunchInputs(params: Record<string, unknown>): PoolsLau
   if (!isAbsent(rawImageId) && typeof rawImageId !== "string") {
     return { ok: false, reason: `"imageId" must be the string id of an image already in the locker.` };
   }
-  const imageId = isAbsent(rawImageId) ? null : (rawImageId as string).trim();
+  const trimmedImageId = isAbsent(rawImageId) ? "" : (rawImageId as string).trim();
+  if (options.requireImage && trimmedImageId === "") {
+    return { ok: false, reason: MISSING_IMAGE_REASON };
+  }
+  const imageId = trimmedImageId === "" ? null : trimmedImageId;
 
   // The prebuy is HUMAN decimal ETH and is converted exactly once, against a
   // stated 18 decimals. A raw amount that travels without its decimals is the

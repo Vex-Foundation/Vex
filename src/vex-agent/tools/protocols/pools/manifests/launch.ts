@@ -1,6 +1,6 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { POOLS_LAUNCH_DISCOVERY } from "../../embeddings/pools/launch.js";
-import { POOLS_LAUNCH_FIELD_PARAMS } from "./launch-params.js";
+import { POOLS_LAUNCH_EXECUTE_PARAMS, POOLS_LAUNCH_FIELD_PARAMS } from "./launch-params.js";
 
 // The pools.fun launch surface: an advisory preview, the request-a-form tool,
 // and the one leg that actually signs. `launch_execute` is `mutating` with
@@ -52,7 +52,10 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "- the gateway's identity and version, its live fee and bounds, the pair's on-chain allowlist, the opening "
       + "tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's "
       + "balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own "
-      + "session wallet on this path; there is no recipient parameter. It runs ONLY under explicit authority: in a "
+      + "session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the "
+      + "imageId of a picture the user staged in the image locker (list them with trench.images, which reads the "
+      + "locker both launchpads share), because a token launched without one renders blank on pools.fun forever and "
+      + "that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a "
       + "FULL-permission chat session the user's permission is the authority and this executes directly; in a "
       + "RESTRICTED session it refuses BY NAME and you must call pools.launch_request_form instead - that form is this "
       + "tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the "
@@ -64,7 +67,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "PROVEN from the receipt says so and stays pending - it never guesses an address, and you must not launch again.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
-    params: [...POOLS_LAUNCH_FIELD_PARAMS],
+    params: [...POOLS_LAUNCH_EXECUTE_PARAMS],
     exampleParams: { name: "My Token", symbol: "MYT", pairedAsset: "weth", imageId: "img_01", prebuy: "0.01" },
     discovery: POOLS_LAUNCH_DISCOVERY["pools.launch_execute"],
   },

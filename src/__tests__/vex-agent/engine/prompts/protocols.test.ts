@@ -93,6 +93,20 @@ describe("buildProtocolsPrompt", () => {
     // The address is NOT knowable at preview time (image -> metadata link ->
     // salt -> address) and the deployment fee moves; a model that promises
     // either from a preview is stating a money fact it cannot support.
+    // Post-PPV (2026-08-19): the doctrine must state the REQUIREMENT and the
+    // refusal, not merely warn about a blank token. A model reading only a
+    // consequence launched one anyway.
+    it("states that the agent path requires an image and that execute refuses without one", () => {
+      resetProtocolsPromptCache();
+      const prompt = buildProtocolsPrompt();
+      expect(prompt).toContain("AN IMAGE IS REQUIRED on the agent path");
+      expect(prompt).toContain("`pools.launch_execute` REFUSES without one and launches nothing");
+      expect(prompt).toContain("`trench.images`");
+      // The blank-token outcome survives only as the user's own manual choice,
+      // never as something the agent may elect.
+      expect(prompt).toContain("Only the user's own launch form may choose to launch without one");
+    });
+
     it("marks the launch preview advisory: no address, dynamic fee", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
