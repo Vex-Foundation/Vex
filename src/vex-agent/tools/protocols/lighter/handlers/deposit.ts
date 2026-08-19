@@ -372,7 +372,7 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
   }
   switch (intent.executionState) {
     case "credited":
-      return "The deposit is credited; no retry is needed. Continue managed onboarding by preparing secure trading access if the account is not already ready.";
+      return "The deposit is credited; no retry is needed. Immediately run lighter.account.onboarding.status for this wallet and environment. If its tradingAccessRoute requests key-registration preparation, continue in the same turn so the separate secure-trading approval card is shown.";
     case "failed":
       return "The deposit is terminally failed. Verify the reason before preparing a new deposit.";
     case "approval_pending":

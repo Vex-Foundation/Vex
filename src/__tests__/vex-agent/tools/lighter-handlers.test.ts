@@ -811,6 +811,56 @@ describe("Lighter agent read handlers", () => {
     expect(data.userGuidance).toContain("they are ready to trade");
   });
 
+  it("routes a funded Robinhood Chain account directly to local credential approval preparation", async () => {
+    const readManagedReadiness = vi.fn(async () => ({
+      ready: false,
+      reason: "active_managed_credential_missing" as const,
+      activeManagedCredential: false,
+      durableActivation: false,
+      exactPublicKeyMatch: false,
+      clientCheckPassed: false,
+      nonceSynchronized: false,
+      nonceReservable: false,
+    }));
+    configureLighterManagedTradingReadinessResolver({ read: readManagedReadiness });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "948401",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: false,
+      requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: [{ kind: "register_trading_key", reason: "secure setup" }],
+        ready: false,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(readManagedReadiness).toHaveBeenCalledWith("rhc", 42);
+    expect(data.managedTradingAccessActive).toBe(false);
+    expect(data.tradingAccessRoute).toEqual({
+      kind: "prepare_key_registration_approval",
+      toolId: "lighter.key.register.prepare",
+      params: { environment: "rhc" },
+    });
+    expect(data.userGuidance).toContain("Immediately call lighter.key.register.prepare");
+    expect(data.userGuidance).toContain('environment "rhc"');
+    expect(data.userGuidance).toContain("generates and encrypts the credential locally");
+    expect(data.userGuidance).toContain("Never call lighter.key.register directly");
+  });
+
   it("routes an unresolved managed nonce to setup recovery instead of reporting ready", async () => {
     configureLighterManagedTradingReadinessResolver({
       read: vi.fn(async () => ({

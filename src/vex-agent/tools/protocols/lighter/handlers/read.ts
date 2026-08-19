@@ -609,11 +609,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             combinedBalanceMeetsMinimum: combinedAvailableUnits >= marketMinimumUnits,
           } as const;
       const belowTradeMinimum = tradeMinimumAssessment?.decision === "below_lighter_trade_minimum";
-      const managedTradingReadiness = status.accountIndex === null || environment.value === "rhc"
+      const managedTradingReadiness = status.accountIndex === null
         ? null
         : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
-      const managedTradingAccessActive = environment.value === "core"
-        && status.tradingKeyRegistered
+      const managedTradingAccessActive = status.tradingKeyRegistered
         && managedTradingReadiness?.ready === true;
       const readinessRecoveryLeg = managedTradingReadiness?.ready === false
         ? managedReadinessRecoveryLeg(managedTradingReadiness)
@@ -671,6 +670,25 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
                 toolId: null,
                 params: null,
               };
+      const tradingAccessRoute = fundingAssessment.decision === "ready"
+        && status.accountIndex !== null
+        && readinessRecoveryLeg?.kind === "register_trading_key"
+        ? {
+            kind: "prepare_key_registration_approval",
+            toolId: "lighter.key.register.prepare",
+            params: { environment: environment.value },
+          }
+        : readinessRecoveryLeg === null
+          ? {
+              kind: managedTradingAccessActive ? "trading_access_ready" : "account_not_ready",
+              toolId: null,
+              params: null,
+            }
+          : {
+              kind: readinessRecoveryLeg.kind,
+              toolId: null,
+              params: null,
+            };
       const userGuidance = belowTradeMinimum && tradeMinimumAssessment !== null
         ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined available ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
         : !depositAmountProvided && needsFunding
@@ -681,8 +699,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             ? `Do not prepare a deposit because the selected Vex wallet's directly depositable ${settlementAsset} on ${fundingDeployment.settlementNetworkName} cannot cover the required top-up. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; required deposit ${fundingAssessment.depositDisplay}; wallet ${settlementAsset} shortfall ${fundingAssessment.walletDepositShortfallDisplay}. Explain that other wallet assets are not counted as directly depositable collateral and would require a separate live-quoted, separately approved swap or bridge. ETH is reported only for network fees and never counted as ${settlementAsset}.`
             : fundingAssessment.decision === "below_lighter_deposit_minimum"
               ? `Do not prepare a deposit and do not round the top-up upward. The current Lighter collateral is not enough for the requested trade, but the exact required top-up ${fundingAssessment.collateralShortfallDisplay} is below Lighter's live minimum deposit ${fundingAssessment.minimumDepositDisplay}. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}; required top-up ${fundingAssessment.collateralShortfallDisplay}; Lighter minimum deposit ${fundingAssessment.minimumDepositDisplay}. Explain that Vex will not move extra funds beyond the requested top-up; the user must choose a trade or funding amount whose required deposit meets the live minimum.`
-            : environment.value === "rhc"
-              ? "RHC funding is sufficient. Phase 1 does not register a trading key or place a trade; key registration and the later trade each require their own approval in later phases."
+            : tradingAccessRoute.kind === "prepare_key_registration_approval"
+              ? `Funding and wallet-owned account creation are proven on ${fundingDeployment.settlementNetworkName}, but secure Vex trading access is not active yet. Immediately call lighter.key.register.prepare in this same turn with environment "${environment.value}" so Vex generates and encrypts the credential locally and the host shows a separate key-registration approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.key.register directly and never ask the user for a key, account index, API-key index, nonce, or fingerprint.`
             : plan.ready && managedTradingAccessActive
               ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
               : managedTradingReadiness?.reason === "nonce_not_reservable"
@@ -705,6 +723,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         fundingAssessment,
         tradeMinimumAssessment,
         fundingRoute,
+        tradingAccessRoute,
         depositAmountProvided,
         userGuidance,
       });

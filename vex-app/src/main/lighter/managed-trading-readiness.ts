@@ -41,7 +41,6 @@ export async function resolveManagedLighterTradingReadiness(
   accountIndex: number,
   deps: LighterManagedTradingReadinessDeps = defaultDeps(),
 ): Promise<LighterManagedTradingReadiness> {
-  if (environment !== "core") return notReady("verification_unavailable");
   const scope = deps.listManagedScopes(environment)
     .find((candidate) => candidate.accountIndex === accountIndex);
   if (scope === undefined) return notReady("active_managed_credential_missing");

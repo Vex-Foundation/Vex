@@ -120,6 +120,39 @@ describe("managed Lighter trading readiness", () => {
     expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);
   });
 
+  it("proves Robinhood Chain readiness through the exact RHC key and nonce scope", async () => {
+    const setup = deps({
+      listManagedScopes: vi.fn((_environment: "core" | "rhc") => [{
+        environment: "rhc" as const,
+        accountIndex: 42,
+        apiKeyIndex: 4,
+      }]),
+      findRegistrationIntent: vi.fn(async () => activeIntent({
+        environment: "rhc",
+        chainId: 4663,
+        vaultCredentialId: "lighter/rhc/account-42/api-key-4",
+      })),
+      findNonceState: vi.fn(async () => observedNonce({ environment: "rhc" })),
+    });
+
+    const result = await resolveManagedLighterTradingReadiness("rhc", 42, setup);
+
+    expect(result).toMatchObject({ ready: true, reason: "ready" });
+    expect(setup.listManagedScopes).toHaveBeenCalledWith("rhc");
+    expect(setup.findRegistrationIntent).toHaveBeenCalledWith("rhc", 42);
+    expect(setup.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 4,
+    });
+    expect(setup.client.getNextNonce).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 4,
+    });
+    expect(setup.keyChecker.check).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+    }));
+  });
+
   it("does not accept an imported or pending credential as managed readiness", async () => {
     const setup = deps({ listManagedScopes: () => [] });
 
