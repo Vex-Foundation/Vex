@@ -30,7 +30,7 @@ const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    'USDC amount to deposit in human decimals (USDC has 6 decimals), for example "11". Minimum 1 USDC; a smaller deposit is not credited.',
+    'Settlement amount to deposit in human decimals: USDC on Core or USDG on Robinhood Chain (both use 6 decimals), for example "11". Minimum 1 settlement token; a smaller deposit is not credited.',
 };
 
 const DEPOSIT_INTENT_ID_PARAM: ProtocolParamDef = {
@@ -79,7 +79,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare an exact approval-gated Lighter perps deposit from the selected Vex wallet: Ethereum USDC for Core or Robinhood Chain USDG for RHC. Use only after managed onboarding proves the direct settlement balance covers the exact shortfall. The host approval card is the consent surface. Preparation persists live balances, allowance, native ETH fee readiness, environment/chain/contracts, reviewed proxy identities, exact beneficiary, calldata, and zero transaction value. It owns no signer and moves no funds. RHC is preparation-only in Phase 1: approval resume cannot resolve a key, sign, or broadcast until Phase 2 gates pass.",
+      "Prepare an exact approval-gated Lighter perps deposit from the selected Vex wallet: Ethereum USDC for Core or Robinhood Chain USDG for RHC. Use only after managed onboarding proves the direct settlement balance covers the exact shortfall. The host approval card is the consent surface. Preparation persists live balances, allowance, native ETH fee readiness, environment/chain/contracts, reviewed proxy identities, exact beneficiary, calldata, and zero transaction value. It owns no signer and moves no funds. Returns the durable intent id, exact reviewed deposit details, approval status, expiry, and host approval-card guidance. Only the matching approved resume may resolve the local wallet key and execute it.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, DEPOSIT_AMOUNT_PARAM],
@@ -91,7 +91,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated Lighter deposit resume target for a prepared intent. Call only through the exact approval card. Core retains its existing privileged Ethereum execution and reconciliation path. RHC execution is deliberately closed in Phase 1 before key resolution or signing; it returns a preparation-only refusal until the Phase 2 privileged execution and live-canary gates pass.",
+      "Approval-gated Lighter deposit resume target for one exact prepared intent. Call only through the matching host approval card; direct or cross-session calls are refused. After a fresh exact preflight, the privileged local wallet path may approve the environment-specific gateway and deposit Ethereum USDC for Core or Robinhood Chain USDG for RHC, so real funds move on-chain and network fees are spent. Transaction hashes are durably recorded before broadcast, ambiguous sends are reconciliation-only, and any replacement is fee-only with identical calldata, destination, value, and nonce. Returns the durable execution state and exact settlement evidence; credit is final only after the matching on-chain receipt, Deposit event, Lighter type-1 status-3 transaction, and wallet-owned account balance are all verified.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [DEPOSIT_INTENT_ID_PARAM],

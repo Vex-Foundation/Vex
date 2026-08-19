@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   getUniswapDeployment: vi.fn((chainId: number) => ({ chainId })),
   getUniswapEvmClients: vi.fn(),
   readContract: vi.fn(),
+  getLocalChain: vi.fn(),
+  getConfiguredLocalChainRpcUrl: vi.fn(),
+  readDepositPreflight: vi.fn(),
+  assertPreflightWithinApproval: vi.fn(),
+  runtimeFeeSafetyLimit: vi.fn(),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -40,6 +45,18 @@ vi.mock("@tools/uniswap/evm-client.js", () => ({
 vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
   signStageBroadcast: vi.fn(),
 }));
+vi.mock("@tools/evm-chains/registry.js", () => ({
+  getLocalChain: mocks.getLocalChain,
+  getConfiguredLocalChainRpcUrl: mocks.getConfiguredLocalChainRpcUrl,
+}));
+vi.mock("@tools/lighter/wallet-funding/deposit-preflight.js", () => ({
+  LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE: true,
+  readLighterDepositPreflight: mocks.readDepositPreflight,
+}));
+vi.mock("@tools/lighter/wallet-funding/deposit-pre-sign.js", () => ({
+  assertLighterDepositPreflightWithinApproval: mocks.assertPreflightWithinApproval,
+  runtimeFeeSafetyLimit: mocks.runtimeFeeSafetyLimit,
+}));
 
 const { buildLighterDepositExecutionDeps } = await import(
   "@tools/lighter/wallet-funding/deposit-execution-deps.js"
@@ -52,6 +69,15 @@ describe("Lighter deposit execution lifecycle locking", () => {
     mocks.getUniswapEvmClients.mockReturnValue({
       publicClient: { readContract: mocks.readContract },
       walletClient: {},
+    });
+    mocks.getLocalChain.mockReturnValue({ id: 4663 });
+    mocks.getConfiguredLocalChainRpcUrl.mockReturnValue("https://managed.example/rhc");
+    mocks.readDepositPreflight.mockResolvedValue({ approvalRequired: false });
+    mocks.runtimeFeeSafetyLimit.mockReturnValue({
+      gasLimit: 200_000n,
+      maxFeePerGas: 20_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+      maxNetworkFeeWei: 4_000_000_000_000_000n,
     });
   });
 
@@ -166,5 +192,46 @@ describe("Lighter deposit execution lifecycle locking", () => {
       functionName: "allowance",
       args: [wallet, gateway],
     }));
+  });
+
+  it("revalidates RHC through the exact signer client and rejects RPC rotation", async () => {
+    const publicClient = { readContract: mocks.readContract };
+    mocks.getUniswapEvmClients.mockReturnValueOnce({ publicClient, walletClient: {} });
+    const deps = buildLighterDepositExecutionDeps({
+      environment: "rhc",
+      privateKey: `0x${"1".repeat(64)}`,
+      sessionId: "session-rhc",
+      assertExecutionLease: vi.fn().mockResolvedValue(undefined),
+    });
+    const intent = {
+      amountUnits: "11000000",
+      walletAddress: "0x1111111111111111111111111111111111111111",
+      routeType: 0,
+      executionState: "approved",
+    } as never;
+
+    await deps.assertFreshPreSignPreflight(intent, "deposit");
+    expect(mocks.readDepositPreflight).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      publicClient,
+    }));
+
+    mocks.getConfiguredLocalChainRpcUrl.mockReturnValueOnce("https://rotated.example/rhc");
+    await expect(deps.assertFreshPreSignPreflight(intent, "deposit")).rejects.toThrow(
+      "RPC changed after the signer client was created",
+    );
+    expect(mocks.readDepositPreflight).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create an RHC signer client when only the public fallback exists", () => {
+    mocks.getConfiguredLocalChainRpcUrl.mockReturnValueOnce(null);
+
+    expect(() => buildLighterDepositExecutionDeps({
+      environment: "rhc",
+      privateKey: `0x${"1".repeat(64)}`,
+      sessionId: "session-rhc",
+      assertExecutionLease: vi.fn(),
+    })).toThrow("requires the explicitly configured production RPC");
+    expect(mocks.getUniswapEvmClients).not.toHaveBeenCalled();
   });
 });

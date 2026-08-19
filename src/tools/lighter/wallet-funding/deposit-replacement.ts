@@ -68,7 +68,7 @@ export function proveApprovedLighterDepositReplacement(input: {
     || replacement.to === null
     || replacement.value !== 0n
   ) {
-    throw new Error(`Ethereum replacement is not an exact fee-only ${stage} repricing.`);
+    throw new Error(`Settlement-chain replacement is not an exact fee-only ${stage} repricing.`);
   }
 
   const amountUnits = BigInt(intent.amountUnits);
@@ -92,7 +92,7 @@ export function proveApprovedLighterDepositReplacement(input: {
     getAddress(replacement.to) !== getAddress(expected.to)
     || replacement.data.toLowerCase() !== expected.data.toLowerCase()
   ) {
-    throw new Error(`Ethereum replacement changed the approved ${stage} calldata.`);
+    throw new Error(`Settlement-chain replacement changed the approved ${stage} calldata.`);
   }
 
   const ceiling = persistedFeeSafetyLimit(intent, stage);
@@ -104,12 +104,12 @@ export function proveApprovedLighterDepositReplacement(input: {
     || replacement.maxPriorityFeePerGas > ceiling.maxPriorityFeePerGas
     || replacement.gas * replacement.maxFeePerGas > ceiling.maxNetworkFeeWei
   ) {
-    throw new Error(`Ethereum replacement exceeds the persisted ${stage} fee safety limit.`);
+    throw new Error(`Settlement-chain replacement exceeds the persisted ${stage} fee safety limit.`);
   }
 
   const observedAt = input.observedAt ?? new Date();
   if (!Number.isFinite(observedAt.getTime())) {
-    throw new Error("Ethereum replacement observation time is invalid.");
+    throw new Error("Settlement-chain replacement observation time is invalid.");
   }
   return {
     originalTxHash: originalHash,

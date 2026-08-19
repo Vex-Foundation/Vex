@@ -352,7 +352,7 @@ function canSupersedePristineDepositFromAnotherSession(input: {
 function depositUserGuidance(execution: LighterDepositExecutionResult): string {
   switch (execution.status) {
     case "l2_pending":
-      return "Ethereum confirmed the deposit, but Vex has not yet proven that Lighter credited this exact transaction. Tell the user the deposit is awaiting Lighter confirmation and must not be retried.";
+      return "The settlement chain confirmed the deposit, but Vex has not yet proven that Lighter credited this exact transaction. Tell the user the deposit is awaiting Lighter confirmation and must not be retried.";
     case "ambiguous":
       return `The ${execution.stage} transaction outcome could not be confirmed. Tell the user the state is uncertain and that it must be reconciled before any retry; do not say it succeeded or failed.`;
     case "failed":
@@ -553,7 +553,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       intents: refreshedIntents.map(projectDepositStatus),
       riskNotes: [
         "Phase 2 reconciliation is evidence-only: it never signs, broadcasts, retries, or replaces a deposit transaction.",
-        "Credited requires the exact staged L1 hash, matching Ethereum Deposit event, executed Lighter transaction, and ownership of the event-selected master account.",
+        "Credited requires the exact staged settlement hash, matching Deposit event, executed Lighter transaction, and ownership of the event-selected master account.",
         "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
       ],
       message:
@@ -937,7 +937,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         ? "after the active wallet operation is reconciled"
         : `after ${lease.retryAfter.toISOString()}`;
       return fail(
-        `Another Lighter operation owns this Ethereum wallet execution slot. Nothing was signed; retry ${retryNote}.`,
+        `Another Lighter operation owns this settlement-chain wallet execution slot. Nothing was signed; retry ${retryNote}.`,
       );
     }
 

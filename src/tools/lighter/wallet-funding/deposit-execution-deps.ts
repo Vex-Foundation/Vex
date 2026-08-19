@@ -26,6 +26,10 @@ import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
+  getConfiguredLocalChainRpcUrl,
+  getLocalChain,
+} from "@tools/evm-chains/registry.js";
+import {
   type LighterEnvironment,
 } from "../constants.js";
 import { getLighterFundingDeployment } from "./deployments.js";
@@ -88,6 +92,9 @@ export function buildLighterDepositExecutionDeps(
   if (!deployment || deployment.chainId !== funding.settlementChainId) {
     throw new Error(`${funding.settlementNetworkName} is not configured for Lighter deposits.`);
   }
+  const signerRpcUrl = input.environment === "rhc"
+    ? configuredRhcRpcUrl(funding.settlementChainId)
+    : null;
   const clients = getUniswapEvmClients(deployment, input.privateKey);
   const settlementToken = funding.settlementTokenProxy;
   const writeUnderSessionLock = <T>(
@@ -101,11 +108,20 @@ export function buildLighterDepositExecutionDeps(
       if (intent.amountUnits === null || !/^[1-9][0-9]*$/.test(intent.amountUnits)) {
         throw new Error("The approved Lighter deposit amount is missing or invalid.");
       }
+      if (
+        input.environment === "rhc"
+        && configuredRhcRpcUrl(funding.settlementChainId) !== signerRpcUrl
+      ) {
+        throw new Error(
+          "The configured Robinhood Chain RPC changed after the signer client was created. Nothing was signed or submitted.",
+        );
+      }
       const fresh = await readLighterDepositPreflight({
         environment: input.environment,
         walletAddress: intent.walletAddress,
         amountUnits: BigInt(intent.amountUnits),
         routeType: intent.routeType ?? 0,
+        publicClient: clients.publicClient,
       });
       if (intent.executionState === "approve_confirmed" && fresh.approvalRequired) {
         throw new Error(
@@ -205,6 +221,17 @@ export function buildLighterDepositExecutionDeps(
         onboardingIntentsRepo.markFailedWith(client, intentId, reason)),
     },
   };
+}
+
+function configuredRhcRpcUrl(chainId: number): string {
+  const localChain = getLocalChain(chainId);
+  const rpcUrl = localChain === undefined ? null : getConfiguredLocalChainRpcUrl(localChain);
+  if (rpcUrl === null) {
+    throw new Error(
+      "Robinhood Chain deposit execution requires the explicitly configured production RPC. Nothing was signed or submitted.",
+    );
+  }
+  return rpcUrl;
 }
 
 async function runStaged(

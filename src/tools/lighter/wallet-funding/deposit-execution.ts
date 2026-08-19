@@ -247,7 +247,7 @@ export async function executeApprovedLighterDeposit(input: {
             intent.intentId,
             "approve",
             approve.txHash,
-            "Ethereum reported an approval replacement without staged sender and nonce evidence.",
+            "The settlement chain reported an approval replacement without staged sender and nonce evidence.",
           );
         }
         let accepted: LighterReplacementTransaction;
@@ -385,7 +385,7 @@ export async function executeApprovedLighterDeposit(input: {
           intent.intentId,
           "deposit",
           deposit.txHash,
-          "Ethereum reported a deposit replacement without staged sender and nonce evidence.",
+          "The settlement chain reported a deposit replacement without staged sender and nonce evidence.",
         );
       }
       let accepted: LighterReplacementTransaction;
@@ -441,7 +441,7 @@ export async function executeApprovedLighterDeposit(input: {
         intent.intentId,
         "deposit",
         deposit.txHash,
-        "Deposit runner reported confirmation without an Ethereum receipt.",
+        "Deposit runner reported confirmation without a settlement-chain receipt.",
       );
     }
     depositEvidence = proveLighterDepositL1(deposit.receipt, {
@@ -493,7 +493,7 @@ export async function executeApprovedLighterDeposit(input: {
     approveTxHash,
     depositTxHash,
     reason:
-      "Ethereum confirmed the deposit. Exact Lighter-side evidence for this L1 transaction is still required before Vex can mark it credited.",
+      "The settlement chain confirmed the deposit. Exact Lighter-side evidence for this transaction is still required before Vex can mark it credited.",
   };
 }
 

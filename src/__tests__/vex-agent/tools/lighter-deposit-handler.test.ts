@@ -569,7 +569,7 @@ describe("lighter.deposit execution lease", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("owns this Ethereum wallet execution slot");
+    expect(result.output).toContain("owns this settlement-chain wallet execution slot");
     expect(result.output).toContain("Nothing was signed");
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
     expect(mocks.buildExecutionDeps).not.toHaveBeenCalled();
@@ -607,7 +607,7 @@ describe("lighter.deposit execution lease", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("owns this Ethereum wallet execution slot");
+    expect(result.output).toContain("owns this settlement-chain wallet execution slot");
     expect(mocks.acquireExecutionLease).toHaveBeenCalledTimes(1);
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });

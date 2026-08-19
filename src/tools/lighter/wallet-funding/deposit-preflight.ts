@@ -187,6 +187,8 @@ export async function readLighterDepositPreflight(input: {
   readonly walletAddress: string;
   readonly amountUnits: bigint;
   readonly routeType?: number;
+  /** Signer boundary may supply its already-bound client to eliminate RPC rotation. */
+  readonly publicClient?: ReturnType<typeof getUniswapPublicClient>;
 }): Promise<LighterDepositPreflightSnapshot> {
   const environment = input.environment ?? "core";
   const funding = getLighterFundingDeployment(environment);
@@ -206,7 +208,7 @@ export async function readLighterDepositPreflight(input: {
     }
   }
 
-  const publicClient = getUniswapPublicClient(chainDeployment);
+  const publicClient = input.publicClient ?? getUniswapPublicClient(chainDeployment);
   const lighter = getLighterClient();
   const walletAddress = getAddress(input.walletAddress);
   const gatewayAddress = funding.gatewayProxy;

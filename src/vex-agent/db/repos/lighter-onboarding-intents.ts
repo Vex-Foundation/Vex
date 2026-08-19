@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { query, queryOne } from "../client.js";
+import { jsonb } from "../params.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import type {
   LighterDepositCreditEvidence,
@@ -236,7 +237,7 @@ export async function createOrFindLiveDepositApprovalPendingWith(
     input.preflight.totalMaxFeeWei,
     input.preflight.nativeReserveWei,
     input.preflight.requiredNativeBalanceWei,
-    JSON.stringify(toPublicSnapshot(input.preflight)),
+    jsonb(toPublicSnapshot(input.preflight)),
     input.expiresAt,
   ]);
   const created = inserted.rows[0];
@@ -584,7 +585,7 @@ export async function renewPristineApprovedDepositIntentWith(
       snapshot.totalMaxFeeWei,
       snapshot.nativeReserveWei,
       snapshot.requiredNativeBalanceWei,
-      JSON.stringify(toPublicSnapshot(snapshot)),
+      jsonb(toPublicSnapshot(snapshot)),
       input.expiresAt,
       snapshot.chainId,
       snapshot.gatewayAddress,
@@ -706,7 +707,7 @@ export async function renewConfirmedApprovalDepositIntentWith(
       snapshot.totalMaxFeeWei,
       snapshot.nativeReserveWei,
       snapshot.requiredNativeBalanceWei,
-      JSON.stringify(toPublicSnapshot(snapshot)),
+      jsonb(toPublicSnapshot(snapshot)),
       input.expiresAt,
       snapshot.chainId,
       snapshot.gatewayAddress,
@@ -1439,17 +1440,101 @@ function parsePublicSnapshot(value: unknown): LighterDepositPublicSnapshot | nul
     throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
   }
   const snapshot = value as Record<string, unknown>;
-  if (
-    typeof snapshot.observedAt !== "string"
-    || !Number.isFinite(Date.parse(snapshot.observedAt))
-    || (snapshot.environment !== "core" && snapshot.environment !== "rhc")
-    || typeof snapshot.depositCalldata !== "string"
-    || !/^0x[0-9a-f]+$/i.test(snapshot.depositCalldata)
-    || snapshot.depositValueWei !== "0"
-  ) {
+  const observedAt = requiredSnapshotString(snapshot.observedAt);
+  if (!Number.isFinite(Date.parse(observedAt)) || snapshot.depositValueWei !== "0") {
     throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
   }
-  return snapshot as unknown as LighterDepositPublicSnapshot;
+  return {
+    observedAt,
+    environment: requiredSnapshotEnvironment(snapshot.environment),
+    lighterRestBaseUrl: requiredSnapshotString(snapshot.lighterRestBaseUrl),
+    settlementNetworkName: requiredSnapshotString(snapshot.settlementNetworkName),
+    walletAddress: requiredSnapshotString(snapshot.walletAddress),
+    beneficiaryAddress: requiredSnapshotString(snapshot.beneficiaryAddress),
+    chainId: requiredSnapshotInteger(snapshot.chainId),
+    settlementBlockNumber: requiredSnapshotString(snapshot.settlementBlockNumber),
+    ethereumBlockNumber: requiredSnapshotString(snapshot.ethereumBlockNumber),
+    lighterBlockNumber: requiredSnapshotString(snapshot.lighterBlockNumber),
+    gatewayAddress: requiredSnapshotString(snapshot.gatewayAddress),
+    gatewayImplementationAddress: nullableSnapshotString(snapshot.gatewayImplementationAddress),
+    gatewayCodeHash: requiredSnapshotString(snapshot.gatewayCodeHash),
+    settlementTokenAddress: requiredSnapshotString(snapshot.settlementTokenAddress),
+    settlementTokenImplementationAddress: nullableSnapshotString(
+      snapshot.settlementTokenImplementationAddress,
+    ),
+    settlementTokenCodeHash: requiredSnapshotString(snapshot.settlementTokenCodeHash),
+    settlementTokenSymbol: requiredSnapshotSettlementSymbol(snapshot.settlementTokenSymbol),
+    settlementTokenDecimals: requiredSnapshotInteger(snapshot.settlementTokenDecimals),
+    assetIndex: requiredSnapshotInteger(snapshot.assetIndex),
+    routeType: requiredSnapshotInteger(snapshot.routeType),
+    amountUnits: requiredSnapshotString(snapshot.amountUnits),
+    minimumTransferUnits: requiredSnapshotString(snapshot.minimumTransferUnits),
+    depositCalldata: requiredSnapshotHex(snapshot.depositCalldata),
+    depositValueWei: "0",
+    walletBalanceUnits: requiredSnapshotString(snapshot.walletBalanceUnits),
+    walletAllowanceUnits: requiredSnapshotString(snapshot.walletAllowanceUnits),
+    walletNativeBalanceWei: requiredSnapshotString(snapshot.walletNativeBalanceWei),
+    approvalRequired: requiredSnapshotBoolean(snapshot.approvalRequired),
+    approveGasLimit: requiredSnapshotString(snapshot.approveGasLimit),
+    depositGasLimit: requiredSnapshotString(snapshot.depositGasLimit),
+    maxFeePerGasWei: requiredSnapshotString(snapshot.maxFeePerGasWei),
+    maxPriorityFeePerGasWei: requiredSnapshotString(snapshot.maxPriorityFeePerGasWei),
+    approveMaxFeeWei: requiredSnapshotString(snapshot.approveMaxFeeWei),
+    depositMaxFeeWei: requiredSnapshotString(snapshot.depositMaxFeeWei),
+    totalMaxFeeWei: requiredSnapshotString(snapshot.totalMaxFeeWei),
+    nativeReserveWei: requiredSnapshotString(snapshot.nativeReserveWei),
+    requiredNativeBalanceWei: requiredSnapshotString(snapshot.requiredNativeBalanceWei),
+  };
+}
+
+function requiredSnapshotString(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value;
+}
+
+function nullableSnapshotString(value: unknown): string | null {
+  return value === null ? null : requiredSnapshotString(value);
+}
+
+function requiredSnapshotInteger(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value;
+}
+
+function requiredSnapshotBoolean(value: unknown): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value;
+}
+
+function requiredSnapshotEnvironment(value: unknown): LighterEnvironment {
+  if (value !== "core" && value !== "rhc") {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value;
+}
+
+function requiredSnapshotSettlementSymbol(
+  value: unknown,
+): LighterDepositPublicSnapshot["settlementTokenSymbol"] {
+  if (value !== "USDC" && value !== "USDG") {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value;
+}
+
+function requiredSnapshotHex(
+  value: unknown,
+): LighterDepositPublicSnapshot["depositCalldata"] {
+  if (typeof value !== "string" || !/^0x[0-9a-f]+$/i.test(value)) {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return value as LighterDepositPublicSnapshot["depositCalldata"];
 }
 
 function nullableString(value: unknown): string | null {
