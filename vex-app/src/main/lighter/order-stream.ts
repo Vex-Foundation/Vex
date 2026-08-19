@@ -338,7 +338,11 @@ export class LighterOrderStreamSupervisor {
   private subscribe(watcher: AccountWatcher, socket: LighterOrderStreamSocket): void {
     const token = watcher.pendingAuthToken;
     watcher.pendingAuthToken = null;
-    const subscriptions = token === null ? [] : [
+    if (token === null) {
+      this.restartWatcher(watcher, "missing_auth_token");
+      return;
+    }
+    const subscriptions = [
       {
         type: "subscribe",
         channel: `account_all_orders/${watcher.target.accountIndex}`,
@@ -354,8 +358,7 @@ export class LighterOrderStreamSupervisor {
       },
     ];
     if (
-      subscriptions.length !== 3
-      || subscriptions.some((subscription) =>
+      subscriptions.some((subscription) =>
         !this.sendIfOpen(socket, JSON.stringify(subscription)))
     ) {
       this.restartWatcher(watcher, "subscribe_failed");

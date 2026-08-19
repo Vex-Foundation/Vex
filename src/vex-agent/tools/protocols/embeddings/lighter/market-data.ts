@@ -185,9 +185,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.cancel": {
     embeddingText: embeddingText(
-      `Approval-resume target for one exact prepared Lighter order cancellation. ` +
-      `Use only when the trusted approval card from lighter.order.cancel.prepare resumes. The privileged runtime re-reads the exact active provider order, credential, and nonce; persists structural identity before one TxType 15 submission; never retries ambiguity; and reports canceled only from exact inactive-order evidence. ` +
-      `Direct model calls without the matching approval are refused.`,
+      `Execute one exact prepared Lighter order cancellation after approval. ` +
+      `Use when: the trusted approval card from lighter.order.cancel.prepare resumes. The privileged runtime re-reads the exact active provider order, credential, and nonce; persists structural identity before one TxType 15 submission; never retries ambiguity; and reports canceled only from exact inactive-order evidence. ` +
+      `Direct model calls without the matching approval are refused. Example queries: execute the approved Lighter cancellation, resume my approved order cancel.`,
     ),
     aliases: ["execute lighter cancellation", "approved order cancel"],
     exampleIntents: ["execute approved Lighter order cancellation"],
@@ -199,7 +199,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Prepare an approval-gated modification for one exact active Lighter limit order. ` +
       `Use when: the user identifies an open provider order id and explicitly requests a replacement total size and/or price. Vex reads live market precision and authenticated order state, refuses a total below already-filled size, and binds the original and requested values into a durable approval card. ` +
-      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. Example queries: modify my Lighter order to 0.01 at 2500, change this Lighter limit price.`,
     ),
     aliases: ["prepare lighter order modification", "change lighter limit price", "resize lighter order"],
     exampleIntents: ["modify my Lighter order to 0.01 at 2500", "change this Lighter limit order price"],
@@ -209,9 +209,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.modify": {
     embeddingText: embeddingText(
-      `Approval-resume target for one exact prepared Lighter order modification. ` +
-      `Use only when the trusted approval card from lighter.order.modify.prepare resumes. The privileged runtime revalidates exact order state, market precision, credential, and nonce; persists structural identity before one TxType 17 submission; never retries ambiguity; and reports completion only from exact updated provider evidence. ` +
-      `Direct model calls without the matching approval are refused.`,
+      `Execute one exact prepared Lighter order modification after approval. ` +
+      `Use when: the trusted approval card from lighter.order.modify.prepare resumes. The privileged runtime revalidates exact order state, market precision, credential, and nonce; persists structural identity before one TxType 17 submission; never retries ambiguity; and reports completion only from exact updated provider evidence. ` +
+      `Direct model calls without the matching approval are refused. Example queries: execute the approved Lighter modification, resume my approved order change.`,
     ),
     aliases: ["execute lighter modification", "approved order modify"],
     exampleIntents: ["execute approved Lighter order modification"],
@@ -223,7 +223,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Prepare one explicit approval to immediately cancel every active Lighter order in one saved account across all markets. ` +
       `Use when: the user clearly asks to cancel all open Lighter orders. Vex reads and binds the complete exact active-order set and refuses execution if any order changes before submission. ` +
-      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. Example queries: cancel all my Lighter orders, clear every open order on RHC Lighter.`,
     ),
     aliases: ["prepare lighter cancel all", "cancel every lighter order", "clear lighter open orders"],
     exampleIntents: ["cancel all my Lighter orders", "prepare to clear every open order on RHC Lighter"],
@@ -233,9 +233,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.cancelAll": {
     embeddingText: embeddingText(
-      `Approval-resume target for one exact immediate account-wide Lighter cancellation. ` +
-      `Use only when the trusted approval card from lighter.order.cancelAll.prepare resumes. The privileged runtime requires the exact active set to remain unchanged, signs immediate TxType 16 once, never retries ambiguity, and reports completion only when no active orders remain and every approved order has exact terminal evidence. ` +
-      `Direct model calls without the matching approval are refused.`,
+      `Execute one exact immediate account-wide Lighter cancellation after approval. ` +
+      `Use when: the trusted approval card from lighter.order.cancelAll.prepare resumes. The privileged runtime requires the exact active set to remain unchanged, signs immediate TxType 16 once, never retries ambiguity, and reports completion only when no active orders remain and every approved order has exact terminal evidence. ` +
+      `Direct model calls without the matching approval are refused. Example queries: execute approved Lighter cancel all, resume clearing all approved orders.`,
     ),
     aliases: ["execute lighter cancel all", "approved cancel every order"],
     exampleIntents: ["execute approved Lighter cancel all"],
@@ -247,7 +247,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Prepare an approval-gated close of the entire current position in one Lighter perpetual market. ` +
       `Use when: the user explicitly asks to close a specific long or short and supplies a maximum slippage ceiling. Vex reads the exact live position, market precision, and visible book depth, then binds a full-size reduce-only market IOC order at a worst acceptable price. ` +
-      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. Example queries: close my Lighter ETH position with 100 bps max slippage, prepare my full RHC position close.`,
     ),
     aliases: ["prepare lighter position close", "close lighter long", "close lighter short"],
     exampleIntents: ["close my Lighter ETH position with 100 bps max slippage"],
@@ -257,9 +257,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.position.close": {
     embeddingText: embeddingText(
-      `Approval-resume target for one exact prepared Lighter position close. ` +
-      `Use only when the trusted approval card from lighter.position.close.prepare resumes. The privileged runtime revalidates position and depth, submits one full-size reduce-only market IOC order, never retries ambiguity, and reports exact fill, average fill price, and resulting position. ` +
-      `Direct model calls without the matching approval are refused.`,
+      `Execute one exact prepared Lighter position close after approval. ` +
+      `Use when: the trusted approval card from lighter.position.close.prepare resumes. The privileged runtime revalidates position and depth, submits one full-size reduce-only market IOC order, never retries ambiguity, and reports exact fill, average fill price, and resulting position. ` +
+      `Direct model calls without the matching approval are refused. Example queries: execute the approved Lighter position close, resume my approved full close.`,
     ),
     aliases: ["execute lighter close", "approved position close"],
     exampleIntents: ["execute approved Lighter position close"],
