@@ -15,7 +15,7 @@ export const LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS = [
   "preflightBlockNumber", "preflightObservedAt", "summary", "scopeNote",
 ] as const;
 
-export async function assertLighterCoreClaimApprovalBinding(input: {
+export async function assertLighterWithdrawalClaimApprovalBinding(input: {
   readonly approvalId: string;
   readonly sessionId: string;
   readonly attempt: LighterWithdrawalClaimAttemptRow;
@@ -30,23 +30,23 @@ export async function assertLighterCoreClaimApprovalBinding(input: {
   ) throw refusal();
 }
 
-export function buildLighterCoreClaimCriticalArgs(a: LighterWithdrawalClaimAttemptRow): Record<string, string | number> {
+export function buildLighterWithdrawalClaimCriticalArgs(a: LighterWithdrawalClaimAttemptRow): Record<string, string | number> {
   return {
     toolId: "lighter.withdraw.claim", claimId: a.claimId, withdrawalIntentId: a.withdrawalIntentId,
     previewId: a.previewId, matchHash: a.matchHash, operationClass: a.operationClass,
-    settlementChainId: 1, settlementNetworkName: a.settlementNetworkName,
+    settlementChainId: a.settlementChainId, settlementNetworkName: a.settlementNetworkName,
     walletAddress: a.walletAddress, ownerAddress: a.ownerAddress, gatewayAddress: a.gatewayAddress,
     gatewayImplementation: a.gatewayImplementation, gatewayCodeHash: a.gatewayCodeHash,
     settlementTokenAddress: a.settlementTokenAddress, settlementTokenCodeHash: a.settlementTokenCodeHash,
-    assetIndex: 3, assetSymbol: "USDC", assetDecimals: 6, amountUnits: a.amountUnits,
-    amountDisplay: `${formatUnits(BigInt(a.amountUnits), 6)} USDC`, calldata: a.calldata,
+    assetIndex: a.assetIndex, assetSymbol: a.assetSymbol, assetDecimals: a.assetDecimals, amountUnits: a.amountUnits,
+    amountDisplay: `${formatUnits(BigInt(a.amountUnits), a.assetDecimals)} ${a.assetSymbol}`, calldata: a.calldata,
     valueWei: "0", gasLimit: a.gasLimit, quotedMaxFeePerGasWei: a.quotedMaxFeePerGasWei,
     quotedPriorityFeePerGasWei: a.quotedPriorityFeePerGasWei,
     networkFeeCeilingWei: a.networkFeeCeilingWei,
     networkFeeCeilingDisplay: `${formatEther(BigInt(a.networkFeeCeilingWei))} ETH`,
     preflightBlockNumber: a.preflightBlockNumber, preflightObservedAt: a.preflightObservedAt,
-    summary: `Claim ${formatUnits(BigInt(a.amountUnits), 6)} USDC from the reviewed Lighter Core gateway to ${a.ownerAddress}.`,
-    scopeNote: "This separate approval signs one zero-value Ethereum gateway claim. It spends ETH only for gas and cannot redirect the USDC recipient.",
+    summary: `Claim ${formatUnits(BigInt(a.amountUnits), a.assetDecimals)} ${a.assetSymbol} from the reviewed Lighter gateway on ${a.settlementNetworkName} to ${a.ownerAddress}.`,
+    scopeNote: `This separate approval signs one zero-value ${a.settlementNetworkName} gateway claim. It spends ETH only for gas and cannot redirect the ${a.assetSymbol} recipient.`,
   };
 }
 
@@ -62,7 +62,7 @@ function matches(preview: Record<string, unknown>, attempt: LighterWithdrawalCla
   if (preview.toolName !== "claim" || preview.namespace !== "lighter") return false;
   const args = record(preview.criticalArgs);
   if (args === null || Object.keys(args).sort().join(",") !== [...LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS].sort().join(",")) return false;
-  const expected = buildLighterCoreClaimCriticalArgs(attempt);
+  const expected = buildLighterWithdrawalClaimCriticalArgs(attempt);
   return Object.entries(expected).every(([key, value]) => args[key] === value);
 }
 
@@ -71,6 +71,9 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 function refusal(): VexError {
   return new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST,
-    "Approved Core manual claim refused because the trusted approval does not exactly match the durable claim attempt. Nothing was signed or submitted.",
+    "Approved Lighter manual claim refused because the trusted approval does not exactly match the durable claim attempt. Nothing was signed or submitted.",
     "Open the matching claim approval card or prepare a fresh claim after reconciliation.");
 }
+
+export const assertLighterCoreClaimApprovalBinding = assertLighterWithdrawalClaimApprovalBinding;
+export const buildLighterCoreClaimCriticalArgs = buildLighterWithdrawalClaimCriticalArgs;

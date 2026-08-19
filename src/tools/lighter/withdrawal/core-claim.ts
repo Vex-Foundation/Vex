@@ -11,6 +11,10 @@ import {
 import { ErrorCodes, VexError } from "../../../errors.js";
 import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "./core-preflight.js";
+import {
+  getLighterSecureWithdrawalProfile,
+  type LighterSecureWithdrawalProfile,
+} from "./profiles.js";
 
 const EIP1967_IMPLEMENTATION_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
@@ -19,12 +23,14 @@ const MAX_BLOCK_FUTURE_SKEW_SECONDS = 60n;
 const CLAIM_PREVIEW_TTL_MS = 3 * 60_000;
 const CLAIM_FEE_CEILING_MULTIPLIER = 4n;
 
-export interface LighterCoreClaimIdentity {
-  readonly kind: "lighter_core_manual_usdc_claim";
-  readonly version: "lighter-core-manual-claim-v1";
+export type LighterWithdrawalClaimOperation = "manual_core_usdc_claim" | "manual_rhc_usdg_claim";
+
+export interface LighterWithdrawalClaimIdentity {
+  readonly kind: "lighter_core_manual_usdc_claim" | "lighter_rhc_manual_usdg_claim";
+  readonly version: "lighter-core-manual-claim-v1" | "lighter-rhc-manual-claim-v1";
   readonly sessionId: string;
   readonly withdrawalIntentId: string;
-  readonly settlementChainId: "1";
+  readonly settlementChainId: "1" | "4663";
   readonly walletAddress: Address;
   readonly ownerAddress: Address;
   readonly gatewayAddress: Address;
@@ -44,18 +50,18 @@ export interface LighterCoreClaimIdentity {
   readonly expiresAt: string;
 }
 
-export interface LighterCoreClaimPreview {
+export interface LighterWithdrawalClaimPreview {
   readonly previewId: string;
   readonly matchHash: string;
-  readonly identity: LighterCoreClaimIdentity;
-  readonly snapshot: LighterCoreClaimPreflightSnapshot;
+  readonly identity: LighterWithdrawalClaimIdentity;
+  readonly snapshot: LighterWithdrawalClaimPreflightSnapshot;
 }
 
-export interface LighterCoreClaimPreflightSnapshot {
+export interface LighterWithdrawalClaimPreflightSnapshot {
   readonly observedAt: string;
   readonly expiresAt: string;
-  readonly settlementChainId: 1;
-  readonly settlementNetworkName: "Ethereum mainnet";
+  readonly settlementChainId: 1 | 4663;
+  readonly settlementNetworkName: "Ethereum mainnet" | "Robinhood Chain mainnet";
   readonly blockNumber: string;
   readonly blockHash: Hex;
   readonly walletAddress: Address;
@@ -66,7 +72,7 @@ export interface LighterCoreClaimPreflightSnapshot {
   readonly settlementTokenAddress: Address;
   readonly settlementTokenCodeHash: Hex;
   readonly assetIndex: 3;
-  readonly assetSymbol: "USDC";
+  readonly assetSymbol: "USDC" | "USDG";
   readonly assetDecimals: 6;
   readonly amountUnits: string;
   readonly pendingBalanceUnits: string;
@@ -82,7 +88,12 @@ export interface LighterCoreClaimPreflightSnapshot {
   readonly networkFeeCeilingWei: string;
 }
 
-export async function readLighterCoreClaimPreflight(input: {
+export type LighterCoreClaimIdentity = LighterWithdrawalClaimIdentity;
+export type LighterCoreClaimPreview = LighterWithdrawalClaimPreview;
+export type LighterCoreClaimPreflightSnapshot = LighterWithdrawalClaimPreflightSnapshot;
+
+export async function readLighterWithdrawalClaimPreflight(input: {
+  readonly profile: LighterSecureWithdrawalProfile;
   readonly publicClient: PublicClient;
   readonly walletAddress: string;
   readonly gatewayAddress: string;
@@ -92,7 +103,7 @@ export async function readLighterCoreClaimPreflight(input: {
   readonly expectedSettlementTokenCodeHash: string;
   readonly amountUnits: bigint;
   readonly now?: Date;
-}): Promise<LighterCoreClaimPreflightSnapshot> {
+}): Promise<LighterWithdrawalClaimPreflightSnapshot> {
   if (input.amountUnits <= 0n || input.amountUnits > (1n << 128n) - 1n) throw invalid("Manual claim amount is outside uint128.");
   const owner = getAddress(input.walletAddress);
   const gateway = getAddress(input.gatewayAddress);
@@ -114,17 +125,17 @@ export async function readLighterCoreClaimPreflight(input: {
     input.publicClient.readContract({ address: gateway, abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI, functionName: "assetConfigs", args: [3] }),
     input.publicClient.estimateFeesPerGas({ chain: input.publicClient.chain, type: "eip1559" }),
   ]);
-  if (chainId !== 1) throw invalid("Manual Core claim RPC is not Ethereum mainnet.");
-  if (block.hash === null) throw invalid("Ethereum latest block has no canonical hash.");
-  assertFreshBlock(block.timestamp, now);
+  if (chainId !== input.profile.settlementChainId) throw invalid(`Manual ${input.profile.sourceName} claim RPC is not ${input.profile.settlementNetworkName}.`);
+  if (block.hash === null) throw invalid(`${input.profile.settlementNetworkName} latest block has no canonical hash.`);
+  assertFreshBlock(block.timestamp, now, input.profile.settlementNetworkName);
   if (pending !== input.amountUnits) throw invalid("Gateway pending balance no longer equals the exact claim amount.");
-  if (gatewayCode === undefined || tokenCode === undefined) throw invalid("Reviewed gateway or USDC bytecode is unavailable.");
-  if (keccak256(gatewayCode).toLowerCase() !== input.expectedGatewayCodeHash.toLowerCase()) throw invalid("Core gateway code identity changed.");
-  if (keccak256(tokenCode).toLowerCase() !== input.expectedSettlementTokenCodeHash.toLowerCase()) throw invalid("Ethereum USDC code identity changed.");
-  if (implementation === null || implementation !== getAddress(input.expectedGatewayImplementation)) throw invalid("Core gateway implementation changed.");
-  if (getAddress(assetConfig[0]) !== token || assetConfig[1] !== 1) throw invalid("Core gateway asset 3 no longer maps to enabled Ethereum USDC.");
+  if (gatewayCode === undefined || tokenCode === undefined) throw invalid(`Reviewed gateway or ${input.profile.assetSymbol} bytecode is unavailable.`);
+  if (keccak256(gatewayCode).toLowerCase() !== input.expectedGatewayCodeHash.toLowerCase()) throw invalid(`${input.profile.sourceName} gateway code identity changed.`);
+  if (keccak256(tokenCode).toLowerCase() !== input.expectedSettlementTokenCodeHash.toLowerCase()) throw invalid(`${input.profile.settlementNetworkName} ${input.profile.assetSymbol} code identity changed.`);
+  if (implementation === null || implementation !== getAddress(input.expectedGatewayImplementation)) throw invalid(`${input.profile.sourceName} gateway implementation changed.`);
+  if (getAddress(assetConfig[0]) !== token || assetConfig[1] !== 1) throw invalid(`${input.profile.sourceName} gateway asset 3 no longer maps to enabled ${input.profile.settlementNetworkName} ${input.profile.assetSymbol}.`);
   if (fees.maxFeePerGas <= 0n || fees.maxPriorityFeePerGas < 0n || fees.maxPriorityFeePerGas > fees.maxFeePerGas) {
-    throw invalid("Ethereum EIP-1559 fee estimate is inconsistent.");
+    throw invalid(`${input.profile.settlementNetworkName} EIP-1559 fee estimate is inconsistent.`);
   }
   await input.publicClient.simulateContract({
     account: owner,
@@ -134,7 +145,7 @@ export async function readLighterCoreClaimPreflight(input: {
     args: [owner, 3, input.amountUnits],
   });
   const gasEstimate = await input.publicClient.estimateGas({ account: owner, to: gateway, data: calldata, value: 0n });
-  if (gasEstimate <= 0n) throw invalid("Ethereum manual claim gas estimate is invalid.");
+  if (gasEstimate <= 0n) throw invalid(`${input.profile.settlementNetworkName} manual claim gas estimate is invalid.`);
   const gasLimit = gasLimitWithHeadroom(gasEstimate);
   const feeCeilingPerGas = fees.maxFeePerGas * CLAIM_FEE_CEILING_MULTIPLIER;
   const priorityFeeCeiling = fees.maxPriorityFeePerGas * CLAIM_FEE_CEILING_MULTIPLIER;
@@ -144,8 +155,8 @@ export async function readLighterCoreClaimPreflight(input: {
   return {
     observedAt,
     expiresAt: new Date(now.getTime() + CLAIM_PREVIEW_TTL_MS).toISOString(),
-    settlementChainId: 1,
-    settlementNetworkName: "Ethereum mainnet",
+    settlementChainId: input.profile.settlementChainId,
+    settlementNetworkName: input.profile.settlementNetworkName,
     blockNumber: block.number.toString(10),
     blockHash: block.hash,
     walletAddress: owner,
@@ -156,7 +167,7 @@ export async function readLighterCoreClaimPreflight(input: {
     settlementTokenAddress: token,
     settlementTokenCodeHash: keccak256(tokenCode),
     assetIndex: 3,
-    assetSymbol: "USDC",
+    assetSymbol: input.profile.assetSymbol,
     assetDecimals: 6,
     amountUnits: input.amountUnits.toString(10),
     pendingBalanceUnits: pending.toString(10),
@@ -173,17 +184,19 @@ export async function readLighterCoreClaimPreflight(input: {
   };
 }
 
-export function buildLighterCoreClaimPreview(input: {
+export function buildLighterWithdrawalClaimPreview(input: {
+  readonly profile: LighterSecureWithdrawalProfile;
   readonly sessionId: string;
   readonly withdrawalIntentId: string;
-  readonly snapshot: LighterCoreClaimPreflightSnapshot;
-}): LighterCoreClaimPreview {
-  const identity: LighterCoreClaimIdentity = {
-    kind: "lighter_core_manual_usdc_claim",
-    version: "lighter-core-manual-claim-v1",
+  readonly snapshot: LighterWithdrawalClaimPreflightSnapshot;
+}): LighterWithdrawalClaimPreview {
+  assertSnapshotProfile(input.snapshot, input.profile);
+  const identity: LighterWithdrawalClaimIdentity = {
+    kind: input.profile.environment === "core" ? "lighter_core_manual_usdc_claim" : "lighter_rhc_manual_usdg_claim",
+    version: input.profile.environment === "core" ? "lighter-core-manual-claim-v1" : "lighter-rhc-manual-claim-v1",
     sessionId: bounded(input.sessionId, "session id"),
     withdrawalIntentId: bounded(input.withdrawalIntentId, "withdrawal intent id"),
-    settlementChainId: "1",
+    settlementChainId: String(input.profile.settlementChainId) as "1" | "4663",
     walletAddress: input.snapshot.walletAddress,
     ownerAddress: input.snapshot.ownerAddress,
     gatewayAddress: input.snapshot.gatewayAddress,
@@ -206,9 +219,9 @@ export function buildLighterCoreClaimPreview(input: {
   return { previewId: `lwcp_${matchHash.slice(0, 24)}`, matchHash, identity, snapshot: input.snapshot };
 }
 
-export function assertLighterCoreClaimPreflightWithinApproval(
-  approved: LighterCoreClaimPreflightSnapshot,
-  fresh: LighterCoreClaimPreflightSnapshot,
+export function assertLighterWithdrawalClaimPreflightWithinApproval(
+  approved: LighterWithdrawalClaimPreflightSnapshot,
+  fresh: LighterWithdrawalClaimPreflightSnapshot,
 ): void {
   const fixed = [
     "settlementChainId", "walletAddress", "ownerAddress", "gatewayAddress", "gatewayImplementation",
@@ -221,19 +234,47 @@ export function assertLighterCoreClaimPreflightWithinApproval(
     || BigInt(fresh.quotedMaxFeePerGasWei) > BigInt(approved.feeCeilingPerGasWei)
     || BigInt(fresh.quotedPriorityFeePerGasWei) > BigInt(approved.priorityFeeCeilingWei)
     || BigInt(fresh.gasLimit) * BigInt(fresh.quotedMaxFeePerGasWei) > BigInt(approved.networkFeeCeilingWei)
-  ) throw invalid("Fresh Ethereum fees exceed the separately approved manual-claim ceiling.");
+  ) throw invalid(`Fresh ${approved.settlementNetworkName} fees exceed the separately approved manual-claim ceiling.`);
 }
+
+export function lighterWithdrawalClaimOperation(profile: LighterSecureWithdrawalProfile): LighterWithdrawalClaimOperation {
+  return profile.environment === "core" ? "manual_core_usdc_claim" : "manual_rhc_usdg_claim";
+}
+
+export function readLighterCoreClaimPreflight(
+  input: Omit<Parameters<typeof readLighterWithdrawalClaimPreflight>[0], "profile">,
+): Promise<LighterWithdrawalClaimPreflightSnapshot> {
+  return readLighterWithdrawalClaimPreflight({ ...input, profile: getLighterSecureWithdrawalProfile("core") });
+}
+
+export function buildLighterCoreClaimPreview(
+  input: Omit<Parameters<typeof buildLighterWithdrawalClaimPreview>[0], "profile">,
+): LighterWithdrawalClaimPreview {
+  return buildLighterWithdrawalClaimPreview({ ...input, profile: getLighterSecureWithdrawalProfile("core") });
+}
+
+export const assertLighterCoreClaimPreflightWithinApproval = assertLighterWithdrawalClaimPreflightWithinApproval;
 
 async function readProxyImplementation(publicClient: PublicClient, proxy: Address): Promise<Address | null> {
   const stored = await publicClient.getStorageAt({ address: proxy, slot: EIP1967_IMPLEMENTATION_SLOT });
   return stored === undefined || /^0x0{64}$/i.test(stored) ? null : getAddress(`0x${stored.slice(-40)}`);
 }
 
-function assertFreshBlock(timestamp: bigint, now: Date): void {
+function assertFreshBlock(timestamp: bigint, now: Date, networkName: string): void {
   const nowSeconds = BigInt(Math.floor(now.getTime() / 1_000));
   if (timestamp < nowSeconds - MAX_BLOCK_AGE_SECONDS || timestamp > nowSeconds + MAX_BLOCK_FUTURE_SKEW_SECONDS) {
-    throw invalid("Ethereum latest block is stale or future-dated.");
+    throw invalid(`${networkName} latest block is stale or future-dated.`);
   }
+}
+
+function assertSnapshotProfile(snapshot: LighterWithdrawalClaimPreflightSnapshot, profile: LighterSecureWithdrawalProfile): void {
+  if (
+    snapshot.settlementChainId !== profile.settlementChainId
+    || snapshot.settlementNetworkName !== profile.settlementNetworkName
+    || snapshot.assetIndex !== profile.assetIndex
+    || snapshot.assetSymbol !== profile.assetSymbol
+    || snapshot.assetDecimals !== profile.assetDecimals
+  ) throw invalid("Manual claim snapshot does not match the selected Lighter environment.");
 }
 
 function bounded(value: string, field: string): string {

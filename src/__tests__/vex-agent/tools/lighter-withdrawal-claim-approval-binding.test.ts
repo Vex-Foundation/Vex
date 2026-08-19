@@ -6,7 +6,12 @@ const mocks = vi.hoisted(() => ({ getApproval: vi.fn(), getAudit: vi.fn() }));
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({ getByIdForSession: mocks.getApproval }));
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({ getByApprovalId: mocks.getAudit }));
 
-const { assertLighterCoreClaimApprovalBinding, buildLighterCoreClaimCriticalArgs } = await import(
+const {
+  assertLighterCoreClaimApprovalBinding,
+  assertLighterWithdrawalClaimApprovalBinding,
+  buildLighterCoreClaimCriticalArgs,
+  buildLighterWithdrawalClaimCriticalArgs,
+} = await import(
   "@vex-agent/tools/protocols/lighter/withdrawal-claim-approval-binding.js"
 );
 
@@ -50,6 +55,51 @@ beforeEach(() => {
     sessionId: "session-1", decision: "approved", actionKind: "user_wallet_broadcast",
     executionStatus: "dispatching",
     previewJson: { toolName: "claim", namespace: "lighter", criticalArgs: buildLighterCoreClaimCriticalArgs(ATTEMPT) },
+  });
+});
+
+describe("Lighter RHC manual claim approval binding", () => {
+  const rhcAttempt = {
+    ...ATTEMPT,
+    operationClass: "manual_rhc_usdg_claim",
+    settlementChainId: 4663,
+    settlementNetworkName: "Robinhood Chain mainnet",
+    gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+    gatewayImplementation: "0xe470e41cACc197ea07f879577765a8C81234ed7B",
+    settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    assetSymbol: "USDG",
+  } as unknown as LighterWithdrawalClaimAttemptRow;
+
+  it("binds RHC chain, USDG, gateway, amount, and fee ceiling independently", async () => {
+    mocks.getAudit.mockResolvedValue({
+      sessionId: "session-1", decision: "approved", actionKind: "user_wallet_broadcast",
+      executionStatus: "dispatching",
+      previewJson: { toolName: "claim", namespace: "lighter", criticalArgs: buildLighterWithdrawalClaimCriticalArgs(rhcAttempt) },
+    });
+    await expect(assertLighterWithdrawalClaimApprovalBinding({
+      approvalId: "approval-1", sessionId: "session-1", attempt: rhcAttempt,
+    })).resolves.toBeUndefined();
+  });
+
+  it.each([
+    { operationClass: "manual_core_usdc_claim" },
+    { settlementChainId: 1 },
+    { assetSymbol: "USDC" },
+    { gatewayAddress: ATTEMPT.gatewayAddress },
+    { settlementTokenAddress: ATTEMPT.settlementTokenAddress },
+    { amountUnits: "2000001" },
+  ])("rejects an RHC claim identity mutation", async (changed) => {
+    mocks.getAudit.mockResolvedValue({
+      sessionId: "session-1", decision: "approved", actionKind: "user_wallet_broadcast",
+      executionStatus: "dispatching",
+      previewJson: {
+        toolName: "claim", namespace: "lighter",
+        criticalArgs: { ...buildLighterWithdrawalClaimCriticalArgs(rhcAttempt), ...changed },
+      },
+    });
+    await expect(assertLighterWithdrawalClaimApprovalBinding({
+      approvalId: "approval-1", sessionId: "session-1", attempt: rhcAttempt,
+    })).rejects.toThrow("Nothing was signed or submitted");
   });
 });
 

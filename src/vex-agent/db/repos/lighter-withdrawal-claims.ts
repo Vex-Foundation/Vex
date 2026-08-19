@@ -1,6 +1,11 @@
 import type { PoolClient } from "pg";
 
-import type { LighterCoreClaimPreview } from "@tools/lighter/withdrawal/core-claim.js";
+import {
+  lighterWithdrawalClaimOperation,
+  type LighterWithdrawalClaimOperation,
+  type LighterWithdrawalClaimPreview,
+} from "@tools/lighter/withdrawal/core-claim.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import { queryOne, queryOneWith } from "../client.js";
 import { jsonb } from "../params.js";
 
@@ -15,9 +20,9 @@ export interface LighterWithdrawalClaimAttemptRow {
   readonly previewId: string;
   readonly approvalId: string | null;
   readonly matchHash: string;
-  readonly operationClass: "manual_core_usdc_claim";
-  readonly settlementChainId: 1;
-  readonly settlementNetworkName: "Ethereum mainnet";
+  readonly operationClass: LighterWithdrawalClaimOperation;
+  readonly settlementChainId: 1 | 4663;
+  readonly settlementNetworkName: "Ethereum mainnet" | "Robinhood Chain mainnet";
   readonly walletAddress: string;
   readonly ownerAddress: string;
   readonly gatewayAddress: string;
@@ -26,12 +31,12 @@ export interface LighterWithdrawalClaimAttemptRow {
   readonly settlementTokenAddress: string;
   readonly settlementTokenCodeHash: string;
   readonly assetIndex: 3;
-  readonly assetSymbol: "USDC";
+  readonly assetSymbol: "USDC" | "USDG";
   readonly assetDecimals: 6;
   readonly amountUnits: string;
   readonly calldata: string;
   readonly valueWei: "0";
-  readonly preflightJson: LighterCoreClaimPreview["snapshot"];
+  readonly preflightJson: LighterWithdrawalClaimPreview["snapshot"];
   readonly preflightObservedAt: string;
   readonly preflightBlockNumber: string;
   readonly nativeBalanceWei: string;
@@ -74,20 +79,27 @@ const COLUMNS = `
 
 export async function createManualClaimAttemptWith(
   client: PoolClient,
-  input: { readonly claimId: string; readonly preview: LighterCoreClaimPreview },
+  input: { readonly claimId: string; readonly preview: LighterWithdrawalClaimPreview },
 ): Promise<LighterWithdrawalClaimAttemptRow> {
   const p = input.preview;
   const s = p.snapshot;
+  const profile = claimProfile(s.settlementChainId);
+  if (s.settlementNetworkName !== profile.settlementNetworkName || s.assetSymbol !== profile.assetSymbol) {
+    throw new Error("Manual claim preview contains crossed Lighter environment identity.");
+  }
   const parent = await queryOneWith<{ intent_id: string }>(
     client,
     `UPDATE lighter_withdrawal_intents
         SET execution_state = 'manual_claim_prepared', claim_mode = 'manual', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'claimable'
+      WHERE intent_id = $1 AND session_id = $2 AND environment = $3
+        AND settlement_chain_id = $4 AND settlement_network_name = $5 AND asset_symbol = $6
+        AND execution_state = 'claimable'
         AND pending_balance_units = amount_units AND destination_tx_hash IS NULL
       RETURNING intent_id`,
-    [p.identity.withdrawalIntentId, p.identity.sessionId],
+    [p.identity.withdrawalIntentId, p.identity.sessionId, profile.environment,
+      profile.settlementChainId, profile.settlementNetworkName, profile.assetSymbol],
   );
-  if (parent === null) throw new Error("Core withdrawal is no longer exactly claimable.");
+  if (parent === null) throw new Error(`${profile.sourceName} withdrawal is no longer exactly claimable.`);
   const row = await queryOneWith<Record<string, unknown>>(
     client,
     `INSERT INTO lighter_withdrawal_claim_attempts (
@@ -100,20 +112,21 @@ export async function createManualClaimAttemptWith(
        gas_limit, quoted_max_fee_per_gas_wei, quoted_priority_fee_per_gas_wei,
        fee_ceiling_per_gas_wei, priority_fee_ceiling_wei, network_fee_ceiling_wei, expires_at
      ) VALUES (
-       $1,$2,$3,$4,$5,'manual_core_usdc_claim',1,'Ethereum mainnet',$6,
-       $7,$8,$9,$10,$11,$12,3,'USDC',6,$13,$14,'0',$15::jsonb,
-       $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,
+       $10,$11,$12,$13,$14,$15,3,$16,6,$17,$18,'0',$19::jsonb,
+       $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
      ) RETURNING ${COLUMNS}`,
     [
       input.claimId, p.identity.withdrawalIntentId, p.identity.sessionId, p.previewId, p.matchHash,
+      lighterWithdrawalClaimOperation(profile), profile.settlementChainId, profile.settlementNetworkName,
       s.walletAddress, s.ownerAddress, s.gatewayAddress, s.gatewayImplementation, s.gatewayCodeHash,
-      s.settlementTokenAddress, s.settlementTokenCodeHash, s.amountUnits, s.calldata, jsonb(s),
+      s.settlementTokenAddress, s.settlementTokenCodeHash, profile.assetSymbol, s.amountUnits, s.calldata, jsonb(s),
       s.observedAt, s.blockNumber, s.nativeBalanceWei, s.gasEstimate, s.gasLimit,
       s.quotedMaxFeePerGasWei, s.quotedPriorityFeePerGasWei, s.feeCeilingPerGasWei,
       s.priorityFeeCeilingWei, s.networkFeeCeilingWei, s.expiresAt,
     ],
   );
-  if (row === null) throw new Error("Manual Core claim attempt was not persisted.");
+  if (row === null) throw new Error(`Manual ${profile.sourceName} claim attempt was not persisted.`);
   return mapRow(row);
 }
 
@@ -316,17 +329,35 @@ export async function markReconciledOutcome(input: {
 }
 
 function mapRow(row: Record<string, unknown>): LighterWithdrawalClaimAttemptRow {
+  const settlementChainId = Number(row.settlement_chain_id);
+  const profile = claimProfile(settlementChainId);
+  const operationClass = String(row.operation_class);
+  const preflight = row.preflight_json as LighterWithdrawalClaimPreview["snapshot"];
+  if (
+    operationClass !== lighterWithdrawalClaimOperation(profile)
+    || String(row.settlement_network_name) !== profile.settlementNetworkName
+    || String(row.asset_symbol) !== profile.assetSymbol
+    || Number(row.asset_index) !== profile.assetIndex
+    || Number(row.asset_decimals) !== profile.assetDecimals
+    || preflight.settlementChainId !== profile.settlementChainId
+    || preflight.settlementNetworkName !== profile.settlementNetworkName
+    || preflight.assetSymbol !== profile.assetSymbol
+    || preflight.gatewayAddress.toLowerCase() !== String(row.gateway_address).toLowerCase()
+    || preflight.gatewayImplementation.toLowerCase() !== String(row.gateway_implementation).toLowerCase()
+    || preflight.settlementTokenAddress.toLowerCase() !== String(row.settlement_token_address).toLowerCase()
+  ) throw new Error("Persisted manual claim contains crossed Lighter environment identity.");
   return {
     claimId: String(row.claim_id), withdrawalIntentId: String(row.withdrawal_intent_id),
     sessionId: String(row.session_id), previewId: String(row.preview_id),
     approvalId: nullable(row.approval_id), matchHash: String(row.match_hash),
-    operationClass: "manual_core_usdc_claim", settlementChainId: 1,
-    settlementNetworkName: "Ethereum mainnet", walletAddress: String(row.wallet_address),
+    operationClass: operationClass as LighterWithdrawalClaimOperation,
+    settlementChainId: profile.settlementChainId,
+    settlementNetworkName: profile.settlementNetworkName, walletAddress: String(row.wallet_address),
     ownerAddress: String(row.owner_address), gatewayAddress: String(row.gateway_address),
     gatewayImplementation: String(row.gateway_implementation), gatewayCodeHash: String(row.gateway_code_hash),
     settlementTokenAddress: String(row.settlement_token_address), settlementTokenCodeHash: String(row.settlement_token_code_hash),
-    assetIndex: 3, assetSymbol: "USDC", assetDecimals: 6, amountUnits: String(row.amount_units),
-    calldata: String(row.calldata), valueWei: "0", preflightJson: row.preflight_json as LighterCoreClaimPreview["snapshot"],
+    assetIndex: 3, assetSymbol: profile.assetSymbol, assetDecimals: 6, amountUnits: String(row.amount_units),
+    calldata: String(row.calldata), valueWei: "0", preflightJson: preflight,
     preflightObservedAt: iso(row.preflight_observed_at), preflightBlockNumber: String(row.preflight_block_number),
     nativeBalanceWei: String(row.native_balance_wei), gasEstimate: String(row.gas_estimate), gasLimit: String(row.gas_limit),
     quotedMaxFeePerGasWei: String(row.quoted_max_fee_per_gas_wei), quotedPriorityFeePerGasWei: String(row.quoted_priority_fee_per_gas_wei),
@@ -339,6 +370,12 @@ function mapRow(row: Record<string, unknown>): LighterWithdrawalClaimAttemptRow 
     ambiguousReason: nullable(row.ambiguous_reason), stagedAt: nullableIso(row.staged_at), submittedAt: nullableIso(row.submitted_at),
     confirmedAt: nullableIso(row.confirmed_at), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), expiresAt: iso(row.expires_at),
   };
+}
+
+function claimProfile(settlementChainId: number) {
+  if (settlementChainId === 1) return getLighterSecureWithdrawalProfile("core");
+  if (settlementChainId === 4663) return getLighterSecureWithdrawalProfile("rhc");
+  throw new Error("Manual claim settlement chain is unsupported.");
 }
 
 function hash(value: string): string {

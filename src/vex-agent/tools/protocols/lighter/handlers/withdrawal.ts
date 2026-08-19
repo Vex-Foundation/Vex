@@ -12,9 +12,9 @@ import { readLighterRhcWithdrawalPreflight } from "@tools/lighter/withdrawal/rhc
 import { buildLighterRhcWithdrawalPreview } from "@tools/lighter/withdrawal/rhc-preview.js";
 import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import {
-  assertLighterCoreClaimPreflightWithinApproval,
-  buildLighterCoreClaimPreview,
-  readLighterCoreClaimPreflight,
+  assertLighterWithdrawalClaimPreflightWithinApproval,
+  buildLighterWithdrawalClaimPreview,
+  readLighterWithdrawalClaimPreflight,
 } from "@tools/lighter/withdrawal/core-claim.js";
 import { proveLighterCoreWithdrawalSettlement } from "@tools/lighter/withdrawal/settlement-proof.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
@@ -35,8 +35,8 @@ import {
   buildLighterWithdrawalCriticalArgs,
 } from "../withdrawal-approval-binding.js";
 import {
-  assertLighterCoreClaimApprovalBinding,
-  buildLighterCoreClaimCriticalArgs,
+  assertLighterWithdrawalClaimApprovalBinding,
+  buildLighterWithdrawalClaimCriticalArgs,
 } from "../withdrawal-claim-approval-binding.js";
 import {
   executeApprovedLighterWithdrawal,
@@ -70,7 +70,7 @@ function buildClaimApprovalFollowUp(
     approvalPreview: {
       toolName: "claim",
       namespace: "lighter",
-      criticalArgs: buildLighterCoreClaimCriticalArgs(attempt),
+      criticalArgs: buildLighterWithdrawalClaimCriticalArgs(attempt),
     },
   };
 }
@@ -79,14 +79,12 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.withdraw.claim.prepare": async (params, context) => {
     const sessionId = context.sessionId;
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
-    if (!sessionId || intentId.length === 0) return fail("Manual Core claim preparation requires a session-scoped withdrawal intent id.");
+    if (!sessionId || intentId.length === 0) return fail("Manual Lighter claim preparation requires a session-scoped withdrawal intent id.");
     const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
-    if (intent === null) return fail(`No Core withdrawal intent ${intentId} exists in this session.`);
-    if (intent.environment !== "core") {
-      return fail("RHC manual claims are not enabled by the Core Ethereum claim path.");
-    }
+    if (intent === null) return fail(`No Lighter withdrawal intent ${intentId} exists in this session.`);
+    const profile = getLighterSecureWithdrawalProfile(intent.environment);
     if (intent.executionState !== "claimable" || intent.pendingBalanceUnits !== intent.amountUnits) {
-      return fail(`Core withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
+      return fail(`${profile.sourceName} withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
     }
     let selected: string;
     try {
@@ -94,12 +92,13 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (error) {
       return walletScopeErrorToResult(error);
     }
-    if (selected !== getAddress(intent.walletAddress)) return fail("The selected Vex wallet does not own this Core withdrawal claim.");
-    const deployment = getUniswapDeployment(1);
-    if (deployment === undefined) return fail("Ethereum mainnet is unavailable for Core claim preparation.");
+    if (selected !== getAddress(intent.walletAddress)) return fail(`The selected Vex wallet does not own this ${profile.sourceName} withdrawal claim.`);
+    const deployment = getUniswapDeployment(profile.settlementChainId);
+    if (deployment === undefined) return fail(`${profile.settlementNetworkName} is unavailable for ${profile.sourceName} claim preparation.`);
     let preview;
     try {
-      const snapshot = await readLighterCoreClaimPreflight({
+      const snapshot = await readLighterWithdrawalClaimPreflight({
+        profile,
         publicClient: getUniswapPublicClient(deployment),
         walletAddress: intent.walletAddress,
         gatewayAddress: intent.gatewayAddress,
@@ -109,7 +108,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         expectedSettlementTokenCodeHash: intent.settlementTokenCodeHash,
         amountUnits: BigInt(intent.amountUnits),
       });
-      preview = buildLighterCoreClaimPreview({ sessionId, withdrawalIntentId: intent.intentId, snapshot });
+      preview = buildLighterWithdrawalClaimPreview({ profile, sessionId, withdrawalIntentId: intent.intentId, snapshot });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
@@ -121,19 +120,19 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           preview,
         }));
     } catch (error) {
-      return fail(error instanceof Error ? error.message : "Manual Core claim could not be reserved durably.");
+      return fail(error instanceof Error ? error.message : `Manual ${profile.sourceName} claim could not be reserved durably.`);
     }
     return {
       ...ok({
-        source: "vex_lighter_core_manual_claim_intent",
+        source: `vex_lighter_${intent.environment}_manual_claim_intent`,
         status: "approval_prepared",
         claimId: attempt.claimId,
         withdrawalIntentId: attempt.withdrawalIntentId,
-        amountDisplay: `${formatUnits(BigInt(attempt.amountUnits), 6)} USDC`,
-        settlementNetwork: "Ethereum mainnet",
+        amountDisplay: `${formatUnits(BigInt(attempt.amountUnits), 6)} ${profile.assetSymbol}`,
+        settlementNetwork: profile.settlementNetworkName,
         networkFeeCeilingWei: attempt.networkFeeCeilingWei,
         expiresAt: attempt.expiresAt,
-        userGuidance: "Tell the user to review the separate Ethereum claim approval card. This spends ETH for gas and does not reuse the L2 withdrawal approval.",
+        userGuidance: `Tell the user to review the separate ${profile.settlementNetworkName} claim approval card. This spends ETH for gas and does not reuse the L2 withdrawal approval.`,
       }),
       preparedActionFollowUp: buildClaimApprovalFollowUp(attempt),
     };
@@ -142,14 +141,15 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.withdraw.claim": async (params, context) => {
     const sessionId = context.sessionId;
     const claimId = typeof params.claimId === "string" ? params.claimId.trim() : "";
-    if (!sessionId || claimId.length === 0) return fail("Manual Core claim requires a session-scoped prepared claim id.");
+    if (!sessionId || claimId.length === 0) return fail("Manual Lighter claim requires a session-scoped prepared claim id.");
     if (!context.approved || !context.approvalId) {
-      return { success: false, output: "Manual Core claim requires its matching approved Ethereum claim card.", pendingApproval: true };
+      return { success: false, output: "Manual Lighter claim requires its matching approved settlement-network claim card.", pendingApproval: true };
     }
     const attempt = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId);
-    if (attempt === null) return fail(`No manual Core claim ${claimId} exists in this session.`);
+    if (attempt === null) return fail(`No manual Lighter claim ${claimId} exists in this session.`);
+    const profile = getLighterSecureWithdrawalProfile(attempt.operationClass === "manual_core_usdc_claim" ? "core" : "rhc");
     try {
-      await assertLighterCoreClaimApprovalBinding({ approvalId: context.approvalId, sessionId, attempt });
+      await assertLighterWithdrawalClaimApprovalBinding({ approvalId: context.approvalId, sessionId, attempt });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
@@ -157,14 +157,15 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
         claimId, sessionId, approvalId: context.approvalId!, decision: "expired", reason: "approved claim resume observed expired preview",
       }));
-      return fail(`Manual Core claim ${claimId} expired before execution.`);
+      return fail(`Manual ${profile.sourceName} claim ${claimId} expired before execution.`);
     }
     const approved = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
-      claimId, sessionId, approvalId: context.approvalId!, decision: "approved", reason: "user approved exact Ethereum Core USDC claim",
+      claimId, sessionId, approvalId: context.approvalId!, decision: "approved",
+      reason: `user approved exact ${profile.settlementNetworkName} ${profile.sourceName} ${profile.assetSymbol} claim`,
     }));
-    if (approved === null) return fail(`Manual Core claim ${claimId} has already left prepared state.`);
-    const lease = await acquireLighterDepositExecutionLease({ chainId: 1, walletAddress: approved.walletAddress, intentId: approved.withdrawalIntentId }).catch(() => null);
-    if (lease === null || !lease.acquired) return fail("Could not acquire the Lighter Ethereum wallet execution slot. Nothing was signed.");
+    if (approved === null) return fail(`Manual ${profile.sourceName} claim ${claimId} has already left prepared state.`);
+    const lease = await acquireLighterDepositExecutionLease({ chainId: profile.settlementChainId, walletAddress: approved.walletAddress, intentId: approved.withdrawalIntentId }).catch(() => null);
+    if (lease === null || !lease.acquired) return fail(`Could not acquire the Lighter ${profile.settlementNetworkName} wallet execution slot. Nothing was signed.`);
     try {
       await lease.handle.assertOwned();
       let signer;
@@ -174,12 +175,13 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         return walletScopeErrorToResult(error);
       }
       if (signer.family !== "eip155" || getAddress(signer.address) !== getAddress(approved.walletAddress)) {
-        return fail("The resolved signing wallet does not match the approved Core claim wallet. Nothing was signed.");
+        return fail(`The resolved signing wallet does not match the approved ${profile.sourceName} claim wallet. Nothing was signed.`);
       }
-      const deployment = getUniswapDeployment(1);
-      if (deployment === undefined) return fail("Ethereum mainnet is unavailable for Core claim execution.");
+      const deployment = getUniswapDeployment(profile.settlementChainId);
+      if (deployment === undefined) return fail(`${profile.settlementNetworkName} is unavailable for ${profile.sourceName} claim execution.`);
       const clients = getUniswapEvmClients(deployment, signer.privateKey as Hex);
-      const fresh = await readLighterCoreClaimPreflight({
+      const fresh = await readLighterWithdrawalClaimPreflight({
+        profile,
         publicClient: clients.publicClient,
         walletAddress: approved.walletAddress,
         gatewayAddress: approved.gatewayAddress,
@@ -189,7 +191,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         expectedSettlementTokenCodeHash: approved.settlementTokenCodeHash,
         amountUnits: BigInt(approved.amountUnits),
       });
-      assertLighterCoreClaimPreflightWithinApproval(approved.preflightJson, fresh);
+      assertLighterWithdrawalClaimPreflightWithinApproval(approved.preflightJson, fresh);
       await lease.handle.assertOwned();
       const outcome = await signStageBroadcast(
         clients.publicClient,
@@ -219,8 +221,8 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
           claimId, sessionId, outcome: "ambiguous", reason: `manual_claim_${outcome.stage}_outcome_unknown`,
         }));
-        return ok({ source: "vex_lighter_core_manual_claim", status: "ambiguous", claimId, txHash: outcome.txHash,
-          userGuidance: "Tell the user the Ethereum claim outcome is uncertain and must be reconciled. Do not retry or prepare another claim." });
+        return ok({ source: `vex_lighter_${profile.environment}_manual_claim`, status: "ambiguous", claimId, txHash: outcome.txHash,
+          userGuidance: `Tell the user the ${profile.settlementNetworkName} claim outcome is uncertain and must be reconciled. Do not retry or prepare another claim.` });
       }
       await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markSubmittedWith(client, claimId, sessionId));
       if (outcome.replacement !== undefined) {
@@ -242,10 +244,10 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
         claimId, sessionId, outcome: "confirming", receipt: publicReceipt(outcome.receipt),
       }));
-      return ok({ source: "vex_lighter_core_manual_claim", status: "confirming", claimId,
+      return ok({ source: `vex_lighter_${profile.environment}_manual_claim`, status: "confirming", claimId,
         txHash: outcome.receipt.transactionHash, receiptStatus: outcome.receipt.status,
         userGuidance: outcome.kind === "confirmed"
-          ? "Tell the user the exact claim mined and is awaiting 12-confirmation Ethereum finality before delivery is final."
+          ? `Tell the user the exact claim mined and is awaiting 12-confirmation ${profile.settlementNetworkName} finality before delivery is final.`
           : "Tell the user the claim transaction reverted and remains blocked until exact finality and pending-balance reconciliation." });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -260,9 +262,9 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
           claimId, sessionId, outcome: "ambiguous", reason: "manual_claim_post_staging_outcome_unknown",
         })).catch(() => false);
-        return ok({ source: "vex_lighter_core_manual_claim", status: "ambiguous", claimId,
+        return ok({ source: `vex_lighter_${profile.environment}_manual_claim`, status: "ambiguous", claimId,
           txHash: current.replacementTxHash ?? current.txHash, reason,
-          userGuidance: "Tell the user the staged Ethereum claim must be reconciled and must not be retried." });
+          userGuidance: `Tell the user the staged ${profile.settlementNetworkName} claim must be reconciled and must not be retried.` });
       }
       return fail(reason);
     } finally {
