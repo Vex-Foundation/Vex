@@ -1,4 +1,4 @@
--- 080_launch_image_onchain_variant.sql - the locker stores the ORIGINAL,
+-- 083_launch_image_onchain_variant.sql - the locker stores the ORIGINAL,
 -- Trench gets a derived on-chain copy
 --
 -- WHY THIS EXISTS. Migration 062 gave `launch_images` a `byte_length <= 20480`
@@ -36,16 +36,16 @@
 --    `trench/handlers/launch/plan.ts` is the gate that actually refuses, since
 --    the DB no longer bounds what the locker can hold.
 --
--- 4. THE BACKFILL IS NOT A DEFAULT, IT IS THE TRUTH. Every pre-080 row already
+-- 4. THE BACKFILL IS NOT A DEFAULT, IT IS THE TRUTH. Every pre-083 row already
 --    satisfies `byte_length <= 20480` by the 062 CHECK, and the bytes on disk
 --    ARE the bytes a Trench launch would commit. So for those rows the original
 --    IS its own on-chain variant, and copying `byte_length`/`digest` across
 --    states exactly that. This is what keeps the C0 digest binding
---    byte-for-byte identical to its pre-080 behaviour for every image that
+--    byte-for-byte identical to its pre-083 behaviour for every image that
 --    already exists.
 --
 -- Expand-only and re-runnable: every ALTER is `IF NOT EXISTS` or a
--- drop-then-add on an EXPLICITLY NAMED constraint, matching 079's style.
+-- drop-then-add on an EXPLICITLY NAMED constraint, matching 082's style.
 
 -- ── 1. The byte-length bound becomes a resource bound ──────────────────────
 --
@@ -74,14 +74,14 @@ ALTER TABLE launch_images
 -- so leaving it variant-less is the outcome that states the truth instead of
 -- blocking every other user's upgrade.
 -- The `byte_length <= 20480` guard is what makes this statement RE-RUNNABLE and
--- what makes it TRUE. Its premise is "every pre-080 row fits the on-chain
+-- what makes it TRUE. Its premise is "every pre-083 row fits the on-chain
 -- budget", and the 062 CHECK is the proof of that premise - so stating it here
 -- rather than relying on it is the difference between a backfill and a guess.
--- On a second apply the table also holds rows written AFTER 080, including
+-- On a second apply the table also holds rows written AFTER 083, including
 -- legitimately copy-less multi-megabyte originals; without this guard those
 -- would be backfilled into a column that must never exceed 20480, and the
 -- migration would fail on its own new constraint. Proved by check (7) of
--- `agents_dm/pools-fun-live/migration-080-apply-proof.ts`, which caught exactly
+-- `agents_dm/pools-fun-live/migration-083-apply-proof.ts`, which caught exactly
 -- that on the first draft.
 UPDATE launch_images
    SET onchain_byte_length = byte_length,

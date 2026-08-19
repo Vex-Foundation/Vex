@@ -1,4 +1,15 @@
--- 079_pools_fun_launch.sql - pools.fun launches and fee claims
+-- 082_pools_fun_launch.sql - pools.fun launches and fee claims
+--
+-- RUNS AFTER 081. This file was written as 079 while the pools lane and the
+-- Morpho lane were built in parallel; main landed its own 079/080/081
+-- (`079_agent_activity_evm_lend`, `080_swap_prequotes_lend_kinds`,
+-- `081_swap_prequotes_borrow_kinds`) at the same numbers, so this one is
+-- renumbered to 082 and its restatements now carry the UNION of both lanes.
+-- That matters because a CHECK cannot be amended in place: whichever
+-- restatement ran last would otherwise have silently erased the other lane's
+-- vocabulary. Every `agent_activity` predicate below is therefore restated from
+-- the state migration 079 left, not from 066, and the added members are named
+-- against their source lane in the section comments.
 --
 -- WHAT THIS ADDS, and why each piece is the shape it is.
 --
@@ -150,7 +161,7 @@ ALTER TABLE token_launch_intents
 -- carried.
 --
 -- This was found by APPLYING the migration to a real Postgres and inserting the
--- rows (`agents_dm/pools-fun-live/migration-079-apply-proof.ts`). A green test
+-- rows (`agents_dm/pools-fun-live/migration-082-apply-proof.ts`). A green test
 -- suite cannot find it - no unit test exercises DDL, and the defect lives in
 -- the interaction between a new constraint and a two-year-old one.
 --
@@ -219,18 +230,26 @@ ALTER TABLE agent_activity
   ));
 
 -- The binding is restated in full - a CHECK cannot be extended in place - with
--- every existing arm carried across byte-for-byte from MIGRATION 066 (the
--- current state, not 063: 066 added `swap_fee` to the vocabulary and to the
--- `swap` arm, and restating 063's older list here would have SILENTLY DROPPED
--- it and made every Uniswap fee row unwritable). Only the `launch` arm is
--- widened.
+-- every existing arm carried across byte-for-byte from MIGRATION 079 (the
+-- current state, not 066 and not 063: 066 added `swap_fee` to the vocabulary and
+-- to the `swap` arm, and 079 added `allowance_reset` / `allowance` to the `lend`
+-- arm for Morpho's ERC-20 approval legs. Restating an older list here would have
+-- SILENTLY DROPPED either one and made those rows unwritable). Only the `launch`
+-- arm is widened by this file, plus the new `claim` arm below.
+--
+-- `agent_activity_kind_family_binding` (079) is deliberately NOT restated here.
+-- Its predicate reads `kind NOT IN ('lend', 'prediction') OR ...`, so the new
+-- `claim` kind satisfies it by the leading disjunct exactly as `swap`, `launch`
+-- and `yield` already do. A pools arm would be a disjunct nothing needs, and
+-- restating the constraint would risk dropping 079's `eip155` lend arm.
+
 -- ── 4b. `claim` is its OWN kind (owner decision 2026-08-19) ────────────────
 --
 -- A creator-fee claim is not a launch. It signs its own transaction, pays two
 -- assets, spends nothing, and happens months after the launch it belongs to -
 -- so filing it under `kind='launch'` would put a payout inside the population
 -- every launch feed, launch filter and launch ceiling reads. This is the one
--- NON-ADDITIVE part of 079: every consumer that switches on `kind` must handle
+-- NON-ADDITIVE part of 082: every consumer that switches on `kind` must handle
 -- 'claim' rather than fall through, and each one was audited in the same change.
 --
 -- `pools_fee` deliberately STAYS on the `launch` arm: it is the Vex integrator
@@ -258,7 +277,10 @@ ALTER TABLE agent_activity
       'bridge_fill_expected', 'bridge_fill_observed', 'bridge_refund'
     ))
     OR
-    (kind = 'lend' AND event_role IN ('lend_deposit', 'lend_withdraw', 'lend_borrow_operate'))
+    (kind = 'lend' AND event_role IN (
+      'allowance_reset', 'allowance',
+      'lend_deposit', 'lend_withdraw', 'lend_borrow_operate'
+    ))
     OR
     (kind = 'prediction' AND event_role IN (
       'predict_buy', 'predict_sell', 'predict_claim', 'predict_close'
