@@ -170,6 +170,31 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.order.cancel.prepare": {
+    embeddingText: embeddingText(
+      `Prepare an approval-gated cancellation for one exact active Lighter order. ` +
+      `Use when: the user identifies an open order by its provider order id and asks to cancel it. Vex resolves the saved account credential, reads the exact active order with authenticated provider access, and binds its string order id, market, side, price, remaining amount, fills, and status into a durable intent and approval card. ` +
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. ` +
+      `Example queries: cancel Lighter order 123 on market 0, prepare cancellation for my open RHC order.`,
+    ),
+    aliases: ["lighter cancel order", "cancel open order", "prepare order cancellation"],
+    exampleIntents: ["cancel Lighter order 123 on market 0", "prepare cancellation for that open RHC order"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.order.cancel": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact prepared Lighter order cancellation. ` +
+      `Use only when the trusted approval card from lighter.order.cancel.prepare resumes. The privileged runtime re-reads the exact active provider order, credential, and nonce; persists structural identity before one TxType 15 submission; never retries ambiguity; and reports canceled only from exact inactive-order evidence. ` +
+      `Direct model calls without the matching approval are refused.`,
+    ),
+    aliases: ["execute lighter cancellation", "approved order cancel"],
+    exampleIntents: ["execute approved Lighter order cancellation"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.withdraw.prepare": {
     embeddingText: embeddingText(
       `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
@@ -361,7 +386,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 28;
+const EXPECTED_COUNT = 30;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

@@ -28,6 +28,10 @@ const ORDER_CREATE_EXECUTION_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/order-create-execution.ts",
 );
+const ORDER_LIFECYCLE_EXECUTION_SOURCE = join(
+  ROOT,
+  "src/vex-agent/tools/protocols/lighter/order-lifecycle.ts",
+);
 const WITHDRAWAL_EXECUTION_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/withdrawal-execution.ts",
@@ -63,7 +67,7 @@ describe("Lighter execution boundary", () => {
     expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.writeActionKind).toBe("external_post");
     expect(LIGHTER_ORDER_EXECUTION_BOUNDARY.writeToolIds).toEqual([
       "lighter.order.create",
-      "lighter.order.cancel.preview",
+      "lighter.order.cancel.prepare",
       "lighter.order.cancel",
     ]);
   });
@@ -107,7 +111,7 @@ describe("Lighter execution boundary", () => {
     ]);
   });
 
-  it("registers create only through the approval-gated execution path", () => {
+  it("registers create and cancel only through approval-gated execution paths", () => {
     const toolIds = new Set(LIGHTER_TOOLS.map((tool) => tool.toolId));
     const handlerIds = new Set(Object.keys(LIGHTER_HANDLERS));
     expect(toolIds.has("lighter.order.create.prepare")).toBe(true);
@@ -126,10 +130,16 @@ describe("Lighter execution boundary", () => {
       actionKind: LIGHTER_ORDER_WRITE_ACTION_KIND,
     });
 
-    expect(toolIds.has("lighter.order.cancel.preview")).toBe(false);
-    expect(handlerIds.has("lighter.order.cancel.preview")).toBe(false);
-    expect(toolIds.has("lighter.order.cancel")).toBe(false);
-    expect(handlerIds.has("lighter.order.cancel")).toBe(false);
+    expect(LIGHTER_TOOLS.find((tool) => tool.toolId === "lighter.order.cancel.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(handlerIds.has("lighter.order.cancel.prepare")).toBe(true);
+    expect(LIGHTER_TOOLS.find((tool) => tool.toolId === "lighter.order.cancel")).toMatchObject({
+      mutating: true,
+      actionKind: LIGHTER_ORDER_WRITE_ACTION_KIND,
+    });
+    expect(handlerIds.has("lighter.order.cancel")).toBe(true);
   });
 
   it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks outside the execution pipeline", () => {
@@ -138,6 +148,7 @@ describe("Lighter execution boundary", () => {
       for (const file of walk(root)) {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
+        if (file === ORDER_LIFECYCLE_EXECUTION_SOURCE) continue;
         if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (
@@ -159,6 +170,7 @@ describe("Lighter execution boundary", () => {
         if (file === LOW_LEVEL_SUBMIT_CLIENT_SOURCE) continue;
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
+        if (file === ORDER_LIFECYCLE_EXECUTION_SOURCE) continue;
         if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (/\bsendTx\s*\(/.test(source) || /\bsendTxBatch\s*\(/.test(source)) {

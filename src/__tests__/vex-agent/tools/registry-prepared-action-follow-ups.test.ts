@@ -5,6 +5,7 @@ import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/depos
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
+const LIGHTER_LIFECYCLE_INTENT_ID = "lighter-lifecycle-00000000-0000-4000-8000-000000000001";
 const LIGHTER_DEPOSIT_INTENT_ID = "lighter-onboard-00000000-0000-4000-8000-000000000001";
 const LIGHTER_WITHDRAWAL_INTENT_ID = "lighter-withdrawal-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
@@ -65,6 +66,38 @@ function lighterCandidate() {
         reduceOnly: false,
         previewId: "lighter-preview-1",
         matchHash: "a".repeat(64),
+      },
+    },
+  };
+}
+
+function lighterCancelCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.order.cancel", params: { intentId: LIGHTER_LIFECYCLE_INTENT_ID } },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "order.cancel",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.order.cancel",
+        intentId: LIGHTER_LIFECYCLE_INTENT_ID,
+        actionType: "cancel_one",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        marketIndex: 0,
+        providerOrderId: "1152921504606846975",
+        clientOrderId: "123",
+        side: "buy",
+        orderType: "limit",
+        timeInForce: "good-till-time",
+        price: "50",
+        initialBaseAmount: "1",
+        remainingBaseAmount: "0.5",
+        filledBaseAmount: "0.5",
+        matchHash: "b".repeat(64),
+        summary: "Cancel exact Lighter order 1152921504606846975 on market 0.",
       },
     },
   };
@@ -261,6 +294,25 @@ describe("prepared-action follow-up registry", () => {
       ok: true,
       followUp: input,
     });
+  });
+
+  it.each(["execute_tool", "lighter__order__cancel__prepare"])(
+    "allows %s to hand off an exact Lighter cancel intent",
+    (sourceToolName) => {
+      const input = lighterCancelCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({ ok: true, followUp: input });
+    },
+  );
+
+  it("rejects rounded or altered Lighter cancel identity", () => {
+    const input = lighterCancelCandidate();
+    expect(validatePreparedActionFollowUp("execute_tool", {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: { ...input.approvalPreview.criticalArgs, providerOrderId: "1152921504606846976" },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
   });
 
   it.each(["execute_tool", "lighter__deposit__prepare"])(

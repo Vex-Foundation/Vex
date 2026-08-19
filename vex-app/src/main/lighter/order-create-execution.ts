@@ -5,6 +5,7 @@ import {
 } from "@tools/lighter/signer-adapter.js";
 import {
   createLighterSignerBinaryAdapter,
+  createLighterOrderLifecycleSignerBinary,
   createLighterWithdrawalSignerBinary,
 } from "@tools/lighter/signer-binary-adapter.js";
 import { readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
@@ -14,6 +15,10 @@ import {
   configureLighterCreateOrderExecutionDeps,
   defaultLighterCreateOrderExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
+import {
+  configureLighterOrderLifecycleExecutionDeps,
+  defaultLighterOrderLifecycleExecutionDeps,
+} from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
@@ -75,11 +80,20 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
   const signer = createLighterSignerBinaryAdapter();
   const withdrawalSigner = createLighterWithdrawalSignerBinary();
+  const lifecycleSigner = createLighterOrderLifecycleSignerBinary();
   const lighterClient = getLighterClient();
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
       secretReader,
       signer,
+      client: lighterClient,
+    }),
+  );
+  const uninstallLifecycleExecutionDeps = configureLighterOrderLifecycleExecutionDeps(
+    defaultLighterOrderLifecycleExecutionDeps({
+      secretReader,
+      authSigner: signer,
+      lifecycleSigner,
       client: lighterClient,
     }),
   );
@@ -176,6 +190,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallScopeResolver();
     uninstallReadinessResolver();
     uninstallWithdrawalExecutionDeps();
+    uninstallLifecycleExecutionDeps();
     uninstallExecutionDeps();
   };
 }

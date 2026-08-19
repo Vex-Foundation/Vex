@@ -25,6 +25,33 @@ const INTENT_ID_PARAM: ProtocolParamDef = {
     "Session-scoped Lighter order execution intent id produced by lighter.order.create.prepare. The approved create path refuses ids from other sessions.",
 };
 
+const LIFECYCLE_INTENT_ID_PARAM: ProtocolParamDef = {
+  key: "intentId",
+  type: "string",
+  required: true,
+  description: "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+};
+
+const LIFECYCLE_ACCOUNT_PARAM: ProtocolParamDef = {
+  key: "accountIndex",
+  type: "number",
+  description: "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+};
+
+const LIFECYCLE_MARKET_PARAM: ProtocolParamDef = {
+  key: "marketId",
+  type: "number",
+  required: true,
+  description: "Exact Lighter market index of the active provider order.",
+};
+
+const PROVIDER_ORDER_ID_PARAM: ProtocolParamDef = {
+  key: "orderId",
+  type: "string",
+  required: true,
+  description: "Exact decimal provider order_id string from authenticated Lighter open orders. It is never converted to a JavaScript number.",
+};
+
 const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
@@ -72,6 +99,30 @@ const WITHDRAW_CLAIM_ID_PARAM: ProtocolParamDef = {
 };
 
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "lighter.order.cancel.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare a user approval for canceling one exact active Lighter order. Reads authenticated provider state for the selected Core or RHC account, matches the exact string order_id and market, and persists immutable side, price, remaining amount, fills, status, credential scope, and expiry. Returns a trusted approval card; it never loads a private key, reserves a nonce, signs, submits, or treats absence as cancellation.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, PROVIDER_ORDER_ID_PARAM],
+    exampleParams: { environment: "rhc", marketId: 0, orderId: "123456789" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancel.prepare"],
+  },
+  {
+    toolId: "lighter.order.cancel",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. It reports canceled only from exact provider inactive-order evidence and includes executed, remaining, and average-fill amounts.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [LIFECYCLE_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-lifecycle-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancel"],
+  },
   {
     toolId: "lighter.withdraw.claim.prepare",
     namespace: "lighter",

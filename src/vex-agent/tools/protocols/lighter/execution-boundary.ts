@@ -4,7 +4,7 @@ export const LIGHTER_ORDER_WRITE_ACTION_KIND = "external_post" as const satisfie
 
 export const LIGHTER_ORDER_WRITE_TOOL_IDS = [
   "lighter.order.create",
-  "lighter.order.cancel.preview",
+  "lighter.order.cancel.prepare",
   "lighter.order.cancel",
 ] as const;
 

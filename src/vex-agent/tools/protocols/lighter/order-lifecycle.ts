@@ -136,7 +136,7 @@ export async function prepareLighterCancelOne(input: {
   readonly apiKeyIndex: number;
   readonly marketIndex: number;
   readonly providerOrderId: string;
-  readonly auth: LighterPrivilegedAccountAuth;
+  readonly auth?: LighterPrivilegedAccountAuth;
   readonly client?: Pick<LighterClient, "getAccountActiveOrders">;
 }): Promise<LighterCancelOnePreparation> {
   assertProviderOrderId(input.providerOrderId);

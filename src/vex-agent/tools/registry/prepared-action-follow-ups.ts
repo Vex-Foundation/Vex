@@ -42,6 +42,20 @@ export interface ValidatedLighterOrderCreateFollowUp {
   };
 }
 
+export interface ValidatedLighterOrderCancelFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.order.cancel";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "order.cancel";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export interface ValidatedLighterDepositFollowUp {
   readonly toolName: "execute_tool";
   readonly args: {
@@ -89,6 +103,7 @@ export interface ValidatedLighterWithdrawalFollowUp {
 export type ValidatedPreparedActionFollowUp =
   | ValidatedWalletSendFollowUp
   | ValidatedLighterOrderCreateFollowUp
+  | ValidatedLighterOrderCancelFollowUp
   | ValidatedLighterDepositFollowUp
   | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterKeyRegistrationFollowUp;
@@ -99,11 +114,16 @@ export type PreparedActionFollowUpValidation =
 
 const WALLET_INTENT_ID_RE = /^intent-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_INTENT_ID_RE = /^lighter-exec-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LIGHTER_LIFECYCLE_INTENT_ID_RE = /^lighter-lifecycle-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_DEPOSIT_INTENT_ID_RE = /^lighter-onboard-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_WITHDRAWAL_INTENT_ID_RE = /^lighter-withdrawal-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__order__create__prepare",
+]);
+const LIGHTER_ORDER_CANCEL_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__order__cancel__prepare",
 ]);
 const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
   "execute_tool",
@@ -239,6 +259,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.order.create"
   ) {
     return validateLighterOrderCreateFollowUp(candidate);
+  }
+  if (
+    LIGHTER_ORDER_CANCEL_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.order.cancel"
+  ) {
+    return validateLighterOrderCancelFollowUp(candidate);
   }
   if (
     LIGHTER_DEPOSIT_PREPARE_SOURCES.has(sourceToolName)
@@ -699,6 +726,64 @@ function validateLighterOrderCreateFollowUp(
         namespace: "lighter",
         criticalArgs,
       },
+    },
+  };
+}
+
+const LIGHTER_CANCEL_PREVIEW_KEYS = [
+  "toolId", "intentId", "actionType", "environment", "accountIndex", "apiKeyIndex",
+  "marketIndex", "providerOrderId", "clientOrderId", "side", "orderType", "timeInForce",
+  "price", "initialBaseAmount", "remainingBaseAmount", "filledBaseAmount", "matchHash", "summary",
+] as const;
+
+function validateLighterOrderCancelFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(candidate.args).sort().join(",") !== "params,toolId" || candidate.args.toolId !== "lighter.order.cancel") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) return { ok: false, reason: "invalid_contract" };
+  const intentId = (params as Record<string, unknown>).intentId;
+  if (Object.keys(params as Record<string, unknown>).join(",") !== "intentId" || typeof intentId !== "string" || !LIGHTER_LIFECYCLE_INTENT_ID_RE.test(intentId)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "order.cancel" || preview.namespace !== "lighter") return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_CANCEL_PREVIEW_KEYS].sort().join(",")) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_CANCEL_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    criticalArgs[key] = value;
+  }
+  if (
+    criticalArgs.toolId !== "lighter.order.cancel" || criticalArgs.intentId !== intentId
+    || criticalArgs.actionType !== "cancel_one"
+    || (criticalArgs.environment !== "core" && criticalArgs.environment !== "rhc")
+    || typeof criticalArgs.accountIndex !== "number" || !Number.isSafeInteger(criticalArgs.accountIndex) || criticalArgs.accountIndex < 0
+    || typeof criticalArgs.apiKeyIndex !== "number" || !Number.isInteger(criticalArgs.apiKeyIndex) || criticalArgs.apiKeyIndex < 4 || criticalArgs.apiKeyIndex > 254
+    || typeof criticalArgs.marketIndex !== "number" || !Number.isInteger(criticalArgs.marketIndex) || criticalArgs.marketIndex < 0 || criticalArgs.marketIndex > 65_535
+    || typeof criticalArgs.providerOrderId !== "string" || !/^[1-9][0-9]*$/.test(criticalArgs.providerOrderId)
+    || BigInt(criticalArgs.providerOrderId) > (1n << 60n) - 1n
+    || typeof criticalArgs.clientOrderId !== "string" || !/^[0-9]+$/.test(criticalArgs.clientOrderId)
+    || typeof criticalArgs.side !== "string" || typeof criticalArgs.orderType !== "string"
+    || typeof criticalArgs.timeInForce !== "string" || typeof criticalArgs.price !== "string"
+    || typeof criticalArgs.initialBaseAmount !== "string" || typeof criticalArgs.remainingBaseAmount !== "string"
+    || typeof criticalArgs.filledBaseAmount !== "string" || typeof criticalArgs.matchHash !== "string"
+    || !/^[0-9a-f]{64}$/.test(criticalArgs.matchHash)
+    || typeof criticalArgs.summary !== "string" || criticalArgs.summary.length < 1 || criticalArgs.summary.length > 600
+  ) return { ok: false, reason: "invalid_contract" };
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: { toolId: "lighter.order.cancel", params: { intentId } },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: "order.cancel", namespace: "lighter", criticalArgs },
     },
   };
 }
