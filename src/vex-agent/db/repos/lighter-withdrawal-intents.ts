@@ -1,6 +1,9 @@
 import type { PoolClient } from "pg";
 
 import type { LighterCoreWithdrawalPreview } from "@tools/lighter/withdrawal/core-preview.js";
+import type { LighterRhcWithdrawalPreview } from "@tools/lighter/withdrawal/rhc-preview.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import type {
   LighterTradingCredentialReadiness,
   LighterTradingCredentialVaultReference,
@@ -44,19 +47,19 @@ export interface LighterWithdrawalIntentRow {
   readonly protocolExecutionId: number | null;
   readonly approvalId: string | null;
   readonly matchHash: string;
-  readonly environment: "core";
+  readonly environment: LighterEnvironment;
   readonly operationClass: "secure_l2_withdrawal";
   readonly endpoint: string;
-  readonly signingChainId: 304;
-  readonly settlementChainId: 1;
-  readonly settlementNetworkName: "Ethereum mainnet";
+  readonly signingChainId: 304 | 466324;
+  readonly settlementChainId: 1 | 4663;
+  readonly settlementNetworkName: "Ethereum mainnet" | "Robinhood Chain mainnet";
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly walletAddress: string;
   readonly destinationAddress: string;
   readonly credentialRefJson: LighterTradingCredentialVaultReference;
   readonly assetIndex: 3;
-  readonly assetSymbol: "USDC";
+  readonly assetSymbol: "USDC" | "USDG";
   readonly assetDecimals: 6;
   readonly settlementTokenAddress: string;
   readonly routeType: 0;
@@ -124,7 +127,7 @@ export interface LighterWithdrawalIntentRow {
 
 export interface CreateLighterWithdrawalIntentInput {
   readonly intentId: string;
-  readonly preview: LighterCoreWithdrawalPreview;
+  readonly preview: LighterCoreWithdrawalPreview | LighterRhcWithdrawalPreview;
   readonly credentialReadiness: Extract<LighterTradingCredentialReadiness, { ready: true }>;
   readonly protocolExecutionId?: number | null;
 }
@@ -207,17 +210,17 @@ export async function createOrFindLiveApprovalPendingWith(
     client,
     `SELECT ${SELECT_COLUMNS}
        FROM lighter_withdrawal_intents
-      WHERE environment = 'core'
-        AND account_index = $1
+      WHERE environment = $1
+        AND account_index = $2
         AND asset_index = 3
         AND route_type = 0
         AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
       ORDER BY created_at DESC
       LIMIT 1`,
-    [snapshot.accountIndex],
+    [snapshot.environment, snapshot.accountIndex],
   );
   if (conflict === null) {
-    throw new Error("Core withdrawal intent insert was not persisted and no conflicting row was found.");
+    throw new Error(`${snapshot.environment} withdrawal intent insert was not persisted and no conflicting row was found.`);
   }
   return { outcome: "live_conflict", intent: mapRow(conflict) };
 }
@@ -251,7 +254,7 @@ export async function findLatestForSession(
 
 export async function listReconciliationCandidates(limit = 5): Promise<LighterWithdrawalIntentRow[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) {
-    throw new Error("Core withdrawal reconciliation limit must be between 1 and 25.");
+    throw new Error("Lighter withdrawal reconciliation limit must be between 1 and 25.");
   }
   const result = await query<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS}
@@ -301,7 +304,6 @@ export async function markPreSubmitRevalidated(input: {
             updated_at = NOW()
       WHERE intent_id = $1
         AND session_id = $2
-        AND environment = 'core'
         AND approval_status = 'approved'
         AND execution_state = 'approved'
         AND nonce_reservation_id IS NULL
@@ -331,7 +333,6 @@ export async function attachNonceReservationWith(
             updated_at = NOW()
       WHERE intent_id = $1
         AND session_id = $2
-        AND environment = 'core'
         AND account_index = $3
         AND api_key_index = $4
         AND approval_status = 'approved'
@@ -661,20 +662,36 @@ function createParams(input: CreateLighterWithdrawalIntentInput): unknown[] {
 }
 
 function assertCredentialMatchesPreview(
-  preview: LighterCoreWithdrawalPreview,
+  preview: LighterCoreWithdrawalPreview | LighterRhcWithdrawalPreview,
   readiness: Extract<LighterTradingCredentialReadiness, { ready: true }>,
 ): void {
   const snapshot = preview.snapshot;
   if (
-    readiness.nonceScope.environment !== "core"
+    readiness.nonceScope.environment !== snapshot.environment
     || readiness.nonceScope.accountIndex !== snapshot.accountIndex
     || readiness.nonceScope.apiKeyIndex !== snapshot.apiKeyIndex
   ) {
-    throw new Error("Core withdrawal credential scope does not match the immutable preview.");
+    throw new Error(`${snapshot.environment} withdrawal credential scope does not match the immutable preview.`);
   }
 }
 
 function mapRow(row: Record<string, unknown>): LighterWithdrawalIntentRow {
+  const environment = String(row.environment);
+  if (environment !== "core" && environment !== "rhc") {
+    throw new Error("Lighter withdrawal row has an unsupported environment.");
+  }
+  const profile = getLighterSecureWithdrawalProfile(environment);
+  if (
+    Number(row.signing_chain_id) !== profile.signingChainId
+    || Number(row.settlement_chain_id) !== profile.settlementChainId
+    || String(row.settlement_network_name) !== profile.settlementNetworkName
+    || Number(row.asset_index) !== profile.assetIndex
+    || String(row.asset_symbol) !== profile.assetSymbol
+    || Number(row.asset_decimals) !== profile.assetDecimals
+    || Number(row.route_type) !== profile.routeType
+  ) {
+    throw new Error(`Lighter ${environment} withdrawal row crossed an environment identity boundary.`);
+  }
   return {
     intentId: String(row.intent_id),
     previewId: String(row.preview_id),
@@ -682,19 +699,19 @@ function mapRow(row: Record<string, unknown>): LighterWithdrawalIntentRow {
     protocolExecutionId: nullableNumber(row.protocol_execution_id),
     approvalId: nullableString(row.approval_id),
     matchHash: String(row.match_hash),
-    environment: "core",
+    environment,
     operationClass: "secure_l2_withdrawal",
     endpoint: String(row.endpoint),
-    signingChainId: 304,
-    settlementChainId: 1,
-    settlementNetworkName: "Ethereum mainnet",
+    signingChainId: profile.signingChainId,
+    settlementChainId: profile.settlementChainId,
+    settlementNetworkName: profile.settlementNetworkName,
     accountIndex: Number(row.account_index),
     apiKeyIndex: Number(row.api_key_index),
     walletAddress: String(row.wallet_address),
     destinationAddress: String(row.destination_address),
     credentialRefJson: row.credential_ref_json as LighterTradingCredentialVaultReference,
     assetIndex: 3,
-    assetSymbol: "USDC",
+    assetSymbol: profile.assetSymbol,
     assetDecimals: 6,
     settlementTokenAddress: String(row.settlement_token_address),
     routeType: 0,
@@ -784,20 +801,20 @@ function nullableIso(value: unknown): string | null {
 function safeText(value: string, field: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > 1_000 || /(?:private|secret|signature|tx_info|auth.?token)/i.test(trimmed)) {
-    throw new Error(`Core withdrawal ${field} is unsafe or invalid.`);
+    throw new Error(`Lighter withdrawal ${field} is unsafe or invalid.`);
   }
   return trimmed;
 }
 
 function safeNonNegativeInteger(value: number, field: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Core withdrawal ${field} is invalid.`);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Lighter withdrawal ${field} is invalid.`);
   return value;
 }
 
 function decimal(value: string, allowZero: boolean, field: string): string {
   const trimmed = value.trim();
   if (!/^\d+$/.test(trimmed) || (!allowZero && BigInt(trimmed) === 0n)) {
-    throw new Error(`Core withdrawal ${field} is invalid.`);
+    throw new Error(`Lighter withdrawal ${field} is invalid.`);
   }
   return BigInt(trimmed).toString(10);
 }
@@ -808,7 +825,7 @@ function assertPublicEvidence(value: Record<string, unknown>): Record<string, un
     encoded.length > 12_000
     || /(?:private.?key|secret|signature|tx_info|auth.?token)/i.test(encoded)
   ) {
-    throw new Error("Core withdrawal revalidation evidence is unsafe or too large.");
+    throw new Error("Lighter withdrawal revalidation evidence is unsafe or too large.");
   }
   return value;
 }
