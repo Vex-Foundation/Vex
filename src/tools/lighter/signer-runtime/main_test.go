@@ -130,6 +130,96 @@ func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
 	}
 }
 
+func TestSignOrderLifecycleTransactionsPreserveExactProviderIdentity(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	base := signerRequest{
+		PrivateKey: strings.Repeat("1", 80), ChainID: lighterRHCChainID,
+		AccountIndex: "42", APIKeyIndex: 7, Nonce: "9", ExpiredAt: fmt.Sprintf("%d", expiredAt),
+	}
+
+	cancel := base
+	cancel.Operation = "signCancelOrder"
+	cancel.CancelOrder = &cancelOrderRequest{MarketIndex: 0, OrderIndex: "1152921504606846975"}
+	cancelResponse, err := signCancelOrder(cancel)
+	if err != nil || cancelResponse.TxType != 15 {
+		t.Fatalf("signCancelOrder() = %#v, %v", cancelResponse, err)
+	}
+	assertLifecycleTxInfo(t, cancelResponse.TxInfo, map[string]any{
+		"MarketIndex": float64(0), "Index": float64(1152921504606846975), "Nonce": float64(9),
+	})
+
+	modify := base
+	modify.Operation = "signModifyOrder"
+	modify.ModifyOrder = &modifyOrderRequest{
+		MarketIndex: 2048, OrderIndex: "281474976710655", BaseAmount: "125000", Price: "300000", TriggerPrice: "0",
+	}
+	modifyResponse, err := signModifyOrder(modify)
+	if err != nil || modifyResponse.TxType != 17 {
+		t.Fatalf("signModifyOrder() = %#v, %v", modifyResponse, err)
+	}
+	assertLifecycleTxInfo(t, modifyResponse.TxInfo, map[string]any{
+		"MarketIndex": float64(2048), "Index": float64(281474976710655), "BaseAmount": float64(125000), "Price": float64(300000),
+	})
+
+	cancelAll := base
+	cancelAll.Operation = "signCancelAllOrders"
+	cancelAll.CancelAllOrders = &cancelAllOrdersRequest{TimeInForce: 0, Time: "0"}
+	cancelAllResponse, err := signCancelAllOrders(cancelAll)
+	if err != nil || cancelAllResponse.TxType != 16 {
+		t.Fatalf("signCancelAllOrders() = %#v, %v", cancelAllResponse, err)
+	}
+	assertLifecycleTxInfo(t, cancelAllResponse.TxInfo, map[string]any{
+		"TimeInForce": float64(0), "Time": float64(0), "Nonce": float64(9),
+	})
+}
+
+func TestReadRequestRejectsUnsafeOrderLifecycleShapes(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	base := signerRequest{
+		Operation: "signCancelOrder", PrivateKey: strings.Repeat("1", 80), ChainID: lighterCoreChainID,
+		AccountIndex: "42", APIKeyIndex: 7, Nonce: "9", ExpiredAt: fmt.Sprintf("%d", expiredAt),
+		CancelOrder: &cancelOrderRequest{MarketIndex: 0, OrderIndex: "123"},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*signerRequest)
+	}{
+		{name: "zero provider identity", mutate: func(r *signerRequest) { r.CancelOrder.OrderIndex = "0" }},
+		{name: "expired signature", mutate: func(r *signerRequest) { r.ExpiredAt = fmt.Sprintf("%d", time.Now().UnixMilli()) }},
+		{name: "reserved key index", mutate: func(r *signerRequest) { r.APIKeyIndex = 3 }},
+		{name: "scheduled cancel all", mutate: func(r *signerRequest) {
+			r.Operation = "signCancelAllOrders"
+			r.CancelOrder = nil
+			r.CancelAllOrders = &cancelAllOrdersRequest{TimeInForce: 1, Time: fmt.Sprintf("%d", expiredAt)}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			cancelOrder := *base.CancelOrder
+			candidate.CancelOrder = &cancelOrder
+			test.mutate(&candidate)
+			payload, _ := json.Marshal(candidate)
+			if _, err := readRequest(strings.NewReader(string(payload))); err == nil {
+				t.Fatal("expected unsafe lifecycle request rejection")
+			}
+		})
+	}
+}
+
+func assertLifecycleTxInfo(t *testing.T, raw string, expected map[string]any) {
+	t.Helper()
+	var actual map[string]any
+	if err := json.Unmarshal([]byte(raw), &actual); err != nil {
+		t.Fatalf("invalid txInfo JSON: %v", err)
+	}
+	for key, value := range expected {
+		if actual[key] != value {
+			t.Fatalf("txInfo[%s] = %#v, want %#v", key, actual[key], value)
+		}
+	}
+}
+
 func TestSignWithdrawBuildsConstrainedTxType13ForReviewedEnvironments(t *testing.T) {
 	for _, chainID := range []uint32{lighterCoreChainID, lighterRHCChainID} {
 		t.Run(fmt.Sprintf("chain-%d", chainID), func(t *testing.T) {

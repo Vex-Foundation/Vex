@@ -27,6 +27,16 @@ import {
   type LighterTradingSecretMaterial,
 } from "./trading-secret.js";
 import { LIGHTER_TX_TYPE_L2_CHANGE_PUB_KEY } from "./wallet-funding/constants.js";
+import {
+  LIGHTER_TX_TYPE_CANCEL_ALL_ORDERS,
+  LIGHTER_TX_TYPE_CANCEL_ORDER,
+  LIGHTER_TX_TYPE_MODIFY_ORDER,
+  type LighterCancelAllOrdersSigningInput,
+  type LighterCancelOrderSigningInput,
+  type LighterModifyOrderSigningInput,
+  type LighterOrderLifecycleSignerAdapter,
+  type LighterOrderLifecycleSignerResult,
+} from "./signer-order-lifecycle.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_STDOUT_BYTES = 256 * 1024;
@@ -93,6 +103,39 @@ interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBaseP
   };
 }
 
+interface LighterSignerBinaryCancelOrderPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signCancelOrder";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly cancelOrder: {
+    readonly marketIndex: number;
+    readonly orderIndex: string;
+  };
+}
+
+interface LighterSignerBinaryModifyOrderPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signModifyOrder";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly modifyOrder: {
+    readonly marketIndex: number;
+    readonly orderIndex: string;
+    readonly baseAmount: string;
+    readonly price: string;
+    readonly triggerPrice: string;
+  };
+}
+
+interface LighterSignerBinaryCancelAllOrdersPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signCancelAllOrders";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly cancelAllOrders: {
+    readonly timeInForce: 0;
+    readonly time: "0";
+  };
+}
+
 interface LighterSignerBinaryWithdrawPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "signWithdraw";
   readonly nonce: string;
@@ -122,6 +165,9 @@ type LighterSignerBinaryPayload =
   | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
   | LighterSignerBinaryCreateOrderPayload
+  | LighterSignerBinaryCancelOrderPayload
+  | LighterSignerBinaryModifyOrderPayload
+  | LighterSignerBinaryCancelAllOrdersPayload
   | LighterSignerBinaryWithdrawPayload
   | LighterSignerBinaryChangePubKeyPayload
   | LighterSignerBinaryCheckClientPayload;
@@ -243,6 +289,58 @@ export function createLighterSignerBinaryAdapter(
         txHash: output.txHash,
       };
     },
+  };
+}
+
+export function createLighterOrderLifecycleSignerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterOrderLifecycleSignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  const run = async (
+    input: LighterCancelOrderSigningInput | LighterModifyOrderSigningInput | LighterCancelAllOrdersSigningInput,
+    payload: LighterSignerBinaryPayload,
+    operation: LighterOrderLifecycleSignerResult["operation"],
+    expectedTxType: 15 | 16 | 17,
+  ): Promise<LighterOrderLifecycleSignerResult> => {
+    const raw = await runner({ binaryPath, payload, timeoutMs });
+    const output = parseOrderLifecycleSignerOutput(raw, expectedTxType);
+    return {
+      kind: "lighter_order_lifecycle_signer_result",
+      operation,
+      environment: input.environment,
+      accountIndex: input.accountIndex,
+      apiKeyIndex: input.apiKeyIndex,
+      nonce: input.nonce,
+      expiredAt: input.expiredAt,
+      txType: expectedTxType,
+      txInfo: output.txInfo,
+      txHash: output.txHash,
+    };
+  };
+
+  return {
+    source: "official_lighter_signer",
+    signCancelOrder: (input) => run(
+      input,
+      buildCancelOrderPayload(input),
+      "cancel_order",
+      LIGHTER_TX_TYPE_CANCEL_ORDER,
+    ),
+    signModifyOrder: (input) => run(
+      input,
+      buildModifyOrderPayload(input),
+      "modify_order",
+      LIGHTER_TX_TYPE_MODIFY_ORDER,
+    ),
+    signCancelAllOrders: (input) => run(
+      input,
+      buildCancelAllOrdersPayload(input),
+      "cancel_all_orders",
+      LIGHTER_TX_TYPE_CANCEL_ALL_ORDERS,
+    ),
   };
 }
 
@@ -399,6 +497,51 @@ function buildWithdrawPayload(
       routeType: input.routeType,
       amount: input.amountUnits,
     },
+  };
+}
+
+function lifecyclePayloadBase(
+  input: LighterCancelOrderSigningInput | LighterModifyOrderSigningInput | LighterCancelAllOrdersSigningInput,
+): LighterSignerBinaryBasePayload & { readonly nonce: string; readonly expiredAt: string } {
+  return {
+    privateKey: input.secret.privateKey,
+    chainId: input.chainId,
+    accountIndex: String(input.accountIndex),
+    apiKeyIndex: input.apiKeyIndex,
+    nonce: input.nonce,
+    expiredAt: input.expiredAt,
+  };
+}
+
+function buildCancelOrderPayload(input: LighterCancelOrderSigningInput): LighterSignerBinaryCancelOrderPayload {
+  return {
+    operation: "signCancelOrder",
+    ...lifecyclePayloadBase(input),
+    cancelOrder: { marketIndex: input.marketIndex, orderIndex: input.providerOrderId },
+  };
+}
+
+function buildModifyOrderPayload(input: LighterModifyOrderSigningInput): LighterSignerBinaryModifyOrderPayload {
+  return {
+    operation: "signModifyOrder",
+    ...lifecyclePayloadBase(input),
+    modifyOrder: {
+      marketIndex: input.marketIndex,
+      orderIndex: input.providerOrderId,
+      baseAmount: input.baseAmountInteger,
+      price: input.priceInteger,
+      triggerPrice: input.triggerPriceInteger,
+    },
+  };
+}
+
+function buildCancelAllOrdersPayload(
+  input: LighterCancelAllOrdersSigningInput,
+): LighterSignerBinaryCancelAllOrdersPayload {
+  return {
+    operation: "signCancelAllOrders",
+    ...lifecyclePayloadBase(input),
+    cancelAllOrders: { timeInForce: input.timeInForce, time: input.cancelAtMs },
   };
 }
 
@@ -571,6 +714,15 @@ function parseWithdrawalSignerOutput(raw: unknown): Pick<
 > {
   const signed = parseSignerOutput(raw);
   if (signed.txType !== 13) throw signerProcessFailed(raw);
+  return { txInfo: signed.txInfo, txHash: signed.txHash };
+}
+
+function parseOrderLifecycleSignerOutput(
+  raw: unknown,
+  expectedTxType: 15 | 16 | 17,
+): Pick<LighterOrderLifecycleSignerResult, "txInfo" | "txHash"> {
+  const signed = parseSignerOutput(raw);
+  if (signed.txType !== expectedTxType) throw signerProcessFailed(raw);
   return { txInfo: signed.txInfo, txHash: signed.txHash };
 }
 

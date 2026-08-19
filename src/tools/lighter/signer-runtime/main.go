@@ -15,6 +15,7 @@ import (
 	lighterhttp "github.com/elliottech/lighter-go/client/http"
 	lightersigner "github.com/elliottech/lighter-go/signer"
 	"github.com/elliottech/lighter-go/types"
+	"github.com/elliottech/lighter-go/types/txtypes"
 	schnorr "github.com/elliottech/poseidon_crypto/signature/schnorr"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -22,6 +23,7 @@ import (
 
 const maxInputBytes = 32 * 1024
 const maxRegistrationNonce = int64(1<<48 - 1)
+const maxProviderOrderIndex = int64(1<<60 - 1)
 const lighterCoreChainID = uint32(304)
 const lighterCoreBaseURL = "https://mainnet.zklighter.elliot.ai"
 const lighterRHCChainID = uint32(466324)
@@ -37,19 +39,22 @@ var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 var l1SignaturePattern = regexp.MustCompile(`^0x[a-fA-F0-9]{130}$`)
 
 type signerRequest struct {
-	Operation           string              `json:"operation"`
-	PrivateKey          string              `json:"privateKey"`
-	ChainID             uint32              `json:"chainId"`
-	AccountIndex        string              `json:"accountIndex"`
-	APIKeyIndex         uint8               `json:"apiKeyIndex"`
-	Nonce               string              `json:"nonce"`
-	DeadlineUnixSeconds string              `json:"deadlineUnixSeconds"`
-	ExpiredAt           string              `json:"expiredAt"`
-	PublicKey           string              `json:"publicKey"`
-	L1Signature         string              `json:"l1Signature"`
-	ExpectedL1Address   string              `json:"expectedL1Address"`
-	Order               *createOrderRequest `json:"order"`
-	Withdrawal          *withdrawRequest    `json:"withdrawal"`
+	Operation           string                  `json:"operation"`
+	PrivateKey          string                  `json:"privateKey"`
+	ChainID             uint32                  `json:"chainId"`
+	AccountIndex        string                  `json:"accountIndex"`
+	APIKeyIndex         uint8                   `json:"apiKeyIndex"`
+	Nonce               string                  `json:"nonce"`
+	DeadlineUnixSeconds string                  `json:"deadlineUnixSeconds"`
+	ExpiredAt           string                  `json:"expiredAt"`
+	PublicKey           string                  `json:"publicKey"`
+	L1Signature         string                  `json:"l1Signature"`
+	ExpectedL1Address   string                  `json:"expectedL1Address"`
+	Order               *createOrderRequest     `json:"order"`
+	CancelOrder         *cancelOrderRequest     `json:"cancelOrder"`
+	ModifyOrder         *modifyOrderRequest     `json:"modifyOrder"`
+	CancelAllOrders     *cancelAllOrdersRequest `json:"cancelAllOrders"`
+	Withdrawal          *withdrawRequest        `json:"withdrawal"`
 }
 
 type createOrderRequest struct {
@@ -69,6 +74,24 @@ type withdrawRequest struct {
 	AssetIndex int16  `json:"assetIndex"`
 	RouteType  uint8  `json:"routeType"`
 	Amount     string `json:"amount"`
+}
+
+type cancelOrderRequest struct {
+	MarketIndex int16  `json:"marketIndex"`
+	OrderIndex  string `json:"orderIndex"`
+}
+
+type modifyOrderRequest struct {
+	MarketIndex  int16  `json:"marketIndex"`
+	OrderIndex   string `json:"orderIndex"`
+	BaseAmount   string `json:"baseAmount"`
+	Price        string `json:"price"`
+	TriggerPrice string `json:"triggerPrice"`
+}
+
+type cancelAllOrdersRequest struct {
+	TimeInForce uint8  `json:"timeInForce"`
+	Time        string `json:"time"`
 }
 
 type signerResponse struct {
@@ -107,6 +130,12 @@ func main() {
 		response, err = createAccountAuth(request)
 	case "signCreateOrder":
 		response, err = signCreateOrder(request)
+	case "signCancelOrder":
+		response, err = signCancelOrder(request)
+	case "signModifyOrder":
+		response, err = signModifyOrder(request)
+	case "signCancelAllOrders":
+		response, err = signCancelAllOrders(request)
 	case "signWithdraw":
 		response, err = signWithdraw(request)
 	case "signChangePubKey":
@@ -130,7 +159,8 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" &&
+	if request.Operation != "signCreateOrder" && request.Operation != "signCancelOrder" && request.Operation != "signModifyOrder" &&
+		request.Operation != "signCancelAllOrders" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" &&
 		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
@@ -222,6 +252,52 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		}
 		if _, err := parsePositiveUint64(request.Withdrawal.Amount, "withdrawal amount"); err != nil {
 			return request, fmt.Errorf("invalid withdrawal amount")
+		}
+		return request, nil
+	}
+	if request.Operation == "signCancelOrder" || request.Operation == "signModifyOrder" || request.Operation == "signCancelAllOrders" {
+		nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+		if err != nil || nonce > maxRegistrationNonce {
+			return request, fmt.Errorf("invalid nonce")
+		}
+		expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+		if err != nil {
+			return request, fmt.Errorf("invalid expiry")
+		}
+		nowMillis := time.Now().UnixMilli()
+		if expiredAt < nowMillis+minWithdrawExpiryLead || expiredAt > nowMillis+maxWithdrawExpiryLead {
+			return request, fmt.Errorf("invalid lifecycle expiry window")
+		}
+		switch request.Operation {
+		case "signCancelOrder":
+			if request.CancelOrder == nil {
+				return request, fmt.Errorf("missing cancel order")
+			}
+			orderIndex, err := parsePositiveInt64(request.CancelOrder.OrderIndex, "order index")
+			if err != nil || orderIndex > maxProviderOrderIndex {
+				return request, fmt.Errorf("invalid order index")
+			}
+		case "signModifyOrder":
+			if request.ModifyOrder == nil {
+				return request, fmt.Errorf("missing modify order")
+			}
+			orderIndex, err := parsePositiveInt64(request.ModifyOrder.OrderIndex, "order index")
+			if err != nil || orderIndex > maxProviderOrderIndex {
+				return request, fmt.Errorf("invalid order index")
+			}
+			if _, err := parsePositiveInt64(request.ModifyOrder.BaseAmount, "base amount"); err != nil {
+				return request, fmt.Errorf("invalid base amount")
+			}
+			if _, err := parsePositiveUint32(request.ModifyOrder.Price, "price"); err != nil {
+				return request, fmt.Errorf("invalid price")
+			}
+			if _, err := parseNonNegativeUint32(request.ModifyOrder.TriggerPrice, "trigger price"); err != nil {
+				return request, fmt.Errorf("invalid trigger price")
+			}
+		case "signCancelAllOrders":
+			if request.CancelAllOrders == nil || request.CancelAllOrders.TimeInForce != 0 || request.CancelAllOrders.Time != "0" {
+				return request, fmt.Errorf("only immediate account-wide cancel all is supported")
+			}
 		}
 		return request, nil
 	}
@@ -524,6 +600,105 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 		TxInfo: txInfo,
 		TxHash: tx.GetTxHash(),
 	}, nil
+}
+
+func lifecycleClient(request signerRequest) (*lighterclient.TxClient, int64, int64, error) {
+	accountIndex, err := parseNonNegativeInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	client, err := lighterclient.NewTxClient(nil, strings.TrimPrefix(request.PrivateKey, "0x"), accountIndex, request.APIKeyIndex, request.ChainID)
+	return client, accountIndex, nonce, err
+}
+
+func lifecycleResponse(tx txtypes.TxInfo, expectedType uint8) (signerResponse, error) {
+	if tx == nil || tx.GetTxType() != expectedType {
+		return signerResponse{}, fmt.Errorf("invalid lifecycle signer response")
+	}
+	txInfo, err := tx.GetTxInfo()
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return signerResponse{OK: true, TxType: expectedType, TxInfo: txInfo, TxHash: tx.GetTxHash()}, nil
+}
+
+func signCancelOrder(request signerRequest) (signerResponse, error) {
+	client, accountIndex, nonce, err := lifecycleClient(request)
+	if err != nil || request.CancelOrder == nil {
+		return signerResponse{}, fmt.Errorf("invalid cancel order request")
+	}
+	index, err := parsePositiveInt64(request.CancelOrder.OrderIndex, "order index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetCancelOrderTransaction(&types.CancelOrderTxReq{MarketIndex: request.CancelOrder.MarketIndex, Index: index}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: &types.L2TxAttributes{}})
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return lifecycleResponse(tx, 15)
+}
+
+func signModifyOrder(request signerRequest) (signerResponse, error) {
+	client, accountIndex, nonce, err := lifecycleClient(request)
+	if err != nil || request.ModifyOrder == nil {
+		return signerResponse{}, fmt.Errorf("invalid modify order request")
+	}
+	index, err := parsePositiveInt64(request.ModifyOrder.OrderIndex, "order index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	baseAmount, err := parsePositiveInt64(request.ModifyOrder.BaseAmount, "base amount")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	price, err := parsePositiveUint32(request.ModifyOrder.Price, "price")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	triggerPrice, err := parseNonNegativeUint32(request.ModifyOrder.TriggerPrice, "trigger price")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetModifyOrderTransaction(&types.ModifyOrderTxReq{MarketIndex: request.ModifyOrder.MarketIndex, Index: index, BaseAmount: baseAmount, Price: price, TriggerPrice: triggerPrice}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: &types.L2TxAttributes{}})
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return lifecycleResponse(tx, 17)
+}
+
+func signCancelAllOrders(request signerRequest) (signerResponse, error) {
+	client, accountIndex, nonce, err := lifecycleClient(request)
+	if err != nil || request.CancelAllOrders == nil {
+		return signerResponse{}, fmt.Errorf("invalid cancel all request")
+	}
+	timeValue, err := parseNonNegativeInt64(request.CancelAllOrders.Time, "cancel all time")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetCancelAllOrdersTransaction(&types.CancelAllOrdersTxReq{TimeInForce: request.CancelAllOrders.TimeInForce, Time: timeValue}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: &types.L2TxAttributes{}})
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return lifecycleResponse(tx, 16)
 }
 
 func signWithdraw(request signerRequest) (signerResponse, error) {
