@@ -60,7 +60,6 @@ export async function signApprovedLighterKeyRegistration(input: {
   if (
     intent.sessionId !== input.sessionId
     || intent.executionState !== "approved"
-    || intent.environment !== "core"
     || intent.registrationNonce === null
     || intent.publicKey === null
     || intent.publicKeyFingerprint === null
@@ -120,6 +119,7 @@ export async function signApprovedLighterKeyRegistration(input: {
     throw signingError("the approved wallet could not sign the registration message");
   }
   const signingInput = buildLighterChangePubKeySigningInput({
+    environment: intent.environment,
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
     nonce: intent.registrationNonce,

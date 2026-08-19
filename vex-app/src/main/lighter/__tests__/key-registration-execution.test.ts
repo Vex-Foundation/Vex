@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { mapLighterError } from "@tools/lighter/errors.js";
 import type { LighterChangePubKeySignerResult } from "@tools/lighter/change-pub-key.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import {
@@ -22,21 +23,22 @@ const WALLET: EvmWallet = {
 
 function intent(
   executionState: LighterKeyRegistrationReservationRow["executionState"] = "approved",
+  environment: LighterEnvironment = "core",
 ): LighterKeyRegistrationReservationRow {
   const now = new Date("2026-08-17T12:00:00.000Z");
   return {
     intentId: "lighter-keyreg-1",
     sessionId: "session-1",
-    environment: "core",
+    environment,
     walletAddress: WALLET.address,
-    chainId: 1,
+    chainId: environment === "core" ? 1 : 4663,
     accountIndex: 42,
     apiKeyIndex: 7,
     slotObservedAt: now,
     slotObservationHash: "d".repeat(64),
     approvalStatus: "approved",
     executionState,
-    vaultCredentialId: "lighter/core/account-42/api-key-7",
+    vaultCredentialId: `lighter/${environment}/account-42/api-key-7`,
     publicKey: PUBLIC_KEY,
     publicKeyFingerprint: "e".repeat(64),
     keyGeneratedAt: now,
@@ -62,10 +64,10 @@ function intent(
   };
 }
 
-function signedResult(): LighterChangePubKeySignerResult {
+function signedResult(environment: LighterEnvironment = "core"): LighterChangePubKeySignerResult {
   return {
     kind: "lighter_change_pub_key_signer_result",
-    environment: "core",
+    environment,
     accountIndex: 42,
     apiKeyIndex: 7,
     nonce: "0",
@@ -102,9 +104,11 @@ function makeDeps(options: {
   readonly checkerPublicKey?: string;
   readonly initialExecutionState?: LighterKeyRegistrationReservationRow["executionState"];
   readonly missingSlotResponse?: "empty" | "not_found" | "other_error";
+  readonly environment?: LighterEnvironment;
 } = {}) {
+  const environment = options.environment ?? "core";
   const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
-  let current = intent(options.initialExecutionState);
+  let current = intent(options.initialExecutionState, environment);
   let apiKeyReadCount = 0;
   let nonceReadCount = 0;
   const events: string[] = [];
@@ -121,10 +125,10 @@ function makeDeps(options: {
     present: true as const,
     reference: {
       kind: "encrypted_vault_reference" as const,
-      environment: "core" as const,
+      environment,
       accountIndex: 42,
       apiKeyIndex: 7,
-      vaultCredentialId: "lighter/core/account-42/api-key-7",
+      vaultCredentialId: `lighter/${environment}/account-42/api-key-7`,
     },
     registrationState: "key_registered_active" as const,
   }));
@@ -143,10 +147,10 @@ function makeDeps(options: {
         apiKeyReadCount += 1;
         if (initiallyApproved && apiKeyReadCount === 1) {
           if (options.missingSlotResponse === "not_found") {
-            throw mapLighterError("core", 400, { message: "api key not found" });
+            throw mapLighterError(environment, 400, { message: "api key not found" });
           }
           if (options.missingSlotResponse === "other_error") {
-            throw mapLighterError("core", 400, { message: "invalid account index" });
+            throw mapLighterError(environment, 400, { message: "invalid account index" });
           }
         }
         const publicKey = initiallyApproved && apiKeyReadCount === 1
@@ -173,7 +177,7 @@ function makeDeps(options: {
     resolveWallet: vi.fn(() => WALLET),
     sign: vi.fn(async () => {
       events.push("sign");
-      return signedResult();
+      return signedResult(environment);
     }),
     keyGenerator: {
       source: "official_lighter_signer",
@@ -266,6 +270,41 @@ describe("Lighter key registration execution", () => {
     expect(setup.activateVaultCredential).toHaveBeenCalledOnce();
     expect(JSON.stringify(result)).not.toContain(LIGHTER_PRIVATE_KEY);
     expect(JSON.stringify(result)).not.toContain("signed");
+  });
+
+  it("uses Robinhood Chain for every provider read, signing check, submission, and activation", async () => {
+    const setup = makeDeps({
+      environment: "rhc",
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "not_found",
+    });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result).toMatchObject({ status: "active", executionState: "active" });
+    expect(setup.deps.client.getAccountsByL1Address).toHaveBeenCalledWith("rhc", {
+      l1Address: WALLET.address,
+      cursor: undefined,
+    });
+    expect(setup.deps.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 7,
+    });
+    expect(setup.deps.client.getNextNonce).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 7,
+    });
+    expect(setup.deps.client.sendTx).toHaveBeenCalledWith("rhc", {
+      txType: 8,
+      txInfo: expect.any(String),
+    });
+    expect(setup.deps.keyChecker.check).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+    }));
+    expect(setup.activateVaultCredential).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+    }));
   });
 
   it("does not treat unrelated exact-slot 400 responses as vacancy", async () => {

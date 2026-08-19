@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import { validatePreparedActionFollowUp } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
@@ -98,22 +99,25 @@ const CONTEXT: ProtocolExecutionContext = {
   sessionId: "session-1",
 };
 
-function row(executionState: "slot_reserved" | "key_generated_encrypted" | "approval_pending" | "approved") {
+function row(
+  executionState: "slot_reserved" | "key_generated_encrypted" | "approval_pending" | "approved",
+  environment: LighterEnvironment = "core",
+) {
   const hasKey = executionState !== "slot_reserved";
   const hasNonce = executionState === "approval_pending" || executionState === "approved";
   return {
     intentId: INTENT_ID,
     sessionId: "session-1",
-    environment: "core" as const,
+    environment,
     walletAddress: WALLET,
-    chainId: 1,
+    chainId: environment === "core" ? 1 : 4663,
     accountIndex: 42,
     apiKeyIndex: 6,
     slotObservedAt: new Date("2030-01-01T00:00:00.000Z"),
     slotObservationHash: "a".repeat(64),
     approvalStatus: executionState === "approved" ? "approved" as const : "approval_pending" as const,
     executionState,
-    vaultCredentialId: hasKey ? "lighter/core/account-42/api-key-6" : null,
+    vaultCredentialId: hasKey ? `lighter/${environment}/account-42/api-key-6` : null,
     publicKey: hasKey ? PUBLIC_KEY : null,
     publicKeyFingerprint: hasKey ? FINGERPRINT : null,
     keyGeneratedAt: hasKey ? new Date("2030-01-01T00:00:00.000Z") : null,
@@ -269,6 +273,54 @@ describe("lighter.key.register.prepare", () => {
       publicKeyFingerprint: FINGERPRINT,
     });
     expect(JSON.stringify(result)).not.toContain("privateKey");
+  });
+
+  it("prepares Robinhood Chain credentials against the RHC account, slot, and nonce APIs", async () => {
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "account_resolved",
+      resolvedAccountIndex: 42,
+    });
+    mocks.reserve.mockResolvedValue({
+      outcome: "created",
+      reservation: row("slot_reserved", "rhc"),
+    });
+    mocks.prepareCredential.mockResolvedValue({
+      intentId: INTENT_ID,
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-6",
+      publicKey: PUBLIC_KEY,
+      publicKeyFingerprint: FINGERPRINT,
+      outcome: "generated",
+    });
+    mocks.findIntent.mockResolvedValue(row("key_generated_encrypted", "rhc"));
+    mocks.markApprovalPending.mockResolvedValue(row("approval_pending", "rhc"));
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "rhc" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 255,
+    });
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      chainId: 4663,
+    }));
+    expect(mocks.getNextNonce).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 6,
+    });
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+    });
   });
 
   it("fails before reserving a slot when the privileged preparer is unavailable", async () => {

@@ -7,6 +7,7 @@ import type {
   LighterChangePubKeySignerAdapter,
   LighterChangePubKeySigningInput,
 } from "@tools/lighter/change-pub-key.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -22,20 +23,20 @@ const LIGHTER_PUBLIC_KEY = "ab".repeat(40);
 const EVM_PRIVATE_KEY = `0x${"2".repeat(64)}` as const;
 const EVM_ACCOUNT = privateKeyToAccount(EVM_PRIVATE_KEY);
 
-function approvedIntent(): LighterKeyRegistrationReservationRow {
+function approvedIntent(environment: LighterEnvironment = "core"): LighterKeyRegistrationReservationRow {
   return {
     intentId: "lighter-onboard-1",
     sessionId: "session-1",
-    environment: "core",
+    environment,
     walletAddress: EVM_ACCOUNT.address,
-    chainId: 1,
+    chainId: environment === "core" ? 1 : 4663,
     accountIndex: 42,
     apiKeyIndex: 6,
     slotObservedAt: NOW,
     slotObservationHash: "a".repeat(64),
     approvalStatus: "approved",
     executionState: "approved",
-    vaultCredentialId: "lighter/core/account-42/api-key-6",
+    vaultCredentialId: `lighter/${environment}/account-42/api-key-6`,
     publicKey: LIGHTER_PUBLIC_KEY,
     publicKeyFingerprint: createHash("sha256")
       .update(Buffer.from(LIGHTER_PUBLIC_KEY, "hex"))
@@ -74,7 +75,7 @@ function wallet(): EvmWallet {
 function signerResult(input: LighterChangePubKeySigningInput) {
   return {
     kind: "lighter_change_pub_key_signer_result" as const,
-    environment: "core" as const,
+    environment: input.environment,
     accountIndex: input.accountIndex,
     apiKeyIndex: input.apiKeyIndex,
     nonce: input.nonce,
@@ -149,6 +150,26 @@ describe("Lighter Phase 3 privileged registration signing", () => {
     expect(JSON.stringify(result)).not.toContain(EVM_PRIVATE_KEY);
     expect(JSON.stringify(result)).not.toContain("L1Sig");
     expect(result.txInfo).toContain("L1Sig");
+  });
+
+  it("passes the Robinhood Chain signer domain through privileged registration signing", async () => {
+    const testDeps = deps();
+    const result = await signApprovedLighterKeyRegistration({
+      sessionId: "session-1",
+      intent: approvedIntent("rhc"),
+      wallet: wallet(),
+      revalidatedNonce: "0",
+    }, testDeps);
+
+    expect(result.environment).toBe("rhc");
+    expect(testDeps.signer.signChangePubKey).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      chainId: 466324,
+    }));
+    expect(testDeps.readVaultPrivateKey).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      vaultCredentialId: "lighter/rhc/account-42/api-key-6",
+    }));
   });
 
   it("refuses nonce drift before reading either secret", async () => {

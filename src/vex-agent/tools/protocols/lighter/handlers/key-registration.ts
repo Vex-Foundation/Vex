@@ -2,9 +2,10 @@ import { getAddress } from "viem";
 
 import { getLighterClient } from "@tools/lighter/client.js";
 import { readLighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/api-key-slots.js";
-import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
-import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
+import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import {
   isLighterIntegrationEnabled,
@@ -29,18 +30,20 @@ const INTENT_TTL_MS = 15 * 60 * 1_000;
 
 async function resolveOrAdoptExistingAccount(
   sessionId: string,
+  environment: LighterEnvironment,
   walletAddress: string,
 ): Promise<LighterOnboardingWorkflowRow | null> {
-  let workflow = await getLighterOnboardingWorkflow("core", walletAddress);
+  let workflow = await getLighterOnboardingWorkflow(environment, walletAddress);
   if (workflow?.workflowState !== "integration_enabled") return workflow;
 
-  const accountIndex = await readUniqueLighterCoreMasterAccount(
+  const accountIndex = await readUniqueLighterMasterAccount(
     getLighterClient(),
+    environment,
     walletAddress,
   );
   const adopted = await withSessionControlLock(sessionId, (client) =>
     transitionLighterOnboardingWorkflowWith(client, {
-      environment: "core",
+      environment,
       walletAddress,
       expectedStates: ["integration_enabled"],
       nextState: "account_resolved",
@@ -48,7 +51,7 @@ async function resolveOrAdoptExistingAccount(
     }));
   if (adopted !== null) return adopted;
 
-  workflow = await getLighterOnboardingWorkflow("core", walletAddress);
+  workflow = await getLighterOnboardingWorkflow(environment, walletAddress);
   if (
     workflow?.workflowState === "account_resolved"
     && workflow.resolvedAccountIndex === accountIndex
@@ -131,26 +134,27 @@ function approvalPreparedPayload(
 
 async function resolveOrReserveIntent(input: {
   readonly sessionId: string;
+  readonly environment: LighterEnvironment;
   readonly walletAddress: string;
   readonly accountIndex: number;
 }): Promise<keyIntentsRepo.LighterKeyRegistrationReservationRow> {
   const existing = await keyIntentsRepo.findLiveLighterKeyRegistrationIntentForAccount(
-    "core",
+    input.environment,
     input.accountIndex,
   );
   if (existing !== null) return existing;
 
   const observation = await readLighterApiKeySlotObservation({
     client: getLighterClient(),
-    environment: "core",
+    environment: input.environment,
     accountIndex: input.accountIndex,
   });
   const reservation = await withSessionControlLock(input.sessionId, (client) =>
     keyIntentsRepo.reserveLighterApiKeySlotWith(client, {
       sessionId: input.sessionId,
-      environment: "core",
+      environment: input.environment,
       walletAddress: input.walletAddress,
-      chainId: LIGHTER_DEPOSIT_CHAIN_ID,
+      chainId: getLighterFundingDeployment(input.environment).settlementChainId,
       accountIndex: input.accountIndex,
       observation,
       expiresAt: new Date(Date.now() + INTENT_TTL_MS),
@@ -192,7 +196,7 @@ async function prepareApprovalPendingIntent(
   }
   if (current.executionState === "key_generated_encrypted") {
     const observedAt = new Date();
-    const nonce = await getLighterClient().getNextNonce("core", {
+    const nonce = await getLighterClient().getNextNonce(current.environment, {
       accountIndex: current.accountIndex,
       apiKeyIndex: current.apiKeyIndex,
     });
@@ -270,9 +274,6 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     if (!sessionId) return fail("Lighter key-registration preparation requires a host session id.");
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
-    if (environment.value !== "core") {
-      return fail("Lighter wallet-funded key registration is available on Core only in this release.");
-    }
     let walletAddress: string;
     try {
       walletAddress = getAddress(
@@ -281,10 +282,10 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     } catch (error) {
       return walletScopeErrorToResult(error);
     }
-    if (!(await isLighterIntegrationEnabled("core", walletAddress))) {
+    if (!(await isLighterIntegrationEnabled(environment.value, walletAddress))) {
       try {
         await setLighterIntegrationEnabled({
-          environment: "core",
+          environment: environment.value,
           walletAddress,
           enabled: true,
         });
@@ -296,7 +297,11 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     }
     let workflow: LighterOnboardingWorkflowRow | null;
     try {
-      workflow = await resolveOrAdoptExistingAccount(sessionId, walletAddress);
+      workflow = await resolveOrAdoptExistingAccount(
+        sessionId,
+        environment.value,
+        walletAddress,
+      );
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
@@ -322,6 +327,7 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     try {
       const reserved = await resolveOrReserveIntent({
         sessionId,
+        environment: environment.value,
         walletAddress,
         accountIndex: workflow.resolvedAccountIndex,
       });

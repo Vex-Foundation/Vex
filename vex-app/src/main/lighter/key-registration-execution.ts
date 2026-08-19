@@ -1,8 +1,8 @@
 import { getAddress } from "viem";
 
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
-import { LIGHTER_API_KEY_INDEX_ALL } from "@tools/lighter/constants.js";
-import { readUniqueLighterCoreMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import {
   createLighterApiKeyGeneratorBinary,
   createLighterRegisteredKeyCheckerBinary,
@@ -114,7 +114,7 @@ async function runLighterKeyRegistration(
     if (slot !== null) {
       throw executionError("the approved API-key slot is no longer empty");
     }
-    const nonce = await deps.client.getNextNonce("core", {
+    const nonce = await deps.client.getNextNonce(intent.environment, {
       accountIndex: intent.accountIndex,
       apiKeyIndex: intent.apiKeyIndex,
     });
@@ -145,7 +145,7 @@ async function runLighterKeyRegistration(
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
-      response = await deps.client.sendTx("core", {
+      response = await deps.client.sendTx(intent.environment, {
         txType: signed.txType,
         txInfo: signed.txInfo,
       });
@@ -223,7 +223,7 @@ async function reconcileRegistration(
     throw executionError("the encrypted trading credential no longer matches the approved key");
   }
   const checked = await deps.keyChecker.check({
-    environment: "core",
+    environment: intent.environment,
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
     secret,
@@ -249,7 +249,7 @@ async function reconcileRegistration(
   }
 
   if (intent.executionState === "key_verified") {
-    const nonce = await deps.client.getNextNonce("core", {
+    const nonce = await deps.client.getNextNonce(intent.environment, {
       accountIndex: intent.accountIndex,
       apiKeyIndex: intent.apiKeyIndex,
     });
@@ -293,7 +293,11 @@ async function assertOwnedMasterAccount(
 ): Promise<void> {
   let accountIndex: number;
   try {
-    accountIndex = await readUniqueLighterCoreMasterAccount(client, intent.walletAddress);
+    accountIndex = await readUniqueLighterMasterAccount(
+      client,
+      intent.environment,
+      intent.walletAddress,
+    );
   } catch {
     throw executionError("the approved Lighter master account is not uniquely owned by the wallet");
   }
@@ -308,7 +312,7 @@ async function readExactApiKeySlot(
 ): Promise<LighterApiKey | null> {
   let response: Awaited<ReturnType<LighterClient["getApiKeys"]>>;
   try {
-    response = await client.getApiKeys("core", {
+    response = await client.getApiKeys(intent.environment, {
       accountIndex: intent.accountIndex,
       apiKeyIndex: intent.apiKeyIndex,
     });
@@ -333,7 +337,7 @@ function isMissingExactApiKeySlot(error: unknown): boolean {
   return error instanceof VexError
     && error.code === ErrorCodes.LIGHTER_INVALID_REQUEST
     && error.httpStatus === 400
-    && /^Lighter Core rejected the request \(HTTP 400\)\. Upstream said: api key not found$/i
+    && /^Lighter (?:Core|RHC) rejected the request \(HTTP 400\)\. Upstream said: api key not found$/i
       .test(error.message);
 }
 
@@ -360,12 +364,12 @@ async function waitForExactApiKeySlot(
 
 function assertIntentShape(intent: RegistrationIntent): void {
   if (
-    intent.environment !== "core"
-    || intent.publicKey === null
+    intent.publicKey === null
     || normalizePublicKey(intent.publicKey) !== intent.publicKey
     || intent.registrationNonce === null
     || !/^(?:0|[1-9][0-9]*)$/.test(intent.registrationNonce)
     || intent.vaultCredentialId !== credentialReference(intent).vaultCredentialId
+    || intent.chainId !== getLighterFundingDeployment(intent.environment).settlementChainId
   ) {
     throw executionError("the durable registration intent is incomplete or malformed");
   }
