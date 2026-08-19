@@ -78,6 +78,65 @@ function orderFrame(status = "filled") {
   };
 }
 
+function tradeFrame() {
+  return {
+    type: "update/account_all_trades",
+    channel: "account_all_trades:42",
+    trades: {
+      "0": [{
+        trade_id: 1001,
+        trade_id_str: "1001",
+        tx_hash: "0xtrade",
+        type: "trade",
+        market_id: 0,
+        size: "1.0",
+        price: "2000.00",
+        usd_amount: "2000.00",
+        ask_id: 987,
+        ask_id_str: "987",
+        bid_id: 988,
+        bid_id_str: "988",
+        ask_client_id: 123456,
+        ask_client_id_str: "123456",
+        bid_client_id: 654321,
+        bid_client_id_str: "654321",
+        ask_account_id: 42,
+        bid_account_id: 43,
+        is_maker_ask: true,
+        block_height: 99,
+        timestamp: 1_800_000_000_000,
+      }],
+    },
+  };
+}
+
+function positionFrame() {
+  return {
+    type: "update/account_all_positions",
+    channel: "account_all_positions:42",
+    positions: {
+      "0": {
+        market_id: 0,
+        symbol: "ETH",
+        initial_margin_fraction: "0.05",
+        open_order_count: 0,
+        pending_order_count: 0,
+        position_tied_order_count: 0,
+        sign: 1,
+        position: "0",
+        avg_entry_price: "0",
+        position_value: "0",
+        unrealized_pnl: "0",
+        realized_pnl: "10",
+        liquidation_price: "0",
+        margin_mode: 0,
+        allocated_margin: "0",
+      },
+    },
+    shares: [],
+  };
+}
+
 function makeHarness() {
   const sockets: FakeSocket[] = [];
   let vaultListener: ((state: "unlocked" | "locked") => void) | null = null;
@@ -154,11 +213,11 @@ describe("Lighter order stream supervisor", () => {
     h.sockets[0]!.message({ type: "connected" });
     await vi.runAllTicks();
 
-    expect(JSON.parse(h.sockets[0]!.sent[0]!)).toEqual({
-      type: "subscribe",
-      channel: "account_all_orders/42",
-      auth: AUTH_TOKEN,
-    });
+    expect(h.sockets[0]!.sent.map((value) => JSON.parse(value))).toEqual([
+      { type: "subscribe", channel: "account_all_orders/42", auth: AUTH_TOKEN },
+      { type: "subscribe", channel: "account_all_trades/42" },
+      { type: "subscribe", channel: "account_all_positions/42" },
+    ]);
     expect(h.resnapshot).toHaveBeenCalledWith(
       "rhc",
       42,
@@ -183,6 +242,33 @@ describe("Lighter order stream supervisor", () => {
     );
     socket.message({ ...orderFrame(), channel: "account_all_orders:43" });
     expect(socket.closes.at(-1)?.reason).toBe("invalid_account_evidence");
+    stop();
+  });
+
+  it("validates trade and position frames before serialized reconciliation", async () => {
+    const h = makeHarness();
+    const stop = await startHarness(h);
+    const socket = h.sockets[0]!;
+    socket.message({ type: "connected" });
+    socket.message(tradeFrame());
+    socket.message(positionFrame());
+    await vi.runAllTicks();
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.reconcile).toHaveBeenNthCalledWith(
+      1,
+      "rhc",
+      42,
+      expect.objectContaining({ type: "update/account_all_trades" }),
+    );
+    expect(h.reconcile).toHaveBeenNthCalledWith(
+      2,
+      "rhc",
+      42,
+      expect.objectContaining({ type: "update/account_all_positions" }),
+    );
     stop();
   });
 

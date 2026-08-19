@@ -6,37 +6,45 @@ import {
 import type {
   LighterAccountAllOrdersStreamMessage,
   LighterAccountOrder,
+  LighterAccountPosition,
+  LighterTrade,
 } from "@tools/lighter/types.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import {
   classifyLighterStreamOrderState,
-  reconcileLighterOrderStreamMessage,
-  type LighterOrderStreamReconciliationDeps,
-  type LighterOrderStreamReconciliationReport,
 } from "./order-stream-reconciliation.js";
+import {
+  reconcileLighterAccountStreamMessage,
+  type LighterAccountStreamReconciliationDeps,
+  type LighterAccountStreamReconciliationReport,
+} from "./account-stream-reconciliation.js";
 
 /**
  * One authoritative account-order resnapshot after a stream connection opens.
  *
  * `account_all_orders` has no documented resumable cursor. A reconnect therefore
- * performs one authenticated active/inactive REST read for the account before
- * trusting the new live lane. Absence is still not evidence: only exact returned
- * orders are fed into the positive-evidence reconciler.
+ * performs authenticated active/inactive order and trade reads plus a fresh
+ * account-position read before trusting the new live lane. Absence is still not
+ * evidence: only exact returned identities are fed into reconciliation.
  */
 
 export interface LighterOrderStreamResnapshotDeps {
   readonly client: Pick<
     LighterClient,
-    "getAccountActiveOrders" | "getAccountInactiveOrders" | "getNextNonce"
+    "getAccount" | "getAccountActiveOrders" | "getAccountInactiveOrders" | "getAccountTrades" | "getNextNonce"
   >;
-  readonly reconciliation?: Omit<LighterOrderStreamReconciliationDeps, "client">;
+  readonly reconciliation?: Omit<LighterAccountStreamReconciliationDeps, "client">;
 }
 
 export interface LighterOrderStreamResnapshotReport {
   readonly activeOrders: number;
   readonly inactiveOrders: number;
   readonly uniqueOrders: number;
-  readonly reconciliation: LighterOrderStreamReconciliationReport;
+  readonly trades: number;
+  readonly positions: number;
+  readonly reconciliation: LighterAccountStreamReconciliationReport;
+  readonly tradeReconciliation: LighterAccountStreamReconciliationReport;
+  readonly positionReconciliation: LighterAccountStreamReconciliationReport;
 }
 
 export async function resnapshotLighterOrderAccount(
@@ -52,7 +60,7 @@ export async function resnapshotLighterOrderAccount(
     throw new Error("Lighter order resnapshot auth does not match the requested account.");
   }
 
-  const [active, inactive] = await Promise.all([
+  const [active, inactive, trades, accountResponse] = await Promise.all([
     deps.client.getAccountActiveOrders(environment, {
       accountIndex,
       marketType: "all",
@@ -62,7 +70,23 @@ export async function resnapshotLighterOrderAccount(
       marketType: "all",
       limit: 100,
     }, auth),
+    deps.client.getAccountTrades(environment, {
+      accountIndex,
+      limit: 100,
+      sortBy: "timestamp",
+    }, auth),
+    deps.client.getAccount(environment, {
+      by: "index",
+      value: String(accountIndex),
+      activeOnly: false,
+    }),
   ]);
+
+  const accounts = accountResponse.accounts.filter((account) =>
+    (account.index ?? account.account_index) === accountIndex);
+  if (accounts.length !== 1) {
+    throw new Error("Lighter order resnapshot could not resolve the exact account uniquely.");
+  }
 
   const unique = new Map<string, LighterAccountOrder>();
   for (const order of active.orders) chooseMostAdvanced(unique, order);
@@ -73,19 +97,36 @@ export async function resnapshotLighterOrderAccount(
     : {
         ...deps.reconciliation,
         client: deps.client,
-        transport: "account_orders_resnapshot" as const,
-      } satisfies LighterOrderStreamReconciliationDeps;
-  const reconciliation = await reconcileLighterOrderStreamMessage(
+        orderTransport: "account_orders_resnapshot" as const,
+      } satisfies LighterAccountStreamReconciliationDeps;
+  const reconciliation = await reconcileLighterAccountStreamMessage(
     environment,
     accountIndex,
     message,
+    reconciliationDeps,
+  );
+  const tradeReconciliation = await reconcileLighterAccountStreamMessage(
+    environment,
+    accountIndex,
+    toAccountAllTradesMessage(accountIndex, trades.trades),
+    reconciliationDeps,
+  );
+  const positions = accounts[0]?.positions ?? [];
+  const positionReconciliation = await reconcileLighterAccountStreamMessage(
+    environment,
+    accountIndex,
+    toAccountAllPositionsMessage(accountIndex, positions),
     reconciliationDeps,
   );
   return {
     activeOrders: active.orders.length,
     inactiveOrders: inactive.orders.length,
     uniqueOrders: unique.size,
+    trades: trades.trades.length,
+    positions: positions.length,
     reconciliation,
+    tradeReconciliation,
+    positionReconciliation,
   };
 }
 
@@ -121,5 +162,32 @@ function toAccountAllOrdersMessage(
     type: "update/account_all_orders",
     channel: `account_all_orders:${accountIndex}`,
     orders: byMarket,
+  };
+}
+
+function toAccountAllTradesMessage(
+  accountIndex: number,
+  trades: readonly LighterTrade[],
+) {
+  const byMarket: Record<string, LighterTrade[]> = {};
+  for (const trade of trades) (byMarket[String(trade.market_id)] ??= []).push(trade);
+  return {
+    type: "update/account_all_trades" as const,
+    channel: `account_all_trades:${accountIndex}`,
+    trades: byMarket,
+  };
+}
+
+function toAccountAllPositionsMessage(
+  accountIndex: number,
+  positions: readonly LighterAccountPosition[],
+) {
+  const byMarket: Record<string, LighterAccountPosition> = {};
+  for (const position of positions) byMarket[String(position.market_id)] = position;
+  return {
+    type: "subscribed/account_all_positions" as const,
+    channel: `account_all_positions:${accountIndex}`,
+    positions: byMarket,
+    shares: [],
   };
 }

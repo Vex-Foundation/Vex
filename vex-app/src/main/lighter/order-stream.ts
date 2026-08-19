@@ -3,12 +3,17 @@ import { Buffer } from "node:buffer";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
 import type {
-  LighterAccountAllOrdersStreamMessage,
+  LighterAccountStreamMessage,
 } from "@tools/lighter/types.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
-import { validateLighterAccountAllOrdersStreamMessage } from "@tools/lighter/validation.js";
+import {
+  validateLighterAccountAllOrdersStreamMessage,
+  validateLighterAccountAllPositionsStreamMessage,
+  validateLighterAccountAllTradesStreamMessage,
+} from "@tools/lighter/validation.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
-import { reconcileLighterOrderStreamMessage } from "@vex-agent/tools/protocols/lighter/order-stream-reconciliation.js";
+import * as lighterOrderLifecycleIntentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+import { reconcileLighterAccountStreamMessage } from "@vex-agent/tools/protocols/lighter/account-stream-reconciliation.js";
 import { resnapshotLighterOrderAccount } from "@vex-agent/tools/protocols/lighter/order-stream-resnapshot.js";
 import { log } from "../logger/index.js";
 import {
@@ -49,7 +54,7 @@ export interface LighterOrderStreamSupervisorDeps {
   readonly reconcile: (
     environment: LighterEnvironment,
     accountIndex: number,
-    message: LighterAccountAllOrdersStreamMessage,
+    message: LighterAccountStreamMessage,
   ) => Promise<unknown>;
   readonly resnapshot: (
     environment: LighterEnvironment,
@@ -92,7 +97,7 @@ export function defaultLighterOrderStreamSupervisorDeps(
     resolveAuth,
     createSocket: (url) => new WebSocket(url) as unknown as LighterOrderStreamSocket,
     reconcile: (environment, accountIndex, message) =>
-      reconcileLighterOrderStreamMessage(environment, accountIndex, message),
+      reconcileLighterAccountStreamMessage(environment, accountIndex, message),
     resnapshot: (environment, accountIndex, auth) =>
       resnapshotLighterOrderAccount(environment, accountIndex, auth),
     isVaultUnlocked: () => getSecretSessionStatus().unlocked,
@@ -297,14 +302,11 @@ export class LighterOrderStreamSupervisor {
       return;
     }
     if (type === "pong") return;
-    if (type !== "update/account_all_orders") return;
+    if (!isAccountEvidenceMessageType(type)) return;
 
-    let message: LighterAccountAllOrdersStreamMessage;
+    let message: LighterAccountStreamMessage;
     try {
-      message = validateLighterAccountAllOrdersStreamMessage(
-        raw,
-        watcher.target.accountIndex,
-      );
+      message = validateAccountEvidenceMessage(raw, type, watcher.target.accountIndex);
     } catch {
       this.deps.diagnostic("lighter.order_stream.frame_invalid", scopeDetail(watcher.target));
       this.restartWatcher(watcher, "invalid_account_evidence");
@@ -336,11 +338,26 @@ export class LighterOrderStreamSupervisor {
   private subscribe(watcher: AccountWatcher, socket: LighterOrderStreamSocket): void {
     const token = watcher.pendingAuthToken;
     watcher.pendingAuthToken = null;
-    if (token === null || !this.sendIfOpen(socket, JSON.stringify({
-      type: "subscribe",
-      channel: `account_all_orders/${watcher.target.accountIndex}`,
-      auth: token,
-    }))) {
+    const subscriptions = token === null ? [] : [
+      {
+        type: "subscribe",
+        channel: `account_all_orders/${watcher.target.accountIndex}`,
+        auth: token,
+      },
+      {
+        type: "subscribe",
+        channel: `account_all_trades/${watcher.target.accountIndex}`,
+      },
+      {
+        type: "subscribe",
+        channel: `account_all_positions/${watcher.target.accountIndex}`,
+      },
+    ];
+    if (
+      subscriptions.length !== 3
+      || subscriptions.some((subscription) =>
+        !this.sendIfOpen(socket, JSON.stringify(subscription)))
+    ) {
       this.restartWatcher(watcher, "subscribe_failed");
       return;
     }
@@ -460,9 +477,12 @@ export class LighterOrderStreamSupervisor {
 }
 
 export async function listLighterOrderStreamTargets(): Promise<readonly LighterOrderStreamTarget[]> {
-  const rows = await lighterOrderExecutionIntentsRepo.listStreamWatchable(undefined, undefined, 500);
+  const [orderRows, lifecycleRows] = await Promise.all([
+    lighterOrderExecutionIntentsRepo.listStreamWatchable(undefined, undefined, 500),
+    lighterOrderLifecycleIntentsRepo.listStreamWatchable(undefined, undefined, 500),
+  ]);
   const targets = new Map<string, LighterOrderStreamTarget>();
-  for (const row of rows) {
+  for (const row of [...orderRows, ...lifecycleRows]) {
     const credential = row.credentialRefJson;
     if (
       credential.environment !== row.environment
@@ -534,6 +554,28 @@ function readMessageType(raw: unknown): string | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const type = (raw as Record<string, unknown>).type;
   return typeof type === "string" ? type : null;
+}
+
+function isAccountEvidenceMessageType(type: string | null): type is LighterAccountStreamMessage["type"] {
+  return type === "update/account_all_orders"
+    || type === "subscribed/account_all_trades"
+    || type === "update/account_all_trades"
+    || type === "subscribed/account_all_positions"
+    || type === "update/account_all_positions";
+}
+
+function validateAccountEvidenceMessage(
+  raw: unknown,
+  type: LighterAccountStreamMessage["type"],
+  accountIndex: number,
+): LighterAccountStreamMessage {
+  if (type === "update/account_all_orders") {
+    return validateLighterAccountAllOrdersStreamMessage(raw, accountIndex);
+  }
+  if (type === "subscribed/account_all_trades" || type === "update/account_all_trades") {
+    return validateLighterAccountAllTradesStreamMessage(raw, accountIndex);
+  }
+  return validateLighterAccountAllPositionsStreamMessage(raw, accountIndex);
 }
 
 function readStringMessageData(event: unknown): string | null {

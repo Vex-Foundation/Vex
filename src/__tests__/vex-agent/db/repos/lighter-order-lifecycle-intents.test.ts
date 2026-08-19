@@ -101,4 +101,19 @@ describe("Lighter order lifecycle intent repository", () => {
     expect(mockQueryOne.mock.calls[1]?.[0]).toContain("execution_state = 'pre_submit_revalidated'");
     expect(mockQueryOne.mock.calls[2]?.[0]).toContain("execution_state = 'signed'");
   });
+
+  it("guards stream evidence by exact account scope and nonterminal states", async () => {
+    await repo.markStreamEvidence({
+      intentId: base.intentId,
+      environment: "rhc",
+      accountIndex: 42,
+      state: "completed",
+      evidence: { kind: "lighter_lifecycle_stream_evidence", orderId: base.providerOrderId },
+    });
+
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining("execution_state IN ('signed','submission_staged','api_accepted','sequencer_pending','ambiguous')"),
+      expect.arrayContaining([base.intentId, "rhc", 42, "completed"]),
+    );
+  });
 });

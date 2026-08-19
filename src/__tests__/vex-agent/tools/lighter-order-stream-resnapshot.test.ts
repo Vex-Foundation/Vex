@@ -91,6 +91,8 @@ describe("Lighter order stream reconnect resnapshot", () => {
     const client = {
       getAccountActiveOrders: vi.fn(async () => ({ code: 200, orders: [order("open")] })),
       getAccountInactiveOrders: vi.fn(async () => ({ code: 200, orders: [order("filled")] })),
+      getAccountTrades: vi.fn(async () => ({ code: 200, trades: [] })),
+      getAccount: vi.fn(async () => ({ code: 200, accounts: [{ index: 42, positions: [] }] })),
       getNextNonce: vi.fn(async () => ({ code: 200, nonce: 13 })),
     };
     const report = await resnapshotLighterOrderAccount(
@@ -100,9 +102,13 @@ describe("Lighter order stream reconnect resnapshot", () => {
       {
         client,
         reconciliation: {
-          intents: {
+          orderIntents: {
             listStreamWatchable: vi.fn(async () => [row]),
             markStreamOutcome,
+          },
+          lifecycleIntents: {
+            listStreamWatchable: vi.fn(async () => []),
+            markStreamEvidence: vi.fn(async () => null),
           },
           nonceState: {
             find: vi.fn(async () => null),
@@ -125,7 +131,9 @@ describe("Lighter order stream reconnect resnapshot", () => {
       activeOrders: 1,
       inactiveOrders: 1,
       uniqueOrders: 1,
-      reconciliation: { advanced: 1 },
+      trades: 0,
+      positions: 0,
+      reconciliation: { createOrders: { advanced: 1 } },
     });
   });
 
@@ -133,6 +141,8 @@ describe("Lighter order stream reconnect resnapshot", () => {
     const client = {
       getAccountActiveOrders: vi.fn(),
       getAccountInactiveOrders: vi.fn(),
+      getAccountTrades: vi.fn(),
+      getAccount: vi.fn(),
       getNextNonce: vi.fn(),
     };
 

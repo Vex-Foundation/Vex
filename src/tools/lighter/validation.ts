@@ -7,6 +7,8 @@ import {
 import type {
   LighterAccountOrdersResponse,
   LighterAccountAllOrdersStreamMessage,
+  LighterAccountAllPositionsStreamMessage,
+  LighterAccountAllTradesStreamMessage,
   LighterAccountResponse,
   LighterAccountsByL1AddressResponse,
   LighterAccountTradesResponse,
@@ -278,7 +280,7 @@ const accountPositionSchema = z
     total_funding_paid_out: numericString.optional(),
     margin_mode: int,
     allocated_margin: numericString,
-    total_discount: numericString,
+    total_discount: numericString.optional(),
   })
   .passthrough();
 
@@ -439,6 +441,34 @@ const accountAllOrdersStreamSchema = z
       z.string().regex(/^\d+$/),
       z.array(accountOrderSchema).max(2_000),
     ),
+    timestamp: providerInteger.optional(),
+  })
+  .passthrough();
+
+const accountAllTradesStreamSchema = z
+  .object({
+    type: z.enum(["subscribed/account_all_trades", "update/account_all_trades"]),
+    channel: z.string().min(1).max(160),
+    trades: z.union([
+      z.array(tradeSchema).max(5_000),
+      z.record(z.string().regex(/^\d+$/), z.array(tradeSchema).max(2_000)),
+    ]),
+    total_volume: finiteNumber.optional(),
+    monthly_volume: finiteNumber.optional(),
+    weekly_volume: finiteNumber.optional(),
+    daily_volume: finiteNumber.optional(),
+    timestamp: providerInteger.optional(),
+  })
+  .passthrough();
+
+const accountAllPositionsStreamSchema = z
+  .object({
+    type: z.enum(["subscribed/account_all_positions", "update/account_all_positions"]),
+    channel: z.string().min(1).max(160),
+    positions: z.record(z.string().regex(/^\d+$/), accountPositionSchema),
+    shares: z.array(z.record(z.string(), z.unknown())).max(2_000).default([]),
+    last_funding_round: z.record(z.string().regex(/^\d+$/), numericString).optional(),
+    last_funding_discount: z.record(z.string().regex(/^\d+$/), numericString).optional(),
     timestamp: providerInteger.optional(),
   })
   .passthrough();
@@ -625,6 +655,78 @@ export function validateLighterAccountAllOrdersStreamMessage(
     }
   }
   return parsed;
+}
+
+export function validateLighterAccountAllTradesStreamMessage(
+  raw: unknown,
+  expectedAccountIndex: number,
+): LighterAccountAllTradesStreamMessage {
+  assertExpectedStreamAccount(expectedAccountIndex);
+  const parsed = parseOrThrow(accountAllTradesStreamSchema, raw, "account all trades stream");
+  if (parsed.channel !== `account_all_trades:${expectedAccountIndex}`) {
+    throw invalidAccountStreamMessage("trades channel does not match the authenticated account");
+  }
+  const seenTradeIds = new Set<string>();
+  let totalTrades = 0;
+  const entries = Array.isArray(parsed.trades)
+    ? [[null, parsed.trades] as const]
+    : Object.entries(parsed.trades);
+  for (const [marketIndexRaw, trades] of entries) {
+    const marketIndex = marketIndexRaw === null ? null : Number(marketIndexRaw);
+    if (marketIndex !== null && (!Number.isSafeInteger(marketIndex) || marketIndex < 0)) {
+      throw invalidAccountStreamMessage("trade market map contains an invalid index");
+    }
+    totalTrades += trades.length;
+    if (totalTrades > 5_000) throw invalidAccountStreamMessage("frame exceeds the bounded trade count");
+    for (const trade of trades) {
+      if (marketIndex !== null && trade.market_id !== marketIndex) {
+        throw invalidAccountStreamMessage("trade market does not match its market-map key");
+      }
+      if (trade.ask_account_id !== expectedAccountIndex && trade.bid_account_id !== expectedAccountIndex) {
+        throw invalidAccountStreamMessage("trade does not involve the authenticated account");
+      }
+      if (seenTradeIds.has(trade.trade_id_str)) {
+        throw invalidAccountStreamMessage("frame contains a duplicate trade id");
+      }
+      seenTradeIds.add(trade.trade_id_str);
+    }
+  }
+  return parsed;
+}
+
+export function validateLighterAccountAllPositionsStreamMessage(
+  raw: unknown,
+  expectedAccountIndex: number,
+): LighterAccountAllPositionsStreamMessage {
+  assertExpectedStreamAccount(expectedAccountIndex);
+  const parsed = parseOrThrow(accountAllPositionsStreamSchema, raw, "account all positions stream");
+  if (parsed.channel !== `account_all_positions:${expectedAccountIndex}`) {
+    throw invalidAccountStreamMessage("positions channel does not match the authenticated account");
+  }
+  if (Object.keys(parsed.positions).length > 5_000) {
+    throw invalidAccountStreamMessage("frame exceeds the bounded position count");
+  }
+  for (const [marketIndexRaw, position] of Object.entries(parsed.positions)) {
+    const marketIndex = Number(marketIndexRaw);
+    if (!Number.isSafeInteger(marketIndex) || marketIndex < 0 || position.market_id !== marketIndex) {
+      throw invalidAccountStreamMessage("position market does not match its market-map key");
+    }
+  }
+  return parsed;
+}
+
+function assertExpectedStreamAccount(expectedAccountIndex: number): void {
+  if (!Number.isSafeInteger(expectedAccountIndex) || expectedAccountIndex < 0) {
+    throw invalidAccountStreamMessage("expected account index is invalid");
+  }
+}
+
+function invalidAccountStreamMessage(detail: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    `Invalid Lighter account stream response: ${detail}.`,
+    "The Lighter stream returned evidence outside the expected account scope.",
+  );
 }
 
 function invalidStreamMessage(detail: string): VexError {

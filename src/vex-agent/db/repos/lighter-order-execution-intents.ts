@@ -187,7 +187,7 @@ export interface MarkLighterOrderStreamOutcomeInput {
   readonly intentId: string;
   readonly environment: LighterEnvironment;
   readonly state: LighterProviderOutcomeExecutionState;
-  readonly source: Extract<LighterProviderOutcomeSource, "active_order" | "inactive_order">;
+  readonly source: Extract<LighterProviderOutcomeSource, "active_order" | "inactive_order" | "account_trade">;
   readonly providerOrderId: string;
   readonly providerOrderStatus: string;
   readonly providerOutcomeJson: Record<string, unknown>;

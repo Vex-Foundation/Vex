@@ -148,7 +148,7 @@ export interface LighterAccountPosition {
   total_funding_paid_out?: string;
   margin_mode: number;
   allocated_margin: string;
-  total_discount: string;
+  total_discount?: string;
   [key: string]: unknown;
 }
 
@@ -304,6 +304,36 @@ export interface LighterAccountAllOrdersStreamMessage {
   readonly timestamp?: number;
   readonly [key: string]: unknown;
 }
+
+/** Authenticated account-wide trade evidence. Initial snapshots use an array; updates are keyed by market. */
+export interface LighterAccountAllTradesStreamMessage {
+  readonly type: "subscribed/account_all_trades" | "update/account_all_trades";
+  readonly channel: string;
+  readonly trades: readonly LighterTrade[] | Readonly<Record<string, readonly LighterTrade[]>>;
+  readonly total_volume?: number;
+  readonly monthly_volume?: number;
+  readonly weekly_volume?: number;
+  readonly daily_volume?: number;
+  readonly timestamp?: number;
+  readonly [key: string]: unknown;
+}
+
+/** Account-wide position evidence. Both subscription snapshots and updates are full market maps. */
+export interface LighterAccountAllPositionsStreamMessage {
+  readonly type: "subscribed/account_all_positions" | "update/account_all_positions";
+  readonly channel: string;
+  readonly positions: Readonly<Record<string, LighterAccountPosition>>;
+  readonly shares: readonly Record<string, unknown>[];
+  readonly last_funding_round?: Readonly<Record<string, string>>;
+  readonly last_funding_discount?: Readonly<Record<string, string>>;
+  readonly timestamp?: number;
+  readonly [key: string]: unknown;
+}
+
+export type LighterAccountStreamMessage =
+  | LighterAccountAllOrdersStreamMessage
+  | LighterAccountAllTradesStreamMessage
+  | LighterAccountAllPositionsStreamMessage;
 
 export type LighterMarketType = "perp" | "spot";
 export type LighterMarketStatus = "inactive" | "active";

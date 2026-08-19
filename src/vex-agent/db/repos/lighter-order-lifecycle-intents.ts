@@ -396,6 +396,54 @@ export async function listRepairable(limit = 100): Promise<LighterOrderLifecycle
   return rows.map(mapRow);
 }
 
+/** Session-independent lifecycle intents that still need positive provider evidence. */
+export async function listStreamWatchable(
+  environment?: LighterEnvironment,
+  accountIndex?: number,
+  limit = 100,
+): Promise<LighterOrderLifecycleIntentRow[]> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new Error("lighter_order_lifecycle_intents: limit must be from 1 through 500");
+  }
+  if (accountIndex !== undefined && (!Number.isSafeInteger(accountIndex) || accountIndex < 0)) {
+    throw new Error("lighter_order_lifecycle_intents: invalid accountIndex");
+  }
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
+      WHERE approval_status = 'approved'
+        AND execution_state IN ('signed','submission_staged','api_accepted','sequencer_pending','ambiguous')
+        AND ($1::text IS NULL OR environment = $1)
+        AND ($2::bigint IS NULL OR account_index = $2)
+      ORDER BY updated_at ASC LIMIT $3`,
+    [environment ?? null, accountIndex ?? null, limit],
+  );
+  return rows.map(mapRow);
+}
+
+/** Merge-safe stream transition. Callers provide only validated, account-scoped provider evidence. */
+export async function markStreamEvidence(input: {
+  readonly intentId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly state: "sequencer_pending" | "completed" | "rejected";
+  readonly evidence: Record<string, unknown>;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  if (jsonbByteLength(input.evidence) > 64 * 1024) {
+    throw new Error("lighter_order_lifecycle_intents: stream evidence is too large");
+  }
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_order_lifecycle_intents
+      SET execution_state = $4, provider_outcome_json = $5::jsonb,
+          provider_outcome_checked_at = NOW(), updated_at = NOW()
+      WHERE intent_id = $1 AND environment = $2 AND account_index = $3
+        AND approval_status = 'approved'
+        AND execution_state IN ('signed','submission_staged','api_accepted','sequencer_pending','ambiguous')
+      RETURNING ${COLUMNS}`,
+    [input.intentId, input.environment, input.accountIndex, input.state, jsonb(input.evidence)],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 async function transition(
   sql: string,
   params: unknown[],
