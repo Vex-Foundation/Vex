@@ -128,7 +128,7 @@ function deriveBridgeDisplayAmounts(
  *
  * `in_transaction` — the venue took the fee inside the transaction this row
  * records (KyberSwap, Jupiter); it has no row of its own.
- * `separate_leg` — a sibling `bridge_fee`/`swap_fee`/`trench_fee` transfer.
+ * `separate_leg` — a sibling `bridge_fee`/`swap_fee`/`trench_fee`/`pools_fee` transfer.
  * `null` — no fee is claimed: none was charged, none was collected yet, or the
  * projection FAILED CLOSED on an anomaly.
  */
@@ -188,7 +188,7 @@ function deriveVexFeeClaim(
   recorded: VexFeeClaim,
 ): VexFeeClaim {
   // R1 Step 2c: the withdrawal is correct for an IN-TRANSACTION fee and WRONG
-  // for a separate leg. A `bridge_fee`/`swap_fee`/`trench_fee` transfer is its
+  // for a separate leg. A `bridge_fee`/`swap_fee`/`trench_fee`/`pools_fee` transfer is its
   // OWN confirmed transaction — the money left the wallet — and it necessarily
   // confirms before the bridge fill outcome exists. Blanking it because the
   // parent later failed or refunded would tell the user a charge they actually

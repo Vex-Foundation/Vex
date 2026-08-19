@@ -92,9 +92,9 @@
  * with an explicit `~ … est.` marker — never bare "USD at execution".
  *
  * SECURITY: wallet allow-list is the GLOBAL configured inventory only
- * (`inventory-wallets.ts` — the same resolution `portfolio-db.ts` uses for
- * `scope: "global"`); the renderer never supplies an address. Logging records
- * ONLY counts + correlationId-free structural context — a cancellation logs
+ * (`inventory-wallets.ts`; indexed raw+lowercase variants for shape-valid EVM,
+ * exact raw values for Solana); the renderer never supplies an address.
+ * Logging records ONLY counts + correlationId-free structural context — a cancellation logs
  * exactly one redacted event (`portfolio.token_history_query_canceled`),
  * never addresses/amounts.
  *
@@ -115,7 +115,7 @@ import {
   type TokenHistoryDto,
   type TokenHistoryReadInput,
 } from "@shared/schemas/token-history.js";
-import { resolveInventoryWalletAddresses } from "./inventory-wallets.js";
+import { resolveInventoryWalletAddressLookupVariants } from "./inventory-wallets.js";
 import { log } from "../logger/index.js";
 import { mapEntry, normalizeSourceRank } from "./token-history-db-mappers.js";
 import {
@@ -137,7 +137,7 @@ import type { PageRow } from "./token-history-db-types.js";
 export async function getTokenHistory(
   input: TokenHistoryReadInput,
 ): Promise<Result<TokenHistoryDto, VexError>> {
-  const wallets = [...resolveInventoryWalletAddresses()];
+  const wallets = [...resolveInventoryWalletAddressLookupVariants()];
 
   // Fail closed: no configured wallets → the empty available page, before any SQL.
   if (wallets.length === 0) {

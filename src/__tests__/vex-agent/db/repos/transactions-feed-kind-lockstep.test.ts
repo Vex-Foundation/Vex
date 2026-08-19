@@ -18,7 +18,7 @@
  *      the whole half);
  *   3. the `product_type` projection names it (so it cannot fall through to
  *      `ELSE 'spot'` and be rendered as a spot trade it never was);
- *   4. the app feed's LOGICAL_ROW_PREDICATE admits it.
+ *   4. the app feed's positive logical-role predicate admits its user actions.
  *
  * A new migration that widens the kind vocabulary therefore FAILS this test
  * until both feeds are taught the kind — which is the whole point. The
@@ -46,8 +46,8 @@ const QUERY_BUILDER_SRC = readFileSync(
   "utf-8",
 );
 
-const AGENT_SCAN_SRC = readFileSync(
-  join(ROOT, "vex-app", "src", "main", "database", "agent-scan-db-query.ts"),
+const LOGICAL_ROW_SRC = readFileSync(
+  join(ROOT, "vex-app", "src", "main", "database", "agent-activity-logical-row.ts"),
   "utf-8",
 );
 
@@ -84,6 +84,25 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   claim: "claim",
 };
 
+/** Every current user-action role per kind; plumbing roles are intentionally absent. */
+const KIND_LOGICAL_ROLES: Readonly<Record<string, readonly string[]>> = {
+  swap: ["swap"],
+  bridge: ["bridge_fill_expected"],
+  lend: ["lend_deposit", "lend_withdraw", "lend_borrow_operate"],
+  prediction: ["predict_buy", "predict_sell", "predict_claim", "predict_close"],
+  wrap: ["wrap", "unwrap"],
+  yield: [
+    "yield_pt",
+    "yield_yt",
+    "yield_py",
+    "yield_lp",
+    "yield_sy",
+    "yield_claim",
+  ],
+  launch: ["token_launch"],
+  claim: ["pools_claim"],
+};
+
 /** The activity half's row predicate, read from the source it is written in. */
 function activityRowPredicate(): string {
   const match = /activityConds\.push\(\s*"(\(kind = 'swap'[^"]*)"/.exec(QUERY_BUILDER_SRC);
@@ -98,14 +117,11 @@ function productTypeProjection(): string {
   return match[1];
 }
 
-/** The app feed's LOGICAL_ROW_PREDICATE literal. */
+/** The shared app-feed logical-row predicate literal. */
 function logicalRowPredicate(): string {
-  // A plain literal again since the owner revision of 2026-08-05 retired its
-  // second caller: the Vex-fee LATERAL used to reuse this rule to skip a fee leg
-  // that was ALREADY its own ledger entry, and no fee leg is one any more.
-  const match = /const LOGICAL_ROW_PREDICATE = `([\s\S]*?)`;/.exec(AGENT_SCAN_SRC);
+  const match = /AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE = `([\s\S]*?)`;/.exec(LOGICAL_ROW_SRC);
   const body = match?.[1];
-  if (body === undefined) throw new Error("lockstep: LOGICAL_ROW_PREDICATE was not found");
+  if (body === undefined) throw new Error("lockstep: shared logical-row predicate was not found");
   return body;
 }
 
@@ -160,31 +176,33 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
     // needs no entry there because its whole `kind = 'bridge'` arm is admitted
     // only through `event_role = 'bridge_fill_expected'`.
     expect(QUERY_BUILDER_SRC).toContain(
-      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee')",
+      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee')",
     );
-    // The Agent Scan feed excludes all three by role AHEAD of every admitting
-    // arm: a `trench_fee` leg carries `kind = 'launch'`, so the kind arm alone
-    // cannot tell it from the launch itself.
-    expect(logicalRowPredicate()).toContain(
-      "aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')",
-    );
+    // The app feeds are positive-role only: every known technical role is
+    // absent, and a future one therefore cannot become a row by default.
+    for (const role of [
+      "allowance",
+      "allowance_reset",
+      "bridge_fee",
+      "swap_fee",
+      "trench_fee",
+      "pools_fee",
+    ]) {
+      expect(logicalRowPredicate()).not.toContain(`'${role}'`);
+    }
   });
 
-  it("the Agent Scan feed's logical-row predicate admits every kind", () => {
+  it("the app feeds' logical-row predicate admits every user action for every kind", () => {
     const predicate = logicalRowPredicate();
     for (const kind of liveKinds()) {
-      if (kind === "swap") {
-        expect(predicate).toContain("aa.event_role = 'swap'");
-        continue;
+      const roles = KIND_LOGICAL_ROLES[kind];
+      expect(roles, `kind '${kind}' has no declared logical roles`).toBeDefined();
+      for (const role of roles ?? []) {
+        expect(
+          predicate,
+          `app feeds do not admit '${kind}' action role '${role}'`,
+        ).toContain(`'${role}'`);
       }
-      if (kind === "bridge") {
-        expect(predicate).toContain("aa.event_role = 'bridge_fill_expected'");
-        continue;
-      }
-      expect(
-        predicate,
-        `Agent Scan does not admit kind '${kind}' — it is written and invisible`,
-      ).toContain(`'${kind}'`);
     }
   });
 });

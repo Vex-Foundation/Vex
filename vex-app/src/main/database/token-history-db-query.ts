@@ -14,6 +14,7 @@ import {
   ACTIVITY_KIND_MAX_LENGTH,
   EVENT_ROLE_MAX_LENGTH,
 } from "@shared/agent-activity-vocabulary.js";
+import { AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE } from "./agent-activity-logical-row.js";
 import { legacyActivityKindSql } from "./legacy-activity-kind.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -466,17 +467,9 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
         LEFT(aa.event_role, ${EVENT_ROLE_MAX_LENGTH}) AS event_role
       FROM agent_activity aa
       WHERE aa.wallet_address = ANY($${walletsParam}::text[])
-        AND (
-          aa.event_role = 'swap'
-          OR aa.event_role = 'bridge_fill_expected'
-          -- launch (migration 062): a token's history should OPEN with the
-          -- transaction that created it. Omitting it would leave every Trench
-          -- token's own history missing its first and most important entry.
-          OR aa.kind IN ('lend', 'prediction', 'launch')
-          OR aa.event_role IN (
-            'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
-          )
-        )
+        -- Shared positive allow-list: approvals, fees and future technical
+        -- roles stay execution detail instead of becoming history entries.
+        AND ${AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE}
         AND (
           (
             -- A launch matches the ordinary single-chain, first-leg shape: the
