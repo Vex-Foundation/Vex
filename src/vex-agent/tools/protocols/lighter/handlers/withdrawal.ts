@@ -1,24 +1,37 @@
 import { randomUUID } from "node:crypto";
-import { formatUnits, getAddress } from "viem";
+import { formatUnits, getAddress, type Hex, type TransactionReceipt } from "viem";
 
 import { getLighterClient } from "@tools/lighter/client.js";
 import {
   defaultLighterTradingVaultCredentialId,
   evaluateLighterTradingCredentialReadiness,
 } from "@tools/lighter/trading-credentials.js";
-import { readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
+import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI, readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
 import { buildLighterCoreWithdrawalPreview } from "@tools/lighter/withdrawal/core-preview.js";
+import {
+  assertLighterCoreClaimPreflightWithinApproval,
+  buildLighterCoreClaimPreview,
+  readLighterCoreClaimPreflight,
+} from "@tools/lighter/withdrawal/core-claim.js";
+import { proveLighterCoreWithdrawalSettlement } from "@tools/lighter/withdrawal/settlement-proof.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
+import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
+import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
-import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { getUniswapEvmClients, getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import * as withdrawalIntentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import * as withdrawalClaimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
-import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
 import { assertLighterCoreWithdrawalApprovalBinding } from "../withdrawal-approval-binding.js";
+import {
+  assertLighterCoreClaimApprovalBinding,
+  buildLighterCoreClaimCriticalArgs,
+} from "../withdrawal-claim-approval-binding.js";
 import {
   executeApprovedLighterCoreWithdrawal,
   getConfiguredLighterCoreWithdrawalExecutionDeps,
@@ -78,7 +91,213 @@ function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActi
   };
 }
 
+function buildClaimApprovalFollowUp(
+  attempt: withdrawalClaimsRepo.LighterWithdrawalClaimAttemptRow,
+): PreparedActionFollowUp {
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.withdraw.claim", params: { claimId: attempt.claimId } },
+    expiresAt: attempt.expiresAt,
+    approvalPreview: {
+      toolName: "claim",
+      namespace: "lighter",
+      criticalArgs: buildLighterCoreClaimCriticalArgs(attempt),
+    },
+  };
+}
+
 export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.withdraw.claim.prepare": async (params, context) => {
+    const sessionId = context.sessionId;
+    const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
+    if (!sessionId || intentId.length === 0) return fail("Manual Core claim preparation requires a session-scoped withdrawal intent id.");
+    const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
+    if (intent === null) return fail(`No Core withdrawal intent ${intentId} exists in this session.`);
+    if (intent.executionState !== "claimable" || intent.pendingBalanceUnits !== intent.amountUnits) {
+      return fail(`Core withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
+    }
+    let selected: string;
+    try {
+      selected = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
+    } catch (error) {
+      return walletScopeErrorToResult(error);
+    }
+    if (selected !== getAddress(intent.walletAddress)) return fail("The selected Vex wallet does not own this Core withdrawal claim.");
+    const deployment = getUniswapDeployment(1);
+    if (deployment === undefined) return fail("Ethereum mainnet is unavailable for Core claim preparation.");
+    let preview;
+    try {
+      const snapshot = await readLighterCoreClaimPreflight({
+        publicClient: getUniswapPublicClient(deployment),
+        walletAddress: intent.walletAddress,
+        gatewayAddress: intent.gatewayAddress,
+        expectedGatewayImplementation: intent.gatewayImplementation,
+        expectedGatewayCodeHash: intent.gatewayCodeHash,
+        settlementTokenAddress: intent.settlementTokenAddress,
+        expectedSettlementTokenCodeHash: intent.settlementTokenCodeHash,
+        amountUnits: BigInt(intent.amountUnits),
+      });
+      preview = buildLighterCoreClaimPreview({ sessionId, withdrawalIntentId: intent.intentId, snapshot });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    let attempt;
+    try {
+      attempt = await withSessionControlLock(sessionId, (client) =>
+        withdrawalClaimsRepo.createManualClaimAttemptWith(client, {
+          claimId: `lighter-withdrawal-claim-${randomUUID()}`,
+          preview,
+        }));
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "Manual Core claim could not be reserved durably.");
+    }
+    return {
+      ...ok({
+        source: "vex_lighter_core_manual_claim_intent",
+        status: "approval_prepared",
+        claimId: attempt.claimId,
+        withdrawalIntentId: attempt.withdrawalIntentId,
+        amountDisplay: `${formatUnits(BigInt(attempt.amountUnits), 6)} USDC`,
+        settlementNetwork: "Ethereum mainnet",
+        networkFeeCeilingWei: attempt.networkFeeCeilingWei,
+        expiresAt: attempt.expiresAt,
+        userGuidance: "Tell the user to review the separate Ethereum claim approval card. This spends ETH for gas and does not reuse the L2 withdrawal approval.",
+      }),
+      preparedActionFollowUp: buildClaimApprovalFollowUp(attempt),
+    };
+  },
+
+  "lighter.withdraw.claim": async (params, context) => {
+    const sessionId = context.sessionId;
+    const claimId = typeof params.claimId === "string" ? params.claimId.trim() : "";
+    if (!sessionId || claimId.length === 0) return fail("Manual Core claim requires a session-scoped prepared claim id.");
+    if (!context.approved || !context.approvalId) {
+      return { success: false, output: "Manual Core claim requires its matching approved Ethereum claim card.", pendingApproval: true };
+    }
+    const attempt = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId);
+    if (attempt === null) return fail(`No manual Core claim ${claimId} exists in this session.`);
+    try {
+      await assertLighterCoreClaimApprovalBinding({ approvalId: context.approvalId, sessionId, attempt });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    if (Date.parse(attempt.expiresAt) <= Date.now()) {
+      await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
+        claimId, sessionId, approvalId: context.approvalId!, decision: "expired", reason: "approved claim resume observed expired preview",
+      }));
+      return fail(`Manual Core claim ${claimId} expired before execution.`);
+    }
+    const approved = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
+      claimId, sessionId, approvalId: context.approvalId!, decision: "approved", reason: "user approved exact Ethereum Core USDC claim",
+    }));
+    if (approved === null) return fail(`Manual Core claim ${claimId} has already left prepared state.`);
+    const lease = await acquireLighterDepositExecutionLease({ chainId: 1, walletAddress: approved.walletAddress, intentId: approved.withdrawalIntentId }).catch(() => null);
+    if (lease === null || !lease.acquired) return fail("Could not acquire the Lighter Ethereum wallet execution slot. Nothing was signed.");
+    try {
+      await lease.handle.assertOwned();
+      let signer;
+      try {
+        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      } catch (error) {
+        return walletScopeErrorToResult(error);
+      }
+      if (signer.family !== "eip155" || getAddress(signer.address) !== getAddress(approved.walletAddress)) {
+        return fail("The resolved signing wallet does not match the approved Core claim wallet. Nothing was signed.");
+      }
+      const deployment = getUniswapDeployment(1);
+      if (deployment === undefined) return fail("Ethereum mainnet is unavailable for Core claim execution.");
+      const clients = getUniswapEvmClients(deployment, signer.privateKey as Hex);
+      const fresh = await readLighterCoreClaimPreflight({
+        publicClient: clients.publicClient,
+        walletAddress: approved.walletAddress,
+        gatewayAddress: approved.gatewayAddress,
+        expectedGatewayImplementation: approved.gatewayImplementation,
+        expectedGatewayCodeHash: approved.gatewayCodeHash,
+        settlementTokenAddress: approved.settlementTokenAddress,
+        expectedSettlementTokenCodeHash: approved.settlementTokenCodeHash,
+        amountUnits: BigInt(approved.amountUnits),
+      });
+      assertLighterCoreClaimPreflightWithinApproval(approved.preflightJson, fresh);
+      await lease.handle.assertOwned();
+      const outcome = await signStageBroadcast(
+        clients.publicClient,
+        clients.walletClient,
+        { to: getAddress(approved.gatewayAddress), data: approved.calldata as Hex, value: 0n },
+        {
+          onHashStaged: async (handles) => {
+            const staged = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markStagedWith(client, {
+              claimId, sessionId, txHash: handles.txHash, fromAddress: handles.fromAddress, nonce: handles.nonce,
+            }));
+            if (staged === null) throw new Error("Manual claim hash could not be staged durably before broadcast.");
+          },
+          onAccepted: async () => {
+            await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markSubmittedWith(client, claimId, sessionId));
+          },
+        },
+        undefined,
+        undefined,
+        {
+          gasLimit: BigInt(approved.gasLimit),
+          maxFeePerGas: BigInt(approved.feeCeilingPerGasWei),
+          maxPriorityFeePerGas: BigInt(approved.priorityFeeCeilingWei),
+          maxNetworkFeeWei: BigInt(approved.networkFeeCeilingWei),
+        },
+      );
+      if (outcome.kind === "ambiguous") {
+        await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
+          claimId, sessionId, outcome: "ambiguous", reason: `manual_claim_${outcome.stage}_outcome_unknown`,
+        }));
+        return ok({ source: "vex_lighter_core_manual_claim", status: "ambiguous", claimId, txHash: outcome.txHash,
+          userGuidance: "Tell the user the Ethereum claim outcome is uncertain and must be reconciled. Do not retry or prepare another claim." });
+      }
+      await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markSubmittedWith(client, claimId, sessionId));
+      if (outcome.replacement !== undefined) {
+        await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.recordReplacementWith(client, {
+          claimId, sessionId, replacementTxHash: outcome.replacement!.replacementTxHash,
+        }));
+      }
+      if (outcome.kind === "confirmed") {
+        const [block, latest, pending] = await Promise.all([
+          clients.publicClient.getBlock({ blockNumber: outcome.receipt.blockNumber, includeTransactions: false }),
+          clients.publicClient.getBlockNumber(),
+          clients.publicClient.readContract({ address: getAddress(approved.gatewayAddress), abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI, functionName: "getPendingBalance", args: [getAddress(approved.ownerAddress), 3] }),
+        ]);
+        proveLighterCoreWithdrawalSettlement({ receipt: outcome.receipt, canonicalBlockHash: block.hash,
+          latestBlockNumber: latest, owner: approved.ownerAddress, gatewayAddress: approved.gatewayAddress,
+          tokenAddress: approved.settlementTokenAddress, amountUnits: BigInt(approved.amountUnits), requiredConfirmations: 1 });
+        if (pending !== 0n) throw new Error("Confirmed manual claim left a nonzero exact gateway pending balance.");
+      }
+      await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
+        claimId, sessionId, outcome: "confirming", receipt: publicReceipt(outcome.receipt),
+      }));
+      return ok({ source: "vex_lighter_core_manual_claim", status: "confirming", claimId,
+        txHash: outcome.receipt.transactionHash, receiptStatus: outcome.receipt.status,
+        userGuidance: outcome.kind === "confirmed"
+          ? "Tell the user the exact claim mined and is awaiting 12-confirmation Ethereum finality before delivery is final."
+          : "Tell the user the claim transaction reverted and remains blocked until exact finality and pending-balance reconciliation." });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const current = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId).catch(() => null);
+      if (current?.txHash === null) {
+        await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markUnsubmittedFailureWith(client, {
+          claimId, sessionId, reason: "manual claim failed before durable transaction staging",
+        })).catch(() => false);
+        return fail(reason);
+      }
+      if (current !== null) {
+        await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
+          claimId, sessionId, outcome: "ambiguous", reason: "manual_claim_post_staging_outcome_unknown",
+        })).catch(() => false);
+        return ok({ source: "vex_lighter_core_manual_claim", status: "ambiguous", claimId,
+          txHash: current.replacementTxHash ?? current.txHash, reason,
+          userGuidance: "Tell the user the staged Ethereum claim must be reconciled and must not be retried." });
+      }
+      return fail(reason);
+    } finally {
+      await lease.handle.releaseExecutionLease().catch(() => {});
+    }
+  },
+
   "lighter.withdraw.status": async (params, context) => {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Core withdrawal status requires a host session id.");
@@ -89,9 +308,20 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     if (intent === null) return fail(intentId.length > 0
       ? `No Core withdrawal intent ${intentId} exists in this session.`
       : "No Core withdrawal intent exists in this session.");
+    let claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
+    if (
+      intent.executionState === "manual_claim_prepared"
+      && claimAttempt?.state === "prepared"
+      && Date.parse(claimAttempt.expiresAt) <= Date.now()
+    ) {
+      await withSessionControlLock(sessionId, (client) =>
+        withdrawalClaimsRepo.expirePreparedWith(client, claimAttempt!.claimId, sessionId));
+      intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intent.intentId) ?? intent;
+      claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
+    }
     if (!["destination_confirmed", "rejected", "failed", "refunded", "expired"].includes(intent.executionState)) {
       if (intent.signerTxHash === null || intent.submissionStagedAt === null) {
-        return ok(withdrawalStatusPayload(intent));
+        return ok(withdrawalStatusPayload(intent, claimAttempt));
       }
       const privilegedAuth = await resolveLighterReadOnlyAccountAuth("core", intent.accountIndex);
       if (privilegedAuth === null) {
@@ -110,7 +340,8 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         return fail(error instanceof Error ? error.message : String(error));
       }
     }
-    return ok(withdrawalStatusPayload(intent));
+    claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
+    return ok(withdrawalStatusPayload(intent, claimAttempt));
   },
 
   "lighter.withdraw.prepare": async (params, context) => {
@@ -279,7 +510,19 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
   },
 };
 
-function withdrawalStatusPayload(intent: LighterWithdrawalIntentRow): Record<string, unknown> {
+function publicReceipt(receipt: TransactionReceipt): Record<string, unknown> {
+  return {
+    transactionHash: receipt.transactionHash, status: receipt.status,
+    blockNumber: receipt.blockNumber.toString(10), blockHash: receipt.blockHash,
+    from: receipt.from, to: receipt.to, gasUsed: receipt.gasUsed.toString(10),
+    effectiveGasPrice: receipt.effectiveGasPrice.toString(10), logCount: receipt.logs.length,
+  };
+}
+
+function withdrawalStatusPayload(
+  intent: LighterWithdrawalIntentRow,
+  claim?: withdrawalClaimsRepo.LighterWithdrawalClaimAttemptRow | null,
+): Record<string, unknown> {
   return {
     source: "vex_lighter_core_withdrawal_reconciliation",
     intentId: intent.intentId,
@@ -296,6 +539,11 @@ function withdrawalStatusPayload(intent: LighterWithdrawalIntentRow): Record<str
     withdrawalHistoryStatus: intent.withdrawalHistoryStatus,
     pendingBalanceUnits: intent.pendingBalanceUnits,
     claimMode: intent.claimMode,
+    claimId: claim?.claimId ?? null,
+    claimState: claim?.state ?? null,
+    claimApprovalId: claim?.approvalId ?? intent.claimApprovalId,
+    claimTxHash: claim?.txHash ?? intent.claimTxHash,
+    claimReplacementTxHash: claim?.replacementTxHash ?? intent.claimReplacementTxHash,
     destinationTxHash: intent.destinationTxHash,
     destinationBlockNumber: intent.destinationBlockNumber,
     destinationConfirmations: intent.destinationConfirmations,

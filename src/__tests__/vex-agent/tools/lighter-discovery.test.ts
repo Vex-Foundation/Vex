@@ -30,6 +30,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.withdraw.claim.prepare",
+  "lighter.withdraw.claim",
   "lighter.withdraw.prepare",
   "lighter.withdraw",
   "lighter.key.register.prepare",
@@ -102,6 +104,14 @@ describe("Lighter agent discovery surface", () => {
       mutating: true,
       actionKind: "external_post",
     });
+    expect(getProtocolManifest("lighter.withdraw.claim.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(getProtocolManifest("lighter.withdraw.claim")).toMatchObject({
+      mutating: true,
+      actionKind: "user_wallet_broadcast",
+    });
   });
 
   it("accepts core or rhc environment on environment-scoped tools", () => {
@@ -132,6 +142,10 @@ describe("Lighter agent discovery surface", () => {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("external_post");
         expect(tool.requiredParams).toContain("intentId");
+      } else if (tool.toolId === "lighter.withdraw.claim") {
+        expect(tool.mutating).toBe(true);
+        expect(tool.actionKind).toBe("user_wallet_broadcast");
+        expect(tool.requiredParams).toContain("claimId");
       } else if (tool.toolId === "lighter.deposit") {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("user_wallet_broadcast");
@@ -143,6 +157,7 @@ describe("Lighter agent discovery surface", () => {
       } else if (
         tool.toolId === "lighter.order.create.prepare"
         || tool.toolId === "lighter.withdraw.prepare"
+        || tool.toolId === "lighter.withdraw.claim.prepare"
         || tool.toolId === "lighter.deposit.prepare"
         || tool.toolId === "lighter.key.register.prepare"
       ) {
@@ -172,6 +187,8 @@ describe("Lighter agent discovery surface", () => {
         || tool.toolId === "lighter.key.register"
       ) {
         expect(tool.required).toContain("intentId");
+      } else if (tool.toolId === "lighter.withdraw.claim") {
+        expect(tool.required).toContain("claimId");
       } else {
         expect(tool.required).not.toContain("environment");
       }

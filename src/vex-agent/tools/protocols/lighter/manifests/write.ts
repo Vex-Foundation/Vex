@@ -64,7 +64,38 @@ const CORE_WITHDRAW_INTENT_ID_PARAM: ProtocolParamDef = {
   description: "Session-scoped Core withdrawal intent produced by lighter.withdraw.prepare.",
 };
 
+const CORE_CLAIM_ID_PARAM: ProtocolParamDef = {
+  key: "claimId",
+  type: "string",
+  required: true,
+  description: "Session-scoped manual Core claim id produced by lighter.withdraw.claim.prepare.",
+};
+
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "lighter.withdraw.claim.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare a separate Ethereum wallet approval for one exact claimable Lighter Core USDC withdrawal. Requires the durable withdrawal to be exactly claimable, the selected wallet to equal the fixed owner, modern gateway pending balance to equal the one withdrawal amount, reviewed Core gateway implementation/code and enabled asset-3 USDC mapping, successful zero-value typed-call simulation, fresh EIP-1559 fees, and enough ETH for the disclosed hard fee ceiling. Persists a separate claim attempt and never signs or broadcasts.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [CORE_WITHDRAW_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-withdrawal-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.claim.prepare"],
+  },
+  {
+    toolId: "lighter.withdraw.claim",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Approval-resume target for one exact manual Lighter Core USDC claim on Ethereum mainnet. Refuses direct, cross-session, stale, changed-amount, changed-contract, changed-calldata, insufficient-ETH, or over-ceiling fee execution. The local wallet signs only withdrawPendingBalance(owner,3,amount) with value zero; Vex persists hash/from/nonce before one raw broadcast, accepts only exact fee-only replacements, never retries ambiguity, and requires exact gateway event, USDC transfer, canonical block, zero pending balance, and 12 confirmations before final delivery.",
+    mutating: true,
+    actionKind: "user_wallet_broadcast",
+    params: [CORE_CLAIM_ID_PARAM],
+    exampleParams: { claimId: "lighter-withdrawal-claim-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.claim"],
+  },
   {
     toolId: "lighter.withdraw.prepare",
     namespace: "lighter",

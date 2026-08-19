@@ -125,6 +125,38 @@ export async function findByClaimId(sessionId: string, claimId: string): Promise
   return row === null ? null : mapRow(row);
 }
 
+export async function findLatestForWithdrawal(
+  sessionId: string,
+  withdrawalIntentId: string,
+): Promise<LighterWithdrawalClaimAttemptRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_withdrawal_claim_attempts
+      WHERE session_id = $1 AND withdrawal_intent_id = $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [sessionId, withdrawalIntentId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function expirePreparedWith(
+  client: PoolClient,
+  claimId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const row = await queryOneWith<{ withdrawal_intent_id: string }>(client,
+    `UPDATE lighter_withdrawal_claim_attempts
+        SET state = 'expired', decision_reason = 'manual claim preview expired', updated_at = NOW()
+      WHERE claim_id = $1 AND session_id = $2 AND state = 'prepared' AND expires_at <= NOW()
+      RETURNING withdrawal_intent_id`, [claimId, sessionId]);
+  if (row === null) return false;
+  const parent = await queryOneWith(client,
+    `UPDATE lighter_withdrawal_intents SET execution_state = 'claimable', updated_at = NOW()
+      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_prepared'
+      RETURNING intent_id`, [row.withdrawal_intent_id, sessionId]);
+  if (parent === null) throw new Error("Expired manual claim could not restore its parent withdrawal.");
+  return true;
+}
+
 export async function markDecisionWith(client: PoolClient, input: {
   readonly claimId: string;
   readonly sessionId: string;
@@ -141,17 +173,35 @@ export async function markDecisionWith(client: PoolClient, input: {
     [input.claimId, input.sessionId, input.approvalId, input.decision, safeText(input.reason)],
   );
   if (row === null) return null;
-  await queryOneWith(
+  const parent = await queryOneWith(
     client,
     `UPDATE lighter_withdrawal_intents
         SET execution_state = $3, claim_approval_id = $4, updated_at = NOW()
       WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_prepared'
       RETURNING intent_id`,
     [String(row.withdrawal_intent_id), input.sessionId,
-      input.decision === "approved" ? "manual_claim_approved" : input.decision,
+      input.decision === "approved" ? "manual_claim_approved" : "claimable",
       input.approvalId],
   );
+  if (parent === null) throw new Error("Core withdrawal claim decision could not update its parent intent.");
   return mapRow(row);
+}
+
+export async function markUnsubmittedFailureWith(client: PoolClient, input: {
+  readonly claimId: string; readonly sessionId: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOneWith<{ withdrawal_intent_id: string }>(client,
+    `UPDATE lighter_withdrawal_claim_attempts
+        SET state = 'rejected', decision_reason = $3, updated_at = NOW()
+      WHERE claim_id = $1 AND session_id = $2 AND state = 'approved' AND tx_hash IS NULL
+      RETURNING withdrawal_intent_id`, [input.claimId, input.sessionId, safeText(input.reason)]);
+  if (row === null) return false;
+  const parent = await queryOneWith(client,
+    `UPDATE lighter_withdrawal_intents SET execution_state = 'claimable', updated_at = NOW()
+      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_approved'
+      RETURNING intent_id`, [row.withdrawal_intent_id, input.sessionId]);
+  if (parent === null) throw new Error("Unsubmitted manual claim failure could not restore its parent withdrawal.");
+  return true;
 }
 
 export async function markStagedWith(client: PoolClient, input: {
@@ -171,27 +221,29 @@ export async function markStagedWith(client: PoolClient, input: {
     [input.claimId, input.sessionId, hash(input.txHash), input.fromAddress, input.nonce],
   );
   if (row === null) return null;
-  await queryOneWith(client,
+  const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents
         SET execution_state = 'manual_claim_staged', claim_tx_hash = $3,
             destination_tx_hash = $3, updated_at = NOW()
       WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_approved'
       RETURNING intent_id`,
     [String(row.withdrawal_intent_id), input.sessionId, input.txHash]);
+  if (parent === null) throw new Error("Staged manual claim could not update its parent withdrawal intent.");
   return mapRow(row);
 }
 
 export async function markSubmittedWith(client: PoolClient, claimId: string, sessionId: string): Promise<boolean> {
   const row = await queryOneWith<{ withdrawal_intent_id: string }>(client,
     `UPDATE lighter_withdrawal_claim_attempts
-        SET state = 'submitted', submitted_at = NOW(), updated_at = NOW()
-      WHERE claim_id = $1 AND session_id = $2 AND state = 'staged'
+        SET state = 'submitted', submitted_at = COALESCE(submitted_at, NOW()), updated_at = NOW()
+      WHERE claim_id = $1 AND session_id = $2 AND state IN ('staged','submitted')
       RETURNING withdrawal_intent_id`, [claimId, sessionId]);
   if (row === null) return false;
-  await queryOneWith(client,
+  const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents SET execution_state = 'manual_claim_submitted', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_staged'
+      WHERE intent_id = $1 AND session_id = $2 AND execution_state IN ('manual_claim_staged','manual_claim_submitted')
       RETURNING intent_id`, [row.withdrawal_intent_id, sessionId]);
+  if (parent === null) throw new Error("Submitted manual claim could not update its parent withdrawal intent.");
   return true;
 }
 
@@ -239,6 +291,28 @@ export async function markOutcomeWith(client: PoolClient, input: {
     [row.withdrawal_intent_id, input.sessionId, parentState,
       input.outcome === "ambiguous" ? safeText(input.reason ?? "manual_claim_outcome_unknown") : null]);
   return true;
+}
+
+export async function markReconciledOutcome(input: {
+  readonly sessionId: string;
+  readonly withdrawalIntentId: string;
+  readonly transactionHash: string;
+  readonly outcome: "confirmed" | "reverted";
+  readonly receipt: Record<string, unknown>;
+}): Promise<boolean> {
+  const txHash = hash(input.transactionHash);
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_claim_attempts
+        SET state = $4, receipt_json = $5::jsonb,
+            confirmed_at = CASE WHEN $4 = 'confirmed' THEN NOW() ELSE confirmed_at END,
+            updated_at = NOW()
+      WHERE session_id = $1 AND withdrawal_intent_id = $2
+        AND state IN ('staged','submitted','confirming','ambiguous')
+        AND (LOWER(tx_hash) = LOWER($3) OR LOWER(replacement_tx_hash) = LOWER($3))
+      RETURNING ${COLUMNS}`,
+    [input.sessionId, input.withdrawalIntentId, txHash, input.outcome, jsonb(input.receipt)],
+  );
+  return row !== null;
 }
 
 function mapRow(row: Record<string, unknown>): LighterWithdrawalClaimAttemptRow {

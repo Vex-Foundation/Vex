@@ -206,6 +206,28 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.withdraw.claim.prepare": {
+    embeddingText: embeddingText(
+      `Prepare a separate Ethereum wallet approval to claim one exact Lighter Core USDC withdrawal that reconciliation has proven claimable. ` +
+      `Use only after withdrawal status reports claimable. It rechecks the reviewed gateway, exact pending amount, fixed owner, typed zero-value calldata, simulation, ETH balance, and fresh EIP-1559 fee ceiling. It never signs or broadcasts.`,
+    ),
+    aliases: ["prepare lighter withdrawal claim", "claim core usdc", "manual lighter claim"],
+    exampleIntents: ["prepare the claim for my Core USDC withdrawal", "claim my pending lighter USDC"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
+  "lighter.withdraw.claim": {
+    embeddingText: embeddingText(
+      `Resume one separately approved Lighter Core manual USDC claim on Ethereum. ` +
+      `The privileged wallet path revalidates exact pending balance and contract identity, enforces the approved fee ceiling, stages the computed hash before one raw broadcast, and never retries ambiguity. Final delivery still requires exact event, transfer, canonical block, and 12 confirmations.`,
+    ),
+    aliases: ["execute lighter withdrawal claim", "approved core usdc claim"],
+    exampleIntents: ["execute the approved Core USDC claim"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
@@ -332,7 +354,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 26;
+const EXPECTED_COUNT = 28;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

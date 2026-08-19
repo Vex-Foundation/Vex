@@ -16,6 +16,7 @@ import {
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
 import type { LighterWithdrawHistoryItem } from "@tools/lighter/types.js";
 import * as intentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import * as claimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 
@@ -34,6 +35,7 @@ export async function reconcileLighterCoreWithdrawal(input: {
   readonly privilegedAuth: LighterPrivilegedAccountAuth;
   readonly publicClient: PublicClient;
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
+  readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
 }): Promise<LighterWithdrawalIntentRow> {
   const repo = input.intents ?? intentsRepo;
   const intent = input.intent;
@@ -126,6 +128,7 @@ export async function reconcileLighterCoreWithdrawal(input: {
       common,
       hash: settlementHash,
       claimMode: intent.claimTxHash === null ? "auto" : "manual",
+      claims: input.claims ?? claimsRepo,
     });
   }
   if (historyRow.status === "failed" || historyRow.status === "refunded") {
@@ -163,6 +166,9 @@ export async function reconcileLighterCoreWithdrawal(input: {
         ambiguousReason: "claimable_history_pending_balance_mismatch",
       });
     }
+    if (intent.executionState === "manual_claim_prepared" || intent.executionState === "manual_claim_approved") {
+      return persist(repo, { ...common, state: intent.executionState });
+    }
     return persist(repo, { ...common, state: "claimable" });
   }
   const historyHash = historyRow.l1_tx_hash;
@@ -181,6 +187,7 @@ export async function reconcileLighterCoreWithdrawal(input: {
     common,
     hash: historyHash as Hex,
     claimMode: intent.claimTxHash === null ? "auto" : "manual",
+    claims: input.claims ?? claimsRepo,
   });
 }
 
@@ -201,8 +208,7 @@ function hasProvenClaimProgress(state: LighterWithdrawalIntentRow["executionStat
 
 function hasProvenSettlementProgress(state: LighterWithdrawalIntentRow["executionState"]): boolean {
   return [
-    "auto_claim_observed", "manual_claim_prepared", "manual_claim_approved",
-    "manual_claim_staged", "manual_claim_submitted", "destination_confirmed",
+    "auto_claim_observed", "manual_claim_staged", "manual_claim_submitted", "destination_confirmed",
   ].includes(state);
 }
 
@@ -214,6 +220,7 @@ async function reconcileDestinationTransaction(input: {
   readonly common: ReconciliationCommon;
   readonly hash: Hex;
   readonly claimMode: "auto" | "manual";
+  readonly claims: Pick<typeof claimsRepo, "markReconciledOutcome">;
 }): Promise<LighterWithdrawalIntentRow> {
   let receipt;
   try {
@@ -230,6 +237,73 @@ async function reconcileDestinationTransaction(input: {
     input.publicClient.getBlock({ blockNumber: receipt.blockNumber, includeTransactions: false }),
     input.publicClient.getBlockNumber(),
   ]);
+  if (receipt.transactionHash.toLowerCase() !== input.hash.toLowerCase()) {
+    return persist(input.repo, {
+      ...input.common,
+      state: "ambiguous",
+      ambiguousReason: "ethereum_receipt_hash_identity_mismatch",
+    });
+  }
+  if (receipt.status === "reverted" && input.claimMode === "manual") {
+    const canonical = block.hash === receipt.blockHash;
+    const confirmationsBig = latestBlockNumber >= receipt.blockNumber
+      ? latestBlockNumber - receipt.blockNumber + 1n
+      : 0n;
+    const confirmations = confirmationsBig > BigInt(Number.MAX_SAFE_INTEGER)
+      ? 0 : Number(confirmationsBig);
+    if (!canonical || confirmations === 0) {
+      return persist(input.repo, {
+        ...input.common,
+        state: "ambiguous",
+        ambiguousReason: "manual_claim_revert_not_canonical",
+      });
+    }
+    if (confirmations < 12) {
+      return persist(input.repo, {
+        ...input.common,
+        state: "manual_claim_submitted",
+        claimMode: "manual",
+        destinationTxHash: receipt.transactionHash,
+        destinationBlockNumber: receipt.blockNumber.toString(10),
+        destinationBlockHash: receipt.blockHash,
+        destinationConfirmations: confirmations,
+      });
+    }
+    if (input.pendingBalance !== BigInt(input.intent.amountUnits)) {
+      return persist(input.repo, {
+        ...input.common,
+        state: "ambiguous",
+        ambiguousReason: "finalized_manual_claim_revert_pending_balance_mismatch",
+      });
+    }
+    const evidence = {
+      kind: "finalized_manual_claim_revert",
+      transactionHash: receipt.transactionHash,
+      blockNumber: receipt.blockNumber.toString(10),
+      blockHash: receipt.blockHash,
+      confirmations,
+      pendingBalanceUnits: input.pendingBalance.toString(10),
+    } as const;
+    const row = await persist(input.repo, {
+      ...input.common,
+      state: "claimable",
+      claimMode: "manual",
+      destinationTxHash: receipt.transactionHash,
+      destinationBlockNumber: receipt.blockNumber.toString(10),
+      destinationBlockHash: receipt.blockHash,
+      destinationConfirmations: confirmations,
+      destinationEvidence: evidence,
+    });
+    const recorded = await input.claims.markReconciledOutcome({
+      sessionId: input.intent.sessionId,
+      withdrawalIntentId: input.intent.intentId,
+      transactionHash: receipt.transactionHash,
+      outcome: "reverted",
+      receipt: evidence,
+    });
+    if (!recorded) throw invalid("Finalized manual claim revert could not update its durable attempt.");
+    return row;
+  }
   try {
     const proof = proveLighterCoreWithdrawalSettlement({
       receipt,
@@ -247,7 +321,7 @@ async function reconcileDestinationTransaction(input: {
         ambiguousReason: "destination_proven_but_gateway_balance_nonzero",
       });
     }
-    return persist(input.repo, {
+    const row = await persist(input.repo, {
       ...input.common,
       state: "destination_confirmed",
       claimMode: input.claimMode,
@@ -257,6 +331,17 @@ async function reconcileDestinationTransaction(input: {
       destinationConfirmations: proof.confirmations,
       destinationEvidence: proof as unknown as Record<string, unknown>,
     });
+    if (input.claimMode === "manual") {
+      const recorded = await input.claims.markReconciledOutcome({
+        sessionId: input.intent.sessionId,
+        withdrawalIntentId: input.intent.intentId,
+        transactionHash: proof.transactionHash,
+        outcome: "confirmed",
+        receipt: proof as unknown as Record<string, unknown>,
+      });
+      if (!recorded) throw invalid("Finalized manual claim delivery could not update its durable attempt.");
+    }
+    return row;
   } catch (error) {
     if (error instanceof LighterSettlementConfirmingError) {
       return persist(input.repo, {

@@ -466,6 +466,8 @@ export async function recordReconciliation(input: {
     | "secure_waiting"
     | "claimable"
     | "auto_claim_observed"
+    | "manual_claim_prepared"
+    | "manual_claim_approved"
     | "manual_claim_submitted"
     | "destination_confirmed"
     | "failed"
@@ -524,6 +526,8 @@ export async function recordReconciliation(input: {
         AND (
           $3 = 'ambiguous'
           OR $3 = 'destination_confirmed'
+          OR ($3 = 'manual_claim_prepared' AND execution_state = 'manual_claim_prepared')
+          OR ($3 = 'manual_claim_approved' AND execution_state = 'manual_claim_approved')
           OR ($3 = 'manual_claim_submitted' AND execution_state IN (
             'manual_claim_staged','manual_claim_submitted','ambiguous'
           ))
@@ -533,7 +537,7 @@ export async function recordReconciliation(input: {
           ))
           OR ($3 = 'claimable' AND execution_state IN (
             'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting',
-            'claimable','ambiguous'
+            'claimable','manual_claim_staged','manual_claim_submitted','ambiguous'
           ))
           OR ($3 = 'secure_waiting' AND execution_state IN (
             'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting','ambiguous'

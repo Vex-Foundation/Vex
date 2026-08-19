@@ -323,4 +323,34 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
       ambiguousReason: "provider_tx_regressed_after_execution",
     }));
   });
+
+  it("releases a reverted manual claim only after exact 12-confirmation reconciliation", async () => {
+    const d = reconciliationDeps({ state: "manual_claim_submitted", pendingBalance: 2_000_000n });
+    const markReconciledOutcome = vi.fn(async () => true);
+    const reverted = { ...receipt(), status: "reverted" as const, logs: [] };
+    const input = {
+      ...d,
+      intent: {
+        ...d.intent,
+        executionState: "manual_claim_submitted" as const,
+        claimTxHash: TX_HASH,
+        destinationTxHash: TX_HASH,
+      },
+      publicClient: {
+        ...d.publicClient,
+        getTransactionReceipt: vi.fn(async () => reverted),
+      },
+      claims: { markReconciledOutcome },
+    };
+    const reconciled = await reconcileLighterCoreWithdrawal(input as never);
+    expect(reconciled.executionState).toBe("claimable");
+    expect(markReconciledOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      transactionHash: TX_HASH,
+      outcome: "reverted",
+    }));
+    expect(d.recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
+      state: "claimable",
+      destinationConfirmations: 12,
+    }));
+  });
 });
