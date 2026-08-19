@@ -87,7 +87,7 @@ describe("Lighter environment-scoped deposit preflight proof", () => {
       ethereumBlockNumber: "23456789",
       lighterBlockNumber: "0",
       gatewayAddress: deployment.gatewayProxy,
-      gatewayImplementationAddress: null,
+      gatewayImplementationAddress: deployment.expectedGatewayImplementation,
       settlementTokenAddress: deployment.settlementTokenProxy,
       settlementTokenImplementationAddress: null,
       settlementTokenSymbol: "USDC",

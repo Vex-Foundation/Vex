@@ -48,6 +48,9 @@ export const LIGHTER_ENDPOINT_PATHS = {
   recentTrades: "/api/v1/recentTrades",
   trades: "/api/v1/trades",
   candles: "/api/v1/candles",
+  tx: "/api/v1/tx",
+  withdrawalDelay: "/api/v1/withdrawalDelay",
+  withdrawHistory: "/api/v1/withdraw/history",
   sendTx: "/api/v1/sendTx",
 } as const;
 

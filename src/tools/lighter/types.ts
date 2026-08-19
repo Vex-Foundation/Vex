@@ -62,6 +62,7 @@ export interface LighterAssetDetail {
   l1_decimals: number;
   decimals: number;
   min_transfer_amount: string;
+  min_withdrawal_amount?: string;
   l1_address: string;
   margin_mode?: "enabled" | "disabled";
   [key: string]: unknown;
@@ -122,6 +123,9 @@ export interface LighterAccount {
   status?: number;
   collateral?: string;
   available_balance?: string;
+  pending_order_count?: number;
+  cross_initial_margin_requirement?: string;
+  cross_maintenance_margin_requirement?: string;
   positions?: unknown[];
   assets?: unknown[];
   [key: string]: unknown;
@@ -162,6 +166,37 @@ export interface LighterNextNonceResponse {
   code: number;
   message?: string;
   nonce: number;
+  [key: string]: unknown;
+}
+
+export interface LighterWithdrawalDelayResponse {
+  seconds: number;
+  [key: string]: unknown;
+}
+
+export type LighterWithdrawHistoryStatus =
+  | "failed"
+  | "pending"
+  | "claimable"
+  | "refunded"
+  | "completed";
+
+export interface LighterWithdrawHistoryItem {
+  id: string;
+  amount: string;
+  timestamp: number;
+  status: LighterWithdrawHistoryStatus;
+  type: "secure" | "fast";
+  l1_tx_hash: string;
+  asset_id: number;
+  [key: string]: unknown;
+}
+
+export interface LighterWithdrawHistoryResponse {
+  code: number;
+  message?: string;
+  withdraws: LighterWithdrawHistoryItem[];
+  cursor: string;
   [key: string]: unknown;
 }
 
@@ -410,6 +445,19 @@ export interface LighterAccountsByL1AddressParams {
 
 export interface LighterTxFromL1Params {
   hash: string;
+}
+
+export interface LighterTxQuery {
+  by: "hash" | "sequence_index";
+  value: string;
+}
+
+export type LighterWithdrawHistoryFilter = "all" | "pending" | "claimable";
+
+export interface LighterWithdrawHistoryParams {
+  accountIndex: number;
+  cursor?: string;
+  filter?: LighterWithdrawHistoryFilter;
 }
 
 export interface LighterReadOnlyTokensParams {

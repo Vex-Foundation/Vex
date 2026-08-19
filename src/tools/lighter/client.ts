@@ -61,6 +61,10 @@ import type {
   LighterInfoResponse,
   LighterTxFromL1Params,
   LighterTxFromL1Response,
+  LighterTxQuery,
+  LighterWithdrawalDelayResponse,
+  LighterWithdrawHistoryParams,
+  LighterWithdrawHistoryResponse,
 } from "./types.js";
 import {
   validateLighterAccount,
@@ -82,6 +86,8 @@ import {
   validateLighterLayer1BasicInfo,
   validateLighterInfo,
   validateLighterTxFromL1,
+  validateLighterWithdrawalDelay,
+  validateLighterWithdrawHistory,
 } from "./validation.js";
 import {
   authorizeLighterReadOnlyAuthTokenForAccount,
@@ -321,6 +327,52 @@ export class LighterClient {
       LIGHTER_ENDPOINT_PATHS.txFromL1TxHash,
       validateLighterTxFromL1,
       { hash: readNonEmptyString(params.hash, "hash") },
+    );
+  }
+
+  async getTx(
+    environment: LighterEnvironment,
+    params: LighterTxQuery,
+  ): Promise<LighterTxFromL1Response> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.tx,
+      validateLighterTxFromL1,
+      {
+        by: params.by,
+        value: readNonEmptyString(params.value, "transaction value"),
+      },
+    );
+  }
+
+  getWithdrawalDelay(
+    environment: LighterEnvironment,
+  ): Promise<LighterWithdrawalDelayResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.withdrawalDelay,
+      validateLighterWithdrawalDelay,
+    );
+  }
+
+  async getWithdrawHistory(
+    environment: LighterEnvironment,
+    params: LighterWithdrawHistoryParams,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
+  ): Promise<LighterWithdrawHistoryResponse> {
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.withdrawHistory,
+      validateLighterWithdrawHistory,
+      {
+        account_index: String(readAccountIndex(auth.accountIndex)),
+        cursor: params.cursor === undefined
+          ? undefined
+          : readNonEmptyString(params.cursor, "withdraw history cursor"),
+        filter: params.filter,
+      },
+      { auth: "read-only", authToken: auth.token },
     );
   }
 

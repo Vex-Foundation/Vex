@@ -25,6 +25,8 @@ import type {
   LighterLayer1BasicInfoResponse,
   LighterInfoResponse,
   LighterTxFromL1Response,
+  LighterWithdrawalDelayResponse,
+  LighterWithdrawHistoryResponse,
 } from "./types.js";
 
 const int = z.number().int().finite();
@@ -211,6 +213,7 @@ const assetDetailsResponseSchema = z
       l1_decimals: int,
       decimals: int,
       min_transfer_amount: numericString,
+      min_withdrawal_amount: numericString.optional(),
       l1_address: z.string().min(1),
       margin_mode: z.enum(["enabled", "disabled"]).optional(),
     }).passthrough()),
@@ -265,6 +268,9 @@ const accountSchema = z
     status: int.optional(),
     collateral: optionalNumericString,
     available_balance: optionalNumericString,
+    pending_order_count: int.optional(),
+    cross_initial_margin_requirement: optionalNumericString,
+    cross_maintenance_margin_requirement: optionalNumericString,
     positions: z.array(z.unknown()).optional(),
     assets: z.array(z.unknown()).optional(),
   })
@@ -310,6 +316,29 @@ const nextNonceResponseSchema = z
     code: int,
     message,
     nonce: providerInteger,
+  })
+  .passthrough();
+
+const withdrawalDelayResponseSchema = z
+  .object({
+    seconds: int.nonnegative(),
+  })
+  .passthrough();
+
+const withdrawHistoryResponseSchema = z
+  .object({
+    code: int,
+    message,
+    withdraws: z.array(z.object({
+      id: z.string().min(1).max(256),
+      amount: numericString,
+      timestamp: providerInteger,
+      status: z.enum(["failed", "pending", "claimable", "refunded", "completed"]),
+      type: z.enum(["secure", "fast"]),
+      l1_tx_hash: z.string().max(256),
+      asset_id: int,
+    }).passthrough()).max(1_000),
+    cursor: z.string(),
   })
   .passthrough();
 
@@ -502,6 +531,14 @@ export function validateLighterApiKeys(raw: unknown): LighterApiKeysResponse {
 
 export function validateLighterNextNonce(raw: unknown): LighterNextNonceResponse {
   return parseOrThrow(nextNonceResponseSchema, raw, "next nonce");
+}
+
+export function validateLighterWithdrawalDelay(raw: unknown): LighterWithdrawalDelayResponse {
+  return parseOrThrow(withdrawalDelayResponseSchema, raw, "withdrawal delay");
+}
+
+export function validateLighterWithdrawHistory(raw: unknown): LighterWithdrawHistoryResponse {
+  return parseOrThrow(withdrawHistoryResponseSchema, raw, "withdraw history");
 }
 
 export function validateLighterSendTx(raw: unknown): LighterSendTxResponse {
