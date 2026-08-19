@@ -1,7 +1,7 @@
 /**
- * Exact, read-only evidence checks for a Lighter Core L1 deposit.
+ * Exact, read-only evidence checks for an environment-bound Lighter settlement deposit.
  *
- * The Ethereum transaction receipt proves which Lighter account index the
+ * The settlement-chain transaction receipt proves which Lighter account index the
  * gateway assigned. The Lighter API must then expose the transaction derived
  * from that exact L1 hash, with the same deposit fields, and the account lookup
  * must prove that exact index belongs to the depositing wallet. None of these
@@ -104,16 +104,16 @@ export function proveLighterDepositL1(
   expected: ExpectedLighterDeposit,
 ): LighterDepositL1Evidence {
   if (receipt.status !== "success") {
-    throw new Error("Ethereum does not prove a successful Lighter deposit.");
+    throw new Error("The settlement chain does not prove a successful Lighter deposit.");
   }
   if (!sameHex(receipt.transactionHash, expected.txHash)) {
-    throw new Error("Ethereum receipt hash does not match the staged Lighter deposit hash.");
+    throw new Error("Settlement receipt hash does not match the staged Lighter deposit hash.");
   }
   if (receipt.to === null || !sameAddress(receipt.to, expected.gatewayAddress)) {
-    throw new Error("Ethereum receipt target does not match the approved Lighter gateway.");
+    throw new Error("Settlement receipt target does not match the approved Lighter gateway.");
   }
   if (!sameAddress(receipt.from, expected.walletAddress)) {
-    throw new Error("Ethereum receipt sender does not match the approved Vex wallet.");
+    throw new Error("Settlement receipt sender does not match the approved Vex wallet.");
   }
 
   const gatewayLogs = receipt.logs.filter((log) => sameAddress(log.address, expected.gatewayAddress));
@@ -132,7 +132,7 @@ export function proveLighterDepositL1(
     }
   });
   if (decoded.length !== 1) {
-    throw new Error("Ethereum receipt must contain exactly one Lighter Deposit event.");
+    throw new Error("Settlement receipt must contain exactly one Lighter Deposit event.");
   }
 
   const event = decoded[0]!;
@@ -251,20 +251,20 @@ function assertDepositFields(
   },
 ): void {
   if (readSafeInteger(value[keys.accountIndex], keys.accountIndex) !== expected.accountIndex) {
-    throw new Error("Lighter deposit account index evidence does not match Ethereum.");
+    throw new Error("Lighter deposit account index evidence does not match the settlement receipt.");
   }
   const l1Address = value[keys.l1Address];
   if (typeof l1Address !== "string" || !sameAddress(l1Address, expected.l1Address)) {
-    throw new Error("Lighter deposit address evidence does not match Ethereum.");
+    throw new Error("Lighter deposit address evidence does not match the settlement receipt.");
   }
   if (readSafeInteger(value[keys.assetIndex], keys.assetIndex) !== expected.assetIndex) {
-    throw new Error("Lighter deposit asset evidence does not match Ethereum.");
+    throw new Error("Lighter deposit asset evidence does not match the settlement receipt.");
   }
   if (readSafeInteger(value[keys.routeType], keys.routeType) !== expected.routeType) {
-    throw new Error("Lighter deposit route evidence does not match Ethereum.");
+    throw new Error("Lighter deposit route evidence does not match the settlement receipt.");
   }
   if (readUnsignedBigInt(value[keys.amount], keys.amount) !== expected.amountUnits) {
-    throw new Error("Lighter deposit amount evidence does not match Ethereum.");
+    throw new Error("Lighter deposit amount evidence does not match the settlement receipt.");
   }
 }
 

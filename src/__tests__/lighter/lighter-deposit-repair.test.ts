@@ -24,6 +24,7 @@ const REPLACEMENT_HASH: `0x${string}` = `0x${"d".repeat(64)}`;
 const BLOCK_HASH: `0x${string}` = `0x${"c".repeat(64)}`;
 const WALLET = "0x1111111111111111111111111111111111111111";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+const RHC_CONTRACT = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
 
 function depositReceipt(
   overrides: Partial<LighterDepositReceipt> = {},
@@ -231,7 +232,77 @@ function confirmedIntent(): LighterOnboardingIntentRow {
   });
 }
 
+function rhcIntent(
+  overrides: Partial<LighterOnboardingIntentRow> = {},
+): LighterOnboardingIntentRow {
+  return intent({
+    environment: "rhc",
+    chainId: 4663,
+    depositContract: RHC_CONTRACT,
+    ...overrides,
+  });
+}
+
 describe("Lighter deposit evidence-only repair", () => {
+  it("reconciles exact RHC receipt, credit, and account evidence in the RHC environment", async () => {
+    const d = deps();
+    const row = rhcIntent({
+      executionState: "deposit_submitted",
+      depositTxHash: DEPOSIT_HASH,
+    });
+    const receipt = depositReceipt({
+      to: RHC_CONTRACT,
+      logs: [{
+        address: RHC_CONTRACT,
+        topics: depositEventTopics(),
+        data: encodeAbiParameters(
+          [
+            { type: "uint48" },
+            { type: "address" },
+            { type: "uint16" },
+            { type: "uint8" },
+            { type: "uint128" },
+          ],
+          [42, WALLET, 3, 0, 11_000_000n],
+        ),
+      }],
+    });
+    d.readReceipt.mockResolvedValueOnce({ receipt, replacement: null });
+    d.reconcileDepositReceipt.mockImplementationOnce(async (current, _hash, _outcome, evidence) =>
+      rhcIntent({
+        ...current,
+        executionState: "deposit_confirmed",
+        depositL1BlockHash: evidence.blockHash,
+        depositL1BlockNumber: evidence.blockNumber,
+        depositEventAccountIndex: evidence.accountIndex,
+      }));
+    d.readLighterTx.mockResolvedValueOnce(lighterTx());
+    d.readOwnedAccounts.mockResolvedValueOnce(ownedAccounts());
+    d.markCredited.mockImplementationOnce(async (current, evidence) => rhcIntent({
+      ...current,
+      executionState: "credited",
+      resolvedAccountIndex: evidence.accountIndex,
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({
+      resolution: "credited",
+      stateBefore: "deposit_submitted",
+      stateAfter: "credited",
+      accountIndex: 42,
+    });
+    expect(d.readReceipt).toHaveBeenCalledWith(row, DEPOSIT_HASH);
+    expect(d.readLighterTx).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      chainId: 4663,
+      executionState: "deposit_confirmed",
+    }), DEPOSIT_HASH);
+    expect(d.readOwnedAccounts).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+    }), WALLET);
+  });
+
   it("leaves a staged transaction pending when Ethereum has no receipt", async () => {
     const d = deps();
     d.readReceipt.mockResolvedValueOnce(null);
@@ -313,8 +384,10 @@ describe("Lighter deposit evidence-only repair", () => {
     const result = await repairLighterDepositIntent(row, d);
 
     expect(result.resolution).toBe("awaiting_lighter");
-    expect(d.readReceipt).toHaveBeenCalledWith(DEPOSIT_HASH);
-    expect(d.readLighterTx).toHaveBeenCalledWith(DEPOSIT_HASH);
+    expect(d.readReceipt).toHaveBeenCalledWith(row, DEPOSIT_HASH);
+    expect(d.readLighterTx).toHaveBeenCalledWith(expect.objectContaining({
+      executionState: "deposit_confirmed",
+    }), DEPOSIT_HASH);
   });
 
   it("blocks Lighter credit when a previously confirmed receipt disappears", async () => {
@@ -365,7 +438,7 @@ describe("Lighter deposit evidence-only repair", () => {
         blockNumber: "23456790",
       }),
     );
-    expect(d.readLighterTx).toHaveBeenCalledWith(DEPOSIT_HASH);
+    expect(d.readLighterTx).toHaveBeenCalledWith(expect.anything(), DEPOSIT_HASH);
   });
 
   it("adopts an exact fee-only deposit replacement and queries Lighter by its mined hash", async () => {
@@ -420,7 +493,7 @@ describe("Lighter deposit evidence-only repair", () => {
       "confirmed",
       expect.objectContaining({ txHash: REPLACEMENT_HASH }),
     );
-    expect(d.readLighterTx).toHaveBeenCalledWith(REPLACEMENT_HASH);
+    expect(d.readLighterTx).toHaveBeenCalledWith(expect.anything(), REPLACEMENT_HASH);
   });
 
   it("moves a calldata-changing replacement to manual review", async () => {

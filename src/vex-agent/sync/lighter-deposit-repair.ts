@@ -1,8 +1,8 @@
 /**
- * Evidence-only repair for unresolved Lighter Core deposit intents.
+ * Evidence-only repair for unresolved, environment-bound Lighter deposit intents.
  *
  * This module has no signer, wallet client, send, or retry-broadcast path.
- * It reads already-staged Ethereum transaction identities, accepts only exact
+ * It reads already-staged settlement-chain transaction identities, accepts only exact
  * fee-only repricings, then advances local state
  * through hash-bound CAS updates under the
  * owning session's control lock. A missing receipt remains pending; an RPC
@@ -23,8 +23,12 @@ import {
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
-import { LIGHTER_DEPOSIT_CHAIN_ID } from "@tools/lighter/wallet-funding/constants.js";
 import { LighterClient } from "@tools/lighter/client.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
+import {
+  getConfiguredLocalChainRpcUrl,
+  getLocalChain,
+} from "@tools/evm-chains/registry.js";
 import type {
   LighterAccountsByL1AddressResponse,
   LighterTxFromL1Response,
@@ -77,12 +81,16 @@ export interface LighterDepositRepairSweepReport {
 
 export interface LighterDepositRepairDeps {
   readonly listUnresolved: () => Promise<LighterOnboardingIntentRow[]>;
-  readonly readReceipt: (txHash: string) => Promise<{
+  readonly readReceipt: (intent: LighterOnboardingIntentRow, txHash: string) => Promise<{
     readonly receipt: LighterDepositReceipt;
     readonly replacement: ReceiptReplacementEvidence | null;
   } | null>;
-  readonly readLighterTx: (txHash: string) => Promise<LighterTxFromL1Response | null>;
+  readonly readLighterTx: (
+    intent: LighterOnboardingIntentRow,
+    txHash: string,
+  ) => Promise<LighterTxFromL1Response | null>;
   readonly readOwnedAccounts: (
+    intent: LighterOnboardingIntentRow,
     walletAddress: string,
   ) => Promise<LighterAccountsByL1AddressResponse>;
   readonly reconcileApproveReceipt: (
@@ -119,21 +127,43 @@ export interface LighterDepositRepairDeps {
 }
 
 export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairDeps {
-  const deployment = getUniswapDeployment(LIGHTER_DEPOSIT_CHAIN_ID);
-  if (!deployment) {
-    throw new Error("Ethereum mainnet deployment is not configured for Lighter deposit repair.");
-  }
-  const publicClient = getUniswapPublicClient(deployment);
   const lighter = new LighterClient();
+  const publicClients = new Map<"core" | "rhc", ReturnType<typeof getUniswapPublicClient>>();
+
+  function publicClientFor(intent: LighterOnboardingIntentRow) {
+    const funding = assertSupportedDepositIdentity(intent);
+    if (intent.environment === "rhc") {
+      const localChain = getLocalChain(funding.settlementChainId);
+      if (localChain === undefined || getConfiguredLocalChainRpcUrl(localChain) === null) {
+        throw new Error(
+          "Robinhood Chain deposit repair requires the explicitly configured production RPC. Evidence repair never falls back to the public rate-limited endpoint.",
+        );
+      }
+    }
+    const cached = publicClients.get(intent.environment);
+    if (cached !== undefined) return cached;
+    const deployment = getUniswapDeployment(funding.settlementChainId);
+    if (!deployment || deployment.chainId !== funding.settlementChainId) {
+      throw new Error(`${funding.settlementNetworkName} is not configured for Lighter deposit repair.`);
+    }
+    const client = getUniswapPublicClient(deployment);
+    publicClients.set(intent.environment, client);
+    return client;
+  }
 
   return {
     async listUnresolved() {
-      return (await intentsRepo.listUnresolved("core")).filter(
-        (intent) => intent.capability === "deposit",
-      );
+      const [core, rhc] = await Promise.all([
+        intentsRepo.listUnresolved("core"),
+        intentsRepo.listUnresolved("rhc"),
+      ]);
+      return [...core, ...rhc]
+        .filter((intent) => intent.capability === "deposit")
+        .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime());
     },
-    async readReceipt(txHash) {
+    async readReceipt(intent, txHash) {
       assertTxHash(txHash);
+      const publicClient = publicClientFor(intent);
       try {
         const receipt = await publicClient.getTransactionReceipt({
           hash: txHash as `0x${string}`,
@@ -157,21 +187,23 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
         throw err;
       }
     },
-    async readLighterTx(txHash) {
+    async readLighterTx(intent, txHash) {
+      assertSupportedDepositIdentity(intent);
       try {
-        return await lighter.getTxFromL1("core", { hash: txHash });
+        return await lighter.getTxFromL1(intent.environment, { hash: txHash });
       } catch (err) {
         if (isLighterTxNotFound(err)) return null;
         throw err;
       }
     },
-    async readOwnedAccounts(walletAddress) {
+    async readOwnedAccounts(intent, walletAddress) {
+      assertSupportedDepositIdentity(intent);
       let cursor: string | undefined;
       let first: LighterAccountsByL1AddressResponse | null = null;
       const subAccounts: LighterAccountsByL1AddressResponse["sub_accounts"] = [];
       const seenCursors = new Set<string>();
       for (let page = 0; page < 20; page += 1) {
-        const response = await lighter.getAccountsByL1Address("core", {
+        const response = await lighter.getAccountsByL1Address(intent.environment, {
           l1Address: walletAddress,
           cursor,
         });
@@ -239,9 +271,11 @@ export async function repairLighterDepositIntent(
   intent: LighterOnboardingIntentRow,
   deps: LighterDepositRepairDeps,
 ): Promise<LighterDepositRepairReport> {
-  if (intent.capability !== "deposit" || intent.environment !== "core") {
+  try {
+    assertSupportedDepositIdentity(intent);
+  } catch (err) {
     return report(intent, "manual_review", "none", null, null,
-      "The row is not a supported Lighter Core deposit intent; no state was changed.");
+      `The row is not a supported environment-bound Lighter deposit intent: ${errorText(err)} No state was changed.`);
   }
   if (intent.executionState === "credited" || intent.executionState === "failed") {
     return report(intent, "terminal", "none", null, intent.resolvedAccountIndex,
@@ -309,10 +343,10 @@ async function repairApproveLeg(
     return report(intent, "manual_review", "ethereum_receipt", txHash, null,
       "The approval is confirmed but no deposit hash is staged. Repair will never broadcast the missing deposit.");
   }
-  const read = await deps.readReceipt(txHash);
+  const read = await deps.readReceipt(current, txHash);
   if (read === null) {
     return report(intent, "awaiting_chain", "none", txHash, null,
-      "No Ethereum receipt exists yet. Wait and reconcile again; never rebroadcast the approval.");
+      "No settlement-chain receipt exists yet. Wait and reconcile again; never rebroadcast the approval.");
   }
   if (read.replacement !== null) {
     let replacement: LighterReplacementTransaction;
@@ -327,7 +361,7 @@ async function repairApproveLeg(
         current,
         deps,
         txHash,
-        `Ethereum reported an unsafe approval replacement: ${errorText(err)}`,
+        `The settlement chain reported an unsafe approval replacement: ${errorText(err)}`,
       );
     }
     const updated = await deps.recordApproveReplacement(current, replacement);
@@ -340,7 +374,7 @@ async function repairApproveLeg(
       current,
       deps,
       txHash,
-      "Ethereum returned an approval receipt for a different transaction hash.",
+      "The settlement chain returned an approval receipt for a different transaction hash.",
     );
   }
   const updated = await deps.reconcileApproveReceipt(
@@ -356,8 +390,8 @@ async function repairApproveLeg(
     txHash,
     null,
     read.receipt.status === "success"
-      ? "Ethereum proves the approval confirmed. No deposit was broadcast by repair."
-      : "Ethereum proves the approval reverted. The intent is terminally failed.",
+      ? "The settlement chain proves the approval confirmed. No deposit was broadcast by repair."
+      : "The settlement chain proves the approval reverted. The intent is terminally failed.",
     intent.executionState,
   );
 }
@@ -371,19 +405,19 @@ async function repairDepositLeg(
   let confirmed = current;
   let advancedFromReceipt = false;
   const priorL1 = l1EvidenceFromIntent(current);
-  const read = await deps.readReceipt(txHash);
+  const read = await deps.readReceipt(current, txHash);
   if (read === null) {
     if (current.executionState === "deposit_confirmed" && priorL1 !== null) {
       return markManualReview(
         current,
         deps,
         txHash,
-        "The previously confirmed Ethereum receipt is no longer canonical. Lighter credit is blocked until the exact transaction is proven again.",
+        "The previously confirmed settlement receipt is no longer canonical. Lighter credit is blocked until the exact transaction is proven again.",
         "none",
       );
     }
     return report(current, "awaiting_chain", "none", txHash, null,
-      "No Ethereum receipt exists yet. Wait and reconcile again; never rebroadcast the deposit.");
+      "No settlement-chain receipt exists yet. Wait and reconcile again; never rebroadcast the deposit.");
   }
   if (read.replacement !== null) {
     let replacement: LighterReplacementTransaction;
@@ -398,7 +432,7 @@ async function repairDepositLeg(
         current,
         deps,
         txHash,
-        `Ethereum reported an unsafe deposit replacement: ${errorText(err)}`,
+        `The settlement chain reported an unsafe deposit replacement: ${errorText(err)}`,
       );
     }
     const updated = await deps.recordDepositReplacement(current, replacement);
@@ -412,7 +446,7 @@ async function repairDepositLeg(
       current,
       deps,
       txHash,
-      "Ethereum returned a deposit receipt for a different transaction hash.",
+      "The settlement chain returned a deposit receipt for a different transaction hash.",
     );
   }
   if (read.receipt.status === "reverted") {
@@ -421,13 +455,13 @@ async function repairDepositLeg(
         current,
         deps,
         txHash,
-        "The canonical Ethereum receipt now proves a revert after an earlier confirmation. Automatic Lighter credit is blocked.",
+        "The canonical settlement receipt now proves a revert after an earlier confirmation. Automatic Lighter credit is blocked.",
       );
     }
     const updated = await deps.reconcileDepositReceipt(current, txHash, "reverted");
     if (updated === null) return superseded(current, txHash);
     return report(updated, "failed", "ethereum_receipt", txHash, null,
-      "Ethereum proves the deposit reverted. The intent is terminally failed.", intent.executionState);
+      "The settlement chain proves the deposit reverted. The intent is terminally failed.", intent.executionState);
   }
 
   let l1: LighterDepositL1Evidence;
@@ -449,7 +483,7 @@ async function repairDepositLeg(
     advancedFromReceipt = true;
   }
 
-  const lighterTx = await deps.readLighterTx(txHash);
+  const lighterTx = await deps.readLighterTx(confirmed, txHash);
   if (lighterTx === null || lighterTx.status !== 3 || lighterTx.executed_at <= 0) {
     return report(
       confirmed,
@@ -457,12 +491,12 @@ async function repairDepositLeg(
       "ethereum_receipt",
       txHash,
       l1.accountIndex,
-      "Ethereum confirms the deposit, but Lighter has not exposed the exact executed transaction yet. Wait; do not retry the deposit.",
+      "The settlement chain confirms the deposit, but Lighter has not exposed the exact executed transaction yet. Wait; do not retry the deposit.",
       intent.executionState,
     );
   }
 
-  const accounts = await deps.readOwnedAccounts(intent.walletAddress);
+  const accounts = await deps.readOwnedAccounts(confirmed, intent.walletAddress);
   const candidate = accounts.sub_accounts.filter((account) => account.index === l1.accountIndex);
   if (candidate.length === 0) {
     return report(confirmed, "awaiting_lighter", "lighter_transaction", txHash, l1.accountIndex,
@@ -484,12 +518,13 @@ async function repairDepositLeg(
     "lighter_account",
     txHash,
     creditEvidence.accountIndex,
-    "The exact Ethereum deposit, executed Lighter transaction, and wallet-owned master account all match.",
+    "The exact settlement deposit, executed Lighter transaction, and wallet-owned master account all match.",
     intent.executionState,
   );
 }
 
 function expectedDeposit(intent: LighterOnboardingIntentRow, txHash: string) {
+  assertSupportedDepositIdentity(intent);
   if (
     intent.depositContract === null
     || intent.depositTo === null
@@ -509,6 +544,23 @@ function expectedDeposit(intent: LighterOnboardingIntentRow, txHash: string) {
     routeType: intent.routeType,
     amountUnits: BigInt(intent.amountUnits),
   };
+}
+
+function assertSupportedDepositIdentity(intent: LighterOnboardingIntentRow) {
+  const funding = getLighterFundingDeployment(intent.environment);
+  if (
+    intent.capability !== "deposit"
+    || intent.chainId !== funding.settlementChainId
+    || intent.depositContract === null
+    || getAddress(intent.depositContract) !== funding.gatewayProxy
+    || intent.depositTo === null
+    || getAddress(intent.depositTo) !== getAddress(intent.walletAddress)
+    || intent.assetIndex !== funding.settlementAssetIndex
+    || intent.routeType !== funding.perpsRouteType
+  ) {
+    throw new Error("stored chain, gateway, beneficiary, asset, or route identity is invalid.");
+  }
+  return funding;
 }
 
 function l1EvidenceFromIntent(
