@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/elliottech/lighter-go/types/txtypes"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -126,6 +127,87 @@ func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
 	}
 	if !response.OK || response.TxInfo == "" || response.TxHash == "" {
 		t.Fatalf("market IOC order did not produce a signed transaction")
+	}
+}
+
+func TestSignWithdrawBuildsConstrainedCoreTxType13(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	request := signerRequest{
+		Operation:    "signWithdraw",
+		PrivateKey:   strings.Repeat("1", 80),
+		ChainID:      lighterCoreChainID,
+		AccountIndex: "42",
+		APIKeyIndex:  7,
+		Nonce:        "9",
+		ExpiredAt:    fmt.Sprintf("%d", expiredAt),
+		Withdrawal: &withdrawRequest{
+			AssetIndex: lighterCoreUSDCAssetIndex,
+			RouteType:  lighterSecureWithdrawRouteType,
+			Amount:     "2000000",
+		},
+	}
+	response, err := signWithdraw(request)
+	if err != nil {
+		t.Fatalf("signWithdraw() error = %v", err)
+	}
+	if !response.OK || response.TxType != lighterWithdrawTxType {
+		t.Fatalf("signWithdraw() did not return TxType 13")
+	}
+	if response.TxHash == "" || response.TxInfo == "" {
+		t.Fatalf("signWithdraw() returned incomplete signed identity")
+	}
+	var txInfo map[string]any
+	if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+		t.Fatalf("withdraw TxInfo is not JSON: %v", err)
+	}
+	if txInfo["AssetIndex"] != float64(3) || txInfo["RouteType"] != float64(0) ||
+		txInfo["Amount"] != float64(2_000_000) || txInfo["Nonce"] != float64(9) {
+		t.Fatalf("withdraw TxInfo does not preserve the constrained identity: %#v", txInfo)
+	}
+}
+
+func TestReadRequestRejectsWithdrawOutsideCoreUSDCPerpsBoundary(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	base := signerRequest{
+		Operation:    "signWithdraw",
+		PrivateKey:   strings.Repeat("1", 80),
+		ChainID:      lighterCoreChainID,
+		AccountIndex: "42",
+		APIKeyIndex:  7,
+		Nonce:        "9",
+		ExpiredAt:    fmt.Sprintf("%d", expiredAt),
+		Withdrawal: &withdrawRequest{
+			AssetIndex: lighterCoreUSDCAssetIndex,
+			RouteType:  lighterSecureWithdrawRouteType,
+			Amount:     "2000000",
+		},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*signerRequest)
+	}{
+		{name: "RHC signer chain", mutate: func(request *signerRequest) { request.ChainID = lighterRHCChainID }},
+		{name: "wrong asset", mutate: func(request *signerRequest) { request.Withdrawal.AssetIndex = 4 }},
+		{name: "spot route", mutate: func(request *signerRequest) { request.Withdrawal.RouteType = 1 }},
+		{name: "zero amount", mutate: func(request *signerRequest) { request.Withdrawal.Amount = "0" }},
+		{name: "long expiry", mutate: func(request *signerRequest) {
+			request.ExpiredAt = fmt.Sprintf("%d", time.Now().Add(10*time.Minute).UnixMilli())
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			withdrawal := *base.Withdrawal
+			candidate.Withdrawal = &withdrawal
+			test.mutate(&candidate)
+			payload, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			if _, err := readRequest(strings.NewReader(string(payload))); err == nil {
+				t.Fatalf("expected constrained withdrawal request rejection")
+			}
+		})
 	}
 }
 

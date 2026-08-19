@@ -16,6 +16,11 @@ import type {
   LighterSignerAdapter,
 } from "./signer-adapter.js";
 import { LIGHTER_SIGNER_CHAIN_IDS } from "./signer-adapter.js";
+import type {
+  LighterCoreWithdrawalSignerAdapter,
+  LighterCoreWithdrawalSignerResult,
+  LighterCoreWithdrawalSigningInput,
+} from "./signer-withdrawal.js";
 import {
   materialFromSecret,
   type LighterTradingSecretMaterial,
@@ -87,6 +92,17 @@ interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBaseP
   };
 }
 
+interface LighterSignerBinaryWithdrawPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signWithdraw";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly withdrawal: {
+    readonly assetIndex: 3;
+    readonly routeType: 0;
+    readonly amount: string;
+  };
+}
+
 interface LighterSignerBinaryChangePubKeyPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "signChangePubKey";
   readonly nonce: string;
@@ -105,6 +121,7 @@ type LighterSignerBinaryPayload =
   | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
   | LighterSignerBinaryCreateOrderPayload
+  | LighterSignerBinaryWithdrawPayload
   | LighterSignerBinaryChangePubKeyPayload
   | LighterSignerBinaryCheckClientPayload;
 
@@ -264,6 +281,43 @@ export function createLighterChangePubKeySignerBinary(
   };
 }
 
+export function createLighterCoreWithdrawalSignerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterCoreWithdrawalSignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return {
+    source: "official_lighter_signer",
+    signWithdraw: async (input) => {
+      const raw = await runner({
+        binaryPath,
+        payload: buildWithdrawPayload(input),
+        timeoutMs,
+      });
+      const output = parseWithdrawalSignerOutput(raw);
+      const result = {
+        kind: "lighter_core_withdrawal_signer_result",
+        environment: "core",
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        nonce: input.nonce,
+        expiredAt: input.expiredAt,
+        assetIndex: input.assetIndex,
+        routeType: input.routeType,
+        amountUnits: input.amountUnits,
+        matchHash: input.matchHash,
+        txType: 13,
+        txHash: output.txHash,
+      } as Omit<LighterCoreWithdrawalSignerResult, "txInfo">;
+      return Object.defineProperty(result, "txInfo", {
+        value: output.txInfo,
+        enumerable: false,
+      }) as LighterCoreWithdrawalSignerResult;
+    },
+  };
+}
+
 /** Official SDK CheckClient seam, kept separate from order signing surfaces. */
 export function createLighterRegisteredKeyCheckerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
@@ -317,6 +371,25 @@ function buildChangePubKeyPayload(
     publicKey: input.publicKey,
     l1Signature: input.l1Signature,
     expectedL1Address: input.expectedL1Address,
+  };
+}
+
+function buildWithdrawPayload(
+  input: LighterCoreWithdrawalSigningInput,
+): LighterSignerBinaryWithdrawPayload {
+  return {
+    operation: "signWithdraw",
+    privateKey: input.secret.privateKey,
+    chainId: input.chainId,
+    accountIndex: String(input.accountIndex),
+    apiKeyIndex: input.apiKeyIndex,
+    nonce: input.nonce,
+    expiredAt: input.expiredAt,
+    withdrawal: {
+      assetIndex: input.assetIndex,
+      routeType: input.routeType,
+      amount: input.amountUnits,
+    },
   };
 }
 
@@ -481,6 +554,15 @@ function parseChangePubKeyOutput(raw: unknown): Pick<
     txHash: signed.txHash,
     messageToSign: raw.messageToSign,
   };
+}
+
+function parseWithdrawalSignerOutput(raw: unknown): Pick<
+  LighterCoreWithdrawalSignerResult,
+  "txInfo" | "txHash"
+> {
+  const signed = parseSignerOutput(raw);
+  if (signed.txType !== 13) throw signerProcessFailed(raw);
+  return { txInfo: signed.txInfo, txHash: signed.txHash };
 }
 
 function parseAccountAuthOutput(raw: unknown): Pick<

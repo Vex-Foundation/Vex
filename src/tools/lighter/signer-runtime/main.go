@@ -26,6 +26,11 @@ const lighterCoreChainID = uint32(304)
 const lighterCoreBaseURL = "https://mainnet.zklighter.elliot.ai"
 const lighterRHCChainID = uint32(466324)
 const lighterRHCBaseURL = "https://api.rh.lighter.xyz"
+const lighterWithdrawTxType = uint8(13)
+const lighterCoreUSDCAssetIndex = int16(3)
+const lighterSecureWithdrawRouteType = uint8(0)
+const minWithdrawExpiryLead = int64(15 * 1000)
+const maxWithdrawExpiryLead = int64(5 * 60 * 1000)
 
 var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
@@ -44,6 +49,7 @@ type signerRequest struct {
 	L1Signature         string              `json:"l1Signature"`
 	ExpectedL1Address   string              `json:"expectedL1Address"`
 	Order               *createOrderRequest `json:"order"`
+	Withdrawal          *withdrawRequest    `json:"withdrawal"`
 }
 
 type createOrderRequest struct {
@@ -57,6 +63,12 @@ type createOrderRequest struct {
 	ReduceOnly       uint8  `json:"reduceOnly"`
 	TriggerPrice     string `json:"triggerPrice"`
 	OrderExpiry      string `json:"orderExpiry"`
+}
+
+type withdrawRequest struct {
+	AssetIndex int16  `json:"assetIndex"`
+	RouteType  uint8  `json:"routeType"`
+	Amount     string `json:"amount"`
 }
 
 type signerResponse struct {
@@ -95,6 +107,8 @@ func main() {
 		response, err = createAccountAuth(request)
 	case "signCreateOrder":
 		response, err = signCreateOrder(request)
+	case "signWithdraw":
+		response, err = signWithdraw(request)
 	case "signChangePubKey":
 		response, err = signChangePubKey(request)
 	case "checkClient":
@@ -116,7 +130,7 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" && request.Operation != "signChangePubKey" &&
+	if request.Operation != "signCreateOrder" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" &&
 		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
@@ -178,6 +192,36 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		}
 		if !common.IsHexAddress(request.ExpectedL1Address) {
 			return request, fmt.Errorf("invalid expected l1 address")
+		}
+		return request, nil
+	}
+	if request.Operation == "signWithdraw" {
+		nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+		if err != nil || nonce > maxRegistrationNonce {
+			return request, fmt.Errorf("invalid nonce")
+		}
+		if request.ChainID != lighterCoreChainID {
+			return request, fmt.Errorf("invalid withdrawal chain id")
+		}
+		expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+		if err != nil {
+			return request, fmt.Errorf("invalid expiry")
+		}
+		nowMillis := time.Now().UnixMilli()
+		if expiredAt < nowMillis+minWithdrawExpiryLead || expiredAt > nowMillis+maxWithdrawExpiryLead {
+			return request, fmt.Errorf("invalid withdrawal expiry window")
+		}
+		if request.Withdrawal == nil {
+			return request, fmt.Errorf("missing withdrawal")
+		}
+		if request.Withdrawal.AssetIndex != lighterCoreUSDCAssetIndex {
+			return request, fmt.Errorf("invalid withdrawal asset")
+		}
+		if request.Withdrawal.RouteType != lighterSecureWithdrawRouteType {
+			return request, fmt.Errorf("invalid withdrawal route")
+		}
+		if _, err := parsePositiveUint64(request.Withdrawal.Amount, "withdrawal amount"); err != nil {
+			return request, fmt.Errorf("invalid withdrawal amount")
 		}
 		return request, nil
 	}
@@ -482,6 +526,83 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 	}, nil
 }
 
+func signWithdraw(request signerRequest) (signerResponse, error) {
+	if request.Withdrawal == nil {
+		return signerResponse{}, fmt.Errorf("missing withdrawal")
+	}
+	accountIndex, err := parseNonNegativeInt64(request.AccountIndex, "account index")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	amount, err := parsePositiveUint64(request.Withdrawal.Amount, "withdrawal amount")
+	if err != nil {
+		return signerResponse{}, err
+	}
+
+	client, err := lighterclient.NewTxClient(
+		nil,
+		strings.TrimPrefix(request.PrivateKey, "0x"),
+		accountIndex,
+		request.APIKeyIndex,
+		request.ChainID,
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetWithdrawTransaction(
+		&types.WithdrawTxReq{
+			AssetIndex: request.Withdrawal.AssetIndex,
+			RouteType:  request.Withdrawal.RouteType,
+			Amount:     amount,
+		},
+		&types.TransactOpts{
+			FromAccountIndex: &accountIndex,
+			ApiKeyIndex:      &apiKeyIndex,
+			ExpiredAt:        expiredAt,
+			Nonce:            &nonce,
+			TxAttributes:     &types.L2TxAttributes{},
+		},
+	)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	if tx == nil || tx.GetTxType() != lighterWithdrawTxType {
+		return signerResponse{}, fmt.Errorf("invalid withdraw signer response")
+	}
+	if tx.FromAccountIndex != accountIndex || tx.ApiKeyIndex != apiKeyIndex ||
+		tx.AssetIndex != lighterCoreUSDCAssetIndex || tx.RouteType != lighterSecureWithdrawRouteType ||
+		tx.Amount != amount || tx.ExpiredAt != expiredAt || tx.Nonce != nonce {
+		return signerResponse{}, fmt.Errorf("withdraw signer response identity mismatch")
+	}
+	messageHash, err := tx.Hash(request.ChainID)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	publicKey := client.GetKeyManager().PubKeyBytes()
+	if err := schnorr.Validate(publicKey[:], messageHash, tx.Sig); err != nil {
+		return signerResponse{}, fmt.Errorf("failed to validate withdraw signature")
+	}
+	txInfo, err := tx.GetTxInfo()
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return signerResponse{
+		OK:     true,
+		TxType: lighterWithdrawTxType,
+		TxInfo: txInfo,
+		TxHash: tx.GetTxHash(),
+	}, nil
+}
+
 func parsePositiveInt64(value string, field string) (int64, error) {
 	parsed, err := parseNonNegativeInt64(value, field)
 	if err != nil {
@@ -527,6 +648,20 @@ func parseNonNegativeUint32(value string, field string) (uint32, error) {
 		return 0, fmt.Errorf("%s is outside uint32 range", field)
 	}
 	return uint32(parsed), nil
+}
+
+func parsePositiveUint64(value string, field string) (uint64, error) {
+	if !regexp.MustCompile(`^\d+$`).MatchString(value) {
+		return 0, fmt.Errorf("%s must be a decimal integer", field)
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s is outside uint64 range", field)
+	}
+	if parsed == 0 {
+		return 0, fmt.Errorf("%s must be positive", field)
+	}
+	return parsed, nil
 }
 
 func writeFailure(code string, message string) {
