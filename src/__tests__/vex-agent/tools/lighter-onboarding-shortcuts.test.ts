@@ -160,8 +160,13 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
       ?.split("\n## ")[0] ?? "";
     expect(onboarding).toContain("RHC fast path");
     expect(onboarding).toContain("call `lighter_rhc_onboarding_status` directly");
+    expect(onboarding).toContain("defaults to Robinhood Chain (RHC)");
+    expect(onboarding).toContain("use Core only when the user explicitly selects Core");
     expect(onboarding).toContain("Core fast path");
     expect(onboarding).toContain("call `lighter_core_onboarding_status` directly");
+    expect(onboarding).toContain("Keep the selected environment stable");
+    expect(onboarding).toContain("Never omit it downstream");
+    expect(onboarding).not.toContain("Core by default");
     expect(onboarding).toContain("do not run protocol discovery or a separate wallet-balance read");
     expect(onboarding).toContain("answer directly from its deterministic result");
   });

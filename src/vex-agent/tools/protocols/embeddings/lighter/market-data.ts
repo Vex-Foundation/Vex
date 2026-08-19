@@ -4,13 +4,13 @@ import { embeddingText } from "../../_embedding-text.js";
 export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.account.onboarding.status": {
     embeddingText: embeddingText(
-      `Inspect whether the selected Vex wallet is ready to trade on Lighter Core and compute only the required onboarding legs. ` +
+      `Inspect whether the selected Vex wallet is ready to trade on Lighter, defaulting an unspecified conversational request to Robinhood Chain (RHC) and using Core only when the user explicitly selects Core. Compute only the required onboarding legs and keep that environment stable in every downstream Lighter call. ` +
       `Use when: setup, funding, readiness, or a USDC-sized perp request needs checking. For a trade, pass its market so Vex checks the live market minimum before funding. It also reads wallet USDC, Lighter collateral, deposit minimum, and public key state. Below-market, below-deposit, and insufficient-balance outcomes show live balances and never prepare a deposit. It signs and moves nothing. ` +
       `Example queries: set up my Lighter account, can this wallet trade on Lighter, fund Lighter for a 2 USDC trade.`,
     ),
     aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
     exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
-    ecosystems: ["lighter", "ethereum"],
+    ecosystems: ["lighter", "robinhood-chain", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
@@ -134,7 +134,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.preview": {
     embeddingText: embeddingText(
       `Create a read-only Lighter order preview using live market detail, order book, and account data. ` +
-      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol. Omit environment, account index, API key index, time-in-force, and reduce-only unless explicit; Vex resolves/defaults them. For "30 minutes from now", pass orderExpiryOffsetMinutes. ` +
+      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. If they say "ETH", pass marketSymbol. An unspecified conversational environment defaults to RHC; after onboarding selects Core or RHC, pass that exact environment and never switch it. Omit account index, API key index, time-in-force, and reduce-only unless explicit. For "30 minutes from now", pass orderExpiryOffsetMinutes. ` +
       `Returns preview id, match hash, integer amount/price, minimum checks, best bid/ask, position context, and risk notes. Never signs, submits, or calls sendTx. ` +
       `Example queries: preview 0.001 ETH at 3000, preflight RHC limit buy.`,
     ),

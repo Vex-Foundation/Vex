@@ -253,7 +253,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       MARKET_SYMBOL_PARAM,
     ],
     atMostOne: [["marketId", "marketSymbol"]],
-    exampleParams: { environment: "core", amountIn: "11", marketSymbol: "SUI" },
+    exampleParams: { environment: "rhc", amountIn: "11", marketSymbol: "SUI" },
     discovery:
       LIGHTER_MARKET_DATA_DISCOVERY["lighter.account.onboarding.status"],
   },

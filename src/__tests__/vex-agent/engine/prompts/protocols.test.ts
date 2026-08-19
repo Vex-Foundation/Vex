@@ -61,6 +61,8 @@ describe("buildProtocolsPrompt", () => {
     expect(section).toContain("live-data-backed read-only preview");
     expect(section).toContain("never places, submits, executes, or broadcasts");
     expect(section).toContain("Do not call it a simulation");
+    expect(section).toContain("same environment selected during onboarding");
+    expect(section).toContain("Never omit environment after onboarding has selected it");
     expect(section).toContain("Inspect `approvalReady`");
     expect(section).toContain("Prepare trade approval button");
     expect(section).toContain("Do not print internal tool names");
@@ -81,8 +83,14 @@ describe("buildProtocolsPrompt", () => {
     const section = prompt.split("## Lighter Onboarding Routing")[1]?.split("\n## ")[0] ?? "";
     expect(section).toContain('"set up my Lighter account"');
     expect(section).toContain('"I want to trade perps on Lighter"');
+    expect(section).toContain("defaults to Robinhood Chain (RHC)");
+    expect(section).toContain("use Core only when the user explicitly selects Core");
+    expect(section).toContain("Keep the selected environment stable");
+    expect(section).toContain("Never omit it downstream");
+    expect(section).not.toContain("Core by default");
+    expect(section).toContain("How much USDG do you want to deposit?");
     expect(section).toContain("How much USDC do you want to deposit?");
-    expect(section).toContain("USDC worth");
+    expect(section).toContain("'USDC worth' or 'USDG worth'");
     expect(section).toContain("the named asset as `marketSymbol`");
     expect(section).toContain("checks the live market minimum before funding");
     expect(section).toContain("fundingAssessment.decision = prepare_deposit");
