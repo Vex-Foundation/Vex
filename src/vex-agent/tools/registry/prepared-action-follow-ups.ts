@@ -84,6 +84,20 @@ export interface ValidatedLighterOrderCancelAllFollowUp {
   };
 }
 
+export interface ValidatedLighterPositionCloseFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.position.close";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "position.close";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export interface ValidatedLighterDepositFollowUp {
   readonly toolName: "execute_tool";
   readonly args: {
@@ -134,6 +148,7 @@ export type ValidatedPreparedActionFollowUp =
   | ValidatedLighterOrderCancelFollowUp
   | ValidatedLighterOrderModifyFollowUp
   | ValidatedLighterOrderCancelAllFollowUp
+  | ValidatedLighterPositionCloseFollowUp
   | ValidatedLighterDepositFollowUp
   | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterKeyRegistrationFollowUp;
@@ -162,6 +177,10 @@ const LIGHTER_ORDER_MODIFY_PREPARE_SOURCES = new Set([
 const LIGHTER_ORDER_CANCEL_ALL_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__order__cancelAll__prepare",
+]);
+const LIGHTER_POSITION_CLOSE_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__position__close__prepare",
 ]);
 const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
   "execute_tool",
@@ -318,6 +337,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.order.cancelAll"
   ) {
     return validateLighterOrderCancelAllFollowUp(candidate);
+  }
+  if (
+    LIGHTER_POSITION_CLOSE_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.position.close"
+  ) {
+    return validateLighterPositionCloseFollowUp(candidate);
   }
   if (
     LIGHTER_DEPOSIT_PREPARE_SOURCES.has(sourceToolName)
@@ -960,6 +986,74 @@ function validateLighterOrderCancelAllFollowUp(
       args: { toolId: "lighter.order.cancelAll", params: { intentId } },
       expiresAt: candidate.expiresAt,
       approvalPreview: { toolName: "order.cancelAll", namespace: "lighter", criticalArgs },
+    },
+  };
+}
+
+const LIGHTER_POSITION_CLOSE_PREVIEW_KEYS = [
+  "toolId", "intentId", "actionType", "environment", "accountIndex", "apiKeyIndex",
+  "marketIndex", "symbol", "positionSide", "positionAmount", "averageEntryPrice", "closingSide",
+  "baseAmount", "baseAmountInteger", "worstAcceptablePrice", "priceInteger", "maxSlippageBps",
+  "reduceOnly", "orderType", "timeInForce", "matchHash", "summary",
+] as const;
+
+function validateLighterPositionCloseFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(candidate.args).sort().join(",") !== "params,toolId" || candidate.args.toolId !== "lighter.position.close") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) return { ok: false, reason: "invalid_contract" };
+  const intentId = (params as Record<string, unknown>).intentId;
+  if (Object.keys(params as Record<string, unknown>).join(",") !== "intentId" || typeof intentId !== "string" || !LIGHTER_LIFECYCLE_INTENT_ID_RE.test(intentId)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "position.close" || preview.namespace !== "lighter") return { ok: false, reason: "invalid_contract" };
+  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_POSITION_CLOSE_PREVIEW_KEYS].sort().join(",")) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_POSITION_CLOSE_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    criticalArgs[key] = value;
+  }
+  if (
+    criticalArgs.toolId !== "lighter.position.close" || criticalArgs.intentId !== intentId
+    || criticalArgs.actionType !== "close_position"
+    || (criticalArgs.environment !== "core" && criticalArgs.environment !== "rhc")
+    || typeof criticalArgs.accountIndex !== "number" || !Number.isSafeInteger(criticalArgs.accountIndex) || criticalArgs.accountIndex < 0
+    || typeof criticalArgs.apiKeyIndex !== "number" || !Number.isInteger(criticalArgs.apiKeyIndex) || criticalArgs.apiKeyIndex < 4 || criticalArgs.apiKeyIndex > 254
+    || typeof criticalArgs.marketIndex !== "number" || !Number.isInteger(criticalArgs.marketIndex) || criticalArgs.marketIndex < 0 || criticalArgs.marketIndex > 254
+    || typeof criticalArgs.symbol !== "string" || criticalArgs.symbol.length < 1 || criticalArgs.symbol.length > 32
+    || (criticalArgs.positionSide !== "long" && criticalArgs.positionSide !== "short")
+    || (criticalArgs.closingSide !== "buy" && criticalArgs.closingSide !== "sell")
+    || (criticalArgs.positionSide === "long" ? criticalArgs.closingSide !== "sell" : criticalArgs.closingSide !== "buy")
+    || typeof criticalArgs.positionAmount !== "string" || !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.positionAmount)
+    || typeof criticalArgs.averageEntryPrice !== "string" || !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.averageEntryPrice)
+    || typeof criticalArgs.baseAmount !== "string" || !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.baseAmount)
+    || typeof criticalArgs.worstAcceptablePrice !== "string" || !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.worstAcceptablePrice)
+    || typeof criticalArgs.baseAmountInteger !== "string" || !/^[1-9][0-9]*$/.test(criticalArgs.baseAmountInteger)
+    || BigInt(criticalArgs.baseAmountInteger) > (1n << 48n) - 1n
+    || typeof criticalArgs.priceInteger !== "string" || !/^[1-9][0-9]*$/.test(criticalArgs.priceInteger)
+    || BigInt(criticalArgs.priceInteger) > (1n << 32n) - 1n
+    || typeof criticalArgs.maxSlippageBps !== "number" || !Number.isInteger(criticalArgs.maxSlippageBps)
+    || criticalArgs.maxSlippageBps < 1 || criticalArgs.maxSlippageBps > 500
+    || criticalArgs.reduceOnly !== true || criticalArgs.orderType !== "market"
+    || criticalArgs.timeInForce !== "immediate-or-cancel"
+    || typeof criticalArgs.matchHash !== "string" || !/^[0-9a-f]{64}$/.test(criticalArgs.matchHash)
+    || typeof criticalArgs.summary !== "string" || criticalArgs.summary.length < 1 || criticalArgs.summary.length > 600
+  ) return { ok: false, reason: "invalid_contract" };
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: { toolId: "lighter.position.close", params: { intentId } },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: "position.close", namespace: "lighter", criticalArgs },
     },
   };
 }

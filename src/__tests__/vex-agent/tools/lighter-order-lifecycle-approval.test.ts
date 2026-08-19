@@ -10,7 +10,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   getByApprovalId: (...args: unknown[]) => getAudit(...args),
 }));
 
-const { assertLighterCancelAllApprovalBinding, assertLighterCancelOneApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
+const { assertLighterCancelAllApprovalBinding, assertLighterCancelOneApprovalBinding, assertLighterClosePositionApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
   "@vex-agent/tools/protocols/lighter/order-lifecycle-approval-binding.js"
 );
 const { LIGHTER_ORDER_LIFECYCLE_HANDLERS } = await import(
@@ -222,6 +222,99 @@ describe("Lighter cancel-all approval binding", () => {
 
   it("keeps direct cancel-all calls behind the host approval gate", async () => {
     const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"]!(
+      { intentId },
+      { sessionId: "session-1" } as never,
+    );
+    expect(result).toMatchObject({ success: false, pendingApproval: true });
+  });
+});
+
+describe("Lighter close-position approval binding", () => {
+  const closeIntent = {
+    ...intent,
+    actionType: "close_position",
+    providerOrderId: null,
+    requestedBaseAmountInteger: "10000",
+    requestedPriceInteger: "4950",
+    requestedSide: "sell",
+    reduceOnly: true,
+    matchHash: "d".repeat(64),
+    providerSnapshotJson: {
+      position: {
+        marketIndex: 0,
+        symbol: "ETH",
+        sign: 1,
+        side: "long",
+        position: "1",
+        averageEntryPrice: "45",
+      },
+      baseAmount: "1",
+      worstAcceptablePrice: "49.5",
+      maxSlippageBps: 100,
+    },
+  };
+  const closeCritical = {
+    toolId: "lighter.position.close",
+    intentId,
+    actionType: "close_position",
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    marketIndex: 0,
+    symbol: "ETH",
+    positionSide: "long",
+    positionAmount: "1",
+    averageEntryPrice: "45",
+    closingSide: "sell",
+    baseAmount: "1",
+    baseAmountInteger: "10000",
+    worstAcceptablePrice: "49.5",
+    priceInteger: "4950",
+    maxSlippageBps: 100,
+    reduceOnly: true,
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
+    matchHash: "d".repeat(64),
+    summary: "Close the entire ETH long.",
+  };
+
+  function useCloseApproval(critical = closeCritical): void {
+    getApproval.mockResolvedValueOnce({
+      status: "approved",
+      toolCall: {
+        command: "execute_tool",
+        args: { toolId: "lighter.position.close", params: { intentId } },
+      },
+    });
+    getAudit.mockResolvedValueOnce({
+      sessionId: "session-1",
+      decision: "approved",
+      actionKind: "external_post",
+      executionStatus: "dispatching",
+      previewJson: { toolName: "position.close", namespace: "lighter", criticalArgs: critical },
+    });
+  }
+
+  it("accepts only the exact reduce-only close size, side, and slippage price", async () => {
+    useCloseApproval();
+    await expect(assertLighterClosePositionApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: closeIntent as never,
+    })).resolves.toBeUndefined();
+  });
+
+  it("rejects an altered close price", async () => {
+    useCloseApproval({ ...closeCritical, priceInteger: "4951" });
+    await expect(assertLighterClosePositionApprovalBinding({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: closeIntent as never,
+    })).rejects.toThrow("approval does not match the exact live position");
+  });
+
+  it("keeps direct close calls behind the host approval gate", async () => {
+    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"]!(
       { intentId },
       { sessionId: "session-1" } as never,
     );

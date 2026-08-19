@@ -126,8 +126,29 @@ export interface LighterAccount {
   pending_order_count?: number;
   cross_initial_margin_requirement?: string;
   cross_maintenance_margin_requirement?: string;
-  positions?: unknown[];
+  positions?: LighterAccountPosition[];
   assets?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface LighterAccountPosition {
+  market_id: number;
+  symbol: string;
+  initial_margin_fraction: string;
+  open_order_count: number;
+  pending_order_count: number;
+  position_tied_order_count: number;
+  sign: number;
+  position: string;
+  avg_entry_price: string;
+  position_value: string;
+  unrealized_pnl: string;
+  realized_pnl: string;
+  liquidation_price: string;
+  total_funding_paid_out?: string;
+  margin_mode: number;
+  allocated_margin: string;
+  total_discount: string;
   [key: string]: unknown;
 }
 

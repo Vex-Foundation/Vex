@@ -66,6 +66,13 @@ const MODIFY_PRICE_PARAM: ProtocolParamDef = {
   description: "Replacement limit price in human market units, converted exactly using current Lighter market precision.",
 };
 
+const MAX_SLIPPAGE_BPS_PARAM: ProtocolParamDef = {
+  key: "maxSlippageBps",
+  type: "number",
+  required: true,
+  description: "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+};
+
 const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
@@ -184,6 +191,30 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancelAll"],
+  },
+  {
+    toolId: "lighter.position.close.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. It never loads a private key, reserves a nonce, signs, or submits.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, MAX_SLIPPAGE_BPS_PARAM],
+    exampleParams: { environment: "rhc", marketId: 0, maxSlippageBps: 100 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.position.close.prepare"],
+  },
+  {
+    toolId: "lighter.position.close",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. It reports exact fill and resulting position, including partial closes without automatic resubmission.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [LIFECYCLE_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-lifecycle-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.position.close"],
   },
   {
     toolId: "lighter.withdraw.claim.prepare",

@@ -241,6 +241,54 @@ describe("LighterClient URL selection", () => {
     expect(response.sub_accounts.map((account) => account.index)).toEqual([42, 43]);
   });
 
+  it("validates the official account position shape before returning it", async () => {
+    mockOk({
+      code: 200,
+      accounts: [{
+        index: 42,
+        l1_address: "0x3333333333333333333333333333333333333333",
+        positions: [{
+          market_id: 0,
+          symbol: "ETH",
+          initial_margin_fraction: "0.05",
+          open_order_count: 0,
+          pending_order_count: 0,
+          position_tied_order_count: 0,
+          sign: 1,
+          position: "0.1000",
+          avg_entry_price: "3000.00",
+          position_value: "300.00",
+          unrealized_pnl: "1.25",
+          realized_pnl: "0.00",
+          liquidation_price: "2500.00",
+          total_funding_paid_out: "0.01",
+          margin_mode: 0,
+          allocated_margin: "15.00",
+          total_discount: "0.00",
+        }],
+      }],
+    });
+
+    const response = await client.getAccount("core", { by: "index", value: 42 });
+
+    expect(lastUrl().pathname).toBe("/api/v1/account");
+    expect(response.accounts[0]?.positions?.[0]?.position).toBe("0.1000");
+  });
+
+  it("rejects an incomplete account position response", async () => {
+    mockOk({
+      code: 200,
+      accounts: [{
+        index: 42,
+        positions: [{ market_id: 0, symbol: "ETH", sign: 1, position: "0.1000" }],
+      }],
+    });
+
+    await expect(client.getAccount("core", { by: "index", value: 42 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
+  });
+
   it("rejects empty deposit evidence query values before sending", async () => {
     await expect(client.getTxFromL1("core", { hash: "  " })).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,

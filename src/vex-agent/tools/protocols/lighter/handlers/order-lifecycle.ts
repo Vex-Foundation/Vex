@@ -21,15 +21,18 @@ import {
 import {
   executeApprovedLighterCancelAll,
   executeApprovedLighterCancelOne,
+  executeApprovedLighterClosePosition,
   executeApprovedLighterModifyOrder,
   getConfiguredLighterOrderLifecycleExecutionDeps,
   prepareLighterCancelAll,
   prepareLighterCancelOne,
+  prepareLighterClosePosition,
   prepareLighterModifyOrder,
 } from "../order-lifecycle.js";
 import {
   assertLighterCancelAllApprovalBinding,
   assertLighterCancelOneApprovalBinding,
+  assertLighterClosePositionApprovalBinding,
   assertLighterModifyOrderApprovalBinding,
 } from "../order-lifecycle-approval-binding.js";
 
@@ -431,6 +434,139 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       return fail(error instanceof Error ? error.message : String(error));
     }
   },
+
+  "lighter.position.close.prepare": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter position-close preparation requires a host session id.");
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params.marketId);
+    if (!marketId.ok) return fail(marketId.reason);
+    const maxSlippageBps = readSlippageBps(params.maxSlippageBps);
+    if (!maxSlippageBps.ok) return fail(maxSlippageBps.reason);
+    const accountIndex = readOptionalAccountIndex(params.accountIndex);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const scope = resolveScope(environment.value, accountIndex.value);
+    if (!scope.ok) return fail(scope.reason);
+    const readiness = evaluateLighterTradingCredentialReadiness({
+      ...scope.value,
+      vaultCredentialId: defaultLighterTradingVaultCredentialId(scope.value),
+    });
+    if (!readiness.ready) return fail("Managed Lighter trading access is not ready for this account.");
+    let prepared;
+    try {
+      prepared = await prepareLighterClosePosition({
+        environment: environment.value,
+        accountIndex: scope.value.accountIndex,
+        apiKeyIndex: scope.value.apiKeyIndex,
+        marketIndex: marketId.value,
+        maxSlippageBps: maxSlippageBps.value,
+        client: getLighterClient(),
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    const existing = await intentsRepo.findAnyLiveOrderMutation({
+      environment: environment.value,
+      accountIndex: scope.value.accountIndex,
+    });
+    if (existing !== null) {
+      if (existing.actionType === "close_position" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
+        return {
+          ...ok(preparedPayload(existing, "approval_prepared_existing")),
+          preparedActionFollowUp: closePositionFollowUp(existing),
+        };
+      }
+      return fail(`A live Lighter ${existing.actionType} action already exists for this account in state ${existing.executionState}.`);
+    }
+    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
+    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
+      intentsRepo.createApprovalPendingWith(dbClient, {
+        intentId: `lighter-lifecycle-${randomUUID()}`,
+        sessionId: context.sessionId!,
+        matchHash: prepared.matchHash,
+        environment: prepared.environment,
+        accountIndex: prepared.accountIndex,
+        apiKeyIndex: prepared.apiKeyIndex,
+        actionType: "close_position",
+        marketIndex: prepared.marketIndex,
+        providerOrderId: null,
+        requestedBaseAmountInteger: prepared.baseAmountInteger,
+        requestedPriceInteger: prepared.priceInteger,
+        requestedSide: prepared.closingSide,
+        reduceOnly: true,
+        providerSnapshotJson: {
+          position: prepared.position,
+          closingSide: prepared.closingSide,
+          baseAmount: prepared.baseAmount,
+          worstAcceptablePrice: prepared.worstAcceptablePrice,
+          maxSlippageBps: prepared.maxSlippageBps,
+          marketSizeDecimals: prepared.sizeDecimals,
+          marketPriceDecimals: prepared.priceDecimals,
+          bookEvidence: prepared.bookEvidence,
+          orderType: "market",
+          timeInForce: "immediate-or-cancel",
+          reduceOnly: true,
+        },
+        credentialRefJson: readiness.reference,
+        expiresAt,
+      }),
+    );
+    if (created === null) return fail("The exact Lighter position-close intent could not be persisted.");
+    return {
+      ...ok(preparedPayload(created, "approval_prepared")),
+      preparedActionFollowUp: closePositionFollowUp(created),
+    };
+  },
+
+  "lighter.position.close": async (params, context) => {
+    if (!context.sessionId) return fail("Lighter position close requires a host session id.");
+    const intentId = readIntentId(params.intentId);
+    if (!intentId.ok) return fail(intentId.reason);
+    if (!context.approved || !context.approvalId) {
+      return { success: false, output: "Lighter position close requires its exact approved Vex approval card.", pendingApproval: true };
+    }
+    const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
+    if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
+    try {
+      await assertLighterClosePositionApprovalBinding({
+        approvalId: context.approvalId,
+        sessionId: context.sessionId,
+        intent,
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+    if (Date.parse(intent.expiresAt) <= Date.now()) {
+      await intentsRepo.markApprovalDecision({
+        intentId: intent.intentId,
+        decision: "expired",
+        approvalId: context.approvalId,
+        reason: "approved position close resumed after expiry",
+      });
+      return fail("The exact Lighter position-close approval expired. Prepare it again from fresh position and book state.");
+    }
+    const approved = await intentsRepo.markApprovalDecision({
+      intentId: intent.intentId,
+      decision: "approved",
+      approvalId: context.approvalId,
+      reason: "user approved exact reduce-only Lighter position close",
+    });
+    if (approved === null) return fail("The Lighter position-close intent has already left approval-pending state.");
+    const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
+    if (deps === null) return fail("Privileged Lighter close-position dependencies are unavailable. Nothing was signed or submitted.");
+    try {
+      const result = await executeApprovedLighterClosePosition(approved, deps);
+      return ok({
+        source: "vex_lighter_position_close",
+        ...result,
+        userGuidance: result.status === "closed" || result.status === "partially_closed"
+          ? "Report the exact fill, average fill price, provider order status, and resulting position. If partially closed, state clearly that no automatic retry occurred."
+          : "Tell the user the reduce-only close was submitted but final order and position evidence is pending; reconcile before any retry.",
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  },
 };
 
 function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
@@ -525,6 +661,42 @@ function cancelAllFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActi
   };
 }
 
+function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+  const snapshot = intent.providerSnapshotJson;
+  const position = snapshot.position !== null && typeof snapshot.position === "object" && !Array.isArray(snapshot.position)
+    ? snapshot.position as Record<string, unknown> : {};
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {
+    toolId: "lighter.position.close",
+    intentId: intent.intentId,
+    actionType: "close_position",
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+    marketIndex: intent.marketIndex,
+    symbol: scalarString(position.symbol),
+    positionSide: scalarString(position.side),
+    positionAmount: scalarString(position.position),
+    averageEntryPrice: scalarString(position.averageEntryPrice),
+    closingSide: intent.requestedSide,
+    baseAmount: scalarString(snapshot.baseAmount),
+    baseAmountInteger: intent.requestedBaseAmountInteger,
+    worstAcceptablePrice: scalarString(snapshot.worstAcceptablePrice),
+    priceInteger: intent.requestedPriceInteger,
+    maxSlippageBps: typeof snapshot.maxSlippageBps === "number" ? snapshot.maxSlippageBps : -1,
+    reduceOnly: true,
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
+    matchHash: intent.matchHash,
+    summary: `Close the entire ${scalarString(position.position)} ${scalarString(position.symbol)} ${scalarString(position.side)} position with one reduce-only market IOC ${intent.requestedSide} order. Worst acceptable price ${scalarString(snapshot.worstAcceptablePrice)}; maximum slippage ${String(snapshot.maxSlippageBps)} bps. No automatic retry.`,
+  };
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.position.close", params: { intentId: intent.intentId } },
+    expiresAt: intent.expiresAt,
+    approvalPreview: { toolName: "position.close", namespace: "lighter", criticalArgs },
+  };
+}
+
 function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string): Record<string, unknown> {
   return {
     source: "vex_lighter_order_lifecycle_intent",
@@ -538,7 +710,7 @@ function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string)
     approvalStatus: intent.approvalStatus,
     executionState: intent.executionState,
     expiresAt: intent.expiresAt,
-    message: `Exact Lighter ${intent.actionType === "modify" ? "order modification" : intent.actionType === "cancel_all" ? "account-wide cancellation" : "order cancellation"} prepared; approve the trusted card before anything is signed or submitted.`,
+    message: `Exact Lighter ${intent.actionType === "modify" ? "order modification" : intent.actionType === "cancel_all" ? "account-wide cancellation" : intent.actionType === "close_position" ? "reduce-only position close" : "order cancellation"} prepared; approve the trusted card before anything is signed or submitted.`,
   };
 }
 
@@ -593,6 +765,12 @@ function readPositiveDecimal(value: unknown, field: string): { ok: true; value: 
     return { ok: false, reason: `${field} must be a positive decimal string.` };
   }
   return { ok: true, value: trimmed };
+}
+
+function readSlippageBps(value: unknown): { ok: true; value: number } | { ok: false; reason: string } {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 500
+    ? { ok: true, value }
+    : { ok: false, reason: "maxSlippageBps must be an explicit integer from 1 through 500." };
 }
 
 function scalarString(value: unknown): string { return typeof value === "string" ? value : ""; }

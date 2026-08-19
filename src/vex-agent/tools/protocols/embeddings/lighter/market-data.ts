@@ -243,6 +243,30 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.position.close.prepare": {
+    embeddingText: embeddingText(
+      `Prepare an approval-gated close of the entire current position in one Lighter perpetual market. ` +
+      `Use when: the user explicitly asks to close a specific long or short and supplies a maximum slippage ceiling. Vex reads the exact live position, market precision, and visible book depth, then binds a full-size reduce-only market IOC order at a worst acceptable price. ` +
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits.`,
+    ),
+    aliases: ["prepare lighter position close", "close lighter long", "close lighter short"],
+    exampleIntents: ["close my Lighter ETH position with 100 bps max slippage"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.position.close": {
+    embeddingText: embeddingText(
+      `Approval-resume target for one exact prepared Lighter position close. ` +
+      `Use only when the trusted approval card from lighter.position.close.prepare resumes. The privileged runtime revalidates position and depth, submits one full-size reduce-only market IOC order, never retries ambiguity, and reports exact fill, average fill price, and resulting position. ` +
+      `Direct model calls without the matching approval are refused.`,
+    ),
+    aliases: ["execute lighter close", "approved position close"],
+    exampleIntents: ["execute approved Lighter position close"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.withdraw.prepare": {
     embeddingText: embeddingText(
       `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
@@ -434,7 +458,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 34;
+const EXPECTED_COUNT = 36;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

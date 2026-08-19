@@ -3,15 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   executeApprovedLighterCancelAll,
   executeApprovedLighterCancelOne,
+  executeApprovedLighterClosePosition,
   executeApprovedLighterModifyOrder,
   lifecycleSnapshot,
   prepareLighterCancelAll,
   prepareLighterCancelOne,
+  prepareLighterClosePosition,
   prepareLighterModifyOrder,
   type LighterOrderLifecycleExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
-import type { LighterAccountOrder } from "@tools/lighter/types.js";
+import type { LighterAccountOrder, LighterAccountPosition } from "@tools/lighter/types.js";
+import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
 
 const NOW = Date.parse("2026-08-19T20:00:00.000Z");
 const PRIVATE_KEY = "1".repeat(80);
@@ -33,6 +36,25 @@ const openOrder: LighterAccountOrder = {
   time_in_force: "good-till-time",
   reduce_only: false,
   status: "open",
+};
+
+const longPosition: LighterAccountPosition = {
+  market_id: 0,
+  symbol: "ETH",
+  initial_margin_fraction: "5.00",
+  open_order_count: 0,
+  pending_order_count: 0,
+  position_tied_order_count: 0,
+  sign: 1,
+  position: "1.0000",
+  avg_entry_price: "45.00",
+  position_value: "50.000000",
+  unrealized_pnl: "5.000000",
+  realized_pnl: "0.000000",
+  liquidation_price: "30.00",
+  margin_mode: 0,
+  allocated_margin: "0.000000",
+  total_discount: "0.000000",
 };
 
 function intent(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): LighterOrderLifecycleIntentRow {
@@ -423,5 +445,166 @@ describe("Lighter cancel-all lifecycle", () => {
     );
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+describe("Lighter reduce-only position close lifecycle", () => {
+  const market = {
+    symbol: "ETH",
+    market_id: 0,
+    market_type: "perp" as const,
+    base_asset_id: 1,
+    quote_asset_id: 3,
+    status: "active" as const,
+    taker_fee: "0.00045",
+    maker_fee: "0.00010",
+    liquidation_fee: "0.005",
+    min_base_amount: "0.0001",
+    min_quote_amount: "10",
+    supported_size_decimals: 4,
+    supported_price_decimals: 2,
+    supported_quote_decimals: 6,
+    order_quote_limit: "1000000",
+    is_maker_fee_enabled: true,
+    is_taker_fee_enabled: true,
+  };
+  const bid = {
+    order_index: 1,
+    order_id: "281474976710657",
+    owner_account_index: 99,
+    initial_base_amount: "2.0000",
+    remaining_base_amount: "2.0000",
+    price: "50.00",
+    order_expiry: 0,
+    transaction_time: NOW,
+  };
+
+  it("prepares an exact full-size reduce-only IOC close within explicit slippage", async () => {
+    const result = await prepareLighterClosePosition({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      maxSlippageBps: 100,
+      client: {
+        getAccount: vi.fn().mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [longPosition] }] }),
+        getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+        getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
+      },
+    });
+    expect(result).toMatchObject({
+      closingSide: "sell",
+      baseAmount: "1",
+      baseAmountInteger: "10000",
+      worstAcceptablePrice: "49.5",
+      priceInteger: "4950",
+      maxSlippageBps: 100,
+    });
+    expect(result.matchHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("refuses to prepare when visible depth cannot close the full position", async () => {
+    await expect(prepareLighterClosePosition({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      maxSlippageBps: 100,
+      client: {
+        getAccount: vi.fn().mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [longPosition] }] }),
+        getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+        getOrderBookOrders: vi.fn().mockResolvedValue({
+          code: 200, total_asks: 0, asks: [], total_bids: 1,
+          bids: [{ ...bid, remaining_base_amount: "0.5000" }],
+        }),
+      },
+    })).rejects.toThrow("cannot close the full position");
+  });
+
+  it("submits once and reports exact fill plus resulting flat position", async () => {
+    const dependencies = deps();
+    const matchHash = "d".repeat(64);
+    const clientOrderId = deriveVexAssignedClientOrderIndex(matchHash);
+    const closeOrder: LighterAccountOrder = {
+      ...openOrder,
+      order_id: "281474976710658",
+      client_order_id: clientOrderId,
+      client_order_index: Number(clientOrderId),
+      initial_base_amount: "1.0000",
+      remaining_base_amount: "0.0000",
+      filled_base_amount: "1.0000",
+      filled_quote_amount: "49.75",
+      price: "49.50",
+      side: "sell",
+      type: "market",
+      time_in_force: "immediate-or-cancel",
+      reduce_only: true,
+      status: "filled",
+    };
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn()
+        .mockResolvedValueOnce({ code: 200, accounts: [{ index: 42, positions: [longPosition] }] })
+        .mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [{ ...longPosition, position: "0.0000" }] }] }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
+      getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
+    });
+    vi.mocked(dependencies.client.getAccountInactiveOrders).mockResolvedValue({ code: 200, orders: [closeOrder] });
+    vi.mocked(dependencies.client.sendTx).mockResolvedValue({
+      code: 200, tx_hash: "hash-14", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
+    });
+    vi.mocked(dependencies.authSigner.signCreateOrder).mockImplementation(async (input) => ({
+      kind: "lighter_create_order_signer_result",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      nonce: "9",
+      clientOrderIndex: input.order.clientOrderIndex,
+      matchHash: input.order.matchHash,
+      txType: 14,
+      txInfo: "signed-close",
+      txHash: "hash-14",
+    }));
+    const closeIntent = intent({
+      actionType: "close_position",
+      matchHash,
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+    const result = await executeApprovedLighterClosePosition(closeIntent, dependencies);
+    expect(result).toMatchObject({
+      status: "closed",
+      clientOrderId,
+      providerOrderId: "281474976710658",
+      executedAmount: "1.0000",
+      remainingOrderAmount: "0.0000",
+      averageFillPrice: "49.75",
+      resultingPosition: null,
+    });
+    expect(dependencies.authSigner.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({
+      order: expect.objectContaining({
+        orderTypeCode: 1,
+        timeInForceCode: 0,
+        reduceOnly: true,
+        isAsk: true,
+        baseAmountInteger: "10000",
+        priceInteger: "4950",
+      }),
+    }));
+    expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
   });
 });

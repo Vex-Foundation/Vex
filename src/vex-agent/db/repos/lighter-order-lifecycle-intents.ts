@@ -209,7 +209,7 @@ export async function findAnyLiveOrderMutation(input: {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
       WHERE environment = $1 AND account_index = $2
-        AND action_type IN ('cancel_one','modify','cancel_all')
+        AND action_type IN ('cancel_one','modify','cancel_all','close_position')
         AND execution_state NOT IN ('completed','rejected','expired')
       ORDER BY created_at ASC LIMIT 1`,
     [input.environment, input.accountIndex],

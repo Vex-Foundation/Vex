@@ -151,6 +151,42 @@ function lighterCancelAllCandidate() {
   };
 }
 
+function lighterPositionCloseCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.position.close", params: { intentId: LIGHTER_LIFECYCLE_INTENT_ID } },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "position.close",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.position.close",
+        intentId: LIGHTER_LIFECYCLE_INTENT_ID,
+        actionType: "close_position",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        marketIndex: 0,
+        symbol: "ETH",
+        positionSide: "long",
+        positionAmount: "1",
+        averageEntryPrice: "45",
+        closingSide: "sell",
+        baseAmount: "1",
+        baseAmountInteger: "10000",
+        worstAcceptablePrice: "49.5",
+        priceInteger: "4950",
+        maxSlippageBps: 100,
+        reduceOnly: true,
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
+        matchHash: "d".repeat(64),
+        summary: "Close the entire ETH long with a reduce-only market IOC order.",
+      },
+    },
+  };
+}
+
 function lighterDepositCandidate() {
   return {
     toolName: "execute_tool",
@@ -400,6 +436,25 @@ describe("prepared-action follow-up registry", () => {
       approvalPreview: {
         ...input.approvalPreview,
         criticalArgs: { ...input.approvalPreview.criticalArgs, orderCount: 1 },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
+  });
+
+  it.each(["execute_tool", "lighter__position__close__prepare"])(
+    "allows %s to hand off an exact Lighter position-close intent",
+    (sourceToolName) => {
+      const input = lighterPositionCloseCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({ ok: true, followUp: input });
+    },
+  );
+
+  it("rejects a position close whose side would increase exposure", () => {
+    const input = lighterPositionCloseCandidate();
+    expect(validatePreparedActionFollowUp("execute_tool", {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: { ...input.approvalPreview.criticalArgs, closingSide: "buy" },
       },
     })).toEqual({ ok: false, reason: "invalid_contract" });
   });

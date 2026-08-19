@@ -260,6 +260,28 @@ const txFromL1ResponseSchema = z
   })
   .passthrough();
 
+const accountPositionSchema = z
+  .object({
+    market_id: int,
+    symbol: z.string().min(1),
+    initial_margin_fraction: numericString,
+    open_order_count: int,
+    pending_order_count: int,
+    position_tied_order_count: int,
+    sign: int,
+    position: numericString,
+    avg_entry_price: numericString,
+    position_value: numericString,
+    unrealized_pnl: numericString,
+    realized_pnl: numericString,
+    liquidation_price: numericString,
+    total_funding_paid_out: numericString.optional(),
+    margin_mode: int,
+    allocated_margin: numericString,
+    total_discount: numericString,
+  })
+  .passthrough();
+
 const accountSchema = z
   .object({
     index: int.optional(),
@@ -271,7 +293,7 @@ const accountSchema = z
     pending_order_count: int.optional(),
     cross_initial_margin_requirement: optionalNumericString,
     cross_maintenance_margin_requirement: optionalNumericString,
-    positions: z.array(z.unknown()).optional(),
+    positions: z.array(accountPositionSchema).optional(),
     assets: z.array(z.unknown()).optional(),
   })
   .passthrough();

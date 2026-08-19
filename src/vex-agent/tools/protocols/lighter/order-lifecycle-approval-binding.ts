@@ -20,6 +20,13 @@ const CANCEL_ALL_CRITICAL_KEYS = [
   "matchHash", "orderCount", "orderIdentities", "summary", "timeInForce", "toolId",
 ] as const;
 
+const CLOSE_POSITION_CRITICAL_KEYS = [
+  "accountIndex", "actionType", "apiKeyIndex", "averageEntryPrice", "baseAmount",
+  "baseAmountInteger", "closingSide", "environment", "intentId", "marketIndex", "matchHash",
+  "maxSlippageBps", "orderType", "positionAmount", "positionSide", "priceInteger", "reduceOnly",
+  "summary", "symbol", "timeInForce", "toolId", "worstAcceptablePrice",
+] as const;
+
 export async function assertLighterCancelOneApprovalBinding(input: {
   readonly approvalId: string;
   readonly sessionId: string;
@@ -125,6 +132,43 @@ export async function assertLighterCancelAllApprovalBinding(input: {
   ) throw cancelAllRefusal();
 }
 
+export async function assertLighterClosePositionApprovalBinding(input: {
+  readonly approvalId: string;
+  readonly sessionId: string;
+  readonly intent: LighterOrderLifecycleIntentRow;
+}): Promise<void> {
+  const approval = await approvalsRepo.getByIdForSession(input.approvalId, input.sessionId);
+  const args = record(approval?.toolCall.args ?? approval?.toolCall.arguments);
+  const params = record(args?.params);
+  if (
+    approval?.status !== "approved" || (approval.toolCall.command ?? approval.toolCall.name) !== "execute_tool"
+    || args?.toolId !== "lighter.position.close" || Object.keys(params ?? {}).join(",") !== "intentId"
+    || params?.intentId !== input.intent.intentId
+  ) throw closeRefusal();
+  const audit = await approvalIntentsRepo.getByApprovalId(input.approvalId);
+  const critical = record(audit?.previewJson.criticalArgs);
+  const position = record(input.intent.providerSnapshotJson.position);
+  if (
+    audit?.sessionId !== input.sessionId || audit.decision !== "approved"
+    || audit.actionKind !== "external_post" || audit.executionStatus !== "dispatching"
+    || audit.previewJson.toolName !== "position.close" || audit.previewJson.namespace !== "lighter"
+    || Object.keys(critical ?? {}).sort().join(",") !== [...CLOSE_POSITION_CRITICAL_KEYS].sort().join(",")
+    || critical?.toolId !== "lighter.position.close" || critical.intentId !== input.intent.intentId
+    || critical.actionType !== "close_position" || critical.environment !== input.intent.environment
+    || critical.accountIndex !== input.intent.accountIndex || critical.apiKeyIndex !== input.intent.apiKeyIndex
+    || critical.marketIndex !== input.intent.marketIndex || critical.symbol !== position?.symbol
+    || critical.positionSide !== position?.side || critical.positionAmount !== position?.position
+    || critical.averageEntryPrice !== position?.averageEntryPrice || critical.closingSide !== input.intent.requestedSide
+    || critical.baseAmountInteger !== input.intent.requestedBaseAmountInteger
+    || critical.priceInteger !== input.intent.requestedPriceInteger
+    || critical.maxSlippageBps !== input.intent.providerSnapshotJson.maxSlippageBps
+    || critical.reduceOnly !== true || critical.orderType !== "market" || critical.timeInForce !== "immediate-or-cancel"
+    || critical.matchHash !== input.intent.matchHash
+    || typeof critical.baseAmount !== "string" || typeof critical.worstAcceptablePrice !== "string"
+    || typeof critical.summary !== "string" || critical.summary.length === 0
+  ) throw closeRefusal();
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
@@ -151,5 +195,13 @@ function cancelAllRefusal(): VexError {
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     "Approved Lighter cancel-all refused because the approval does not match the exact account-wide active-order set.",
     "Open the matching cancel-all approval card or prepare a fresh account-wide cancellation.",
+  );
+}
+
+function closeRefusal(): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    "Approved Lighter position close refused because the approval does not match the exact live position, side, size, and slippage-bounded reduce-only order.",
+    "Open the matching close-position approval card or prepare a fresh close from current position and book state.",
   );
 }
