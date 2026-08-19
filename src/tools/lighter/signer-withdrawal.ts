@@ -1,10 +1,10 @@
 import { ErrorCodes, VexError } from "../../errors.js";
+import type { LighterEnvironment } from "./constants.js";
 import type { LighterTradingSecretMaterial } from "./trading-secret.js";
 import {
-  LIGHTER_CORE_WITHDRAW_ASSET_INDEX,
-  LIGHTER_CORE_WITHDRAW_ROUTE_TYPE,
   LIGHTER_CORE_WITHDRAW_TX_TYPE,
 } from "./withdrawal/core-preflight.js";
+import { getLighterSecureWithdrawalProfile } from "./withdrawal/profiles.js";
 import { getLighterFundingDeployment } from "./wallet-funding/deployments.js";
 
 const UINT48_MAX = (1n << 48n) - 1n;
@@ -12,11 +12,11 @@ const UINT64_MAX = (1n << 64n) - 1n;
 const MIN_EXPIRY_LEAD_MS = 15_000;
 const MAX_EXPIRY_LEAD_MS = 5 * 60_000;
 
-export interface LighterCoreWithdrawalSigningInput {
-  readonly kind: "lighter_core_withdrawal_signing_input";
-  readonly environment: "core";
+export interface LighterWithdrawalSigningInput {
+  readonly kind: "lighter_core_withdrawal_signing_input" | "lighter_rhc_withdrawal_signing_input";
+  readonly environment: LighterEnvironment;
   readonly restBaseUrl: string;
-  readonly chainId: 304;
+  readonly chainId: 304 | 466324;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly nonce: string;
@@ -28,9 +28,9 @@ export interface LighterCoreWithdrawalSigningInput {
   readonly secret: LighterTradingSecretMaterial;
 }
 
-export interface LighterCoreWithdrawalSignerResult {
-  readonly kind: "lighter_core_withdrawal_signer_result";
-  readonly environment: "core";
+export interface LighterWithdrawalSignerResult {
+  readonly kind: "lighter_core_withdrawal_signer_result" | "lighter_rhc_withdrawal_signer_result";
+  readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
   readonly nonce: string;
@@ -45,11 +45,25 @@ export interface LighterCoreWithdrawalSignerResult {
   readonly txHash: string;
 }
 
-export interface LighterCoreWithdrawalSignerAdapter {
+export interface LighterWithdrawalSignerAdapter {
   readonly source: "official_lighter_signer";
   readonly signWithdraw: (
-    input: LighterCoreWithdrawalSigningInput,
-  ) => Promise<LighterCoreWithdrawalSignerResult>;
+    input: LighterWithdrawalSigningInput,
+  ) => Promise<LighterWithdrawalSignerResult>;
+}
+
+export type LighterCoreWithdrawalSigningInput = LighterWithdrawalSigningInput & {
+  readonly kind: "lighter_core_withdrawal_signing_input";
+  readonly environment: "core";
+  readonly chainId: 304;
+};
+export type LighterCoreWithdrawalSignerResult = LighterWithdrawalSignerResult & {
+  readonly kind: "lighter_core_withdrawal_signer_result";
+  readonly environment: "core";
+};
+export interface LighterCoreWithdrawalSignerAdapter {
+  readonly source: "official_lighter_signer";
+  readonly signWithdraw: (input: LighterCoreWithdrawalSigningInput) => Promise<LighterCoreWithdrawalSignerResult>;
 }
 
 export function buildLighterCoreWithdrawalSigningInput(input: {
@@ -62,6 +76,20 @@ export function buildLighterCoreWithdrawalSigningInput(input: {
   readonly secret: LighterTradingSecretMaterial;
   readonly nowMs?: number;
 }): LighterCoreWithdrawalSigningInput {
+  return buildLighterWithdrawalSigningInput({ environment: "core", ...input }) as LighterCoreWithdrawalSigningInput;
+}
+
+export function buildLighterWithdrawalSigningInput(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly amountUnits: string;
+  readonly matchHash: string;
+  readonly secret: LighterTradingSecretMaterial;
+  readonly nowMs?: number;
+}): LighterWithdrawalSigningInput {
   requireSafeIndex(input.accountIndex, "accountIndex");
   requireTradingKeyIndex(input.apiKeyIndex);
   const nonce = requireDecimal(input.nonce, UINT48_MAX, true, "nonce");
@@ -75,20 +103,23 @@ export function buildLighterCoreWithdrawalSigningInput(input: {
     || expiryMs < nowMs + MIN_EXPIRY_LEAD_MS
     || expiryMs > nowMs + MAX_EXPIRY_LEAD_MS
   ) {
-    throw invalid("Core withdrawal signer expiry must be 15 seconds to 5 minutes in the future.");
+    throw invalid(`${withdrawalLabel(input.environment)} signer expiry must be 15 seconds to 5 minutes in the future.`);
   }
-  const deployment = getLighterFundingDeployment("core");
+  const deployment = getLighterFundingDeployment(input.environment);
+  const profile = getLighterSecureWithdrawalProfile(input.environment);
   return {
-    kind: "lighter_core_withdrawal_signing_input",
-    environment: "core",
+    kind: input.environment === "core"
+      ? "lighter_core_withdrawal_signing_input"
+      : "lighter_rhc_withdrawal_signing_input",
+    environment: input.environment,
     restBaseUrl: deployment.restBaseUrl,
-    chainId: 304,
+    chainId: profile.signingChainId,
     accountIndex: input.accountIndex,
     apiKeyIndex: input.apiKeyIndex,
     nonce,
     expiredAt,
-    assetIndex: LIGHTER_CORE_WITHDRAW_ASSET_INDEX,
-    routeType: LIGHTER_CORE_WITHDRAW_ROUTE_TYPE,
+    assetIndex: profile.assetIndex,
+    routeType: profile.routeType,
     amountUnits,
     matchHash: input.matchHash,
     secret: input.secret,
@@ -99,13 +130,23 @@ export async function signLighterCoreWithdrawalWithAdapter(
   input: LighterCoreWithdrawalSigningInput,
   adapter: LighterCoreWithdrawalSignerAdapter,
 ): Promise<LighterCoreWithdrawalSignerResult> {
+  return signLighterWithdrawalWithAdapter(input, adapter as unknown as LighterWithdrawalSignerAdapter) as Promise<LighterCoreWithdrawalSignerResult>;
+}
+
+export async function signLighterWithdrawalWithAdapter(
+  input: LighterWithdrawalSigningInput,
+  adapter: LighterWithdrawalSignerAdapter,
+): Promise<LighterWithdrawalSignerResult> {
   if (adapter.source !== "official_lighter_signer") {
-    throw invalid("Core withdrawal signing requires the official Lighter signer.");
+    throw invalid(`${withdrawalLabel(input.environment)} signing requires the official Lighter signer.`);
   }
   const result = await adapter.signWithdraw(input);
+  const expectedKind = input.environment === "core"
+    ? "lighter_core_withdrawal_signer_result"
+    : "lighter_rhc_withdrawal_signer_result";
   if (
-    result.kind !== "lighter_core_withdrawal_signer_result"
-    || result.environment !== "core"
+    result.kind !== expectedKind
+    || result.environment !== input.environment
     || result.accountIndex !== input.accountIndex
     || result.apiKeyIndex !== input.apiKeyIndex
     || result.nonce !== input.nonce
@@ -116,13 +157,13 @@ export async function signLighterCoreWithdrawalWithAdapter(
     || result.matchHash !== input.matchHash
     || result.txType !== LIGHTER_CORE_WITHDRAW_TX_TYPE
   ) {
-    throw invalid("Core withdrawal signer result does not match the approved intent.");
+    throw invalid(`${withdrawalLabel(input.environment)} signer result does not match the approved intent.`);
   }
   if (result.txInfo.trim().length === 0 || result.txHash.trim().length === 0) {
-    throw invalid("Core withdrawal signer returned incomplete transaction identity.");
+    throw invalid(`${withdrawalLabel(input.environment)} signer returned incomplete transaction identity.`);
   }
   if (Object.prototype.propertyIsEnumerable.call(result, "txInfo")) {
-    throw invalid("Core withdrawal signed payload crossed an enumerable result boundary.");
+    throw invalid(`${withdrawalLabel(input.environment)} signed payload crossed an enumerable result boundary.`);
   }
   return result;
 }
@@ -154,6 +195,10 @@ function invalid(message: string): VexError {
   return new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     message,
-    "No Core withdrawal was submitted. Re-run live preflight and approve a fresh exact intent.",
+    "No withdrawal was submitted. Re-run live preflight and approve a fresh exact environment-scoped intent.",
   );
+}
+
+function withdrawalLabel(environment: LighterEnvironment): string {
+  return environment === "core" ? "Core withdrawal" : "RHC withdrawal";
 }

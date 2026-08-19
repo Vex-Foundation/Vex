@@ -130,43 +130,47 @@ func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
 	}
 }
 
-func TestSignWithdrawBuildsConstrainedCoreTxType13(t *testing.T) {
-	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
-	request := signerRequest{
-		Operation:    "signWithdraw",
-		PrivateKey:   strings.Repeat("1", 80),
-		ChainID:      lighterCoreChainID,
-		AccountIndex: "42",
-		APIKeyIndex:  7,
-		Nonce:        "9",
-		ExpiredAt:    fmt.Sprintf("%d", expiredAt),
-		Withdrawal: &withdrawRequest{
-			AssetIndex: lighterCoreUSDCAssetIndex,
-			RouteType:  lighterSecureWithdrawRouteType,
-			Amount:     "2000000",
-		},
-	}
-	response, err := signWithdraw(request)
-	if err != nil {
-		t.Fatalf("signWithdraw() error = %v", err)
-	}
-	if !response.OK || response.TxType != lighterWithdrawTxType {
-		t.Fatalf("signWithdraw() did not return TxType 13")
-	}
-	if response.TxHash == "" || response.TxInfo == "" {
-		t.Fatalf("signWithdraw() returned incomplete signed identity")
-	}
-	var txInfo map[string]any
-	if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
-		t.Fatalf("withdraw TxInfo is not JSON: %v", err)
-	}
-	if txInfo["AssetIndex"] != float64(3) || txInfo["RouteType"] != float64(0) ||
-		txInfo["Amount"] != float64(2_000_000) || txInfo["Nonce"] != float64(9) {
-		t.Fatalf("withdraw TxInfo does not preserve the constrained identity: %#v", txInfo)
+func TestSignWithdrawBuildsConstrainedTxType13ForReviewedEnvironments(t *testing.T) {
+	for _, chainID := range []uint32{lighterCoreChainID, lighterRHCChainID} {
+		t.Run(fmt.Sprintf("chain-%d", chainID), func(t *testing.T) {
+			expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+			request := signerRequest{
+				Operation:    "signWithdraw",
+				PrivateKey:   strings.Repeat("1", 80),
+				ChainID:      chainID,
+				AccountIndex: "42",
+				APIKeyIndex:  7,
+				Nonce:        "9",
+				ExpiredAt:    fmt.Sprintf("%d", expiredAt),
+				Withdrawal: &withdrawRequest{
+					AssetIndex: lighterCoreUSDCAssetIndex,
+					RouteType:  lighterSecureWithdrawRouteType,
+					Amount:     "2000000",
+				},
+			}
+			response, err := signWithdraw(request)
+			if err != nil {
+				t.Fatalf("signWithdraw() error = %v", err)
+			}
+			if !response.OK || response.TxType != lighterWithdrawTxType {
+				t.Fatalf("signWithdraw() did not return TxType 13")
+			}
+			if response.TxHash == "" || response.TxInfo == "" {
+				t.Fatalf("signWithdraw() returned incomplete signed identity")
+			}
+			var txInfo map[string]any
+			if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+				t.Fatalf("withdraw TxInfo is not JSON: %v", err)
+			}
+			if txInfo["AssetIndex"] != float64(3) || txInfo["RouteType"] != float64(0) ||
+				txInfo["Amount"] != float64(2_000_000) || txInfo["Nonce"] != float64(9) {
+				t.Fatalf("withdraw TxInfo does not preserve the constrained identity: %#v", txInfo)
+			}
+		})
 	}
 }
 
-func TestReadRequestRejectsWithdrawOutsideCoreUSDCPerpsBoundary(t *testing.T) {
+func TestReadRequestRejectsWithdrawOutsideReviewedStablecoinPerpsBoundary(t *testing.T) {
 	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
 	base := signerRequest{
 		Operation:    "signWithdraw",
@@ -186,7 +190,7 @@ func TestReadRequestRejectsWithdrawOutsideCoreUSDCPerpsBoundary(t *testing.T) {
 		name   string
 		mutate func(*signerRequest)
 	}{
-		{name: "RHC signer chain", mutate: func(request *signerRequest) { request.ChainID = lighterRHCChainID }},
+		{name: "settlement chain", mutate: func(request *signerRequest) { request.ChainID = 4663 }},
 		{name: "wrong asset", mutate: func(request *signerRequest) { request.Withdrawal.AssetIndex = 4 }},
 		{name: "spot route", mutate: func(request *signerRequest) { request.Withdrawal.RouteType = 1 }},
 		{name: "zero amount", mutate: func(request *signerRequest) { request.Withdrawal.Amount = "0" }},

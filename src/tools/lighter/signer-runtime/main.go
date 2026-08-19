@@ -200,7 +200,7 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		if err != nil || nonce > maxRegistrationNonce {
 			return request, fmt.Errorf("invalid nonce")
 		}
-		if request.ChainID != lighterCoreChainID {
+		if request.ChainID != lighterCoreChainID && request.ChainID != lighterRHCChainID {
 			return request, fmt.Errorf("invalid withdrawal chain id")
 		}
 		expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")

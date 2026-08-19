@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createLighterCoreWithdrawalSignerBinary } from "@tools/lighter/signer-binary-adapter.js";
+import {
+  createLighterCoreWithdrawalSignerBinary,
+  createLighterWithdrawalSignerBinary,
+} from "@tools/lighter/signer-binary-adapter.js";
 import {
   buildLighterCoreWithdrawalSigningInput,
+  buildLighterWithdrawalSigningInput,
   signLighterCoreWithdrawalWithAdapter,
+  signLighterWithdrawalWithAdapter,
   type LighterCoreWithdrawalSignerAdapter,
 } from "@tools/lighter/signer-withdrawal.js";
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
@@ -77,6 +82,46 @@ describe("Lighter Core withdrawal signer boundary", () => {
     expect(Object.keys(result)).not.toContain("txInfo");
     expect(JSON.stringify(result)).not.toContain("Sig");
     expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);
+  });
+
+  it("binds RHC USDG to signer domain 466324 without accepting settlement chain 4663", async () => {
+    const signingInput = buildLighterWithdrawalSigningInput({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 4,
+      nonce: "11",
+      expiredAt: String(NOW + 120_000),
+      amountUnits: "1000000",
+      matchHash: "b".repeat(64),
+      secret: materialFromSecret(PRIVATE_KEY),
+      nowMs: NOW,
+    });
+    const calls: unknown[] = [];
+    const adapter = createLighterWithdrawalSignerBinary({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: async (request) => {
+        calls.push(request);
+        return { ok: true, txType: 13, txInfo: "{\"Sig\":\"opaque\"}", txHash: "rhc-hash-13" };
+      },
+    });
+    const result = await signLighterWithdrawalWithAdapter(signingInput, adapter);
+    expect(signingInput).toMatchObject({
+      kind: "lighter_rhc_withdrawal_signing_input",
+      environment: "rhc",
+      restBaseUrl: "https://api.rh.lighter.xyz",
+      chainId: 466324,
+      assetIndex: 3,
+      routeType: 0,
+    });
+    expect(calls).toEqual([expect.objectContaining({
+      payload: expect.objectContaining({ chainId: 466324, withdrawal: { assetIndex: 3, routeType: 0, amount: "1000000" } }),
+    })]);
+    expect(result).toMatchObject({
+      kind: "lighter_rhc_withdrawal_signer_result",
+      environment: "rhc",
+      txHash: "rhc-hash-13",
+    });
+    expect(Object.keys(result)).not.toContain("txInfo");
   });
 
   it("rejects mismatched or enumerable signed results", async () => {

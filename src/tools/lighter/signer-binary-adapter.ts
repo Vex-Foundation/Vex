@@ -18,8 +18,9 @@ import type {
 import { LIGHTER_SIGNER_CHAIN_IDS } from "./signer-adapter.js";
 import type {
   LighterCoreWithdrawalSignerAdapter,
-  LighterCoreWithdrawalSignerResult,
-  LighterCoreWithdrawalSigningInput,
+  LighterWithdrawalSignerAdapter,
+  LighterWithdrawalSignerResult,
+  LighterWithdrawalSigningInput,
 } from "./signer-withdrawal.js";
 import {
   materialFromSecret,
@@ -284,6 +285,12 @@ export function createLighterChangePubKeySignerBinary(
 export function createLighterCoreWithdrawalSignerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterCoreWithdrawalSignerAdapter {
+  return createLighterWithdrawalSignerBinary(options) as unknown as LighterCoreWithdrawalSignerAdapter;
+}
+
+export function createLighterWithdrawalSignerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterWithdrawalSignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
   const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -297,8 +304,10 @@ export function createLighterCoreWithdrawalSignerBinary(
       });
       const output = parseWithdrawalSignerOutput(raw);
       const result = {
-        kind: "lighter_core_withdrawal_signer_result",
-        environment: "core",
+        kind: input.environment === "core"
+          ? "lighter_core_withdrawal_signer_result"
+          : "lighter_rhc_withdrawal_signer_result",
+        environment: input.environment,
         accountIndex: input.accountIndex,
         apiKeyIndex: input.apiKeyIndex,
         nonce: input.nonce,
@@ -309,11 +318,11 @@ export function createLighterCoreWithdrawalSignerBinary(
         matchHash: input.matchHash,
         txType: 13,
         txHash: output.txHash,
-      } as Omit<LighterCoreWithdrawalSignerResult, "txInfo">;
+      } as Omit<LighterWithdrawalSignerResult, "txInfo">;
       return Object.defineProperty(result, "txInfo", {
         value: output.txInfo,
         enumerable: false,
-      }) as LighterCoreWithdrawalSignerResult;
+      }) as LighterWithdrawalSignerResult;
     },
   };
 }
@@ -375,7 +384,7 @@ function buildChangePubKeyPayload(
 }
 
 function buildWithdrawPayload(
-  input: LighterCoreWithdrawalSigningInput,
+  input: LighterWithdrawalSigningInput,
 ): LighterSignerBinaryWithdrawPayload {
   return {
     operation: "signWithdraw",
@@ -557,7 +566,7 @@ function parseChangePubKeyOutput(raw: unknown): Pick<
 }
 
 function parseWithdrawalSignerOutput(raw: unknown): Pick<
-  LighterCoreWithdrawalSignerResult,
+  LighterWithdrawalSignerResult,
   "txInfo" | "txHash"
 > {
   const signed = parseSignerOutput(raw);
