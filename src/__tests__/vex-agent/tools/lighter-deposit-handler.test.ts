@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { validatePreparedActionFollowUp } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 
@@ -150,6 +151,10 @@ function intentRow(overrides: Record<string, unknown> = {}) {
     preflightTotalMaxFeeWei: "6000000000000000",
     preflightNativeReserveWei: "4000000000000000",
     preflightRequiredNativeBalanceWei: "10000000000000000",
+    preflightPublicSnapshot: {
+      ...preflightSnapshot({ observedAt: new Date("2030-01-01T00:00:00.000Z") }),
+      observedAt: "2030-01-01T00:00:00.000Z",
+    },
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
@@ -185,18 +190,33 @@ function intentRow(overrides: Record<string, unknown> = {}) {
 function preflightSnapshot(overrides: Record<string, unknown> = {}) {
   return {
     observedAt: new Date(),
+    environment: "core",
+    lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
+    settlementNetworkName: "Ethereum mainnet",
     walletAddress: WALLET,
+    beneficiaryAddress: WALLET,
     chainId: 1,
+    settlementBlockNumber: "23456789",
     ethereumBlockNumber: "23456789",
     lighterBlockNumber: "23456780",
     gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+    gatewayImplementationAddress: null,
+    gatewayCodeHash: `0x${"1".repeat(64)}`,
     settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    settlementTokenImplementationAddress: null,
+    settlementTokenCodeHash: `0x${"2".repeat(64)}`,
     settlementTokenSymbol: "USDC",
     settlementTokenDecimals: 6,
     assetIndex: 3,
     routeType: 0,
     amountUnits: "11000000",
     minimumTransferUnits: "1000000",
+    depositCalldata: buildLighterDepositCalldata({
+      environment: "core",
+      to: WALLET,
+      amountUnits: 11_000_000n,
+    }).data,
+    depositValueWei: "0",
     walletBalanceUnits: "50000000",
     walletAllowanceUnits: "0",
     walletNativeBalanceWei: "1000000000000000000",
@@ -212,6 +232,44 @@ function preflightSnapshot(overrides: Record<string, unknown> = {}) {
     requiredNativeBalanceWei: "10000000000000000",
     ...overrides,
   };
+}
+
+function rhcPreflightSnapshot(overrides: Record<string, unknown> = {}) {
+  return preflightSnapshot({
+    environment: "rhc",
+    lighterRestBaseUrl: "https://api.rh.lighter.xyz",
+    settlementNetworkName: "Robinhood Chain mainnet",
+    chainId: 4663,
+    gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+    gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+    settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
+    settlementTokenSymbol: "USDG",
+    depositCalldata: buildLighterDepositCalldata({
+      environment: "rhc",
+      to: WALLET,
+      amountUnits: 11_000_000n,
+    }).data,
+    ...overrides,
+  });
+}
+
+function rhcIntentRow(overrides: Record<string, unknown> = {}) {
+  const snapshot = rhcPreflightSnapshot({
+    observedAt: new Date("2030-01-01T00:00:00.000Z"),
+  });
+  return intentRow({
+    environment: "rhc",
+    chainId: 4663,
+    depositContract: snapshot.gatewayAddress,
+    settlementTokenAddress: snapshot.settlementTokenAddress,
+    settlementTokenSymbol: "USDG",
+    preflightPublicSnapshot: {
+      ...snapshot,
+      observedAt: "2030-01-01T00:00:00.000Z",
+    },
+    ...overrides,
+  });
 }
 
 beforeEach(() => {
@@ -436,6 +494,23 @@ describe("lighter.deposit execution lease", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("disabled for this Vex wallet before execution");
     expect(result.output).toContain("Nothing was signed or submitted");
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
+  it("keeps RHC execution closed before approval binding, lease, or key resolution", async () => {
+    mocks.findByIntentId.mockResolvedValueOnce(rhcIntentRow());
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: rhcIntentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("preparation-only in Phase 1");
+    expect(result.output).toContain("wallet key was not resolved");
+    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
     expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
@@ -707,6 +782,43 @@ describe("lighter.deposit execution lease", () => {
 });
 
 describe("lighter.deposit.prepare", () => {
+  it("prepares an exact RHC USDG approval without resolving a signer", async () => {
+    const preflight = rhcPreflightSnapshot();
+    mocks.readDepositPreflight.mockResolvedValueOnce(preflight);
+    mocks.createOrFind.mockResolvedValueOnce({
+      outcome: "created",
+      intent: rhcIntentRow(),
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "rhc", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.readDepositPreflight).toHaveBeenCalledWith({
+      environment: "rhc",
+      walletAddress: WALLET,
+      amountUnits: 11_000_000n,
+      routeType: 0,
+    });
+    expect(mocks.createOrFind).toHaveBeenCalledWith(
+      { marker: "locked-client" },
+      expect.objectContaining({ environment: "rhc", chainId: 4663 }),
+    );
+    expect(result.preparedActionFollowUp?.approvalPreview.criticalArgs).toMatchObject({
+      environment: "rhc",
+      chainId: 4663,
+      settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      amountDisplay: "11 USDG",
+      beneficiaryAddress: WALLET,
+      depositValueWei: "0",
+      depositCalldata: preflight.depositCalldata,
+    });
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
+  });
+
   it("activates managed Lighter setup before preparing a deposit", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
     mocks.createOrFind.mockResolvedValue({

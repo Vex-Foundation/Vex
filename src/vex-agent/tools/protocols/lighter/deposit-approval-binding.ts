@@ -27,6 +27,15 @@ export const LIGHTER_DEPOSIT_CRITICAL_ARG_KEYS = [
   "preflightEthereumBlockNumber",
   "preflightLighterBlockNumber",
   "preflightObservedAt",
+  "settlementNetworkName",
+  "lighterRestBaseUrl",
+  "beneficiaryAddress",
+  "gatewayImplementationAddress",
+  "gatewayCodeHash",
+  "settlementTokenImplementationAddress",
+  "settlementTokenCodeHash",
+  "depositCalldata",
+  "depositValueWei",
   "approvalRequired",
   "summary",
   "scopeNote",
@@ -87,6 +96,8 @@ function approvalPreviewMatchesIntent(
   if (previewJson.toolName !== "deposit" || previewJson.namespace !== "lighter") return false;
   const criticalArgs = readRecord(previewJson.criticalArgs);
   if (criticalArgs === null) return false;
+  const publicSnapshot = intent.preflightPublicSnapshot;
+  if (publicSnapshot === null || publicSnapshot === undefined) return false;
   if (
     Object.keys(criticalArgs).sort().join(",")
     !== [...LIGHTER_DEPOSIT_CRITICAL_ARG_KEYS].sort().join(",")
@@ -112,6 +123,17 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.preflightEthereumBlockNumber === intent.preflightEthereumBlockNumber
     && criticalArgs.preflightLighterBlockNumber === intent.preflightLighterBlockNumber
     && criticalArgs.preflightObservedAt === intent.preflightObservedAt?.toISOString()
+    && criticalArgs.settlementNetworkName === publicSnapshot.settlementNetworkName
+    && criticalArgs.lighterRestBaseUrl === publicSnapshot.lighterRestBaseUrl
+    && criticalArgs.beneficiaryAddress === publicSnapshot.beneficiaryAddress
+    && criticalArgs.gatewayImplementationAddress
+      === publicSnapshot.gatewayImplementationAddress
+    && criticalArgs.gatewayCodeHash === publicSnapshot.gatewayCodeHash
+    && criticalArgs.settlementTokenImplementationAddress
+      === publicSnapshot.settlementTokenImplementationAddress
+    && criticalArgs.settlementTokenCodeHash === publicSnapshot.settlementTokenCodeHash
+    && criticalArgs.depositCalldata === publicSnapshot.depositCalldata
+    && criticalArgs.depositValueWei === "0"
     && criticalArgs.approvalRequired === approvalRequired(intent)
     && isNonEmptyString(criticalArgs.amountDisplay)
     && isNonEmptyString(criticalArgs.summary)

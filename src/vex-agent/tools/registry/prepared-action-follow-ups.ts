@@ -7,10 +7,10 @@ import type {
   PreparedActionFollowUp,
 } from "../types.js";
 import {
-  LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
-  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
 } from "@tools/lighter/wallet-funding/constants.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
 export interface ValidatedWalletSendFollowUp {
   readonly toolName: "wallet_send_confirm";
@@ -140,6 +140,15 @@ const LIGHTER_DEPOSIT_PREVIEW_KEYS = [
   "preflightEthereumBlockNumber",
   "preflightLighterBlockNumber",
   "preflightObservedAt",
+  "settlementNetworkName",
+  "lighterRestBaseUrl",
+  "beneficiaryAddress",
+  "gatewayImplementationAddress",
+  "gatewayCodeHash",
+  "settlementTokenImplementationAddress",
+  "settlementTokenCodeHash",
+  "depositCalldata",
+  "depositValueWei",
   "approvalRequired",
   "summary",
   "scopeNote",
@@ -165,7 +174,7 @@ const LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS = [
 
 const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 const LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE =
-  /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? USDC$/;
+  /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? (?:USDC|USDG)$/;
 const EVM_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
 
 function isScalar(value: unknown): value is ApprovalPreviewScalar {
@@ -420,26 +429,32 @@ function validateLighterDepositFollowUp(
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
   }
+  const environment = criticalArgs.environment;
+  if (environment !== "core" && environment !== "rhc") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const funding = getLighterFundingDeployment(environment);
+  const exactDepositCalldata = expectedLighterDepositCalldata(criticalArgs, environment);
   if (
     criticalArgs.toolId !== "lighter.deposit" ||
     criticalArgs.intentId !== intentId ||
-    criticalArgs.environment !== "core" ||
+    criticalArgs.environment !== funding.environment ||
     typeof criticalArgs.walletAddress !== "string" ||
     !EVM_ADDRESS_RE.test(criticalArgs.walletAddress) ||
     criticalArgs.depositTo !== criticalArgs.walletAddress ||
     typeof criticalArgs.depositContract !== "string" ||
-    criticalArgs.depositContract.toLowerCase() !==
-      LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS.toLowerCase() ||
-    criticalArgs.chainId !== 1 ||
-    criticalArgs.assetIndex !== 3 ||
-    criticalArgs.routeType !== 0 ||
+    criticalArgs.depositContract.toLowerCase() !== funding.gatewayProxy.toLowerCase() ||
+    criticalArgs.chainId !== funding.settlementChainId ||
+    criticalArgs.assetIndex !== funding.settlementAssetIndex ||
+    criticalArgs.routeType !== funding.perpsRouteType ||
     typeof criticalArgs.amountUnits !== "string" ||
     !/^[1-9][0-9]*$/.test(criticalArgs.amountUnits) ||
     typeof criticalArgs.amountDisplay !== "string" ||
     !LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE.test(criticalArgs.amountDisplay) ||
+    !criticalArgs.amountDisplay.endsWith(` ${funding.settlementSymbol}`) ||
     typeof criticalArgs.settlementTokenAddress !== "string" ||
     criticalArgs.settlementTokenAddress.toLowerCase() !==
-      LIGHTER_CORE_MAINNET_USDC_ADDRESS.toLowerCase() ||
+      funding.settlementTokenProxy.toLowerCase() ||
     criticalArgs.settlementTokenDecimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS ||
     !isPositiveIntegerString(criticalArgs.preflightMinimumTransferUnits) ||
     !isNonNegativeIntegerString(criticalArgs.preflightWalletBalanceUnits) ||
@@ -448,6 +463,35 @@ function validateLighterDepositFollowUp(
     !isNonNegativeIntegerString(criticalArgs.preflightLighterBlockNumber) ||
     typeof criticalArgs.preflightObservedAt !== "string" ||
     !Number.isFinite(Date.parse(criticalArgs.preflightObservedAt)) ||
+    criticalArgs.settlementNetworkName !== funding.settlementNetworkName ||
+    criticalArgs.lighterRestBaseUrl !== funding.restBaseUrl ||
+    criticalArgs.beneficiaryAddress !== criticalArgs.walletAddress ||
+    (criticalArgs.gatewayImplementationAddress !== null
+      && (typeof criticalArgs.gatewayImplementationAddress !== "string"
+        || !EVM_ADDRESS_RE.test(criticalArgs.gatewayImplementationAddress))) ||
+    (funding.expectedGatewayImplementation !== undefined
+      && typeof criticalArgs.gatewayImplementationAddress === "string"
+      && criticalArgs.gatewayImplementationAddress.toLowerCase()
+        !== funding.expectedGatewayImplementation.toLowerCase()) ||
+    (funding.expectedGatewayImplementation !== undefined
+      && criticalArgs.gatewayImplementationAddress === null) ||
+    typeof criticalArgs.gatewayCodeHash !== "string" ||
+    !/^0x[0-9a-f]{64}$/i.test(criticalArgs.gatewayCodeHash) ||
+    (criticalArgs.settlementTokenImplementationAddress !== null
+      && (typeof criticalArgs.settlementTokenImplementationAddress !== "string"
+        || !EVM_ADDRESS_RE.test(criticalArgs.settlementTokenImplementationAddress))) ||
+    (funding.expectedSettlementTokenImplementation !== undefined
+      && typeof criticalArgs.settlementTokenImplementationAddress === "string"
+      && criticalArgs.settlementTokenImplementationAddress.toLowerCase()
+        !== funding.expectedSettlementTokenImplementation.toLowerCase()) ||
+    (funding.expectedSettlementTokenImplementation !== undefined
+      && criticalArgs.settlementTokenImplementationAddress === null) ||
+    typeof criticalArgs.settlementTokenCodeHash !== "string" ||
+    !/^0x[0-9a-f]{64}$/i.test(criticalArgs.settlementTokenCodeHash) ||
+    typeof criticalArgs.depositCalldata !== "string" ||
+    !/^0x8a857083[0-9a-f]+$/i.test(criticalArgs.depositCalldata) ||
+    criticalArgs.depositCalldata.toLowerCase() !== exactDepositCalldata?.toLowerCase() ||
+    criticalArgs.depositValueWei !== "0" ||
     typeof criticalArgs.approvalRequired !== "boolean" ||
     BigInt(criticalArgs.preflightWalletBalanceUnits) < BigInt(criticalArgs.amountUnits) ||
     BigInt(criticalArgs.preflightMinimumTransferUnits) > BigInt(criticalArgs.amountUnits) ||
@@ -480,6 +524,30 @@ function validateLighterDepositFollowUp(
       },
     },
   };
+}
+
+function expectedLighterDepositCalldata(
+  criticalArgs: Record<string, ApprovalPreviewScalar>,
+  environment: "core" | "rhc",
+): string | null {
+  if (
+    typeof criticalArgs.walletAddress !== "string"
+    || typeof criticalArgs.amountUnits !== "string"
+    || !/^[1-9][0-9]*$/.test(criticalArgs.amountUnits)
+    || typeof criticalArgs.assetIndex !== "number"
+    || criticalArgs.routeType !== 0
+  ) return null;
+  try {
+    return buildLighterDepositCalldata({
+      environment,
+      to: criticalArgs.walletAddress,
+      amountUnits: BigInt(criticalArgs.amountUnits),
+      assetIndex: criticalArgs.assetIndex,
+      route: "perps",
+    }).data;
+  } catch {
+    return null;
+  }
 }
 
 function isPositiveIntegerString(value: unknown): value is string {

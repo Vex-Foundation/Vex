@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registry/prepared-action-follow-ups.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
@@ -99,6 +100,19 @@ function lighterDepositCandidate() {
         preflightEthereumBlockNumber: "23456789",
         preflightLighterBlockNumber: "23456780",
         preflightObservedAt: "2030-01-01T00:00:00.000Z",
+        settlementNetworkName: "Ethereum mainnet",
+        lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
+        beneficiaryAddress: "0x1111111111111111111111111111111111111111",
+        gatewayImplementationAddress: null,
+        gatewayCodeHash: `0x${"1".repeat(64)}`,
+        settlementTokenImplementationAddress: null,
+        settlementTokenCodeHash: `0x${"2".repeat(64)}`,
+        depositCalldata: buildLighterDepositCalldata({
+          environment: "core",
+          to: "0x1111111111111111111111111111111111111111",
+          amountUnits: 11_000_000n,
+        }).data,
+        depositValueWei: "0",
         approvalRequired: true,
         summary: "Deposit 11 USDC from this Vex wallet into its own Lighter account.",
         scopeNote: "This approval authorizes only this deposit, not a trade or withdrawal.",
@@ -140,6 +154,34 @@ function lighterKeyRegistrationCandidate() {
   };
 }
 
+function lighterRhcDepositCandidate() {
+  const candidate = lighterDepositCandidate();
+  const walletAddress = candidate.approvalPreview.criticalArgs.walletAddress;
+  return {
+    ...candidate,
+    approvalPreview: {
+      ...candidate.approvalPreview,
+      criticalArgs: {
+        ...candidate.approvalPreview.criticalArgs,
+        environment: "rhc",
+        depositContract: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+        chainId: 4663,
+        amountDisplay: "11 USDG",
+        settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+        settlementNetworkName: "Robinhood Chain mainnet",
+        lighterRestBaseUrl: "https://api.rh.lighter.xyz",
+        gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+        settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
+        depositCalldata: buildLighterDepositCalldata({
+          environment: "rhc",
+          to: walletAddress,
+          amountUnits: 11_000_000n,
+        }).data,
+      },
+    },
+  };
+}
+
 describe("prepared-action follow-up registry", () => {
   it("allows and canonicalizes wallet_send_prepare → wallet_send_confirm", () => {
     const input = candidate();
@@ -176,6 +218,14 @@ describe("prepared-action follow-up registry", () => {
       expect(result).toEqual({ ok: true, followUp: input });
     },
   );
+
+  it("allows an exact environment-bound RHC USDG deposit preparation", () => {
+    const input = lighterRhcDepositCandidate();
+    expect(validatePreparedActionFollowUp("execute_tool", input)).toEqual({
+      ok: true,
+      followUp: input,
+    });
+  });
 
   it.each(["execute_tool", "lighter__key__register__prepare"])(
     "allows %s to hand off an exact Lighter key-registration intent",
@@ -242,6 +292,10 @@ describe("prepared-action follow-up registry", () => {
       { preflightWalletAllowanceUnits: "11000000", approvalRequired: true },
       { preflightEthereumBlockNumber: "0" },
       { preflightObservedAt: "not-a-date" },
+      { beneficiaryAddress: "0x2222222222222222222222222222222222222222" },
+      { depositCalldata: `0x8a857083${"0".repeat(256)}` },
+      { depositValueWei: "1" },
+      { lighterRestBaseUrl: "https://api.rh.lighter.xyz" },
     ];
     for (const override of overrides) {
       expect(

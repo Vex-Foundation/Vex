@@ -25,11 +25,11 @@ export type LighterOnboardingLegKind = (typeof LIGHTER_ONBOARDING_LEG_KINDS)[num
 
 /**
  * Read-only observation feeding the planner. All settlement-asset amounts are
- * integer base units at 6-decimal USDC scale (bigint), never floats.
+ * integer base units at the environment's 6-decimal settlement scale, never floats.
  */
 export interface LighterOnboardingObservation {
   readonly environment: LighterEnvironment;
-  /** Settlement asset (USDC) the Vex wallet already holds on the deposit chain. */
+  /** Settlement asset (USDC on Core, USDG on RHC) held on the deposit chain. */
   readonly walletSettlementUnits: bigint;
   /**
    * Can the wallet obtain more settlement asset if short (e.g. it holds a

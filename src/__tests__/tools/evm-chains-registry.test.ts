@@ -9,6 +9,7 @@ const {
   resolveLocalChainId,
   LOCAL_CHAIN_ALIASES,
   getLocalChainRpcUrl,
+  getConfiguredLocalChainRpcUrl,
   toLocalViemChain,
 } = await import("@tools/evm-chains/registry.js");
 
@@ -76,16 +77,19 @@ describe("getLocalChainRpcUrl / toLocalViemChain", () => {
   it("falls back to the bundled default RPC when no override is configured", () => {
     const chain = getLocalChain(RH_ID)!;
     expect(getLocalChainRpcUrl(chain)).toBe(DEFAULT_RPC);
+    expect(getConfiguredLocalChainRpcUrl(chain)).toBeNull();
   });
 
   it("honors a valid user https override keyed by chainId", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "https://my-private-rhc.example/rpc" } });
     expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
+    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
   });
 
   it("ignores a malformed override and uses the default", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "not-a-url" } });
     expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe(DEFAULT_RPC);
+    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBeNull();
   });
 
   it("builds a viem chain wired for multicall3", () => {

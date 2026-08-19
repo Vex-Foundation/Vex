@@ -209,6 +209,7 @@ describe("lighter onboarding intent creation SQL", () => {
       ROW.preflight_total_max_fee_wei,
       ROW.preflight_native_reserve_wei,
       ROW.preflight_required_native_balance_wei,
+      expect.stringContaining('"depositValueWei":"0"'),
       ROW.expires_at,
     ]);
     expect(client.query).toHaveBeenCalledTimes(2);
@@ -308,6 +309,7 @@ describe("lighter onboarding intent creation SQL", () => {
       INPUT.preflight.totalMaxFeeWei,
       INPUT.preflight.nativeReserveWei,
       INPUT.preflight.requiredNativeBalanceWei,
+      expect.stringContaining('"environment":"core"'),
       expiresAt,
       INPUT.preflight.chainId,
       INPUT.preflight.gatewayAddress,
@@ -392,6 +394,7 @@ describe("lighter onboarding intent creation SQL", () => {
       preflight.totalMaxFeeWei,
       preflight.nativeReserveWei,
       preflight.requiredNativeBalanceWei,
+      expect.stringContaining('"approvalRequired":false'),
       expiresAt,
       preflight.chainId,
       preflight.gatewayAddress,

@@ -12,6 +12,7 @@ import { getAddress } from "viem";
 
 import { ErrorCodes, VexError } from "../../../errors.js";
 import type { LighterDepositPreflightSnapshot } from "./deposit-preflight.js";
+import type { LighterEnvironment } from "../constants.js";
 
 export const LIGHTER_DEPOSIT_PRE_SIGN_MAX_AGE_MS = 30_000;
 export const LIGHTER_DEPOSIT_RUNTIME_FEE_SANITY_MULTIPLIER = 4n;
@@ -26,6 +27,7 @@ export interface LighterDepositSignedFeeCeiling {
 }
 
 export interface LighterDepositApprovedSnapshot {
+  readonly environment?: LighterEnvironment;
   readonly walletAddress: string;
   readonly chainId: number;
   readonly depositContract: string | null;
@@ -43,6 +45,17 @@ export interface LighterDepositApprovedSnapshot {
   readonly preflightMaxPriorityFeePerGasWei: string | null;
   readonly preflightApproveMaxFeeWei: string | null;
   readonly preflightDepositMaxFeeWei: string | null;
+  readonly preflightPublicSnapshot?: Pick<
+    LighterDepositPreflightSnapshot,
+    | "lighterRestBaseUrl"
+    | "settlementNetworkName"
+    | "gatewayImplementationAddress"
+    | "gatewayCodeHash"
+    | "settlementTokenImplementationAddress"
+    | "settlementTokenCodeHash"
+    | "depositCalldata"
+    | "depositValueWei"
+  > | null;
 }
 
 export function assertLighterDepositPreflightWithinApproval(input: {
@@ -66,6 +79,7 @@ export function assertLighterDepositPreflightWithinApproval(input: {
     || intent.assetIndex === null
     || intent.routeType === null
     || intent.preflightEthereumBlockNumber === null
+    || (intent.environment !== undefined && fresh.environment !== intent.environment)
     || getAddress(fresh.walletAddress) !== getAddress(intent.walletAddress)
     || fresh.chainId !== intent.chainId
     || getAddress(fresh.gatewayAddress) !== getAddress(intent.depositContract)
@@ -77,8 +91,32 @@ export function assertLighterDepositPreflightWithinApproval(input: {
       !== intent.settlementTokenAddress?.toLowerCase()
     || fresh.settlementTokenSymbol !== intent.settlementTokenSymbol
     || fresh.settlementTokenDecimals !== intent.settlementTokenDecimals
+    || fresh.beneficiaryAddress.toLowerCase() !== intent.depositTo.toLowerCase()
+    || fresh.depositValueWei !== "0"
   ) {
     throw revalidationError("Live chain or Lighter metadata no longer matches the approved deposit.");
+  }
+  const approvedPublic = intent.preflightPublicSnapshot;
+  if (
+    approvedPublic !== undefined
+    && approvedPublic !== null
+    && (
+      fresh.lighterRestBaseUrl !== approvedPublic.lighterRestBaseUrl
+      || fresh.settlementNetworkName !== approvedPublic.settlementNetworkName
+      || fresh.gatewayImplementationAddress?.toLowerCase()
+        !== approvedPublic.gatewayImplementationAddress?.toLowerCase()
+      || fresh.gatewayCodeHash.toLowerCase() !== approvedPublic.gatewayCodeHash.toLowerCase()
+      || fresh.settlementTokenImplementationAddress?.toLowerCase()
+        !== approvedPublic.settlementTokenImplementationAddress?.toLowerCase()
+      || fresh.settlementTokenCodeHash.toLowerCase()
+        !== approvedPublic.settlementTokenCodeHash.toLowerCase()
+      || fresh.depositCalldata.toLowerCase() !== approvedPublic.depositCalldata.toLowerCase()
+      || fresh.depositValueWei !== approvedPublic.depositValueWei
+    )
+  ) {
+    throw revalidationError(
+      "The live public deployment or exact calldata no longer matches the approved deposit.",
+    );
   }
   if (BigInt(fresh.ethereumBlockNumber) < BigInt(intent.preflightEthereumBlockNumber)) {
     throw revalidationError("Ethereum head moved behind the approved preflight block.");
@@ -90,7 +128,7 @@ export function assertLighterDepositPreflightWithinApproval(input: {
     && BigInt(intent.preflightApproveGasLimit ?? "0") === 0n
   ) {
     throw revalidationError(
-      "USDC allowance fell below the approved amount and would add an unapproved transaction.",
+      "Settlement-token allowance fell below the approved amount and would add an unapproved transaction.",
     );
   }
 }

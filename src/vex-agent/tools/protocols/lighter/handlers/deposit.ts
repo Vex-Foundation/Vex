@@ -29,6 +29,7 @@ import {
 } from "@tools/lighter/wallet-funding/deposit-preflight.js";
 import { assertLighterDepositPreflightWithinApproval } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import { buildLighterDepositExecutionDeps } from "@tools/lighter/wallet-funding/deposit-execution-deps.js";
 import {
   executeApprovedLighterDeposit,
@@ -51,7 +52,6 @@ import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { readEnvironment } from "../params.js";
 
-const MIN_DEPOSIT_UNITS = decimalToBaseUnits(LIGHTER_DEPOSIT_MIN_USDC, LIGHTER_SETTLEMENT_ASSET_DECIMALS);
 const INTENT_TTL_MS = 15 * 60 * 1000;
 
 function buildDepositApprovalFollowUp(intent: LighterOnboardingIntentRow): PreparedActionFollowUp {
@@ -76,6 +76,18 @@ function buildDepositApprovalFollowUp(intent: LighterOnboardingIntentRow): Prepa
     preflightEthereumBlockNumber: disclosure.ethereumBlockNumber,
     preflightLighterBlockNumber: disclosure.lighterBlockNumber,
     preflightObservedAt: disclosure.preflightObservedAt,
+    settlementNetworkName: intent.preflightPublicSnapshot?.settlementNetworkName ?? "",
+    lighterRestBaseUrl: intent.preflightPublicSnapshot?.lighterRestBaseUrl ?? "",
+    beneficiaryAddress: disclosure.beneficiaryAddress,
+    gatewayImplementationAddress:
+      intent.preflightPublicSnapshot?.gatewayImplementationAddress ?? null,
+    gatewayCodeHash: intent.preflightPublicSnapshot?.gatewayCodeHash ?? "",
+    settlementTokenImplementationAddress:
+      intent.preflightPublicSnapshot?.settlementTokenImplementationAddress ?? null,
+    settlementTokenCodeHash:
+      intent.preflightPublicSnapshot?.settlementTokenCodeHash ?? "",
+    depositCalldata: disclosure.depositCalldata,
+    depositValueWei: disclosure.depositValueWei,
     approvalRequired: disclosure.approvalRequired,
     summary: disclosure.summary,
     scopeNote: disclosure.scopeNote,
@@ -106,6 +118,10 @@ function depositApprovalPreparedPayload(intent: LighterOnboardingIntentRow): Rec
     lighterBlockNumber: disclosure.lighterBlockNumber,
     settlementTokenAddress: disclosure.settlementTokenAddress,
     creditAddress: disclosure.creditAddress,
+    beneficiaryAddress: disclosure.beneficiaryAddress,
+    approvalSpender: disclosure.approvalSpender,
+    depositCalldata: disclosure.depositCalldata,
+    depositValueWei: disclosure.depositValueWei,
     summary: disclosure.summary,
     scopeNote: disclosure.scopeNote,
     createsAccountNote: disclosure.createsAccountNote,
@@ -555,9 +571,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
 
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
-    if (environment.value !== "core") {
-      return fail("Lighter wallet-funded deposit is available on Core only in this release.");
-    }
+    const funding = getLighterFundingDeployment(environment.value);
 
     let walletAddress: string;
     try {
@@ -568,10 +582,10 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(err);
     }
 
-    if (!(await isLighterIntegrationEnabled("core", walletAddress))) {
+    if (!(await isLighterIntegrationEnabled(environment.value, walletAddress))) {
       try {
         await setLighterIntegrationEnabled({
-          environment: "core",
+          environment: environment.value,
           walletAddress,
           enabled: true,
         });
@@ -584,7 +598,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
 
     const amountInRaw = params.amountIn;
     if (typeof amountInRaw !== "string") {
-      return fail('amountIn must be a decimal USDC string, for example "11".');
+      return fail(`amountIn must be a decimal ${funding.settlementSymbol} string, for example "11".`);
     }
     let amountUnits: bigint;
     try {
@@ -592,14 +606,15 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
-    if (amountUnits < MIN_DEPOSIT_UNITS) {
-      return fail(`Lighter deposit must be at least ${LIGHTER_DEPOSIT_MIN_USDC} USDC; a smaller deposit is not credited.`);
+    if (amountUnits < funding.minimumDepositUnits) {
+      return fail(`Lighter deposit must be at least ${LIGHTER_DEPOSIT_MIN_USDC} ${funding.settlementSymbol}; a smaller deposit is not credited.`);
     }
 
     const routeType = LIGHTER_DEPOSIT_ROUTE_TYPE.perps;
     let preflight;
     try {
       preflight = await readLighterDepositPreflight({
+        environment: environment.value,
         walletAddress,
         amountUnits,
         routeType,
@@ -613,7 +628,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       creation = await withSessionControlLock(sessionId, (client) =>
         onboardingIntentsRepo.createOrFindLiveDepositApprovalPendingWith(client, {
           sessionId,
-          environment: "core",
+          environment: environment.value,
           walletAddress: preflight.walletAddress,
           chainId: preflight.chainId,
           depositContract: preflight.gatewayAddress,
@@ -653,7 +668,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
               const replacement = await onboardingIntentsRepo
                 .createOrFindLiveDepositApprovalPendingWith(client, {
                   sessionId,
-                  environment: "core",
+                  environment: environment.value,
                   walletAddress: preflight.walletAddress,
                   chainId: preflight.chainId,
                   depositContract: preflight.gatewayAddress,
@@ -817,6 +832,11 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     if (intent.capability !== "deposit") {
       return fail(`Intent ${intent.intentId} is not a Lighter deposit intent.`);
     }
+    if (intent.environment === "rhc") {
+      return fail(
+        "Robinhood Chain Lighter deposits are preparation-only in Phase 1. Nothing was signed or submitted, and the wallet key was not resolved. Direct USDG execution remains closed until the Phase 2 privileged execution and live canary gates pass.",
+      );
+    }
     if (!(await isLighterIntegrationEnabled(intent.environment, intent.walletAddress))) {
       return fail(
         "Lighter was disabled for this Vex wallet before execution. Nothing was signed or submitted; enable it again and prepare a fresh approval.",
@@ -888,6 +908,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         throw new Error("The approved deposit amount is missing or invalid.");
       }
       const fresh = await readLighterDepositPreflight({
+        environment: approved.environment,
         walletAddress: approved.walletAddress,
         amountUnits: BigInt(approved.amountUnits),
         routeType: approved.routeType ?? LIGHTER_DEPOSIT_ROUTE_TYPE.perps,

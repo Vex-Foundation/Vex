@@ -89,6 +89,8 @@ export interface LighterOnboardingIntentRow {
   readonly preflightTotalMaxFeeWei: string | null;
   readonly preflightNativeReserveWei: string | null;
   readonly preflightRequiredNativeBalanceWei: string | null;
+  /** Complete public preparation evidence. Optional only for legacy Core rows. */
+  readonly preflightPublicSnapshot?: LighterDepositPublicSnapshot | null;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
   readonly executionState: LighterOnboardingExecutionState;
   readonly approveTxHash: string | null;
@@ -118,6 +120,11 @@ export interface LighterOnboardingIntentRow {
   readonly updatedAt: Date;
   readonly expiresAt: Date;
 }
+
+export type LighterDepositPublicSnapshot = Omit<
+  LighterDepositPreflightSnapshot,
+  "observedAt"
+> & { readonly observedAt: string };
 
 export interface CreateDepositIntentInput {
   readonly sessionId: string;
@@ -152,7 +159,7 @@ const RETURNING = `
   preflight_max_fee_per_gas_wei, preflight_max_priority_fee_per_gas_wei,
   preflight_approve_max_fee_wei, preflight_deposit_max_fee_wei,
   preflight_total_max_fee_wei, preflight_native_reserve_wei,
-  preflight_required_native_balance_wei,
+  preflight_required_native_balance_wei, preflight_public_snapshot,
   approval_status, execution_state,
   approve_tx_hash, approve_tx_from, approve_tx_nonce,
   approve_replacement_tx_hash, approve_replacement_reason, approve_replacement_observed_at,
@@ -177,13 +184,13 @@ const INSERT_DEPOSIT_SQL = `
     preflight_max_fee_per_gas_wei, preflight_max_priority_fee_per_gas_wei,
     preflight_approve_max_fee_wei, preflight_deposit_max_fee_wei,
     preflight_total_max_fee_wei, preflight_native_reserve_wei,
-    preflight_required_native_balance_wei,
+    preflight_required_native_balance_wei, preflight_public_snapshot,
     approval_status, execution_state, expires_at
   ) VALUES (
     $1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
     $21, $22, $23, $24, $25, $26, $27, $28, $29,
-    'approval_pending', 'approval_pending', $30
+    $30::jsonb, 'approval_pending', 'approval_pending', $31
   )
   ON CONFLICT DO NOTHING
   RETURNING ${RETURNING}
@@ -229,6 +236,7 @@ export async function createOrFindLiveDepositApprovalPendingWith(
     input.preflight.totalMaxFeeWei,
     input.preflight.nativeReserveWei,
     input.preflight.requiredNativeBalanceWei,
+    JSON.stringify(toPublicSnapshot(input.preflight)),
     input.expiresAt,
   ]);
   const created = inserted.rows[0];
@@ -515,7 +523,8 @@ export async function renewPristineApprovedDepositIntentWith(
             preflight_total_max_fee_wei = $20,
             preflight_native_reserve_wei = $21,
             preflight_required_native_balance_wei = $22,
-            expires_at = $23,
+            preflight_public_snapshot = $23::jsonb,
+            expires_at = $24,
             updated_at = NOW()
       WHERE intent_id = $1
         AND session_id = $2
@@ -523,12 +532,12 @@ export async function renewPristineApprovedDepositIntentWith(
         AND approval_status = 'approved'
         AND execution_state = 'approved'
         AND LOWER(wallet_address) = LOWER($3)
-        AND chain_id = $24
-        AND LOWER(deposit_contract) = LOWER($25)
+        AND chain_id = $25
+        AND LOWER(deposit_contract) = LOWER($26)
         AND LOWER(deposit_to) = LOWER($3)
-        AND asset_index = $26
-        AND route_type = $27
-        AND amount_units = $28
+        AND asset_index = $27
+        AND route_type = $28
+        AND amount_units = $29
         AND approve_tx_hash IS NULL
         AND approve_tx_from IS NULL
         AND approve_tx_nonce IS NULL
@@ -575,6 +584,7 @@ export async function renewPristineApprovedDepositIntentWith(
       snapshot.totalMaxFeeWei,
       snapshot.nativeReserveWei,
       snapshot.requiredNativeBalanceWei,
+      JSON.stringify(toPublicSnapshot(snapshot)),
       input.expiresAt,
       snapshot.chainId,
       snapshot.gatewayAddress,
@@ -638,7 +648,8 @@ export async function renewConfirmedApprovalDepositIntentWith(
             preflight_total_max_fee_wei = $20,
             preflight_native_reserve_wei = $21,
             preflight_required_native_balance_wei = $22,
-            expires_at = $23,
+            preflight_public_snapshot = $23::jsonb,
+            expires_at = $24,
             updated_at = NOW()
       WHERE intent_id = $1
         AND session_id = $2
@@ -646,12 +657,12 @@ export async function renewConfirmedApprovalDepositIntentWith(
         AND approval_status = 'approved'
         AND execution_state = 'approve_confirmed'
         AND LOWER(wallet_address) = LOWER($3)
-        AND chain_id = $24
-        AND LOWER(deposit_contract) = LOWER($25)
+        AND chain_id = $25
+        AND LOWER(deposit_contract) = LOWER($26)
         AND LOWER(deposit_to) = LOWER($3)
-        AND asset_index = $26
-        AND route_type = $27
-        AND amount_units = $28
+        AND asset_index = $27
+        AND route_type = $28
+        AND amount_units = $29
         AND approve_tx_hash IS NOT NULL
         AND approve_tx_from IS NOT NULL
         AND approve_tx_nonce IS NOT NULL
@@ -695,6 +706,7 @@ export async function renewConfirmedApprovalDepositIntentWith(
       snapshot.totalMaxFeeWei,
       snapshot.nativeReserveWei,
       snapshot.requiredNativeBalanceWei,
+      JSON.stringify(toPublicSnapshot(snapshot)),
       input.expiresAt,
       snapshot.chainId,
       snapshot.gatewayAddress,
@@ -1348,6 +1360,7 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     preflightRequiredNativeBalanceWei: nullableString(
       row.preflight_required_native_balance_wei,
     ),
+    preflightPublicSnapshot: parsePublicSnapshot(row.preflight_public_snapshot),
     approvalStatus: row.approval_status as LighterOnboardingApprovalStatus,
     executionState: row.execution_state as LighterOnboardingExecutionState,
     approveTxHash: row.approve_tx_hash === null ? null : String(row.approve_tx_hash),
@@ -1398,7 +1411,9 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
 function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
   const snapshot = input.preflight;
   if (
-    snapshot.walletAddress.toLowerCase() !== input.walletAddress.toLowerCase()
+    snapshot.environment !== input.environment
+    || snapshot.walletAddress.toLowerCase() !== input.walletAddress.toLowerCase()
+    || snapshot.beneficiaryAddress.toLowerCase() !== input.depositTo.toLowerCase()
     || snapshot.chainId !== input.chainId
     || snapshot.gatewayAddress.toLowerCase() !== input.depositContract.toLowerCase()
     || snapshot.assetIndex !== input.assetIndex
@@ -1407,6 +1422,34 @@ function assertPreflightMatchesInput(input: CreateDepositIntentInput): void {
   ) {
     throw new Error("Lighter deposit preflight does not match the durable intent fields.");
   }
+}
+
+function toPublicSnapshot(
+  snapshot: LighterDepositPreflightSnapshot,
+): LighterDepositPublicSnapshot {
+  return {
+    ...snapshot,
+    observedAt: snapshot.observedAt.toISOString(),
+  };
+}
+
+function parsePublicSnapshot(value: unknown): LighterDepositPublicSnapshot | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  const snapshot = value as Record<string, unknown>;
+  if (
+    typeof snapshot.observedAt !== "string"
+    || !Number.isFinite(Date.parse(snapshot.observedAt))
+    || (snapshot.environment !== "core" && snapshot.environment !== "rhc")
+    || typeof snapshot.depositCalldata !== "string"
+    || !/^0x[0-9a-f]+$/i.test(snapshot.depositCalldata)
+    || snapshot.depositValueWei !== "0"
+  ) {
+    throw new Error("Stored Lighter deposit public preflight snapshot is invalid.");
+  }
+  return snapshot as unknown as LighterDepositPublicSnapshot;
 }
 
 function nullableString(value: unknown): string | null {

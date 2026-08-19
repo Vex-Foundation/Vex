@@ -79,11 +79,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare an approval-gated Lighter Core deposit from the selected Vex wallet. Use when: managed onboarding has inspected the wallet and either the user supplied a deposit amount or fundingAssessment returned prepare_deposit with the exact shortfall. In the latter case call this immediately in the same turn with depositAmountIn; do not ask another chat confirmation because the host approval card is the consent surface. Resolve the wallet automatically and activate its local Lighter integration as part of this explicit onboarding intent; never send the user to Settings. The first deposit creates a wallet-owned Lighter account. Read and persist live balances, allowance, contracts, gas limits, and maximum-fee exposure before creating the durable intent and trusted approval disclosure. Returns the durable intent, exact deposit disclosure, expiry, approval status, and host approval-card guidance. This preparation step owns no signer and moves no funds. Core perps deposits only in this release.",
+      "Prepare an exact approval-gated Lighter perps deposit from the selected Vex wallet: Ethereum USDC for Core or Robinhood Chain USDG for RHC. Use only after managed onboarding proves the direct settlement balance covers the exact shortfall. The host approval card is the consent surface. Preparation persists live balances, allowance, native ETH fee readiness, environment/chain/contracts, reviewed proxy identities, exact beneficiary, calldata, and zero transaction value. It owns no signer and moves no funds. RHC is preparation-only in Phase 1: approval resume cannot resolve a key, sign, or broadcast until Phase 2 gates pass.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, DEPOSIT_AMOUNT_PARAM],
-    exampleParams: { environment: "core", amountIn: "11" },
+    exampleParams: { environment: "rhc", amountIn: "11" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit.prepare"],
   },
   {
@@ -91,7 +91,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated Lighter Core deposit resume target for a prepared deposit intent. Call this only through the approval card that lighter.deposit.prepare enqueues; never call it directly without a prepared intent and approval-resume context. An approved call signs an ERC-20 approval and the deposit with the Vex wallet key and submits them on Ethereum mainnet, so real funds move toward the user's Lighter account (the first deposit is expected to create the account). A successful Ethereum transaction is reported as l2_pending until exact Lighter credit evidence proves the deposit; account existence alone never proves credit. Returns the recorded approval decision plus the execution outcome: l2_pending, an ambiguous outcome that must be reconciled before any retry, or a failed leg.",
+      "Approval-gated Lighter deposit resume target for a prepared intent. Call only through the exact approval card. Core retains its existing privileged Ethereum execution and reconciliation path. RHC execution is deliberately closed in Phase 1 before key resolution or signing; it returns a preparation-only refusal until the Phase 2 privileged execution and live-canary gates pass.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [DEPOSIT_INTENT_ID_PARAM],

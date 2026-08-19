@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildLighterDepositApprovalDisclosure } from "@tools/lighter/wallet-funding/deposit-approval-disclosure.js";
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
@@ -40,6 +41,49 @@ function depositIntent(overrides: Partial<LighterOnboardingIntentRow> = {}): Lig
     preflightTotalMaxFeeWei: "6000000000000000",
     preflightNativeReserveWei: "4000000000000000",
     preflightRequiredNativeBalanceWei: "10000000000000000",
+    preflightPublicSnapshot: {
+      observedAt: "2030-01-01T00:00:00.000Z",
+      environment: "core",
+      lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
+      settlementNetworkName: "Ethereum mainnet",
+      walletAddress: WALLET,
+      beneficiaryAddress: WALLET,
+      chainId: 1,
+      settlementBlockNumber: "23456789",
+      ethereumBlockNumber: "23456789",
+      lighterBlockNumber: "23456780",
+      gatewayAddress: CONTRACT,
+      gatewayImplementationAddress: null,
+      gatewayCodeHash: `0x${"1".repeat(64)}`,
+      settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      settlementTokenImplementationAddress: null,
+      settlementTokenCodeHash: `0x${"2".repeat(64)}`,
+      settlementTokenSymbol: "USDC",
+      settlementTokenDecimals: 6,
+      assetIndex: 3,
+      routeType: 0,
+      amountUnits: "11520000",
+      minimumTransferUnits: "1000000",
+      depositCalldata: buildLighterDepositCalldata({
+        environment: "core",
+        to: WALLET,
+        amountUnits: 11_520_000n,
+      }).data,
+      depositValueWei: "0",
+      walletBalanceUnits: "50000000",
+      walletAllowanceUnits: "0",
+      walletNativeBalanceWei: "1000000000000000000",
+      approvalRequired: true,
+      approveGasLimit: "100000",
+      depositGasLimit: "200000",
+      maxFeePerGasWei: "20000000000",
+      maxPriorityFeePerGasWei: "2000000000",
+      approveMaxFeeWei: "2000000000000000",
+      depositMaxFeeWei: "4000000000000000",
+      totalMaxFeeWei: "6000000000000000",
+      nativeReserveWei: "4000000000000000",
+      requiredNativeBalanceWei: "10000000000000000",
+    },
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
     approveTxHash: null,
@@ -82,10 +126,10 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.approvalRequired).toBe(true);
     expect(d.creditAddress).toBe(WALLET);
     expect(d.depositContract).toBe(CONTRACT);
-    expect(d.chainLabel).toBe("Ethereum");
+    expect(d.chainLabel).toBe("Ethereum mainnet");
     expect(d.routeLabel).toBe("perps");
     expect(d.environmentLabel).toBe("Lighter Core");
-    expect(d.summary).toContain("Deposit 11.52 USDC");
+    expect(d.summary).toContain("with 11.52 USDC");
     expect(d).not.toHaveProperty("maximumNetworkFeeDisplay");
     expect(d).not.toHaveProperty("requiredNativeBalanceDisplay");
     expect(d).not.toHaveProperty("maxFeePerGasDisplay");
@@ -96,6 +140,10 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d.scopeNote).toMatch(/only a deposit/i);
     expect(d.scopeNote).toMatch(/does not place any trade/i);
     expect(d.scopeNote).toMatch(/withdrawal/i);
+    expect(d.scopeNote).toMatch(/swap/i);
+    expect(d.scopeNote).toMatch(/bridge/i);
+    expect(d.scopeNote).toMatch(/key registration/i);
+    expect(d.scopeNote).toMatch(/separate approvals/i);
   });
 
   it("labels account creation without disclosing a stale gas quote", () => {
@@ -104,6 +152,46 @@ describe("buildLighterDepositApprovalDisclosure", () => {
     expect(d).not.toHaveProperty("gasNote");
     expect(d).not.toHaveProperty("approveGasLimit");
     expect(d).not.toHaveProperty("maxFeePerGasWei");
+  });
+
+  it("discloses the exact RHC USDG network, beneficiary, spender, and zero value", () => {
+    const core = depositIntent();
+    const rhc = depositIntent({
+      environment: "rhc",
+      chainId: 4663,
+      depositContract: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+      settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      settlementTokenSymbol: "USDG",
+      preflightPublicSnapshot: {
+        ...core.preflightPublicSnapshot!,
+        environment: "rhc",
+        lighterRestBaseUrl: "https://api.rh.lighter.xyz",
+        settlementNetworkName: "Robinhood Chain mainnet",
+        chainId: 4663,
+        gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+        gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+        settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+        settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
+        settlementTokenSymbol: "USDG",
+        depositCalldata: buildLighterDepositCalldata({
+          environment: "rhc",
+          to: WALLET,
+          amountUnits: 11_520_000n,
+        }).data,
+      },
+    });
+
+    const d = buildLighterDepositApprovalDisclosure(rhc);
+    expect(d).toMatchObject({
+      environmentLabel: "Robinhood Chain Lighter",
+      settlementAsset: "USDG",
+      amountDisplay: "11.52 USDG",
+      chainLabel: "Robinhood Chain mainnet (4663)",
+      beneficiaryAddress: WALLET,
+      approvalSpender: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+      depositValueWei: "0",
+    });
+    expect(d.scopeNote).toContain("ETH is used only for network fees");
   });
 
   it("refuses a non-deposit capability", () => {

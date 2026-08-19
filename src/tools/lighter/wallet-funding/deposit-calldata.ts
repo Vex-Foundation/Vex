@@ -1,5 +1,5 @@
 /**
- * Pure encoder for the Lighter Core L1 USDC deposit transaction.
+ * Pure encoder for an environment-scoped Lighter settlement-token deposit.
  *
  * Produces the exact `{ to, data, value }` for a deposit that credits the
  * caller's own L1 address (sender-credit; the first deposit creates the
@@ -27,11 +27,11 @@ export interface LighterDepositCalldataInput {
   readonly environment?: LighterEnvironment;
   /** L1 address to credit — MUST be the depositing (Vex) wallet's own address. */
   readonly to: string;
-  /** Settlement amount in integer base units (6-decimal USDC). */
+  /** Settlement amount in integer base units (6-decimal USDC or USDG). */
   readonly amountUnits: bigint;
   /** Which account the deposit funds; defaults to perps. */
   readonly route?: LighterDepositRoute;
-  /** Deposit asset index; defaults to the verified USDC index. */
+  /** Deposit asset index; defaults to the deployment's verified settlement index. */
   readonly assetIndex?: number;
 }
 

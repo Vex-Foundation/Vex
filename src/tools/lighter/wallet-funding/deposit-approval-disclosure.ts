@@ -16,13 +16,17 @@ import {
   LIGHTER_SETTLEMENT_ASSET,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
 } from "./constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 
 const ENVIRONMENT_LABELS = {
   core: "Lighter Core",
   rhc: "Robinhood Chain Lighter",
 } as const;
 
-const CHAIN_LABELS: Record<number, string> = { 1: "Ethereum" };
+const CHAIN_LABELS: Record<number, string> = {
+  1: "Ethereum mainnet",
+  4663: "Robinhood Chain mainnet (4663)",
+};
 
 const ROUTE_LABELS: Record<number, string> = { 0: "perps", 1: "spot" };
 
@@ -44,6 +48,10 @@ export interface LighterDepositApprovalDisclosure {
   readonly preflightObservedAt: string;
   readonly creditAddress: string;
   readonly depositContract: string;
+  readonly beneficiaryAddress: string;
+  readonly approvalSpender: string;
+  readonly depositCalldata: string;
+  readonly depositValueWei: "0";
   readonly chainLabel: string;
   readonly routeLabel: string;
   readonly createsAccountNote: string;
@@ -87,6 +95,36 @@ export function buildLighterDepositApprovalDisclosure(
   }
 
   const settlementAsset = LIGHTER_SETTLEMENT_ASSET[intent.environment];
+  const funding = getLighterFundingDeployment(intent.environment);
+  const publicSnapshot = intent.preflightPublicSnapshot ?? null;
+  if (
+    intent.chainId !== funding.settlementChainId
+    || intent.depositContract.toLowerCase() !== funding.gatewayProxy.toLowerCase()
+    || intent.settlementTokenAddress.toLowerCase() !== funding.settlementTokenProxy.toLowerCase()
+    || intent.settlementTokenSymbol !== funding.settlementSymbol
+    || intent.settlementTokenDecimals !== funding.settlementDecimals
+    || intent.assetIndex !== funding.settlementAssetIndex
+    || intent.routeType !== funding.perpsRouteType
+    || intent.depositTo.toLowerCase() !== intent.walletAddress.toLowerCase()
+    || publicSnapshot === null
+    || (publicSnapshot !== null && (
+      publicSnapshot.environment !== intent.environment
+      || publicSnapshot.chainId !== intent.chainId
+      || publicSnapshot.beneficiaryAddress.toLowerCase() !== intent.depositTo.toLowerCase()
+      || publicSnapshot.gatewayAddress.toLowerCase() !== intent.depositContract.toLowerCase()
+      || publicSnapshot.settlementTokenAddress.toLowerCase()
+        !== intent.settlementTokenAddress.toLowerCase()
+      || publicSnapshot.amountUnits !== intent.amountUnits
+      || publicSnapshot.assetIndex !== intent.assetIndex
+      || publicSnapshot.routeType !== intent.routeType
+      || publicSnapshot.depositValueWei !== "0"
+      || !/^0x8a857083[0-9a-f]+$/i.test(publicSnapshot.depositCalldata)
+    ))
+  ) {
+    throw disclosureUnavailable(
+      "The Lighter deposit intent does not match the environment-bound public action identity.",
+    );
+  }
   const amount = formatLighterIntegerAmount(
     parseAmountUnits(intent.amountUnits),
     LIGHTER_SETTLEMENT_ASSET_DECIMALS,
@@ -156,14 +194,18 @@ export function buildLighterDepositApprovalDisclosure(
     preflightObservedAt: intent.preflightObservedAt.toISOString(),
     creditAddress: intent.depositTo,
     depositContract: intent.depositContract,
+    beneficiaryAddress: intent.depositTo,
+    approvalSpender: intent.depositContract,
+    depositCalldata: publicSnapshot?.depositCalldata ?? "",
+    depositValueWei: "0",
     chainLabel,
     routeLabel,
     createsAccountNote:
       "If this is your wallet's first Lighter deposit, it creates a new Lighter account owned by this wallet.",
     scopeNote:
-      "This approval authorizes only a deposit into your own Lighter account. It does not place any trade or authorize any withdrawal.",
+      "This approval authorizes only a deposit into your own Lighter perps account and, when needed, the exact settlement-token allowance for it. ETH is used only for network fees. It does not place any trade or include a swap, bridge, transfer, withdrawal, or key registration; key registration and any later trade require separate approvals.",
     summary:
-      `Deposit ${amountDisplay} from ${intent.depositTo} into your ${environmentLabel} ${routeLabel} account on ${chainLabel}.`,
+      `Fund your ${environmentLabel} ${routeLabel} account with ${amountDisplay} from ${intent.depositTo} on ${chainLabel}.`,
   };
 }
 

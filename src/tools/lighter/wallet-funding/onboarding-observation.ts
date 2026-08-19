@@ -31,7 +31,7 @@ export interface DeriveOnboardingObservationInput {
    * present. Resolved by the privileged caller; false when the account is null.
    */
   readonly vexTradingKeyRegistered: boolean;
-  /** Settlement asset (USDC) base units the Vex wallet holds on the deposit chain. */
+  /** Environment-specific settlement-asset base units held on the deposit chain. */
   readonly walletSettlementUnits: bigint;
   /** Whether the wallet holds a swappable asset to acquire more settlement asset. */
   readonly walletCanAcquireSettlement: boolean;

@@ -135,12 +135,19 @@ export function resolveLocalChainId(input: string): number | undefined {
  * validated as a plain http(s) URL — never a bundled key, never trusted blindly.
  */
 export function getLocalChainRpcUrl(config: LocalChainConfig): string {
+  return getConfiguredLocalChainRpcUrl(config) ?? config.defaultRpcUrl;
+}
+
+/** Explicit operator/user override, or null when only the public fallback exists. */
+export function getConfiguredLocalChainRpcUrl(
+  config: LocalChainConfig,
+): string | null {
   const override = loadConfig().localChainRpcUrls?.[String(config.id)];
   if (typeof override === "string") {
     const trimmed = override.trim();
     if (/^https?:\/\/\S+$/i.test(trimmed)) return trimmed;
   }
-  return config.defaultRpcUrl;
+  return null;
 }
 
 /**
