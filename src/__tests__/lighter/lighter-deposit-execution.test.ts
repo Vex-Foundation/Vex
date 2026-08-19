@@ -15,6 +15,8 @@ import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/depos
 
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+const RHC_CONTRACT = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
+const RHC_USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const APPROVE_HASH: `0x${string}` = `0x${"a".repeat(64)}`;
 const DEPOSIT_HASH: `0x${string}` = `0x${"b".repeat(64)}`;
 const BLOCK_HASH: `0x${string}` = `0x${"c".repeat(64)}`;
@@ -153,6 +155,19 @@ function intent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnb
   };
 }
 
+function rhcIntent(overrides: Partial<LighterOnboardingIntentRow> = {}): LighterOnboardingIntentRow {
+  return intent({
+    environment: "rhc",
+    chainId: 4663,
+    depositContract: RHC_CONTRACT,
+    settlementTokenAddress: RHC_USDG,
+    settlementTokenSymbol: "USDG",
+    preflightEthereumBlockNumber: "40124106",
+    preflightLighterBlockNumber: "40124098",
+    ...overrides,
+  });
+}
+
 function intentsSpy() {
   return {
     markAllowanceVerified: vi.fn().mockResolvedValue({ executionState: "allowance_verified" }),
@@ -275,6 +290,50 @@ describe("executeApprovedLighterDeposit", () => {
     }));
     expect(d.assertFreshPreSignPreflight).toHaveBeenNthCalledWith(1, expect.anything(), "approve");
     expect(d.assertFreshPreSignPreflight).toHaveBeenNthCalledWith(2, expect.anything(), "deposit");
+  });
+
+  it("executes an exact RHC USDG deposit lifecycle without crossing into Core identity", async () => {
+    const receipt = depositReceipt({
+      to: RHC_CONTRACT,
+      logs: [{
+        address: RHC_CONTRACT,
+        topics: depositEventTopics(),
+        data: encodeAbiParameters(
+          [
+            { type: "uint48" },
+            { type: "address" },
+            { type: "uint16" },
+            { type: "uint8" },
+            { type: "uint128" },
+          ],
+          [42, WALLET, 3, 0, 11_000_000n],
+        ),
+      }],
+    });
+    const d = deps({
+      runDepositLeg: vi.fn(async ({ onHashStaged }) => {
+        await onHashStaged(staged(DEPOSIT_HASH, 8));
+        return { txHash: DEPOSIT_HASH, outcome: "confirmed" as const, receipt };
+      }),
+    });
+
+    const result = await executeApprovedLighterDeposit({ intent: rhcIntent(), deps: d });
+
+    expect(result).toMatchObject({ status: "l2_pending", depositTxHash: DEPOSIT_HASH });
+    expect(d.runApproveLegIfNeeded).toHaveBeenCalledWith(expect.objectContaining({
+      walletAddress: WALLET,
+      spender: RHC_CONTRACT,
+      amountUnits: 11_000_000n,
+    }));
+    expect(d.runDepositLeg).toHaveBeenCalledWith(expect.objectContaining({
+      walletAddress: WALLET,
+      to: RHC_CONTRACT,
+      data: buildLighterDepositCalldata({
+        environment: "rhc",
+        to: WALLET,
+        amountUnits: 11_000_000n,
+      }).data,
+    }));
   });
 
   it("skips the approve broadcast when allowance already suffices", async () => {

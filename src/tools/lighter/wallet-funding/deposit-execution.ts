@@ -30,12 +30,12 @@ import {
 } from "./deposit-pre-sign.js";
 import { proveApprovedLighterDepositReplacement } from "./deposit-replacement.js";
 import {
-  LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
-  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
-  LIGHTER_DEPOSIT_CHAIN_ID,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
-  LIGHTER_USDC_ASSET_INDEX,
 } from "./constants.js";
+import {
+  getLighterFundingDeployment,
+  type LighterFundingDeployment,
+} from "./deployments.js";
 
 export type LegOutcome = "confirmed" | "reverted" | "ambiguous";
 
@@ -135,6 +135,7 @@ export async function executeApprovedLighterDeposit(input: {
   readonly deps: LighterDepositExecutionDeps;
 }): Promise<LighterDepositExecutionResult> {
   const { intent, deps } = input;
+  const funding = getLighterFundingDeployment(intent.environment);
   const resumingAfterConfirmedApproval = intent.executionState === "approve_confirmed";
 
   if (!deps.depositFeePreflightComplete()) {
@@ -148,18 +149,17 @@ export async function executeApprovedLighterDeposit(input: {
 
   if (
     intent.capability !== "deposit"
-    || intent.environment !== "core"
-    || intent.chainId !== LIGHTER_DEPOSIT_CHAIN_ID
+    || intent.chainId !== funding.settlementChainId
     || intent.approvalStatus !== "approved"
     || (intent.executionState !== "approved" && !resumingAfterConfirmedApproval)
     || intent.amountUnits === null
     || intent.depositTo === null
     || intent.depositContract === null
     || intent.depositTo.toLowerCase() !== intent.walletAddress.toLowerCase()
-    || intent.depositContract.toLowerCase() !== LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS.toLowerCase()
-    || intent.assetIndex !== LIGHTER_USDC_ASSET_INDEX
-    || intent.routeType !== 0
-    || !hasValidPersistedPreflight(intent)
+    || intent.depositContract.toLowerCase() !== funding.gatewayProxy.toLowerCase()
+    || intent.assetIndex !== funding.settlementAssetIndex
+    || intent.routeType !== funding.perpsRouteType
+    || !hasValidPersistedPreflight(intent, funding)
     || (
       resumingAfterConfirmedApproval
       && (
@@ -183,6 +183,7 @@ export async function executeApprovedLighterDeposit(input: {
     amountUnits = BigInt(intent.amountUnits);
     // Rebuild calldata from the persisted intent; validates recipient/amount/index.
     calldata = buildLighterDepositCalldata({
+      environment: intent.environment,
       to: intent.depositTo,
       amountUnits,
       route: "perps",
@@ -526,11 +527,14 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function hasValidPersistedPreflight(intent: LighterOnboardingIntentRow): boolean {
+function hasValidPersistedPreflight(
+  intent: LighterOnboardingIntentRow,
+  funding: LighterFundingDeployment,
+): boolean {
   if (
     intent.amountUnits === null
-    || intent.settlementTokenAddress?.toLowerCase() !== LIGHTER_CORE_MAINNET_USDC_ADDRESS.toLowerCase()
-    || intent.settlementTokenSymbol !== "USDC"
+    || intent.settlementTokenAddress?.toLowerCase() !== funding.settlementTokenProxy.toLowerCase()
+    || intent.settlementTokenSymbol !== funding.settlementSymbol
     || intent.settlementTokenDecimals !== LIGHTER_SETTLEMENT_ASSET_DECIMALS
     || intent.preflightMinimumTransferUnits === null
     || intent.preflightWalletBalanceUnits === null

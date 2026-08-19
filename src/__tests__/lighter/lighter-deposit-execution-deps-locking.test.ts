@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   withSessionControlLock: vi.fn(),
@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   markDepositConfirmedWith: vi.fn(),
   markAmbiguousWith: vi.fn(),
   markFailedWith: vi.fn(),
+  getUniswapDeployment: vi.fn((chainId: number) => ({ chainId })),
+  getUniswapEvmClients: vi.fn(),
+  readContract: vi.fn(),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -29,10 +32,10 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
   markFailedWith: mocks.markFailedWith,
 }));
 vi.mock("@tools/uniswap/deployments.js", () => ({
-  getUniswapDeployment: () => ({ chainId: 1 }),
+  getUniswapDeployment: mocks.getUniswapDeployment,
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+  getUniswapEvmClients: mocks.getUniswapEvmClients,
 }));
 vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
   signStageBroadcast: vi.fn(),
@@ -43,6 +46,15 @@ const { buildLighterDepositExecutionDeps } = await import(
 );
 
 describe("Lighter deposit execution lifecycle locking", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getUniswapDeployment.mockImplementation((chainId: number) => ({ chainId }));
+    mocks.getUniswapEvmClients.mockReturnValue({
+      publicClient: { readContract: mocks.readContract },
+      walletClient: {},
+    });
+  });
+
   it("routes every executor state write through the owning session lock", async () => {
     const lockedClient = { marker: "locked-client" };
     mocks.withSessionControlLock.mockImplementation(async (_sessionId, write) =>
@@ -62,6 +74,7 @@ describe("Lighter deposit execution lifecycle locking", () => {
     }
 
     const deps = buildLighterDepositExecutionDeps({
+      environment: "core",
       privateKey: `0x${"1".repeat(64)}`,
       sessionId: "session-1",
       assertExecutionLease: vi.fn(),
@@ -120,5 +133,38 @@ describe("Lighter deposit execution lifecycle locking", () => {
       "intent-1",
       depositStaged,
     );
+  });
+
+  it("binds an RHC approval read to chain 4663, USDG, and the exact gateway", async () => {
+    const wallet = "0x1111111111111111111111111111111111111111";
+    const gateway = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
+    mocks.readContract.mockResolvedValueOnce(11_000_000n);
+    const deps = buildLighterDepositExecutionDeps({
+      environment: "rhc",
+      privateKey: `0x${"1".repeat(64)}`,
+      sessionId: "session-rhc",
+      assertExecutionLease: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await deps.runApproveLegIfNeeded({
+      walletAddress: wallet,
+      spender: gateway,
+      amountUnits: 11_000_000n,
+      feeCeiling: {
+        gasLimit: 100_000n,
+        maxFeePerGas: 20_000_000_000n,
+        maxPriorityFeePerGas: 2_000_000_000n,
+        maxNetworkFeeWei: 2_000_000_000_000_000n,
+      },
+      onHashStaged: vi.fn(),
+    });
+
+    expect(result).toEqual({ skipped: true });
+    expect(mocks.getUniswapDeployment).toHaveBeenCalledWith(4663);
+    expect(mocks.readContract).toHaveBeenCalledWith(expect.objectContaining({
+      address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      functionName: "allowance",
+      args: [wallet, gateway],
+    }));
   });
 });

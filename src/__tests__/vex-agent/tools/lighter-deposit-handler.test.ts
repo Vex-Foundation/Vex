@@ -499,21 +499,62 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 
-  it("keeps RHC execution closed before approval binding, lease, or key resolution", async () => {
-    mocks.findByIntentId.mockResolvedValueOnce(rhcIntentRow());
+  it("executes RHC only after exact approval binding, live revalidation, lease, and key resolution", async () => {
+    const pending = rhcIntentRow();
+    const approved = rhcIntentRow({
+      approvalId: "approval-1",
+      approvalStatus: "approved",
+      executionState: "approved",
+    });
+    mocks.findByIntentId.mockResolvedValueOnce(pending);
+    mocks.markApprovalDecision.mockResolvedValueOnce(approved);
+    mocks.readDepositPreflight.mockResolvedValueOnce(rhcPreflightSnapshot());
+    mocks.acquireExecutionLease.mockResolvedValueOnce({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValueOnce({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValueOnce({
+      status: "l2_pending",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      depositTxHash: `0x${"b".repeat(64)}`,
+      reason: "exact RHC Lighter evidence pending",
+    });
 
     const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
-      { intentId: rhcIntentRow().intentId },
+      { intentId: pending.intentId },
       approvedContext,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("preparation-only in Phase 1");
-    expect(result.output).toContain("wallet key was not resolved");
-    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
-    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
-    expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
-    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.assertApprovalBinding).toHaveBeenCalledWith({
+      approvalId: "approval-1",
+      sessionId: "session-1",
+      intent: pending,
+    });
+    expect(mocks.acquireExecutionLease).toHaveBeenCalledWith({
+      chainId: 4663,
+      walletAddress: WALLET,
+      intentId: pending.intentId,
+    });
+    expect(mocks.buildExecutionDeps).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      privateKey: `0x${"1".repeat(64)}`,
+      sessionId: "session-1",
+      assertExecutionLease: expect.any(Function),
+    }));
+    expect(mocks.executeApprovedDeposit).toHaveBeenCalledWith({
+      intent: approved,
+      deps: { marker: "execution-deps" },
+    });
+    expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a busy wallet lease before resolving the private key", async () => {

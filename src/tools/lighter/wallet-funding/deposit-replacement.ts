@@ -6,12 +6,7 @@ import type { ReceiptReplacementEvidence } from "@tools/evm-chains/receipt-guard
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { persistedFeeSafetyLimit } from "./deposit-pre-sign.js";
 import { buildLighterDepositCalldata } from "./deposit-calldata.js";
-import {
-  LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS,
-  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
-  LIGHTER_DEPOSIT_CHAIN_ID,
-  LIGHTER_USDC_ASSET_INDEX,
-} from "./constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 
 const APPROVE_ABI = [{
   type: "function",
@@ -38,6 +33,7 @@ export function proveApprovedLighterDepositReplacement(input: {
   readonly observedAt?: Date;
 }): LighterAcceptedReplacement {
   const { intent, stage, replacement } = input;
+  const funding = getLighterFundingDeployment(intent.environment);
   const originalHash = stage === "approve" ? intent.approveTxHash : intent.depositTxHash;
   const stagedFrom = stage === "approve" ? intent.approveTxFrom : intent.depositTxFrom;
   const stagedNonce = stage === "approve" ? intent.approveTxNonce : intent.depositTxNonce;
@@ -52,12 +48,11 @@ export function proveApprovedLighterDepositReplacement(input: {
     || intent.routeType === null
     || !/^[1-9][0-9]*$/.test(intent.amountUnits)
     || intent.capability !== "deposit"
-    || intent.environment !== "core"
-    || intent.chainId !== LIGHTER_DEPOSIT_CHAIN_ID
-    || intent.assetIndex !== LIGHTER_USDC_ASSET_INDEX
-    || intent.routeType !== 0
+    || intent.chainId !== funding.settlementChainId
+    || intent.assetIndex !== funding.settlementAssetIndex
+    || intent.routeType !== funding.perpsRouteType
     || getAddress(intent.walletAddress) !== getAddress(intent.depositTo)
-    || getAddress(intent.depositContract) !== getAddress(LIGHTER_CORE_DEPOSIT_CONTRACT_ADDRESS)
+    || getAddress(intent.depositContract) !== funding.gatewayProxy
   ) {
     throw new Error(`Stored Lighter ${stage} transaction identity is incomplete.`);
   }
@@ -79,7 +74,7 @@ export function proveApprovedLighterDepositReplacement(input: {
   const amountUnits = BigInt(intent.amountUnits);
   const expected = stage === "approve"
     ? {
-        to: getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS),
+        to: funding.settlementTokenProxy,
         data: encodeFunctionData({
           abi: APPROVE_ABI,
           functionName: "approve",
@@ -87,6 +82,7 @@ export function proveApprovedLighterDepositReplacement(input: {
         }),
       }
     : buildLighterDepositCalldata({
+        environment: intent.environment,
         to: intent.depositTo,
         amountUnits,
         assetIndex: intent.assetIndex,

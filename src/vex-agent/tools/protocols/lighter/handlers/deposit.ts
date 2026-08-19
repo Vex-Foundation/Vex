@@ -832,11 +832,6 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     if (intent.capability !== "deposit") {
       return fail(`Intent ${intent.intentId} is not a Lighter deposit intent.`);
     }
-    if (intent.environment === "rhc") {
-      return fail(
-        "Robinhood Chain Lighter deposits are preparation-only in Phase 1. Nothing was signed or submitted, and the wallet key was not resolved. Direct USDG execution remains closed until the Phase 2 privileged execution and live canary gates pass.",
-      );
-    }
     if (!(await isLighterIntegrationEnabled(intent.environment, intent.walletAddress))) {
       return fail(
         "Lighter was disabled for this Vex wallet before execution. Nothing was signed or submitted; enable it again and prepare a fresh approval.",
@@ -915,7 +910,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       });
       if (approved.executionState === "approve_confirmed" && fresh.approvalRequired) {
         throw new Error(
-          "The confirmed USDC allowance is no longer sufficient. Nothing was signed or submitted; prepare a new deposit approval.",
+          `The confirmed ${approved.settlementTokenSymbol ?? "settlement-token"} allowance is no longer sufficient. Nothing was signed or submitted; prepare a new deposit approval.`,
         );
       }
       assertLighterDepositPreflightWithinApproval({
@@ -964,6 +959,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       }
 
       const deps = buildLighterDepositExecutionDeps({
+        environment: approved.environment,
         privateKey: signer.privateKey as Hex,
         sessionId,
         assertExecutionLease: () => leaseHandle.assertOwned(),

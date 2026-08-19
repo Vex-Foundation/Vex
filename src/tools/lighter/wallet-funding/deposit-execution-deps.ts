@@ -1,7 +1,7 @@
 /**
  * Live signing dependencies for the approved Lighter deposit executor.
  *
- * Builds the real approve/deposit leg runners on the existing Ethereum-mainnet
+ * Builds the real approve/deposit leg runners on the environment's settlement
  * Uniswap EVM clients and `signStageBroadcast` (which stages the tx hash before
  * broadcast and returns a confirmed/reverted/ambiguous outcome). The private key
  * is passed in by the privileged handler that resolved the signing wallet; this
@@ -26,9 +26,9 @@ import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
-  LIGHTER_CORE_MAINNET_USDC_ADDRESS,
-  LIGHTER_DEPOSIT_CHAIN_ID,
-} from "./constants.js";
+  type LighterEnvironment,
+} from "../constants.js";
+import { getLighterFundingDeployment } from "./deployments.js";
 import type { LegOutcome, LighterDepositExecutionDeps } from "./deposit-execution.js";
 import type { LighterStagedEvmTransaction } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
@@ -69,6 +69,8 @@ const ERC20_ALLOWANCE_APPROVE_ABI = [
 ] as const;
 
 export interface LighterDepositSignerInput {
+  /** Exact approved funding environment; selects chain, token, and gateway identity. */
+  readonly environment: LighterEnvironment;
   /** The Vex wallet L1 private key, resolved by the privileged handler. */
   readonly privateKey: Hex;
   /** Owning host session; every lifecycle write serializes through its lock. */
@@ -81,12 +83,13 @@ export interface LighterDepositSignerInput {
 export function buildLighterDepositExecutionDeps(
   input: LighterDepositSignerInput,
 ): LighterDepositExecutionDeps {
-  const deployment = getUniswapDeployment(LIGHTER_DEPOSIT_CHAIN_ID);
-  if (!deployment) {
-    throw new Error("Ethereum mainnet deployment is not configured for Lighter deposits.");
+  const funding = getLighterFundingDeployment(input.environment);
+  const deployment = getUniswapDeployment(funding.settlementChainId);
+  if (!deployment || deployment.chainId !== funding.settlementChainId) {
+    throw new Error(`${funding.settlementNetworkName} is not configured for Lighter deposits.`);
   }
   const clients = getUniswapEvmClients(deployment, input.privateKey);
-  const usdc = getAddress(LIGHTER_CORE_MAINNET_USDC_ADDRESS);
+  const settlementToken = funding.settlementTokenProxy;
   const writeUnderSessionLock = <T>(
     write: (client: PoolClient) => Promise<T>,
   ): Promise<T> => withSessionControlLock(input.sessionId, write);
@@ -99,13 +102,14 @@ export function buildLighterDepositExecutionDeps(
         throw new Error("The approved Lighter deposit amount is missing or invalid.");
       }
       const fresh = await readLighterDepositPreflight({
+        environment: input.environment,
         walletAddress: intent.walletAddress,
         amountUnits: BigInt(intent.amountUnits),
         routeType: intent.routeType ?? 0,
       });
       if (intent.executionState === "approve_confirmed" && fresh.approvalRequired) {
         throw new Error(
-          "The confirmed USDC allowance is no longer sufficient. Nothing was signed or submitted.",
+          `The confirmed ${funding.settlementSymbol} allowance is no longer sufficient. Nothing was signed or submitted.`,
         );
       }
       assertLighterDepositPreflightWithinApproval({ intent, fresh, stage });
@@ -123,7 +127,7 @@ export function buildLighterDepositExecutionDeps(
       const owner = getAddress(walletAddress);
       const spenderAddr = getAddress(spender);
       const current = (await clients.publicClient.readContract({
-        address: usdc,
+        address: settlementToken,
         abi: ERC20_ALLOWANCE_APPROVE_ABI,
         functionName: "allowance",
         args: [owner, spenderAddr],
@@ -139,7 +143,7 @@ export function buildLighterDepositExecutionDeps(
       });
       const outcome = await runStaged(
         clients,
-        { to: usdc, data, value: 0n },
+        { to: settlementToken, data, value: 0n },
         onHashStaged,
         undefined,
         feeCeiling,
