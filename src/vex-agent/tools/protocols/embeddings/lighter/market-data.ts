@@ -170,6 +170,30 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "high",
   },
+  "lighter.withdraw.prepare": {
+    embeddingText: embeddingText(
+      `Prepare an exact secure USDC withdrawal from the selected wallet's Lighter Core account to the same wallet on Ethereum mainnet. ` +
+      `Use when the user asks to withdraw, cash out, or move Core USDC back to their wallet. Pass only the human-decimal amount; Vex resolves the saved account and key scope and refuses destination, route, chain, ownership, margin, gateway, or unresolved-state ambiguity. ` +
+      `Creates a trusted approval card after live Core and Ethereum preflight. It signs and moves nothing during preparation.`,
+    ),
+    aliases: ["withdraw from lighter", "lighter core withdrawal", "withdraw usdc", "cash out lighter"],
+    exampleIntents: ["withdraw 2 USDC from Lighter Core", "move my Core collateral back to my wallet"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.withdraw": {
+    embeddingText: embeddingText(
+      `Execute one exact prepared Lighter Core secure USDC withdrawal only after its trusted approval resumes. ` +
+      `Direct calls are refused. The privileged path revalidates live Core and Ethereum evidence, uses the encrypted local managed key, reserves the shared nonce, signs constrained TxType 13, stages durable identity, and submits once. ` +
+      `API acceptance is not delivery; final status requires L2 and Ethereum settlement proof, and uncertain outcomes are never blindly retried.`,
+    ),
+    aliases: ["approved lighter withdrawal", "execute core usdc withdrawal"],
+    exampleIntents: ["execute the approved Lighter Core withdrawal"],
+    ecosystems: ["lighter", "ethereum"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.deposit.prepare": {
     embeddingText: embeddingText(
       `Prepare a separately approval-gated Lighter Core deposit from the selected Vex EVM wallet into that same wallet's Lighter account. ` +
@@ -296,7 +320,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 23;
+const EXPECTED_COUNT = 25;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

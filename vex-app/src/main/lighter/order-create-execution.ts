@@ -3,7 +3,11 @@ import {
   buildLighterAccountAuthSigningInputForScope,
   createLighterAccountAuthWithAdapter,
 } from "@tools/lighter/signer-adapter.js";
-import { createLighterSignerBinaryAdapter } from "@tools/lighter/signer-binary-adapter.js";
+import {
+  createLighterCoreWithdrawalSignerBinary,
+  createLighterSignerBinaryAdapter,
+} from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterCoreWithdrawalPreflight } from "@tools/lighter/withdrawal/core-preflight.js";
 import { loadLighterTradingSecretMaterial } from "@tools/lighter/trading-secret.js";
 import {
   configureLighterCreateOrderExecutionDeps,
@@ -27,6 +31,13 @@ import {
 } from "../secrets/lighter-trading-credential.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
+import {
+  configureLighterCoreWithdrawalExecutionDeps,
+  defaultLighterCoreWithdrawalExecutionDeps,
+} from "@vex-agent/tools/protocols/lighter/withdrawal-execution.js";
+import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { ErrorCodes, VexError } from "../../../../src/errors.js";
 
 // Short-lived account-auth token lifetime for read-only reconciliation reads.
 const REPAIR_ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
@@ -62,11 +73,52 @@ export async function deriveLighterReadOnlyAccountAuth(
 export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
   const signer = createLighterSignerBinaryAdapter();
+  const withdrawalSigner = createLighterCoreWithdrawalSignerBinary();
+  const lighterClient = getLighterClient();
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
       secretReader,
       signer,
-      client: getLighterClient(),
+      client: lighterClient,
+    }),
+  );
+  const uninstallWithdrawalExecutionDeps = configureLighterCoreWithdrawalExecutionDeps(
+    defaultLighterCoreWithdrawalExecutionDeps({
+      secretReader,
+      authSigner: signer,
+      withdrawalSigner,
+      client: lighterClient,
+      readPreflight: async (plan) => {
+        const privilegedAuth = await deriveLighterReadOnlyAccountAuth(
+          plan.credentialReference,
+          secretReader,
+          signer,
+        );
+        if (privilegedAuth === null) {
+          throw new VexError(
+            ErrorCodes.LIGHTER_INVALID_REQUEST,
+            "Core withdrawal revalidation could not derive bounded read-only account authorization.",
+            "Unlock the local vault and retry from a fresh approval. No withdrawal was signed.",
+          );
+        }
+        const ethereum = getUniswapDeployment(1);
+        if (ethereum === undefined) {
+          throw new VexError(
+            ErrorCodes.LIGHTER_INVALID_REQUEST,
+            "Ethereum mainnet deployment is unavailable for Core withdrawal revalidation.",
+            "No withdrawal was signed.",
+          );
+        }
+        return readLighterCoreWithdrawalPreflight({
+          walletAddress: plan.walletAddress,
+          accountIndex: plan.accountIndex,
+          apiKeyIndex: plan.apiKeyIndex,
+          amountUnits: BigInt(plan.amountUnits),
+          client: lighterClient,
+          privilegedAuth,
+          publicClient: getUniswapPublicClient(ethereum),
+        });
+      },
     }),
   );
   const stopOrderStream = installLighterOrderStreamSupervisor({
@@ -119,6 +171,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallReadAuth();
     uninstallScopeResolver();
     uninstallReadinessResolver();
+    uninstallWithdrawalExecutionDeps();
     uninstallExecutionDeps();
   };
 }

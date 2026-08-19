@@ -72,10 +72,25 @@ export interface ValidatedLighterKeyRegistrationFollowUp {
   };
 }
 
+export interface ValidatedLighterWithdrawalFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.withdraw";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "withdraw";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export type ValidatedPreparedActionFollowUp =
   | ValidatedWalletSendFollowUp
   | ValidatedLighterOrderCreateFollowUp
   | ValidatedLighterDepositFollowUp
+  | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterKeyRegistrationFollowUp;
 
 export type PreparedActionFollowUpValidation =
@@ -85,6 +100,7 @@ export type PreparedActionFollowUpValidation =
 const WALLET_INTENT_ID_RE = /^intent-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_INTENT_ID_RE = /^lighter-exec-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_DEPOSIT_INTENT_ID_RE = /^lighter-onboard-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LIGHTER_WITHDRAWAL_INTENT_ID_RE = /^lighter-withdrawal-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__order__create__prepare",
@@ -96,6 +112,10 @@ const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
 const LIGHTER_KEY_REGISTRATION_PREPARE_SOURCES = new Set([
   "execute_tool",
   "lighter__key__register__prepare",
+]);
+const LIGHTER_WITHDRAWAL_PREPARE_SOURCES = new Set([
+  "execute_tool",
+  "lighter__withdraw__prepare",
 ]);
 const PREVIEW_KEYS = ["network", "chain", "to", "amount", "token"] as const;
 const LIGHTER_PREVIEW_KEYS = [
@@ -171,6 +191,16 @@ const LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS = [
   "signatureNote",
   "scopeNote",
 ] as const;
+const LIGHTER_WITHDRAWAL_PREVIEW_KEYS = [
+  "toolId", "intentId", "previewId", "matchHash", "environment", "operationClass",
+  "accountIndex", "apiKeyIndex", "walletAddress", "destinationAddress", "signingChainId",
+  "settlementChainId", "settlementNetworkName", "assetIndex", "assetSymbol", "assetDecimals",
+  "settlementTokenAddress", "routeType", "route", "amountUnits", "amountDisplay",
+  "minimumWithdrawalUnits", "availableBalanceUnits", "collateralUnits", "initialMarginUnits",
+  "pendingOrderCount", "openPositionCount", "activeOrderCount", "withdrawalDelaySeconds",
+  "estimatedClaimableAt", "gatewayAddress", "gatewayImplementation", "gatewayCodeHash",
+  "settlementTokenCodeHash", "preflightObservedAt", "summary", "scopeNote",
+] as const;
 
 const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 const LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE =
@@ -222,6 +252,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.key.register"
   ) {
     return validateLighterKeyRegistrationFollowUp(candidate);
+  }
+  if (
+    LIGHTER_WITHDRAWAL_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.withdraw"
+  ) {
+    return validateLighterWithdrawalFollowUp(candidate);
   }
 
   if (
@@ -659,4 +696,110 @@ function validateLighterOrderCreateFollowUp(
       },
     },
   };
+}
+
+function validateLighterWithdrawalFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) return { ok: false, reason: "invalid_contract" };
+  if (
+    Object.keys(candidate.args).sort().join(",") !== "params,toolId"
+    || candidate.args.toolId !== "lighter.withdraw"
+  ) return { ok: false, reason: "invalid_contract" };
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const paramsRecord = params as Record<string, unknown>;
+  const intentId = paramsRecord.intentId;
+  if (
+    Object.keys(paramsRecord).join(",") !== "intentId"
+    || typeof intentId !== "string"
+    || !LIGHTER_WITHDRAWAL_INTENT_ID_RE.test(intentId)
+  ) return { ok: false, reason: "invalid_contract" };
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "withdraw" || preview.namespace !== "lighter") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  if (
+    Object.keys(preview.criticalArgs).sort().join(",")
+    !== [...LIGHTER_WITHDRAWAL_PREVIEW_KEYS].sort().join(",")
+  ) return { ok: false, reason: "invalid_contract" };
+  const args: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_WITHDRAWAL_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    args[key] = value;
+  }
+  const funding = getLighterFundingDeployment("core");
+  if (
+    args.toolId !== "lighter.withdraw"
+    || args.intentId !== intentId
+    || typeof args.previewId !== "string"
+    || !/^lwp_[0-9a-f]{24}$/.test(args.previewId)
+    || typeof args.matchHash !== "string"
+    || !/^[0-9a-f]{64}$/.test(args.matchHash)
+    || args.environment !== "core"
+    || args.operationClass !== "secure_l2_withdrawal"
+    || !safeNonNegativeInt(args.accountIndex)
+    || !safeNonNegativeInt(args.apiKeyIndex)
+    || Number(args.apiKeyIndex) < 4
+    || Number(args.apiKeyIndex) > 254
+    || typeof args.walletAddress !== "string"
+    || !EVM_ADDRESS_RE.test(args.walletAddress)
+    || args.destinationAddress !== args.walletAddress
+    || args.signingChainId !== 304
+    || args.settlementChainId !== 1
+    || args.settlementNetworkName !== "Ethereum mainnet"
+    || args.assetIndex !== 3
+    || args.assetSymbol !== "USDC"
+    || args.assetDecimals !== 6
+    || typeof args.settlementTokenAddress !== "string"
+    || args.settlementTokenAddress.toLowerCase() !== funding.settlementTokenProxy.toLowerCase()
+    || args.routeType !== 0
+    || args.route !== "secure"
+    || !isPositiveIntegerString(args.amountUnits)
+    || typeof args.amountDisplay !== "string"
+    || !/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? USDC$/.test(args.amountDisplay)
+    || !isPositiveIntegerString(args.minimumWithdrawalUnits)
+    || !isNonNegativeIntegerString(args.availableBalanceUnits)
+    || !isNonNegativeIntegerString(args.collateralUnits)
+    || !isNonNegativeIntegerString(args.initialMarginUnits)
+    || BigInt(args.amountUnits) < BigInt(args.minimumWithdrawalUnits)
+    || BigInt(args.amountUnits) > BigInt(args.availableBalanceUnits)
+    || BigInt(args.amountUnits) > BigInt(args.collateralUnits)
+    || BigInt(args.collateralUnits) - BigInt(args.amountUnits) < BigInt(args.initialMarginUnits)
+    || !safeNonNegativeInt(args.pendingOrderCount)
+    || !safeNonNegativeInt(args.openPositionCount)
+    || !safeNonNegativeInt(args.activeOrderCount)
+    || !safeNonNegativeInt(args.withdrawalDelaySeconds)
+    || typeof args.estimatedClaimableAt !== "string"
+    || !Number.isFinite(Date.parse(args.estimatedClaimableAt))
+    || typeof args.gatewayAddress !== "string"
+    || args.gatewayAddress.toLowerCase() !== funding.gatewayProxy.toLowerCase()
+    || typeof args.gatewayImplementation !== "string"
+    || funding.expectedGatewayImplementation === undefined
+    || args.gatewayImplementation.toLowerCase() !== funding.expectedGatewayImplementation.toLowerCase()
+    || typeof args.gatewayCodeHash !== "string"
+    || !/^0x[0-9a-f]{64}$/i.test(args.gatewayCodeHash)
+    || typeof args.settlementTokenCodeHash !== "string"
+    || !/^0x[0-9a-f]{64}$/i.test(args.settlementTokenCodeHash)
+    || typeof args.preflightObservedAt !== "string"
+    || !Number.isFinite(Date.parse(args.preflightObservedAt))
+    || !isBoundedText(args.summary)
+    || !isBoundedText(args.scopeNote)
+  ) return { ok: false, reason: "invalid_contract" };
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: { toolId: "lighter.withdraw", params: { intentId } },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: "withdraw", namespace: "lighter", criticalArgs: args },
+    },
+  };
+}
+
+function safeNonNegativeInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }

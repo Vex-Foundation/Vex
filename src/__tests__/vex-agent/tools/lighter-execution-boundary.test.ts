@@ -28,6 +28,10 @@ const ORDER_CREATE_EXECUTION_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/order-create-execution.ts",
 );
+const WITHDRAWAL_EXECUTION_SOURCE = join(
+  ROOT,
+  "src/vex-agent/tools/protocols/lighter/withdrawal-execution.ts",
+);
 const LOW_LEVEL_SUBMIT_CLIENT_SOURCE = join(ROOT, "src/tools/lighter/client.ts");
 
 const FORBIDDEN_AGENT_SUBMIT_RE = /\b(sendTx|sendTxBatch|createOrder|cancelOrder)\s*\(/;
@@ -134,6 +138,7 @@ describe("Lighter execution boundary", () => {
       for (const file of walk(root)) {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
+        if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (
           FORBIDDEN_AGENT_SUBMIT_RE.test(source)
@@ -154,6 +159,7 @@ describe("Lighter execution boundary", () => {
         if (file === LOW_LEVEL_SUBMIT_CLIENT_SOURCE) continue;
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
+        if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (/\bsendTx\s*\(/.test(source) || /\bsendTxBatch\s*\(/.test(source)) {
           offenders.push(relative(ROOT, file));

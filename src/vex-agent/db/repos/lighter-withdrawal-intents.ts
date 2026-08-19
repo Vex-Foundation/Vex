@@ -108,6 +108,15 @@ export interface LighterWithdrawalIntentRow {
   readonly destinationBlockHash: string | null;
   readonly destinationConfirmations: number | null;
   readonly destinationEvidenceJson: Record<string, unknown> | null;
+  readonly signedAt: string | null;
+  readonly submissionStagedAt: string | null;
+  readonly apiAcceptedAt: string | null;
+  readonly l2ExecutedAt: string | null;
+  readonly claimableAt: string | null;
+  readonly destinationConfirmedAt: string | null;
+  readonly lastCheckedAt: string | null;
+  readonly settlementScanFromBlock: string | null;
+  readonly withdrawalHistoryTimestamp: number | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly expiresAt: string;
@@ -144,7 +153,10 @@ const SELECT_COLUMNS = `
   pending_balance_units, ambiguous_reason, claim_mode, claim_approval_id,
   claim_tx_hash, claim_replacement_tx_hash, destination_tx_hash,
   destination_block_number, destination_block_hash, destination_confirmations,
-  destination_evidence_json, created_at, updated_at, expires_at`;
+  destination_evidence_json, signed_at, submission_staged_at, api_accepted_at,
+  l2_executed_at, claimable_at, destination_confirmed_at, last_checked_at,
+  settlement_scan_from_block, withdrawal_history_timestamp,
+  created_at, updated_at, expires_at`;
 
 const INSERT_SQL = `INSERT INTO lighter_withdrawal_intents (
   intent_id, preview_id, session_id, protocol_execution_id, match_hash,
@@ -233,6 +245,214 @@ export async function findLatestForSession(
       ORDER BY created_at DESC
       LIMIT 1`,
     [sessionId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markApprovalDecision(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly approvalId: string;
+  readonly decision: "approved" | "rejected" | "expired";
+  readonly reason: string;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET approval_status = $4,
+            execution_state = $4,
+            approval_id = $3,
+            decision_reason = $5,
+            decided_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approval_pending'
+      RETURNING ${SELECT_COLUMNS}`,
+    [input.intentId, input.sessionId, input.approvalId, input.decision, safeText(input.reason, "decision reason")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markPreSubmitRevalidated(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly evidence: Record<string, unknown>;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET pre_submit_revalidation_json = $3::jsonb,
+            pre_submit_revalidated_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND environment = 'core'
+        AND approval_status = 'approved'
+        AND execution_state = 'approved'
+        AND nonce_reservation_id IS NULL
+      RETURNING ${SELECT_COLUMNS}`,
+    [input.intentId, input.sessionId, jsonb(assertPublicEvidence(input.evidence))],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function attachNonceReservationWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly accountIndex: number;
+    readonly apiKeyIndex: number;
+    readonly reservationId: string;
+    readonly nonceValue: string;
+  },
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = 'nonce_reserved',
+            nonce_reservation_id = $5,
+            nonce_value = $6,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND environment = 'core'
+        AND account_index = $3
+        AND api_key_index = $4
+        AND approval_status = 'approved'
+        AND execution_state = 'approved'
+        AND pre_submit_revalidated_at IS NOT NULL
+        AND nonce_reservation_id IS NULL
+      RETURNING ${SELECT_COLUMNS}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.accountIndex,
+      input.apiKeyIndex,
+      safeText(input.reservationId, "reservation id"),
+      decimal(input.nonceValue, true, "nonce"),
+    ],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markSigned(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+  readonly signerTxHash: string;
+  readonly signerExpiryMs: number;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = 'signed',
+            signer_tx_hash = $5,
+            signer_expiry_ms = $6,
+            signed_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND execution_state = 'nonce_reserved'
+        AND nonce_reservation_id = $3
+        AND nonce_value = $4
+        AND signer_tx_hash IS NULL
+      RETURNING ${SELECT_COLUMNS}`,
+    [
+      input.intentId,
+      input.sessionId,
+      safeText(input.reservationId, "reservation id"),
+      decimal(input.nonceValue, true, "nonce"),
+      safeText(input.signerTxHash, "signer transaction hash"),
+      safeNonNegativeInteger(input.signerExpiryMs, "signer expiry"),
+    ],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markSubmissionStaged(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly signerTxHash: string;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = 'submission_staged',
+            submission_staged_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND execution_state = 'signed'
+        AND signer_tx_hash = $3
+      RETURNING ${SELECT_COLUMNS}`,
+    [input.intentId, input.sessionId, safeText(input.signerTxHash, "signer transaction hash")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markApiAccepted(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly signerTxHash: string;
+  readonly submittedTxHash: string;
+  readonly submitCode: number;
+  readonly submitMessage?: string | null;
+  readonly predictedExecutionTimeMs: number;
+  readonly volumeQuotaRemaining?: number | null;
+  readonly settlementScanFromBlock: string;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = 'api_accepted',
+            submitted_tx_hash = $4,
+            submit_code = $5,
+            submit_message = $6,
+            predicted_execution_time_ms = $7,
+            volume_quota_remaining = $8,
+            settlement_scan_from_block = $9,
+            api_accepted_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND execution_state = 'submission_staged'
+        AND signer_tx_hash = $3
+        AND submitted_tx_hash IS NULL
+      RETURNING ${SELECT_COLUMNS}`,
+    [
+      input.intentId,
+      input.sessionId,
+      safeText(input.signerTxHash, "signer transaction hash"),
+      safeText(input.submittedTxHash, "submitted transaction hash"),
+      safeNonNegativeInteger(input.submitCode, "submit code"),
+      input.submitMessage === null || input.submitMessage === undefined
+        ? null
+        : safeText(input.submitMessage, "submit message"),
+      safeNonNegativeInteger(input.predictedExecutionTimeMs, "predicted execution time"),
+      input.volumeQuotaRemaining === null || input.volumeQuotaRemaining === undefined
+        ? null
+        : String(safeNonNegativeInteger(input.volumeQuotaRemaining, "volume quota")),
+      decimal(input.settlementScanFromBlock, true, "settlement scan block"),
+    ],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function markAmbiguous(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly reason: string;
+}): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_withdrawal_intents
+        SET execution_state = 'ambiguous',
+            ambiguous_reason = $3,
+            last_checked_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND execution_state IN ('nonce_reserved','signed','submission_staged','api_accepted','l2_pending')
+      RETURNING ${SELECT_COLUMNS}`,
+    [input.intentId, input.sessionId, safeText(input.reason, "ambiguity reason")],
   );
   return row === null ? null : mapRow(row);
 }
@@ -370,6 +590,15 @@ function mapRow(row: Record<string, unknown>): LighterWithdrawalIntentRow {
     destinationBlockHash: nullableString(row.destination_block_hash),
     destinationConfirmations: nullableNumber(row.destination_confirmations),
     destinationEvidenceJson: nullableObject(row.destination_evidence_json),
+    signedAt: nullableIso(row.signed_at),
+    submissionStagedAt: nullableIso(row.submission_staged_at),
+    apiAcceptedAt: nullableIso(row.api_accepted_at),
+    l2ExecutedAt: nullableIso(row.l2_executed_at),
+    claimableAt: nullableIso(row.claimable_at),
+    destinationConfirmedAt: nullableIso(row.destination_confirmed_at),
+    lastCheckedAt: nullableIso(row.last_checked_at),
+    settlementScanFromBlock: nullableString(row.settlement_scan_from_block),
+    withdrawalHistoryTimestamp: nullableNumber(row.withdrawal_history_timestamp),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     expiresAt: iso(row.expires_at),
@@ -394,4 +623,36 @@ function iso(value: unknown): string {
 
 function nullableIso(value: unknown): string | null {
   return value === null || value === undefined ? null : iso(value);
+}
+
+function safeText(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 1_000 || /(?:private|secret|signature|tx_info|auth.?token)/i.test(trimmed)) {
+    throw new Error(`Core withdrawal ${field} is unsafe or invalid.`);
+  }
+  return trimmed;
+}
+
+function safeNonNegativeInteger(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Core withdrawal ${field} is invalid.`);
+  return value;
+}
+
+function decimal(value: string, allowZero: boolean, field: string): string {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed) || (!allowZero && BigInt(trimmed) === 0n)) {
+    throw new Error(`Core withdrawal ${field} is invalid.`);
+  }
+  return BigInt(trimmed).toString(10);
+}
+
+function assertPublicEvidence(value: Record<string, unknown>): Record<string, unknown> {
+  const encoded = jsonb(value);
+  if (
+    encoded.length > 12_000
+    || /(?:private.?key|secret|signature|tx_info|auth.?token)/i.test(encoded)
+  ) {
+    throw new Error("Core withdrawal revalidation evidence is unsafe or too large.");
+  }
+  return value;
 }

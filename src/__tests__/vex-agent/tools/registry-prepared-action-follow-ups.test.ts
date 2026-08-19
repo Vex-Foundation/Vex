@@ -6,6 +6,7 @@ import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/depos
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const LIGHTER_DEPOSIT_INTENT_ID = "lighter-onboard-00000000-0000-4000-8000-000000000001";
+const LIGHTER_WITHDRAWAL_INTENT_ID = "lighter-withdrawal-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 const LIGHTER_KEY_PUBLIC_KEY = "ab".repeat(40);
 const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
@@ -103,7 +104,7 @@ function lighterDepositCandidate() {
         settlementNetworkName: "Ethereum mainnet",
         lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
         beneficiaryAddress: "0x1111111111111111111111111111111111111111",
-        gatewayImplementationAddress: null,
+        gatewayImplementationAddress: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
         gatewayCodeHash: `0x${"1".repeat(64)}`,
         settlementTokenImplementationAddress: null,
         settlementTokenCodeHash: `0x${"2".repeat(64)}`,
@@ -149,6 +150,57 @@ function lighterKeyRegistrationCandidate() {
         authorityNote: "Registers one local credential; later actions stay separately gated.",
         signatureNote: "Signs one exact human-readable EIP-191 message locally.",
         scopeNote: "Does not authorize a deposit, order, transfer, or withdrawal.",
+      },
+    },
+  };
+}
+
+function lighterWithdrawalCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: { toolId: "lighter.withdraw", params: { intentId: LIGHTER_WITHDRAWAL_INTENT_ID } },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "withdraw",
+      namespace: "lighter",
+      criticalArgs: {
+        toolId: "lighter.withdraw",
+        intentId: LIGHTER_WITHDRAWAL_INTENT_ID,
+        previewId: "lwp_aaaaaaaaaaaaaaaaaaaaaaaa",
+        matchHash: "a".repeat(64),
+        environment: "core",
+        operationClass: "secure_l2_withdrawal",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        walletAddress: "0x1111111111111111111111111111111111111111",
+        destinationAddress: "0x1111111111111111111111111111111111111111",
+        signingChainId: 304,
+        settlementChainId: 1,
+        settlementNetworkName: "Ethereum mainnet",
+        assetIndex: 3,
+        assetSymbol: "USDC",
+        assetDecimals: 6,
+        settlementTokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        routeType: 0,
+        route: "secure",
+        amountUnits: "2000000",
+        amountDisplay: "2 USDC",
+        minimumWithdrawalUnits: "1000000",
+        availableBalanceUnits: "8000000",
+        collateralUnits: "10000000",
+        initialMarginUnits: "1000000",
+        pendingOrderCount: 0,
+        openPositionCount: 0,
+        activeOrderCount: 0,
+        withdrawalDelaySeconds: 1227,
+        estimatedClaimableAt: "2030-01-01T00:20:27.000Z",
+        gatewayAddress: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+        gatewayImplementation: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
+        gatewayCodeHash: `0x${"1".repeat(64)}`,
+        settlementTokenCodeHash: `0x${"2".repeat(64)}`,
+        preflightObservedAt: "2030-01-01T00:00:00.000Z",
+        summary: "Withdraw 2 USDC from Core to the same wallet on Ethereum.",
+        scopeNote: "Manual claim, if required, needs separate approval.",
       },
     },
   };
@@ -226,6 +278,17 @@ describe("prepared-action follow-up registry", () => {
       followUp: input,
     });
   });
+
+  it.each(["execute_tool", "lighter__withdraw__prepare"])(
+    "allows %s to hand off an exact Core withdrawal intent",
+    (sourceToolName) => {
+      const input = lighterWithdrawalCandidate();
+      expect(validatePreparedActionFollowUp(sourceToolName, input)).toEqual({
+        ok: true,
+        followUp: input,
+      });
+    },
+  );
 
   it.each(["execute_tool", "lighter__key__register__prepare"])(
     "allows %s to hand off an exact Lighter key-registration intent",

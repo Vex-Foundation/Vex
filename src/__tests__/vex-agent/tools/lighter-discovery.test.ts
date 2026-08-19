@@ -29,6 +29,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.withdraw.prepare",
+  "lighter.withdraw",
   "lighter.key.register.prepare",
   "lighter.key.register",
   "lighter.deposit.prepare",
@@ -91,6 +93,14 @@ describe("Lighter agent discovery surface", () => {
       mutating: false,
       actionKind: "read",
     });
+    expect(getProtocolManifest("lighter.withdraw.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(getProtocolManifest("lighter.withdraw")).toMatchObject({
+      mutating: true,
+      actionKind: "external_post",
+    });
   });
 
   it("accepts core or rhc environment on environment-scoped tools", () => {
@@ -117,7 +127,7 @@ describe("Lighter agent discovery surface", () => {
 
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(false);
-      if (tool.toolId === "lighter.order.create") {
+      if (tool.toolId === "lighter.order.create" || tool.toolId === "lighter.withdraw") {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("external_post");
         expect(tool.requiredParams).toContain("intentId");
@@ -131,6 +141,7 @@ describe("Lighter agent discovery surface", () => {
         expect(tool.requiredParams).toContain("intentId");
       } else if (
         tool.toolId === "lighter.order.create.prepare"
+        || tool.toolId === "lighter.withdraw.prepare"
         || tool.toolId === "lighter.deposit.prepare"
         || tool.toolId === "lighter.key.register.prepare"
       ) {
@@ -156,6 +167,7 @@ describe("Lighter agent discovery surface", () => {
       expect(tool.namespace).toBe("lighter");
       if (
         tool.toolId === "lighter.order.create"
+        || tool.toolId === "lighter.withdraw"
         || tool.toolId === "lighter.key.register"
       ) {
         expect(tool.required).toContain("intentId");

@@ -49,7 +49,46 @@ const KEY_REGISTRATION_INTENT_ID_PARAM: ProtocolParamDef = {
     "Session-scoped Lighter key-registration intent id produced by lighter.key.register.prepare.",
 };
 
+const CORE_WITHDRAW_AMOUNT_PARAM: ProtocolParamDef = {
+  key: "amountIn",
+  type: "string",
+  required: true,
+  description:
+    'Exact Lighter Core USDC amount to withdraw in human decimals, for example "2". Core secure withdrawal only; Vex proves the live minimum, available collateral, margin safety, owner destination, withdrawal delay, and Ethereum gateway identity before approval.',
+};
+
+const CORE_WITHDRAW_INTENT_ID_PARAM: ProtocolParamDef = {
+  key: "intentId",
+  type: "string",
+  required: true,
+  description: "Session-scoped Core withdrawal intent produced by lighter.withdraw.prepare.",
+};
+
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "lighter.withdraw.prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare one exact approval-gated secure USDC withdrawal from the selected wallet's uniquely owned Lighter Core account to that same wallet on Ethereum mainnet. Uses only the saved local managed credential scope; never asks for or accepts a private key, API-key index, nonce, destination override, fast route, or alternate chain. Live preflight proves ownership, credential registration, available collateral and margin safety, no unresolved secure withdrawal, current withdrawal delay and minimum, Ethereum chain freshness, reviewed gateway implementation/code, USDC mapping, and zero modern pending balance. Preparation persists a public immutable intent and creates the trusted approval card; it never signs or calls sendTx.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [CORE_WITHDRAW_AMOUNT_PARAM],
+    exampleParams: { amountIn: "2" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.prepare"],
+  },
+  {
+    toolId: "lighter.withdraw",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Approval-resume target for one exact prepared Lighter Core secure USDC withdrawal. Direct calls and mismatched approvals are refused. After approval, Vex reruns the full live preflight, matches the encrypted local credential to the registered public key, reserves the shared account/API-key nonce atomically, signs only Core TxType 13 asset 3 route 0 with a short expiry in the packaged official signer, persists signed and submission-staged identity before sendTx, and never blindly retries an ambiguous outcome. API acceptance is pending, not final delivery; reconciliation must prove L2 execution and exact Ethereum USDC settlement.",
+    mutating: true,
+    actionKind: "external_post",
+    params: [CORE_WITHDRAW_INTENT_ID_PARAM],
+    exampleParams: { intentId: "lighter-withdrawal-example" },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw"],
+  },
   {
     toolId: "lighter.key.register.prepare",
     namespace: "lighter",

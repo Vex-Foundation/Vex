@@ -384,12 +384,11 @@ export function proveLighterCoreWithdrawalPreflight(
     throw preflightError("Core returned an invalid withdrawal delay.");
   }
   const nonterminal = evidence.history.filter(
-    (item) => item.type === "secure"
-      && item.asset_id === LIGHTER_CORE_WITHDRAW_ASSET_INDEX
+    (item) => item.asset_id === LIGHTER_CORE_WITHDRAW_ASSET_INDEX
       && (item.status === "pending" || item.status === "claimable"),
   );
   if (nonterminal.length > 0) {
-    throw preflightError("A Core USDC secure withdrawal is already pending or claimable for this account.");
+    throw preflightError("A Core USDC withdrawal is already pending or claimable for this account.");
   }
 
   if (evidence.settlement.chainId !== deployment.settlementChainId) {
