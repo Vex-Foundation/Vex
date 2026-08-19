@@ -496,6 +496,96 @@ describe("Lighter deposit evidence-only repair", () => {
     expect(d.readLighterTx).toHaveBeenCalledWith(expect.anything(), REPLACEMENT_HASH);
   });
 
+  it("adopts only an RHC fee-only replacement with the exact RHC calldata", async () => {
+    const d = deps();
+    const row = rhcIntent({
+      executionState: "deposit_submitted",
+      depositTxHash: DEPOSIT_HASH,
+      depositTxFrom: WALLET,
+      depositTxNonce: "7",
+      preflightDepositGasLimit: "200000",
+      preflightMaxFeePerGasWei: "20000000000",
+      preflightMaxPriorityFeePerGasWei: "2000000000",
+      preflightDepositMaxFeeWei: "4000000000000000",
+    });
+    const replacementRow = rhcIntent({
+      ...row,
+      depositReplacementTxHash: REPLACEMENT_HASH,
+      depositReplacementReason: "repriced",
+      depositReplacementObservedAt: new Date("2030-01-01T00:02:00.000Z"),
+    });
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({
+        transactionHash: REPLACEMENT_HASH,
+        to: RHC_CONTRACT,
+        logs: [{
+          address: RHC_CONTRACT,
+          topics: depositEventTopics(),
+          data: encodeAbiParameters(
+            [
+              { type: "uint48" },
+              { type: "address" },
+              { type: "uint16" },
+              { type: "uint8" },
+              { type: "uint128" },
+            ],
+            [42, WALLET, 3, 0, 11_000_000n],
+          ),
+        }],
+      }),
+      replacement: depositReplacement({
+        to: RHC_CONTRACT,
+        data: buildLighterDepositCalldata({
+          environment: "rhc",
+          to: WALLET,
+          amountUnits: 11_000_000n,
+        }).data,
+      }),
+    });
+    d.recordDepositReplacement.mockResolvedValueOnce(replacementRow);
+    d.reconcileDepositReceipt.mockResolvedValueOnce(rhcIntent({
+      ...replacementRow,
+      executionState: "deposit_confirmed",
+      depositL1BlockHash: BLOCK_HASH,
+      depositL1BlockNumber: "23456789",
+      depositEventAccountIndex: 42,
+    }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({ resolution: "deposit_confirmed", txHash: REPLACEMENT_HASH });
+    expect(d.recordDepositReplacement).toHaveBeenCalledWith(row, expect.objectContaining({
+      originalTxHash: DEPOSIT_HASH,
+      replacementTxHash: REPLACEMENT_HASH,
+      reason: "repriced",
+    }));
+  });
+
+  it("moves a Core-destination replacement reported for an RHC intent to manual review", async () => {
+    const d = deps();
+    const row = rhcIntent({
+      executionState: "deposit_submitted",
+      depositTxHash: DEPOSIT_HASH,
+      depositTxFrom: WALLET,
+      depositTxNonce: "7",
+      preflightDepositGasLimit: "200000",
+      preflightMaxFeePerGasWei: "20000000000",
+      preflightMaxPriorityFeePerGasWei: "2000000000",
+      preflightDepositMaxFeeWei: "4000000000000000",
+    });
+    d.readReceipt.mockResolvedValueOnce({
+      receipt: depositReceipt({ transactionHash: REPLACEMENT_HASH, to: RHC_CONTRACT }),
+      replacement: depositReplacement(),
+    });
+    d.markAmbiguous.mockResolvedValueOnce(rhcIntent({ ...row, executionState: "ambiguous" }));
+
+    const result = await repairLighterDepositIntent(row, d);
+
+    expect(result).toMatchObject({ resolution: "manual_review" });
+    expect(result.guidance).toContain("changed the approved deposit calldata");
+    expect(d.recordDepositReplacement).not.toHaveBeenCalled();
+  });
+
   it("moves a calldata-changing replacement to manual review", async () => {
     const d = deps();
     const row = intent({

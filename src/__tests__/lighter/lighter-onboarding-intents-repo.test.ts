@@ -18,6 +18,7 @@ const d = RUN ? describe : describe.skip;
 const SESSION_IDS: string[] = [];
 const WALLET_ADDRESSES = new Set<string>();
 const CONTRACT = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+const RHC_CONTRACT = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
 
 beforeAll(async () => {
   if (!RUN) return;
@@ -27,7 +28,7 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const walletAddress of WALLET_ADDRESSES) {
     await execute(
-      "DELETE FROM lighter_onboarding_workflows WHERE environment = 'core' AND wallet_address = LOWER($1)",
+      "DELETE FROM lighter_onboarding_workflows WHERE wallet_address = LOWER($1)",
       [walletAddress],
     ).catch(() => undefined);
   }
@@ -51,25 +52,50 @@ async function newDepositIntent(sessionId: string) {
   return created.intent!;
 }
 
-async function createDepositOutcome(sessionId: string, wallet: string) {
+async function createDepositOutcome(
+  sessionId: string,
+  wallet: string,
+  environment: "core" | "rhc" = "core",
+) {
   WALLET_ADDRESSES.add(wallet);
+  const isRhc = environment === "rhc";
   const created = await withSessionControlLock(sessionId, async (client) => {
-    await ensureLighterOnboardingWorkflowEnabledWith(client, "core", wallet);
+    await ensureLighterOnboardingWorkflowEnabledWith(client, environment, wallet);
     return repo.createOrFindLiveDepositApprovalPendingWith(client, {
       sessionId,
-      environment: "core",
+      environment,
       walletAddress: wallet,
-      chainId: 1,
-      depositContract: CONTRACT,
+      chainId: isRhc ? 4663 : 1,
+      depositContract: isRhc ? RHC_CONTRACT : CONTRACT,
       depositTo: wallet,
       assetIndex: 3,
       routeType: 0,
       amountUnits: "11000000",
-      preflight: preflight(wallet, "11000000"),
+      preflight: isRhc
+        ? rhcPreflight(wallet, "11000000")
+        : preflight(wallet, "11000000"),
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
   });
   return created;
+}
+
+function rhcPreflight(walletAddress: string, amountUnits: string) {
+  return {
+    ...preflight(walletAddress, amountUnits),
+    environment: "rhc" as const,
+    lighterRestBaseUrl: "https://api.rh.lighter.xyz",
+    settlementNetworkName: "Robinhood Chain mainnet",
+    chainId: 4663,
+    settlementBlockNumber: "40124106",
+    ethereumBlockNumber: "40124106",
+    lighterBlockNumber: "40124098",
+    gatewayAddress: RHC_CONTRACT,
+    gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+    settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
+    settlementTokenSymbol: "USDG" as const,
+  };
 }
 
 function walletForSession(sessionId: string): string {
@@ -119,6 +145,71 @@ function preflight(walletAddress: string, amountUnits: string) {
 }
 
 d("lighter_onboarding_intents repo", () => {
+  it("walks the full RHC direct-deposit lifecycle through durable CAS transitions", async () => {
+    const sessionId = await newSession();
+    const wallet = walletForSession(sessionId);
+    const created = await createDepositOutcome(sessionId, wallet, "rhc");
+    expect(created.outcome).toBe("created");
+    const intent = created.intent!;
+    expect(intent).toMatchObject({ environment: "rhc", chainId: 4663 });
+
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markAllowanceVerifiedWith(client, intent.intentId));
+    const depositHash = `0x${"e".repeat(64)}`;
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: depositHash,
+        fromAddress: wallet,
+        nonce: 9,
+      }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositConfirmedWith(client, intent.intentId, {
+        txHash: depositHash,
+        blockHash: `0x${"f".repeat(64)}`,
+        blockNumber: "40124106",
+        accountIndex: 77,
+        walletAddress: wallet,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+      }));
+    const credited = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositCreditedWith(client, intent.intentId, {
+        txHash: depositHash,
+        blockHash: `0x${"f".repeat(64)}`,
+        blockNumber: "40124106",
+        accountIndex: 77,
+        walletAddress: wallet,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "11000000",
+        lighterTxHash: "rhc-lighter-tx-hash",
+        lighterStatus: 3,
+        lighterBlockHeight: 40124120,
+        lighterExecutedAt: 1786949159112,
+      }));
+
+    expect(credited).toMatchObject({
+      environment: "rhc",
+      executionState: "credited",
+      resolvedAccountIndex: 77,
+    });
+  });
+
+  it("isolates concurrent Core and RHC deposits for the same wallet by environment", async () => {
+    const coreSession = await newSession();
+    const rhcSession = await newSession();
+    const wallet = walletForSession(coreSession);
+    const core = await createDepositOutcome(coreSession, wallet, "core");
+    const rhc = await createDepositOutcome(rhcSession, wallet, "rhc");
+
+    expect(core).toMatchObject({ outcome: "created", intent: { environment: "core", chainId: 1 } });
+    expect(rhc).toMatchObject({ outcome: "created", intent: { environment: "rhc", chainId: 4663 } });
+    expect(core.intent?.intentId).not.toBe(rhc.intent?.intentId);
+  });
+
   it("creates a deposit intent in approval_pending", async () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
