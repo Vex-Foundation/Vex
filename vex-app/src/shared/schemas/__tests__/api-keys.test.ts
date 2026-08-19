@@ -13,8 +13,6 @@ describe("apiKeysSetInputSchema", () => {
       tavilyApiKey: "t",
       rettiwtApiKey: "r",
       relayApiKey: "relay",
-      robinhoodChainRpcUrl:
-        "https://robinhood-mainnet.g.alchemy.com/v2/test-key",
       lighterCoreTradingAccountIndex: 42,
       lighterCoreTradingApiKeyIndex: 7,
       lighterCoreTradingApiPrivateKey: `0x${"1".repeat(80)}`,
@@ -23,18 +21,6 @@ describe("apiKeysSetInputSchema", () => {
       lighterRhcTradingApiPrivateKey: `0x${"2".repeat(80)}`,
     });
     expect(parsed.success).toBe(true);
-  });
-
-  it("accepts only HTTPS Robinhood Chain RPC endpoints", () => {
-    expect(apiKeysSetInputSchema.safeParse({
-      robinhoodChainRpcUrl: "https://robinhood-mainnet.g.alchemy.com/v2/key",
-    }).success).toBe(true);
-    expect(apiKeysSetInputSchema.safeParse({
-      robinhoodChainRpcUrl: "http://rpc.example.test/key",
-    }).success).toBe(false);
-    expect(apiKeysSetInputSchema.safeParse({
-      robinhoodChainRpcUrl: "https://user:secret@rpc.example.test",
-    }).success).toBe(false);
   });
 
   it("rejects reserved Lighter trading API-key indexes before IPC", () => {

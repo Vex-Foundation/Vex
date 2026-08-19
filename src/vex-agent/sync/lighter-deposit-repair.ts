@@ -25,10 +25,6 @@ import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import { LighterClient } from "@tools/lighter/client.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
-import {
-  getConfiguredLocalChainRpcUrl,
-  getLocalChain,
-} from "@tools/evm-chains/registry.js";
 import type {
   LighterAccountsByL1AddressResponse,
   LighterTxFromL1Response,
@@ -132,14 +128,6 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
 
   function publicClientFor(intent: LighterOnboardingIntentRow) {
     const funding = assertSupportedDepositIdentity(intent);
-    if (intent.environment === "rhc") {
-      const localChain = getLocalChain(funding.settlementChainId);
-      if (localChain === undefined || getConfiguredLocalChainRpcUrl(localChain) === null) {
-        throw new Error(
-          "Robinhood Chain deposit repair requires the explicitly configured production RPC. Evidence repair never falls back to the public rate-limited endpoint.",
-        );
-      }
-    }
     const cached = publicClients.get(intent.environment);
     if (cached !== undefined) return cached;
     const deployment = getUniswapDeployment(funding.settlementChainId);

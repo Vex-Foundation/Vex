@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   getUniswapEvmClients: vi.fn(),
   readContract: vi.fn(),
   getLocalChain: vi.fn(),
-  getConfiguredLocalChainRpcUrl: vi.fn(),
+  getLocalChainRpcUrl: vi.fn(),
   readDepositPreflight: vi.fn(),
   assertPreflightWithinApproval: vi.fn(),
   runtimeFeeSafetyLimit: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
 }));
 vi.mock("@tools/evm-chains/registry.js", () => ({
   getLocalChain: mocks.getLocalChain,
-  getConfiguredLocalChainRpcUrl: mocks.getConfiguredLocalChainRpcUrl,
+  getLocalChainRpcUrl: mocks.getLocalChainRpcUrl,
 }));
 vi.mock("@tools/lighter/wallet-funding/deposit-preflight.js", () => ({
   LIGHTER_DEPOSIT_FEE_PREFLIGHT_COMPLETE: true,
@@ -71,7 +71,9 @@ describe("Lighter deposit execution lifecycle locking", () => {
       walletClient: {},
     });
     mocks.getLocalChain.mockReturnValue({ id: 4663 });
-    mocks.getConfiguredLocalChainRpcUrl.mockReturnValue("https://managed.example/rhc");
+    mocks.getLocalChainRpcUrl.mockReturnValue(
+      "https://rpc.mainnet.chain.robinhood.com",
+    );
     mocks.readDepositPreflight.mockResolvedValue({ approvalRequired: false });
     mocks.runtimeFeeSafetyLimit.mockReturnValue({
       gasLimit: 200_000n,
@@ -216,22 +218,21 @@ describe("Lighter deposit execution lifecycle locking", () => {
       publicClient,
     }));
 
-    mocks.getConfiguredLocalChainRpcUrl.mockReturnValueOnce("https://rotated.example/rhc");
+    mocks.getLocalChainRpcUrl.mockReturnValueOnce("https://rotated.example/rhc");
     await expect(deps.assertFreshPreSignPreflight(intent, "deposit")).rejects.toThrow(
       "RPC changed after the signer client was created",
     );
     expect(mocks.readDepositPreflight).toHaveBeenCalledTimes(1);
   });
 
-  it("does not create an RHC signer client when only the public fallback exists", () => {
-    mocks.getConfiguredLocalChainRpcUrl.mockReturnValueOnce(null);
-
+  it("creates an RHC signer client with the backend public endpoint", () => {
     expect(() => buildLighterDepositExecutionDeps({
       environment: "rhc",
       privateKey: `0x${"1".repeat(64)}`,
       sessionId: "session-rhc",
       assertExecutionLease: vi.fn(),
-    })).toThrow("requires the explicitly configured production RPC");
-    expect(mocks.getUniswapEvmClients).not.toHaveBeenCalled();
+    })).not.toThrow();
+    expect(mocks.getLocalChainRpcUrl).toHaveBeenCalledWith({ id: 4663 });
+    expect(mocks.getUniswapEvmClients).toHaveBeenCalled();
   });
 });

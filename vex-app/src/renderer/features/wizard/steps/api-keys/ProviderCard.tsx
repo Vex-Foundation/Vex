@@ -34,7 +34,6 @@ export type ProviderCardSlug =
   | "tavily"
   | "rettiwt"
   | "relay"
-  | "robinhood-chain-rpc"
   | "lighter-core-trading"
   | "lighter-rhc-trading";
 

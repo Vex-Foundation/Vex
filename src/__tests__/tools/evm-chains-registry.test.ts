@@ -1,4 +1,4 @@
-import { afterAll, describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockLoadConfig = vi.fn();
 vi.mock("@config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
@@ -15,22 +15,12 @@ const {
 
 const RH_ID = 4663;
 const DEFAULT_RPC = "https://rpc.mainnet.chain.robinhood.com";
-const ORIGINAL_MANAGED_RPC = process.env.ROBINHOOD_CHAIN_RPC_URL;
 // Canonical Multicall3 — the same deterministic address across EVM chains.
 const CANONICAL_MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  delete process.env.ROBINHOOD_CHAIN_RPC_URL;
   mockLoadConfig.mockReturnValue({ localChainRpcUrls: undefined });
-});
-
-afterAll(() => {
-  if (ORIGINAL_MANAGED_RPC === undefined) {
-    delete process.env.ROBINHOOD_CHAIN_RPC_URL;
-  } else {
-    process.env.ROBINHOOD_CHAIN_RPC_URL = ORIGINAL_MANAGED_RPC;
-  }
 });
 
 describe("evm-chains registry — Robinhood Chain (4663)", () => {
@@ -94,26 +84,6 @@ describe("getLocalChainRpcUrl / toLocalViemChain", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "https://my-private-rhc.example/rpc" } });
     expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
     expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
-  });
-
-  it("prefers an unlocked encrypted managed RPC endpoint", () => {
-    process.env.ROBINHOOD_CHAIN_RPC_URL =
-      "https://robinhood-mainnet.g.alchemy.com/v2/encrypted-key";
-    mockLoadConfig.mockReturnValue({
-      localChainRpcUrls: { "4663": "https://legacy.example/rpc" },
-    });
-    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe(
-      "https://robinhood-mainnet.g.alchemy.com/v2/encrypted-key",
-    );
-  });
-
-  it("does not let the bundled public RPC satisfy the production gate", () => {
-    process.env.ROBINHOOD_CHAIN_RPC_URL = `${DEFAULT_RPC}/`;
-    mockLoadConfig.mockReturnValue({
-      localChainRpcUrls: { "4663": DEFAULT_RPC },
-    });
-    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBeNull();
-    expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe(DEFAULT_RPC);
   });
 
   it("ignores a malformed override and uses the default", () => {

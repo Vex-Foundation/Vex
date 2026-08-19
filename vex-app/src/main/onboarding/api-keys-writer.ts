@@ -34,8 +34,6 @@ import {
 export interface ApiKeysWriterOptions {
   /** Override `ENV_FILE` for tests; production callers omit. */
   readonly envFile?: string;
-  /** Live chain probe override for tests. Production callers omit. */
-  readonly probeRobinhoodChainRpc?: (endpoint: string) => Promise<void>;
 }
 
 type ManagedApiKey = (typeof MANAGED_API_KEYS_CANONICAL_ORDER)[number];
@@ -55,106 +53,6 @@ function invalidTradingInput(message: string): Result<never> {
     redacted: true,
     correlationId: API_KEYS_WRITER_CORRELATION_ID,
   });
-}
-
-const ROBINHOOD_PUBLIC_RPC = "https://rpc.mainnet.chain.robinhood.com";
-const ROBINHOOD_CHAIN_ID = 4_663;
-const RPC_TIMEOUT_MS = 8_000;
-const MAX_BLOCK_AGE_SECONDS = 5 * 60;
-const MAX_RPC_RESPONSE_BYTES = 64 * 1_024;
-
-function invalidRpcInput(message: string): Result<never> {
-  return err({
-    code: "provider.invalid_api_key",
-    domain: "onboarding",
-    message,
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId: API_KEYS_WRITER_CORRELATION_ID,
-  });
-}
-
-interface JsonRpcEnvelope {
-  readonly result?: unknown;
-  readonly error?: unknown;
-}
-
-async function rpcCall(
-  endpoint: string,
-  method: string,
-  params: readonly unknown[],
-): Promise<unknown> {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    redirect: "error",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error("rpc_http_error");
-  const rawBody = await response.text();
-  if (rawBody.length > MAX_RPC_RESPONSE_BYTES) {
-    throw new Error("rpc_response_too_large");
-  }
-  const body = JSON.parse(rawBody) as JsonRpcEnvelope;
-  if (body.error !== undefined || body.result === undefined) {
-    throw new Error("rpc_response_error");
-  }
-  return body.result;
-}
-
-function parseHexInteger(value: unknown): bigint {
-  if (typeof value !== "string" || !/^0x[0-9a-f]+$/i.test(value)) {
-    throw new Error("rpc_invalid_quantity");
-  }
-  return BigInt(value);
-}
-
-export async function probeRobinhoodChainRpc(endpoint: string): Promise<void> {
-  const [chainId, latestBlock, feeHistory] = await Promise.all([
-    rpcCall(endpoint, "eth_chainId", []),
-    rpcCall(endpoint, "eth_getBlockByNumber", ["latest", false]),
-    rpcCall(endpoint, "eth_feeHistory", ["0x2", "latest", [50]]),
-  ]);
-  if (parseHexInteger(chainId) !== BigInt(ROBINHOOD_CHAIN_ID)) {
-    throw new Error("rpc_wrong_chain");
-  }
-  if (latestBlock === null || typeof latestBlock !== "object") {
-    throw new Error("rpc_missing_block");
-  }
-  parseHexInteger((latestBlock as { readonly number?: unknown }).number);
-  const timestamp = parseHexInteger(
-    (latestBlock as { readonly timestamp?: unknown }).timestamp,
-  );
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1_000));
-  if (
-    timestamp > nowSeconds + 60n
-    || nowSeconds - timestamp > BigInt(MAX_BLOCK_AGE_SECONDS)
-  ) {
-    throw new Error("rpc_stale_block");
-  }
-  if (feeHistory === null || typeof feeHistory !== "object") {
-    throw new Error("rpc_fee_history_unavailable");
-  }
-  parseHexInteger(
-    (feeHistory as { readonly oldestBlock?: unknown }).oldestBlock,
-  );
-  const baseFees =
-    (feeHistory as { readonly baseFeePerGas?: unknown }).baseFeePerGas;
-  if (!Array.isArray(baseFees) || baseFees.length < 2) {
-    throw new Error("rpc_fee_history_unavailable");
-  }
-  for (const fee of baseFees) parseHexInteger(fee);
-}
-
-function isBundledPublicRobinhoodRpc(endpoint: string): boolean {
-  try {
-    return new URL(endpoint).hostname.toLowerCase()
-      === new URL(ROBINHOOD_PUBLIC_RPC).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
 }
 
 function tradingReference(input: {
@@ -233,25 +131,8 @@ function readTradingCredentialAction(
 
 export async function writeApiKeys(
   input: ApiKeysSetInput,
-  options: ApiKeysWriterOptions = {},
+  _options: ApiKeysWriterOptions = {},
 ): Promise<Result<ApiKeysSetResult>> {
-  const robinhoodRpc = input.robinhoodChainRpcUrl?.trim();
-  if (robinhoodRpc !== undefined) {
-    if (isBundledPublicRobinhoodRpc(robinhoodRpc)) {
-      return invalidRpcInput(
-        "The bundled Robinhood Chain public RPC is rate-limited and cannot be saved as the production endpoint. Use a managed mainnet endpoint.",
-      );
-    }
-    try {
-      await (options.probeRobinhoodChainRpc ?? probeRobinhoodChainRpc)(
-        robinhoodRpc,
-      );
-    } catch {
-      return invalidRpcInput(
-        "Vex could not verify that endpoint as a fresh Robinhood Chain mainnet RPC with fee-history support. Check the managed endpoint and try again.",
-      );
-    }
-  }
   // Build the write plan in canonical order so fieldsWritten is
   // deterministic regardless of object iteration order.
   const writes: Array<{ key: ManagedApiKey; value: string }> = [];
@@ -266,9 +147,6 @@ export async function writeApiKeys(
   }
   if (input.relayApiKey !== undefined) {
     writes.push({ key: "RELAY_API_KEY", value: input.relayApiKey });
-  }
-  if (robinhoodRpc !== undefined) {
-    writes.push({ key: "ROBINHOOD_CHAIN_RPC_URL", value: robinhoodRpc });
   }
   const coreTrading = readTradingCredentialAction(input, "core");
   if (!coreTrading.ok) return coreTrading;

@@ -13,8 +13,6 @@ const mocks = vi.hoisted(() => ({
   getUniswapDeployment: vi.fn(),
   getUniswapPublicClient: vi.fn(),
   getTransactionReceipt: vi.fn(),
-  getLocalChain: vi.fn(),
-  getConfiguredLocalChainRpcUrl: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
@@ -32,11 +30,6 @@ vi.mock("@tools/uniswap/deployments.js", () => ({
 vi.mock("@tools/uniswap/evm-client.js", () => ({
   getUniswapPublicClient: mocks.getUniswapPublicClient,
 }));
-vi.mock("@tools/evm-chains/registry.js", () => ({
-  getLocalChain: mocks.getLocalChain,
-  getConfiguredLocalChainRpcUrl: mocks.getConfiguredLocalChainRpcUrl,
-}));
-
 const { buildProductionLighterDepositRepairDeps } = await import(
   "@vex-agent/sync/lighter-deposit-repair.js"
 );
@@ -60,8 +53,6 @@ describe("production Lighter deposit repair dependencies", () => {
     vi.clearAllMocks();
     mocks.listUnresolved.mockImplementation(async (environment: string) =>
       environment === "rhc" ? [rhcIntent()] : []);
-    mocks.getLocalChain.mockReturnValue({ id: 4663 });
-    mocks.getConfiguredLocalChainRpcUrl.mockReturnValue("https://managed.example/rhc");
     mocks.getUniswapDeployment.mockImplementation((chainId: number) => ({ chainId }));
     mocks.getUniswapPublicClient.mockReturnValue({
       getTransactionReceipt: mocks.getTransactionReceipt,
@@ -102,13 +93,11 @@ describe("production Lighter deposit repair dependencies", () => {
     });
   });
 
-  it("never repairs RHC through the bundled public fallback", async () => {
-    mocks.getConfiguredLocalChainRpcUrl.mockReturnValueOnce(null);
+  it("repairs RHC without per-user RPC configuration", async () => {
     const deps = buildProductionLighterDepositRepairDeps();
 
-    await expect(deps.readReceipt(rhcIntent(), TX_HASH)).rejects.toThrow(
-      "requires the explicitly configured production RPC",
-    );
-    expect(mocks.getUniswapPublicClient).not.toHaveBeenCalled();
+    await expect(deps.readReceipt(rhcIntent(), TX_HASH)).resolves.toBeDefined();
+    expect(mocks.getUniswapDeployment).toHaveBeenCalledWith(4663);
+    expect(mocks.getUniswapPublicClient).toHaveBeenCalled();
   });
 });

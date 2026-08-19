@@ -23,17 +23,6 @@
 import { defineChain, type Chain } from "viem";
 import { loadConfig } from "../../config/store.js";
 
-export const ROBINHOOD_CHAIN_RPC_ENV_KEY = "ROBINHOOD_CHAIN_RPC_URL" as const;
-
-function isBundledPublicRobinhoodRpcUrl(raw: string): boolean {
-  try {
-    return new URL(raw).hostname.toLowerCase()
-      === "rpc.mainnet.chain.robinhood.com";
-  } catch {
-    return false;
-  }
-}
-
 /** Only EVM (eip155) chains live here today. Kept explicit for future families. */
 export type LocalChainFamily = "eip155";
 
@@ -153,26 +142,10 @@ export function getLocalChainRpcUrl(config: LocalChainConfig): string {
 export function getConfiguredLocalChainRpcUrl(
   config: LocalChainConfig,
 ): string | null {
-  if (config.id === ROBINHOOD_CHAIN.id) {
-    const managedRpcUrl = process.env[ROBINHOOD_CHAIN_RPC_ENV_KEY]?.trim();
-    if (
-      managedRpcUrl !== undefined
-      && /^https:\/\/\S+$/i.test(managedRpcUrl)
-      && !isBundledPublicRobinhoodRpcUrl(managedRpcUrl)
-    ) {
-      return managedRpcUrl;
-    }
-  }
   const override = loadConfig().localChainRpcUrls?.[String(config.id)];
   if (typeof override === "string") {
     const trimmed = override.trim();
-    if (
-      /^https?:\/\/\S+$/i.test(trimmed)
-      && (
-        config.id !== ROBINHOOD_CHAIN.id
-        || !isBundledPublicRobinhoodRpcUrl(trimmed)
-      )
-    ) return trimmed;
+    if (/^https?:\/\/\S+$/i.test(trimmed)) return trimmed;
   }
   return null;
 }

@@ -25,10 +25,6 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import { getUniswapDeployment } from "../../uniswap/deployments.js";
 import { getUniswapPublicClient } from "../../uniswap/evm-client.js";
-import {
-  getConfiguredLocalChainRpcUrl,
-  getLocalChain,
-} from "../../evm-chains/registry.js";
 import { getLighterClient } from "../client.js";
 import type { LighterEnvironment } from "../constants.js";
 import type {
@@ -196,18 +192,6 @@ export async function readLighterDepositPreflight(input: {
   if (chainDeployment === undefined) {
     throw preflightError(`${funding.settlementNetworkName} is not configured for Lighter deposits.`);
   }
-  if (environment === "rhc") {
-    const localChain = getLocalChain(funding.settlementChainId);
-    if (
-      localChain === undefined
-      || getConfiguredLocalChainRpcUrl(localChain) === null
-    ) {
-      throw preflightError(
-        "Robinhood Chain Lighter funding requires a verified managed RPC. Save it under Settings → API Keys → Robinhood Chain RPC; the bundled public rate-limited endpoint is identity-read fallback only. Nothing was prepared.",
-      );
-    }
-  }
-
   const publicClient = input.publicClient ?? getUniswapPublicClient(chainDeployment);
   const lighter = getLighterClient();
   const walletAddress = getAddress(input.walletAddress);

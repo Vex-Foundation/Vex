@@ -26,7 +26,7 @@ import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
-  getConfiguredLocalChainRpcUrl,
+  getLocalChainRpcUrl,
   getLocalChain,
 } from "@tools/evm-chains/registry.js";
 import {
@@ -93,7 +93,7 @@ export function buildLighterDepositExecutionDeps(
     throw new Error(`${funding.settlementNetworkName} is not configured for Lighter deposits.`);
   }
   const signerRpcUrl = input.environment === "rhc"
-    ? configuredRhcRpcUrl(funding.settlementChainId)
+    ? rhcRpcUrl(funding.settlementChainId)
     : null;
   const clients = getUniswapEvmClients(deployment, input.privateKey);
   const settlementToken = funding.settlementTokenProxy;
@@ -110,10 +110,10 @@ export function buildLighterDepositExecutionDeps(
       }
       if (
         input.environment === "rhc"
-        && configuredRhcRpcUrl(funding.settlementChainId) !== signerRpcUrl
+        && rhcRpcUrl(funding.settlementChainId) !== signerRpcUrl
       ) {
         throw new Error(
-          "The configured Robinhood Chain RPC changed after the signer client was created. Nothing was signed or submitted.",
+          "The Robinhood Chain RPC changed after the signer client was created. Nothing was signed or submitted.",
         );
       }
       const fresh = await readLighterDepositPreflight({
@@ -223,15 +223,14 @@ export function buildLighterDepositExecutionDeps(
   };
 }
 
-function configuredRhcRpcUrl(chainId: number): string {
+function rhcRpcUrl(chainId: number): string {
   const localChain = getLocalChain(chainId);
-  const rpcUrl = localChain === undefined ? null : getConfiguredLocalChainRpcUrl(localChain);
-  if (rpcUrl === null) {
+  if (localChain === undefined) {
     throw new Error(
-      "Robinhood Chain deposit execution requires the explicitly configured production RPC verified under Settings → API Keys → Robinhood Chain RPC. Nothing was signed or submitted.",
+      "Robinhood Chain is not configured for deposit execution. Nothing was signed or submitted.",
     );
   }
-  return rpcUrl;
+  return getLocalChainRpcUrl(localChain);
 }
 
 async function runStaged(
