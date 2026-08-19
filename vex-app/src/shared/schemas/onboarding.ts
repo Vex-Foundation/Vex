@@ -49,6 +49,7 @@ export const apiKeysStateSchema = z
     tavilyConfigured: z.boolean(),
     rettiwtConfigured: z.boolean(),
     relayConfigured: z.boolean(),
+    robinhoodChainRpcConfigured: z.boolean().optional(),
     lighterCoreReadOnlyConfigured: z.boolean().optional(),
     lighterRhcReadOnlyConfigured: z.boolean().optional(),
     lighterCoreTradingConfigured: z.boolean().optional(),

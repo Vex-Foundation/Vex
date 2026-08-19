@@ -18,6 +18,7 @@ export interface FieldRefs {
   readonly tavily: RefObject<HTMLInputElement | null>;
   readonly rettiwt: RefObject<HTMLInputElement | null>;
   readonly relay: RefObject<HTMLInputElement | null>;
+  readonly robinhoodChainRpc: RefObject<HTMLInputElement | null>;
   readonly lighterCoreTradingAccountIndex: RefObject<HTMLInputElement | null>;
   readonly lighterCoreTradingApiKeyIndex: RefObject<HTMLInputElement | null>;
   readonly lighterCoreTradingPrivateKey: RefObject<HTMLInputElement | null>;
@@ -44,6 +45,8 @@ export function buildPayload(refs: FieldRefs): ApiKeysSetInput {
   const tavily = refs.tavily.current?.value.trim() ?? "";
   const rettiwt = refs.rettiwt.current?.value.trim() ?? "";
   const relay = refs.relay.current?.value.trim() ?? "";
+  const robinhoodChainRpc =
+    refs.robinhoodChainRpc.current?.value.trim() ?? "";
   const lighterCoreTradingAccountIndex =
     refs.lighterCoreTradingAccountIndex.current?.value.trim() ?? "";
   const lighterCoreTradingApiKeyIndex =
@@ -66,6 +69,9 @@ export function buildPayload(refs: FieldRefs): ApiKeysSetInput {
     ...(tavily.length > 0 ? { tavilyApiKey: tavily } : {}),
     ...(rettiwt.length > 0 ? { rettiwtApiKey: rettiwt } : {}),
     ...(relay.length > 0 ? { relayApiKey: relay } : {}),
+    ...(robinhoodChainRpc.length > 0
+      ? { robinhoodChainRpcUrl: robinhoodChainRpc }
+      : {}),
     ...(lighterCoreTradingAccountIndex.length > 0
       ? { lighterCoreTradingAccountIndex: Number(lighterCoreTradingAccountIndex) }
       : {}),

@@ -21,6 +21,20 @@
 import { z } from "zod";
 
 const optionalSecret = z.string().min(1).optional();
+const optionalHttpsEndpoint = z
+  .string()
+  .min(1)
+  .max(2_048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && url.username.length === 0
+        && url.password.length === 0 && url.hash.length === 0;
+    } catch {
+      return false;
+    }
+  }, "Enter a valid HTTPS endpoint without embedded username, password, or fragment.")
+  .optional();
 const optionalNonNegativeInteger = z.number().int().nonnegative().optional();
 const optionalApiKeyIndex = z.number().int().min(4).max(254).optional();
 const optionalBoolean = z.boolean().optional();
@@ -31,6 +45,7 @@ export const apiKeysSetInputSchema = z
     tavilyApiKey: optionalSecret,
     rettiwtApiKey: optionalSecret,
     relayApiKey: optionalSecret,
+    robinhoodChainRpcUrl: optionalHttpsEndpoint,
     lighterCoreTradingAccountIndex: optionalNonNegativeInteger,
     lighterCoreTradingApiKeyIndex: optionalApiKeyIndex,
     lighterCoreTradingApiPrivateKey: optionalSecret,
@@ -49,6 +64,7 @@ export const MANAGED_API_KEYS_CANONICAL_ORDER = [
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
   "RELAY_API_KEY",
+  "ROBINHOOD_CHAIN_RPC_URL",
 ] as const;
 
 /**

@@ -236,6 +236,56 @@ export function RelayCard({
   );
 }
 
+export interface RobinhoodChainRpcCardProps {
+  readonly status: ProviderCardStatus;
+  readonly configured: boolean;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+}
+
+export function RobinhoodChainRpcCard({
+  status,
+  configured,
+  inputRef,
+}: RobinhoodChainRpcCardProps): JSX.Element {
+  return (
+    <ProviderCard
+      slug="robinhood-chain-rpc"
+      iconSlot={<VexIcon icon={WaypointsIcon} size={18} aria-hidden />}
+      name="Robinhood Chain RPC"
+      status={status}
+      description="Production connection for Robinhood Chain approvals and deposits."
+      detail={
+        <>
+          Robinhood recommends a managed mainnet endpoint for production. Vex
+          verifies chain 4663, a fresh block, and fee-history support before
+          encrypting the full endpoint locally. Read-only wallet checks can use
+          the bundled public RPC; fund-moving preparation cannot.
+        </>
+      }
+      getKey={{
+        url: "https://docs.robinhood.com/chain/connecting/",
+        label: "Open Robinhood Chain RPC guide",
+      }}
+    >
+      <Label htmlFor="vex-apikey-robinhood-chain-rpc" className="sr-only">
+        Robinhood Chain managed RPC endpoint
+      </Label>
+      <PasswordField
+        id="vex-apikey-robinhood-chain-rpc"
+        inputMode="url"
+        autoComplete="new-password"
+        placeholder="https://robinhood-mainnet.g.alchemy.com/v2/..."
+        ref={inputRef}
+      />
+      <p className="text-xs text-[var(--color-text-muted)]">
+        {configured
+          ? "Leave blank to keep the encrypted endpoint, or paste a replacement to verify and overwrite it."
+          : "Required only for state-changing Robinhood Chain actions. Never paste a wallet private key here."}
+      </p>
+    </ProviderCard>
+  );
+}
+
 export interface LighterTradingCardProps {
   readonly environment: "core" | "rhc";
   readonly status: ProviderCardStatus;

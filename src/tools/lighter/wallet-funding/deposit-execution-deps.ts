@@ -228,7 +228,7 @@ function configuredRhcRpcUrl(chainId: number): string {
   const rpcUrl = localChain === undefined ? null : getConfiguredLocalChainRpcUrl(localChain);
   if (rpcUrl === null) {
     throw new Error(
-      "Robinhood Chain deposit execution requires the explicitly configured production RPC. Nothing was signed or submitted.",
+      "Robinhood Chain deposit execution requires the explicitly configured production RPC verified under Settings → API Keys → Robinhood Chain RPC. Nothing was signed or submitted.",
     );
   }
   return rpcUrl;

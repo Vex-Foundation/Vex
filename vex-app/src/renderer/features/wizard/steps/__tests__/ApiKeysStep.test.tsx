@@ -229,6 +229,34 @@ describe("ApiKeysStep", () => {
     expect(privateKeyInput.value).toBe("");
   });
 
+  it("submits and synchronously clears the managed Robinhood Chain RPC endpoint", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetApiKeys.mockResolvedValue({
+      ok: true,
+      data: { fieldsWritten: ["ROBINHOOD_CHAIN_RPC_URL"] },
+    } as Result<ApiKeysSetResult>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
+    const { container, getByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const rpcInput = getByLabelText(
+      /Robinhood Chain managed RPC endpoint/i,
+    ) as HTMLInputElement;
+    const endpoint =
+      "https://robinhood-mainnet.g.alchemy.com/v2/test-managed-key";
+    fireEvent.input(rpcInput, { target: { value: endpoint } });
+    fireEvent.submit(
+      container.querySelector('[data-vex-wizard-apikeys="form"] form')!,
+    );
+
+    await waitFor(() => {
+      expect(mockSetApiKeys).toHaveBeenCalledWith({
+        robinhoodChainRpcUrl: endpoint,
+      });
+    });
+    expect(rpcInput.value).toBe("");
+  });
+
   // Optional-connections model: API keys never block advancement. The
   // form shows a non-blocking "Jupiter missing" warning and the user can
   // proceed via "Skip optional" / "Save and continue".
@@ -367,7 +395,7 @@ describe("ApiKeysStep", () => {
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(6);
+    expect(cards).toHaveLength(7);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
     ).toEqual([
@@ -375,6 +403,7 @@ describe("ApiKeysStep", () => {
       "tavily",
       "rettiwt",
       "relay",
+      "robinhood-chain-rpc",
       "lighter-rhc-trading",
       "lighter-core-trading",
     ]);
@@ -412,6 +441,14 @@ describe("ApiKeysStep", () => {
       "https://dashboard.relay.link",
     );
     expect(relayCard?.textContent ?? "").toContain("Bridging works without it");
+
+    const robinhoodRpcCard = container.querySelector(
+      '[data-vex-apikeys-card="robinhood-chain-rpc"]',
+    );
+    expect(robinhoodRpcCard?.querySelector("a[href]")?.getAttribute("href")).toBe(
+      "https://docs.robinhood.com/chain/connecting/",
+    );
+    expect(robinhoodRpcCard?.textContent ?? "").toContain("chain 4663");
   });
 
   it("every external link on a card uses target='_blank' + rel='noopener noreferrer' (PR8)", () => {

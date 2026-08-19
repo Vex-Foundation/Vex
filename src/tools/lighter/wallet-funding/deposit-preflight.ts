@@ -203,7 +203,7 @@ export async function readLighterDepositPreflight(input: {
       || getConfiguredLocalChainRpcUrl(localChain) === null
     ) {
       throw preflightError(
-        "Robinhood Chain Lighter funding requires an explicitly configured production-capable RPC; the bundled public rate-limited endpoint is identity-read fallback only.",
+        "Robinhood Chain Lighter funding requires a verified managed RPC. Save it under Settings → API Keys → Robinhood Chain RPC; the bundled public rate-limited endpoint is identity-read fallback only. Nothing was prepared.",
       );
     }
   }

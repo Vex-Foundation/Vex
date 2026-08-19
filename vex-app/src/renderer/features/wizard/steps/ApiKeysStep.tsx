@@ -54,6 +54,7 @@ import {
   TavilyCard,
   RettiwtCard,
   RelayCard,
+  RobinhoodChainRpcCard,
 } from "./api-keys/ProviderCards.js";
 
 export interface ApiKeysStepProps {
@@ -83,6 +84,7 @@ export function ApiKeysStep({
     tavily: useRef<HTMLInputElement | null>(null),
     rettiwt: useRef<HTMLInputElement | null>(null),
     relay: useRef<HTMLInputElement | null>(null),
+    robinhoodChainRpc: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingAccountIndex: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
     lighterCoreTradingPrivateKey: useRef<HTMLInputElement | null>(null),
@@ -99,6 +101,8 @@ export function ApiKeysStep({
   const tavilyConfigured = apiKeysState?.tavilyConfigured ?? false;
   const rettiwtConfigured = apiKeysState?.rettiwtConfigured ?? false;
   const relayConfigured = apiKeysState?.relayConfigured ?? false;
+  const robinhoodChainRpcConfigured =
+    apiKeysState?.robinhoodChainRpcConfigured ?? false;
   const lighterCoreTradingConfigured =
     apiKeysState?.lighterCoreTradingConfigured ?? false;
   const lighterRhcTradingConfigured =
@@ -235,6 +239,12 @@ export function ApiKeysStep({
         <RelayCard
           status={statusFor(relayConfigured)}
           inputRef={refs.relay}
+        />
+
+        <RobinhoodChainRpcCard
+          status={statusFor(robinhoodChainRpcConfigured)}
+          configured={robinhoodChainRpcConfigured}
+          inputRef={refs.robinhoodChainRpc}
         />
 
         <LighterTradingCard

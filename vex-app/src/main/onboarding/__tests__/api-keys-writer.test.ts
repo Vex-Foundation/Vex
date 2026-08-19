@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sessionMocks = vi.hoisted(() => ({
   writeUnlockedSecrets: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("../../secrets/lighter-trading-credential.js", () => ({
     sessionMocks.getTradingRegistrationState(reference),
 }));
 
-const { writeApiKeys } = await import("../api-keys-writer.js");
+const { probeRobinhoodChainRpc, writeApiKeys } = await import("../api-keys-writer.js");
 
 describe("writeApiKeys", () => {
   beforeEach(() => {
@@ -63,6 +63,60 @@ describe("writeApiKeys", () => {
     expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
       JUPITER_API_KEY: "sk-jup-xyz",
     });
+  });
+
+  it("verifies and stores the managed Robinhood Chain RPC in the encrypted vault", async () => {
+    const endpoint =
+      "https://robinhood-mainnet.g.alchemy.com/v2/test-managed-key";
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const result = await writeApiKeys(
+      { robinhoodChainRpcUrl: endpoint },
+      { probeRobinhoodChainRpc: probe },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: { fieldsWritten: ["ROBINHOOD_CHAIN_RPC_URL"] },
+    });
+    expect(probe).toHaveBeenCalledWith(endpoint);
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      ROBINHOOD_CHAIN_RPC_URL: endpoint,
+    });
+  });
+
+  it("rejects the bundled public Robinhood RPC as a production endpoint", async () => {
+    const probe = vi.fn();
+    const result = await writeApiKeys(
+      { robinhoodChainRpcUrl: "https://rpc.mainnet.chain.robinhood.com/" },
+      { probeRobinhoodChainRpc: probe },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("rate-limited");
+      expect(result.error.message).not.toContain("https://");
+    }
+    expect(probe).not.toHaveBeenCalled();
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without storing an RPC endpoint that does not pass the live probe", async () => {
+    const endpoint = "https://wrong-chain.example.test/key";
+    const result = await writeApiKeys(
+      { robinhoodChainRpcUrl: endpoint },
+      {
+        probeRobinhoodChainRpc: vi.fn().mockRejectedValue(
+          new Error(`provider rejected ${endpoint}`),
+        ),
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("could not verify");
+      expect(result.error.message).not.toContain(endpoint);
+    }
+    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
   });
 
   it("imports a Lighter trading API private key through the extra-secret vault boundary", async () => {
@@ -203,5 +257,64 @@ describe("writeApiKeys", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
+  });
+});
+
+describe("probeRobinhoodChainRpc", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubRpc(results: Readonly<Record<string, unknown>>): void {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as { readonly method: string };
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: results[request.method],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+  }
+
+  it("accepts chain 4663 with a fresh block and fee history", async () => {
+    const nowHex = `0x${Math.floor(Date.now() / 1_000).toString(16)}`;
+    stubRpc({
+      eth_chainId: "0x1237",
+      eth_getBlockByNumber: { number: "0x1", timestamp: nowHex },
+      eth_feeHistory: { oldestBlock: "0x1", baseFeePerGas: ["0x1", "0x2", "0x3"] },
+    });
+
+    await expect(probeRobinhoodChainRpc(
+      "https://robinhood-mainnet.g.alchemy.com/v2/test-key",
+    )).resolves.toBeUndefined();
+  });
+
+  it("rejects a healthy endpoint on the wrong chain", async () => {
+    const nowHex = `0x${Math.floor(Date.now() / 1_000).toString(16)}`;
+    stubRpc({
+      eth_chainId: "0x1",
+      eth_getBlockByNumber: { number: "0x1", timestamp: nowHex },
+      eth_feeHistory: { oldestBlock: "0x1", baseFeePerGas: ["0x1", "0x2", "0x3"] },
+    });
+
+    await expect(probeRobinhoodChainRpc(
+      "https://ethereum.example.test/key",
+    )).rejects.toThrow("rpc_wrong_chain");
+  });
+
+  it("rejects a stale Robinhood Chain block head", async () => {
+    const staleHex = `0x${(Math.floor(Date.now() / 1_000) - 600).toString(16)}`;
+    stubRpc({
+      eth_chainId: "0x1237",
+      eth_getBlockByNumber: { number: "0x1", timestamp: staleHex },
+      eth_feeHistory: { oldestBlock: "0x1", baseFeePerGas: ["0x1", "0x2", "0x3"] },
+    });
+
+    await expect(probeRobinhoodChainRpc(
+      "https://stale.example.test/key",
+    )).rejects.toThrow("rpc_stale_block");
   });
 });
