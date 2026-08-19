@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
+  adoptPristineLighterKeyRegistrationApprovalWith,
   markLighterKeyRegistrationActiveWith,
   markLighterKeyRegistrationAmbiguousWith,
   markLighterKeyRegistrationApprovalPendingWith,
@@ -344,6 +345,55 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(sql).toContain("registration_tx_hash IS NULL");
     expect(sql).toContain("registration_submitted_tx_hash IS NULL");
     expect(params).toEqual([pristine.intent_id, INPUT.sessionId, expiresAt]);
+  });
+
+  it("adopts only an unapproved registration with no signing or submission evidence", async () => {
+    const expiresAt = new Date("2030-01-01T02:00:00.000Z");
+    const pending = lifecycleRow("approval_pending", {
+      session_id: "session-2",
+      approval_status: "approval_pending",
+      registration_tx_type: null,
+      registration_tx_hash: null,
+      registration_tx_expired_at: null,
+      registration_tx_staged_at: null,
+      expires_at: expiresAt,
+    });
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{ ...pending, session_id: INPUT.sessionId }],
+        rowCount: 1,
+      }),
+    };
+
+    await expect(adoptPristineLighterKeyRegistrationApprovalWith(client as never, {
+      intentId: String(pending.intent_id),
+      previousSessionId: "session-2",
+      sessionId: INPUT.sessionId,
+      environment: "core",
+      walletAddress: WALLET,
+      accountIndex: 42,
+      expiresAt,
+    })).resolves.toMatchObject({
+      sessionId: INPUT.sessionId,
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+      expiresAt,
+    });
+
+    const [sql, params] = client.query.mock.calls[0]!;
+    expect(sql).toContain("SET session_id = $3");
+    expect(sql).toContain("approval_id IS NULL");
+    expect(sql).toContain("registration_tx_staged_at IS NULL");
+    expect(sql).toContain("registration_activated_at IS NULL");
+    expect(params).toEqual([
+      pending.intent_id,
+      "session-2",
+      INPUT.sessionId,
+      "core",
+      WALLET,
+      42,
+      expiresAt,
+    ]);
   });
 
   it("refuses an unresolved workflow that has not proven the requested account", async () => {

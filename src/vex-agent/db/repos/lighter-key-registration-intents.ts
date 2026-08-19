@@ -452,6 +452,83 @@ export async function renewPristineApprovedLighterKeyRegistrationIntentWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/**
+ * Move an unapproved key-registration preparation to the current session only
+ * when durable state proves that signing, staging, submission, and activation
+ * never began. The encrypted credential and exact public approval scope stay
+ * unchanged; any approval parked in the old session can no longer execute it.
+ */
+export async function adoptPristineLighterKeyRegistrationApprovalWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly previousSessionId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+    readonly accountIndex: number;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (
+    input.previousSessionId.trim().length === 0
+    || input.sessionId.trim().length === 0
+    || input.previousSessionId === input.sessionId
+  ) {
+    throw new Error("Lighter key-registration adoption requires two distinct sessions.");
+  }
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) {
+    throw new Error("Lighter key-registration adoption requires a valid account index.");
+  }
+  assertTimestamp(input.expiresAt, "adopted approval expiry");
+
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET session_id = $3,
+            expires_at = $7,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND environment = $4
+        AND LOWER(wallet_address) = LOWER($5)
+        AND resolved_account_index = $6
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approval_pending'
+        AND approval_id IS NULL
+        AND protocol_execution_id IS NULL
+        AND decided_at IS NULL
+        AND decision_reason IS NULL
+        AND failure_reason IS NULL
+        AND registration_tx_type IS NULL
+        AND registration_tx_hash IS NULL
+        AND registration_tx_expired_at IS NULL
+        AND registration_tx_staged_at IS NULL
+        AND registration_submitted_tx_hash IS NULL
+        AND registration_submit_code IS NULL
+        AND registration_predicted_execution_time_ms IS NULL
+        AND registration_submit_accepted_at IS NULL
+        AND registration_ambiguity_reason IS NULL
+        AND registration_key_verified_at IS NULL
+        AND registration_client_checked_at IS NULL
+        AND post_registration_nonce IS NULL
+        AND registration_nonce_synchronized_at IS NULL
+        AND registration_activated_at IS NULL
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.previousSessionId,
+      input.sessionId,
+      input.environment,
+      input.walletAddress,
+      input.accountIndex,
+      input.expiresAt,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Persist public TxType/hash/expiry identity before sendTx can be called. */
 export async function markLighterKeyRegistrationTxStagedWith(
   client: LighterOnboardingQueryClient,

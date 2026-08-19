@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   findLive: vi.fn(),
   reserve: vi.fn(),
   findIntent: vi.fn(),
+  adoptPristineApproval: vi.fn(),
   markApprovalPending: vi.fn(),
   markApproved: vi.fn(),
   renewPristineApproved: vi.fn(),
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   getWorkflow: vi.fn(),
   transitionWorkflow: vi.fn(),
   withSessionControlLock: vi.fn(),
+  withSessionControlLocks: vi.fn(),
   resolveSelectedAddress: vi.fn(),
   getPreparer: vi.fn(),
   prepareCredential: vi.fn(),
@@ -47,6 +49,8 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
   findLiveLighterKeyRegistrationIntentForAccount: mocks.findLive,
   reserveLighterApiKeySlotWith: (_client: unknown, input: unknown) => mocks.reserve(input),
   findLighterKeyRegistrationIntent: mocks.findIntent,
+  adoptPristineLighterKeyRegistrationApprovalWith: (_client: unknown, input: unknown) =>
+    mocks.adoptPristineApproval(input),
   markLighterKeyRegistrationApprovalPendingWith: (_client: unknown, input: unknown) =>
     mocks.markApprovalPending(input),
   markLighterKeyRegistrationApprovedWith: (_client: unknown, input: unknown) =>
@@ -68,6 +72,7 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: mocks.withSessionControlLock,
+  withSessionControlLocks: mocks.withSessionControlLocks,
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -164,6 +169,8 @@ beforeEach(() => {
   mocks.getPreparer.mockReturnValue({ prepare: mocks.prepareCredential });
   mocks.withSessionControlLock.mockImplementation(async (_sessionId, fn) =>
     fn({ marker: "locked-client" }));
+  mocks.withSessionControlLocks.mockImplementation(async (_sessionIds, fn) =>
+    fn({ marker: "multi-locked-client" }));
   mocks.getApiKeys.mockResolvedValue({ code: 200, api_keys: [] });
   mocks.getNextNonce.mockResolvedValue({ code: 200, nonce: 0 });
   mocks.findLive.mockResolvedValue(null);
@@ -182,6 +189,7 @@ beforeEach(() => {
   mocks.markApprovalPending.mockResolvedValue(row("approval_pending"));
   mocks.markApproved.mockResolvedValue(row("approved"));
   mocks.renewPristineApproved.mockResolvedValue(row("approved"));
+  mocks.adoptPristineApproval.mockResolvedValue(null);
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.getExecutor.mockReturnValue(null);
 });
@@ -352,6 +360,44 @@ describe("lighter.key.register.prepare", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("belongs to another session");
     expect(mocks.prepareCredential).not.toHaveBeenCalled();
+  });
+
+  it("adopts an unsubmitted RHC approval preparation into the current session", async () => {
+    const previous = { ...row("approval_pending", "rhc"), sessionId: "session-2" };
+    const adopted = { ...previous, sessionId: "session-1" };
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+    mocks.findLive.mockResolvedValue(previous);
+    mocks.adoptPristineApproval.mockResolvedValue(adopted);
+
+    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+      { environment: "rhc" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.withSessionControlLocks).toHaveBeenCalledWith(
+      ["session-2", "session-1"],
+      expect.any(Function),
+    );
+    expect(mocks.adoptPristineApproval).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      previousSessionId: "session-2",
+      sessionId: "session-1",
+      environment: "rhc",
+      walletAddress: WALLET,
+      accountIndex: 42,
+      expiresAt: expect.any(Date),
+    }));
+    expect(result.preparedActionFollowUp).toBeDefined();
+    expect(validatePreparedActionFollowUp(
+      "lighter__key__register__prepare",
+      result.preparedActionFollowUp!,
+    )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
+    expect(mocks.prepareCredential).not.toHaveBeenCalled();
+    expect(mocks.getNextNonce).not.toHaveBeenCalled();
   });
 
   it("fails closed when the reserved slot has no valid public nextNonce", async () => {

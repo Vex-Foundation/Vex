@@ -16,7 +16,10 @@ import {
   transitionLighterOnboardingWorkflowWith,
   type LighterOnboardingWorkflowRow,
 } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  withSessionControlLock,
+  withSessionControlLocks,
+} from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -325,7 +328,7 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       );
     }
     try {
-      const reserved = await resolveOrReserveIntent({
+      let reserved = await resolveOrReserveIntent({
         sessionId,
         environment: environment.value,
         walletAddress,
@@ -333,6 +336,26 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       });
       if (reserved.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
         return fail("The durable key-registration reservation belongs to a different wallet.");
+      }
+      if (reserved.sessionId !== sessionId) {
+        const adopted = await withSessionControlLocks(
+          [reserved.sessionId, sessionId],
+          (client) => keyIntentsRepo.adoptPristineLighterKeyRegistrationApprovalWith(client, {
+            intentId: reserved.intentId,
+            previousSessionId: reserved.sessionId,
+            sessionId,
+            environment: reserved.environment,
+            walletAddress: reserved.walletAddress,
+            accountIndex: reserved.accountIndex,
+            expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+          }),
+        );
+        if (adopted === null) {
+          return fail(
+            `Lighter key-registration intent ${reserved.intentId} belongs to another session and cannot be safely resumed.`,
+          );
+        }
+        reserved = adopted;
       }
       const reissuingApproval = isPristineApprovedIntent(reserved);
       const approvalPending = await prepareApprovalPendingIntent(reserved, sessionId);
