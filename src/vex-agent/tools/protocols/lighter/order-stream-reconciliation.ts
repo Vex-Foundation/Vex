@@ -88,7 +88,7 @@ export async function reconcileLighterOrderStreamMessage(
       continue;
     }
     const status = order.status ?? "";
-    const source = isTerminalState(state) ? "inactive_order" : "active_order";
+    const source = isTerminalOrder(state, status) ? "inactive_order" : "active_order";
     const evidence = {
       ...lighterOrderEvidenceJson(source, order, intent.clientOrderIndex),
       transport,
@@ -169,7 +169,11 @@ export function classifyLighterStreamOrderState(
       : "open";
   }
   if (status === "filled") return "filled";
-  if (status?.startsWith("canceled") === true) return "canceled";
+  if (isCanceledOrExpiredStatus(status)) {
+    return lighterDecimalGreaterThanZero(order.filled_base_amount)
+      ? "partially_filled"
+      : "canceled";
+  }
   return null;
 }
 
@@ -183,8 +187,18 @@ function flattenOrders(
   return orders;
 }
 
-function isTerminalState(state: LighterProviderOutcomeExecutionState): boolean {
-  return state === "filled" || state === "canceled" || state === "rejected";
+function isTerminalOrder(
+  state: LighterProviderOutcomeExecutionState,
+  providerStatus: string,
+): boolean {
+  return state === "filled"
+    || state === "canceled"
+    || state === "rejected"
+    || isCanceledOrExpiredStatus(providerStatus);
+}
+
+function isCanceledOrExpiredStatus(status: string | undefined): boolean {
+  return status?.startsWith("canceled") === true || status?.includes("expire") === true;
 }
 
 function sameOrderEvidence(

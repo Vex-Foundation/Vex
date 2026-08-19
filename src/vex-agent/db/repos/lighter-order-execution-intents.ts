@@ -598,6 +598,14 @@ export async function listStreamWatchable(
       WHERE execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous','open','partially_filled')
         AND approval_status = 'approved'
         AND client_order_index IS NOT NULL
+        AND NOT (
+          execution_state = 'partially_filled'
+          AND provider_outcome_source = 'inactive_order'
+          AND (
+            LOWER(COALESCE(provider_order_status, '')) LIKE '%cancel%'
+            OR LOWER(COALESCE(provider_order_status, '')) LIKE '%expire%'
+          )
+        )
         AND ($1::text IS NULL OR environment = $1)
         AND ($2::bigint IS NULL OR account_index = $2)
       ORDER BY created_at ASC

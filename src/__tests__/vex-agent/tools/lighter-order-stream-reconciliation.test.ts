@@ -171,6 +171,26 @@ describe("Lighter order stream reconciliation", () => {
     }));
   });
 
+  it.each(["canceled", "canceled-expired", "expired"])(
+    "reports terminal %s orders with a positive fill as partially filled",
+    async (status) => {
+      const d = deps();
+      const report = await reconcileLighterOrderStreamMessage(
+        "rhc",
+        42,
+        frame([order({ status, filled_base_amount: "0.25", remaining_base_amount: "0.75" })]),
+        d,
+      );
+
+      expect(report.advanced).toBe(1);
+      expect(d.intents.markStreamOutcome).toHaveBeenCalledWith(expect.objectContaining({
+        state: "partially_filled",
+        source: "inactive_order",
+        providerOrderStatus: status,
+      }));
+    },
+  );
+
   it("never infers an outcome from an order missing from the frame", async () => {
     const d = deps();
     const report = await reconcileLighterOrderStreamMessage("rhc", 42, frame([]), d);
@@ -232,6 +252,7 @@ describe("Lighter order stream reconciliation", () => {
     expect(classifyLighterStreamOrderState(order({ status: "pending" }))).toBe("sequencer_pending");
     expect(classifyLighterStreamOrderState(order({ status: "in-progress" }))).toBe("sequencer_pending");
     expect(classifyLighterStreamOrderState(order({ status: "canceled-expired" }))).toBe("canceled");
+    expect(classifyLighterStreamOrderState(order({ status: "expired" }))).toBe("canceled");
     expect(classifyLighterStreamOrderState(order({ status: "rejected" }))).toBeNull();
   });
 });

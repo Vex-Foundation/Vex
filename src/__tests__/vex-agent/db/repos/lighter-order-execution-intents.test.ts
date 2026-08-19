@@ -698,6 +698,9 @@ describe("lighter order execution intents repo", () => {
     expect(sql).toContain("'open','partially_filled'");
     expect(sql).toContain("approval_status = 'approved'");
     expect(sql).toContain("client_order_index IS NOT NULL");
+    expect(sql).toContain("provider_outcome_source = 'inactive_order'");
+    expect(sql).toContain("LIKE '%cancel%'");
+    expect(sql).toContain("LIKE '%expire%'");
     expect(sql).toContain("LIMIT 250");
     expect(params).toEqual(["rhc", 42]);
     expect(rows[0]).toMatchObject({ executionState: "open", accountIndex: 42 });

@@ -49,16 +49,20 @@ export function stateFromInactiveLighterOrder(
   order: LighterAccountOrder,
 ): "sequencer_pending" | "partially_filled" | "filled" | "canceled" | "rejected" {
   const status = (order.status ?? "").toLowerCase();
+  const hasPositiveFill = lighterDecimalGreaterThanZero(order.filled_base_amount);
+  if (status.includes("partial") && status.includes("fill")) return "partially_filled";
   if (status.includes("fill")) return "filled";
-  if (status.includes("cancel") || status.includes("expire")) return "canceled";
+  if (status.includes("cancel") || status.includes("expire")) {
+    return hasPositiveFill ? "partially_filled" : "canceled";
+  }
   if (status.includes("reject") || status.includes("fail")) return "rejected";
-  if (lighterDecimalGreaterThanZero(order.filled_base_amount)) return "partially_filled";
+  if (hasPositiveFill) return "partially_filled";
   return "sequencer_pending";
 }
 
 export function lighterDecimalGreaterThanZero(value: string | undefined): boolean {
   if (value === undefined || !/^\d+(?:\.\d+)?$/.test(value)) return false;
-  return Number(value) > 0;
+  return /[1-9]/.test(value);
 }
 
 export function lighterOrderEvidenceJson(
