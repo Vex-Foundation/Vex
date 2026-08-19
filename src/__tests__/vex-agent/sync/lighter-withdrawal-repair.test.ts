@@ -21,7 +21,7 @@ vi.mock("@vex-agent/tools/protocols/lighter/read-account-auth.js", () => ({
   resolveLighterReadOnlyAccountAuth: mocks.auth,
 }));
 vi.mock("@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js", () => ({
-  reconcileLighterCoreWithdrawal: mocks.reconcile,
+  reconcileLighterWithdrawal: mocks.reconcile,
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: vi.fn(async (_sessionId: string, fn: (db: object) => Promise<unknown>) => fn({})),
@@ -37,6 +37,7 @@ const { repairUnresolvedLighterWithdrawals } = await import(
 function intent(state = "secure_waiting") {
   return {
     intentId: "withdrawal-1", sessionId: "session-1", accountIndex: 42,
+    environment: "core", settlementChainId: 1,
     walletAddress: "0x1111111111111111111111111111111111111111", executionState: state,
   };
 }
@@ -49,7 +50,7 @@ beforeEach(() => {
   mocks.reconcile.mockResolvedValue(intent("claimable"));
 });
 
-describe("background Core withdrawal repair", () => {
+describe("background Lighter withdrawal repair", () => {
   it("does not unlock or reconcile when bounded read authorization is unavailable", async () => {
     mocks.auth.mockResolvedValue(null);
     await expect(repairUnresolvedLighterWithdrawals()).resolves.toMatchObject({
@@ -63,6 +64,16 @@ describe("background Core withdrawal repair", () => {
       examined: 1, advanced: 1, awaitingVault: 0, errors: 0,
     });
     expect(mocks.reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses RHC read authorization and settlement identity for RHC candidates", async () => {
+    mocks.list.mockResolvedValue([{ ...intent(), environment: "rhc", settlementChainId: 4663 }]);
+    mocks.reconcile.mockResolvedValue({ ...intent("claimable"), environment: "rhc", settlementChainId: 4663 });
+    await expect(repairUnresolvedLighterWithdrawals()).resolves.toMatchObject({ advanced: 1, errors: 0 });
+    expect(mocks.auth).toHaveBeenCalledWith("rhc", 42);
+    expect(mocks.reconcile).toHaveBeenCalledWith(expect.objectContaining({
+      intent: expect.objectContaining({ environment: "rhc", settlementChainId: 4663 }),
+    }));
   });
 
   it("expires an abandoned prepared claim before continuing reconciliation", async () => {
