@@ -11,6 +11,8 @@ import type {
   SessionList,
   SessionListItem,
   SessionModelDto,
+  SessionRenameInput,
+  SessionRenameResult,
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "../../../schemas/sessions.js";
@@ -39,6 +41,13 @@ export interface SessionsBridge {
   readonly setPinned: (
     input: SessionSetPinnedInput
   ) => Promise<Result<SessionSetPinnedResult>>;
+  /**
+   * Rename a session (user display title). Returns the updated row, or
+   * `null` when the id is unknown or soft-deleted (stale renderer cache).
+   */
+  readonly rename: (
+    input: SessionRenameInput
+  ) => Promise<Result<SessionRenameResult>>;
   /**
    * Soft-delete a session. Main enforces fail-closed against active
    * mission runs and pending approvals; the discriminated outcome

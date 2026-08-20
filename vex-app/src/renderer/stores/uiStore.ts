@@ -21,10 +21,6 @@ import type { ReasoningEffort } from "@shared/schemas/chat.js";
 
 export const MAX_RENDER_LOGS = 500;
 
-/** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
-const MAX_BOOK_SECTION_ENTRIES = 32;
-const MAX_BOOK_SECTION_ID_LENGTH = 32;
-
 /**
  * Theme runtime types + logic live in the same-named sibling module
  * (`uiStore/theme.ts`); re-exported so the store stays the single public
@@ -38,12 +34,22 @@ export type { RuntimeMode } from "./uiStore/runtime-mode.js";
 import {
   applyThemeToDocument,
   bindSystemThemeListener,
-  coerceThemePreference,
   resolveTheme,
   systemPrefersDark,
   type VexTheme,
   type VexThemePreference,
 } from "./uiStore/theme.js";
+import {
+  clampBookWidth,
+  clampSidebarWidth,
+  DEFAULT_BOOK_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+} from "./uiStore/layout.js";
+import {
+  mergeUiState,
+  migrateUiState,
+  partializeUiState,
+} from "./uiStore/persistence.js";
 import {
   DEFAULT_RUNTIME_MODE,
   type RuntimeMode,
@@ -117,7 +123,7 @@ export interface CreateSessionInitialTurn {
   readonly reasoningEffort: ReasoningEffort | null;
 }
 
-interface UiState {
+export interface UiState {
   /** Resolved shell theme = f(themePreference, OS scheme). NOT persisted. */
   readonly theme: VexTheme;
   /** Persisted theme choice; "system" re-resolves on OS scheme changes. */
@@ -125,6 +131,19 @@ interface UiState {
   /** vex-studio seam: no UI logic reads this yet. NOT persisted. */
   readonly runtimeMode: RuntimeMode;
   readonly sidebarOpen: boolean;
+  /**
+   * Persisted sidebar drag width (px, clamped 264-420). The rendered track is
+   * solved by `lib/shell-columns.ts`; this is only the preference input.
+   */
+  readonly sidebarWidth: number;
+  /** Persisted BOOK drag width (px, clamped 300-520). See `sidebarWidth`. */
+  readonly bookWidth: number;
+  /**
+   * Below the auto-collapse breakpoint the sidebar renders the rail unless
+   * the user manually re-expands it; this is that override. NOT persisted —
+   * a relaunch under a narrow window starts back at the rail.
+   */
+  readonly sidebarNarrowExpanded: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
    * RUNTIME / SESSION / POSITION). Defaults CLOSED — unlike sidebarOpen — and is
@@ -237,6 +256,11 @@ interface UiState {
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
+  /** Live drag write: clamps into the sidebar contract range. */
+  readonly setSidebarWidth: (px: number) => void;
+  /** Live drag write: clamps into the BOOK contract range. */
+  readonly setBookWidth: (px: number) => void;
+  readonly setSidebarNarrowExpanded: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
@@ -321,6 +345,9 @@ export const useUiStore = create<UiState>()(
         set({ themePreference, theme });
       },
       sidebarOpen: true,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      bookWidth: DEFAULT_BOOK_WIDTH,
+      sidebarNarrowExpanded: false,
       bookOpen: true,
       currentView: "splash",
       setupGateActive: true,
@@ -341,6 +368,10 @@ export const useUiStore = create<UiState>()(
       prologueVersion: null,
       bookSectionOrder: [],
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
+      setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
+      setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
+        set({ sidebarNarrowExpanded }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
@@ -401,7 +432,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 9,
+      version: 10,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.
@@ -409,124 +440,11 @@ export const useUiStore = create<UiState>()(
         if (state !== undefined) applyThemeToDocument(state.theme);
       },
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        themePreference: state.themePreference,
-        sidebarOpen: state.sidebarOpen,
-        bookOpen: state.bookOpen,
-        hideDustBalances: state.hideDustBalances,
-        prologueVersion: state.prologueVersion,
-        bookSectionOrder: state.bookSectionOrder,
-      }),
-      // Expand-only migrations, oldest first:
-      //   v2: BOOK now opens by default — force it open once on upgrade from v1
-      //       so existing installs pick up the new default (later toggles
-      //       persist normally).
-      //   v3: `theme` added — seed the then-default so a pre-theme install
-      //       hydrates into a defined value, not `undefined`.
-      //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
-      //       Removed by the Hyperliquid deletion: the field no longer exists
-      //       on `UiState`, so a leftover `hlFavorites` key in an old payload
-      //       is simply ignored by `merge` below, never seeded again.
-      //   v5: Chronos rebrand — the retired `vex`/`robinhood` theme pair
-      //       collapses to `chronos` (the merge coercion below also enforces
-      //       this on every rehydrate).
-      //   v6: `hideDustBalances` added (Portfolio tab dust filter) — seed
-      //       the same TRUE default a fresh install gets, so an upgrading
-      //       install's dust airdrops hide immediately instead of the field
-      //       hydrating `undefined`.
-      //   v7: `prologueVersion` added (gate-prologue play policy, moved here
-      //       from a direct localStorage adapter so the renderer keeps ONE
-      //       sanctioned storage path) — seed null: an upgrading install has
-      //       never recorded a completed prologue under this key, and null
-      //       resolves to the full play, the same first-impression a fresh
-      //       install gets.
-      //   v8: `bookSectionOrder` added (BOOK rail drag-to-reorder) — seed []
-      //       so an upgrading install hydrates into the DEFAULT order rather
-      //       than `undefined`. Expand-only; no existing key is read or
-      //       rewritten.
-      migrate: (persisted, version) => {
-        if (persisted === null || typeof persisted !== "object") {
-          return persisted;
-        }
-        let next = persisted as Record<string, unknown>;
-        if (version < 2) next = { ...next, bookOpen: true };
-        if (version < 5) next = { ...next, theme: "chronos" };
-        if (version < 6 && !("hideDustBalances" in next)) {
-          next = { ...next, hideDustBalances: true };
-        }
-        if (version < 7 && !("prologueVersion" in next)) {
-          next = { ...next, prologueVersion: null };
-        }
-        if (version < 8 && !("bookSectionOrder" in next)) {
-          next = { ...next, bookSectionOrder: [] };
-        }
-        //   v9: `theme` (always "chronos") became `themePreference`
-        //       ("chronos" | "celeris" | "system"). Seed from the old key
-        //       through the coercion so every historical value (including
-        //       the retired "vex"/"robinhood") lands on a legal preference.
-        if (version < 9) {
-          next = { ...next, themePreference: coerceThemePreference(next["theme"]) };
-        }
-        return next;
-      },
-      // localStorage is user-writable (untrusted input), and `migrate` only
-      // runs on version hops — a hand-edited current-version payload skips it.
-      // Coerce on EVERY rehydrate: any off-union `themePreference` (including
-      // the retired "vex"/"robinhood" values) degrades to the default instead
-      // of reaching `data-vex-theme` with an unknown value.
-      merge: (persisted, current) => {
-        const incoming =
-          persisted !== null && typeof persisted === "object"
-            ? (persisted as Partial<UiState>)
-            : undefined;
-        const themePreference = coerceThemePreference(
-          incoming?.themePreference,
-        );
-        const theme: VexTheme = resolveTheme(
-          themePreference,
-          systemPrefersDark(),
-        );
-        // Same coercion for the dust filter: anything that is not a boolean
-        // degrades to the TRUE default, never a crash or a stray non-boolean
-        // reaching the checkbox's `checked` prop.
-        const hideDustBalances: boolean =
-          typeof incoming?.hideDustBalances === "boolean"
-            ? incoming.hideDustBalances
-            : true;
-        // Same posture for the prologue flag: a non-string, empty or
-        // absurdly long hand-edited value degrades to null — which the play
-        // policy resolves to the FULL prologue, never a crash.
-        const prologueVersion: string | null =
-          typeof incoming?.prologueVersion === "string" &&
-          incoming.prologueVersion.length > 0 &&
-          incoming.prologueVersion.length <= 64
-            ? incoming.prologueVersion
-            : null;
-        // Same posture for the rail order, with a HARD BOUND on both the list
-        // and each entry so a hand-written payload cannot make the resolver
-        // walk an unbounded array. Anything off-shape degrades to [] — the
-        // default order, never a crash and never a blank rail.
-        const bookSectionOrder: readonly string[] =
-          Array.isArray(incoming?.bookSectionOrder) &&
-          incoming.bookSectionOrder.length <= MAX_BOOK_SECTION_ENTRIES &&
-          incoming.bookSectionOrder.every(
-            (value) =>
-              typeof value === "string" &&
-              value.length > 0 &&
-              value.length <= MAX_BOOK_SECTION_ID_LENGTH,
-          )
-            ? incoming.bookSectionOrder
-            : [];
-        return {
-          ...current,
-          ...incoming,
-          theme,
-          themePreference,
-          hideDustBalances,
-          prologueVersion,
-          bookSectionOrder,
-        };
-      },
+      // Whitelist + migrations + rehydrate coercion live in
+      // uiStore/persistence.ts (same-named sibling folder).
+      partialize: partializeUiState,
+      migrate: migrateUiState,
+      merge: mergeUiState,
     }
   )
 );

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -372,7 +372,11 @@ describe("AppShell", () => {
         screen.getByRole("menuitem", { name: new RegExp(entry, "i") }),
       ).not.toBeNull();
     }
-    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
+    // Six ACTION entries; the runtime provenance row rides the menu footer
+    // as a disabled (non-actionable) row.
+    const menuItems = screen.getAllByRole("menuitem");
+    expect(menuItems.filter((item) => !item.hasAttribute("disabled"))).toHaveLength(6);
+    expect(menuItems).toHaveLength(7);
     expect(screen.queryByRole("menuitem", { name: /Missions/i })).toBeNull();
     expect(screen.queryByText("Results ledger")).toBeNull();
     expect(screen.getByText("What Vex has learned")).not.toBeNull();
@@ -593,6 +597,48 @@ describe("AppShell", () => {
     ).toBeNull();
   });
 
+  it("solves the shell grid tracks from the solver (sidebar 280px, welcome BOOK auto)", () => {
+    const view = renderShell();
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    expect(frame).not.toBeNull();
+    // jsdom: no ResizeObserver, viewport = window.innerWidth (1024). Welcome
+    // stage keeps the BOOK track auto (the floating tab sizes itself).
+    expect(frame?.style.gridTemplateColumns).toBe("280px minmax(0, 1fr) auto");
+  });
+
+  it("mounts the sidebar drag handle only while the sidebar is expanded", () => {
+    const view = renderShell();
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='sidebar']"),
+    ).not.toBeNull();
+    // Welcome stage: no BOOK handle (the floating tab is not a grid column).
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='book']"),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Collapse sessions sidebar/i }),
+    );
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='sidebar']"),
+    ).toBeNull();
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    // The collapsed rail is the fixed 56px track.
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) auto");
+  });
+
+  it("a dragged sidebar width re-solves the track and persists through the store", () => {
+    const view = renderShell();
+    act(() => useUiStore.getState().setSidebarWidth(342));
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    expect(frame?.style.gridTemplateColumns).toBe("342px minmax(0, 1fr) auto");
+  });
 });
 
 function makeAgentRow(title: string): SessionListItem {

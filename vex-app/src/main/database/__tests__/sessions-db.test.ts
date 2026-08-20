@@ -196,6 +196,56 @@ describe("setSessionPinnedWithClient — soft-delete invariant", () => {
   });
 });
 
+describe("renameSessionWithClient — contract", () => {
+  it("returns ok(null) when the row is unknown or soft-deleted (UPDATE 0 rows)", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client } = scriptedClient([{ rows: [], rowCount: 0 }]);
+    const result = await mod.renameSessionWithClient(client, TEST_ID, "New name");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data).toBeNull();
+  });
+
+  it("guarded UPDATE writes only title and filters deleted_at IS NULL", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client, queryMock } = scriptedClient([{ rows: [], rowCount: 0 }]);
+    await mod.renameSessionWithClient(client, TEST_ID, "New name");
+    const call = queryMock.mock.calls[0]!;
+    const sql = call[0] as string;
+    expect(sql).toMatch(/UPDATE sessions/);
+    expect(sql).toMatch(/SET\s+title\s*=\s*\$2/);
+    expect(sql).toMatch(/AND\s+deleted_at\s+IS\s+NULL/);
+    expect(call[1]).toEqual([TEST_ID, "New name", "vex_app"]);
+  });
+
+  it("returns the renamed SessionListItem with missionStatus for a mission row", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client } = scriptedClient([
+      {
+        rows: [
+          {
+            id: TEST_ID,
+            mode: "mission",
+            permission: "restricted",
+            initial_goal: "Goal",
+            started_at: new Date(),
+            ended_at: null,
+            title: "Renamed mission",
+            pinned_at: null,
+          },
+        ],
+        rowCount: 1,
+      },
+      { rows: [{ status: "running" }], rowCount: 1 }, // loadMissionStatus
+    ]);
+    const result = await mod.renameSessionWithClient(client, TEST_ID, "Renamed mission");
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data !== null) {
+      expect(result.data.title).toBe("Renamed mission");
+      expect(result.data.missionStatus).toBe("running");
+    }
+  });
+});
+
 // Drift guard for the puzzle 03 follow-up: every helper that uses the
 // `ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES` whitelist must include
 // `paused_user`. Otherwise the sidebar's active-run buckets, the

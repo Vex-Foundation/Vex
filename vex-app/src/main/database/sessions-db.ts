@@ -41,3 +41,4 @@ export { getSessionById, listSessions } from "./sessions/read.js";
 export { getSessionExportMessages } from "./sessions/export-history.js";
 export { softDeleteSessionWithClient, softDeleteSession } from "./sessions/delete.js";
 export { setSessionPinnedWithClient, setSessionPinned } from "./sessions/pin.js";
+export { renameSessionWithClient, renameSession } from "./sessions/rename.js";

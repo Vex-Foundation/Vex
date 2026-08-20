@@ -41,6 +41,7 @@ import { registerSessionsExportMarkdownHandler } from "./sessions/export-markdow
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
+import { registerSessionsRenameHandler } from "./sessions/rename.js";
 import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
 import { registerSessionPlanHandlers } from "./sessions/plan.js";
 import { registerSecretsHandlers } from "./secrets.js";
@@ -76,6 +77,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsListHandler());
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
+  teardowns.push(registerSessionsRenameHandler());
   teardowns.push(registerSessionsDeleteHandler());
   teardowns.push(registerSessionsExportMarkdownHandler());
   teardowns.push(...registerSessionPlanHandlers());

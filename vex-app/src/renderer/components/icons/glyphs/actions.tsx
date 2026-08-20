@@ -184,3 +184,25 @@ export const IconPause = ({ size = 16, className }: GlyphProps): JSX.Element => 
     </g>
   </svg>
 );
+
+/* Outline five-point star (pin/favorite). Drawn native on the 24 grid: the
+ * reference set carries no star; the 1.5px ring weight matches the outline
+ * glyphs above. */
+export const IconStar = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M12 3.25L14.62 8.56L20.48 9.41L16.24 13.55L17.24 19.38L12 16.63L6.76 19.38L7.76 13.55L3.52 9.41L9.38 8.56L12 3.25ZM12 6.64L10.37 9.94L6.73 10.47L9.36 13.04L8.74 16.66L12 14.95L15.26 16.66L14.64 13.04L17.27 10.47L13.63 9.94L12 6.64Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+/* Filled five-point star (pinned state). */
+export const IconStarFill = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M12 3.25L14.62 8.56L20.48 9.41L16.24 13.55L17.24 19.38L12 16.63L6.76 19.38L7.76 13.55L3.52 9.41L9.38 8.56L12 3.25Z"
+      fill="currentColor"
+    />
+  </svg>
+);

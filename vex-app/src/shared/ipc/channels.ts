@@ -85,6 +85,7 @@ export const CH = {
     list: "vex:sessions:list",
     get: "vex:sessions:get",
     setPinned: "vex:sessions:setPinned",
+    rename: "vex:sessions:rename",
     delete: "vex:sessions:delete",
     /**
      * Native, path-private Markdown transcript export. Main owns the save

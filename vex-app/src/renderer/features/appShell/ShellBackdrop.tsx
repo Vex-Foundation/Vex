@@ -49,6 +49,11 @@ import { cn } from "../../lib/utils.js";
  * on owner instruction, 2026-07-31; git history is the archive.)
  */
 const BACKDROP_SRC = "/backdrops/midnight-lake.webp";
+/** Celeris (light) artwork: the same lake by day, meadow foreground. Shown
+ * only under `data-vex-theme="celeris"` — the swap is pure CSS
+ * (`.vex-backdrop-chronos` / `.vex-backdrop-celeris`, shell.css), never a
+ * JS theme read. */
+const BACKDROP_CELERIS_SRC = "/backdrops/celeris-lake-day.webp";
 
 export function ShellBackdrop({
   dimmed,
@@ -66,7 +71,13 @@ export function ShellBackdrop({
         src={BACKDROP_SRC}
         alt=""
         draggable={false}
-        className="vex-backdrop-drift h-full w-full select-none object-cover saturate-[1.05] contrast-[1.03]"
+        className="vex-backdrop-chronos vex-backdrop-drift h-full w-full select-none object-cover saturate-[1.05] contrast-[1.03]"
+      />
+      <img
+        src={BACKDROP_CELERIS_SRC}
+        alt=""
+        draggable={false}
+        className="vex-backdrop-celeris vex-backdrop-drift absolute inset-0 h-full w-full select-none object-cover"
       />
       {/* Film grain over the artwork ONLY (below the veils) — see the
         * BACKDROP_SRC note; rails/panels keep their own grain rules. */}
@@ -87,9 +98,11 @@ export function ShellBackdrop({
         * scrim ended at the aside boundary and read as a displaced filter
         * seam). Fades out behind an active session, where the deep veil
         * above already owns legibility. */}
+      {/* Scrim stops read --vex-surface-0, so celeris grounds the hero with
+        * a WHITE veil from the same declaration. */}
       <div
         className={cn(
-          "absolute inset-x-0 bottom-0 h-[46%] bg-[linear-gradient(180deg,transparent_0%,rgba(10,13,24,0.42)_52%,rgba(10,13,24,0.88)_100%)] transition-opacity duration-[900ms] ease-[var(--vex-ease-inout)]",
+          "absolute inset-x-0 bottom-0 h-[46%] bg-[linear-gradient(180deg,transparent_0%,color-mix(in_oklab,var(--vex-surface-0)_42%,transparent)_52%,color-mix(in_oklab,var(--vex-surface-0)_88%,transparent)_100%)] transition-opacity duration-[900ms] ease-[var(--vex-ease-inout)]",
           dimmed ? "opacity-0" : "opacity-100",
         )}
       />

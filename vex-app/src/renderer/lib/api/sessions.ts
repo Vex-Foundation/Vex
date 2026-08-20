@@ -33,6 +33,8 @@ import type {
   SessionModelDto,
   SessionSetPinnedInput,
   SessionSetPinnedResult,
+  SessionRenameInput,
+  SessionRenameResult,
 } from "@shared/schemas/sessions.js";
 import type {
   PlanGetResult,
@@ -124,6 +126,33 @@ export function useSetSessionPinned(): UseMutationResult<
   return useMutation({
     mutationFn: (input: SessionSetPinnedInput) =>
       window.vex.sessions.setPinned(input),
+    onSuccess: (result) => {
+      if (!result.ok) return;
+      if (result.data !== null) {
+        queryClient.setQueryData(
+          sessionKeys.detail(result.data.id),
+          { ok: true, data: result.data } satisfies Result<SessionListItem>,
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
+    },
+  });
+}
+
+/**
+ * Rename a session via main (`vex.sessions.rename`). Mirrors the pin
+ * mutation's cache behavior: a returned row refreshes the detail cache, a
+ * `null` (stale id) just falls through to the list invalidation.
+ */
+export function useRenameSession(): UseMutationResult<
+  Result<SessionRenameResult>,
+  Error,
+  SessionRenameInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SessionRenameInput) =>
+      window.vex.sessions.rename(input),
     onSuccess: (result) => {
       if (!result.ok) return;
       if (result.data !== null) {
