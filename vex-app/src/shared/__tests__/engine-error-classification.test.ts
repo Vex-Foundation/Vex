@@ -53,7 +53,7 @@ function readInstalledApiErrorTypes(): readonly string[] {
   );
   if (members.length === 0) {
     throw new Error(
-      "Could not parse ApiErrorType from the installed SDK — the declaration shape changed; fix this parser rather than deleting the check.",
+      "Could not parse ApiErrorType from the installed SDK - the declaration shape changed; fix this parser rather than deleting the check.",
     );
   }
   return members;
@@ -92,7 +92,7 @@ const API_ERROR_TYPE_ROWS: ReadonlyArray<readonly [string, EngineErrorCategory]>
   ["unmapped", "unknown"],
 ];
 
-describe("classifyEngineFailure — ApiErrorType (stream path)", () => {
+describe("classifyEngineFailure - ApiErrorType (stream path)", () => {
   it("has a row for EVERY member the installed SDK declares, and no phantoms", () => {
     const declared = [...INSTALLED_API_ERROR_TYPES].sort();
     const covered = API_ERROR_TYPE_ROWS.map(([member]) => member).sort();
@@ -130,7 +130,7 @@ describe("classifyEngineFailure — ApiErrorType (stream path)", () => {
     expect(generic).toEqual([]);
   });
 
-  it("row 28 — an open-enum escape survives as data and resolves to `unknown`", () => {
+  it("row 28 - an open-enum escape survives as data and resolves to `unknown`", () => {
     // `ApiErrorType` is an OpenEnum: at runtime an unrecognized value is a
     // plain string and is a LEGAL provider response. It must not throw and
     // must not be silently treated as "no signal".
@@ -139,7 +139,7 @@ describe("classifyEngineFailure — ApiErrorType (stream path)", () => {
     );
   });
 
-  it("beats a contradicting status — the provider's own taxonomy wins", () => {
+  it("beats a contradicting status - the provider's own taxonomy wins", () => {
     // An SSE stream opens with HTTP 200 and reports the failure mid-body, so a
     // status accompanying an errorType is the LESS trustworthy signal.
     expect(
@@ -169,7 +169,7 @@ const STATUS_CLASS_ROWS: ReadonlyArray<
   ["ProviderOverloadedResponseError", 529, "capacity"],
 ];
 
-describe("classifyEngineFailure — SDK classes (throw path)", () => {
+describe("classifyEngineFailure - SDK classes (throw path)", () => {
   it("covers all 15 status-mapped response classes", () => {
     expect(STATUS_CLASS_ROWS).toHaveLength(15);
   });
@@ -220,7 +220,7 @@ describe("classifyEngineFailure — SDK classes (throw path)", () => {
   );
 });
 
-describe("classifyEngineFailure — OpenRouterDefaultError catch-all", () => {
+describe("classifyEngineFailure - OpenRouterDefaultError catch-all", () => {
   // `M.fail("4XX"|"5XX")` throws OpenRouterDefaultError for ANY status outside
   // the 15 mapped classes, carrying only a status. The status branch must be
   // total over integers, not a 15-case list.
@@ -248,7 +248,7 @@ describe("classifyEngineFailure — OpenRouterDefaultError catch-all", () => {
   });
 });
 
-describe("classifyEngineFailure — transport errno fallback", () => {
+describe("classifyEngineFailure - transport errno fallback", () => {
   it.each([
     "ETIMEDOUT",
     "ECONNRESET",
@@ -268,7 +268,7 @@ describe("classifyEngineFailure — transport errno fallback", () => {
   });
 });
 
-describe("classifyEngineFailure — total behaviour", () => {
+describe("classifyEngineFailure - total behaviour", () => {
   it("returns `unknown` rather than throwing when nothing is known", () => {
     expect(classifyEngineFailure({})).toBe("unknown");
     expect(

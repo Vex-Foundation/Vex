@@ -35,7 +35,7 @@ describe("safeHref", () => {
 });
 
 describe("safeImgSrc", () => {
-  it("returns null for a well-formed https URL — remote images disabled for launch (W1)", () => {
+  it("returns null for a well-formed https URL - remote images disabled for launch (W1)", () => {
     // Remote images are DISABLED for launch to close the CSP img-src
     // exfiltration channel; every source (even a clean public https logo)
     // resolves to null so the caller renders alt text only.
@@ -125,7 +125,7 @@ describe("MarkdownContent", () => {
       "![c](//a.b/c.png)", // protocol-relative
       "![d](https://u:p@a.b/c.png)", // embedded credentials
       "![e](https://localhost/c.png)", // localhost
-      "![g](https://cdn.example/logo.png)", // clean public https — still disabled for launch (W1)
+      "![g](https://cdn.example/logo.png)", // clean public https - still disabled for launch (W1)
     ];
     for (const md of cases) {
       const { container } = renderMd(md);

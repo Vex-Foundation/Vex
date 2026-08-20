@@ -13,7 +13,7 @@ interface ReadyBodyProps {
 
 export function ReadyBody({ appliedCount }: ReadyBodyProps): JSX.Element {
   const word = appliedCount === 1 ? "migration" : "migrations";
-  const detail = `${appliedCount} ${word} applied — schema is up to date.`;
+  const detail = `${appliedCount} ${word} applied - schema is up to date.`;
 
   return (
     <SetupStatusCard

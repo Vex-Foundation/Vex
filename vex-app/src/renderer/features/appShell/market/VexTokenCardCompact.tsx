@@ -170,7 +170,7 @@ function StaleMarker(): JSX.Element {
     <span
       data-vex-area="vex-token-stale"
       className="flex items-center gap-1 text-ink-tertiary"
-      title="Live feed delayed — showing the last known price."
+      title="Live feed delayed - showing the last known price."
     >
       <span
         aria-hidden

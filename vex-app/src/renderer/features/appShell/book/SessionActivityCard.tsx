@@ -90,7 +90,7 @@ export function SessionActivityCard({
     // Timeout degradation must NEVER read as "the agent has done nothing".
     body = (
       <CardStateNote>
-        Activity is unavailable right now — try again shortly.
+        Activity is unavailable right now - try again shortly.
       </CardStateNote>
     );
   } else if (entries.length === 0) {

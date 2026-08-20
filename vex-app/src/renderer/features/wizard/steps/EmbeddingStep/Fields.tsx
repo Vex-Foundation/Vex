@@ -81,7 +81,7 @@ export function EmbeddingFields({
           />
           <p className="text-xs text-ink-tertiary">
             {MIN_EMBEDDING_DIM}–{MAX_EMBEDDING_DIM}. Common: 384, 768, 1024,
-            1536. Locks once memories exist — changing it later would
+            1536. Locks once memories exist - changing it later would
             strand them.
           </p>
         </div>

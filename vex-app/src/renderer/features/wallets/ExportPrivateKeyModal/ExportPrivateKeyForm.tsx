@@ -57,7 +57,7 @@ export function ExportPrivateKeyForm({
       >
         Your private key will be copied to the system clipboard. Vex{" "}
         <strong>will attempt</strong> to clear the clipboard after 10
-        seconds, but this is best-effort — a crash or power loss may
+        seconds, but this is best-effort - a crash or power loss may
         prevent cleanup. Anyone with access to this computer during
         that window can read the key. Do not paste it into untrusted
         applications. The key will NOT be shown on screen.

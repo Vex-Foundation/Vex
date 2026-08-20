@@ -74,7 +74,7 @@ describe("parseWei", () => {
 });
 
 describe("estimatedTotalCostWei", () => {
-  it("sums msg.value + vexFee + network fee — the whole cost of launching", () => {
+  it("sums msg.value + vexFee + network fee - the whole cost of launching", () => {
     // 0.051 + 0.0001275 + 0.001634838
     expect(
       estimatedTotalCostWei("51000000000000000", "127500000000000", "1634838000000000"),
@@ -89,7 +89,7 @@ describe("estimatedTotalCostWei", () => {
 });
 
 describe("normalizeEthInput", () => {
-  it("returns the typed decimal unchanged — it validates, it does not convert", () => {
+  it("returns the typed decimal unchanged - it validates, it does not convert", () => {
     expect(normalizeEthInput("0.001")).toBe("0.001");
     expect(normalizeEthInput("1")).toBe("1");
     expect(normalizeEthInput(" 1.234567890123456789 ")).toBe("1.234567890123456789");

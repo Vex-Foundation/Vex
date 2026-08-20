@@ -31,7 +31,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   };
 }
 
-describe("resolveTurnIslandView — the four working states", () => {
+describe("resolveTurnIslandView - the four working states", () => {
   it("working → the compact 'vexing…' pill (the legacy 'Working' word is retired)", () => {
     const view = resolveTurnIslandView(preview({ status: "working" }), false);
     expect(view).toMatchObject({
@@ -108,7 +108,7 @@ describe("resolveTurnIslandView — the four working states", () => {
   });
 });
 
-describe("resolveTurnIslandView — precedence", () => {
+describe("resolveTurnIslandView - precedence", () => {
   it("an error outranks everything and never animates", () => {
     const view = resolveTurnIslandView(
       preview({ phase: "error", status: "thinking", reasoningText: "trace" }),
@@ -185,7 +185,7 @@ describe("showsCentredScene", () => {
     expect(showsCentredScene(blankFirstMoment, false, false)).toBe(false);
   });
 
-  it("a pending signature suppresses it — trust is stillness", () => {
+  it("a pending signature suppresses it - trust is stillness", () => {
     // The freeze wins over every eligible input: a looping scene while we wait
     // for the user's pen reads as progress that is not happening.
     expect(showsCentredScene(blankFirstMoment, true, true)).toBe(false);

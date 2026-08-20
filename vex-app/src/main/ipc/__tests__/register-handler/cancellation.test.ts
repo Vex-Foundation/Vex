@@ -34,7 +34,7 @@ vi.mock("electron", () => ({
     },
   },
   app: {
-    isPackaged: true, // simulate prod — only app://vex/ origin is trusted
+    isPackaged: true, // simulate prod - only app://vex/ origin is trusted
   },
 }));
 
@@ -101,7 +101,7 @@ const trustedSender = senderFrame("app://vex/index.html");
 //     return {cancelled: false}
 //   - completed/failed requests cannot be retroactively cancelled
 
-describe("registerHandler — cancellation (PR3)", () => {
+describe("registerHandler - cancellation (PR3)", () => {
   beforeEach(() => {
     handlers.clear();
     cleanupTasks.clear();

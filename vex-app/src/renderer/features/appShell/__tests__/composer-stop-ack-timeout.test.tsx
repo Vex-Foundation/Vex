@@ -108,7 +108,7 @@ describe("stop acknowledgment time-box", () => {
     expect(result.current.notice?.tone).not.toBe("error");
   });
 
-  it("makes the second press real — the durable request fires again", async () => {
+  it("makes the second press real - the durable request fires again", async () => {
     const { result } = renderHook(
       () => useComposerSubmit(SESSION, null, false, null),
       { wrapper },

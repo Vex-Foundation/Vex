@@ -29,7 +29,7 @@ describe("isBridgeTrackingStale", () => {
     expect(isBridgeTrackingStale(null, iso(2 * 60_000), NOW)).toBe(false);
   });
 
-  it("the threshold is strict — exactly at the boundary is NOT yet delayed", () => {
+  it("the threshold is strict - exactly at the boundary is NOT yet delayed", () => {
     expect(isBridgeTrackingStale(iso(BRIDGE_TRACKING_STALE_MS), iso(0), NOW)).toBe(false);
     expect(isBridgeTrackingStale(iso(BRIDGE_TRACKING_STALE_MS + 1), iso(0), NOW)).toBe(true);
   });
@@ -38,7 +38,7 @@ describe("isBridgeTrackingStale", () => {
     expect(isBridgeTrackingStale("not-a-date", "also-not-a-date", NOW)).toBe(false);
   });
 
-  it("defaults nowMs to Date.now() — a clearly-old check is delayed, a just-now check is not", () => {
+  it("defaults nowMs to Date.now() - a clearly-old check is delayed, a just-now check is not", () => {
     expect(isBridgeTrackingStale("2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z")).toBe(true);
     expect(isBridgeTrackingStale(new Date().toISOString(), new Date().toISOString())).toBe(false);
   });

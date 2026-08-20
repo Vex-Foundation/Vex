@@ -131,7 +131,7 @@ describe("providerPersist handler", () => {
     expect(mockWriter).toHaveBeenCalledTimes(1);
   });
 
-  it("verify failure short-circuits — writer NEVER called", async () => {
+  it("verify failure short-circuits - writer NEVER called", async () => {
     mockVerify.mockResolvedValue({
       ok: false,
       error: {
@@ -187,7 +187,7 @@ describe("providerPersist handler", () => {
     expect(result.error?.details?.verified).toBe(true);
   });
 
-  it("logs include provider+modelSet+latencyMs+correlationId on success — NEVER apiKey or model VALUE", async () => {
+  it("logs include provider+modelSet+latencyMs+correlationId on success - NEVER apiKey or model VALUE", async () => {
     mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 99 } });
     mockWriter.mockResolvedValue({
       ok: true,

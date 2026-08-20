@@ -100,7 +100,7 @@ describe("SetupTour", () => {
     expect(store.getState().prologueReplayNonce).toBe(before + 2);
   });
 
-  it("does not persist the prologue version key — the preview stays repeatable", async () => {
+  it("does not persist the prologue version key - the preview stays repeatable", async () => {
     const { SetupTour } = await importFresh("1");
     render(<SetupTour />);
     fireEvent.click(screen.getByRole("button", { name: "Replay gate" }));

@@ -46,8 +46,8 @@ const SCREEN_TITLE = "Agent Scan";
 /** Header subtitle — it must say when the feed is narrowed to one session. */
 function screenSubtitle(sessionId: string | null): string {
   return sessionId === null
-    ? "Every action Vex executed on-chain, newest first — each row links to its transaction."
-    : "Everything Vex executed on-chain in THIS session, newest first — each row links to its transaction.";
+    ? "Every action Vex executed on-chain, newest first - each row links to its transaction."
+    : "Everything Vex executed on-chain in THIS session, newest first - each row links to its transaction.";
 }
 
 /** Starting height guess per row; real heights are measured after mount. */
@@ -171,7 +171,7 @@ export function AgentScanScreen({
     // Timeout degradation: NEVER rendered as an empty history.
     body = (
       <FeedNote tone="calm">
-        Activity is unavailable right now — try again shortly.
+        Activity is unavailable right now - try again shortly.
       </FeedNote>
     );
   } else if (query.isError) {
@@ -186,7 +186,7 @@ export function AgentScanScreen({
       </FeedNote>
     ) : (
       <FeedNote tone="quiet">
-        No activity recorded yet — everything Vex executes appears here.
+        No activity recorded yet - everything Vex executes appears here.
       </FeedNote>
     );
   } else {

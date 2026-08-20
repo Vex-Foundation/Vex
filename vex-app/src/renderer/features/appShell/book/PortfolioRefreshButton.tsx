@@ -67,12 +67,12 @@ export function PortfolioRefreshButton(): JSX.Element {
       </button>
       {feedback.kind === "throttled" ? (
         <span className="text-[10px] tabular-nums text-ink-tertiary">
-          just refreshed — retry in {feedback.retryAfterSeconds}s
+          just refreshed - retry in {feedback.retryAfterSeconds}s
         </span>
       ) : null}
       {feedback.kind === "unavailable" ? (
         <span className="text-[10px] text-warning-label">
-          could not refresh — showing last known
+          could not refresh - showing last known
         </span>
       ) : null}
     </div>

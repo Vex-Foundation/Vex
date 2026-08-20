@@ -100,7 +100,7 @@ describe("readEnvValue", () => {
 // Address resolution is exercised through the production probe
 // (`gatherWalletProbe(...).addresses`); these cases don't write keystore
 // files, so they assert addresses only (status is covered separately below).
-describe("gatherWalletProbe — primary address resolution", () => {
+describe("gatherWalletProbe - primary address resolution", () => {
   let tmp = "";
   let configFile = "";
 
@@ -131,7 +131,7 @@ describe("gatherWalletProbe — primary address resolution", () => {
     });
   });
 
-  it("returns {evm:null, solana:null} when the config file is missing (silent — no warn for expected first-run state)", async () => {
+  it("returns {evm:null, solana:null} when the config file is missing (silent - no warn for expected first-run state)", async () => {
     expect((await gatherWalletProbe(configFile, tmp)).addresses).toEqual({
       evm: null,
       solana: null,
@@ -139,7 +139,7 @@ describe("gatherWalletProbe — primary address resolution", () => {
     expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("returns {evm:null, solana:null} when the file contains malformed JSON (warns — corrupt config is operationally meaningful)", async () => {
+  it("returns {evm:null, solana:null} when the file contains malformed JSON (warns - corrupt config is operationally meaningful)", async () => {
     writeFileSync(configFile, "{not-valid-json", "utf8");
     expect((await gatherWalletProbe(configFile, tmp)).addresses).toEqual({
       evm: null,

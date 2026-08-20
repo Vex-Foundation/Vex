@@ -40,7 +40,7 @@ function broadcastMessage(result: ToolResult): string {
   return outcome.message;
 }
 
-describe("readExecutorOutcome — a confirmed launch never renders as JSON", () => {
+describe("readExecutorOutcome - a confirmed launch never renders as JSON", () => {
   it("projects the executor's own summary when it is usable", () => {
     const message = broadcastMessage(
       confirmedResult(`Launched RKT on Robinhood Chain: ${TOKEN}. Tx: ${TX_HASH}`),
@@ -54,7 +54,7 @@ describe("readExecutorOutcome — a confirmed launch never renders as JSON", () 
     ["a NON-STRING summary", 42],
     ["an EMPTY summary", ""],
     ["a WHITESPACE-ONLY summary", "   "],
-  ])("composes a sentence for %s — and never the JSON blob", (_label, summary) => {
+  ])("composes a sentence for %s - and never the JSON blob", (_label, summary) => {
     const message = broadcastMessage(confirmedResult(summary));
 
     // Positively: the composed sentence, from already-validated fields.
@@ -92,7 +92,7 @@ describe("readExecutorOutcome — a confirmed launch never renders as JSON", () 
   });
 });
 
-describe("readExecutorOutcome — the other statuses keep the executor's prose", () => {
+describe("readExecutorOutcome - the other statuses keep the executor's prose", () => {
   it.each(["pending", "reverted", "confirmed_pending_identity"])(
     "passes %s output through verbatim, with its hash stated once",
     (status) => {
@@ -107,7 +107,7 @@ describe("readExecutorOutcome — the other statuses keep the executor's prose",
     },
   );
 
-  it("keeps a REFUSAL's prose verbatim — nothing was signed", () => {
+  it("keeps a REFUSAL's prose verbatim - nothing was signed", () => {
     const outcome = readExecutorOutcome({
       success: false,
       output: "Vex did not sign anything: the anchored fee moved.",

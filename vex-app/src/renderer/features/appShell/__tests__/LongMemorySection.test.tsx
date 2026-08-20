@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe("LongMemorySection", () => {
-  it("lists entries and never shows mutation buttons — even on active rows", async () => {
+  it("lists entries and never shows mutation buttons - even on active rows", async () => {
     longMemoryListMock.mockResolvedValue(
       ok([entry({ id: 1, status: "active", title: "Active row" })]),
     );

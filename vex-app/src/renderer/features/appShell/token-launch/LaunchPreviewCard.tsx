@@ -211,7 +211,7 @@ function PreviewAmounts({
         <p className="text-[11px] leading-relaxed text-ink-tertiary">
           This is the exact amount the launch transaction sends. Deploying also
           authorizes Vex&apos;s 25 bps fee below, as a separate transfer once
-          the launch confirms, and the network&apos;s gas — nothing else.
+          the launch confirms, and the network&apos;s gas - nothing else.
         </p>
       </div>
 
@@ -229,7 +229,7 @@ function PreviewAmounts({
         </span>
       </div>
       <p className="text-[11px] leading-relaxed text-ink-tertiary">
-        Paid to the network, not to us, and only an estimate — it is not part of
+        Paid to the network, not to us, and only an estimate - it is not part of
         the amount above. Gas scales with your image size
         {preview.vexFeeCharged ? ", and covers the fee transfer as well" : ""}.
       </p>
@@ -268,7 +268,7 @@ function VexFeeDisclosure({
   if (preview.vexFeeCharged === false) {
     return (
       <p className="text-[11px] leading-relaxed text-ink-tertiary">
-        Vex fee: none — 25 bps of this amount rounds to zero.
+        Vex fee: none - 25 bps of this amount rounds to zero.
       </p>
     );
   }
@@ -278,7 +278,7 @@ function VexFeeDisclosure({
 
   return (
     <p className="text-[11px] leading-relaxed text-ink-tertiary">
-      Vex fee: {amount} ETH (25 bps) — charged separately after your launch
+      Vex fee: {amount} ETH (25 bps) - charged separately after your launch
       confirms; a launch that does not happen is never charged.
     </p>
   );

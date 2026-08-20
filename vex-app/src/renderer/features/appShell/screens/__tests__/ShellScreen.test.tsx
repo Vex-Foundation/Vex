@@ -66,7 +66,7 @@ describe("ShellScreen", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("is a fixed full-app overlay declaring its FLIP morph anchor — never an in-flow sheet", () => {
+  it("is a fixed full-app overlay declaring its FLIP morph anchor - never an in-flow sheet", () => {
     const withOrigin = render(
       <ShellScreen title="Memory" origin={ORIGIN} onClose={vi.fn()}>
         <p>screen content</p>

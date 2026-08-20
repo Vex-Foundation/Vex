@@ -23,7 +23,7 @@ export function truncateAddress(address: string): string {
  */
 export function formatUsd(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   const abs = Math.abs(value);
   if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
@@ -43,7 +43,7 @@ export function formatClock(iso: string): string | null {
 /** Signed compact USD for PnL: `+$12.30` / `-$4.00` / `—`. */
 export function formatUsdDelta(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${sign}${formatUsd(Math.abs(value))}`;
@@ -57,7 +57,7 @@ export function formatUsdDelta(value: number | null | undefined): string {
  */
 export function formatTokenPriceUsd(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   if (value === 0) return "$0.00";
   const abs = Math.abs(value);
@@ -75,7 +75,7 @@ export function formatTokenPriceUsd(value: number | null | undefined): string {
  */
 export function formatTokenAmount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   if (value === 0) return "0";
   const abs = Math.abs(value);
@@ -105,7 +105,7 @@ export function formatTokenQuantity(
 /** Signed percent for a price-change readout: `+113.00%` / `-1.73%` / `—`. */
 export function formatPercentDelta(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${sign}${Math.abs(value).toFixed(2)}%`;
@@ -114,7 +114,7 @@ export function formatPercentDelta(value: number | null | undefined): string {
 /** Compact integer for counts: `354`, `1.2K`, `3.4M`. `null`/non-finite → em dash. */
 export function formatCompactCount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "-";
   }
   const abs = Math.abs(value);
   if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;

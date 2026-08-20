@@ -122,7 +122,7 @@ export function LicenseNotice({
           Docker&rsquo;s terms.
         </p>
         <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
-          Vex does not manage your Docker license — it only starts and stops
+          Vex does not manage your Docker license - it only starts and stops
           its own local services through Docker&rsquo;s public CLI.
         </p>
         <button

@@ -65,7 +65,7 @@ function Body({
   if (unavailable) {
     return (
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-        Your launches are unavailable right now — try again shortly.
+        Your launches are unavailable right now - try again shortly.
       </p>
     );
   }
@@ -114,7 +114,7 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
         </div>
         {/*
           A launch whose token identity is NOT proven yet (OD-3) renders as what
-          it is — a broadcast still in flight — and NEVER as a token: there is no
+          it is - a broadcast still in flight - and NEVER as a token: there is no
           address to show, and an empty one would read as a token with a missing
           name rather than a launch that has not landed.
 
@@ -140,9 +140,9 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
           ) : (
             <span
               className="font-doto text-[11px] font-medium uppercase tracking-[0.12em] text-ink-tertiary"
-              title="Broadcast — Vex is still checking whether this launch was included on-chain. No token address is proven yet."
+              title="Broadcast - Vex is still checking whether this launch was included on-chain. No token address is proven yet."
             >
-              in flight — no token address yet
+              in flight - no token address yet
             </span>
           )
         ) : (

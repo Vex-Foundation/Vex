@@ -89,7 +89,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TokenHistoryScreen — agent_activity swap status chip (Agent Scan §4.7)", () => {
+describe("TokenHistoryScreen - agent_activity swap status chip (Agent Scan §4.7)", () => {
   it("renders a PENDING chip for a pending agent_activity swap entry", () => {
     mockQuery([
       availablePage([swapEntry({ id: "a-1", status: "pending", failureCode: null })]),
@@ -120,7 +120,7 @@ describe("TokenHistoryScreen — agent_activity swap status chip (Agent Scan §4
   });
 });
 
-describe("TokenHistoryScreen — agent_activity amount honesty (Codex final review C20/C27)", () => {
+describe("TokenHistoryScreen - agent_activity amount honesty (Codex final review C20/C27)", () => {
   it("renders a whole-number human amount (no decimal point) for a confirmed agent_activity leg", () => {
     mockQuery([
       availablePage([
@@ -165,12 +165,12 @@ describe("TokenHistoryScreen — agent_activity amount honesty (Codex final revi
       ]),
     ]);
     mountScreen();
-    expect(screen.getByText(/— TOKA/)).not.toBeNull();
+    expect(screen.getByText(/- TOKA/)).not.toBeNull();
     expect(screen.queryByText(/50 TOKA/)).toBeNull();
   });
 });
 
-describe("TokenHistoryScreen — USD estimate provenance (Codex final review round 2 C35)", () => {
+describe("TokenHistoryScreen - USD estimate provenance (Codex final review round 2 C35)", () => {
   it("renders an agent_activity-sourced (estimated) valueUsd with an explicit ~... est. marker, never bare execution USD", () => {
     mockQuery([
       availablePage([

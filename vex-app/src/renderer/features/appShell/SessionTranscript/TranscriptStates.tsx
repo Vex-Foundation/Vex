@@ -52,7 +52,7 @@ export function TranscriptEmptyState(): JSX.Element {
       className="flex min-h-0 flex-1 items-center justify-center px-4"
     >
       <p className="text-center text-sm text-[var(--vex-text-2)]">
-        Start the conversation — your messages and Vex&apos;s replies appear
+        Start the conversation - your messages and Vex&apos;s replies appear
         here.
       </p>
     </div>

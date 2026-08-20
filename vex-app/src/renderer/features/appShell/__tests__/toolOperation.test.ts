@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveToolOperation } from "../ToolLedger/toolOperation.js";
 
-describe("resolveToolOperation — engine alias mirror", () => {
+describe("resolveToolOperation - engine alias mirror", () => {
   it.each([
     "swap_quote",
     "swap_quote_uniswap",
@@ -49,14 +49,14 @@ describe("resolveToolOperation — engine alias mirror", () => {
   });
 });
 
-describe("resolveToolOperation — execute_tool reads args ONE way only", () => {
+describe("resolveToolOperation - execute_tool reads args ONE way only", () => {
   it("gives an uncurated (unproven-venue) wrapper no operation", () => {
     expect(
       resolveToolOperation("execute_tool", null, '{"toolId":"kyberswap.swap.execute"}'),
     ).toBeNull();
   });
 
-  it("admits a quote segment from a curated wrapper — a DOWNGRADE of the claim", () => {
+  it("admits a quote segment from a curated wrapper - a DOWNGRADE of the claim", () => {
     expect(
       resolveToolOperation(
         "execute_tool",
@@ -72,7 +72,7 @@ describe("resolveToolOperation — execute_tool reads args ONE way only", () => 
     ["an id outside the curated map", '{"toolId":"kyberswap.swap.futurething"}'],
     ["no args at all", null],
   ])(
-    "never upgrades %s to mutating — it stays unproven (and therefore labelled)",
+    "never upgrades %s to mutating - it stays unproven (and therefore labelled)",
     (_label, args) => {
       expect(resolveToolOperation("execute_tool", "kyberswap", args)).toBe(
         "unproven",
@@ -101,7 +101,7 @@ describe("resolveToolOperation — execute_tool reads args ONE way only", () => 
  * that renders as an executed bridge is precisely the money-path lie rule 90
  * forbids, so anything short of a proven `false` claims less.
  */
-describe("resolveToolOperation — dotted protocol toolIds", () => {
+describe("resolveToolOperation - dotted protocol toolIds", () => {
   it.each([
     ["kyberswap.swap.execute", "kyberswap", "mutating"],
     ["kyberswap.swap.quote", "kyberswap", "quote"],
@@ -156,14 +156,14 @@ describe("resolveToolOperation — dotted protocol toolIds", () => {
     ["a non-object payload", '"dryRun"'],
     ["no args at all", null],
   ])(
-    "reads relay.bridge with %s as UNPROVEN — labelled, never a bare executed summary",
+    "reads relay.bridge with %s as UNPROVEN - labelled, never a bare executed summary",
     (_label, args) => {
       expect(resolveToolOperation("relay.bridge", "relay", args)).toBe("unproven");
     },
   );
 });
 
-describe("resolveToolOperation — dryRun through the LEGACY envelope", () => {
+describe("resolveToolOperation - dryRun through the LEGACY envelope", () => {
   it("reads the nested params.dryRun", () => {
     expect(
       resolveToolOperation(
@@ -202,7 +202,7 @@ describe("resolveToolOperation — dryRun through the LEGACY envelope", () => {
  * manifest entry that nobody mirrors must show up as a failing row, not as a
  * silently unlabelled money card.
  */
-describe("resolveToolOperation — Trench Express exact toolIds", () => {
+describe("resolveToolOperation - Trench Express exact toolIds", () => {
   const operationFor = (toolId: string) =>
     resolveToolOperation("execute_tool", "trench", `{"toolId":"${toolId}"}`);
 
@@ -258,7 +258,7 @@ describe("resolveToolOperation — Trench Express exact toolIds", () => {
  * ids are mutating BUT both accept `dryRun`, whose rehearsal returns
  * `success: true` and signs nothing — so a dry run may never claim an execution.
  */
-describe("resolveToolOperation — Morpho exact toolIds", () => {
+describe("resolveToolOperation - Morpho exact toolIds", () => {
   const operationFor = (toolId: string) =>
     resolveToolOperation("execute_tool", "morpho", `{"toolId":"${toolId}"}`);
 
@@ -336,7 +336,7 @@ describe("resolveToolOperation — Morpho exact toolIds", () => {
  * money leg line under a market-data card, and an unmirrored launch would go the
  * other way and claim less than it did.
  */
-describe("resolveToolOperation — pools.fun exact toolIds", () => {
+describe("resolveToolOperation - pools.fun exact toolIds", () => {
   const operationFor = (toolId: string) =>
     resolveToolOperation("execute_tool", "pools", `{"toolId":"${toolId}"}`);
 

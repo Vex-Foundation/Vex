@@ -68,7 +68,7 @@ vi.mock("../../../lib/api/sessions.js", async (importActual) => {
     useSession: () => ({
       data: {
         ok: true,
-        data: { id: "unused", mode: "agent" } as unknown as SessionListItem, // test-local cast — render only checks wiring
+        data: { id: "unused", mode: "agent" } as unknown as SessionListItem, // test-local cast - render only checks wiring
       } satisfies Result<SessionListItem>,
       isLoading: false,
     }),
@@ -116,7 +116,7 @@ function renderPanel(): ReturnType<typeof render> {
   );
 }
 
-describe("SessionPanel — keyed session-enter", () => {
+describe("SessionPanel - keyed session-enter", () => {
   it("carries .vex-session-enter on the welcome stage and the active-session stage", () => {
     useUiStore.setState({ activeSessionId: null });
     const view = renderPanel();

@@ -198,6 +198,13 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
         ) {
           violations.push(`${full}: uses localStorage (allowed only via Zustand persist whitelist)`);
         }
+        // The icon library left with the rebrand (F6): components/icons/
+        // glyphs is the only icon source. components.json still says
+        // "iconLibrary": "lucide" (fixed shadcn vocabulary), so this gate is
+        // what turns an accidental `shadcn add` re-import into a red build.
+        if (/from\s+["']lucide-react["']/.test(src)) {
+          violations.push(`${full}: imports lucide-react (removed in the rebrand; use components/icons glyphs)`);
+        }
         if (/\bsessionStorage\.(setItem|getItem|removeItem)\b/.test(src)) {
           violations.push(`${full}: uses sessionStorage (forbidden)`);
         }

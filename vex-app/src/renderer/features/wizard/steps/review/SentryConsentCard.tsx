@@ -24,7 +24,7 @@ const COLLECTED_BULLETS: ReadonlyArray<string> = [
   "Crash + uncaught error stack traces (file paths and secret-like strings redacted).",
   "App version, OS family, Electron + Node versions.",
   "Wizard step id and IPC channel name (without payloads) as breadcrumbs.",
-  "A random anonymous install ID — not tied to your wallet or any account.",
+  "A random anonymous install ID - not tied to your wallet or any account.",
 ];
 
 const NEVER_BULLETS: ReadonlyArray<string> = [
@@ -110,7 +110,7 @@ export function SentryConsentCard({
           </div>
           <p className="text-ink-tertiary">
             Stack traces and breadcrumbs are scrubbed in the main process
-            before they leave your machine — see <code>main/logger/redact.ts</code>{" "}
+            before they leave your machine - see <code>main/logger/redact.ts</code>{" "}
             and <code>main/telemetry/before-send.ts</code> in the source.
           </p>
         </div>

@@ -171,7 +171,7 @@ describe("inline rename (double-click)", () => {
   });
 });
 
-describe("the COLLAPSED rail keeps the glyph — it is the whole row there", () => {
+describe("the COLLAPSED rail keeps the glyph - it is the whole row there", () => {
   it("renders the mode glyph when there is no name to sit beside", () => {
     renderRow(session(), false);
     expect(selectControl().querySelector("svg")).not.toBeNull();

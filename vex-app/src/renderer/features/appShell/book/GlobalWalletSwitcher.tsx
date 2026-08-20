@@ -228,7 +228,7 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
   return (
     <li className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0">
       <span className="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
-        {symbol ?? "—"}
+        {symbol ?? "-"}
       </span>
       <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
         {quantity !== null ? (

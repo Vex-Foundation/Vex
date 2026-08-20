@@ -62,7 +62,7 @@ function entry(container: HTMLElement, id: number): HTMLElement {
   return el as HTMLElement;
 }
 
-describe("TranscriptRows — what animates", () => {
+describe("TranscriptRows - what animates", () => {
   it("gives a live-appended USER row the send entry", () => {
     const { container } = renderRows([row(1, "user")], new Set());
     expect(entry(container, 1).innerHTML).toContain("vex-message-send");
@@ -75,7 +75,7 @@ describe("TranscriptRows — what animates", () => {
     expect(html).not.toContain("vex-message-send");
   });
 
-  it("HISTORY hard-cuts — opening an old session must not replay every send", () => {
+  it("HISTORY hard-cuts - opening an old session must not replay every send", () => {
     const { container } = renderRows(
       [row(1, "user"), row(2, "assistant")],
       new Set([1, 2]),
@@ -93,7 +93,7 @@ describe("TranscriptRows — what animates", () => {
   });
 });
 
-describe("TranscriptRows — the animation must not sit on the anchored element", () => {
+describe("TranscriptRows - the animation must not sit on the anchored element", () => {
   it("keeps the entry class OFF the element the top-anchor effect measures", () => {
     // `data-vex-entry-id` + `data-vex-entry-variant` is exactly the selector
     // SessionTranscript's layout effect queries.

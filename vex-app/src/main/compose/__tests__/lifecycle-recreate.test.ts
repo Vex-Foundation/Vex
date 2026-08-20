@@ -116,7 +116,7 @@ beforeEach(() => {
   });
 });
 
-describe("composeUp — post-setup stale bind-mount branch (primary up path)", () => {
+describe("composeUp - post-setup stale bind-mount branch (primary up path)", () => {
   beforeEach(() => {
     mocks.composeUpDetached.mockResolvedValueOnce(
       spawnResult({ code: 1, stderr: STALE_STDERR }),
@@ -185,7 +185,7 @@ describe("composeUp — post-setup stale bind-mount branch (primary up path)", (
   });
 });
 
-describe("composeUp — reused-stack convergence branch (port-busy path)", () => {
+describe("composeUp - reused-stack convergence branch (port-busy path)", () => {
   beforeEach(() => {
     mocks.isPortFree
       .mockResolvedValueOnce(false) // pg port busy

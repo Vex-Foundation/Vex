@@ -102,7 +102,7 @@ describe("EndpointPicker", () => {
     ).toBeTruthy();
   });
 
-  it("states the filter honestly — tool calling, not general compatibility", () => {
+  it("states the filter honestly - tool calling, not general compatibility", () => {
     renderPicker();
     const copy = screen.getByText(/support tool calling/);
     expect(copy.textContent).toContain("base rates");
@@ -133,7 +133,7 @@ describe("EndpointPicker", () => {
   });
 });
 
-describe("EndpointPicker — availability", () => {
+describe("EndpointPicker - availability", () => {
   it("badges the suggested endpoint, and only that one", () => {
     renderPicker({ suggestedEndpointTag: "anthropic" });
     const badges = screen.getAllByText("Suggested");
@@ -143,7 +143,7 @@ describe("EndpointPicker — availability", () => {
     );
   });
 
-  it("treats the suggestion as a HINT — it never selects the row", () => {
+  it("treats the suggestion as a HINT - it never selects the row", () => {
     const { onChange } = renderPicker({
       value: null,
       suggestedEndpointTag: "anthropic",

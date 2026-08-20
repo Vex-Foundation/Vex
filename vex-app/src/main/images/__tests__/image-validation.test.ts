@@ -103,7 +103,7 @@ function rejectionKind(bytes: Uint8Array): string {
 
 // ── Accepted formats ──────────────────────────────────────────────────────
 
-describe("validateLockerImageBytes — the allowlist", () => {
+describe("validateLockerImageBytes - the allowlist", () => {
   it("accepts a PNG and reads its dimensions from IHDR", () => {
     const outcome = validateLockerImageBytes(pngFixture(320, 200));
     expect(outcome).toMatchObject({ ok: true, mime: "image/png", width: 320, height: 200 });
@@ -142,7 +142,7 @@ describe("validateLockerImageBytes — the allowlist", () => {
  * no size limit of ours. The Trench budget is enforced on the DERIVED copy, on
  * the launch path.
  */
-describe("validateLockerImageBytes — the resource bound", () => {
+describe("validateLockerImageBytes - the resource bound", () => {
   it("accepts a file exactly at the bound", () => {
     const bytes = pngFixture(8, 8, LOCKER_IMAGE_MAX_SOURCE_BYTES - 33);
     expect(bytes.byteLength).toBe(LOCKER_IMAGE_MAX_SOURCE_BYTES);
@@ -182,14 +182,14 @@ describe("validateLockerImageBytes — the resource bound", () => {
 
 // ── Refusals: format ──────────────────────────────────────────────────────
 
-describe("validateLockerImageBytes — magic bytes decide, nothing else", () => {
+describe("validateLockerImageBytes - magic bytes decide, nothing else", () => {
   it("refuses a GIF (a real image, but off the allowlist)", () => {
     const bytes = new Uint8Array(64);
     bytes.set(new TextEncoder().encode("GIF89a"), 0);
     expect(rejectionKind(bytes)).toBe("unsupported_format");
   });
 
-  it("refuses an SVG — a scriptable document, never a raster image here", () => {
+  it("refuses an SVG - a scriptable document, never a raster image here", () => {
     const bytes = new Uint8Array(128);
     bytes.set(new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\">"), 0);
     expect(rejectionKind(bytes)).toBe("unsupported_format");
@@ -246,7 +246,7 @@ describe("validateLockerImageBytes — magic bytes decide, nothing else", () => 
 
 // ── Refusals: implausible dimensions ──────────────────────────────────────
 
-describe("validateLockerImageBytes — the dimension plausibility band", () => {
+describe("validateLockerImageBytes - the dimension plausibility band", () => {
   it("refuses a zero-width header", () => {
     expect(rejectionKind(pngFixture(0, 64))).toBe("unsupported_format");
   });
@@ -255,7 +255,7 @@ describe("validateLockerImageBytes — the dimension plausibility band", () => {
     expect(rejectionKind(pngFixture(64, 0))).toBe("unsupported_format");
   });
 
-  it("refuses an absurd dimension — a hostile header, not a large picture", () => {
+  it("refuses an absurd dimension - a hostile header, not a large picture", () => {
     // 20 KB cannot contain a 100000px-wide raster; the header is lying.
     expect(rejectionKind(pngFixture(100_000, 10))).toBe("unsupported_format");
   });
@@ -264,7 +264,7 @@ describe("validateLockerImageBytes — the dimension plausibility band", () => {
 // ── Label derivation ──────────────────────────────────────────────────────
 
 describe("deriveLockerImageLabel", () => {
-  it("keeps the base name and drops the directory — a label is never a path", () => {
+  it("keeps the base name and drops the directory - a label is never a path", () => {
     expect(deriveLockerImageLabel("/home/someone/pictures/moon.png")).toBe("moon.png");
   });
 

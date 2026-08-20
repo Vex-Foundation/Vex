@@ -221,7 +221,7 @@ describe("MissionRail render gate", () => {
     expect(screen.queryByText("Mission")).toBeNull();
   });
 
-  it("renders the Legacy plan chip for an ACCEPTED, still-enabled plan — the only exit ramp left for that session", () => {
+  it("renders the Legacy plan chip for an ACCEPTED, still-enabled plan - the only exit ramp left for that session", () => {
     // Plan Mode can never be re-enabled, so an accepted plan that stays
     // `enabled: true` would otherwise strand the session with no visible
     // way to turn it off. The condition is exactly `plan.enabled === true`,
@@ -268,7 +268,7 @@ describe("MissionRail badge derivation", () => {
     expect(btn.classList.contains("vex-badge--shimmer")).toBe(true);
   });
 
-  it("Mission badge stays Preparing while the plan read is PENDING — unknown plan state never flashes Ready", () => {
+  it("Mission badge stays Preparing while the plan read is PENDING - unknown plan state never flashes Ready", () => {
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
     mockUseMissionDiff.mockReturnValue({ data: ok(diff()) });

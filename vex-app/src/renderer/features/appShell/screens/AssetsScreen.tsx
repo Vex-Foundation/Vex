@@ -87,8 +87,8 @@ export function AssetsScreen({
         ) : portfolio === null || portfolio.tokens.length === 0 ? (
           <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
             {sessionId === null
-              ? "No balances yet — fund a wallet and every asset appears here."
-              : "No balances in this session's wallets yet — fund them and every asset appears here."}
+              ? "No balances yet - fund a wallet and every asset appears here."
+              : "No balances in this session's wallets yet - fund them and every asset appears here."}
           </p>
         ) : (
           <>
@@ -99,7 +99,7 @@ export function AssetsScreen({
             ) : null}
             {visible.length === 0 ? (
               <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
-                Every asset here is dust — uncheck &quot;Hide dust&quot; to
+                Every asset here is dust - uncheck &quot;Hide dust&quot; to
                 view.
               </p>
             ) : (

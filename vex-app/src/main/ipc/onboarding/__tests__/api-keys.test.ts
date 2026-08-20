@@ -113,7 +113,7 @@ describe("apiKeysSet handler", () => {
     expect(mockWriter).not.toHaveBeenCalled();
   });
 
-  it("does NOT log the secret values — only canonical key names + correlationId", async () => {
+  it("does NOT log the secret values - only canonical key names + correlationId", async () => {
     mockWriter.mockResolvedValue({
       ok: true,
       data: { fieldsWritten: ["JUPITER_API_KEY", "TAVILY_API_KEY"] },

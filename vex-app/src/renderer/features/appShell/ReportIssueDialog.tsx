@@ -270,7 +270,7 @@ export function ReportIssueDialog({
               />
               <div className="flex items-center justify-between gap-3 text-xs text-ink-secondary">
                 <p>
-                  Don&apos;t paste passwords, mnemonics, or private keys —
+                  Don&apos;t paste passwords, mnemonics, or private keys -
                   redaction is a safety net, not a guarantee.
                 </p>
                 <span aria-live="polite">

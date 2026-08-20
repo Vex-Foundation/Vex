@@ -135,7 +135,7 @@ describe("BookPanel chrome", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
-  it("routes the WELCOME stage to the floating Portfolio tab — no rail chrome at all", () => {
+  it("routes the WELCOME stage to the floating Portfolio tab - no rail chrome at all", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
     const tab = screen.getByTestId("welcome-portfolio-panel");
     expect(tab.getAttribute("data-book-open")).toBe("true");
@@ -171,7 +171,7 @@ describe("the launch surface is reachable", () => {
     ).toBe(SESSION);
   });
 
-  it("does not mount the Trench card on the welcome stage — a launch needs a session", () => {
+  it("does not mount the Trench card on the welcome stage - a launch needs a session", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
     expect(screen.queryByTestId("card-images")).toBeNull();
   });
@@ -220,7 +220,7 @@ describe("BookPanel session card stack", () => {
     ]);
   });
 
-  it("keeps the SESSION rail on session stage — the welcome tab never mounts there", () => {
+  it("keeps the SESSION rail on session stage - the welcome tab never mounts there", () => {
     render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
     expect(screen.queryByTestId("welcome-portfolio-panel")).toBeNull();
   });

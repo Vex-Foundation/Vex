@@ -40,7 +40,7 @@ function capture(): EngineErrorEvent[] {
   return seen;
 }
 
-describe("dispatchPreparedMission — engine error emit", () => {
+describe("dispatchPreparedMission - engine error emit", () => {
   it("emits nothing when the continuation succeeds", async () => {
     const seen = capture();
     dispatchPreparedMission(() => Promise.resolve("ok"), {

@@ -254,7 +254,7 @@ export function WizardShell(): JSX.Element {
             </p>
           </div>
           <p className="text-xs text-ink-tertiary">
-            Most setup-state failures are transient — retry once, then
+            Most setup-state failures are transient - retry once, then
             restart Vex if the problem persists.
           </p>
           <OpenLogsLink />

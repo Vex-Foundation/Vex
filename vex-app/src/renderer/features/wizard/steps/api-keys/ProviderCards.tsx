@@ -48,7 +48,7 @@ export function JupiterCard({
       description="Prices and swaps tokens on Solana."
       detail={
         <>
-          The key is free — open the portal, then{" "}
+          The key is free - open the portal, then{" "}
           <span className="font-medium text-ink-primary">
             API Keys → Create new API key
           </span>
@@ -73,7 +73,7 @@ export function JupiterCard({
       <p className="text-xs text-ink-tertiary">
         {configured
           ? "Leave blank to keep the saved key, or paste a new one to overwrite it."
-          : "Leave blank to add later — Solana swaps stay unavailable until you set it."}
+          : "Leave blank to add later - Solana swaps stay unavailable until you set it."}
       </p>
     </ProviderCard>
   );
@@ -143,7 +143,7 @@ export function RettiwtCard({
           <span className="font-medium text-ink-primary">
             secondary X account
           </span>{" "}
-          — Vex keeps the key encrypted locally, but X may still flag
+          - Vex keeps the key encrypted locally, but X may still flag
           automation activity (~1 in 100k risk). Sign in in an incognito
           window, then click the extension to generate the key. It stays
           valid for 5 years from login.

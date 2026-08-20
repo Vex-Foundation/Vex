@@ -99,7 +99,7 @@ export function SessionSleepBanner({
         Vex went to sleep
       </p>
       <p className="mt-1 text-xs text-foreground/80">
-        Wakes at {wakeAt} — {formatRemaining(dueAtMs - nowMs)}
+        Wakes at {wakeAt} - {formatRemaining(dueAtMs - nowMs)}
       </p>
       {pausedWake.reason !== null ? (
         <p className="mt-1 text-xs text-muted-foreground">{pausedWake.reason}</p>

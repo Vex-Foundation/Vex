@@ -49,7 +49,7 @@ export function EmbeddingSkipCard({
         embeddingsState?.baseUrlRedacted ? (
           <>
             Vex is using <code>{embeddingsState.baseUrlRedacted}</code>{" "}
-            (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}) —{" "}
+            (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}) -{" "}
             {embeddingsState.reachable ? (
               <span className="text-success">reachable</span>
             ) : (

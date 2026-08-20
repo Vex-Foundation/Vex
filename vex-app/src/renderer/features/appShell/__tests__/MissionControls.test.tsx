@@ -173,7 +173,7 @@ describe("MissionControls", () => {
     expect(startMock).toHaveBeenCalledWith({ sessionId: SESSION, missionId: MISSION });
   });
 
-  it("shows the Review & accept contract bar (not Start, not the notice) for a ready, unaccepted contract — the MISSION READY state", async () => {
+  it("shows the Review & accept contract bar (not Start, not the notice) for a ready, unaccepted contract - the MISSION READY state", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -191,7 +191,7 @@ describe("MissionControls", () => {
     expect(useUiStore.getState().reviewModal).toBe("mission");
   });
 
-  it("keeps the bar hidden while the plan read is still PENDING — unknown plan state is not readiness", async () => {
+  it("keeps the bar hidden while the plan read is still PENDING - unknown plan state is not readiness", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -204,7 +204,7 @@ describe("MissionControls", () => {
     ).toBeNull();
   });
 
-  it("keeps the bar hidden after a FAILED plan read — a failed read must not unlock readiness", async () => {
+  it("keeps the bar hidden after a FAILED plan read - a failed read must not unlock readiness", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -220,7 +220,7 @@ describe("MissionControls", () => {
     ).toBeNull();
   });
 
-  it("keeps the bar hidden while an enabled plan is still missing — MissionRail's Preparing state must win", async () => {
+  it("keeps the bar hidden while an enabled plan is still missing - MissionRail's Preparing state must win", async () => {
     // Shared readiness predicate (planMissing, exported by MissionRail): a
     // ready draft with plan-mode ON but an empty plan body is NOT the
     // MISSION READY state — the rail says Preparing, and the bar must agree.
@@ -454,7 +454,7 @@ describe("MissionControls", () => {
     expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 
-  it("hides Renew once a fresh draft exists (post-renew) — no duplicate-draft loop", async () => {
+  it("hides Renew once a fresh draft exists (post-renew) - no duplicate-draft loop", async () => {
     // After mission.renew, a fresh status='draft' mission exists, but
     // getRenewableSource STILL returns the old terminal accepted mission. Renew
     // must NOT linger — else it looks like it "did nothing" and each extra click
@@ -518,7 +518,7 @@ describe("MissionControls", () => {
   });
 });
 
-describe("MissionControls — paused_error standing alert (issue #42)", () => {
+describe("MissionControls - paused_error standing alert (issue #42)", () => {
   it("renders the alert with the eyebrow, provider_error copy, and the warning line", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({

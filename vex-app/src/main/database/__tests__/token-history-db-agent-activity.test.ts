@@ -242,7 +242,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — agent_activity arm (Agent Scan §4.7)", () => {
+describe("getTokenHistory - agent_activity arm (Agent Scan §4.7)", () => {
   it("matches by EXACT chain_id (bound as a plain int, no alias-string dance) and either leg's token address", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({
@@ -272,7 +272,7 @@ describe("getTokenHistory — agent_activity arm (Agent Scan §4.7)", () => {
     expect(sql).toContain("aa2.protocol_execution_id = a.execution_id");
   });
 
-  it("SELECTs the raw executed legs + decimals (never a blind COALESCE of executed/requested — C20)", async () => {
+  it("SELECTs the raw executed legs + decimals (never a blind COALESCE of executed/requested - C20)", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({
       chainId: BASE_CHAIN_ID,
@@ -290,7 +290,7 @@ describe("getTokenHistory — agent_activity arm (Agent Scan §4.7)", () => {
     expect(sql).not.toContain("COALESCE(aa.executed_amount_out_human");
   });
 
-  it("maps a confirmed agent_activity row's amount from raw+decimals — NEVER the quote-time requested echo, even when present (Codex final review C20)", async () => {
+  it("maps a confirmed agent_activity row's amount from raw+decimals - NEVER the quote-time requested echo, even when present (Codex final review C20)", async () => {
     scriptTransaction({ page: [agentActivityRow()] });
     const result = await getTokenHistory({
       chainId: BASE_CHAIN_ID,
@@ -320,7 +320,7 @@ describe("getTokenHistory — agent_activity arm (Agent Scan §4.7)", () => {
     }
   });
 
-  it("tags valueUsd 'estimated' regardless of status — unlike the executed amount, there is no settlement-time USD repricing to fall back to (C35)", async () => {
+  it("tags valueUsd 'estimated' regardless of status - unlike the executed amount, there is no settlement-time USD repricing to fall back to (C35)", async () => {
     scriptTransaction({
       page: [agentActivityRow({ status: "definitively_failed", failure_code: "slippage" })],
     });
@@ -368,7 +368,7 @@ describe("getTokenHistory — agent_activity arm (Agent Scan §4.7)", () => {
     }
   });
 
-  it("collapses a definitively_failed row to status='failed', surfaces its failureCode, and shows NO amount (a failed attempt's legs are moot — C20)", async () => {
+  it("collapses a definitively_failed row to status='failed', surfaces its failureCode, and shows NO amount (a failed attempt's legs are moot - C20)", async () => {
     scriptTransaction({
       page: [agentActivityRow({ status: "definitively_failed", failure_code: "slippage", tx_ref: null })],
     });

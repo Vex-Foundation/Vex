@@ -44,7 +44,7 @@ describe("compactionPreparationDtoSchema", () => {
     expect(compactionPreparationDtoSchema.safeParse(dto()).success).toBe(true);
   });
 
-  it("REJECTS a payload carrying summary text — the strict parse is the guard", () => {
+  it("REJECTS a payload carrying summary text - the strict parse is the guard", () => {
     const leaked = compactionPreparationDtoSchema.safeParse(
       dto({ summary: "the model's condensation of the conversation" }),
     );
@@ -62,7 +62,7 @@ describe("compactionPreparationDtoSchema", () => {
     ).toBe(false);
   });
 
-  it("carries no free-string field at all — every key is a scalar, enum or ISO date", () => {
+  it("carries no free-string field at all - every key is a scalar, enum or ISO date", () => {
     const parsed = compactionPreparationDtoSchema.parse(dto());
     expect(Object.keys(parsed).sort()).toEqual([
       "appliedAt",
@@ -89,7 +89,7 @@ describe("compactionPreparationDtoSchema", () => {
     ).toBe(false);
   });
 
-  it("the result is nullable — no preparation is a normal state", () => {
+  it("the result is nullable - no preparation is a normal state", () => {
     expect(compactionPreparationResultSchema.parse(null)).toBeNull();
   });
 });

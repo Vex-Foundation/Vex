@@ -39,7 +39,7 @@ const STATUS_WORD: Record<ToolInspectStatus, string> = {
  * circular payloads must not crash the panel — they degrade to String().
  */
 function stringifyPayload(value: unknown): string {
-  if (value === undefined) return "—";
+  if (value === undefined) return "-";
   try {
     return JSON.stringify(
       value,

@@ -111,7 +111,7 @@ afterEach(() => {
 });
 
 describe("restoreWalletFromFile (EVM happy path)", () => {
-  it("restores when no existing wallet — backup is null", async () => {
+  it("restores when no existing wallet - backup is null", async () => {
     const result = await restoreWalletFromFile({
       chain: "evm",
       sourcePath: "/some/keystore.json",
@@ -211,7 +211,7 @@ describe("restoreWalletFromFile (mismatch confirmation)", () => {
     expect(mockSaveKeystoreFile).not.toHaveBeenCalled();
   });
 
-  it("proceeds when confirmReplace returns true — backup, copy, config in order", async () => {
+  it("proceeds when confirmReplace returns true - backup, copy, config in order", async () => {
     mockGetPrimaryEvmAddress.mockReturnValue(otherEvmAddress);
     mockAutoBackup.mockResolvedValue("/home/user/.config/vex/backups/T123");
     const callLog: string[] = [];

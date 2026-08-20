@@ -294,7 +294,7 @@ describe("AppShell", () => {
     expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
-  it("profile menu carries exactly six entries (no Missions — Sessions covers it)", async () => {
+  it("profile menu carries exactly six entries (no Missions - Sessions covers it)", async () => {
     renderShell();
     await screen.findByText("The night shift is active.");
 
@@ -329,7 +329,7 @@ describe("AppShell", () => {
     expect(screen.getByText("What Vex has learned")).not.toBeNull();
     expect(screen.getByText("Find any conversation")).not.toBeNull();
     expect(screen.getByText("Every move, verified on-chain")).not.toBeNull();
-    expect(screen.getByText("Start here — the five-minute tour")).not.toBeNull();
+    expect(screen.getByText("Start here - the five-minute tour")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /^Memory/i }));
     expect(useUiStore.getState().shellRoute.kind).toBe("memory");
@@ -378,7 +378,7 @@ describe("AppShell", () => {
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 
-  it("shows no pulsing dots anywhere — status is color + words, never motion", async () => {
+  it("shows no pulsing dots anywhere - status is color + words, never motion", async () => {
     const view = renderShell();
     await screen.findByText("The night shift is active.");
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));

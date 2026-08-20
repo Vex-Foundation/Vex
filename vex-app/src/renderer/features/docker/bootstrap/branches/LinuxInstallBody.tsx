@@ -42,7 +42,7 @@ export function LinuxInstallBody({
         tone="info"
         word="Install"
         title="Docker Engine is not installed"
-        detail="Linux — install via your package manager."
+        detail="Linux - install via your package manager."
       />
 
       {state.kind === "loading" ? (

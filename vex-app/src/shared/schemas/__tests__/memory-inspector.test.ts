@@ -206,7 +206,7 @@ describe("memoryCandidateDtoSchema", () => {
     ).toBe(true);
   });
 
-  it("REJECTS raw narrative/evidence/embedding fields (strict DTO — sanitization pin)", () => {
+  it("REJECTS raw narrative/evidence/embedding fields (strict DTO - sanitization pin)", () => {
     for (const forbidden of [
       "content_md",
       "source_refs",
@@ -273,7 +273,7 @@ describe("memoryDecisionDtoSchema", () => {
     ).toBe(true);
   });
 
-  it("REJECTS evidence_refs / decision_hash (strict DTO — sanitization pin)", () => {
+  it("REJECTS evidence_refs / decision_hash (strict DTO - sanitization pin)", () => {
     for (const forbidden of ["evidence_refs", "decision_hash"]) {
       const result = memoryDecisionDtoSchema.safeParse({
         ...validDecision(),
@@ -385,7 +385,7 @@ describe("memoryJobDtoSchema / memoryJobsSummaryDtoSchema", () => {
   });
 });
 
-describe("enum sets mirror the engine (direct agent-enum import — drift pins)", () => {
+describe("enum sets mirror the engine (direct agent-enum import - drift pins)", () => {
   it("candidate status", () => {
     expect([...MEMORY_CANDIDATE_STATUSES]).toEqual([...CANDIDATE_STATUS]);
   });

@@ -41,7 +41,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
           data-vex-restore-vault-locked
         >
           This backup&apos;s vault uses a different master password. Vex is now
-          locked — unlock it again using <strong>this backup&apos;s</strong>{" "}
+          locked - unlock it again using <strong>this backup&apos;s</strong>{" "}
           master password (not your previous one) to access the restored
           wallets.
         </p>

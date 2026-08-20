@@ -48,7 +48,7 @@ function errorDelta(
   };
 }
 
-describe("toRendererStreamDelta — aborted delta", () => {
+describe("toRendererStreamDelta - aborted delta", () => {
   it("carries the terminal abort signal with its streamId intact", () => {
     // The streamId is the whole point: a consumer must clear exactly the
     // stream that ended, never a newer one that started in between.
@@ -68,7 +68,7 @@ describe("toRendererStreamDelta — aborted delta", () => {
     expect(streamDeltaEventSchema.safeParse(mapped).success).toBe(true);
   });
 
-  it("admits no extra field — the schema is strict on the discriminant", () => {
+  it("admits no extra field - the schema is strict on the discriminant", () => {
     const parsed = streamDeltaEventSchema.safeParse({
       type: "engine.stream.delta",
       sessionId: SESSION,
@@ -83,7 +83,7 @@ describe("toRendererStreamDelta — aborted delta", () => {
   });
 });
 
-describe("toRendererStreamDelta — error deltas", () => {
+describe("toRendererStreamDelta - error deltas", () => {
   it("carries the bounded errorType across the boundary", () => {
     const mapped = toRendererStreamDelta(
       errorDelta({ errorType: "rate_limit_exceeded" }),
@@ -108,7 +108,7 @@ describe("toRendererStreamDelta — error deltas", () => {
     expect(streamDeltaEventSchema.safeParse(mapped).success).toBe(true);
   });
 
-  it("rejects a label that is not enum-shaped — the bound is real", () => {
+  it("rejects a label that is not enum-shaped - the bound is real", () => {
     const mapped = toRendererStreamDelta(
       errorDelta({ errorType: "Not An Enum Label, But A Sentence." }),
     );

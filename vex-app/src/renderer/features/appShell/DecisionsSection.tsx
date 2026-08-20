@@ -55,7 +55,7 @@ export function DecisionsSection(): JSX.Element {
       <div>
         <h2 className="vex-eyebrow">Manager decisions</h2>
         <p className="mt-1 text-xs text-ink-secondary">
-          The memory manager&apos;s decision audit — every promote, merge,
+          The memory manager&apos;s decision audit - every promote, merge,
           reject, or reconcile verdict, append-only and immutable.
         </p>
       </div>

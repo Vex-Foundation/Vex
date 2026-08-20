@@ -382,7 +382,7 @@ describe("AppShell", () => {
     );
   });
 
-  it("welcome→mission-create: the welcome reasoning pick is stripped — first submit omits it and the store is never seeded", async () => {
+  it("welcome→mission-create: the welcome reasoning pick is stripped - first submit omits it and the store is never seeded", async () => {
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
     useUiStore.setState({ activeSessionId: null });
     modelsListAvailableMock.mockResolvedValue(

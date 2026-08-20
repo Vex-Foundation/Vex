@@ -87,7 +87,7 @@ afterEach(() => {
 });
 
 describe("initSentryIfConsented", () => {
-  it("returns false + does not init when consent is off — SDK module NOT loaded", async () => {
+  it("returns false + does not init when consent is off - SDK module NOT loaded", async () => {
     mockLoad.mockResolvedValue({
       telemetry: { enabled: false, consentedAt: null },
     });
@@ -101,7 +101,7 @@ describe("initSentryIfConsented", () => {
     expect(sentryModuleLoaded).toBe(false);
   });
 
-  it("returns false + does not init when DSN unresolvable — SDK module NOT loaded", async () => {
+  it("returns false + does not init when DSN unresolvable - SDK module NOT loaded", async () => {
     mockLoad.mockResolvedValue({
       telemetry: { enabled: true, consentedAt: "2026-05-12T00:00:00Z" },
     });
@@ -112,7 +112,7 @@ describe("initSentryIfConsented", () => {
     expect(sentryModuleLoaded).toBe(false);
   });
 
-  it("initializes with explicit safe options when consent + DSN ok — flips lazy-load flag", async () => {
+  it("initializes with explicit safe options when consent + DSN ok - flips lazy-load flag", async () => {
     mockLoad.mockResolvedValue({
       telemetry: { enabled: true, consentedAt: "2026-05-12T00:00:00Z" },
     });
@@ -135,7 +135,7 @@ describe("initSentryIfConsented", () => {
     expect(opts["autoSessionTracking"]).toBe(false);
   });
 
-  it("is idempotent — second call after success is a no-op", async () => {
+  it("is idempotent - second call after success is a no-op", async () => {
     mockLoad.mockResolvedValue({
       telemetry: { enabled: true, consentedAt: "2026-05-12T00:00:00Z" },
     });

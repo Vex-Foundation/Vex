@@ -154,7 +154,7 @@ describe("compaction.getPreparation", () => {
   });
 });
 
-describe("compaction.requestApply — outcome mapping", () => {
+describe("compaction.requestApply - outcome mapping", () => {
   const cases = [
     ["queued", "queued", "apply_requested"],
     ["queued_no_live_runner", "no_live_runner", "apply_requested"],
@@ -204,7 +204,7 @@ describe("compaction.requestApply — outcome mapping", () => {
   });
 });
 
-describe("compaction.requestApply — the renderer-authority boundary", () => {
+describe("compaction.requestApply - the renderer-authority boundary", () => {
   it("never reaches a cutover primitive", async () => {
     mocks.requestApply.mockResolvedValueOnce({ kind: "queued", preparationId: 1 });
     await call(CH.compaction.requestApply, { sessionId: SESSION });
@@ -213,14 +213,14 @@ describe("compaction.requestApply — the renderer-authority boundary", () => {
     expect(mocks.forcePreparedApply).not.toHaveBeenCalled();
   });
 
-  it("never emits on the preparation bus — only the engine does, post-commit", async () => {
+  it("never emits on the preparation bus - only the engine does, post-commit", async () => {
     mocks.requestApply.mockResolvedValueOnce({ kind: "queued", preparationId: 1 });
     await call(CH.compaction.requestApply, { sessionId: SESSION });
     expect(mocks.busEmit).not.toHaveBeenCalled();
   });
 });
 
-describe("compaction.requestApply — authorization and failures", () => {
+describe("compaction.requestApply - authorization and failures", () => {
   it("an unknown/foreign session is compaction.not_found and never reaches the engine", async () => {
     mocks.getCompactionPreparation.mockResolvedValueOnce({
       ok: true,

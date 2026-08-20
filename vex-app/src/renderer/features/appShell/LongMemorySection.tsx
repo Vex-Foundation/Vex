@@ -45,7 +45,7 @@ export function LongMemorySection(): JSX.Element {
       <div>
         <h2 className="vex-eyebrow">Long-term memory</h2>
         <p className="mt-1 text-xs text-ink-secondary">
-          What the agent knows — durable lessons across all sessions. Sources,
+          What the agent knows - durable lessons across all sessions. Sources,
           maturity, and statuses are shown so low-confidence entries are
           visible but labeled. The lifecycle is managed automatically by the
           agent&apos;s memory manager.

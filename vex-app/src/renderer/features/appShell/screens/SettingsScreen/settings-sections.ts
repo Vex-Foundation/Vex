@@ -74,7 +74,7 @@ export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
 ): SettingsStatus {
-  if (env === null) return { word: "—", tone: "neutral" };
+  if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {
     case "vault":
       return env.hasKeystorePassword

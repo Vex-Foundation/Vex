@@ -15,7 +15,7 @@ interface ReadyBodyProps {
 export function ReadyBody({ result }: ReadyBodyProps): JSX.Element {
   const detail =
     result.kind === "reused"
-      ? "Existing stack reused — services already healthy."
+      ? "Existing stack reused - services already healthy."
       : (result.message ?? "All services started and answered health checks.");
 
   return (

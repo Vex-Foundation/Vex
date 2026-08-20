@@ -59,7 +59,7 @@ describe("usage schemas", () => {
     expect(turnUsageDtoSchema.safeParse(withoutCacheFields).success).toBe(false);
   });
 
-  it("turnUsageDtoSchema accepts NEGATIVE cachedSavings (net cache overhead is real — no .min(0))", () => {
+  it("turnUsageDtoSchema accepts NEGATIVE cachedSavings (net cache overhead is real - no .min(0))", () => {
     const parsed = turnUsageDtoSchema.safeParse(
       turnFixture({ cachedSavings: -0.0021, cacheWriteTokens: 8000 }),
     );
@@ -229,7 +229,7 @@ describe("usage schemas", () => {
  * gates compaction. The fields are OPTIONAL so a payload minted by an older
  * main still parses (both sides validate this DTO).
  */
-describe("contextWindowDtoSchema — pressure bands (additive)", () => {
+describe("contextWindowDtoSchema - pressure bands (additive)", () => {
   const BASE = { sessionId: SESSION, tokensUsed: 100, contextLimit: 200_000 };
 
   it("accepts a payload WITHOUT the fractions (older main, backward compatible)", () => {
@@ -248,7 +248,7 @@ describe("contextWindowDtoSchema — pressure bands (additive)", () => {
     expect(parsed.data.pressureBarrierFraction).toBe(0.88);
   });
 
-  it("rejects out-of-range fractions — a marker outside the bar is meaningless", () => {
+  it("rejects out-of-range fractions - a marker outside the bar is meaningless", () => {
     for (const bad of [0, -0.1, 1.5]) {
       expect(
         contextWindowDtoSchema.safeParse({

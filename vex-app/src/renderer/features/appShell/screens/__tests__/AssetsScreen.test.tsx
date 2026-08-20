@@ -164,12 +164,12 @@ describe("AssetsScreen", () => {
     useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     render(<ShellScreens />);
     expect(
-      screen.getByText(/No balances yet — fund a wallet/i),
+      screen.getByText(/No balances yet - fund a wallet/i),
     ).not.toBeNull();
   });
 });
 
-describe("AssetsScreen — token-history eye", () => {
+describe("AssetsScreen - token-history eye", () => {
   const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 
   it("renders the eye ONLY for rows with exact identity and routes to tokenHistory with returnTo 'assets'", () => {
@@ -248,7 +248,7 @@ describe("AssetsScreen — token-history eye", () => {
   });
 });
 
-describe("AssetsScreen — hide dust", () => {
+describe("AssetsScreen - hide dust", () => {
   /** 4 real (well-priced) rows + 2 sub-cent dust rows. */
   const TOKENS_WITH_DUST: readonly PositionTokenDto[] = [
     token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 600 }),
@@ -313,7 +313,7 @@ describe("AssetsScreen — hide dust", () => {
   });
 });
 
-describe("AssetsScreen — session scope (C4)", () => {
+describe("AssetsScreen - session scope (C4)", () => {
   const SESSION = "00000000-0000-4000-8000-0000000000ab";
   const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 

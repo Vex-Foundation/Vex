@@ -71,7 +71,7 @@ export function ProbeRows({
           health.data?.ok
             ? health.data.data.network.online
               ? `online · ${health.data.data.network.latencyMs ?? "?"} ms`
-              : "offline — agent will run with limited capabilities"
+              : "offline - agent will run with limited capabilities"
             : null
         }
       />

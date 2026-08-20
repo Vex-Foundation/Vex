@@ -16,7 +16,7 @@ import { TOOLS } from "@vex-agent/tools/registry/lookup.js";
 import { toInjectedToolName } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { canonicalToolName } from "../tool-name-canonical.js";
 
-describe("canonicalToolName — the whole catalog, in lockstep", () => {
+describe("canonicalToolName - the whole catalog, in lockstep", () => {
   it("reverses `toInjectedToolName` for every protocol manifest", () => {
     expect(PROTOCOL_TOOLS.length).toBeGreaterThan(0);
     for (const manifest of PROTOCOL_TOOLS) {
@@ -34,7 +34,7 @@ describe("canonicalToolName — the whole catalog, in lockstep", () => {
   });
 });
 
-describe("canonicalToolName — an unresolvable name keeps its raw form", () => {
+describe("canonicalToolName - an unresolvable name keeps its raw form", () => {
   it.each([
     "kyberswapp__swap__quote",
     "nope__not__a__tool",
@@ -53,7 +53,7 @@ describe("canonicalToolName — an unresolvable name keeps its raw form", () => 
  * silently lose every one of them, so they are pinned by hand as well as by the
  * catalog sweep above.
  */
-describe("canonicalToolName — case is preserved", () => {
+describe("canonicalToolName - case is preserved", () => {
   it.each([
     ["dexscreener__tokenPairs", "dexscreener.tokenPairs"],
     ["dexscreener__communityTakeovers", "dexscreener.communityTakeovers"],

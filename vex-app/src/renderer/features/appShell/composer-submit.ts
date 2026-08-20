@@ -105,7 +105,7 @@ export interface ComposerSubmit {
  * right move, nothing else.
  */
 const STOP_FAILED_NOTICE =
-  "Couldn't stop the run. It's still going — try Stop again.";
+  "Couldn't stop the run. It's still going - try Stop again.";
 
 /**
  * How long the disabled "Stopping…" acknowledgment may stand before the

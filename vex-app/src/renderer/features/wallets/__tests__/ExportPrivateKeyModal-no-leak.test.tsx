@@ -154,7 +154,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, "vex");
 });
 
-describe("ExportPrivateKeyModal — secret-leak guard", () => {
+describe("ExportPrivateKeyModal - secret-leak guard", () => {
   it("never surfaces a sentinel key field from the success payload in the DOM or console", async () => {
     mockExport.mockResolvedValue(successWithSentinel(10_000));
     const view = renderModal();

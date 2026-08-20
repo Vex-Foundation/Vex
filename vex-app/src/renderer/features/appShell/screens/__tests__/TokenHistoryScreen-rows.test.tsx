@@ -97,7 +97,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TokenHistoryScreen — entries", () => {
+describe("TokenHistoryScreen - entries", () => {
   it("renders a swap row: activity badge, legs with human quantity vs unknown-provenance em dash, USD @ unit price, venue meta, and the BUILT explorer href", () => {
     mockQuery([availablePage([swapEntry({ id: "a-1" })])]);
     mountScreen();
@@ -110,7 +110,7 @@ describe("TokenHistoryScreen — entries", () => {
     // Human-provenance input quantity prints; unknown-provenance output
     // quantity keeps the em dash — never a blind base-unit format.
     expect(screen.getByText(/1\.5 TOKA/)).not.toBeNull();
-    expect(screen.getByText(/— TOKB/)).not.toBeNull();
+    expect(screen.getByText(/- TOKB/)).not.toBeNull();
     expect(screen.queryByText(/25100000/)).toBeNull();
     // USD primary (output leads, "recorded" provenance renders bare) + unit price.
     expect(screen.getByText(/\$25\.10/)).not.toBeNull();
@@ -149,7 +149,7 @@ describe("TokenHistoryScreen — entries", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("names a Jupiter LEND row by its canonical vocabulary — the exact row the old SPOT taxonomy mislabelled", () => {
+  it("names a Jupiter LEND row by its canonical vocabulary - the exact row the old SPOT taxonomy mislabelled", () => {
     mockQuery([
       availablePage([
         swapEntry({
@@ -275,7 +275,7 @@ describe("TokenHistoryScreen — entries", () => {
     expect(screen.queryByText("failed")).toBeNull();
   });
 
-  it("marks an ESTIMATED bridge amount with ~ and an 'est.' tag (R14 — quoted amount never reads as executed)", () => {
+  it("marks an ESTIMATED bridge amount with ~ and an 'est.' tag (R14 - quoted amount never reads as executed)", () => {
     mockQuery([availablePage([bridgeEntry({ id: "b-est", status: "pending" })])]);
     mountScreen();
     // Both legs (input + output) carry the ~ estimate prefix; a single trailing
@@ -289,7 +289,7 @@ describe("TokenHistoryScreen — entries", () => {
     expect(screen.getByText("est.")).not.toBeNull();
   });
 
-  it("renders an EXECUTED bridge amount bare — settled truth carries no estimate marker", () => {
+  it("renders an EXECUTED bridge amount bare - settled truth carries no estimate marker", () => {
     mockQuery([
       availablePage([
         bridgeEntry({

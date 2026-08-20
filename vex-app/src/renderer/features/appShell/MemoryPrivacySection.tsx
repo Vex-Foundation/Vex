@@ -55,7 +55,7 @@ export function MemoryPrivacySection(): JSX.Element {
           When older messages are compacted into memory, Vex sends a{" "}
           <span className="text-ink-primary">redacted</span> copy of that
           archived transcript to your OpenRouter model. Before it leaves your
-          machine, secrets — wallet seeds, private keys, API keys, and JWTs —
+          machine, secrets - wallet seeds, private keys, API keys, and JWTs -
           are removed, and wallet/contract addresses and transaction hashes are
           masked.
         </p>

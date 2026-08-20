@@ -274,7 +274,7 @@ export function WalletsStep({
       icon={meta.icon}
       flowMode={flowMode}
       title={flowMode === "back-edit" ? "Manage wallets" : "Set up wallets"}
-      description="Vex is self-custodial: wallet keys are generated and encrypted on this machine, under your master password, and never leave it. Add an EVM wallet (Ethereum + L2s), a Solana wallet, or both — generate fresh keys, import existing ones, or restore a backup. Wallets are optional; you can come back to this any time."
+      description="Vex is self-custodial: wallet keys are generated and encrypted on this machine, under your master password, and never leave it. Add an EVM wallet (Ethereum + L2s), a Solana wallet, or both - generate fresh keys, import existing ones, or restore a backup. Wallets are optional; you can come back to this any time."
       footer={
         flowMode === "back-edit" ? (
           <Button

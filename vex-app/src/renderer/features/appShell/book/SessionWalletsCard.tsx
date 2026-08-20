@@ -51,7 +51,7 @@ export function SessionWalletsCard({
         </CardStateNote>
       ) : empty ? (
         <CardStateNote>
-          No wallets selected for this session — wallet tools stay disabled.
+          No wallets selected for this session - wallet tools stay disabled.
         </CardStateNote>
       ) : (
         <ul className="flex flex-col" data-vex-area="deposit-addresses">

@@ -142,7 +142,7 @@ describe("mapAgentScanRow symbols", () => {
     expect(entry.output.displaySymbol).toBe("NATIVE");
   });
 
-  it("leaves a Solana leg's SOL bare — it is a real ticker, not the sentinel", () => {
+  it("leaves a Solana leg's SOL bare - it is a real ticker, not the sentinel", () => {
     const entry = mapValid(
       row({
         chain_id: String(SOLANA_PROVIDER_CHAIN_ID),
@@ -221,7 +221,7 @@ describe("mapAgentScanRow amount honesty", () => {
     expect(entry.amountBasis).toBeNull();
   });
 
-  it("shows NOTHING for an UNRECOGNIZED status — the fail-closed case, not a quote", () => {
+  it("shows NOTHING for an UNRECOGNIZED status - the fail-closed case, not a quote", () => {
     const entry = mapValid(
       row({
         status: "some_future_status",

@@ -127,7 +127,7 @@ describe("SessionActivityCard", () => {
     expect(container.querySelectorAll("li")).toHaveLength(5);
   });
 
-  it("renders legs from displayAmount ONLY — never the raw amountHuman", () => {
+  it("renders legs from displayAmount ONLY - never the raw amountHuman", () => {
     mockFeed([entry({ id: "a-1" })]);
     const { container } = render(<SessionActivityCard sessionId={SESSION} />);
     const text = container.textContent ?? "";

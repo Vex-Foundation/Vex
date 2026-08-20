@@ -201,7 +201,7 @@ export function EndpointPicker({
       )}
 
       <p className="text-xs text-ink-tertiary">
-        Only providers that support tool calling are listed — Vex cannot run on
+        Only providers that support tool calling are listed - Vex cannot run on
         the others. Ordered by recent uptime, most available first; providers
         OpenRouter reports no uptime for are listed last. Prices are base rates
         per 1M tokens; long-context and time-window tiers can differ. Pinning

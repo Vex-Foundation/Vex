@@ -273,7 +273,7 @@ interface ExportOk {
 
 // ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
 
-describe("success path — EVM", () => {
+describe("success path - EVM", () => {
   beforeEach(() => {
     mockCheckExportAllowed.mockReturnValue({ allowed: true });
     mockGetSecretSessionStatus.mockReturnValue({
@@ -318,7 +318,7 @@ describe("success path — EVM", () => {
     expect(__getActiveLeaseTokenForTests()).not.toBeNull();
   });
 
-  it("audit-logs metadata only — secret + password never appear in log args", async () => {
+  it("audit-logs metadata only - secret + password never appear in log args", async () => {
     const EVM_SECRET =
       "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
     mockDecryptExportSecret.mockReturnValue({ secret: EVM_SECRET, format: "hex" });

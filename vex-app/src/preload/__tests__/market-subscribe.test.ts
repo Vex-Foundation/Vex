@@ -52,7 +52,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("vex.market.onVexUpdate — payload validation at the preload boundary", () => {
+describe("vex.market.onVexUpdate - payload validation at the preload boundary", () => {
   it("delivers a valid snapshot to the callback", () => {
     const cb = vi.fn();
     const off = market.onVexUpdate(cb);
@@ -62,7 +62,7 @@ describe("vex.market.onVexUpdate — payload validation at the preload boundary"
     off();
   });
 
-  it("drops off-contract payloads (wrong types, null, extra keys) — callback never runs", () => {
+  it("drops off-contract payloads (wrong types, null, extra keys) - callback never runs", () => {
     const cb = vi.fn();
     const off = market.onVexUpdate(cb);
     emit(EV.market.vex, null);

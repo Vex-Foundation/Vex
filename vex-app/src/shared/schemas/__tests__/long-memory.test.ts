@@ -88,7 +88,7 @@ describe("longMemoryEntryDtoSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("REJECTS raw narrative/embedding fields (strict DTO — sanitization pin)", () => {
+  it("REJECTS raw narrative/embedding fields (strict DTO - sanitization pin)", () => {
     for (const forbidden of [
       "content_md",
       "source_refs",

@@ -59,7 +59,7 @@ export function ImageThumb({
           aria-hidden
           className="flex h-full w-full items-center justify-center font-doto text-[9px] uppercase tracking-[0.14em] text-ink-tertiary"
         >
-          {hasOnchainCopy && thumb.isLoading ? "…" : "—"}
+          {hasOnchainCopy && thumb.isLoading ? "…" : "-"}
         </span>
       )}
 

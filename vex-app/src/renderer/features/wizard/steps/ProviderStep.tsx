@@ -255,7 +255,7 @@ export function ProviderStep({
       icon={meta.icon}
       flowMode={flowMode}
       title="Inference provider"
-      description="OpenRouter is the model backend the agent thinks with. The key buys inference only — your wallet keys and vault contents are never sent to the model provider. Optional here, but the agent cannot run until one is configured."
+      description="OpenRouter is the model backend the agent thinks with. The key buys inference only - your wallet keys and vault contents are never sent to the model provider. Optional here, but the agent cannot run until one is configured."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);
@@ -297,7 +297,7 @@ export function ProviderStep({
             data-vex-provider-configure-later-alert
             className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
           >
-            The agent cannot run any inference without a provider — it will
+            The agent cannot run any inference without a provider - it will
             stay idle until you add an OpenRouter key and model. You can do
             this later from Settings, but nothing will run until then.
           </p>

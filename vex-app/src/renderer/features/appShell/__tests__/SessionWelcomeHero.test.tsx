@@ -100,7 +100,7 @@ describe("SessionWelcomeHero", () => {
     expect(nameless).toContain(heading.textContent);
   });
 
-  it("freezes the draw per mount — re-rendering never changes the headline", () => {
+  it("freezes the draw per mount - re-rendering never changes the headline", () => {
     const randSpy = vi.spyOn(Math, "random");
     const view = render(<SessionWelcomeHero />);
     const first = screen.getByRole("heading", { level: 1 }).textContent;

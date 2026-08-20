@@ -102,10 +102,10 @@ export function CompactionApplyButton({
       : status === "applying"
         ? "Compacting…"
         : lastOutcome === "queued"
-          ? "Queued — applies at the next step"
+          ? "Queued - applies at the next step"
           : // Default for a request we did not issue (Full-Autonomous
             // auto-apply, the agent's own tool) — truthful either way.
-            "Queued — will apply when the agent next runs";
+            "Queued - will apply when the agent next runs";
 
   return (
     <span

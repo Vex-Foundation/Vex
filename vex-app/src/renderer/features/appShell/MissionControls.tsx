@@ -120,34 +120,34 @@ function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
   if (SUCCESS_OUTCOMES.has(r.data.outcome)) return null;
   switch (r.data.outcome) {
     case "lease_busy":
-      return "Busy — another operation is in progress. Try again.";
+      return "Busy - another operation is in progress. Try again.";
     case "no_active_run":
       return "No active mission run.";
     case "not_accepted":
     case "stale_acceptance":
       return "Accept the contract before starting.";
     case "plan_not_accepted":
-      return "Plan not accepted — review and accept the plan before starting.";
+      return "Plan not accepted - review and accept the plan before starting.";
     case "not_ready":
       return "Outline the mission before starting.";
     case "blocked_approval":
       return "Resolve the pending approval first.";
     case "blocked_error":
-      return "Mission paused after an error — use Recover.";
+      return "Mission paused after an error - use Recover.";
     case "blocked_terminal":
     case "already_terminal":
       return "The mission run has already ended.";
     case "not_recoverable":
-      return "This pause isn't an error — use Continue.";
+      return "This pause isn't an error - use Continue.";
     case "session_has_active_run":
     case "active_run_exists":
       return "A mission run is already active.";
     case "no_failed_run":
       return "No failed run to recover.";
     case "provider_unavailable":
-      return "No inference provider — unlock Vex or set up a provider.";
+      return "No inference provider - unlock Vex or set up a provider.";
     case "status_changed":
-      return "Mission state changed — re-check and retry.";
+      return "Mission state changed - re-check and retry.";
     default:
       return "Couldn't complete the action. Re-check the mission state.";
   }
@@ -170,13 +170,13 @@ function renewNoticeFor(r: Result<MissionRenewResult>): string | null {
     case "session_mismatch":
       return "That mission belongs to a different session.";
     case "not_accepted":
-      return "The source mission was never accepted — nothing to renew from.";
+      return "The source mission was never accepted - nothing to renew from.";
     case "not_terminal_yet":
       return `The source mission isn't finished yet (status ${r.data.runStatus}). Wait for it to finish first.`;
     case "session_has_active_run":
       return `A mission run is already active (status ${r.data.runStatus}). Stop it before renewing.`;
     case "session_has_pending_draft":
-      return "A draft mission already exists for this session — accept or discard it before renewing again.";
+      return "A draft mission already exists for this session - accept or discard it before renewing again.";
     default:
       return assertNever(r.data);
   }
@@ -454,7 +454,7 @@ function AcceptancePendingNotice(): JSX.Element {
       data-vex-state="acceptance-pending"
       className="mb-2 w-full text-xs text-warning"
     >
-      Mission contract not accepted — on-chain actions (swaps, bridges, sends)
+      Mission contract not accepted - on-chain actions (swaps, bridges, sends)
       are blocked until you accept the contract and start the mission.
     </p>
   );

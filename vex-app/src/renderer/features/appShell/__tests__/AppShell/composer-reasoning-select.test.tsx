@@ -205,7 +205,7 @@ beforeEach(() => {
   });
 });
 
-describe("SessionComposer reasoning selector — mount gate", () => {
+describe("SessionComposer reasoning selector - mount gate", () => {
   it("mounts for an agent session whose model reports a capability", () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     // Preselect (no upstream default, "medium" in set) → Medium.
@@ -270,7 +270,7 @@ describe("SessionComposer reasoning selector — mount gate", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — options", () => {
+describe("SessionComposer reasoning selector - options", () => {
   it("lists supportedEfforts VERBATIM in DTO order with none labelled Off", () => {
     mockUseAvailableModels.mockReturnValue(
       modelsState(
@@ -299,7 +299,7 @@ describe("SessionComposer reasoning selector — options", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — preselect (selectDefaultReasoningEffort)", () => {
+describe("SessionComposer reasoning selector - preselect (selectDefaultReasoningEffort)", () => {
   it("preselects the upstream defaultEffort when it is in the final set", () => {
     mockUseAvailableModels.mockReturnValue(
       modelsState(capability({ defaultEffort: "high" })),
@@ -327,7 +327,7 @@ describe("SessionComposer reasoning selector — preselect (selectDefaultReasoni
   });
 });
 
-describe("SessionComposer reasoning selector — D5 submit contract", () => {
+describe("SessionComposer reasoning selector - D5 submit contract", () => {
   it("a pick updates the per-session store and rides the next submit", async () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     pick("Low");
@@ -383,7 +383,7 @@ describe("SessionComposer reasoning selector — D5 submit contract", () => {
     });
   });
 
-  it("OMITS reasoningEffort entirely when reasoning is null — even over a stale store value", async () => {
+  it("OMITS reasoningEffort entirely when reasoning is null - even over a stale store value", async () => {
     mockUseAvailableModels.mockReturnValue(modelsState(null));
     useUiStore.setState({ reasoningEffortBySession: { [SESSION]: "high" } });
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
@@ -397,7 +397,7 @@ describe("SessionComposer reasoning selector — D5 submit contract", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — retry preserves the ridden effort", () => {
+describe("SessionComposer reasoning selector - retry preserves the ridden effort", () => {
   it("Retry resends the exact value that rode the failed submit, even after the selector changes", async () => {
     mockSubmitChat.mutateAsync.mockResolvedValueOnce({
       ok: false,
@@ -440,7 +440,7 @@ describe("SessionComposer reasoning selector — retry preserves the ridden effo
   });
 });
 
-describe("SessionComposer reasoning selector — a11y (SelectMenu contract)", () => {
+describe("SessionComposer reasoning selector - a11y (SelectMenu contract)", () => {
   it("is a combobox that toggles aria-expanded and lists options with aria-selected", () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     const trigger = screen.getByRole("combobox", { name: "Reasoning effort" });

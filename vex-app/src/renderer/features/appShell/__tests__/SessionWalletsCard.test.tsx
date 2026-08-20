@@ -85,7 +85,7 @@ describe("SessionWalletsCard", () => {
     expect(screen.queryByText("SOL")).toBeNull();
   });
 
-  it("is READ-ONLY — no picker or change control, only the copy key", () => {
+  it("is READ-ONLY - no picker or change control, only the copy key", () => {
     mount(
       scope({
         evm: { walletId: "w-evm", address: EVM_ADDR, label: "Trading" },

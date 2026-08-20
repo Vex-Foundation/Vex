@@ -17,7 +17,7 @@ function base64Secret(byteLength: number): string {
   return Buffer.alloc(byteLength, 0xff).toString("base64");
 }
 
-describe("redactForExport — recall", () => {
+describe("redactForExport - recall", () => {
   it("redacts a labelled private key", () => {
     const out = redactForExport(
       "private_key: 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
@@ -91,7 +91,7 @@ describe("redactForExport — recall", () => {
   }
 });
 
-describe("redactForExport — precision", () => {
+describe("redactForExport - precision", () => {
   it("leaves an EVM address untouched", () => {
     const address = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
     expect(redactForExport(`Send to ${address}`)).toBe(`Send to ${address}`);

@@ -21,7 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { isCuratedProtocol, resolveProtocolMark } from "../protocol-marks.js";
 
-describe("resolveProtocolMark — curated venues", () => {
+describe("resolveProtocolMark - curated venues", () => {
   it.each([
     ["dexscreener", "/protocols/dexscreener.jpg", "DexScreener"],
     ["jupiter", "/protocols/jupiter.jpg", "Jupiter"],
@@ -48,7 +48,7 @@ describe("resolveProtocolMark — curated venues", () => {
   });
 });
 
-describe("resolveProtocolMark — fallbacks", () => {
+describe("resolveProtocolMark - fallbacks", () => {
   it("gives a KNOWN venue with no bundled asset the monogram, never another brand's mark", () => {
     expect(resolveProtocolMark("polymarket")).toEqual({
       kind: "monogram",
@@ -57,7 +57,7 @@ describe("resolveProtocolMark — fallbacks", () => {
     });
   });
 
-  it("gives solana the monogram — jupiter.jpg is Jupiter's mark, never Solana's", () => {
+  it("gives solana the monogram - jupiter.jpg is Jupiter's mark, never Solana's", () => {
     const mark = resolveProtocolMark("solana");
     expect(mark).toEqual({
       kind: "monogram",
@@ -74,7 +74,7 @@ describe("resolveProtocolMark — fallbacks", () => {
     });
   });
 
-  it("returns null when there is no venue at all — the row renders no mark", () => {
+  it("returns null when there is no venue at all - the row renders no mark", () => {
     expect(resolveProtocolMark(null)).toBeNull();
     expect(resolveProtocolMark("")).toBeNull();
     expect(resolveProtocolMark("   ")).toBeNull();
@@ -86,7 +86,7 @@ describe("resolveProtocolMark — fallbacks", () => {
     expect(mark?.label.length).toBeLessThanOrEqual(32);
   });
 
-  it("never resolves to a remote URL — every curated src is a bundled same-origin path", () => {
+  it("never resolves to a remote URL - every curated src is a bundled same-origin path", () => {
     for (const protocol of [
       "dexscreener",
       "jupiter",
@@ -111,7 +111,7 @@ describe("resolveProtocolMark — fallbacks", () => {
   });
 });
 
-describe("isCuratedProtocol — the gate for UNTRUSTED venue strings", () => {
+describe("isCuratedProtocol - the gate for UNTRUSTED venue strings", () => {
   it("recognises a curated venue regardless of case or padding", () => {
     expect(isCuratedProtocol("kyberswap")).toBe(true);
     expect(isCuratedProtocol("  KyberSwap ")).toBe(true);

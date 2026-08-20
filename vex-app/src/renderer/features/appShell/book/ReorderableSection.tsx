@@ -276,7 +276,7 @@ export function ReorderableSection({
         onDragStart={(event) => reorder.onHandleDragStart(id, event)}
         onDragEnd={reorder.onDragEnd}
         onKeyDown={(event) => reorder.onHandleKeyDown(id, index, event)}
-        aria-label={`Reorder ${BOOK_SECTION_LABEL[id]} — position ${index + 1} of ${count}`}
+        aria-label={`Reorder ${BOOK_SECTION_LABEL[id]} - position ${index + 1} of ${count}`}
         className="absolute right-2 top-2 z-10 cursor-grab rounded p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-ink-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary group-hover:opacity-100"
       >
         <IconGripVertical size={12} />

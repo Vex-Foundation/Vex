@@ -86,8 +86,8 @@ export function BalancesCard({
       ) : top.length === 0 ? (
         <CardStateNote>
           {sessionId === null
-            ? "No balances yet — fund a wallet and your holdings appear here."
-            : "No balances in this session's wallets yet — fund them and your holdings appear here."}
+            ? "No balances yet - fund a wallet and your holdings appear here."
+            : "No balances in this session's wallets yet - fund them and your holdings appear here."}
         </CardStateNote>
       ) : (
         <>

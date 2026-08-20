@@ -208,7 +208,7 @@ describe("AgentCoreStep", () => {
     await findByText(/Lower max output tokens/i);
   });
 
-  it("garbage typed input does NOT silently clear the field — surfaces a client-side validation error", async () => {
+  it("garbage typed input does NOT silently clear the field - surfaces a client-side validation error", async () => {
     const { container, getByLabelText, findByText } = renderWithQuery(
       <AgentCoreStep
         completedSteps={["keystore", "wallets", "apiKeys", "embedding"]}

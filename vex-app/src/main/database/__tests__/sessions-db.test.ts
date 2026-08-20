@@ -121,7 +121,7 @@ describe("softDeleteSessionWithClient outcome branching", () => {
       { rows: [], rowCount: 0 },
       { rows: [{ deleted_at: null }], rowCount: 1 },
       { rows: [], rowCount: 0 },
-      { rows: [], rowCount: 0 }, // no pending approval — race-loser
+      { rows: [], rowCount: 0 }, // no pending approval - race-loser
     ]);
     const result = await mod.softDeleteSessionWithClient(client, TEST_ID);
     expect(result.ok).toBe(true);
@@ -145,7 +145,7 @@ describe("softDeleteSessionWithClient outcome branching", () => {
   });
 });
 
-describe("setSessionPinnedWithClient — soft-delete invariant", () => {
+describe("setSessionPinnedWithClient - soft-delete invariant", () => {
   it("returns ok(null) when the row is soft-deleted (UPDATE 0 rows)", async () => {
     const mod = await import("../sessions-db.js");
     // Soft-deleted rows fail the `AND deleted_at IS NULL` filter, so the
@@ -196,7 +196,7 @@ describe("setSessionPinnedWithClient — soft-delete invariant", () => {
   });
 });
 
-describe("renameSessionWithClient — contract", () => {
+describe("renameSessionWithClient - contract", () => {
   it("returns ok(null) when the row is unknown or soft-deleted (UPDATE 0 rows)", async () => {
     const mod = await import("../sessions-db.js");
     const { client } = scriptedClient([{ rows: [], rowCount: 0 }]);
@@ -252,7 +252,7 @@ describe("renameSessionWithClient — contract", () => {
 // delete guard, and pinned-row lookups will silently miss any session
 // that the user has paused via `runtime.requestPause`. The constant is
 // not exported; we assert it via the SQL parameters the helpers send.
-describe("ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES — paused_user parity", () => {
+describe("ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES - paused_user parity", () => {
   it("loadMissionStatus (used by setSessionPinned) passes paused_user in $2", async () => {
     const mod = await import("../sessions-db.js");
     const { client, queryMock } = scriptedClient([

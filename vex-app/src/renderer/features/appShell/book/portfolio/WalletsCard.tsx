@@ -60,7 +60,7 @@ export function WalletsCard({
         <>
           {wallets.length === 0 ? (
             <CardStateNote>
-              No wallets configured yet — add your first below.
+              No wallets configured yet - add your first below.
             </CardStateNote>
           ) : (
             <ul className="flex flex-col">

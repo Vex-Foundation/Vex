@@ -171,7 +171,7 @@ export function PlanDisplayModal({
         <DialogBody>
           {enabled ? (
             <p className="text-xs text-ink-secondary">
-              Plan Mode has been retired — no session can turn it on anymore.
+              Plan Mode has been retired - no session can turn it on anymore.
               This session still carries a plan from before that change.{" "}
               {pending
                 ? "Accept it to unblock the mission, or turn Plan Mode off below."
@@ -295,9 +295,9 @@ function planAcceptNotice(
       case "accepted":
         return null;
       case "stale":
-        return "Plan changed — review again before accepting.";
+        return "Plan changed - review again before accepting.";
       case "no_plan":
-        return "No plan authored yet — ask Vex to write a plan first.";
+        return "No plan authored yet - ask Vex to write a plan first.";
       case "not_found":
         return "Couldn't accept: this session no longer exists. Refresh and try again.";
       default:
@@ -305,7 +305,7 @@ function planAcceptNotice(
     }
   }
   if (isError) {
-    return "Couldn't accept the plan — something went wrong. Try again.";
+    return "Couldn't accept the plan - something went wrong. Try again.";
   }
   return null;
 }
@@ -330,7 +330,7 @@ function planDisableNotice(
       case "updated":
         return null;
       case "blocked_pending_acceptance":
-        return "Can't turn off yet — a mission run is waiting on this plan's acceptance. Stop the mission first, then turn off Plan Mode.";
+        return "Can't turn off yet - a mission run is waiting on this plan's acceptance. Stop the mission first, then turn off Plan Mode.";
       case "not_found":
         return "Couldn't turn off: this session no longer exists. Refresh and try again.";
       default:
@@ -338,7 +338,7 @@ function planDisableNotice(
     }
   }
   if (isError) {
-    return "Couldn't turn off Plan Mode — something went wrong. Try again.";
+    return "Couldn't turn off Plan Mode - something went wrong. Try again.";
   }
   return null;
 }

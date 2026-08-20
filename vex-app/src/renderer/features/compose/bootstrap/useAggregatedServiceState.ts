@@ -66,7 +66,7 @@ function applyEvent(
       next.set("Postgres", {
         ...pg,
         status: "probing",
-        detail: `probe #${event.attempt} — ${event.message}`,
+        detail: `probe #${event.attempt} - ${event.message}`,
       });
       return next;
 
@@ -92,8 +92,8 @@ function applyEvent(
         status: "probing",
         detail:
           event.reason === "health"
-            ? `probe #${event.attempt} — model loading`
-            : `probe #${event.attempt} — runtime warming`,
+            ? `probe #${event.attempt} - model loading`
+            : `probe #${event.attempt} - runtime warming`,
       });
       return next;
 

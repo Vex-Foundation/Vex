@@ -35,7 +35,7 @@ export function ApiKeysSkipPanel({
       panelDataAttr={{ kind: "apikeys", value: "skip" }}
       icon={icon}
       title="API keys already configured"
-      description="A Jupiter API key is already saved on this install. Continue to keep using it — Tavily and Rettiwt stay editable from the review at the end, or later in Settings."
+      description="A Jupiter API key is already saved on this install. Continue to keep using it - Tavily and Rettiwt stay editable from the review at the end, or later in Settings."
       footer={
         <Button
           onClick={() => {

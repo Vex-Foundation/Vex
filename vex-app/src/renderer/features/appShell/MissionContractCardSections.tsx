@@ -65,7 +65,7 @@ export function CardBody({ draft }: CardBodyProps): JSX.Element {
         <p className="text-ink-primary">
           {draft.goal?.trim() || (
             <span className="italic text-ink-tertiary">
-              (no goal yet — talk to Vex to outline one)
+              (no goal yet - talk to Vex to outline one)
             </span>
           )}
         </p>
@@ -93,7 +93,7 @@ export function CardBody({ draft }: CardBodyProps): JSX.Element {
       {draft.stopConditions.length > 0 ? (
         <Field
           label="Stop conditions"
-          hint="Host-only — Vex cannot change these"
+          hint="Host-only - Vex cannot change these"
         >
           <BulletList items={draft.stopConditions} />
         </Field>

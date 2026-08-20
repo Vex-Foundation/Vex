@@ -495,7 +495,7 @@ describe("TranscriptMessage tool card duration", () => {
     ).toBe("2.3 s");
   });
 
-  it("shows NO chip for a call that never ran — null must not read as 0 s", () => {
+  it("shows NO chip for a call that never ran - null must not read as 0 s", () => {
     for (const value of [null, undefined]) {
       const view = render(
         createElement(TranscriptMessage, { row: toolRowWith(value) }),

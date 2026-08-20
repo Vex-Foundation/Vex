@@ -259,7 +259,7 @@ export function ToolActRow({
           className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:rounded-[4px] focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {/* DisclosureRow house pattern: the 16px leading box crossfades the
-              tool mark to a chevron on hover/focus — "this row expands"
+              tool mark to a chevron on hover/focus - "this row expands"
               without a resting chevron. 100ms opacity, no layout shift. */}
           <span className="relative mr-1.5 inline-grid h-4 w-4 flex-none place-items-center">
             <span className="col-start-1 row-start-1 inline-flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">

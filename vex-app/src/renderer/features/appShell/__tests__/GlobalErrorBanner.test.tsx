@@ -160,7 +160,7 @@ describe("GlobalErrorBanner", () => {
   });
 });
 
-describe("null-session routing — both directions", () => {
+describe("null-session routing - both directions", () => {
   it("a session-less failure NEVER reaches a session banner", () => {
     const client = new QueryClient();
     mountRetention();

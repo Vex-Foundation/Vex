@@ -432,7 +432,7 @@ describe("walletRestoreArchive schema validation", () => {
     ).toBe(false);
   });
 
-  it("rejects unknown keys (strict) — e.g. a smuggled absolute path", () => {
+  it("rejects unknown keys (strict) - e.g. a smuggled absolute path", () => {
     expect(
       walletRestoreArchiveInputSchema.safeParse({
         id: "x",

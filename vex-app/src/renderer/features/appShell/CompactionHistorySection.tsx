@@ -130,7 +130,7 @@ function CompactionRow({
       ? `#${item.sourceStartMessageId}–#${item.sourceEndMessageId}`
       : item.sourceEndMessageId !== null
         ? `…#${item.sourceEndMessageId}`
-        : "—";
+        : "-";
   return (
     <li
       data-vex-compaction-generation={item.checkpointGeneration}

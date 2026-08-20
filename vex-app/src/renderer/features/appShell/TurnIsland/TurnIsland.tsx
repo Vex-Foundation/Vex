@@ -205,7 +205,7 @@ export function TurnIsland({
       className="flex flex-col"
     >
       {/* Announced: phase + status only. The growing text is NEVER a live
-          region — that would spam a screen reader token by token; the
+          region - that would spam a screen reader token by token; the
           persisted transcript row is the canonical content. */}
       <span className="sr-only" role="status">
         <span>
@@ -218,7 +218,7 @@ export function TurnIsland({
         {streaming ? <span>{view.label}</span> : null}
       </span>
       {/* The thoughts this turn has already finished, folded. They sit ABOVE
-          the island because they are behind it in time — the turn reads top to
+          the island because they are behind it in time - the turn reads top to
           bottom as it happened. They persist across tool calls and across
           provider rounds; only the end of the TURN retires them. */}
       <ReasoningSegments segments={preview.reasoningSegments} />

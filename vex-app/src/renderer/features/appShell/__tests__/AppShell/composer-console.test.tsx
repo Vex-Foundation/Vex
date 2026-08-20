@@ -170,7 +170,7 @@ function typeDraft(value: string): void {
   fireEvent.select(field);
 }
 
-describe("composer capsule — chrome", () => {
+describe("composer capsule - chrome", () => {
   it("wraps the composer in the r22 capsule card at the 780px catalog width", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -220,7 +220,7 @@ describe("composer capsule — chrome", () => {
   });
 });
 
-describe("composer capsule — send key", () => {
+describe("composer capsule - send key", () => {
   it("the send key is the 34px round accent control: disabled while empty, armed once typed", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -250,7 +250,7 @@ describe("composer capsule — send key", () => {
   });
 });
 
-describe("composer capsule — placeholder + starter chips", () => {
+describe("composer capsule - placeholder + starter chips", () => {
   it("opens on the first rotating welcome prompt as an aria-hidden overlay - no native placeholder", () => {
     const { container } = render(
       <SessionComposer activeSession={null} activeSessionId={null} />,
@@ -282,7 +282,7 @@ describe("composer capsule — placeholder + starter chips", () => {
   });
 });
 
-describe("composer capsule — slash commands (combobox)", () => {
+describe("composer capsule - slash commands (combobox)", () => {
   it('typing "/" opens the command listbox with the full roster while focus stays in the textarea', () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -344,7 +344,7 @@ describe("composer capsule — slash commands (combobox)", () => {
   });
 });
 
-describe("composer capsule — submission policy (B13)", () => {
+describe("composer capsule - submission policy (B13)", () => {
   it("plain Enter submits under the default policy", async () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -373,7 +373,7 @@ describe("composer capsule — submission policy (B13)", () => {
   });
 });
 
-describe("composer capsule — queue on busy (A27)", () => {
+describe("composer capsule - queue on busy (A27)", () => {
   it("a submit while a turn is in flight queues the message into the visible dock instead of dropping it", async () => {
     // A33 changed this path's first resort: a mid-turn submit STEERS the
     // live turn, and the A27 queue is the fallback. This test pins the
@@ -421,7 +421,7 @@ describe("composer capsule — queue on busy (A27)", () => {
   });
 });
 
-describe("composer capsule — seats", () => {
+describe("composer capsule - seats", () => {
   it("the permission chip names the session grant and never offers a toggle", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -466,7 +466,7 @@ describe("composer capsule — seats", () => {
   });
 });
 
-describe("composer capsule — per-session drafts (B1)", () => {
+describe("composer capsule - per-session drafts (B1)", () => {
   it("a draft survives switching sessions and returns verbatim on switch-back", () => {
     const OTHER = "00000000-0000-4000-8000-00000000cc02";
     const { rerender } = render(

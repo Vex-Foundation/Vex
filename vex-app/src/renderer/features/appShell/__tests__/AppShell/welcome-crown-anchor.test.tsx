@@ -182,7 +182,7 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(slot?.contains(field)).toBe(true);
 }
 
-describe("SessionPanel welcome — crown anchored above a downward growth band", () => {
+describe("SessionPanel welcome - crown anchored above a downward growth band", () => {
   it("seats the crown zone as a sibling ABOVE the fixed-height composer band", () => {
     const { container } = renderWelcome();
     expectAnchoredStructure(container);
@@ -245,7 +245,7 @@ describe("SessionPanel welcome — crown anchored above a downward growth band",
   });
 });
 
-describe("composer growth glide — globals.css contract (raw scan)", () => {
+describe("composer growth glide - globals.css contract (raw scan)", () => {
   /** First rule block for a selector (the composer-console.test helper). */
   function blockFor(selector: string): string {
     const start = GLOBALS_CSS.indexOf(`${selector} {`);
@@ -266,7 +266,7 @@ describe("composer growth glide — globals.css contract (raw scan)", () => {
     expect(grow).not.toContain("animation");
   });
 
-  it("the capsule holds a CONSTANT r22 radius — no border-radius relax left to sync with", () => {
+  it("the capsule holds a CONSTANT r22 radius - no border-radius relax left to sync with", () => {
     // The height glide above used to share its 220ms clock with a radius
     // relax once; the capsule (catalog geometry) is a constant 22px surface,
     // so that second moving part stays gone: the radius is a static value

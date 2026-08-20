@@ -278,7 +278,7 @@ describe("MissionContractModal", () => {
     const callsBeforeAccept = mockPlanGet.mock.calls.length;
     fireEvent.click(accept);
     await waitFor(() => {
-      expect(screen.queryByText(/Plan changed — review again/i)).not.toBeNull();
+      expect(screen.queryByText(/Plan changed - review again/i)).not.toBeNull();
     });
     // Accept button stays in place for re-review.
     expect(
@@ -351,7 +351,7 @@ describe("MissionContractModal", () => {
     );
     await waitFor(() => {
       expect(
-        screen.queryByText(/Couldn't accept the contract — something went wrong/i),
+        screen.queryByText(/Couldn't accept the contract - something went wrong/i),
       ).not.toBeNull();
     });
   });
@@ -439,7 +439,7 @@ describe("MissionContractModal", () => {
     ).not.toBeNull();
   });
 
-  it("a REJECTED plan.get promise (ipc failure) shows the Retry path — never an infinite Loading", async () => {
+  it("a REJECTED plan.get promise (ipc failure) shows the Retry path - never an infinite Loading", async () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
     mockPlanGet.mockRejectedValueOnce(new Error("ipc channel died"));

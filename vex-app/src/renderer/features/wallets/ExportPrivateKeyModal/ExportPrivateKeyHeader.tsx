@@ -21,7 +21,7 @@ export function ExportPrivateKeyHeader({
       <div className="flex items-center gap-2">
         <IconLock size={20} className="shrink-0 text-danger" />
         <DialogTitle>
-          Export private key — {CHAIN_LABEL[chain]}
+          Export private key - {CHAIN_LABEL[chain]}
         </DialogTitle>
       </div>
       <p className="text-xs text-ink-tertiary">

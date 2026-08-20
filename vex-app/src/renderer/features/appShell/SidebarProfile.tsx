@@ -133,7 +133,7 @@ export function SidebarProfile({
     {
       id: "howItWorks",
       icon: entryIcon(IconQuestion),
-      label: entryLabel("How Vex works", "Start here — the five-minute tour"),
+      label: entryLabel("How Vex works", "Start here - the five-minute tour"),
     },
     {
       id: "settings",
@@ -222,7 +222,7 @@ export function SidebarProfile({
       type="button"
       aria-haspopup="menu"
       aria-expanded={open}
-      aria-label={`Vex — ${runtime.label}. Open menu`}
+      aria-label={`Vex - ${runtime.label}. Open menu`}
       title={sidebarOpen ? undefined : runtime.label}
       onClick={() => setOpen((prev) => !prev)}
       className={cn(

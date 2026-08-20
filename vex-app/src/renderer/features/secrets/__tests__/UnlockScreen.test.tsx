@@ -165,7 +165,7 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
-  it("wears the onboarding chrome (PR9 — hallmark + data-vex-onboarding)", () => {
+  it("wears the onboarding chrome (PR9 - hallmark + data-vex-onboarding)", () => {
     // Regression guard: lock screen must stay visually consistent with
     // the rest of the onboarding flow (Countersign/NOTARY rebrand: the
     // photo backdrop is gone; the hallmark mark + shared accent scope

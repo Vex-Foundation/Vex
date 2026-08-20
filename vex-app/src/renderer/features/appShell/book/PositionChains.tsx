@@ -206,7 +206,7 @@ function ChainTotalFigure({
         unpriced ? "text-ink-tertiary" : "text-ink-primary",
       )}
     >
-      {unpriced ? "—" : formatUsd(totalUsd)}
+      {unpriced ? "-" : formatUsd(totalUsd)}
     </span>
   );
 }
@@ -261,13 +261,13 @@ function ChainTokenList({
         const mark = resolveTokenMark(chainId, tokenAddress, symbol);
         return (
           <li
-            key={`${chainId}:${tokenAddress ?? "x"}:${symbol ?? "—"}:${index}`}
+            key={`${chainId}:${tokenAddress ?? "x"}:${symbol ?? "-"}:${index}`}
             className="flex items-center justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0"
           >
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <TokenMark mark={mark} size={13} />
               <span className="truncate text-[11.5px] text-ink-secondary">
-                {symbol !== null && symbol.length > 0 ? symbol : "—"}
+                {symbol !== null && symbol.length > 0 ? symbol : "-"}
               </span>
             </span>
             <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">

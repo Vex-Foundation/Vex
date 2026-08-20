@@ -378,7 +378,7 @@ describe("WalletsStep", () => {
     await view.findByText(/EVM wallet/i);
   });
 
-  it("Restore success — surfaces backup folder warning + Open backup folder button", async () => {
+  it("Restore success - surfaces backup folder warning + Open backup folder button", async () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({ evm: "missing", solana: "missing" })
     );
@@ -397,7 +397,7 @@ describe("WalletsStep", () => {
     expect(view.getByRole("button", { name: /Open backup folder/i })).toBeTruthy();
   });
 
-  it("Restore cancelled by user (internal.cancelled) — no action error shown", async () => {
+  it("Restore cancelled by user (internal.cancelled) - no action error shown", async () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({ evm: "missing", solana: "missing" })
     );
@@ -441,7 +441,7 @@ describe("WalletsStep", () => {
     await view.findByText(/Wrong password/i);
   });
 
-  it("Solana tab — switching shows Solana action menu", async () => {
+  it("Solana tab - switching shows Solana action menu", async () => {
     mockUseEnvState.mockReturnValue(
       envQueryFor({ evm: "missing", solana: "missing" })
     );

@@ -149,7 +149,7 @@ export function ChainActions({
         {backupDir !== null ? (
           <div className={cn("py-1", RAIL_WARNING_CHROME)}>
             <p className="text-sm font-medium text-ink-primary">
-              Backup created — save it to a safe location now.
+              Backup created - save it to a safe location now.
             </p>
             <p className="mt-1 text-xs text-ink-tertiary">
               Losing this device <em>and</em> your master password means
@@ -205,7 +205,7 @@ export function ChainActions({
         <p className="text-sm text-ink-tertiary">
           Set up your {chainLabel(chain)} wallet by generating fresh keys,
           importing an existing private key, or restoring from a backup
-          file. Keys are created and encrypted locally — Vex never sends
+          file. Keys are created and encrypted locally - Vex never sends
           them anywhere.
         </p>
         <div className="flex flex-wrap gap-2">

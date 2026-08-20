@@ -42,7 +42,7 @@ function row(p: {
   };
 }
 
-describe("toDto — displayStatus projection", () => {
+describe("toDto - displayStatus projection", () => {
   it("selects ONLY the metadata sub-key (never raw metadata) in the column tuple", () => {
     expect(MESSAGE_ROW_COLUMNS).toContain(
       "metadata -> 'displayStatus' AS display_status",

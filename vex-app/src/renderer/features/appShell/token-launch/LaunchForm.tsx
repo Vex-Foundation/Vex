@@ -241,7 +241,7 @@ export function LaunchForm({
         />
         {!prebuyIsAmount ? (
           <p className="text-sm text-danger" role="alert">
-            Enter a plain ETH amount, like 0.05 — up to 18 decimal places.
+            Enter a plain ETH amount, like 0.05 - up to 18 decimal places.
           </p>
         ) : (
           <p className="text-[11px] leading-relaxed text-ink-tertiary">

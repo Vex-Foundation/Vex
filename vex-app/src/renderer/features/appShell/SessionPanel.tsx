@@ -194,8 +194,8 @@ export function SessionPanel({
         {/* THE INSTRUMENT — directly below the logo row, one centered
             column (Grok's ~760px input slot), inside the ANCHORED GROWTH
             BAND (owner smoothness decree 2026-07-22): the band's layout
-            height is FIXED at the composer's resting stack — mt-6 (24px) +
-            resting pill (56px) + chips slot (60px) = 140px — so the flex-1
+            height is FIXED at the composer's resting stack - mt-6 (24px) +
+            resting pill (56px) + chips slot (60px) = 140px - so the flex-1
             crown zone above and spacer below split a CONSTANT leftover.
             When the pill auto-grows, the extra height overflows the band
             DOWNWARD into the empty spacer zone instead of re-centering the
@@ -284,7 +284,7 @@ export function SessionPanel({
               {/* The mission contract + action plan no longer render inline:
                   the two tall cards used to push MissionControls + the Accept
                   footer below the fold. They now live in the DESK RULE
-                  header's badge cluster (`MissionRail`) — PremiumBadge →
+                  header's badge cluster (`MissionRail`) - PremiumBadge →
                   top-layer dialog (`MissionContractModal` /
                   `PlanDisplayModal`), which keeps the Accept action pinned and
                   reachable. The transcript now owns the full column height. */}
@@ -298,7 +298,7 @@ export function SessionPanel({
                 ) : null}
               </div>
               {/* FULL-BLEED: the transcript owns the panel's width so its
-                  scroller — and therefore the native scrollbar — reaches the
+                  scroller - and therefore the native scrollbar - reaches the
                   panel's right edge. The reading column is re-applied INSIDE
                   it, around the rows. */}
               {activeSession !== null ? (
@@ -319,7 +319,7 @@ export function SessionPanel({
             composer's tree position stays stable across the idle↔tape
             switch. On the idle stage the OUTER div is the same ANCHORED
             GROWTH BAND as the welcome stage (fixed h-[140px] = the resting
-            composer stack — see the welcome branch): pill auto-grow
+            composer stack - see the welcome branch): pill auto-grow
             overflows downward instead of re-centering the column, so the
             crown never moves; the INNER div seats the instrument in the
             centered column (min(760px, 92%)) rising with the d2 stagger.
@@ -341,7 +341,7 @@ export function SessionPanel({
             )}
           >
             {/* The composer is ONE instrument on every stage (the old `stage`
-                presence prop is retired with the Grok pill — same 56px
+                presence prop is retired with the Grok pill - same 56px
                 geometry welcome, idle, and tape). */}
             <SessionComposer
               activeSession={activeSession}

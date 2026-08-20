@@ -45,7 +45,7 @@ describe("normalizeReasoningCapability", () => {
     expect(normalizeReasoningCapability(undefined)).toBeNull();
   });
 
-  it("reasoning object present but supportedEfforts OMITTED (undefined) normalizes to null — distinct from explicit null", () => {
+  it("reasoning object present but supportedEfforts OMITTED (undefined) normalizes to null - distinct from explicit null", () => {
     // D3: `supported_efforts` OMITTED means "we don't know the selectable
     // set" (→ null); explicit `null` means OpenRouter's own "no
     // restriction" signal (→ the full canonical set, tested below). These

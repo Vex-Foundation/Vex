@@ -46,7 +46,7 @@ export function SessionExportDialog({
         <DialogHeader className="border-line-2">
           <DialogTitle>Export session as Markdown?</DialogTitle>
           <DialogDescription className="text-ink-secondary">
-            {`Save a readable transcript of "${title}" to a file you choose. Secrets are redacted automatically on a best-effort basis — review the file before sharing it.`}
+            {`Save a readable transcript of "${title}" to a file you choose. Secrets are redacted automatically on a best-effort basis - review the file before sharing it.`}
           </DialogDescription>
         </DialogHeader>
 

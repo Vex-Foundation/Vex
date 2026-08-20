@@ -80,7 +80,7 @@ function lastSql(queryMock: ReturnType<typeof vi.fn>, n: number): string {
   return queryMock.mock.calls[n]![0] as string;
 }
 
-describe("branchSessionWithClient — fail-closed outcome classification", () => {
+describe("branchSessionWithClient - fail-closed outcome classification", () => {
   it("an unknown or soft-deleted source is 'not_found' and the transaction rolls back before any write", async () => {
     const { client, queryMock } = scriptedClient([
       EMPTY, // BEGIN
@@ -119,7 +119,7 @@ describe("branchSessionWithClient — fail-closed outcome classification", () =>
     expect(result.data.outcome).toBe("anchor_not_found");
   });
 
-  it("an anchor that compaction moved to the archive is 'anchor_compacted' — only the live tape can seed a branch", async () => {
+  it("an anchor that compaction moved to the archive is 'anchor_compacted' - only the live tape can seed a branch", async () => {
     const { client } = scriptedClient([
       EMPTY,
       { rows: [{ mode: "agent", title: "S" }], rowCount: 1 },
@@ -131,7 +131,7 @@ describe("branchSessionWithClient — fail-closed outcome classification", () =>
     expect(result.data.outcome).toBe("anchor_compacted");
   });
 
-  it("a prefix that severs a tool call from its result is 'open_tool_batch' — no auto-repair, nothing written", async () => {
+  it("a prefix that severs a tool call from its result is 'open_tool_batch' - no auto-repair, nothing written", async () => {
     const { client, queryMock } = scriptedClient([
       EMPTY,
       { rows: [{ mode: "agent", title: "S" }], rowCount: 1 },
@@ -145,7 +145,7 @@ describe("branchSessionWithClient — fail-closed outcome classification", () =>
   });
 });
 
-describe("branchSessionWithClient — the copy transaction", () => {
+describe("branchSessionWithClient - the copy transaction", () => {
   function happyPathScript(): ScriptedQueryResult[] {
     return [
       EMPTY, // BEGIN
@@ -181,7 +181,7 @@ describe("branchSessionWithClient — the copy transaction", () => {
     expect(lastSql(queryMock, 0)).toMatch(/BEGIN ISOLATION LEVEL REPEATABLE READ/);
   });
 
-  it("the message copy INSERTs new rows scoped to the new session and stamps origin_session_id with the source — the source tape itself is never touched", async () => {
+  it("the message copy INSERTs new rows scoped to the new session and stamps origin_session_id with the source - the source tape itself is never touched", async () => {
     const { client, queryMock } = scriptedClient(happyPathScript());
     await branch(client, "Branch title");
     const copySql = lastSql(queryMock, 5);

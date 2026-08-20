@@ -32,7 +32,7 @@ function validForm(over: Partial<PoolsLaunchFormValues> = {}): PoolsLaunchFormVa
   };
 }
 
-describe("poolsFormToPayload — what it accepts", () => {
+describe("poolsFormToPayload - what it accepts", () => {
   it("maps a complete form onto the wire payload", () => {
     expect(poolsFormToPayload(validForm())).toEqual({
       name: "Flamingo",
@@ -80,7 +80,7 @@ describe("poolsFormToPayload — what it accepts", () => {
   });
 });
 
-describe("poolsFormToPayload — what it refuses", () => {
+describe("poolsFormToPayload - what it refuses", () => {
   it.each([
     ["no name", { name: "" }],
     ["no symbol", { symbol: "" }],

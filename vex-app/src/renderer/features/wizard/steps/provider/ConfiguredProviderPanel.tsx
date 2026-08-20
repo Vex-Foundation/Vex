@@ -359,7 +359,7 @@ export function ConfiguredProviderPanel({
               />
               <p className="text-xs text-ink-tertiary">
                 Leave blank to keep the current key. Your saved key is never
-                shown here — it stays in the encrypted vault on this machine.
+                shown here - it stays in the encrypted vault on this machine.
               </p>
             </div>
           </>

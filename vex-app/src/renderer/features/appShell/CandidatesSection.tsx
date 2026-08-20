@@ -51,7 +51,7 @@ export function CandidatesSection(): JSX.Element {
         <h2 className="vex-eyebrow">Memory candidates</h2>
         <p className="mt-1 text-xs text-ink-secondary">
           What the agent proposed for long-term memory. The memory manager
-          decides each candidate&apos;s fate automatically — this view is
+          decides each candidate&apos;s fate automatically - this view is
           inspection only.
         </p>
       </div>

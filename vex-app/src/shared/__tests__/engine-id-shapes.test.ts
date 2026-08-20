@@ -39,11 +39,11 @@ describe("canonical id fields", () => {
     expect(missionRunIdField.safeParse(preparedRunId()).success).toBe(true);
   });
 
-  it("still accepts a UUID mission id — the original creation path", () => {
+  it("still accepts a UUID mission id - the original creation path", () => {
     expect(missionIdField.safeParse(randomUUID()).success).toBe(true);
   });
 
-  it("keeps sessionId a real UUID — that one IS database-generated", () => {
+  it("keeps sessionId a real UUID - that one IS database-generated", () => {
     expect(sessionIdField.safeParse(SESSION).success).toBe(true);
     expect(sessionIdField.safeParse(renewedMissionId()).success).toBe(false);
   });
@@ -54,7 +54,7 @@ describe("canonical id fields", () => {
   });
 });
 
-describe("missionUpdate — a RENEWED mission survives the boundary", () => {
+describe("missionUpdate - a RENEWED mission survives the boundary", () => {
   const event = (missionId: string | null) => ({
     type: "engine.mission.update" as const,
     sessionId: SESSION,
@@ -74,7 +74,7 @@ describe("missionUpdate — a RENEWED mission survives the boundary", () => {
   });
 });
 
-describe("engine.error — a run-scoped failure survives the boundary", () => {
+describe("engine.error - a run-scoped failure survives the boundary", () => {
   const event = (missionRunId: string | null) => ({
     type: "engine.runtime.error" as const,
     sessionId: SESSION,

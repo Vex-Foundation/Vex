@@ -166,7 +166,7 @@ describe("PlanDisplayModal", () => {
 
   it("surfaces a failure notice for each non-success standalone-accept outcome", () => {
     const cases: ReadonlyArray<[string, RegExp]> = [
-      ["stale", /Plan changed — review again/i],
+      ["stale", /Plan changed - review again/i],
       ["no_plan", /No plan authored yet/i],
       ["not_found", /Couldn't accept:.*no longer exists/i],
     ];
@@ -190,7 +190,7 @@ describe("PlanDisplayModal", () => {
     mockAcceptPlan.isError = true;
     renderModal();
     expect(
-      screen.queryByText(/Couldn't accept the plan — something went wrong/i),
+      screen.queryByText(/Couldn't accept the plan - something went wrong/i),
     ).not.toBeNull();
   });
 
@@ -202,11 +202,11 @@ describe("PlanDisplayModal", () => {
     // (contract modal owns the unified accept) shows no standalone notice.
     mockAcceptPlan.data = { ok: true, data: { outcome: "stale" } };
     renderModal({ suppressAccept: true });
-    expect(screen.queryByText(/Plan changed — review again/i)).toBeNull();
+    expect(screen.queryByText(/Plan changed - review again/i)).toBeNull();
   });
 });
 
-describe("PlanDisplayModal — legacy recovery (Turn off Plan Mode)", () => {
+describe("PlanDisplayModal - legacy recovery (Turn off Plan Mode)", () => {
   it("shows Turn off Plan Mode whenever a plan is enabled, even with nothing authored yet", () => {
     mockUseSessionPlan.mockReturnValue(planQuery({ enabled: true, planMd: "" }));
     renderModal();
@@ -243,7 +243,7 @@ describe("PlanDisplayModal — legacy recovery (Turn off Plan Mode)", () => {
     expect(screen.getByText("Turn off Plan Mode")).toBeTruthy();
   });
 
-  it("offers Turn off for an accepted plan with no active pause — the otherwise-stranded case", () => {
+  it("offers Turn off for an accepted plan with no active pause - the otherwise-stranded case", () => {
     mockUseSessionPlan.mockReturnValue(
       planQuery({ enabled: true, planMd: "# Plan", accepted: true }),
     );
@@ -287,7 +287,7 @@ describe("PlanDisplayModal — legacy recovery (Turn off Plan Mode)", () => {
     };
     renderModal();
     expect(
-      screen.getByText(/Couldn't turn off Plan Mode — something went wrong/i),
+      screen.getByText(/Couldn't turn off Plan Mode - something went wrong/i),
     ).toBeTruthy();
   });
 
@@ -298,7 +298,7 @@ describe("PlanDisplayModal — legacy recovery (Turn off Plan Mode)", () => {
     mockSetPlanMode.isError = true;
     renderModal();
     expect(
-      screen.getByText(/Couldn't turn off Plan Mode — something went wrong/i),
+      screen.getByText(/Couldn't turn off Plan Mode - something went wrong/i),
     ).toBeTruthy();
   });
 

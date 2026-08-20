@@ -93,7 +93,7 @@ describe("tokenHistoryReadInputSchema", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("accepts sourceRank=2 (Agent Scan §4.7 — the agent_activity arm)", () => {
+  it("accepts sourceRank=2 (Agent Scan §4.7 - the agent_activity arm)", () => {
     const parsed = tokenHistoryCursorSchema.safeParse({
       createdAt: ISO_MICRO,
       sourceRank: 2,
@@ -307,7 +307,7 @@ describe("tokenHistoryEntrySchema", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("rejects a stale 'atomic' unitProvenance value (heuristic retired — Agent Scan §4.7)", () => {
+  it("rejects a stale 'atomic' unitProvenance value (heuristic retired - Agent Scan §4.7)", () => {
     const parsed = tokenHistoryEntrySchema.safeParse({
       ...base,
       kind: "swap",
@@ -344,7 +344,7 @@ describe("tokenHistoryEntrySchema", () => {
     expect(parsed.success).toBe(false);
   });
 
-  describe("valueUsd — usdProvenance tag (Codex final review round 2 finding 7 / contract C35)", () => {
+  describe("valueUsd - usdProvenance tag (Codex final review round 2 finding 7 / contract C35)", () => {
     const swapBase = {
       ...base,
       kind: "swap" as const,
@@ -376,7 +376,7 @@ describe("tokenHistoryEntrySchema", () => {
       expect(parsed.success).toBe(true);
     });
 
-    it("rejects a leg missing usdProvenance (the pre-C35 bare-string shape — hostile fixture)", () => {
+    it("rejects a leg missing usdProvenance (the pre-C35 bare-string shape - hostile fixture)", () => {
       const parsed = tokenHistoryEntrySchema.safeParse({
         ...swapBase,
         input: { ...leg, valueUsd: "1.50" },

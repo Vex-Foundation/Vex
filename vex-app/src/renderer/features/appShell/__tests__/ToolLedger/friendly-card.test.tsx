@@ -27,7 +27,7 @@ function act(over: Partial<ToolCallActView> = {}): ToolCallActView {
   };
 }
 
-describe("ToolActRow — friendly card presentation", () => {
+describe("ToolActRow - friendly card presentation", () => {
   it("prints a human title and keeps the raw symbol reachable as the tooltip", () => {
     render(
       createElement(ToolActRow, {
@@ -47,7 +47,7 @@ describe("ToolActRow — friendly card presentation", () => {
     ).not.toBeNull();
   });
 
-  it("falls back to the category glyph — never a borrowed brand — with no venue", () => {
+  it("falls back to the category glyph - never a borrowed brand - with no venue", () => {
     const { container } = render(
       createElement(ToolActRow, { act: act({ toolName: "wallet_balances" }) }),
     );
@@ -360,7 +360,7 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(screen.getByRole("button", { name: /Execute tool/ })).not.toBeNull();
   });
 
-  it("shows NO legs when the payload cannot be parsed — never a guessed trade", () => {
+  it("shows NO legs when the payload cannot be parsed - never a guessed trade", () => {
     const { container } = render(
       createElement(ToolActRow, {
         act: act({

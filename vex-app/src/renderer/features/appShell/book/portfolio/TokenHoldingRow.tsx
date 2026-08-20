@@ -143,7 +143,7 @@ export function TokenHoldingRow({
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <TokenMark mark={mark} size={15} />
         <span className="min-w-0 truncate text-[12px] leading-tight text-ink-primary">
-          {name ?? "—"}
+          {name ?? "-"}
           {chainName !== null ? (
             <span className="text-ink-tertiary"> ({chainName})</span>
           ) : null}

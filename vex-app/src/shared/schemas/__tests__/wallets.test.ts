@@ -123,7 +123,7 @@ describe("walletImport input schemas", () => {
 });
 
 describe("walletRestore input/result schemas", () => {
-  it("input requires only chain (single roundtrip — no path)", () => {
+  it("input requires only chain (single roundtrip - no path)", () => {
     expect(
       walletRestoreInputSchema.safeParse({ chain: "evm" }).success
     ).toBe(true);
@@ -314,7 +314,7 @@ describe("preparedIntentDtoSchema", () => {
     ).toBe(false);
   });
 
-  it("REJECTS failureReason field (defense-in-depth — never crosses boundary)", () => {
+  it("REJECTS failureReason field (defense-in-depth - never crosses boundary)", () => {
     expect(
       preparedIntentDtoSchema.safeParse({
         ...validDto(),
@@ -352,7 +352,7 @@ describe("walletsGetPreparedIntentInputSchema", () => {
 });
 
 describe("walletsCancelPreparedIntentInputSchema", () => {
-  it("same shape as get input — sessionId required", () => {
+  it("same shape as get input - sessionId required", () => {
     expect(
       walletsCancelPreparedIntentInputSchema.safeParse({
         sessionId: SESSION_UUID,

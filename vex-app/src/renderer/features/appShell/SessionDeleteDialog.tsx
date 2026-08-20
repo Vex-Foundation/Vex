@@ -88,10 +88,10 @@ function describeOutcome(
   outcome: SessionDeleteOutcome | null,
 ): string {
   if (outcome === "blocked_active_mission") {
-    return `Can't remove "${title}" — this mission is still active. Stop the mission first, then try again.`;
+    return `Can't remove "${title}" - this mission is still active. Stop the mission first, then try again.`;
   }
   if (outcome === "blocked_pending_approval") {
-    return `Can't remove "${title}" — this session has a pending approval. Resolve it first, then try again.`;
+    return `Can't remove "${title}" - this session has a pending approval. Resolve it first, then try again.`;
   }
   if (outcome === "state_changed") {
     return "Session state changed since you opened this dialog. Try again.";

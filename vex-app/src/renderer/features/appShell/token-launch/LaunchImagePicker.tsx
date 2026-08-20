@@ -73,7 +73,7 @@ export function LaunchImagePicker({
     <div className="flex flex-col gap-2">
       <Label htmlFor="vex-launch-image">Image</Label>
       <p className="text-[11px] leading-relaxed text-ink-tertiary">
-        Required. Pick one from your Trench photos, or add a new one — the
+        Required. Pick one from your Trench photos, or add a new one - the
         picture is written into the token itself, so it can&apos;t be changed
         afterwards.
       </p>
@@ -152,7 +152,7 @@ function LockerStrip({
   if (query.isError || (result !== undefined && !result.ok)) {
     return (
       <p className="text-[12px] text-warning">
-        Couldn&apos;t read your image locker — add an image to continue.
+        Couldn&apos;t read your image locker - add an image to continue.
       </p>
     );
   }

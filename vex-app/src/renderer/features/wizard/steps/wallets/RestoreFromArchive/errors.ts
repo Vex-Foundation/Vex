@@ -22,7 +22,7 @@ export function restoreErrorMessage(
     case "wallet.cap_reached":
       return "Restoring this backup would exceed the wallet limit. Remove some wallets first, or choose a smaller backup.";
     case "wallet.user_rejected":
-      return "Restore cancelled — the existing wallets were not replaced.";
+      return "Restore cancelled - the existing wallets were not replaced.";
     case "validation.invalid_input":
       return "That backup could not be selected. Refresh the list and try again.";
     case "onboarding.env_persist_failed":

@@ -96,7 +96,7 @@ function rawRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => __resetProviderEndpointCatalogForTests());
 
-describe("recorded live response — availability crosses the boundary", () => {
+describe("recorded live response - availability crosses the boundary", () => {
   it("parses under the SDK schema and yields a NON-EMPTY ranked list", async () => {
     const result = await loadFromFixture();
     expect(result.endpoints.length).toBeGreaterThan(1);
@@ -149,7 +149,7 @@ describe("recorded live response — availability crosses the boundary", () => {
     expect(result.suggestedEndpointTag).not.toBeNull();
   });
 
-  it("does NOT carry latency/throughput — the keyless client always gets null for them", async () => {
+  it("does NOT carry latency/throughput - the keyless client always gets null for them", async () => {
     const result = await loadFromFixture();
     for (const endpoint of result.endpoints) {
       expect("latencyLast30m" in endpoint).toBe(false);
@@ -158,7 +158,7 @@ describe("recorded live response — availability crosses the boundary", () => {
   });
 });
 
-describe("normalizeEndpoint — availability is validated at the boundary", () => {
+describe("normalizeEndpoint - availability is validated at the boundary", () => {
   it("carries real uptime windows and derives the score", () => {
     const normalized = normalizeEndpoint(rawRow());
     expect(normalized?.uptimeLast5mPercent).toBeCloseTo(98.9795, 3);
@@ -277,7 +277,7 @@ describe("compareEndpointsByAvailability", () => {
     return [...rows].sort(compareEndpointsByAvailability).map((r) => r.tag);
   }
 
-  it("ranks an endpoint WITHOUT availability data below one with it — even a mediocre one", () => {
+  it("ranks an endpoint WITHOUT availability data below one with it - even a mediocre one", () => {
     const measured = option({ tag: "measured", availabilityScore: 60 });
     const unknown = option({
       tag: "unknown",
@@ -388,7 +388,7 @@ describe("suggestedEndpointTagOf", () => {
  * by the process-boundary check. The mapping is asserted structurally instead,
  * so this test documents the contract without crossing the boundary.
  */
-describe("EndpointCandidate mapping — this catalogue is the producer", () => {
+describe("EndpointCandidate mapping - this catalogue is the producer", () => {
   it("maps every candidate field from a real recorded row, with null preserved", async () => {
     const result = await loadFromFixture();
     const row = result.endpoints[0]!;

@@ -19,11 +19,11 @@ export function ApiKeysCard({
   const status = k.jupiterConfigured ? "ok" : "warning";
   const items: string[] = [];
   items.push(
-    `Jupiter: ${k.jupiterConfigured ? "set" : "not set — Solana swaps unavailable"}`,
+    `Jupiter: ${k.jupiterConfigured ? "set" : "not set - Solana swaps unavailable"}`,
   );
-  items.push(`Tavily: ${k.tavilyConfigured ? "set" : "—"}`);
-  items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "—"}`);
-  items.push(`Relay: ${k.relayConfigured ? "set" : "—"}`);
+  items.push(`Tavily: ${k.tavilyConfigured ? "set" : "-"}`);
+  items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "-"}`);
+  items.push(`Relay: ${k.relayConfigured ? "set" : "-"}`);
   return (
     <SummaryCard
       title="API keys"

@@ -203,7 +203,7 @@ describe("vex.secrets.lock handler", () => {
   });
 });
 
-describe("vex.secrets.unlock handler — throttle gate", () => {
+describe("vex.secrets.unlock handler - throttle gate", () => {
   it("returns secrets.unlock_throttled when gate denies the attempt", async () => {
     mockCheckUnlockAllowed.mockReturnValue({
       allowed: false,
@@ -268,7 +268,7 @@ describe("vex.secrets.unlock handler — throttle gate", () => {
   });
 });
 
-describe("vex.secrets.unlock handler — session interaction", () => {
+describe("vex.secrets.unlock handler - session interaction", () => {
   it("on success: records success + does NOT record failure", async () => {
     mockCheckUnlockAllowed.mockReturnValue({ allowed: true });
     mockUnlockSecretSession.mockReturnValue({

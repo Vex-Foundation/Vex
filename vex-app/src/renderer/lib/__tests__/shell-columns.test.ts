@@ -72,7 +72,7 @@ describe("computeShellColumns", () => {
     });
   });
 
-  it("step 3: BOOK auto-closes to the spine when its min still starves center — sidebar holds its preference", () => {
+  it("step 3: BOOK auto-closes to the spine when its min still starves center - sidebar holds its preference", () => {
     // 280 + 300 + 640 = 1220 > 1210 → BOOK drops to the 48px spine;
     // sidebar untouched: center = 1210 - 280 - 48 = 882.
     const cols = computeShellColumns(1210, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));

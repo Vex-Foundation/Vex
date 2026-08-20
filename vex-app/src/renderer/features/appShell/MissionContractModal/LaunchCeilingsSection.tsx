@@ -46,14 +46,14 @@ function storedCeilingLabel(constraints: MissionConstraints): string {
     typeof constraints.maxLaunchValueRaw !== "string"
     || typeof constraints.maxLaunchValueDecimals !== "number"
   ) {
-    return "not set — autonomous launches refuse";
+    return "not set - autonomous launches refuse";
   }
   return `${constraints.maxLaunchValueRaw} raw @ ${constraints.maxLaunchValueDecimals} decimals`;
 }
 
 function storedCountLabel(constraints: MissionConstraints): string {
   if (typeof constraints.maxLaunchCount !== "number") {
-    return "not set — autonomous launches refuse";
+    return "not set - autonomous launches refuse";
   }
   return `${constraints.maxLaunchCount}`;
 }
@@ -110,7 +110,7 @@ export function LaunchCeilingsSection({
       </div>
       <p className="mt-1 text-xs text-ink-secondary">
         You set these, not the agent. Both are required before this mission can
-        create a token unattended — leaving either blank means it refuses every
+        create a token unattended - leaving either blank means it refuses every
         autonomous launch. Saving them requires accepting the contract again.
       </p>
 
@@ -133,7 +133,7 @@ export function LaunchCeilingsSection({
         <div className="mt-3 space-y-2">
           <label className="block text-xs text-ink-secondary">
             <span className="text-ink-tertiary">
-              Max launch value (ETH, per launch — creation fee + prebuy + Vex fee)
+              Max launch value (ETH, per launch - creation fee + prebuy + Vex fee)
             </span>
             <input
               type="text"
@@ -177,7 +177,7 @@ export function LaunchCeilingsSection({
       ) : (
         <p className="mt-2 text-xs text-ink-tertiary">
           This mission has started. Its run enforces the ceilings frozen when it
-          began — editing them here would change what is shown, not what is
+          began - editing them here would change what is shown, not what is
           enforced.
         </p>
       )}
@@ -201,11 +201,11 @@ function noticeFor(
   result: ReturnType<typeof useSetLaunchCeilings>["data"],
 ): string | null {
   if (isError) {
-    return "Couldn't save the launch ceilings — something went wrong. Try again.";
+    return "Couldn't save the launch ceilings - something went wrong. Try again.";
   }
   if (result === undefined) return null;
   if (!result.ok) {
-    return "Couldn't save the launch ceilings — something went wrong. Try again.";
+    return "Couldn't save the launch ceilings - something went wrong. Try again.";
   }
   switch (result.data.outcome) {
     case "updated":

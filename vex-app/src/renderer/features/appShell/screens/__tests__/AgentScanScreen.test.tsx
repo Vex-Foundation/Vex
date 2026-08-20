@@ -82,8 +82,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("AgentScanScreen — filters drive the query input", () => {
-  it("starts with NO constraints — an empty selection is omitted, never sent as an empty array", () => {
+describe("AgentScanScreen - filters drive the query input", () => {
+  it("starts with NO constraints - an empty selection is omitted, never sent as an empty array", () => {
     mockQuery([availablePage([entry({ id: "1" })])]);
     mountScreen();
     expect(lastFilters()).toEqual({});
@@ -121,7 +121,7 @@ describe("AgentScanScreen — filters drive the query input", () => {
     });
   });
 
-  it("offers ONLY protocols that actually write the feed — never an always-empty option", () => {
+  it("offers ONLY protocols that actually write the feed - never an always-empty option", () => {
     mockQuery([availablePage([entry({ id: "1" })])]);
     mountScreen();
 
@@ -175,12 +175,12 @@ describe("AgentScanScreen — filters drive the query input", () => {
   });
 });
 
-describe("AgentScanScreen — states matrix", () => {
+describe("AgentScanScreen - states matrix", () => {
   it("renders a timed-out page as the calm try-again note, NEVER as empty history", () => {
     mockQuery([UNAVAILABLE_PAGE]);
     mountScreen();
     expect(
-      screen.getByText(/Activity is unavailable right now — try again shortly/),
+      screen.getByText(/Activity is unavailable right now - try again shortly/),
     ).not.toBeNull();
     expect(screen.queryByText(/No activity recorded yet/)).toBeNull();
   });
@@ -216,7 +216,7 @@ describe("AgentScanScreen — states matrix", () => {
   });
 });
 
-describe("AgentScanScreen — pagination", () => {
+describe("AgentScanScreen - pagination", () => {
   it("shows Load more on hasNextPage and fires fetchNextPage", () => {
     mockQuery([availablePage([entry({ id: "1" })], { hasMore: true })], {
       hasNextPage: true,

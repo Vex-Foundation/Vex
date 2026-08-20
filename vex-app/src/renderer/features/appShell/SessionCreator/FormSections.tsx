@@ -150,7 +150,7 @@ export function WalletFieldset({
     <fieldset className="flex flex-col gap-2.5">
       <legend className="vex-eyebrow">Wallets</legend>
       <p className="text-xs text-ink-tertiary">
-        Optional — pick the EVM + Solana wallet this session may use. Locked
+        Optional - pick the EVM + Solana wallet this session may use. Locked
         once the session starts; leave empty for a chat-only session.
       </p>
       <div className="grid grid-cols-2 gap-2">

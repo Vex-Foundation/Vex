@@ -126,7 +126,7 @@ afterEach(() => {
   useUiStore.setState({ activeSessionId: null, shellRoute: { kind: "none" } });
 });
 
-describe("GlobalApprovals — badge visibility", () => {
+describe("GlobalApprovals - badge visibility", () => {
   it("renders nothing while loading (data undefined)", () => {
     pendingState = { data: undefined };
     renderBadge();
@@ -146,7 +146,7 @@ describe("GlobalApprovals — badge visibility", () => {
   });
 });
 
-describe("GlobalApprovals — panel", () => {
+describe("GlobalApprovals - panel", () => {
   it("shows the count and lists items across sessions with titles", () => {
     pendingState = {
       data: {
@@ -249,7 +249,7 @@ describe("GlobalApprovals — panel", () => {
   });
 });
 
-describe("GlobalApprovals — dismissal + focus (A6)", () => {
+describe("GlobalApprovals - dismissal + focus (A6)", () => {
   it("Escape closes the panel and restores focus to the trigger", () => {
     pendingState = { data: { ok: true, data: [makeRow()] } };
     renderBadge();
@@ -270,7 +270,7 @@ describe("GlobalApprovals — dismissal + focus (A6)", () => {
   });
 });
 
-describe("GlobalApprovals — poll cadence + overflow", () => {
+describe("GlobalApprovals - poll cadence + overflow", () => {
   it("falls back at 60s idle and 15s while the panel is open", () => {
     pendingState = { data: { ok: true, data: [makeRow()] } };
     renderBadge();

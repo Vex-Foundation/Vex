@@ -36,7 +36,7 @@ describe("sessionWalletScopeDtoSchema", () => {
 });
 
 describe("walletsSetScopeInputSchema", () => {
-  it("is an explicit id pair (IDs only — addresses resolved server-side)", () => {
+  it("is an explicit id pair (IDs only - addresses resolved server-side)", () => {
     expect(
       walletsSetScopeInputSchema.safeParse({
         sessionId: SID,
@@ -57,7 +57,7 @@ describe("availableWalletsDtoSchema", () => {
     ).toBe(true);
   });
 
-  it("rejects extra fields (strict) — leaked key material cannot pass the boundary", () => {
+  it("rejects extra fields (strict) - leaked key material cannot pass the boundary", () => {
     expect(
       availableWalletsDtoSchema.safeParse({
         evm: [

@@ -57,7 +57,7 @@ export interface ApiKeysStepProps {
 }
 
 const JUPITER_MISSING_WARNING =
-  "Without a Jupiter key, Solana swaps stay unavailable. Everything else still works — you can add the key later in Settings.";
+  "Without a Jupiter key, Solana swaps stay unavailable. Everything else still works - you can add the key later in Settings.";
 
 export function ApiKeysStep({
   completedSteps,
@@ -163,7 +163,7 @@ export function ApiKeysStep({
       icon={meta.icon}
       flowMode={flowMode}
       title="Connect your API keys"
-      description="Each key unlocks one tool, and every one of them is optional. Keys are stored on this machine and sent only to their own provider when a tool that needs them runs — never anywhere else."
+      description="Each key unlocks one tool, and every one of them is optional. Keys are stored on this machine and sent only to their own provider when a tool that needs them runs - never anywhere else."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);

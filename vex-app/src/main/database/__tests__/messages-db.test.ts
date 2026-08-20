@@ -87,7 +87,7 @@ describe("messages-db mapper", () => {
                 privateKey: `0x${"a".repeat(64)}`, // secret KEY → dropped entirely
                 note: `0x${"b".repeat(64)}`, // benign key, secret-shaped VALUE → redacted
               },
-              extraField: "private", // sibling of args — never crosses
+              extraField: "private", // sibling of args - never crosses
             },
           ],
           created_at: "2026-05-21T10:00:00.000Z",

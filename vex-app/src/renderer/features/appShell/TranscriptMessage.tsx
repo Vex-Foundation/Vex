@@ -252,7 +252,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               body (owner readability round 2026-07-30): the sans face, Inter
               Tight. This row renders as plain text, not markdown, so it
               carries its own metric instead of inheriting
-              `.vex-chat-prose` — keep the two in sync. */}
+              `.vex-chat-prose` - keep the two in sync. */}
           {/* r22 = the composer card's radius (the two "user surfaces" share
               one shape); 525px cap inside the column, percentage keeps narrow
               windows sane. 44px single-line bubble: 24 line + 10 padding each
@@ -357,7 +357,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               emptyHint="(no output)"
             />
             {/* Orphan result (call scrolled out of the page): its validated
-                explorer refs still surface here — grouped/paired acts get theirs
+                explorer refs still surface here - grouped/paired acts get theirs
                 via ToolActRow instead. Inert when nothing resolves. */}
             <ExplorerRefLinks refs={row.explorerRefs} />
           </div>

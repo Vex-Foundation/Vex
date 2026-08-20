@@ -59,7 +59,7 @@ function armed(fp: PoolsPreparedLaunch = fingerprint()): PoolsLaunchState {
   return run({ type: "prepare_started" }, { type: "prepare_succeeded", fingerprint: fp });
 }
 
-describe("pools launch machine — the two stages", () => {
+describe("pools launch machine - the two stages", () => {
   it("starts in stage 1 with nothing armed", () => {
     expect(POOLS_LAUNCH_INITIAL_STATE).toEqual({ kind: "editing" });
     expect(armedFingerprint(POOLS_LAUNCH_INITIAL_STATE)).toBeNull();
@@ -79,14 +79,14 @@ describe("pools launch machine — the two stages", () => {
   });
 });
 
-describe("pools launch machine — the voiding rule", () => {
+describe("pools launch machine - the voiding rule", () => {
   it("VOIDS an armed fingerprint on any form edit", () => {
     const state = poolsLaunchReducer(armed(), { type: "form_changed" });
     expect(state).toEqual({ kind: "editing" });
     expect(armedFingerprint(state)).toBeNull();
   });
 
-  it("cannot deploy after an edit — the click has nothing to authorize", () => {
+  it("cannot deploy after an edit - the click has nothing to authorize", () => {
     const afterEdit = poolsLaunchReducer(armed(), { type: "form_changed" });
     // The event that would start a spend is inert from stage 1.
     expect(poolsLaunchReducer(afterEdit, { type: "deploy_started" })).toBe(afterEdit);
@@ -98,7 +98,7 @@ describe("pools launch machine — the voiding rule", () => {
     expect(armedFingerprint(state)).toBeNull();
   });
 
-  it("VOIDS on a refused deploy — a refusal never proves the plan still holds", () => {
+  it("VOIDS on a refused deploy - a refusal never proves the plan still holds", () => {
     const deploying = poolsLaunchReducer(armed(), { type: "deploy_started" });
     const state = poolsLaunchReducer(deploying, {
       type: "deploy_refused",
@@ -122,7 +122,7 @@ describe("pools launch machine — the voiding rule", () => {
   });
 });
 
-describe("pools launch machine — in-flight stages are not interruptible", () => {
+describe("pools launch machine - in-flight stages are not interruptible", () => {
   it("ignores an edit while verifying or deploying", () => {
     const verifying = run({ type: "prepare_started" });
     expect(poolsLaunchReducer(verifying, { type: "form_changed" })).toBe(verifying);
@@ -157,7 +157,7 @@ describe("pools launch machine — in-flight stages are not interruptible", () =
   });
 });
 
-describe("pools launch machine — dismissal and busy", () => {
+describe("pools launch machine - dismissal and busy", () => {
   it("is NOT dismissible mid-signature, and dismissible everywhere else", () => {
     const deploying = poolsLaunchReducer(armed(), { type: "deploy_started" });
     expect(canDismissPoolsLaunch(deploying)).toBe(false);
@@ -176,7 +176,7 @@ describe("pools launch machine — dismissal and busy", () => {
   });
 });
 
-describe("pools launch machine — terminal states", () => {
+describe("pools launch machine - terminal states", () => {
   it("keeps main's own sentence and tone verbatim", () => {
     const deploying = poolsLaunchReducer(armed(), { type: "deploy_started" });
     const done = poolsLaunchReducer(deploying, {

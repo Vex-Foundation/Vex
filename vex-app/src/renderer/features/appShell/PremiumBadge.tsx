@@ -217,7 +217,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
       onClick={props.onClick}
       aria-haspopup="dialog"
       aria-expanded={props.expanded ?? false}
-      aria-label={`${label} ${meta.caption.toLowerCase()} — open details`}
+      aria-label={`${label} ${meta.caption.toLowerCase()} - open details`}
       data-vex-state={meta.dataState}
       data-vex-action="open-mission-detail"
       className={cn(

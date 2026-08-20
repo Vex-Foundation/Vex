@@ -53,7 +53,7 @@ const WEI_DECIMALS = 18n;
 const WEI_PER_ETH = 10n ** WEI_DECIMALS;
 
 /** Unknown / unreadable values print this, matching the shell's convention. */
-export const UNKNOWN_AMOUNT = "—";
+export const UNKNOWN_AMOUNT = "-";
 
 /**
  * Parse a raw wei decimal string. Deliberately strict: only an unsigned run of

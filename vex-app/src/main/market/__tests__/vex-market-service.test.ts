@@ -171,7 +171,7 @@ describe("setupVexMarketService", () => {
     expect(callsBefore).toBeGreaterThan(0);
 
     await stop();
-    await stop(); // idempotent — no throw, no double teardown
+    await stop(); // idempotent - no throw, no double teardown
 
     await vi.advanceTimersByTimeAsync(1_000_000); // well past every interval
     expect(fetchPair.mock.calls.length).toBe(callsBefore);

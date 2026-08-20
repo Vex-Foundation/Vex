@@ -32,7 +32,7 @@ function form(over: Record<string, unknown> = {}): Record<string, unknown> {
   };
 }
 
-describe("pools launch form — the money fields that do not exist", () => {
+describe("pools launch form - the money fields that do not exist", () => {
   it.each([
     "creationFeeWei",
     "msgValueWei",
@@ -51,7 +51,7 @@ describe("pools launch form — the money fields that do not exist", () => {
   });
 });
 
-describe("pools launch form — validation", () => {
+describe("pools launch form - validation", () => {
   it("accepts a complete, well-formed launch", () => {
     expect(poolsLaunchFormSchema.safeParse(form()).success).toBe(true);
   });
@@ -81,7 +81,7 @@ describe("pools launch form — validation", () => {
     ["an uppercase prefix", "0X123"],
     ["an @-prefixed address attempt", "@0x123"],
     ["a full address in the username field", "0x1111111111111111"],
-  ])("refuses %s as an X username — it is an address the user got wrong", (_label, username) => {
+  ])("refuses %s as an X username - it is an address the user got wrong", (_label, username) => {
     const parsed = poolsLaunchFormSchema.safeParse(
       form({ feeRecipient: { kind: "x_username", username } }),
     );
@@ -113,7 +113,7 @@ describe("pools launch form — validation", () => {
   });
 
   it.each(["javascript:alert(1)", "data:text/html,x", "http://example.test/f.png", "not a url"])(
-    "refuses %s in the url branch — a link field can never carry an executable scheme",
+    "refuses %s in the url branch - a link field can never carry an executable scheme",
     (url) => {
       // Asserted through the BRANCH, not a stray top-level key: a top-level
       // `imageUrl` is rejected by `.strict()` for a different reason entirely,
@@ -204,7 +204,7 @@ describe("pools launch form — validation", () => {
   });
 });
 
-describe("pools launch — stage 2 carries nothing but the fingerprint", () => {
+describe("pools launch - stage 2 carries nothing but the fingerprint", () => {
   it("accepts exactly the session and the opaque id", () => {
     expect(
       poolsLaunchDeployInputSchema.safeParse({ sessionId: "s1", fingerprintId: "fp1" }).success,
@@ -212,7 +212,7 @@ describe("pools launch — stage 2 carries nothing but the fingerprint", () => {
   });
 
   it.each(["form", "costs", "msgValueWei", "predictedTokenAddress", "feeRecipient"])(
-    "rejects a deploy carrying `%s` — the click may not restate the launch",
+    "rejects a deploy carrying `%s` - the click may not restate the launch",
     (field) => {
       const parsed = poolsLaunchDeployInputSchema.safeParse({
         sessionId: "s1",
@@ -229,7 +229,7 @@ describe("pools launch — stage 2 carries nothing but the fingerprint", () => {
   });
 });
 
-describe("pools launch — prepare input", () => {
+describe("pools launch - prepare input", () => {
   it("requires a session and a form, and refuses anything else", () => {
     expect(poolsLaunchPrepareInputSchema.safeParse({ sessionId: "s1", form: form() }).success).toBe(
       true,
@@ -263,7 +263,7 @@ describe("pools claim input", () => {
   });
 });
 
-describe("prepared launch — every amount is readable", () => {
+describe("prepared launch - every amount is readable", () => {
   const amount = {
     rawWei: "1000",
     decimals: 18,
@@ -333,7 +333,7 @@ describe("prepared launch — every amount is readable", () => {
     ).toBe(true);
   });
 
-  it("requires imageLanded and expiresAt — both are load-bearing in the UI", () => {
+  it("requires imageLanded and expiresAt - both are load-bearing in the UI", () => {
     for (const field of ["imageLanded", "expiresAt"]) {
       const { [field]: _dropped, ...missing } = prepared as Record<string, unknown>;
       expect(poolsPreparedLaunchSchema.safeParse(missing).success).toBe(false);

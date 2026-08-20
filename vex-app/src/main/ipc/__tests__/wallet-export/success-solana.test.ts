@@ -273,7 +273,7 @@ interface ExportOk {
 
 // ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
 
-describe("success path — Solana", () => {
+describe("success path - Solana", () => {
   beforeEach(() => {
     mockCheckExportAllowed.mockReturnValue({ allowed: true });
     mockGetSecretSessionStatus.mockReturnValue({

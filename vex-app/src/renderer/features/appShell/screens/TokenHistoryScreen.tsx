@@ -117,7 +117,7 @@ export function TokenHistoryScreen({
     // Timeout degradation (plan v3): NEVER rendered as empty history.
     body = (
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-        History is unavailable right now — try again shortly.
+        History is unavailable right now - try again shortly.
       </p>
     );
   } else if (query.isError) {
@@ -179,7 +179,7 @@ export function TokenHistoryScreen({
            * recorded — protocol captures + Vex-executed sends. It is NOT a
            * chain scan; external activity is honestly out of scope. */}
           <p className="text-[11px] leading-snug text-ink-tertiary">
-            Vex-recorded activity — protocol captures and Vex-executed sends.
+            Vex-recorded activity - protocol captures and Vex-executed sends.
             Transfers made outside Vex (including airdrops) are not locally
             known.
           </p>

@@ -19,9 +19,9 @@ describe("formatTokenPriceUsd", () => {
 
   it("renders exact zero and an em dash for null/non-finite", () => {
     expect(formatTokenPriceUsd(0)).toBe("$0.00");
-    expect(formatTokenPriceUsd(null)).toBe("—");
-    expect(formatTokenPriceUsd(Number.NaN)).toBe("—");
-    expect(formatTokenPriceUsd(Number.POSITIVE_INFINITY)).toBe("—");
+    expect(formatTokenPriceUsd(null)).toBe("-");
+    expect(formatTokenPriceUsd(Number.NaN)).toBe("-");
+    expect(formatTokenPriceUsd(Number.POSITIVE_INFINITY)).toBe("-");
   });
 });
 
@@ -33,8 +33,8 @@ describe("formatPercentDelta", () => {
   });
 
   it("returns an em dash for null/non-finite", () => {
-    expect(formatPercentDelta(null)).toBe("—");
-    expect(formatPercentDelta(Number.NaN)).toBe("—");
+    expect(formatPercentDelta(null)).toBe("-");
+    expect(formatPercentDelta(Number.NaN)).toBe("-");
   });
 });
 
@@ -46,7 +46,7 @@ describe("formatCompactCount", () => {
   });
 
   it("returns an em dash for null/non-finite", () => {
-    expect(formatCompactCount(null)).toBe("—");
-    expect(formatCompactCount(Number.NaN)).toBe("—");
+    expect(formatCompactCount(null)).toBe("-");
+    expect(formatCompactCount(Number.NaN)).toBe("-");
   });
 });

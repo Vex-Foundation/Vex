@@ -126,7 +126,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("pools lane — stage 1 is a gate, not a formality", () => {
+describe("pools lane - stage 1 is a gate, not a formality", () => {
   it("cannot be prepared from a blank form", () => {
     mount();
     expect(submitButton().disabled).toBe(true);
@@ -149,7 +149,7 @@ describe("pools lane — stage 1 is a gate, not a formality", () => {
   });
 });
 
-describe("pools lane — stage 2 authorizes what is on screen", () => {
+describe("pools lane - stage 2 authorizes what is on screen", () => {
   it("shows the verified figures and arms Deploy once prepared", async () => {
     prepare.mockResolvedValue({ ok: true, data: prepared() });
     mount();
@@ -169,7 +169,7 @@ describe("pools lane — stage 2 authorizes what is on screen", () => {
     expect(screen.getByText(/deploy authorizes exactly the figures above/i)).toBeTruthy();
   });
 
-  it("deploys by FINGERPRINT ID alone — it never restates the launch", async () => {
+  it("deploys by FINGERPRINT ID alone - it never restates the launch", async () => {
     prepare.mockResolvedValue({ ok: true, data: prepared({ fingerprintId: "fp-xyz" }) });
     deploy.mockResolvedValue({
       ok: true,
@@ -199,7 +199,7 @@ describe("pools lane — stage 2 authorizes what is on screen", () => {
   });
 });
 
-describe("pools lane — the voiding rule, on screen", () => {
+describe("pools lane - the voiding rule, on screen", () => {
   it("takes Deploy away again the moment any field changes", async () => {
     prepare.mockResolvedValue({ ok: true, data: prepared() });
     mount();
@@ -259,7 +259,7 @@ describe("pools lane — the voiding rule, on screen", () => {
   });
 });
 
-describe("pools lane — a refused preparation", () => {
+describe("pools lane - a refused preparation", () => {
   it("shows main's reason and leaves the user in stage 1", async () => {
     prepare.mockResolvedValue({
       ok: false,

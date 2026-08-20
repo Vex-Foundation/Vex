@@ -222,7 +222,7 @@ export function SessionTranscript({
       {/* 780px card axis − 16px sides = the 748px reading column: the
           transcript stays exactly 32px narrower than the composer card
           (the shared width rule). The 16px column gap is the ONE vertical
-          rhythm — no per-element margins. */}
+          rhythm - no per-element margins. */}
       <div className="mx-auto w-full max-w-[780px] px-4">
       <div className="relative flex flex-col gap-4">
         {/* The gutter hosts the live working mark (StreamingBubble, left-0) —

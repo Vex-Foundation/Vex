@@ -275,7 +275,7 @@ export function ReviewStep({
         invalidates wizardState; the refetched `completed: true` fires
         WizardShell's COMPLETION WATCHER effect, which switches the view to
         the Phase 2 appShell. We don't call `onAdvance` here because there
-        is no next step — the wizard ends.
+        is no next step - the wizard ends.
       */}
       <span className="sr-only" data-vex-onadvance-stub>
         {typeof onAdvance === "function" ? "" : ""}

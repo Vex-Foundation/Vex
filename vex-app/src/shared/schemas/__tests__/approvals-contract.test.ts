@@ -234,7 +234,7 @@ describe("approvals schemas", () => {
     ).toBe(true);
   });
 
-  it("still rejects unknown keys (strict) — reason did not open the object", () => {
+  it("still rejects unknown keys (strict) - reason did not open the object", () => {
     expect(
       approvalActionInputSchema.safeParse({
         id: "approval-1",

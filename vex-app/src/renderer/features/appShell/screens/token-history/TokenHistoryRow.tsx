@@ -96,7 +96,7 @@ function LegText({
 }): JSX.Element {
   const display = tokenDisplay(token, symbol, localSymbol);
   const quantity = quantityText(amount);
-  const shown = estimated && quantity !== "—" ? `~${quantity}` : quantity;
+  const shown = estimated && quantity !== "-" ? `~${quantity}` : quantity;
   return (
     <span
       title={display.full ?? undefined}
@@ -143,18 +143,18 @@ function bridgeStatusChip(
         tone: "settling",
         title:
           checked !== null
-            ? `Tracking delayed — last checked ${checked}`
-            : "Tracking delayed — not yet checked since the bridge started",
+            ? `Tracking delayed - last checked ${checked}`
+            : "Tracking delayed - not yet checked since the bridge started",
       };
     }
-    return { text: "settling", tone: "settling", title: "Still settling — tracked automatically" };
+    return { text: "settling", tone: "settling", title: "Still settling - tracked automatically" };
   }
   if (entry.status === "failed") {
     if (entry.failureCode === "bridge_refunded") {
       return {
         text: "refunded",
         tone: "refunded",
-        title: "Funds returned to the origin chain — not a completed bridge",
+        title: "Funds returned to the origin chain - not a completed bridge",
       };
     }
     return { text: "failed", tone: "failed", title: entry.failureCode ?? undefined };

@@ -148,7 +148,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text="in mempool"
             title={
               lastChecked !== null
-                ? `Known to a node and waiting for inclusion — last checked ${lastChecked}. Vex re-checks this automatically.`
+                ? `Known to a node and waiting for inclusion - last checked ${lastChecked}. Vex re-checks this automatically.`
                 : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
             }
           />
@@ -162,7 +162,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text={supersededTerminal ? "superseded" : "appears superseded"}
             title={
               "Another transaction from this wallet used this one's nonce; what it did has not been checked."
-              + (supersededTerminal ? " Vex has stopped tracking this as in flight — the outcome is unproven." : "")
+              + (supersededTerminal ? " Vex has stopped tracking this as in flight - the outcome is unproven." : "")
             }
           />
         ) : null}
@@ -174,8 +174,8 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text="verification stalled"
             title={
               entry.stalledReason !== null
-                ? `Repeated checks could not confirm this yet (${entry.stalledReason}). Still pending — nothing has failed.`
-                : "Repeated checks could not confirm this yet. Still pending — nothing has failed."
+                ? `Repeated checks could not confirm this yet (${entry.stalledReason}). Still pending - nothing has failed.`
+                : "Repeated checks could not confirm this yet. Still pending - nothing has failed."
             }
           />
         ) : null}
@@ -187,8 +187,8 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text="tracking delayed"
             title={
               lastChecked !== null
-                ? `Tracking delayed — last checked ${lastChecked}`
-                : "Tracking delayed — not yet checked since this started"
+                ? `Tracking delayed - last checked ${lastChecked}`
+                : "Tracking delayed - not yet checked since this started"
             }
           />
         ) : null}
@@ -253,7 +253,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             <DetailLine label="Failure">
               <span className="text-warning-label">
                 {entry.failureCode ?? "unknown"}
-                {entry.failureReason !== null ? ` — ${entry.failureReason}` : ""}
+                {entry.failureReason !== null ? ` - ${entry.failureReason}` : ""}
               </span>
             </DetailLine>
           ) : null}
@@ -283,7 +283,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text="in mempool"
             title={
               lastChecked !== null
-                ? `Known to a node and waiting for inclusion — last checked ${lastChecked}. Vex re-checks this automatically.`
+                ? `Known to a node and waiting for inclusion - last checked ${lastChecked}. Vex re-checks this automatically.`
                 : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
             }
           />
@@ -297,15 +297,15 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             text={supersededTerminal ? "superseded" : "appears superseded"}
             title={
               "Another transaction from this wallet used this one's nonce; what it did has not been checked."
-              + (supersededTerminal ? " Vex has stopped tracking this as in flight — the outcome is unproven." : "")
+              + (supersededTerminal ? " Vex has stopped tracking this as in flight - the outcome is unproven." : "")
             }
           />
         ) : null}
         {verificationStalled ? (
             <DetailLine label="Stalled">
               {entry.stalledReason !== null
-                ? `Could not conclude: ${entry.stalledReason}. Still pending — this is not a failure.`
-                : "Repeated checks could not conclude. Still pending — this is not a failure."}
+                ? `Could not conclude: ${entry.stalledReason}. Still pending - this is not a failure.`
+                : "Repeated checks could not conclude. Still pending - this is not a failure."}
             </DetailLine>
           ) : null}
           {entry.legs.length > 0 ? (
@@ -320,7 +320,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
                       {leg.role ?? "leg"}
                     </span>
                     <span className="shrink-0">
-                      {leg.chainSlug ?? leg.chainId ?? "—"}
+                      {leg.chainSlug ?? leg.chainId ?? "-"}
                     </span>
                     {leg.status !== null ? (
                       <span className="shrink-0">{leg.status}</span>

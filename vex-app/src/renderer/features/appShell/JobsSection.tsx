@@ -43,7 +43,7 @@ export function JobsSection(): JSX.Element {
       <div>
         <h2 className="vex-eyebrow">Memory jobs</h2>
         <p className="mt-1 text-xs text-ink-secondary">
-          The memory manager&apos;s work queue — consolidation sweeps and
+          The memory manager&apos;s work queue - consolidation sweeps and
           reconcile passes. Retries are handled automatically by the manager.
         </p>
       </div>

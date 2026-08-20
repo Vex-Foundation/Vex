@@ -63,7 +63,7 @@ describe("ComposerQuickActions", () => {
       screen.getByRole("button", { name: /hunt trending memecoins/i }),
     );
     expect(onPick).toHaveBeenCalledWith(
-      "Hunt the trendiest memecoins right now — combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
+      "Hunt the trendiest memecoins right now - combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
     );
   });
 });

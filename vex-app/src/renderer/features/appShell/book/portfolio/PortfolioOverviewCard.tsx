@@ -83,7 +83,7 @@ export function PortfolioOverviewCard({
         </CardStateNote>
       ) : globalPortfolio === null || globalPortfolio.walletCount === 0 ? (
         <CardStateNote>
-          No wallets configured yet — add your first below and your total
+          No wallets configured yet - add your first below and your total
           appears here.
         </CardStateNote>
       ) : (

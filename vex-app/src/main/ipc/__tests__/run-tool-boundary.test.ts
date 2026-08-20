@@ -315,7 +315,7 @@ describe("runTool reachability guard (B-010)", () => {
     // vex-app through the normal turn-loop dispatch path (which keeps the
     // restricted-mode approval gate).
     const rendered = hits.map(
-      (h) => `${path.relative(VEX_APP_SRC, h.file)} :: ${h.kind} — ${h.detail}`,
+      (h) => `${path.relative(VEX_APP_SRC, h.file)} :: ${h.kind} - ${h.detail}`,
     );
     expect(rendered).toEqual([]);
   });

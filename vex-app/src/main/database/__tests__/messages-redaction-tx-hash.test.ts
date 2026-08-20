@@ -15,7 +15,7 @@ import { sanitizeToolArgs } from "../messages/redaction.js";
 
 const HEX32 = `0x${"a".repeat(64)}`;
 
-describe("sanitizeToolArgs — tx-hash args survive", () => {
+describe("sanitizeToolArgs - tx-hash args survive", () => {
   it.each(["txHash", "transactionHash", "hash", "tx_hash", "originTxHash"])(
     "keeps a 32-byte hex under the hash-shaped key %s",
     (key) => {
@@ -37,7 +37,7 @@ describe("sanitizeToolArgs — tx-hash args survive", () => {
     expect(out).toContain("[redacted:key]");
   });
 
-  it("exempts ONLY the tx-hash SHAPE — other secret shapes still redact", () => {
+  it("exempts ONLY the tx-hash SHAPE - other secret shapes still redact", () => {
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnop";
     expect(sanitizeToolArgs({ txHash: jwt })).toContain("[redacted:jwt]");
     expect(sanitizeToolArgs({ hash: "b".repeat(70) })).toContain(

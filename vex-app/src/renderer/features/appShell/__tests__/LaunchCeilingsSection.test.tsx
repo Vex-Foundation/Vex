@@ -82,7 +82,7 @@ function typeInto(field: string, value: string): void {
 }
 
 describe("LaunchCeilingsSection", () => {
-  it("sends the decimal ETH string the user typed — never a wei amount", async () => {
+  it("sends the decimal ETH string the user typed - never a wei amount", async () => {
     renderSection();
     typeInto("max-launch-value-eth", "0.05");
     typeInto("max-launch-count", "2");

@@ -184,7 +184,9 @@ describe("SessionSleepBanner", () => {
     );
     const banner = renderBanner();
     expect(banner?.textContent).toContain("any moment now");
-    expect(banner?.textContent).not.toContain("-");
+    // Never a negative countdown ("-5 min") - the copy's own hyphen
+    // separator is fine, a hyphen glued to a digit is not.
+    expect(banner?.textContent).not.toMatch(/-\d/);
   });
 
   it("renders nothing for an unparseable dueAt rather than Invalid Date", () => {

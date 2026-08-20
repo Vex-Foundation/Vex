@@ -76,7 +76,7 @@ vi.mock("../../../lib/api/sessions.js", async (importActual) => {
         data: {
           id: "00000000-0000-4000-8000-00000000aa01",
           mode: "agent",
-        } as unknown as SessionListItem, // test-local cast — render only checks id/mode
+        } as unknown as SessionListItem, // test-local cast - render only checks id/mode
       } satisfies Result<SessionListItem>,
       isLoading: false,
     }),
@@ -140,7 +140,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("SessionPanel — selected-session path mounts the approval card", () => {
+describe("SessionPanel - selected-session path mounts the approval card", () => {
   it("renders an ApprovalCard for a pending approval (directly protects F3)", () => {
     useUiStore.setState({
       activeSessionId: "00000000-0000-4000-8000-00000000aa01",

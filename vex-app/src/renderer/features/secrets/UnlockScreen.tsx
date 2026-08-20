@@ -294,7 +294,7 @@ export function UnlockScreen(): JSX.Element {
             onClick={() => setResetDialogOpen(true)}
             className="mt-3 w-full text-ink-tertiary"
           >
-            I forgot my password — set up a new vault
+            I forgot my password - set up a new vault
           </Button>
         </div>
       </section>

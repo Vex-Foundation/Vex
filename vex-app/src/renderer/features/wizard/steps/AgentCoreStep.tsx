@@ -171,7 +171,7 @@ export function AgentCoreStep({
           label="Agent context limit"
           envName="AGENT_CONTEXT_LIMIT"
           placeholder={`${AGENT_CONTEXT_LIMIT.default ?? ""}`}
-          hint={`How much conversation the agent keeps in view — higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min}–${AGENT_CONTEXT_LIMIT.max}.`}
+          hint={`How much conversation the agent keeps in view - higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min}–${AGENT_CONTEXT_LIMIT.max}.`}
           defaultLabel={String(AGENT_CONTEXT_LIMIT.default ?? "engine default")}
           state={form.contextLimit}
           onChange={(next) => setForm({ ...form, contextLimit: next })}
