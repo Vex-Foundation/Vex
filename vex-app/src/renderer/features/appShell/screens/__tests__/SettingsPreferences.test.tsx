@@ -10,8 +10,8 @@
  *     ("system" stays pressed while the OS resolves the paint),
  *   - the Enter-key choice round-trips through the composer submission
  *     policy's public API,
- *   - the notifications row does not render while the uiStore slot is
- *     absent, and toggles through the slot's setter once it exists.
+ *   - the notifications row renders on the merged store slot and
+ *     round-trips through its setter.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -71,30 +71,15 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
-  it("the notifications row stays absent until the uiStore slot exists, then toggles through its setter", () => {
-    const { unmount } = render(<SettingsPreferences />);
-    expect(screen.queryByRole("switch", { name: "Notifications" })).toBeNull();
-    unmount();
-
-    // Inject the slot the errors lane will own: flag + setter. The store's
-    // type does not know these keys on this branch, so the injection rides
-    // the same Record view the adapter uses.
-    const inject = {
-      notificationsEnabled: false,
-      setNotificationsEnabled: (value: boolean) => {
-        useUiStore.setState({ notificationsEnabled: value } as never);
-      },
-    };
-    useUiStore.setState(inject as never);
+  it("the notifications row renders on the merged store slot and a click round-trips through its setter", () => {
+    // The errors lane's slot is merged: the row is always present and the
+    // probe resolves the real typed slot (default true).
+    useUiStore.setState({ notificationsEnabled: true });
 
     render(<SettingsPreferences />);
     const toggle = screen.getByRole("switch", { name: "Notifications" });
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
-    expect(
-      (useUiStore.getState() as unknown as Record<string, unknown>)[
-        "notificationsEnabled"
-      ],
-    ).toBe(true);
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
   });
 });
