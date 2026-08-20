@@ -1,7 +1,7 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
 
-import { emitEngineError } from "@vex-agent/engine/runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "@vex-agent/engine/runtime/error-bus.js";
 import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
 
 import type { WakeDeps } from "./deps.js";
@@ -92,7 +92,8 @@ export async function tick(
       // failure in either arrives here.
       //
       // `readMissionErrorSignal` reads own-properties only and never walks
-      // `.cause`, so `message` above stays out of the payload — codes only.
+      // `.cause`; the raw message rides separately as `detail` and is
+      // sanitized at the main-side bridge (owner decree 2026-08-02).
       try {
         const signal = readMissionErrorSignal(err);
         emitEngineError({
@@ -104,6 +105,7 @@ export async function tick(
           statusCode: signal.status,
           causeCode: signal.causeCode,
           retryAfterSeconds: signal.retryAfterSeconds,
+          detail: errorDetailOf(err),
         });
       } catch (emitErr) {
         logger.warn("wake.executor.error_emit_failed", {

@@ -20,6 +20,8 @@ export const CH = {
     health: "vex:system:health",
     osInfo: "vex:system:osInfo",
     network: "vex:system:network",
+    /** OS-native turn-complete notification (A34); main checks focus itself. */
+    notifyTurnComplete: "vex:system:notifyTurnComplete",
   },
 
   // Docker — detection + lifecycle (M4)

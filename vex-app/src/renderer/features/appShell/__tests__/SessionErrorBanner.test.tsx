@@ -50,6 +50,8 @@ function makeEvent(over: Partial<EngineErrorEvent> = {}): EngineErrorEvent {
     retryAfterSeconds: 41,
     occurredAt: "2026-07-29T10:00:00.000Z",
     correlationId: null,
+    detail: null,
+    remedy: null,
     ...over,
   };
 }
@@ -108,6 +110,26 @@ describe("SessionErrorBanner", () => {
     );
     expect(alert.textContent).toContain("rate_limit_exceeded");
     expect(alert.textContent).toContain("HTTP 429");
+  });
+
+  it("shows the sanitized real cause when the event carries one", () => {
+    useEngineErrorStore
+      .getState()
+      .record(makeEvent({ detail: "Rate limit exceeded: free-models-per-day" }));
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    expect(
+      screen.getByText("Rate limit exceeded: free-models-per-day"),
+    ).toBeTruthy();
+  });
+
+  it("renders the remedy as the action hint, replacing the generic retry advice", () => {
+    useEngineErrorStore
+      .getState()
+      .record(makeEvent({ remedy: "rate-limited", retryAfterSeconds: null }));
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    expect(
+      screen.getByText("Wait out the rate limit, then retry."),
+    ).toBeTruthy();
   });
 
   it("says something specific for EVERY category, including `unknown`", () => {

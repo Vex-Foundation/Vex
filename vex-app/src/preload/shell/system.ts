@@ -12,4 +12,7 @@ export const system = {
   network() {
     return invokeWithSchema(CH.system.network, {});
   },
+  notifyTurnComplete(input) {
+    return invokeWithSchema(CH.system.notifyTurnComplete, input);
+  },
 } satisfies SystemBridge;

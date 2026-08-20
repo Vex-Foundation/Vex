@@ -36,11 +36,47 @@ function engineEvent(over: Partial<EngineErrorEvent> = {}): EngineErrorEvent {
     retryAfterSeconds: null,
     occurredAt: "2026-07-29T10:00:00.000Z",
     correlationId: null,
+    detail: null,
     ...over,
   };
 }
 
-describe("strict-parse survival — the base notification is never sunk", () => {
+describe("detail crosses only sanitized; remedy is stamped beside category", () => {
+  it("fills detail from the raw engine message THROUGH the sanitizer", () => {
+    const mapped = toRendererEngineError(
+      engineEvent({
+        detail:
+          "402 from https://openrouter.ai/api: key sk-or-v1-0123456789abcdef lacks credits",
+        errorType: "payment_required",
+      }),
+    );
+    // URL and key are gone, the prose that explains the failure survives.
+    expect(mapped?.detail).toBe("402 from [url] key [key] lacks credits");
+    expect(engineErrorEventSchema.safeParse(mapped).success).toBe(true);
+  });
+
+  it("a secret-only or empty raw detail becomes null, never an empty string", () => {
+    expect(toRendererEngineError(engineEvent({ detail: "   " }))?.detail).toBeNull();
+    expect(toRendererEngineError(engineEvent({ detail: null }))?.detail).toBeNull();
+  });
+
+  it("stamps the remedy from the same signals as the category", () => {
+    const mapped = toRendererEngineError(
+      engineEvent({ errorType: "payment_required" }),
+    );
+    expect(mapped?.category).toBe("account");
+    expect(mapped?.remedy).toBe("insufficient-funds");
+    expect(
+      toRendererEngineError(engineEvent({ statusCode: 429 }))?.remedy,
+    ).toBe("rate-limited");
+    // No remedy exists for a refusal - null, not a guess.
+    expect(
+      toRendererEngineError(engineEvent({ errorType: "refusal" }))?.remedy,
+    ).toBeNull();
+  });
+});
+
+describe("strict-parse survival - the base notification is never sunk", () => {
   // The bridge validates with a STRICT parse, so one out-of-range OPTIONAL
   // used to drop the WHOLE permanent-failure event. The engine's emit funnel
   // now normalizes unusable optionals to null, so anything reaching here

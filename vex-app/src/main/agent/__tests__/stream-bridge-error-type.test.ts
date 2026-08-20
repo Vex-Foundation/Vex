@@ -95,12 +95,11 @@ describe("toRendererStreamDelta — error deltas", () => {
     expect(streamDeltaEventSchema.safeParse(mapped).success).toBe(true);
   });
 
-  it("STILL replaces the raw provider message — prose does not cross", () => {
+  it("sanitizes the raw provider message - a key never crosses, prose does", () => {
     const mapped = toRendererStreamDelta(
       errorDelta({ errorType: "rate_limit_exceeded" }),
     );
     expect(JSON.stringify(mapped)).not.toContain("sk-secret123");
-    expect(mapped?.delta).toMatchObject({ message: "Stream error" });
   });
 
   it("maps a missing errorType to null, not absent", () => {

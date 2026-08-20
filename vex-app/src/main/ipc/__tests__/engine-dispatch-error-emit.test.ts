@@ -86,10 +86,14 @@ describe("dispatchPreparedMission — engine error emit", () => {
     });
   });
 
-  it("never carries the exception message — the provider text stays server-side", async () => {
+  it("carries the raw message as in-process `detail` only - no `message` field, and the renderer bridge sanitizes it", async () => {
+    // Decree 2026-08-02 changed the old "never carries the exception message"
+    // pin: the BUS (in-process, privileged) now carries the raw text as
+    // `detail`, and the ONLY renderer-bound exit - the error bridge - strips
+    // secrets from it. Both halves are asserted here.
     const seen = capture();
     dispatchPreparedMission(
-      () => Promise.reject(new Error("secret-bearing provider text sk-abc123")),
+      () => Promise.reject(new Error("provider refused key sk-fake-abc12345")),
       {
         sessionId: SESSION,
         correlationId: "corr-3",
@@ -100,8 +104,14 @@ describe("dispatchPreparedMission — engine error emit", () => {
     await settle();
 
     expect(seen).toHaveLength(1);
-    expect(JSON.stringify(seen[0])).not.toContain("sk-abc123");
     expect(Object.keys(seen[0] ?? {})).not.toContain("message");
+    expect(seen[0]?.detail).toBe("provider refused key sk-fake-abc12345");
+    const { sanitizeEngineErrorDetail } = await import(
+      "@shared/engine-error-sanitizer.js"
+    );
+    expect(sanitizeEngineErrorDetail(seen[0]?.detail)).toBe(
+      "provider refused key [key]",
+    );
     // No mission run in scope for a chat-session approval.
     expect(seen[0]?.missionRunId).toBeNull();
     expect(seen[0]?.scope).toBe("approval");

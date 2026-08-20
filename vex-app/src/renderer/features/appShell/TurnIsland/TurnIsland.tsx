@@ -242,10 +242,15 @@ export function TurnIsland({
         </div>
       </DynamicIslandProvider>
       {view.state === "error" && view.errorBody !== undefined ? (
-        // Category copy, NOT provider text — the second line explains what the
-        // classified failure means, from the same shared copy table as the
-        // error banner.
-        <span className="mt-1 text-xs text-destructive">{view.errorBody}</span>
+        // Category copy - the second line explains what the classified
+        // failure means, from the same shared copy table as the error banner.
+        <span className="mt-1 text-xs text-danger">{view.errorBody}</span>
+      ) : null}
+      {view.state === "error" && view.errorDetail !== undefined ? (
+        // Sanitized REAL cause (decree 2026-08-02) - technical register.
+        <span className="mt-1 break-words font-mono text-[11px] leading-4 text-[var(--vex-text-2)]">
+          {view.errorDetail}
+        </span>
       ) : null}
       {view.state === "error" && preview.reasoningText.length > 0 ? (
         // The trace itself is deliberately NOT rendered on the error path.

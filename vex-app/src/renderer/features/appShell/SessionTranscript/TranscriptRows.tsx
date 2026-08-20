@@ -49,11 +49,14 @@ function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
 
 export function TranscriptRows({
   rows,
+  sessionId,
   settledIds,
   pendingApprovals,
   workingAgentEntryKey,
 }: {
   readonly rows: readonly TranscriptEntry[];
+  /** Owning session - stamps each row's per-message feedback context (G7). */
+  readonly sessionId: string;
   /** Ids that are HISTORY. `null` while the first page is still landing. */
   readonly settledIds: ReadonlySet<number> | null;
   readonly pendingApprovals: ReadonlyMap<string, string>;
@@ -88,6 +91,8 @@ export function TranscriptRows({
                 row={row}
                 pendingApprovals={pendingApprovals}
                 agentWorking={workingAgentEntryKey === entryKey(row)}
+                feedbackSessionId={sessionId}
+                feedbackMessageKey={entryKey(row)}
               />
             </div>
           </div>

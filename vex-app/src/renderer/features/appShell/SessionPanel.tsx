@@ -127,9 +127,14 @@ export function SessionPanel({
   }, [activeSessionId, detailQuery.data]);
 
   // E15 + A34: the native window title mirrors the active session, with the
-  // unseen-turn badge while an answer landed unfocused (existing transcript
-  // spine only — no new IPC).
-  const unseenTurn = useTurnCompleteNotification(activeSessionId);
+  // unseen-turn badge while an answer landed unfocused; the same signal asks
+  // main for the OS-native notification (narrow notifyTurnComplete contract,
+  // main re-checks focus itself). The user TITLE alone rides in the body -
+  // initialGoal is free prose and can exceed the title schema's 80-char cap.
+  const unseenTurn = useTurnCompleteNotification(
+    activeSessionId,
+    activeSession?.title ?? null,
+  );
   useWindowTitleSync(
     activeSession?.title ?? activeSession?.initialGoal ?? null,
     unseenTurn,

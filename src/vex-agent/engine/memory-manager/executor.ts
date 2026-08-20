@@ -46,7 +46,7 @@ import {
   type MemoryJob,
 } from "@vex-agent/db/repos/memory-jobs/index.js";
 import { emitMemoryWorkerPermanentlyFailedBug } from "./bug-emit.js";
-import { emitEngineError } from "../runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import {
   readMissionErrorSignal,
   type MissionErrorSignal,
@@ -221,7 +221,7 @@ export function startMemoryManagerExecutor(
  * global error surface is the only consumer that reads these; every
  * session-scoped consumer ignores them by contract.
  *
- * Bounded codes only — the raw message goes to the bug report, server-side.
+ * Codes plus the raw message as `detail`, sanitized at the main-side bridge.
  * `readMissionErrorSignal` reads own-properties and never walks `.cause`.
  * `null` is a legitimate input (nothing throwable was captured) and yields an
  * all-null signal rather than a guess — but the items-failed path now hands
@@ -238,6 +238,7 @@ function emitMemoryJobFailure(job: MemoryJob, err: unknown): void {
     statusCode: signal.status,
     causeCode: signal.causeCode,
     retryAfterSeconds: signal.retryAfterSeconds,
+    detail: errorDetailOf(err),
   });
   memLog.warn("manager", "permanently_failed", {
     jobId: job.id,

@@ -534,7 +534,7 @@ describe("MissionControls — paused_error standing alert (issue #42)", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.getAttribute("data-vex-area")).toBe("mission-error-alert");
-    expect(alert.textContent).toMatch(/Mission paused — error/i);
+    expect(alert.textContent).toMatch(/Mission paused - error/i);
     expect(alert.textContent).toMatch(
       /The mission paused after an inference or runtime error\./,
     );
