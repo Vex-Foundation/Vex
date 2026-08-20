@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -374,8 +375,16 @@ describe("AppShell", () => {
     renderShell();
 
     // The headline is the welcome sentinel again (accepted mockup,
-    // 2026-08-20); the PREVIEW wordmark retired with the Grok logo row.
-    await screen.findByRole("heading", { name: /What should I execute/i });
+    // 2026-08-20, greeting form): a time-of-day greeting, personalized only
+    // when a displayName is set. The PREVIEW wordmark retired with the Grok
+    // logo row.
+    await screen.findByRole("heading", {
+      name: (accessibleName: string) =>
+        greetingPoolForHour(new Date().getHours()).some(
+          (variant) =>
+            !variant.withName && variant.text === accessibleName,
+        ),
+    });
     expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 

@@ -6,10 +6,26 @@
  * and the retirement of the BACKED BY footer (studio seam #2).
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { SessionWelcomeHero } from "../SessionWelcomeHero.js";
+
+// The hero reads the Vex-setup displayName through the SAME profile hook
+// SidebarProfile uses; stubbed per case so both headline forms are provable
+// without a query provider.
+const useUserProfileMock = vi.fn();
+vi.mock("../../../lib/api/user-profile.js", () => ({
+  useUserProfile: () => useUserProfileMock(),
+}));
+
+const { SessionWelcomeHero } = await import("../SessionWelcomeHero.js");
+
+function profileWithName(displayName: string | null): void {
+  useUserProfileMock.mockReturnValue({
+    data: { ok: true, data: { displayName } },
+  });
+}
 
 /** The five retired rotator quips — must never render again. */
 const RETIRED_QUIPS = [
@@ -22,6 +38,7 @@ const RETIRED_QUIPS = [
 
 beforeEach(() => {
   useUiStore.setState({ runtimeMode: "agent" });
+  profileWithName(null);
 });
 
 describe("SessionWelcomeHero", () => {
@@ -53,10 +70,45 @@ describe("SessionWelcomeHero", () => {
     expect(eyebrow?.getAttribute("title")).toContain("Self-custodial");
   });
 
-  it("renders the headline as the stage's one heading", () => {
+  it("draws the headline from the current bucket's NAMELESS pool while no displayName is set", () => {
     render(<SessionWelcomeHero />);
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.textContent).toBe("What should I execute?");
+    const nameless = greetingPoolForHour(new Date().getHours())
+      .filter((variant) => !variant.withName)
+      .map((variant) => variant.text);
+    expect(nameless).toContain(heading.textContent);
+  });
+
+  it("with a set displayName the whole bucket is eligible and {name} is substituted", () => {
+    profileWithName("desu");
+    render(<SessionWelcomeHero />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    const eligible = greetingPoolForHour(new Date().getHours()).map((variant) =>
+      variant.text.replace("{name}", "desu"),
+    );
+    expect(eligible).toContain(heading.textContent);
+    expect(heading.textContent).not.toContain("{name}");
+  });
+
+  it("fails closed to the nameless draw while the profile read is unresolved or failed", () => {
+    useUserProfileMock.mockReturnValue({ data: undefined });
+    render(<SessionWelcomeHero />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    const nameless = greetingPoolForHour(new Date().getHours())
+      .filter((variant) => !variant.withName)
+      .map((variant) => variant.text);
+    expect(nameless).toContain(heading.textContent);
+  });
+
+  it("freezes the draw per mount — re-rendering never changes the headline", () => {
+    const randSpy = vi.spyOn(Math, "random");
+    const view = render(<SessionWelcomeHero />);
+    const first = screen.getByRole("heading", { level: 1 }).textContent;
+    view.rerender(<SessionWelcomeHero />);
+    view.rerender(<SessionWelcomeHero />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(first);
+    // One draw for the whole mount, not one per render.
+    expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
   it("reserves the Studio seat: disabled, wearing the lock, and never writing runtimeMode", () => {
