@@ -99,7 +99,7 @@ const WORK_OPTIONS: ReadonlyArray<SelectMenuOption> = [
 // reused here so every text field in this dialog matches the rail's own
 // search input rather than the generic shadcn Input tone.
 const FIELD_CLASSES =
-  "w-full rounded-lg border border-[var(--vex-line-strong)] bg-white/[0.04] px-2.5 text-[12.5px] text-foreground placeholder:text-[var(--vex-text-3)] transition-colors focus:outline-none focus:border-[var(--vex-accent-border)]";
+  "w-full rounded-xl border border-line-input bg-surface-deep px-2.5 text-[12.5px] text-ink-primary placeholder:text-ink-tertiary transition-colors focus:outline-none focus:border-accent-primary/55";
 
 interface VexSetupDialogProps {
   readonly open: boolean;
@@ -213,9 +213,9 @@ export function VexSetupDialog({
       <DialogContent className="max-w-xl">
         <form onSubmit={(event) => void onSubmit(event)} className="flex min-h-0 flex-1 flex-col">
           {/* Centered editorial header per the approved Personalize mock. */}
-          <DialogHeader className="items-center border-[var(--vex-line)] text-center">
+          <DialogHeader className="items-center border-line-2 text-center">
             <DialogTitle>Personalize Vex</DialogTitle>
-            <DialogDescription className="text-[var(--vex-text-2)]">
+            <DialogDescription className="text-ink-secondary">
               Stored locally in your Vex database and applied to every session.
             </DialogDescription>
           </DialogHeader>
@@ -295,7 +295,7 @@ export function VexSetupDialog({
               className="flex flex-col gap-1.5"
             >
               <Label>Risk appetite</Label>
-              <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[var(--vex-line-strong)]">
+              <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-line-3">
                 {RISK_APPETITES.map((appetite, index) => (
                   <button
                     key={appetite}
@@ -303,11 +303,11 @@ export function VexSetupDialog({
                     aria-pressed={riskAppetite === appetite}
                     onClick={() => chooseRiskAppetite(appetite)}
                     className={cn(
-                      "h-9 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]",
-                      index > 0 && "border-l border-[var(--vex-line-strong)]",
+                      "h-9 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary",
+                      index > 0 && "border-l border-line-3",
                       riskAppetite === appetite
-                        ? "bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)]"
-                        : "bg-white/[0.02] text-[var(--vex-text-2)] hover:bg-white/[0.05] hover:text-foreground",
+                        ? "bg-accent-primary text-ink-on-accent"
+                        : "bg-transparent text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
                     )}
                   >
                     {RISK_APPETITE_LABELS[appetite]}
@@ -330,26 +330,26 @@ export function VexSetupDialog({
                 placeholder="e.g. Be concise. Explain risk before any trade idea."
                 className={cn("py-2", FIELD_CLASSES)}
               />
-              <p className="font-mono text-[10px] leading-relaxed text-[var(--vex-text-3)]">
+              <p className="font-mono text-[10px] leading-relaxed text-ink-tertiary">
                 Vex keeps these in mind across sessions. They never override
                 safety or approval rules.
               </p>
             </div>
 
             {submitError !== null ? (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="text-sm text-danger" role="alert">
                 {submitError}
               </p>
             ) : null}
           </DialogBody>
 
-          <DialogFooter className="border-[var(--vex-line)]">
+          <DialogFooter className="border-line-2">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={saving}
-              className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+              className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             >
               Cancel
             </Button>
@@ -382,10 +382,10 @@ function ChipButton({
       aria-pressed={selected}
       onClick={onToggle}
       className={cn(
-        "h-8 rounded-lg px-3 text-[12.5px] transition duration-150 hover:scale-[1.02] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+        "h-8 rounded-lg px-3 text-[12.5px] transition duration-150 hover:scale-[1.02] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
         selected
-          ? "bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)]"
-          : "border border-[var(--vex-line-strong)] bg-white/[0.04] text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground",
+          ? "bg-accent-primary text-ink-on-accent"
+          : "border border-line-3 bg-transparent text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
       )}
     >
       {label}

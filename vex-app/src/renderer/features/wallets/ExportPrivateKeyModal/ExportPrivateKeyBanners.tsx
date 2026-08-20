@@ -25,7 +25,7 @@ export function ExportPrivateKeyBanners({
     <>
       {phase === "copied" ? (
         <p
-          className="rounded-md border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_10%,transparent)] p-3 text-sm text-[var(--color-warning)]"
+          className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
           role="status"
           data-vex-export-status="copied"
         >
@@ -35,7 +35,7 @@ export function ExportPrivateKeyBanners({
 
       {phase === "cleared" || phase === "closing" ? (
         <p
-          className="rounded-md border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklab,var(--color-success)_10%,transparent)] p-3 text-sm text-[var(--color-success)]"
+          className="rounded-xl border border-success/40 bg-success/10 p-3 text-sm text-success"
           role="status"
           data-vex-export-status="cleared"
         >

@@ -72,8 +72,8 @@ export function LaunchImagePicker({
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor="vex-launch-image">Image</Label>
-      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
-        Required. Pick one from your Trench photos, or add a new one — the
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">
+        Required. Pick one from your Trench photos, or add a new one - the
         picture is written into the token itself, so it can&apos;t be changed
         afterwards.
       </p>
@@ -83,15 +83,15 @@ export function LaunchImagePicker({
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {selected !== null ? (
             <>
-              <span className="truncate text-[12.5px] text-[var(--vex-text-2)]">
+              <span className="truncate text-[12.5px] text-ink-secondary">
                 {selected.label}
               </span>
-              <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+              <span className="font-mono text-[10px] tabular-nums text-ink-tertiary">
                 {selected.width}×{selected.height} · {selected.byteLength} bytes
               </span>
             </>
           ) : (
-            <span className="text-[12.5px] text-[var(--vex-text-3)]">
+            <span className="text-[12.5px] text-ink-tertiary">
               No image selected.
             </span>
           )}
@@ -100,7 +100,7 @@ export function LaunchImagePicker({
             type="button"
             onClick={runUpload}
             disabled={disabled || upload.isPending}
-            className="mt-1 w-fit rounded-full border border-[var(--vex-line-strong)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50"
+            className="mt-1 w-fit rounded-full border border-line-3 px-3 py-1 font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
           >
             {upload.isPending ? "Adding…" : "Add image"}
           </button>
@@ -116,7 +116,7 @@ export function LaunchImagePicker({
       />
 
       {notice !== null ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {notice}
         </p>
       ) : null}
@@ -141,7 +141,7 @@ function LockerStrip({
 
   if (query.isLoading) {
     return (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <p className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
         Loading your photos…
       </p>
     );
@@ -151,15 +151,15 @@ function LockerStrip({
   // user off to re-upload images they already have.
   if (query.isError || (result !== undefined && !result.ok)) {
     return (
-      <p className="text-[12px] text-[var(--vex-warn-text)]">
-        Couldn&apos;t read your image locker — add an image to continue.
+      <p className="text-[12px] text-warning">
+        Couldn&apos;t read your image locker - add an image to continue.
       </p>
     );
   }
 
   if (images.length === 0) {
     return (
-      <p className="text-[12px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[12px] leading-relaxed text-ink-tertiary">
         Your Trench photos are empty. Add one here, or from the Trench Photos
         card in the right-hand panel.
       </p>
@@ -204,12 +204,12 @@ function LockerTile({
       disabled={disabled}
       onClick={() => onSelect(image.imageId)}
       className={[
-        "size-11 overflow-hidden rounded-lg border transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+        "size-11 overflow-hidden rounded-xl border transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
         "disabled:opacity-50",
         selected
-          ? "border-[var(--vex-accent-border-strong)]"
-          : "border-[var(--vex-line)] hover:border-[var(--vex-line-strong)]",
+          ? "border-accent-primary/85"
+          : "border-line-2 hover:border-line-3",
       ].join(" ")}
     >
       {dataUrl !== null ? (
@@ -217,7 +217,7 @@ function LockerTile({
         // own aria-label, so an empty alt avoids announcing the label twice.
         <img src={dataUrl} alt="" className="size-full object-cover" />
       ) : (
-        <span className="block size-full bg-[var(--vex-surface-down)]" />
+        <span className="block size-full bg-surface-deep" />
       )}
     </button>
   );
@@ -233,7 +233,7 @@ function SelectedImageWell({
   const dataUrl = thumb.data?.ok === true ? thumb.data.data.dataUrl : null;
 
   return (
-    <div className="size-16 shrink-0 overflow-hidden rounded-lg border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)]">
+    <div className="size-16 shrink-0 overflow-hidden rounded-xl border border-line-3 bg-surface-deep">
       {dataUrl !== null && image !== null ? (
         <img
           src={dataUrl}

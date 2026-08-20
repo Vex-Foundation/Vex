@@ -217,10 +217,10 @@ describe("mission schemas", () => {
   });
 });
 
-describe("missionAcceptContract — plan-mode (Approach A) round-trips", () => {
+describe("missionAcceptContract - plan-mode (Approach A) round-trips", () => {
   const HASH = "a".repeat(64);
 
-  it("input accepts an OPTIONAL planUpdatedAt (datetime) — and omitting it is valid", () => {
+  it("input accepts an OPTIONAL planUpdatedAt (datetime) - and omitting it is valid", () => {
     // Plan-mode OFF / old builds: no planUpdatedAt → still valid.
     const withoutToken = missionAcceptContractInputSchema.safeParse({
       sessionId: SESSION,
@@ -302,7 +302,7 @@ describe("missionAcceptContract — plan-mode (Approach A) round-trips", () => {
   });
 });
 
-describe("missionStart — plan-acceptance start-gate (Stage 6)", () => {
+describe("missionStart - plan-acceptance start-gate (Stage 6)", () => {
   it("result round-trips plan_not_accepted with missionId", () => {
     const parsed = missionStartResultSchema.safeParse({
       outcome: "plan_not_accepted",

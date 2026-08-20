@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { sessionTitleSchema } from "./sessions.js";
 
 export const osPlatformSchema = z.enum(["darwin", "win32", "linux"]);
 export type OsPlatform = z.infer<typeof osPlatformSchema>;
@@ -42,3 +43,21 @@ export const healthReportSchema = z
   })
   .strict();
 export type HealthReport = z.infer<typeof healthReportSchema>;
+
+/**
+ * vex.system.notifyTurnComplete - OS-native turn-complete notification (A34).
+ * The renderer supplies only the session title (validated by the SAME schema
+ * that bounds session names everywhere); main decides whether to show it by
+ * checking window focus ITSELF - the renderer's opinion about focus is never
+ * part of the contract.
+ */
+export const notifyTurnCompleteInputSchema = z
+  .object({ sessionTitle: sessionTitleSchema })
+  .strict();
+export type NotifyTurnCompleteInput = z.infer<typeof notifyTurnCompleteInputSchema>;
+
+/** `shown` is honest feedback: false = focused window or unsupported OS. */
+export const notifyTurnCompleteResultSchema = z
+  .object({ shown: z.boolean() })
+  .strict();
+export type NotifyTurnCompleteResult = z.infer<typeof notifyTurnCompleteResultSchema>;

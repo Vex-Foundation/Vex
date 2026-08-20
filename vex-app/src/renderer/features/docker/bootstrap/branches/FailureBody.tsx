@@ -30,7 +30,7 @@ export function FailureBody({ status }: FailureBodyProps): JSX.Element {
     : "Docker check did not complete";
   const message =
     probeFailed
-      ? "Docker probe failed — open the logs folder for details."
+      ? "Docker probe failed - open the logs folder for details."
       : status?.ok === false
       ? status.error.message
       : status?.ok && !status.data.endpoint.accepted
@@ -40,10 +40,10 @@ export function FailureBody({ status }: FailureBodyProps): JSX.Element {
     <div className="flex flex-col gap-4">
       <SetupStatusCard tone="error" title={title} detail={message} />
 
-      <ul className="flex list-disc flex-col gap-1 pl-5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-xs leading-relaxed text-ink-secondary">
         <li>Ensure your user has access to the local Docker socket.</li>
         <li>
-          Use a local Docker Engine or Docker Desktop endpoint — remote
+          Use a local Docker Engine or Docker Desktop endpoint - remote
           Docker contexts are blocked for local data safety.
         </li>
       </ul>

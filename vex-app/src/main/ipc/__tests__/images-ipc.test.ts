@@ -135,14 +135,14 @@ describe("the boundary refuses to speak about paths at all", () => {
     expect(deleteLockerImage).not.toHaveBeenCalled();
   });
 
-  it("ignores a path the renderer tries to smuggle into upload — the payload is strict and empty", async () => {
+  it("ignores a path the renderer tries to smuggle into upload - the payload is strict and empty", async () => {
     const result = await call(CH.images.upload, { sourcePath: "/etc/passwd" });
     expectError(result, "validation.invalid_input");
     expect(showOpenDialog).not.toHaveBeenCalled();
     expect(storeLockerImageFromFile).not.toHaveBeenCalled();
   });
 
-  it("ignores a session id the renderer tries to add to list — the locker is global", async () => {
+  it("ignores a session id the renderer tries to add to list - the locker is global", async () => {
     const result = await call(CH.images.list, { sessionId: "abc" });
     expectError(result, "validation.invalid_input");
     expect(listLockerImages).not.toHaveBeenCalled();
@@ -287,7 +287,7 @@ describe("delete refuses while a live launch intent holds the image (C2)", () =>
     expect(result.error.message).toContain("SECONDCOIN");
   });
 
-  it("is not retryable — retrying cannot make a live launch let go", async () => {
+  it("is not retryable - retrying cannot make a live launch let go", async () => {
     deleteLockerImage.mockResolvedValue({
       deleted: false,
       reason: "referenced_by_live_intent",

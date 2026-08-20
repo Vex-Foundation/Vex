@@ -24,9 +24,10 @@
  * must never land in `bySessionId`, where a session banner would render it and
  * tell the user their conversation broke when it did not.
  *
- * The payload is bounded codes — category, error type/class, status, retry
- * hint. There is no message field at any layer, so nothing here can leak
- * provider prose into the DOM.
+ * The payload is bounded codes - category, error type/class, status, retry
+ * hint - plus the SANITIZED `detail` and the `remedy` classification (owner
+ * decree 2026-08-02). `detail` is stripped of secrets at the main-side bridge
+ * before it can reach this store or the DOM.
  */
 
 import { create } from "zustand";

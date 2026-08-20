@@ -1,12 +1,26 @@
+/**
+ * Sessions sidebar column. Width comes from the shell grid track (AppShell +
+ * lib/shell-columns.ts); this component owns the collapse CHOREOGRAPHY, not
+ * the geometry: on collapse the content freezes at its expanded width
+ * (inline style) and fades in place for 150ms while the sliding track clips
+ * it, then the rail controls enter the 56px spine from the same horizontal
+ * offset (translateX(49px), backwards fill) over the transition's second
+ * half. A cold-collapsed render is static; expand remounts wide content on a
+ * 200ms fade (asymmetry is deliberate). Scrollbars in the column follow the
+ * pointer: `useQuietScrollbars` rebinds the scrollbar indirection pair away
+ * while the pointer is elsewhere (2s linger).
+ *
+ * The rail reads the shell backdrop through its glass tint (--vex-rail,
+ * guard-whitelisted backdrop-blur) — no separating stroke.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
-  PlusIcon,
-  XIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  SearchIcon,
-  VexIcon,
+  IconClose,
+  IconPanelLeft,
+  IconPlus,
+  IconSearch,
 } from "../../components/icons/index.js";
 import type {
   SessionDeleteOutcome,
@@ -15,10 +29,14 @@ import type {
 import { cn } from "../../lib/utils.js";
 import {
   useDeleteSession,
+  useRenameSession,
   useSessionsList,
   useSetSessionPinned,
 } from "../../lib/api/sessions.js";
+import { useCollapseChoreography } from "../../lib/useCollapseChoreography.js";
+import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { RailSearchField } from "../../components/ui/rail-list.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 import { SidebarProfile } from "./SidebarProfile.js";
@@ -36,17 +54,24 @@ import {
   groupSessions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
-import { computeVisibleGroups } from "./sessionListLayout.js";
 
 interface SessionsListProps {
   readonly onCreate: () => void;
+  /** Rail state decided by the shell frame (breakpoint-aware). */
+  readonly collapsed: boolean;
+  /** Rendered track width from the concession solve. */
+  readonly width: number;
+  readonly onToggleSidebar: () => void;
 }
 
-export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
+export function SessionsList({
+  onCreate,
+  collapsed,
+  width,
+  onToggleSidebar,
+}: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
-  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   // Signing-stroke state for the New-session key: SessionCreator drives
@@ -56,6 +81,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const query = useSessionsList();
   const pinMutation = useSetSessionPinned();
   const deleteMutation = useDeleteSession();
+  const renameMutation = useRenameSession();
   // TanStack Query exposes the last variables sent to the mutation; we
   // use it to disable the star button on the in-flight row only.
   const pendingPinId =
@@ -66,34 +92,27 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
   const [removeBlocked, setRemoveBlocked] =
     useState<SessionDeleteOutcome | null>(null);
 
-  // Rail search (Chronos): a title filter over the SAME resolved titles the
-  // rows render (`filterSessionsByTitle`), toggled by the header magnifier.
-  // Local, launch-ephemeral state — closing the field clears the filter.
+  // Wide content stays mounted while a live collapse fades, unmounts at
+  // settle, remounts right away on expand; the frozen width keeps the
+  // sliding track clipping instead of reflowing (lib/useCollapseChoreography).
+  const { wide, fading, railIn, frozenWidth } = useCollapseChoreography(
+    collapsed,
+    width,
+  );
+
+  const columnRef = useRef<HTMLElement | null>(null);
+  const { quiet, onPointerEnter, onPointerLeave } =
+    useQuietScrollbars(columnRef);
+
+  // Rail search: a title filter over the SAME resolved titles the rows
+  // render, toggled by the header magnifier. Local, launch-ephemeral state.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const [containerHeight, setContainerHeight] = useState<number>(0);
-
   useEffect((): void => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
-
-  useEffect((): (() => void) | undefined => {
-    const el = scrollContainerRef.current;
-    if (el === null) return undefined;
-    // jsdom (tests) does not implement ResizeObserver. We leave
-    // containerHeight at 0 so computeVisibleGroups returns the full list.
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry === undefined) return;
-      setContainerHeight(entry.contentRect.height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   const visibleRows = useMemo(() => {
     if (!query.data?.ok) return [];
@@ -103,17 +122,8 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
 
-  // hiddenCount is intentionally dropped: the retired "Browse all" row was
-  // its only consumer — overflow now lives on the Sessions screen.
-  const { visible: visibleGroups } = useMemo(
-    () => computeVisibleGroups(groups, containerHeight),
-    [groups, containerHeight],
-  );
-
   const handleSelect = useCallback(
     (id: string): void => {
-      // The center panel is always the session panel (Chronos screens
-      // redesign) — selecting a row only needs to point it at the session.
       setActiveSessionId(id);
     },
     [setActiveSessionId],
@@ -124,6 +134,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
       pinMutation.mutate({ id, pinned: nextPinned });
     },
     [pinMutation],
+  );
+
+  const handleRename = useCallback(
+    (id: string, name: string): void => {
+      renameMutation.mutate({ id, name });
+    },
+    [renameMutation],
   );
 
   const handleRequestRemove = useCallback((row: SessionListItem): void => {
@@ -157,20 +174,16 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
     setRemoveBlocked(outcome);
   }, [deleteMutation, removeTarget]);
 
-  const toggleSidebar = useCallback((): void => {
-    setSidebarOpen(!sidebarOpen);
-  }, [setSidebarOpen, sidebarOpen]);
-
   const closeSearch = useCallback((): void => {
     setSearchOpen(false);
     setSearchText("");
   }, []);
 
   // The magnifier on a collapsed rail expands it first — a search field has
-  // no room on the 72px spine (the ChatGPT-sidebar gesture).
+  // no room on the 56px spine.
   const toggleSearch = useCallback((): void => {
-    if (!sidebarOpen) {
-      setSidebarOpen(true);
+    if (collapsed) {
+      onToggleSidebar();
       setSearchOpen(true);
       return;
     }
@@ -179,154 +192,115 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
     } else {
       setSearchOpen(true);
     }
-  }, [sidebarOpen, searchOpen, setSidebarOpen, closeSearch]);
+  }, [collapsed, searchOpen, onToggleSidebar, closeSearch]);
 
   return (
     <aside
+      ref={columnRef}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       className={cn(
-        // Rail over the Eclipse backdrop: softer translucent ink (--vex-rail)
-        // so the artwork shows through and the sidebar merges with the center
-        // column into ONE canvas — pure glass, NO separating stroke of any
-        // kind (owner review round 2: even the edge-fading hairline still
-        // read as a dividing line). Backdrop-blur stays guard-whitelisted for
-        // this rail. z-20 (one step above the center section's z-10) so the
-        // profile menu — wider than the rail by design — paints ABOVE the
-        // center column where it overflows instead of sliding under the
-        // later flex sibling. NO overflow clipping on this aside for the
-        // same reason. macOS-clean ink glass (owner decree, 2026-07-20): the
-        // rail carries ONLY the ink tint + blur, no grain overlay — a prior
-        // grain layer greyed the glass out and is retired.
-        "relative z-20 flex h-full shrink-0 flex-col bg-[var(--vex-rail)] backdrop-blur-xl transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        sidebarOpen ? "w-[296px]" : "w-[72px]",
+        // Glass over the shell backdrop: translucent ink (--vex-rail) +
+        // guard-whitelisted backdrop-blur; NO separating stroke.
+        "vex-sidebar relative flex h-full flex-col bg-[var(--vex-rail)] backdrop-blur-xl",
+        fading && "vex-sidebar-fading",
+        railIn && "vex-sidebar-rail-in",
+        quiet && "vex-quiet-bars",
       )}
+      style={wide ? { width: collapsed ? frozenWidth : "100%" } : undefined}
       data-vex-area="sessions-sidebar"
-      data-vex-sidebar-open={sidebarOpen ? "true" : "false"}
+      data-vex-sidebar-open={collapsed ? "false" : "true"}
     >
       <header
         className={cn(
-          // Owner decree — uniform sidebar glass: the header no longer
-          // carries its own rail-strong fill; it shares the aside's own
-          // bg-[var(--vex-rail)] so the whole rail reads as ONE glass tint,
-          // not a stronger strip sitting over a softer body.
-          // Chronos grammar (the ChatGPT/Grok sidebar reference): the mark
-          // sits LEFT as the sole brand (doubling as "Back to welcome" —
-          // SidebarHomeSigil), the magnifier + collapse arrow sit RIGHT.
-          // Collapsed, the spine stacks mark → magnifier → expand arrow.
+          // The mark sits LEFT as the sole brand (doubling as "Back to
+          // welcome"), the magnifier + collapse arrow sit RIGHT. Collapsed,
+          // the spine stacks mark → magnifier → expand arrow.
           "relative flex shrink-0",
-          sidebarOpen
+          wide
             ? "h-12 items-center justify-between px-3"
             : "flex-col items-center justify-center gap-0.5 px-2 py-2",
         )}
       >
-        <SidebarHomeSigil sidebarOpen={sidebarOpen} />
+        <SidebarHomeSigil sidebarOpen={wide} />
         <div
           className={cn(
             "flex items-center",
-            sidebarOpen ? "gap-0.5" : "flex-col gap-0.5",
+            wide ? "gap-0.5" : "flex-col gap-0.5",
           )}
+          data-rail-control
         >
           <SidebarIconButton
             label={searchOpen ? "Close session search" : "Search sessions"}
             onClick={toggleSearch}
           >
-            <VexIcon icon={SearchIcon} size={16} aria-hidden />
+            <IconSearch size={16} />
           </SidebarIconButton>
           <SidebarIconButton
-            label={sidebarOpen ? "Collapse sessions sidebar" : "Expand sessions sidebar"}
-            onClick={toggleSidebar}
+            label={collapsed ? "Expand sessions sidebar" : "Collapse sessions sidebar"}
+            onClick={onToggleSidebar}
           >
-            <VexIcon
-              icon={sidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon}
-              size={17}
-              aria-hidden
-            />
+            <IconPanelLeft size={17} />
           </SidebarIconButton>
         </div>
       </header>
 
-      {sidebarOpen && searchOpen ? (
-        // Search field — glass well under the brand strip. Escape (or the
-        // clear button on an empty query) closes and clears; typing filters
-        // the rail live via filterSessionsByTitle.
-        <div className="px-3 pt-3">
-          <div className="flex h-9 items-center gap-2 rounded-lg border border-[var(--vex-line-strong)] bg-white/[0.04] px-2.5 transition-colors focus-within:border-[var(--vex-accent-border)]">
-            <VexIcon
-              icon={SearchIcon}
-              size={14}
-              aria-hidden
-              className="shrink-0 text-[var(--vex-text-3)]"
-            />
-            <input
-              ref={searchInputRef}
-              type="search"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  closeSearch();
-                }
-              }}
-              placeholder="Search sessions"
-              aria-label="Search sessions"
-              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground placeholder:text-[var(--vex-text-3)] focus:outline-none [&::-webkit-search-cancel-button]:hidden"
-            />
-            <button
-              type="button"
-              aria-label="Close search"
-              onClick={closeSearch}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-            >
-              <VexIcon icon={XIcon} size={12} aria-hidden />
-            </button>
-          </div>
+      {wide && searchOpen ? (
+        <div className="px-3 pt-1 pb-2">
+          <RailSearchField
+            value={searchText}
+            onChange={setSearchText}
+            onClose={closeSearch}
+            placeholder="Search sessions"
+            label="Search sessions"
+            closeLabel="Close search"
+            inputRef={(el) => {
+              searchInputRef.current = el;
+            }}
+            icon={<IconSearch size={14} />}
+            closeIcon={<IconClose size={12} />}
+          />
         </div>
       ) : null}
 
-      <div className={cn("p-3", !sidebarOpen && "px-2")}>
-        {/* The signing key: the sidebar's primary CTA — the landing's filled
-         * cobalt pill (mono uppercase micro-type, radius 100px), standing
-         * alone (owner decree, 2026-07-20: the "signing key on a plinth"
-         * story is retired — no hairline or accent tick behind the pill).
+      <div className={cn("p-3", !wide && "px-2")} data-rail-control>
+        {/* The signing key: the sidebar's primary CTA — filled accent pill.
          * The signing mechanics are unchanged: the ink stroke draws on
-         * hover/focus (globals.css owns the draw) and loops while
-         * SessionCreator's mutation is in flight; the glint is the one-shot
-         * success light. Both paint the accent-contrast ink. */}
-        <div>
-          <button
-            type="button"
-            onClick={onCreate}
-            aria-label="New session"
+         * hover/focus and loops while SessionCreator's mutation is in
+         * flight; the glint is the one-shot success light. */}
+        <button
+          type="button"
+          onClick={onCreate}
+          aria-label="New session"
+          className={cn(
+            "vex-sign-key relative flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors duration-150",
+            "hover:bg-[var(--vex-accent-hover)]",
+            "active:scale-[0.99] active:bg-[var(--vex-accent-active)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
+            wide ? "w-full px-4" : "mx-auto w-10",
+          )}
+        >
+          <IconPlus size={15} />
+          {wide ? <span>New session</span> : null}
+          <span
+            aria-hidden
             className={cn(
-              "vex-sign-key relative flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors duration-150",
-              "hover:bg-[var(--vex-accent-hover)]",
-              "active:scale-[0.99] active:bg-[var(--vex-accent-active)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
-              sidebarOpen ? "w-full px-4" : "mx-auto w-10",
+              "vex-sign-stroke absolute bottom-[6px] h-[1.5px] rounded-full bg-[color-mix(in_oklab,var(--vex-accent-contrast)_90%,transparent)]",
+              wide ? "inset-x-4" : "inset-x-3",
+              signingState === "signing" && "vex-sign-stroke--signing",
             )}
-          >
-            <VexIcon icon={PlusIcon} size={15} aria-hidden />
-            {sidebarOpen ? <span>New session</span> : null}
+          />
+          {signingState === "signed" ? (
             <span
               aria-hidden
-              className={cn(
-                "vex-sign-stroke absolute bottom-[6px] h-[1.5px] rounded-full bg-[color-mix(in_oklab,var(--vex-accent-contrast)_90%,transparent)]",
-                sidebarOpen ? "inset-x-4" : "inset-x-3",
-                signingState === "signing" && "vex-sign-stroke--signing",
-              )}
+              onAnimationEnd={() => setSigningState("idle")}
+              className="vex-intro-glint absolute bottom-[3px] right-4 h-1.5 w-1.5 rounded-full bg-[var(--vex-accent-contrast)]"
             />
-            {signingState === "signed" ? (
-              <span
-                aria-hidden
-                onAnimationEnd={() => setSigningState("idle")}
-                className="vex-intro-glint absolute bottom-[3px] right-4 h-1.5 w-1.5 rounded-full bg-[var(--vex-accent-contrast)]"
-              />
-            ) : null}
-          </button>
-        </div>
+          ) : null}
+        </button>
       </div>
 
-      {sidebarOpen ? (
+      {wide ? (
         <div
           role="tablist"
           aria-label="Filter sessions"
@@ -342,8 +316,6 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
                 aria-selected={active}
                 onClick={() => setSessionModeFilter(filter.value)}
                 className={cn(
-                  // Landing micro-label grammar: mono 9.5px, wide-tracked,
-                  // accent underline carries the active state.
                   "relative pb-2 pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.2em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
                   active
                     ? "text-foreground"
@@ -363,28 +335,33 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         </div>
       ) : null}
 
+      {/* The browsing region scrolls; quiet bars keep the scrollbar a pointer
+       * affordance. (The fit-to-height packer is retired with the rebuild —
+       * every row is reachable in place; the Sessions screen remains the
+       * full register.) */}
       <div
-        ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-hidden px-2 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-2 py-3"
+        data-rail-control
       >
         {query.isLoading ? (
-          <SessionsLoadingPlaceholder sidebarOpen={sidebarOpen} />
+          <SessionsLoadingPlaceholder sidebarOpen={wide} />
         ) : query.data && query.data.ok === false ? (
           <SessionsErrorPlaceholder
-            sidebarOpen={sidebarOpen}
+            sidebarOpen={wide}
             message={query.data.error.message}
           />
         ) : query.data && query.data.ok ? (
           visibleRows.length === 0 ? (
-            <SessionsEmptyPlaceholder sidebarOpen={sidebarOpen} />
+            <SessionsEmptyPlaceholder sidebarOpen={wide} />
           ) : (
             <SessionGroups
-              groups={visibleGroups}
+              groups={groups}
               activeSessionId={activeSessionId}
-              sidebarOpen={sidebarOpen}
+              sidebarOpen={wide}
               onSelect={handleSelect}
               onTogglePin={handleTogglePin}
               onRequestRemove={handleRequestRemove}
+              onRename={handleRename}
               pendingPinId={pendingPinId}
               idPrefix="sidebar-sessions"
             />
@@ -392,28 +369,19 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         ) : null}
       </div>
 
-      {/* The "Browse all" ledger row is retired (Chronos screens redesign):
-       * the full register now lives on the Sessions screen, opened from the
-       * profile menu. `hiddenCount` from computeVisibleGroups still trims the
-       * rail to its visible budget. */}
-
-      {/* LIVE $VEX — the slim market widget (price · shimmer delta ·
-       * sparkline) rides the rail between the session groups and the profile
-       * footer. Hidden when the rail is collapsed: the icon-only rail has no
-       * room for a price figure. */}
-      {sidebarOpen ? (
+      {/* LIVE $VEX — the slim market widget rides the rail between the
+       * session groups and the profile footer. Hidden on the rail: the
+       * icon-only spine has no room for a price figure. */}
+      {wide ? (
         <div className="border-t border-[var(--vex-line)] px-3 py-3">
           <VexTokenCardCompact />
         </div>
       ) : null}
 
-      {/* Footer — the Chronos profile element: one avatar row whose side-panel
-       * menu owns Personalize / Memory / Sessions / How Vex works / Settings
-       * and the runtime status row.
-       * Report issue intentionally hidden for now; ReportIssueButton/Dialog
-       * retained for re-enable. */}
-      <footer className="flex flex-col">
-        <SidebarProfile sidebarOpen={sidebarOpen} />
+      {/* Footer — the profile element; the collapsed spine keeps the avatar
+       * and only fades (no horizontal entry), matching the reference foot. */}
+      <footer className="flex flex-col" data-rail-foot>
+        <SidebarProfile sidebarOpen={wide} />
       </footer>
 
       <SessionDeleteDialog

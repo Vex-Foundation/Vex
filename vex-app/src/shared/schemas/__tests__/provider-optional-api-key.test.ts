@@ -18,7 +18,7 @@ import { providerPersistInputSchema } from "../provider.js";
 
 const MODEL = "anthropic/claude-sonnet-4.5";
 
-describe("providerPersistInputSchema — optional apiKey", () => {
+describe("providerPersistInputSchema - optional apiKey", () => {
   it("accepts a payload with NO apiKey and leaves the field absent", () => {
     const parsed = providerPersistInputSchema.parse({
       provider: "openrouter",

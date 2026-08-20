@@ -168,10 +168,10 @@ export function MissionContractModal({
         data-vex-area="mission-contract-modal"
         className="max-w-lg"
       >
-        <DialogHeader className="flex-row items-center justify-between gap-3 border-[var(--vex-line)]">
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-line-2">
           {/* Mission titles are authored content, not chrome — they speak the
-           * display register (Archivo), not the base mono stamp. */}
-          <DialogTitle className="truncate font-display text-base font-bold normal-case tracking-[-0.01em]">
+           * Inter Tight display register, not the micro-label stamp. */}
+          <DialogTitle className="truncate font-display text-base font-medium normal-case tracking-[-0.01em]">
             {title}
           </DialogTitle>
           {/* Status marker only — the modal is already open, so this is a
@@ -189,11 +189,11 @@ export function MissionContractModal({
 
         <DialogBody>
           {state === null ? (
-            <p className="text-sm text-[var(--vex-text-3)]">
+            <p className="text-sm text-ink-tertiary">
               Loading the mission contract…
             </p>
           ) : (
-            <div className="-mx-6 -my-5">
+            <div className="flex flex-col gap-2">
               <CardBody draft={state.draft} />
               {/* Host-authored launch ceilings (C6/C6b). Editable only while the
                * mission is still editable — a started run enforces the ceilings

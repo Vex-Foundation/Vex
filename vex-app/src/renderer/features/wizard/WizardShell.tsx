@@ -8,9 +8,8 @@
  * (`.vex-gate-plate` + vignette + grain) and carries the
  * `data-vex-gate` token scope, so stock Buttons inside step forms are
  * cobalt pills and the step forms pick up the pre-shell type scale
- * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`
- * (plus the "Backed by · Virtuals" partner mark, wizard-only). The
- * centered column hosts the minimal `HorizontalStepper` rail above
+ * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`.
+ * The centered column hosts the minimal `HorizontalStepper` rail above
  * `WizardStepPanel`. Loading state is the VexLoader ring.
  *
  * Per-step chrome lives in `WizardStepPanel`; each step returns a
@@ -86,7 +85,7 @@ function renderStep(
 
 const SHELL_CHROME = cn(
   "relative flex h-screen w-screen overflow-hidden",
-  "text-[var(--color-text-primary)]",
+  "text-ink-primary",
 );
 
 /* Error state is an open composition on the plate (AMENDMENT A3 —
@@ -105,27 +104,14 @@ function WizardChrome(): JSX.Element {
       {/* The mark alone — owner decree 2026-07-22: no "VEX" text beside it. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10">
         <img
-          src="/logo_clean.png"
+          src="/brand/vex-mark-white.svg"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-7 w-7 select-none object-contain"
+          className="h-6 w-auto select-none"
         />
       </div>
-      <div className="pointer-events-none absolute bottom-7 left-10 z-10">
-        {/* Static backed-by line — a quiet monochrome partner mark. */}
-        <span className="flex items-center gap-2 opacity-70">
-          <span className="vex-micro text-[var(--color-text-muted)]">
-            Backed by
-          </span>
-          <img
-            src="/logo/virtuals.svg"
-            alt="Virtuals"
-            className="h-3.5 w-3.5"
-          />
-        </span>
-      </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
         v{__VEX_APP_VERSION__}
       </span>
     </>
@@ -259,16 +245,16 @@ export function WizardShell(): JSX.Element {
         <WizardChrome />
         <div className={ERROR_STACK_CHROME}>
           <div className="flex flex-col gap-2">
-            <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
+            <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
               Setup unavailable
             </h1>
             {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
-            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[var(--color-text-secondary)]">
+            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-ink-secondary">
               {message}
             </p>
           </div>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            Most setup-state failures are transient — retry once, then
+          <p className="text-xs text-ink-tertiary">
+            Most setup-state failures are transient - retry once, then
             restart Vex if the problem persists.
           </p>
           <OpenLogsLink />
@@ -336,7 +322,7 @@ export function WizardShell(): JSX.Element {
         {/* A3 boxless: the page scrolls here (quiet onboarding scrollbar),
             not inside a bordered panel well. max-w = 640px of readable
             measure + 4rem for .vex-gate-page's symmetric scrollbar gutter
-            (setup-gate.css), which keeps the thumb off the text column. */}
+            (chronos-gate.css), which keeps the thumb off the text column. */}
         <div className="vex-gate-page min-h-0 w-full max-w-[704px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div

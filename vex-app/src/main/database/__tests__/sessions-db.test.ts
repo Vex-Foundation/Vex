@@ -121,7 +121,7 @@ describe("softDeleteSessionWithClient outcome branching", () => {
       { rows: [], rowCount: 0 },
       { rows: [{ deleted_at: null }], rowCount: 1 },
       { rows: [], rowCount: 0 },
-      { rows: [], rowCount: 0 }, // no pending approval — race-loser
+      { rows: [], rowCount: 0 }, // no pending approval - race-loser
     ]);
     const result = await mod.softDeleteSessionWithClient(client, TEST_ID);
     expect(result.ok).toBe(true);
@@ -145,7 +145,7 @@ describe("softDeleteSessionWithClient outcome branching", () => {
   });
 });
 
-describe("setSessionPinnedWithClient — soft-delete invariant", () => {
+describe("setSessionPinnedWithClient - soft-delete invariant", () => {
   it("returns ok(null) when the row is soft-deleted (UPDATE 0 rows)", async () => {
     const mod = await import("../sessions-db.js");
     // Soft-deleted rows fail the `AND deleted_at IS NULL` filter, so the
@@ -196,13 +196,63 @@ describe("setSessionPinnedWithClient — soft-delete invariant", () => {
   });
 });
 
+describe("renameSessionWithClient - contract", () => {
+  it("returns ok(null) when the row is unknown or soft-deleted (UPDATE 0 rows)", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client } = scriptedClient([{ rows: [], rowCount: 0 }]);
+    const result = await mod.renameSessionWithClient(client, TEST_ID, "New name");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data).toBeNull();
+  });
+
+  it("guarded UPDATE writes only title and filters deleted_at IS NULL", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client, queryMock } = scriptedClient([{ rows: [], rowCount: 0 }]);
+    await mod.renameSessionWithClient(client, TEST_ID, "New name");
+    const call = queryMock.mock.calls[0]!;
+    const sql = call[0] as string;
+    expect(sql).toMatch(/UPDATE sessions/);
+    expect(sql).toMatch(/SET\s+title\s*=\s*\$2/);
+    expect(sql).toMatch(/AND\s+deleted_at\s+IS\s+NULL/);
+    expect(call[1]).toEqual([TEST_ID, "New name", "vex_app"]);
+  });
+
+  it("returns the renamed SessionListItem with missionStatus for a mission row", async () => {
+    const mod = await import("../sessions-db.js");
+    const { client } = scriptedClient([
+      {
+        rows: [
+          {
+            id: TEST_ID,
+            mode: "mission",
+            permission: "restricted",
+            initial_goal: "Goal",
+            started_at: new Date(),
+            ended_at: null,
+            title: "Renamed mission",
+            pinned_at: null,
+          },
+        ],
+        rowCount: 1,
+      },
+      { rows: [{ status: "running" }], rowCount: 1 }, // loadMissionStatus
+    ]);
+    const result = await mod.renameSessionWithClient(client, TEST_ID, "Renamed mission");
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data !== null) {
+      expect(result.data.title).toBe("Renamed mission");
+      expect(result.data.missionStatus).toBe("running");
+    }
+  });
+});
+
 // Drift guard for the puzzle 03 follow-up: every helper that uses the
 // `ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES` whitelist must include
 // `paused_user`. Otherwise the sidebar's active-run buckets, the
 // delete guard, and pinned-row lookups will silently miss any session
 // that the user has paused via `runtime.requestPause`. The constant is
 // not exported; we assert it via the SQL parameters the helpers send.
-describe("ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES — paused_user parity", () => {
+describe("ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES - paused_user parity", () => {
   it("loadMissionStatus (used by setSessionPinned) passes paused_user in $2", async () => {
     const mod = await import("../sessions-db.js");
     const { client, queryMock } = scriptedClient([

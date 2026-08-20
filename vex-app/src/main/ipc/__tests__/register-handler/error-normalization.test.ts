@@ -34,7 +34,7 @@ vi.mock("electron", () => ({
     },
   },
   app: {
-    isPackaged: true, // simulate prod — only app://vex/ origin is trusted
+    isPackaged: true, // simulate prod - only app://vex/ origin is trusted
   },
 }));
 
@@ -110,7 +110,7 @@ describe("registerHandler", () => {
       domain: "system",
       inputSchema: z.object({}).strict(),
       handle: async () => {
-        throw new Error(`boom — leaked secret ${evmKey}`);
+        throw new Error(`boom - leaked secret ${evmKey}`);
       },
     });
     const fn = handlers.get("vex:test:throw")!;

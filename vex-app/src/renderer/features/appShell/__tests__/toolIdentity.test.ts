@@ -43,7 +43,7 @@ describe("isDottedProtocolToolId", () => {
   });
 });
 
-describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lane)", () => {
+describe("resolveToolIdentity - dotted protocol toolIds (the canonicalized lane)", () => {
   it.each([
     ["kyberswap.swap.quote", "kyberswap", "KyberSwap · Swap quote", "swap"],
     ["kyberswap.swap.execute", "kyberswap", "KyberSwap · Swap", "swap"],
@@ -59,7 +59,7 @@ describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lan
     expect(resolveToolIdentity(toolId, null)).toEqual({ protocol, title, category });
   });
 
-  it("gives khalani.bridge the BRIDGE category — the `khalani_` prefix rule must not eat it", () => {
+  it("gives khalani.bridge the BRIDGE category - the `khalani_` prefix rule must not eat it", () => {
     expect(resolveToolIdentity("khalani.bridge", null)).toEqual({
       protocol: "khalani",
       title: "Khalani · Bridge",
@@ -80,7 +80,7 @@ describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lan
     expect(resolveToolIdentity("solana.predict.search", null).category).not.toBe("web");
   });
 
-  it("preserves camelCase — an incidental toLowerCase would lose the map", () => {
+  it("preserves camelCase - an incidental toLowerCase would lose the map", () => {
     expect(resolveToolIdentity("dexscreener.tokenPairs", null).protocol).toBe(
       "dexscreener",
     );
@@ -93,7 +93,7 @@ describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lan
   });
 
   it.each(["khalani__unknown", "dexscreener__unknown", "kyberswapp__swap__quote"])(
-    "refuses a venue to %s — a name main could not canonicalize is unknown, not branded",
+    "refuses a venue to %s - a name main could not canonicalize is unknown, not branded",
     (name) => {
       const identity = resolveToolIdentity(name, null);
       expect(identity.protocol).toBeNull();
@@ -109,7 +109,7 @@ describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lan
  * primitive, a missing/empty/non-string `toolId`, or a namespace that is not a
  * plain lower-case identifier must all yield NO venue at all.
  */
-describe("resolveToolIdentity — the wrapper's namespace read is fail-closed", () => {
+describe("resolveToolIdentity - the wrapper's namespace read is fail-closed", () => {
   it.each([
     ["null args", null],
     ["empty string", ""],
@@ -128,7 +128,7 @@ describe("resolveToolIdentity — the wrapper's namespace read is fail-closed", 
   });
 });
 
-describe("resolveToolIdentity — named tools (prefix map is primary)", () => {
+describe("resolveToolIdentity - named tools (prefix map is primary)", () => {
   it("names the venue when the tool name names it", () => {
     expect(resolveToolIdentity("swap_execute_uniswap", null)).toEqual({
       protocol: "uniswap",
@@ -142,7 +142,7 @@ describe("resolveToolIdentity — named tools (prefix map is primary)", () => {
     });
   });
 
-  it("keeps a venue-less swap honest — no venue, no borrowed mark", () => {
+  it("keeps a venue-less swap honest - no venue, no borrowed mark", () => {
     const identity = resolveToolIdentity("swap_execute", null);
     expect(identity.protocol).toBeNull();
     expect(identity.title).toBe("Swap");
@@ -191,7 +191,7 @@ describe("resolveToolIdentity — named tools (prefix map is primary)", () => {
     });
   });
 
-  it("never consults args for a NAMED tool — identity cannot be spoofed by payload", () => {
+  it("never consults args for a NAMED tool - identity cannot be spoofed by payload", () => {
     const spoofed = resolveToolIdentity(
       "wallet_balances",
       '{"toolId":"uniswap.swap.quote"}',
@@ -200,7 +200,7 @@ describe("resolveToolIdentity — named tools (prefix map is primary)", () => {
   });
 });
 
-describe("resolveToolIdentity — generic wrappers", () => {
+describe("resolveToolIdentity - generic wrappers", () => {
   // The curated presentation map is shared with the dotted lane, so the legacy
   // wrapper now reports the same (more accurate) `swap` category the dotted
   // `kyberswap.swap.quote` does. Category is presentational — glyph and a data
@@ -222,7 +222,7 @@ describe("resolveToolIdentity — generic wrappers", () => {
     expect(identity.title).toBe("Virtuals · Agents list");
   });
 
-  it("FAILS CLOSED on truncated args — the wrapper's own name, no venue", () => {
+  it("FAILS CLOSED on truncated args - the wrapper's own name, no venue", () => {
     const identity = resolveToolIdentity(
       "execute_tool",
       '{"toolId":"kyberswap.swap.quote","params":{"amount":"10',
@@ -236,7 +236,7 @@ describe("resolveToolIdentity — generic wrappers", () => {
     ["an arbitrary valid namespace", '{"toolId":"totally_new_venue.do.thing"}'],
     ["a bare namespace with no action", '{"toolId":"evil"}'],
   ])(
-    "gives NO venue to %s — a syntactically valid namespace is not provenance",
+    "gives NO venue to %s - a syntactically valid namespace is not provenance",
     (_label, args) => {
       const identity = resolveToolIdentity("execute_tool", args);
       expect(identity.protocol).toBeNull();
@@ -333,7 +333,7 @@ describe("resolveToolIdentity — generic wrappers", () => {
     expect(identity.title).toBe("Execute tool");
   });
 
-  it("falls back to the humanizer for an unmirrored trench id — venue proven, action not curated", () => {
+  it("falls back to the humanizer for an unmirrored trench id - venue proven, action not curated", () => {
     expect(resolveToolIdentity("execute_tool", '{"toolId":"trench.new_thing"}')).toEqual({
       protocol: "trench",
       title: "Trench Express · New thing",

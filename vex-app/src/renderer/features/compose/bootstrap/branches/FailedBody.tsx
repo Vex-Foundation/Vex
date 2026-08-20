@@ -29,14 +29,14 @@ export function FailedBody({
 
       {recentLogs.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[var(--color-text-primary)]">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-ink-primary">
             <code>{recentLogs.join("\n")}</code>
           </pre>
         ) : (
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+            className="self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
           >
             Show recent logs ({recentLogs.length} line
             {recentLogs.length === 1 ? "" : "s"})

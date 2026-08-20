@@ -209,7 +209,7 @@ function mutatingUnlessDryRun(
   const nested = readParamsRecord(record);
   const nestedValue = nested === null ? undefined : nested["dryRun"];
   if (topLevel !== undefined && nestedValue !== undefined && topLevel !== nestedValue) {
-    return "unproven"; // two sources, disagreeing — prove nothing
+    return "unproven"; // two sources, disagreeing - prove nothing
   }
   return dryRunToOperation(nestedValue ?? topLevel);
 }
@@ -236,7 +236,7 @@ function parseArgsRecord(toolArgs: string | null): Record<string, unknown> | nul
   try {
     parsed = JSON.parse(toolArgs);
   } catch {
-    return null; // truncated or malformed — never guess the tail
+    return null; // truncated or malformed - never guess the tail
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
@@ -251,7 +251,7 @@ function parseToolId(toolArgs: string | null): string | null {
   try {
     parsed = JSON.parse(toolArgs);
   } catch {
-    return null; // truncated or malformed — never guess the tail
+    return null; // truncated or malformed - never guess the tail
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;

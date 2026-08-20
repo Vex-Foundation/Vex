@@ -237,7 +237,7 @@ describe("runtime.requestStop", () => {
     expect(mockSignalMissionRunAbortLocal).not.toHaveBeenCalled();
   });
 
-  it("does NOT enqueue or signal for a dead-lease running run — aborts directly", async () => {
+  it("does NOT enqueue or signal for a dead-lease running run - aborts directly", async () => {
     mockGetActiveRunForSession.mockResolvedValueOnce(activeState("running", false));
     mockAbortActiveMissionForSession.mockResolvedValueOnce({
       aborted: true,
@@ -326,7 +326,7 @@ describe("runtime.requestStop", () => {
  * against exactly the work most worth stopping. The renderer path is unchanged
  * (`window.vex.runtime.requestStop` → this channel); only what it finds here is.
  */
-describe("runtime.requestStop — chat session with no mission run", () => {
+describe("runtime.requestStop - chat session with no mission run", () => {
   function noRunState() {
     return { ok: true, data: { hasActiveRun: false, missionRunId: null, status: null, leaseActive: false } };
   }

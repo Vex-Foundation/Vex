@@ -3,7 +3,7 @@
  * BalancesCard top five and the All-assets screen's full register): the
  * address-verified `TokenMark` (`resolveTokenMark` — the security control;
  * NEVER a symbol-keyed icon), the display name with the chain in
- * parentheses ("USD Coin (Base)"), and the mono tabular amount + USD
+ * parentheses ("USD Coin (Base)"), and the tabular amount + USD
  * figures. Unpriced holdings keep the em-dash convention
  * (`formatUsd(null)`), never a fabricated $0.00.
  *
@@ -24,7 +24,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { VexIcon, EyeIcon } from "../../../../components/icons/index.js";
+import { IconInspect } from "../../../../components/icons/index.js";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { chainDisplay } from "@shared/chains/display.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
@@ -139,13 +139,13 @@ export function TokenHoldingRow({
   };
 
   return (
-    <li className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-2 last:border-b-0 last:pb-1">
+    <li className="flex items-center justify-between gap-3 border-b border-line-1 py-2 last:border-b-0 last:pb-1">
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <TokenMark mark={mark} size={15} />
-        <span className="min-w-0 truncate text-[12px] leading-tight text-[var(--vex-text)]">
-          {name ?? "—"}
+        <span className="min-w-0 truncate text-[12px] leading-tight text-ink-primary">
+          {name ?? "-"}
           {chainName !== null ? (
-            <span className="text-[var(--vex-text-3)]"> ({chainName})</span>
+            <span className="text-ink-tertiary"> ({chainName})</span>
           ) : null}
         </span>
         {historyIdentity !== null ? (
@@ -153,21 +153,21 @@ export function TokenHoldingRow({
             type="button"
             aria-label={`Token history: ${name ?? truncateAddress(historyIdentity.tokenAddress)}`}
             onClick={openHistory}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-accent-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-ink-tertiary transition-colors hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
-            <VexIcon icon={EyeIcon} size={13} aria-hidden />
+            <IconInspect size={13} />
           </button>
         ) : null}
       </span>
-      <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
+      <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
         {quantity !== null ? (
-          <span className="text-[var(--vex-text-3)]">{quantity}</span>
+          <span className="text-ink-tertiary">{quantity}</span>
         ) : null}
         <span
           className={
             token.balanceUsd === null
-              ? "text-[var(--vex-text-3)]"
-              : "text-[var(--vex-text)]"
+              ? "text-ink-tertiary"
+              : "text-ink-primary"
           }
         >
           {formatUsd(token.balanceUsd)}

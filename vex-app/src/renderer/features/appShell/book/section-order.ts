@@ -4,8 +4,8 @@
  * The order is persisted as an ID LIST, never component references, so a
  * renamed component cannot invalidate a saved layout and an id from an older or
  * newer build is simply dropped. It lives in the renderer's Zustand persist
- * whitelist (`stores/uiStore.ts`) because it is COSMETIC — the `prologueVersion`
- * doctrine: a display preference never crosses IPC into the privileged process,
+ * whitelist (`stores/uiStore.ts`) because it is COSMETIC — a display
+ * preference never crosses IPC into the privileged process,
  * whose storage is for secrets, wallet state and setup truth.
  *
  * Resolution is deliberately TOLERANT: the payload is user-writable

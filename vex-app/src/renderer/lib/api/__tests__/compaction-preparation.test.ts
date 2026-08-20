@@ -76,7 +76,7 @@ function makeWrapper(client: QueryClient) {
 }
 
 describe("PREPARATION_FALLBACK_POLL_MS", () => {
-  it("is a slow net, not a poll — far slower than the Track-2 active poll", () => {
+  it("is a slow net, not a poll - far slower than the Track-2 active poll", () => {
     expect(PREPARATION_FALLBACK_POLL_MS).toBe(60_000);
     expect(PREPARATION_FALLBACK_POLL_MS).toBeGreaterThan(
       COMPACTION_ACTIVE_POLL_MS,

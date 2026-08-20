@@ -32,7 +32,7 @@ function callRow(name: string, id = "call_1"): MessageRow {
   return { ...BASE, tool_calls: [{ id, command: name, args: { a: 1 } }] };
 }
 
-describe("toDto — injected protocol names become dotted toolIds", () => {
+describe("toDto - injected protocol names become dotted toolIds", () => {
   it("canonicalizes BOTH toolName and every toolCalls[].toolName", () => {
     const dto = toDto(callRow("kyberswap__swap__quote"));
     expect(dto.toolName).toBe("kyberswap.swap.quote");
@@ -48,7 +48,7 @@ describe("toDto — injected protocol names become dotted toolIds", () => {
     expect(dto.toolCalls?.[0]?.toolName).toBe("trench.launch_execute");
   });
 
-  it("preserves camelCase — lower-casing would lose 14 real toolIds", () => {
+  it("preserves camelCase - lower-casing would lose 14 real toolIds", () => {
     const dto = toDto(callRow("dexscreener__tokenPairs"));
     expect(dto.toolName).toBe("dexscreener.tokenPairs");
   });
@@ -59,7 +59,7 @@ describe("toDto — injected protocol names become dotted toolIds", () => {
     expect(dto.toolCalls?.[0]?.toolName).toBe("agent_scan");
   });
 
-  it("leaves an UNRESOLVABLE `__` name verbatim — no venue may be borrowed", () => {
+  it("leaves an UNRESOLVABLE `__` name verbatim - no venue may be borrowed", () => {
     const dto = toDto(callRow("kyberswapp__swap__quote"));
     expect(dto.toolName).toBe("kyberswapp__swap__quote");
     expect(dto.toolCalls?.[0]?.toolName).toBe("kyberswapp__swap__quote");

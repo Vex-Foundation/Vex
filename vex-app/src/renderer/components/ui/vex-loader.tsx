@@ -1,16 +1,11 @@
 /**
- * VEX LOADER — the brand loader for the Chronos Gate setup flow
- * (owner decree 2026-07-21: the DotMatrix grid is retired from setup
- * surfaces; boot work is announced by this ring instead).
+ * VEX LOADER — the brand loader for the boot/setup flow: a clean
+ * hairline ring on tokens-v2 aliases whose border carries ONE traveling
+ * arc (masked conic band, `global-css/chronos-gate.css`) at loader
+ * tempo (1.4s/rev). The center is a `children` slot; inline sizes leave
+ * it empty.
  *
- * Anatomy: a hairline circle whose border carries ONE traveling cobalt
- * (or paper) arc — the exact masked conic-band technique of the console
- * and pending rings (`global-css/setup-gate.css`), at loader tempo
- * (1.4s/rev). The center is a slot: at hero sizes the caller mounts the
- * particle `VexSigil` inside so the VEX logo literally draws itself
- * while the ring spins; at inline sizes the slot stays empty.
- *
- * The center is a `children` slot (not a baked-in sigil import) so this
+ * The center is a `children` slot (no baked-in feature artwork) so this
  * shared ui primitive never imports from `features/` — import direction
  * stays one-way (features → components), and ring-only consumers pay
  * zero canvas cost.
@@ -32,18 +27,15 @@ export type VexLoaderTone = "ink" | "paper";
 export interface VexLoaderProps {
   /** Outer diameter in px (the ring hugs this box). */
   readonly size?: number;
-  /** Arc color family: `ink` = cobalt arc on the shell canvas (default);
-   * `paper` = the pre-shell plate's arc. Historically a paper arc on the
-   * solid-cobalt plate — hence the name — but since the INK REDESIGN the
-   * plate is ink-navy and the tone resolves to the accent's lighter mix
-   * (`global-css/setup-gate.css`). Every `tone="paper"` call site is a
-   * pre-shell surface. */
+  /** Arc color family: `ink` = the theme's interactive accent on the
+   * shell canvas (default); `paper` = a paper arc on the dark pre-shell
+   * plate. Every `tone="paper"` call site is a pre-shell surface. */
   readonly tone?: VexLoaderTone;
   /** Announced once via role="status"; never rendered visually. */
   readonly label: string;
   /** Ring stroke width in px (defaults to 2 via CSS). */
   readonly stroke?: number;
-  /** Optional center content (e.g. `<VexSigil />` at hero sizes). */
+  /** Optional center content (e.g. a brand mark at hero sizes). */
   readonly children?: ReactNode;
   readonly className?: string;
 }

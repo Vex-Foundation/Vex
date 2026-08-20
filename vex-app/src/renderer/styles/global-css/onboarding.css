@@ -10,9 +10,9 @@
  * commit can drop them after grep confirms no remaining usages. */
 [data-vex-onboarding="true"] {
   --vex-onboarding-accent: var(--color-accent-primary);
-  /* Ink canvas — identical to --color-bg-primary so onboarding and shell
-   * read as one continuous room. */
-  --vex-onboarding-bg: #0a0d18;
+  /* Ink canvas — identical to the shell base so onboarding and shell read
+   * as one continuous room. */
+  --vex-onboarding-bg: var(--vex-alias-bg-base);
   /* Project the onboarding accent through the shadcn aliases so stock
    * Button/Input/focus-ring inside wizard forms and the unlock screen
    * speak the same electric cobalt as the keys. */
@@ -75,8 +75,13 @@
 [data-vex-onboarding="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
-[data-vex-onboarding="true"] {
-  scrollbar-color: color-mix(in oklab, var(--vex-onboarding-accent) 38%, transparent) transparent;
-  scrollbar-width: thin;
+/* Standard-property fallback gated off WebKit engines - see the measured
+ * Chromium drop-behavior note in scrollbars.css. */
+@supports not selector(::-webkit-scrollbar) {
+  [data-vex-onboarding="true"],
+  [data-vex-onboarding="true"] * {
+    scrollbar-color: color-mix(in oklab, var(--vex-onboarding-accent) 38%, transparent) transparent;
+    scrollbar-width: thin;
+  }
 }
 

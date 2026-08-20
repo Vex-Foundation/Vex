@@ -46,5 +46,5 @@ export function formatEnvDetail(
   if (state.embeddings.configured) parts.push("Embeddings configured");
   return parts.length > 0
     ? `Partial config: ${parts.join(", ")}.`
-    : "First run — guided setup required.";
+    : "First run - guided setup required.";
 }

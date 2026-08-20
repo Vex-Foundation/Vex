@@ -193,7 +193,7 @@ afterEach(() => {
 });
 
 describe("a previewId minted by the real plan builder is accepted by the real submit", () => {
-  it("accepts a launch with a NONZERO PREBUY — the 2026-08-06 hard block", async () => {
+  it("accepts a launch with a NONZERO PREBUY - the 2026-08-06 hard block", async () => {
     const form = formWithPrebuy("0.0005");
     const preview = await previewedLaunch(form);
 
@@ -249,7 +249,7 @@ describe("a previewId minted by the real plan builder is accepted by the real su
     expect(createWith).not.toHaveBeenCalled();
   });
 
-  it("still accepts when only the ANCHOR BLOCK advanced — the block is provenance", async () => {
+  it("still accepts when only the ANCHOR BLOCK advanced - the block is provenance", async () => {
     const form = formWithPrebuy("0.0005");
     const preview = await previewedLaunch(form);
     anchorBlockNumber += 5n;

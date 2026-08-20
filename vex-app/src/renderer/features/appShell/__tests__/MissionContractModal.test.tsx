@@ -10,9 +10,6 @@
  *
  * Setup mirrors `MissionContractCard.test.tsx`: real QueryClient + a window.vex
  * bridge. The native <dialog> is polyfilled (jsdom has no showModal/close).
- *
- * VexIcon is mocked to render nothing so the PremiumBadge header marker
- * (and CardBody/AutoRetry icons) don't pull the ESM icon lib.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,10 +17,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 
 const { MissionContractModal } = await import("../MissionContractModal.js");
 
@@ -285,7 +278,7 @@ describe("MissionContractModal", () => {
     const callsBeforeAccept = mockPlanGet.mock.calls.length;
     fireEvent.click(accept);
     await waitFor(() => {
-      expect(screen.queryByText(/Plan changed — review again/i)).not.toBeNull();
+      expect(screen.queryByText(/Plan changed - review again/i)).not.toBeNull();
     });
     // Accept button stays in place for re-review.
     expect(
@@ -358,7 +351,7 @@ describe("MissionContractModal", () => {
     );
     await waitFor(() => {
       expect(
-        screen.queryByText(/Couldn't accept the contract — something went wrong/i),
+        screen.queryByText(/Couldn't accept the contract - something went wrong/i),
       ).not.toBeNull();
     });
   });
@@ -446,7 +439,7 @@ describe("MissionContractModal", () => {
     ).not.toBeNull();
   });
 
-  it("a REJECTED plan.get promise (ipc failure) shows the Retry path — never an infinite Loading", async () => {
+  it("a REJECTED plan.get promise (ipc failure) shows the Retry path - never an infinite Loading", async () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
     mockPlanGet.mockRejectedValueOnce(new Error("ipc channel died"));

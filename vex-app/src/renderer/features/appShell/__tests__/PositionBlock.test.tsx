@@ -220,7 +220,7 @@ describe("PositionBlock zero-balance display", () => {
 
     expect(screen.getByText("ETH")).not.toBeNull();
     expect(screen.getByText("0.005 ETH")).not.toBeNull();
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
     expect(screen.queryByText("$0.00")).toBeNull();
     expect(screen.queryByText("No priced balances.")).toBeNull();
     expect(container.querySelectorAll("li")).toHaveLength(1);
@@ -330,7 +330,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
     expect(screen.getByText("0.005 ETH")).not.toBeNull();
     // Chain total AND token valuation both render the muted em dash — a $0.00
     // would fabricate a valuation that does not exist.
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("-").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("$0.00")).toBeNull();
     expect(screen.queryByText("No assets on Robinhood")).toBeNull();
   });

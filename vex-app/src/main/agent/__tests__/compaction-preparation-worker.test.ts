@@ -78,7 +78,7 @@ describe("setupCompactionPreparationWorker supervisor", () => {
     await stop();
   });
 
-  it("defaults to the OWNER's probe — `probeCompactionPreparationsReady`", async () => {
+  it("defaults to the OWNER's probe - `probeCompactionPreparationsReady`", async () => {
     // The wiring is the point: with no `probeReady` override the supervisor
     // must consult `main/database/compaction-preparation-db.ts`, which itself
     // fails closed on an unreachable DB or an unapplied migration 058.

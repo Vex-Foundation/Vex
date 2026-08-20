@@ -126,7 +126,7 @@ describe("mission.stop (runStopDispatch)", () => {
     expect(mockAbortActiveMissionForSession).not.toHaveBeenCalled();
   });
 
-  it("aborts a running run whose lease is NOT active — no live runner would observe a queued stop", async () => {
+  it("aborts a running run whose lease is NOT active - no live runner would observe a queued stop", async () => {
     // Regression: a run can be status='running' with leaseActive=false
     // (parked between autonomous mission slices, or an expired/released
     // lease). Enqueue-only strands the stop forever, leaving the session

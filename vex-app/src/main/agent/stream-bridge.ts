@@ -43,11 +43,12 @@ import {
   streamDeltaBus,
   type StreamDeltaEvent as EngineStreamDeltaEvent,
 } from "@vex-agent/engine/events/stream-bus.js";
+import { sanitizeEngineErrorDetail } from "@shared/engine-error-sanitizer.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";
 import { canonicalToolName } from "./tool-name-canonical.js";
 
-/** Renderer-facing replacement for any provider-supplied error text. */
+/** Fallback when the provider error text sanitizes away to nothing. */
 const SAFE_STREAM_ERROR_MESSAGE = "Stream error";
 
 /**
@@ -116,13 +117,13 @@ export function toRendererStreamDelta(
       payload = { kind: "aborted" };
       break;
     case "error":
-      // Raw provider text is NOT trusted at the boundary — replace it. The
-      // bounded `errorType` enum label DOES cross: it is a closed-vocabulary
-      // classification, not prose, and it is the only thing that lets the
-      // preview say why the stream died instead of just "Stream error".
+      // Raw provider text is NOT trusted at the boundary - it crosses only
+      // through the shared sanitizer (owner decree 2026-08-02: the real cause,
+      // stripped of URLs/tokens/keys/hex and length-capped, instead of the
+      // old blanket constant). The bounded `errorType` label crosses verbatim.
       payload = {
         kind: "error",
-        message: SAFE_STREAM_ERROR_MESSAGE,
+        message: sanitizeEngineErrorDetail(delta.message) ?? SAFE_STREAM_ERROR_MESSAGE,
         code: delta.code ?? null,
         errorType: delta.errorType ?? null,
       };

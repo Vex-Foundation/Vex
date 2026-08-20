@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -19,65 +20,6 @@ import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
-
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  AnalyticsUpIcon: "AnalyticsUpIcon",
-  DownloadIcon: "DownloadIcon",
-  MessageSquareIcon: "MessageSquareIcon",
-  // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
-  GlobeIcon: "GlobeIcon",
-  FileIcon: "FileIcon",
-  TerminalIcon: "TerminalIcon",
-  WrenchIcon: "WrenchIcon",
-  CircleAlertIcon: "CircleAlertIcon",
-  ArchiveIcon: "ArchiveIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-  // Chronos: SidebarProfile's "How Vex works" menu entry.
-  BookOpenIcon: "BookOpenIcon",
-  BridgeIcon: "BridgeIcon",
-  BubbleChatSparkIcon: "BubbleChatSparkIcon",
-  BugIcon: "BugIcon",
-  XIcon: "XIcon",
-  ChartCandlestickIcon: "ChartCandlestickIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  Clock03Icon: "Clock03Icon",
-  DatabaseLightningIcon: "DatabaseLightningIcon",
-  Trash2Icon: "Trash2Icon",
-  FlameIcon: "FlameIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  FilterHorizontalIcon: "FilterHorizontalIcon",
-  BrainIcon: "BrainIcon",
-  MapPinIcon: "MapPinIcon",
-  PanelLeftCloseIcon: "PanelLeftCloseIcon",
-  PanelLeftOpenIcon: "PanelLeftOpenIcon",
-  PanelRightCloseIcon: "PanelRightCloseIcon",
-  PanelRightOpenIcon: "PanelRightOpenIcon",
-  SearchIcon: "SearchIcon",
-  CircleStopIcon: "CircleStopIcon",
-  RadarIcon: "RadarIcon",
-  Settings2Icon: "Settings2Icon",
-  Shield02Icon: "Shield02Icon",
-  SparklesIcon: "SparklesIcon",
-  StarIcon: "StarIcon",
-  TargetIcon: "TargetIcon",
-  PercentIcon: "PercentIcon",
-  // Chronos: SidebarProfile's "Personalize" menu entry (opens VexSetupDialog).
-  UserPenIcon: "UserPenIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  ZapIcon: "ZapIcon",
-}));
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -331,23 +273,28 @@ describe("AppShell", () => {
   it("renders the Vex shell hero and the profile footer with the night-shift hallmark", async () => {
     renderShell();
 
-    // The H1 display statement is DELETED (owner decree 2026-07-21): the
-    // welcome crown is the [sigil + PREVIEW wordmark] logo row, pinned
-    // close-range in SessionWelcomeHero.test.tsx and via the badge below.
+    // The rebrand hero headline is back (accepted mockup, 2026-08-20,
+    // greeting form), pinned close-range in SessionWelcomeHero.test.tsx.
     expect(
-      screen.queryByRole("heading", { name: /What should I execute\?/i }),
-    ).toBeNull();
+      screen.getByRole("heading", {
+        name: (accessibleName: string) =>
+          greetingPoolForHour(new Date().getHours()).some(
+            (variant) =>
+              !variant.withName && variant.text === accessibleName,
+          ),
+      }),
+    ).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /New session/i }).length).toBeGreaterThan(0);
     // Healthy runtime → the profile subtitle speaks the Chronos hallmark.
     await screen.findByText("The night shift is active.");
     // The bare version stamp lives in the SESSION rail's collapse header;
     // on the welcome stage the right edge is the floating Portfolio tab
-    // (no version chrome) and the hero's PREVIEW badge carries the version.
+    // (no version chrome) and the hero carries only the eyebrow tooltip.
     expect(screen.queryByText("v0.0.0-test")).toBeNull();
-    expect(screen.getByText("PREVIEW · v0.0.0-test")).not.toBeNull();
+    expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
-  it("profile menu carries exactly six entries (no Missions — Sessions covers it)", async () => {
+  it("profile menu carries exactly six entries (no Missions - Sessions covers it)", async () => {
     renderShell();
     await screen.findByText("The night shift is active.");
 
@@ -372,13 +319,17 @@ describe("AppShell", () => {
         screen.getByRole("menuitem", { name: new RegExp(entry, "i") }),
       ).not.toBeNull();
     }
-    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
+    // Six ACTION entries; the runtime provenance row rides the menu footer
+    // as a disabled (non-actionable) row.
+    const menuItems = screen.getAllByRole("menuitem");
+    expect(menuItems.filter((item) => !item.hasAttribute("disabled"))).toHaveLength(6);
+    expect(menuItems).toHaveLength(7);
     expect(screen.queryByRole("menuitem", { name: /Missions/i })).toBeNull();
     expect(screen.queryByText("Results ledger")).toBeNull();
     expect(screen.getByText("What Vex has learned")).not.toBeNull();
     expect(screen.getByText("Find any conversation")).not.toBeNull();
     expect(screen.getByText("Every move, verified on-chain")).not.toBeNull();
-    expect(screen.getByText("Start here — the five-minute tour")).not.toBeNull();
+    expect(screen.getByText("Start here - the five-minute tour")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /^Memory/i }));
     expect(useUiStore.getState().shellRoute.kind).toBe("memory");
@@ -427,7 +378,7 @@ describe("AppShell", () => {
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 
-  it("shows no pulsing dots anywhere — status is color + words, never motion", async () => {
+  it("shows no pulsing dots anywhere - status is color + words, never motion", async () => {
     const view = renderShell();
     await screen.findByText("The night shift is active.");
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
@@ -567,8 +518,7 @@ describe("AppShell", () => {
     // SidebarHomeSigil.test.tsx; the rail's $VEX widget legitimately says VEX).
     const mark = sidebar?.querySelector("[data-vex-home-mark]");
     expect(mark).not.toBeNull();
-    expect(mark?.tagName).toBe("IMG");
-    expect(mark?.getAttribute("src")).toBe("/logo_clean.png");
+    expect(mark?.querySelector("svg path")).not.toBeNull();
     expect(mark?.textContent).toBe("");
   });
 
@@ -593,6 +543,48 @@ describe("AppShell", () => {
     ).toBeNull();
   });
 
+  it("solves the shell grid tracks from the solver (sidebar 280px, welcome BOOK auto)", () => {
+    const view = renderShell();
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    expect(frame).not.toBeNull();
+    // jsdom: no ResizeObserver, viewport = window.innerWidth (1024). Welcome
+    // stage keeps the BOOK track auto (the floating tab sizes itself).
+    expect(frame?.style.gridTemplateColumns).toBe("280px minmax(0, 1fr) auto");
+  });
+
+  it("mounts the sidebar drag handle only while the sidebar is expanded", () => {
+    const view = renderShell();
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='sidebar']"),
+    ).not.toBeNull();
+    // Welcome stage: no BOOK handle (the floating tab is not a grid column).
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='book']"),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Collapse sessions sidebar/i }),
+    );
+    expect(
+      view.container.querySelector(".vex-shell-handle[data-side='sidebar']"),
+    ).toBeNull();
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    // The collapsed rail is the fixed 56px track.
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) auto");
+  });
+
+  it("a dragged sidebar width re-solves the track and persists through the store", () => {
+    const view = renderShell();
+    act(() => useUiStore.getState().setSidebarWidth(342));
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    expect(frame?.style.gridTemplateColumns).toBe("342px minmax(0, 1fr) auto");
+  });
 });
 
 function makeAgentRow(title: string): SessionListItem {

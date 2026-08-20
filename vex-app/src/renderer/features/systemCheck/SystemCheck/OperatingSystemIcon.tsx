@@ -8,7 +8,7 @@
  * `dangerouslySetInnerHTML`).
  */
 
-import { Settings2Icon, VexIcon } from "../../../components/icons/index.js";
+import { IconSettings } from "../../../components/icons/index.js";
 import { Apple, Linux, Windows } from "@thesvg/react";
 
 export type Platform = "win32" | "darwin" | "linux" | "other";
@@ -39,7 +39,7 @@ export function OperatingSystemIcon({
       return <Linux {...commonProps} />;
     default:
       return (
-        <VexIcon icon={Settings2Icon} size={22} aria-hidden />
+        <IconSettings size={22} />
       );
   }
 }

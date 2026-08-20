@@ -46,7 +46,7 @@ describe("providerListEndpoints schemas", () => {
     }
   });
 
-  it("accepts a null uptime — absence is a legal, distinct value", () => {
+  it("accepts a null uptime - absence is a legal, distinct value", () => {
     expect(
       providerEndpointOptionSchema.safeParse({
         ...endpoint,
@@ -102,7 +102,7 @@ describe("providerPersistInput endpointTag", () => {
     model: "anthropic/claude-sonnet-4.5",
   };
 
-  it("is optional — Auto omits it entirely", () => {
+  it("is optional - Auto omits it entirely", () => {
     expect(providerPersistInputSchema.parse(base)).toEqual(base);
   });
 

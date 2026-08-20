@@ -171,6 +171,12 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
 check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTML/eval in our code", () => {
   const srcDir = path.join(root, "src", "renderer");
   if (!existsSync(srcDir)) throw new Error(`missing: ${srcDir}`);
+  // The pre-paint theme stamp reads (never writes) the Zustand persist
+  // payload before the bundle loads; CSP forbids inlining it. This is the
+  // ONE sanctioned localStorage reader outside the persist middleware.
+  const SANCTIONED_LOCALSTORAGE_FILES = new Set([
+    path.join(srcDir, "public", "theme-boot.js"),
+  ]);
   const violations = [];
   const walk = (dir) => {
     for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -186,8 +192,18 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
         walk(full);
       } else if (/\.(tsx?|jsx?|mts|cts)$/.test(ent.name)) {
         const src = readFileSync(full, "utf8");
-        if (/\blocalStorage\.(setItem|getItem|removeItem)\b/.test(src)) {
+        if (
+          /\blocalStorage\.(setItem|getItem|removeItem)\b/.test(src) &&
+          !SANCTIONED_LOCALSTORAGE_FILES.has(full)
+        ) {
           violations.push(`${full}: uses localStorage (allowed only via Zustand persist whitelist)`);
+        }
+        // The icon library left with the rebrand (F6): components/icons/
+        // glyphs is the only icon source. components.json still says
+        // "iconLibrary": "lucide" (fixed shadcn vocabulary), so this gate is
+        // what turns an accidental `shadcn add` re-import into a red build.
+        if (/from\s+["']lucide-react["']/.test(src)) {
+          violations.push(`${full}: imports lucide-react (removed in the rebrand; use components/icons glyphs)`);
         }
         if (/\bsessionStorage\.(setItem|getItem|removeItem)\b/.test(src)) {
           violations.push(`${full}: uses sessionStorage (forbidden)`);
@@ -210,7 +226,6 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
 
 // 6. brand assets — exist, decode, expected dimensions, byte budget, no EXIF
 const BRAND_ASSETS = [
-  { file: "logo_clean.png", width: 500, height: 500, format: "png", maxBytes: 40_000 },
   { file: "vex.jpg", width: 1254, height: 1254, format: "jpeg", maxBytes: 130_000 },
 ];
 

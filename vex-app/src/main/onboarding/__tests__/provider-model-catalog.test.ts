@@ -210,7 +210,7 @@ describe("in-flight dedup + abort detach (D1a)", () => {
     expect(r1).toBe(r2);
   });
 
-  it("a caller's own AbortSignal detaches ONLY that caller — the shared fetch keeps running for the other waiter", async () => {
+  it("a caller's own AbortSignal detaches ONLY that caller - the shared fetch keeps running for the other waiter", async () => {
     let resolveList: (value: unknown) => void = () => {};
     const list = vi.fn().mockReturnValue(
       new Promise((resolve) => {
@@ -289,7 +289,7 @@ describe("failure cooldown (D1)", () => {
   // Blocker 3 (fix-wave): a WARM cache's refresh failure used to return the
   // stale snapshot WITHOUT arming the cooldown, so every subsequent call
   // during an outage re-fired the network — this pins the fix.
-  it("arms the cooldown on a WARM-cache failure too — a second call inside the window makes no fetch and serves the stale cache", async () => {
+  it("arms the cooldown on a WARM-cache failure too - a second call inside the window makes no fetch and serves the stale cache", async () => {
     let now = 1_000;
     const initialClient = clientFactory([model()]);
     const initial = await loadProviderModelCatalog({
@@ -321,7 +321,7 @@ describe("failure cooldown (D1)", () => {
     expect(failing).toHaveBeenCalledTimes(1);
   });
 
-  it("an abort during a cold fetch does NOT arm the cooldown — the very next call still retries the network", async () => {
+  it("an abort during a cold fetch does NOT arm the cooldown - the very next call still retries the network", async () => {
     let now = 0;
     const abort = Object.assign(new Error("cancelled"), {
       name: "RequestAbortedError",
@@ -369,7 +369,7 @@ describe("keyless catalogue client (SECURITY, blocker 1)", () => {
 });
 
 describe("successful refresh with failed hook extraction (D1)", () => {
-  it("degrades modelMetadata to null on a successful SDK refresh whose hook extraction fails — never the stale prior map", async () => {
+  it("degrades modelMetadata to null on a successful SDK refresh whose hook extraction fails - never the stale prior map", async () => {
     let now = 0;
     const firstFetcher = fetcherReturning({
       data: [

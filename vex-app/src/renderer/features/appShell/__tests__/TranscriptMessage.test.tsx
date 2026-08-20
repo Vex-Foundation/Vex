@@ -127,10 +127,10 @@ describe("TranscriptMessage tool acts (S5)", () => {
     ).not.toBeNull();
     const btn = screen.getByRole("button", { name: /Wallet read/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
-    expect(screen.queryByText('{"chain":"base"}')).toBeNull();
+    expect(document.querySelector("[data-vex-json-tree]")).toBeNull();
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText('{"chain":"base"}')).not.toBeNull(); // params on expand
+    expect(document.querySelector("[data-vex-json-tree]")).not.toBeNull(); // params on expand (C9 tree)
     expect(screen.getByText("Args")).not.toBeNull(); // S5 section heading
     // No result merged → the quiet row shows no Output section.
     expect(screen.queryByText("Output")).toBeNull();
@@ -495,7 +495,7 @@ describe("TranscriptMessage tool card duration", () => {
     ).toBe("2.3 s");
   });
 
-  it("shows NO chip for a call that never ran — null must not read as 0 s", () => {
+  it("shows NO chip for a call that never ran - null must not read as 0 s", () => {
     for (const value of [null, undefined]) {
       const view = render(
         createElement(TranscriptMessage, { row: toolRowWith(value) }),

@@ -35,7 +35,7 @@ function wrappedError(signals: Record<string, unknown>): Error {
   return err;
 }
 
-describe("classifyEngineError — the 429 that started this", () => {
+describe("classifyEngineError - the 429 that started this", () => {
   it("names the rate limit AND the provider's retry hint", () => {
     const vexError = classifyEngineError(
       rawError({ statusCode: 429, errorType: "rate_limit_exceeded", retryAfterSeconds: 41 }),
@@ -62,7 +62,7 @@ describe("classifyEngineError — the 429 that started this", () => {
   });
 });
 
-describe("classifyEngineError — category copy", () => {
+describe("classifyEngineError - category copy", () => {
   it("separates out-of-credit from a bad key inside the account category", () => {
     expect(classifyEngineError(rawError({ statusCode: 402 }), CORR).code).toBe(
       "provider.insufficient_credits",
@@ -100,7 +100,7 @@ describe("classifyEngineError — category copy", () => {
     expect(vexError.message).toContain("image");
   });
 
-  it("distinguishes an unreadable response — its only signal is the class name", () => {
+  it("distinguishes an unreadable response - its only signal is the class name", () => {
     const vexError = classifyEngineError(
       rawError({ errorClass: "SDKValidationError" }),
       CORR,
@@ -128,7 +128,7 @@ describe("classifyEngineError — category copy", () => {
   });
 });
 
-describe("classifyEngineError — the generic message is now a LAST resort", () => {
+describe("classifyEngineError - the generic message is now a LAST resort", () => {
   it("is reached only when nothing at all is known", () => {
     expect(classifyEngineError(new Error("mystery"), CORR).message).toBe(
       "Unable to process the message.",

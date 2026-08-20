@@ -112,7 +112,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — agent_activity lend/prediction (W5, migration 049)", () => {
+describe("getTokenHistory - agent_activity lend/prediction (W5, migration 049)", () => {
   /** A Jupiter Lend deposit — one role per on-chain tx, no allowance legs. */
   function lendAgentRow(overrides: Partial<Record<string, unknown>> = {}) {
     return {
@@ -175,7 +175,7 @@ describe("getTokenHistory — agent_activity lend/prediction (W5, migration 049)
     expect(entry.status).toBe("confirmed");
   });
 
-  it("maps a confirmed prediction row lacking decoder-proven executed data to a BLANK amount (deliberate scope limit — see delta log; never a mislabelled value)", async () => {
+  it("maps a confirmed prediction row lacking decoder-proven executed data to a BLANK amount (deliberate scope limit - see delta log; never a mislabelled value)", async () => {
     scriptTransaction({
       page: [lendAgentRow({ product_type: "prediction", namespace: "jupiter" })],
     });

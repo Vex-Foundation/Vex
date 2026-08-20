@@ -166,7 +166,7 @@ describe("runtime DTO lastError", () => {
     expect(result.data.lastError).toEqual({ statusCode: 429 });
   });
 
-  it("selects named evidence keys — never the evidence column or stop_summary", async () => {
+  it("selects named evidence keys - never the evidence column or stop_summary", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [pausedRow()] });
     await getActiveRunForSession(SESSION, CORRELATION);
 

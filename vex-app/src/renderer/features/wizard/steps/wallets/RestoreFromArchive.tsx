@@ -78,7 +78,7 @@ export function RestoreFromArchive(): JSX.Element {
         }}
       />
 
-      <p className="text-xs text-[var(--color-text-muted)]">
+      <p className="text-xs text-ink-tertiary">
         Restoring replaces your current wallets with the ones in the selected
         backup. Vex will ask you to confirm before replacing anything.
       </p>

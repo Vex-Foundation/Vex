@@ -3,8 +3,8 @@
  *
  * Truncation: `0x1234…abcd` (6 chars from start, 4 from end). Short
  * enough to scan visually, long enough to disambiguate at a glance.
- * Copy uses `navigator.clipboard.writeText`; visual checkmark feedback
- * for 1.5s. No Toast primitive needed for M8.
+ * Copy + 1.5s checkmark feedback ride the shared `useCopyFeedback` hook
+ * (lib/use-copy-feedback.ts); feedback fires only on a real success.
  *
  * Accessibility:
  *  - Address is rendered in a `<code>` so screen readers announce it
@@ -13,8 +13,9 @@
  *    and "Address copied" so AT users know the action result.
  */
 
-import { useEffect, useRef, useState, type JSX } from "react";
+import { type JSX } from "react";
 import { cn } from "../../lib/utils.js";
+import { useCopyFeedback } from "../../lib/use-copy-feedback.js";
 
 export interface AddressDisplayProps {
   readonly address: string;
@@ -30,7 +31,6 @@ export interface AddressDisplayProps {
   readonly copiedLabel?: string;
 }
 
-const COPY_FEEDBACK_MS = 1500;
 const PREFIX_LEN = 6;
 const SUFFIX_LEN = 4;
 
@@ -65,29 +65,6 @@ function CopyStateGlyph({ copied }: { readonly copied: boolean }): JSX.Element {
   );
 }
 
-/**
- * Permissionless copy: an off-screen readonly textarea + the selection copy
- * command. Deprecated API, but the reliable path in a renderer whose
- * permissions API is deny-all — no privileged IPC surface needed for a
- * public address string.
- */
-function copyViaSelection(text: string): boolean {
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    ta.remove();
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 export function AddressDisplay({
   address,
   className,
@@ -96,32 +73,7 @@ export function AddressDisplay({
   copyLabel = "Copy address",
   copiedLabel = "Address copied",
 }: AddressDisplayProps): JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async (): Promise<void> => {
-    // The shell's permission handlers are deny-all (main/permissions.ts), so
-    // `navigator.clipboard.writeText` is rejected in the renderer. Try it
-    // first (future-proof), then fall back to the selection-based copy path,
-    // which needs no permissions API. Feedback fires ONLY on a real success.
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(address);
-      ok = true;
-    } catch {
-      ok = copyViaSelection(address);
-    }
-    if (!ok) return;
-    setCopied(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-  };
+  const { copied, onCopy } = useCopyFeedback(address);
 
   const displayed = truncate ? truncateAddress(address) : address;
 
@@ -132,22 +84,20 @@ export function AddressDisplay({
         data-vex-address-copy={copied ? "copied" : "idle"}
       >
         <code
-          className="font-mono text-[11px] text-[var(--color-text-secondary)]"
+          className="font-mono text-[11px] text-ink-secondary"
           title={truncate ? address : undefined}
         >
           {displayed}
         </code>
         <button
           type="button"
-          onClick={() => {
-            void handleCopy();
-          }}
+          onClick={onCopy}
           aria-label={copied ? copiedLabel : copyLabel}
           className={cn(
             "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px]",
             "border border-white/[0.08] bg-white/[0.025]",
-            "text-[var(--color-text-muted)] transition-colors",
-            "hover:border-white/[0.16] hover:text-[var(--color-text-primary)]",
+            "text-ink-tertiary transition-colors",
+            "hover:border-white/[0.16] hover:text-ink-primary",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)]",
             copied &&
               "border-[color-mix(in_oklab,var(--color-success)_35%,transparent)] text-[var(--color-success)]",
@@ -183,9 +133,7 @@ export function AddressDisplay({
       </code>
       <button
         type="button"
-        onClick={() => {
-          void handleCopy();
-        }}
+        onClick={onCopy}
         aria-label={copied ? copiedLabel : copyLabel}
         className="rounded-sm px-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >

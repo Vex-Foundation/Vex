@@ -24,7 +24,7 @@ vi.mock("../db-config.js", () => ({
   buildPoolConfig: async () => null,
 }));
 
-describe("bug-reports-db — unavailable contract", () => {
+describe("bug-reports-db - unavailable contract", () => {
   it("throws BugReportsDbUnavailableError when buildPoolConfig returns null", async () => {
     const mod = await import("../bug-reports-db.js");
     await expect(

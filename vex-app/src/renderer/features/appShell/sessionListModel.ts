@@ -139,11 +139,6 @@ function truncateForDisplay(value: string): string {
     : value;
 }
 
-export function getSessionSubtitle(row: SessionListItem): string {
-  if (row.mode === "mission") return row.initialGoal ?? "Mission setup";
-  return "Agent conversation";
-}
-
 export function getMissionActivity(row: SessionListItem): MissionActivity | null {
   if (row.mode !== "mission" || row.missionStatus === null) return null;
   if (ACTIVE_MISSION_STATUSES.has(row.missionStatus)) {

@@ -1,7 +1,7 @@
 /**
  * Portfolio Overview — the welcome tab's hero card: the Total Value figure
- * (the tab's ONE serif display number — everything else stays on the
- * sans/mono grammar), the snapshot delta in the existing solid
+ * (the tab's ONE display number, Inter Tight 600 tabular), the snapshot
+ * delta in the existing solid
  * direction-color convention (no shimmer, no washing), and the wallet-scope
  * chips: "All wallets" + one chip per configured wallet, family primaries
  * wearing the Primary badge.
@@ -32,9 +32,18 @@ import {
   flattenPortfolioWallets,
   type PortfolioWallet,
 } from "./wallet-scope.js";
+import {
+  scopeSessionId,
+  type PortfolioCardScope,
+} from "./portfolio-scope.js";
 
-export function PortfolioOverviewCard(): JSX.Element {
-  const globalQuery = usePortfolio(null);
+export function PortfolioOverviewCard({
+  scope,
+}: {
+  /** Wallet scope this card reads (studio seam #3) — never session state read inside. */
+  readonly scope: PortfolioCardScope;
+}): JSX.Element {
+  const globalQuery = usePortfolio(scopeSessionId(scope));
   const walletsQuery = useAvailableWallets();
   const inventory = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   const wallets = inventory !== null ? flattenPortfolioWallets(inventory) : [];
@@ -74,7 +83,7 @@ export function PortfolioOverviewCard(): JSX.Element {
         </CardStateNote>
       ) : globalPortfolio === null || globalPortfolio.walletCount === 0 ? (
         <CardStateNote>
-          No wallets configured yet — add your first below and your total
+          No wallets configured yet - add your first below and your total
           appears here.
         </CardStateNote>
       ) : (
@@ -106,21 +115,22 @@ function TotalFigure({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
         Total value
       </span>
-      {/* Serif is rationed to this ONE display figure (typography law). */}
-      <span className="font-serif text-[34px] leading-none tracking-[-0.01em] text-foreground">
+      {/* Display figure: Inter Tight 600 tabular — the serif retired to the
+        * gate voice (tokens v2 typography law). */}
+      <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
         {formatUsd(portfolio?.liveTotalUsd ?? null)}
       </span>
       {portfolio !== null &&
       portfolio.snapshotTotalUsd !== null &&
       portfolio.pnlVsPrev !== null ? (
-        <span className="flex items-baseline gap-1.5 font-mono text-[11px] tabular-nums">
+        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums">
           <span className={deltaToneClass(portfolio.pnlVsPrev)}>
             {formatUsdDelta(portfolio.pnlVsPrev)}
           </span>
-          <span className="text-[var(--vex-text-3)]">vs last snapshot</span>
+          <span className="text-ink-tertiary">vs last snapshot</span>
         </span>
       ) : null}
     </div>
@@ -130,9 +140,9 @@ function TotalFigure({
 /** Solid direction colors, same convention as the rail's PnL readout
  * (`PositionBlock.pnlToneClass`): up = success, down = warn, flat = muted. */
 function deltaToneClass(pnl: number): string {
-  if (pnl > 0) return "text-[var(--color-success)]";
-  if (pnl < 0) return "text-[var(--vex-warn-text)]";
-  return "text-[var(--vex-text-3)]";
+  if (pnl > 0) return "text-success";
+  if (pnl < 0) return "text-warning-label";
+  return "text-ink-tertiary";
 }
 
 function ScopeChipRow({
@@ -194,8 +204,8 @@ function ScopeChip({
       className={cn(
         "inline-flex h-6 max-w-[150px] items-center gap-1.5 rounded-full border px-2 text-[10.5px] transition-colors",
         pressed
-          ? "border-[var(--vex-accent-border-strong)] text-[var(--vex-text)]"
-          : "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]",
+          ? "border-accent-primary text-ink-primary"
+          : "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary",
       )}
     >
       {chainId !== undefined ? <ChainIcon chainId={chainId} size={11} /> : null}

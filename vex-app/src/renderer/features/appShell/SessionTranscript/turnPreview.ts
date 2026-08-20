@@ -198,6 +198,7 @@ export function useTurnPreview(input: TurnPreviewInput): TurnPreviewResult {
     startedAtMs,
     status: "working",
     errorType: null,
+    errorDetail: null,
   };
   return { preview: placeholder.current, centredSceneEligible };
 }

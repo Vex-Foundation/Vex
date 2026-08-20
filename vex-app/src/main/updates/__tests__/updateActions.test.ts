@@ -251,7 +251,7 @@ describe("restartAndInstallNow (step 2: explicit restart)", () => {
   });
 });
 
-describe("Try again — recovery FROM blockedByOperation (Codex final-review blocker)", () => {
+describe("Try again - recovery FROM blockedByOperation (Codex final-review blocker)", () => {
   const BLOCKED_DOWNLOAD = {
     kind: "blockedByOperation",
     currentVersion: "1.0.0",

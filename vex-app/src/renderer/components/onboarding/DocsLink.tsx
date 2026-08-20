@@ -8,7 +8,7 @@
  * `opener` open against a freshly-launched browser tab is bad hygiene.
  */
 
-import { ArrowUpRightIcon, VexIcon } from "../icons/index.js";
+import { IconArrowUpRight } from "../icons/index.js";
 
 interface DocsLinkProps {
   readonly href: string;
@@ -22,13 +22,13 @@ export function DocsLink({ href, label }: DocsLinkProps): JSX.Element {
       target="_blank"
       rel="noopener noreferrer"
       // Token-driven: the label reads `--vex-accent-text` (the accent's
-      // lighter mix) because accent AS TEXT on the #070b1e pre-shell plate
-      // needs it — raw #1f44ff is 3.09:1 there, the mix is 7.99:1. The
-      // focus ring is a solid mark and keeps --color-ring.
-      className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
+      // lighter mix) because accent AS TEXT needs it - raw accent falls
+      // short of contrast on the plate. The focus ring is a solid mark and
+      // keeps --color-ring.
+      className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base"
     >
       {label}
-      <VexIcon icon={ArrowUpRightIcon} size={12} aria-hidden />
+      <IconArrowUpRight size={12} />
     </a>
   );
 }

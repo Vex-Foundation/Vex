@@ -60,12 +60,12 @@ export function CardBody({ draft }: CardBodyProps): JSX.Element {
   const constraints = formatConstraints(draft);
   const restrictions = formatRestrictions(draft);
   return (
-    <div className="space-y-3 px-4 py-3 text-[var(--vex-text-2)]">
+    <div className="space-y-3 rounded-xl border border-line-1 bg-surface-1 px-4 py-3 text-ink-secondary">
       <Field label="Goal">
-        <p className="text-foreground">
+        <p className="text-ink-primary">
           {draft.goal?.trim() || (
-            <span className="italic text-[var(--vex-text-3)]">
-              (no goal yet — talk to Vex to outline one)
+            <span className="italic text-ink-tertiary">
+              (no goal yet - talk to Vex to outline one)
             </span>
           )}
         </p>
@@ -93,13 +93,13 @@ export function CardBody({ draft }: CardBodyProps): JSX.Element {
       {draft.stopConditions.length > 0 ? (
         <Field
           label="Stop conditions"
-          hint="Host-only — Vex cannot change these"
+          hint="Host-only - Vex cannot change these"
         >
           <BulletList items={draft.stopConditions} />
         </Field>
       ) : null}
       {draft.renewedFromMissionId !== null ? (
-        <p className="text-xs italic text-[var(--vex-text-3)]">
+        <p className="text-xs italic text-ink-tertiary">
           Renewed from mission{" "}
           <span className="font-mono">{draft.renewedFromMissionId}</span>
         </p>
@@ -117,7 +117,7 @@ interface FieldProps {
 function Field({ label, hint, children }: FieldProps): JSX.Element {
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <div className="flex items-center gap-2 font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
         <span>{label}</span>
         {hint ? <span className="text-[10px] italic">· {hint}</span> : null}
       </div>
@@ -160,7 +160,7 @@ function DeployedCapitalField({
     return (
       <Field label="Deployed capital">
         <div data-vex-field="deployed-capital">
-          <span className="italic text-[var(--vex-text-3)]">Not declared</span>
+          <span className="italic text-ink-tertiary">Not declared</span>
         </div>
       </Field>
     );
@@ -171,10 +171,10 @@ function DeployedCapitalField({
   return (
     <Field label="Deployed capital">
       <div data-vex-field="deployed-capital" className="space-y-0.5">
-        <p className="text-foreground">
+        <p className="text-ink-primary">
           {symbol === null ? `${amount} on ${chain}` : `${amount} ${symbol} on ${chain}`}
         </p>
-        <p className="break-all font-mono text-[11px] text-[var(--vex-text-3)]">
+        <p className="break-all font-mono text-[11px] text-ink-tertiary">
           {capital.amountRaw} raw @ {capital.decimals} decimals ·{" "}
           {capital.assetAddress}
         </p>
@@ -189,7 +189,7 @@ function ChipList({ items }: { readonly items: readonly string[] }): JSX.Element
       {items.map((item) => (
         <span
           key={item}
-          className="max-w-full break-all rounded-[3px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+          className="max-w-full break-all rounded-[3px] border border-line-3 px-1.5 py-0.5 font-mono text-[11px] text-ink-primary"
         >
           {item}
         </span>
@@ -204,7 +204,7 @@ function BulletList({
   readonly items: readonly string[];
 }): JSX.Element {
   return (
-    <ul className="list-disc space-y-0.5 pl-5 text-foreground">
+    <ul className="list-disc space-y-0.5 pl-5 text-ink-primary">
       {items.map((item) => (
         <li key={item}>{item}</li>
       ))}
@@ -273,13 +273,13 @@ export function AutoRetrySection({
   onToggle,
 }: AutoRetrySectionProps): JSX.Element {
   return (
-    <div className="border-t border-[var(--vex-line)] px-4 py-3">
+    <div className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <div className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
             Auto-retry on error
           </div>
-          <p className="text-xs text-[var(--vex-text-2)]">
+          <p className="text-xs text-ink-secondary">
             Re-attempt up to 5× after a provider or runtime error. Turns itself
             off once the run performs a wallet, signing, or other
             state-changing action.
@@ -294,10 +294,10 @@ export function AutoRetrySection({
           onClick={() => onToggle(!enabled)}
           data-vex-action="toggle-auto-retry"
           className={cn(
-            "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50",
+            "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-50",
             enabled
-              ? "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent)]"
-              : "border-white/[0.12] bg-white/[0.06]",
+              ? "border-accent-primary/85 bg-accent-primary"
+              : "border-line-4 bg-interactive-active",
           )}
         >
           <span
@@ -307,7 +307,7 @@ export function AutoRetrySection({
               // the accent-contrast ink (white on cobalt, ink on lime). Off:
               // white knob on the dark track reads in both themes.
               enabled
-                ? "translate-x-[18px] bg-[var(--vex-accent-contrast)]"
+                ? "translate-x-[18px] bg-ink-on-accent"
                 : "translate-x-[3px] bg-white",
             )}
           />

@@ -98,7 +98,7 @@ describe("resolveLockerImageBytesForLaunch", () => {
     await expect(resolveLockerImageBytesForLaunch(IMAGE_ID)).resolves.toBeNull();
   });
 
-  it("REFUSES bytes that no longer match the recorded digest — the swap case", async () => {
+  it("REFUSES bytes that no longer match the recorded digest - the swap case", async () => {
     const swapped = new Uint8Array([0xff, 0xd8, 0xff, 9, 9, 9, 9, 9]);
     getLockerImage.mockResolvedValue(metadata());
     readImageBytes.mockResolvedValue(swapped);
@@ -193,7 +193,7 @@ describe("mounting into the C2b seam", () => {
     expect(seam.hasLaunchImageOnchainByteResolver()).toBe(false);
   });
 
-  it("fails closed by name when nothing is registered — never an empty image", async () => {
+  it("fails closed by name when nothing is registered - never an empty image", async () => {
     expect(seam.hasLaunchImageByteResolver()).toBe(false);
     await expect(seam.resolveLaunchImageBytes(IMAGE_ID)).rejects.toThrow(
       seam.LaunchImageResolverUnavailableError,

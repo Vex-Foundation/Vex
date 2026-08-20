@@ -57,7 +57,7 @@ export function CompactionHistorySection({
     <section data-vex-section="compaction-history" className={SECTION}>
       <div>
         <h2 className="vex-eyebrow">Compaction history</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           When this session&apos;s older messages were compacted into memory.
         </p>
       </div>
@@ -130,12 +130,12 @@ function CompactionRow({
       ? `#${item.sourceStartMessageId}–#${item.sourceEndMessageId}`
       : item.sourceEndMessageId !== null
         ? `…#${item.sourceEndMessageId}`
-        : "—";
+        : "-";
   return (
     <li
       data-vex-compaction-generation={item.checkpointGeneration}
       data-status={item.status}
-      className="flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] px-1 py-2 text-xs text-[var(--vex-text-2)] last:border-b-0"
+      className="flex flex-wrap items-center gap-2 border-b border-line-2 px-1 py-2 text-xs text-ink-secondary last:border-b-0"
     >
       <span className={PILL}>gen {item.checkpointGeneration}</span>
       <span className={PILL}>{item.status}</span>
@@ -148,12 +148,12 @@ function CompactionRow({
           onClick={() => onRetry(item.checkpointGeneration)}
           disabled={pending}
           aria-label={`Retry compaction generation ${item.checkpointGeneration}`}
-          className="rounded-[3px] border border-[var(--vex-accent-border)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)]"
+          className="rounded-[3px] border border-accent-primary px-1.5 py-0.5 font-doto text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary"
         >
           {pending ? "Retrying…" : "Retry"}
         </button>
       ) : null}
-      <span className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+      <span className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary">
         {fmtDate(item.completedAt ?? item.createdAt)}
       </span>
     </li>

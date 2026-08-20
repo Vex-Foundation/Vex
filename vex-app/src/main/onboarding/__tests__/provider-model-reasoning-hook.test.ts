@@ -116,7 +116,7 @@ describe("buildReasoningCapabilityMap", () => {
   });
 });
 
-describe("createReasoningCapabilityHook — mechanical fail-open (D1a)", () => {
+describe("createReasoningCapabilityHook - mechanical fail-open (D1a)", () => {
   function jsonResponse(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
       status,
@@ -140,7 +140,7 @@ describe("createReasoningCapabilityHook — mechanical fail-open (D1a)", () => {
     expect(read()).toBeNull();
   });
 
-  it("clone() throwing is caught — the hook resolves normally, capability stays null", async () => {
+  it("clone() throwing is caught - the hook resolves normally, capability stays null", async () => {
     const { hook, read } = createReasoningCapabilityHook();
     const res = jsonResponse({ data: [{ id: "vendor/a" }] });
     vi.spyOn(res, "clone").mockImplementation(() => {
@@ -150,7 +150,7 @@ describe("createReasoningCapabilityHook — mechanical fail-open (D1a)", () => {
     expect(read()).toBeNull();
   });
 
-  it("json() rejecting is caught — the hook resolves normally, capability stays null", async () => {
+  it("json() rejecting is caught - the hook resolves normally, capability stays null", async () => {
     const { hook, read } = createReasoningCapabilityHook();
     const res = jsonResponse({ data: [{ id: "vendor/a" }] });
     const clone = res.clone();
@@ -160,7 +160,7 @@ describe("createReasoningCapabilityHook — mechanical fail-open (D1a)", () => {
     expect(read()).toBeNull();
   });
 
-  it("each createReasoningCapabilityHook() call is request-local — no shared mutable state across instances", async () => {
+  it("each createReasoningCapabilityHook() call is request-local - no shared mutable state across instances", async () => {
     const first = createReasoningCapabilityHook();
     const second = createReasoningCapabilityHook();
     await first.hook(
@@ -173,7 +173,7 @@ describe("createReasoningCapabilityHook — mechanical fail-open (D1a)", () => {
 });
 
 describe("createReasoningCapabilityHook wired into the real HTTPClient (integration)", () => {
-  it("a throwing hook never rejects HTTPClient.request() — the SDK's response still resolves", async () => {
+  it("a throwing hook never rejects HTTPClient.request() - the SDK's response still resolves", async () => {
     const rawBody = JSON.stringify({
       data: [{ id: "vendor/a", reasoning: { supported_efforts: ["high", "medium"] } }],
     });

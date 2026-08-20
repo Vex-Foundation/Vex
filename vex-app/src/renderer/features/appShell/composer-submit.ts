@@ -2,22 +2,41 @@
  * Composer chat-turn submit orchestration (extracted from
  * `SessionComposer.tsx` so the parent stays under the file-size budget).
  *
- * Owns: the draft + notice state machine, the mission-run free-text gate,
- * the retryable-failure notice contract, the stop acknowledgment, and the
+ * Owns: the notice state machine, the mission-run free-text gate, the
+ * retryable-failure notice contract, the stop acknowledgment, the message
+ * queue (a submit while a turn is in flight queues instead of dropping,
+ * and the head auto-drains when the session goes idle - A27), and the
  * welcome→create hand-off that fires a freshly created session's first
- * turn. No JSX — this hook is the composer's submit "why"; the parent only
- * renders the "what" and never re-derives any of this state.
+ * turn. The draft itself lives in the per-session draft store (B1). No JSX.
+ * Stop-availability reading is split into `composer-submit/`.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { Result } from "@shared/ipc/result.js";
-import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { ReasoningEffort } from "@shared/schemas/reasoning.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
 import { useRequestStop, useRuntimeState } from "../../lib/api/runtime.js";
+import {
+  draftKeyFor,
+  readDraft,
+  useComposerDraft,
+  WELCOME_DRAFT_KEY,
+  writeDraft,
+} from "../../lib/composer-drafts.js";
+import {
+  enqueueMessage,
+  takeQueuedMessage,
+  useComposerQueue,
+  type QueuedComposerMessage,
+} from "../../lib/composer-queue.js";
+import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { readStopAvailability } from "./composer-submit/stop-availability.js";
+import {
+  STEERED_TOAST_TEXT,
+  trySteerLiveTurn,
+} from "./composer-submit/steering.js";
 import {
   FREE_TEXT_DISALLOWED,
   gatedReason,
@@ -72,6 +91,12 @@ export interface ComposerSubmit {
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   readonly onRetry: () => void;
   readonly onStop: () => void;
+  /** Queued rows for this session (A27); empty on the welcome composer. */
+  readonly queue: readonly QueuedComposerMessage[];
+  /** Whether a queued row can dispatch immediately (nothing in flight). */
+  readonly sendNowAvailable: boolean;
+  /** Dispatch one queued row now (the dock's send-now action). */
+  readonly sendQueuedNow: (row: QueuedComposerMessage) => void;
 }
 
 /**
@@ -80,7 +105,7 @@ export interface ComposerSubmit {
  * right move, nothing else.
  */
 const STOP_FAILED_NOTICE =
-  "Couldn't stop the run. It's still going — try Stop again.";
+  "Couldn't stop the run. It's still going - try Stop again.";
 
 /**
  * How long the disabled "Stopping…" acknowledgment may stand before the
@@ -144,7 +169,11 @@ export function useComposerSubmit(
   const stopKnownUnavailable = availability === "known-unavailable";
   const handedOffRef = useRef<string | null>(null);
 
-  const [draft, setDraft] = useState<string>("");
+  // Per-session draft (B1): the store keyed by session survives switching
+  // sessions and coming back; the welcome composer uses the reserved key.
+  const draftKey = draftKeyFor(sessionId);
+  const [draft, setDraft] = useComposerDraft(draftKey);
+  const queue = useComposerQueue(sessionId);
   const [notice, setNotice] = useState<ComposerNotice>(null);
   // Stop acknowledgment: first click on Stop cancels the turn AND flips the
   // key to a disabled "Stopping" state so the user sees the request landed.
@@ -246,10 +275,14 @@ export function useComposerSubmit(
               },
             });
           } else {
-            // No Retry → keep the message so it is not lost (restore only if the
-            // user has not typed something new into the now-empty input).
+            // No Retry → keep the message so it is not lost (restore into the
+            // ORIGINAL session's draft slot, and only if the user has not
+            // typed something new there since).
             setNotice({ tone: "error", text: outcome.error.message });
-            setDraft((cur) => (cur.length === 0 ? message : cur));
+            const failedKey = draftKeyFor(targetSessionId);
+            if (readDraft(failedKey).length === 0) {
+              writeDraft(failedKey, message);
+            }
           }
           return;
         }
@@ -312,6 +345,9 @@ export function useComposerSubmit(
     handedOffRef.current = key;
     const { message, reasoningEffort } = createSessionInitialTurn;
     clearCreateSessionInitialTurn();
+    // The welcome draft seeded this turn - release it so returning to the
+    // welcome stage later starts clean (cancelling the create keeps it).
+    writeDraft(WELCOME_DRAFT_KEY, "");
     if (reasoningEffort !== null) {
       setSessionReasoningEffort(sessionId, reasoningEffort);
     }
@@ -350,9 +386,21 @@ export function useComposerSubmit(
         openCreateSession(message, effectiveReasoningEffort);
         return;
       }
-      // Enter can fire a submit even while a turn is in flight (requestSubmit()
-      // ignores the disabled Send button), so gate here.
-      if (submitPending) return;
+      // A submit while a turn is already in flight STEERS the live turn
+      // (A33): the engine persists the message as an interrupt the loop
+      // reads at its next tool-step boundary, and the transcript shows the
+      // steered row. When steering is refused (turn just ended, parked run)
+      // the message QUEUES instead (A27) - never dropped, never doubled.
+      if (submitPending || inFlightRef.current) {
+        setDraft("");
+        const steerOutcome = await trySteerLiveTurn(sessionId, message);
+        if (steerOutcome === "steered") {
+          showToast(STEERED_TOAST_TEXT);
+          return;
+        }
+        enqueueMessage(sessionId, message);
+        return;
+      }
       // Free text is gated while a mission run is active — mission controls
       // live in the MissionControls strip above, not in the composer.
       if (freeTextGate) {
@@ -375,6 +423,29 @@ export function useComposerSubmit(
       submitPending,
       runChatSubmit,
     ],
+  );
+
+  const sendNowAvailable = !submitPending && !freeTextGate && !stopRequested;
+
+  // Queue drain (A27): when the session is idle again and rows are waiting,
+  // dispatch the HEAD through the normal submit path. One row per settle -
+  // the effect re-runs when `submitPending` flips back, so a multi-row queue
+  // drains turn by turn, and a row removed meanwhile is never sent
+  // (`takeQueuedMessage` re-reads the live store).
+  useEffect(() => {
+    if (sessionId === null || !sendNowAvailable || queue.length === 0) return;
+    if (inFlightRef.current) return;
+    const row = takeQueuedMessage(sessionId);
+    if (row !== null) void runChatSubmit(row.text);
+  }, [sessionId, sendNowAvailable, queue, runChatSubmit]);
+
+  const sendQueuedNow = useCallback(
+    (row: QueuedComposerMessage): void => {
+      if (sessionId === null || !sendNowAvailable) return;
+      const taken = takeQueuedMessage(sessionId, row.id);
+      if (taken !== null) void runChatSubmit(taken.text);
+    },
+    [sessionId, sendNowAvailable, runChatSubmit],
   );
 
   const clearNotice = useCallback((): void => setNotice(null), []);
@@ -440,64 +511,9 @@ export function useComposerSubmit(
     onSubmit,
     onRetry,
     onStop,
+    queue,
+    sendNowAvailable,
+    sendQueuedNow,
   };
 }
 
-/**
- * Three states, never two.
- *
- * Collapsing "we do not know" into "not stoppable" is the failure this type
- * exists to prevent: a DB hiccup or an errored read would hide the Stop key
- * from work that is running and spending money. So the unknown state is
- * explicit, and the caller fails toward SHOWING the control.
- *
- * A merely PENDING refetch is NOT unknown — the query keeps serving the last
- * value, so the known answer stands until a new one lands.
- *
- * A persistent DB outage therefore leaves Stop visible. That is the declared
- * conservative posture: a Stop that cannot be applied already surfaces
- * `STOP_FAILED_NOTICE` rather than lying, and the state clears on the next
- * successful `stoppable:false`.
- */
-type StopAvailability =
-  | "known-available"
-  | "known-unavailable"
-  | "unknown";
-
-/** Exactly what `useRuntimeState` serves: the envelope, or nothing read yet. */
-type RuntimeStateQueryData = Result<RuntimeStateDto> | undefined;
-
-/**
- * UNKNOWN means "we ASKED the engine and did not get an answer" — an errored
- * read, at either the transport or the Result layer. Two other absences are
- * deliberately NOT unknown, and both distinctions are load-bearing:
- *
- * NO SESSION. The welcome composer runs with `sessionId === null`, which
- * DISABLES the runtime query, so its data stays `undefined` forever. Read as
- * unknown, that turned Send into a permanent Stop button and the user could
- * never send a first message. A session that does not exist yet is not an
- * unanswered question: there is provably nothing running in it.
- *
- * NOT ASKED YET. On the very first paint the query is still in flight. Read as
- * unknown, EVERY session open would show Stop where Send belongs until an IPC
- * round-trip completed — a guaranteed wrong affordance on the app's most common
- * interaction, to cover a renderer that mounted inside a live slice. That case
- * is now covered by something better: a session-lease ACQUIRE publishes a
- * control-state event (both claim primitives do), which invalidates this query
- * and refetches within milliseconds. The push spine closes the window; guessing
- * "stoppable" for everyone is not the way to close it.
- *
- * An ERRORED read has no such correction — nothing will push it back to the
- * truth — which is exactly why it, and only it, fails open.
- */
-function readStopAvailability(
-  sessionId: string | null,
-  state: RuntimeStateQueryData,
-  isError: boolean,
-): StopAvailability {
-  if (sessionId === null || sessionId.length === 0) return "known-unavailable";
-  if (isError) return "unknown";
-  if (state === undefined) return "known-unavailable";
-  if (!state.ok) return "unknown";
-  return state.data.stoppable ? "known-available" : "known-unavailable";
-}

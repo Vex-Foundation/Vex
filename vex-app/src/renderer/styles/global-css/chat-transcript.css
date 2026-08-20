@@ -1,0 +1,145 @@
+/* Chat transcript chrome: the turn-status shimmer, the running-row sweep,
+ * hover-revealed timestamps, day separators and the Doto turn-stats line.
+ * All ambient loops still under prefers-reduced-motion. */
+
+/* Turn-status shimmer — 5-stop gradient, narrow bright band at 40-60%,
+ * clipped to the glyphs. The highlight stop is blue-300 in BOTH themes
+ * (design-language calibration 2026-08-20: blue-400 never sits on light
+ * surfaces, and chronos' accent-hover is already blue-300) — a justified
+ * theme-invariant static reference. */
+.vex-turn-shimmer {
+  white-space: nowrap;
+  background: linear-gradient(
+    90deg,
+    var(--vex-alias-accent-primary) 0%,
+    var(--vex-alias-accent-primary) 40%,
+    var(--color-blue-300) 50%,
+    var(--vex-alias-accent-primary) 60%,
+    var(--vex-alias-accent-primary) 100%
+  );
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: vex-turn-status-shimmer 1.8s linear infinite;
+}
+@keyframes vex-turn-status-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-turn-shimmer {
+    background-position: 0 0;
+    background-size: 100% 100%;
+    animation: none;
+  }
+}
+/* A clock (or any sibling readout) inside a shimmer parent must RE-DECLARE
+ * -webkit-text-fill-color to escape the parent's transparent fill. */
+.vex-turn-clock {
+  background: none;
+  color: var(--vex-alias-label-tertiary);
+  -webkit-text-fill-color: var(--vex-alias-label-tertiary);
+}
+
+/* Running-row sweep — the inverse of the text shimmer: a 300px band of the
+ * BASE BACKGROUND at 60% washes over the glyphs. color-mix with bg-base makes
+ * one declaration work in both themes. The 90-100% hold gives a beat between
+ * passes (without it the sweep reads as a loading bar). */
+.vex-row-sweep {
+  position: relative;
+  overflow: hidden;
+}
+.vex-row-sweep[data-vex-sweep="running"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 300px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--vex-alias-bg-base) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: vex-tool-row-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes vex-tool-row-sweep {
+  0% {
+    left: -300px;
+  }
+  90%,
+  100% {
+    left: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-row-sweep[data-vex-sweep="running"]::after {
+    animation: none;
+    content: none;
+  }
+}
+
+/* Hover-revealed timestamps. 80ms is the fastest transition in the system —
+ * below the "animation" threshold. hover:hover guards touch (always visible
+ * there); :focus-within keeps keyboard parity; opacity (never display) so
+ * nothing shifts. */
+@media (hover: hover) {
+  [data-time-hover-root] .vex-time-reveal {
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+  [data-time-hover-root]:hover .vex-time-reveal,
+  [data-time-hover-root]:focus-within .vex-time-reveal {
+    opacity: 1;
+  }
+}
+/* Same reveal for the per-message action row (copy). */
+@media (hover: hover) {
+  [data-time-hover-root] .vex-action-reveal {
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+  [data-time-hover-root]:hover .vex-action-reveal,
+  [data-time-hover-root]:focus-within .vex-action-reveal {
+    opacity: 1;
+  }
+}
+
+/* Doto micro-stat register — turn stats, day separators. The dot-matrix face
+ * is the brand signature for statistics; uppercase + tracking per the design
+ * sheet's micro-label rules. */
+.vex-stat-doto {
+  font-family: var(--font-doto);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* Code token classes (lib/markdown/highlight.ts). Restrained palette:
+ * keywords carry the accent, strings the success tone, comments recede;
+ * everything resolves through aliases so both themes read from one sheet. */
+.vex-code-keyword {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-code-string {
+  color: var(--vex-alias-state-success);
+}
+.vex-code-number {
+  color: var(--vex-alias-accent-hover);
+}
+.vex-code-comment {
+  color: var(--vex-alias-label-caption);
+  font-style: italic;
+}
+.vex-code-property {
+  color: var(--vex-alias-label-primary);
+}

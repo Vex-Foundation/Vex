@@ -10,7 +10,7 @@
  */
 
 import type { JSX } from "react";
-import { ArchiveIcon, VexIcon } from "../../components/icons/index.js";
+import { IconArchive } from "../../components/icons/index.js";
 
 export function CompactionMarker({
   content,
@@ -27,7 +27,7 @@ export function CompactionMarker({
     >
       <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
       <span className="flex min-w-0 items-center gap-1.5 text-[var(--vex-text-3)]">
-        <VexIcon icon={ArchiveIcon} size={12} aria-hidden />
+        <IconArchive size={12} />
         <span className="break-words font-mono text-[10px] uppercase tracking-[0.3em]">
           {label}
         </span>

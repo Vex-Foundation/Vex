@@ -77,7 +77,7 @@ describe("setupActivityProgressBridge", () => {
     teardown();
   });
 
-  it("SURVIVES an internal field the DTO does not carry — the `lane` lesson", () => {
+  it("SURVIVES an internal field the DTO does not carry - the `lane` lesson", () => {
     const teardown = setupActivityProgressBridge();
 
     // Exactly the shape that severed the sibling channel: an extra internal
@@ -106,7 +106,7 @@ describe("setupActivityProgressBridge", () => {
     teardown();
   });
 
-  it("carries no amounts, hashes or token identities — ids and reasons only", () => {
+  it("carries no amounts, hashes or token identities - ids and reasons only", () => {
     const teardown = setupActivityProgressBridge();
 
     emitPendingProgress(PROGRESS);

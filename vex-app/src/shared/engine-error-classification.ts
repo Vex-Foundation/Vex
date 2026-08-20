@@ -221,3 +221,70 @@ export function classifyEngineFailure(
 
   return "unknown";
 }
+
+/**
+ * Remediable-failure vocabulary (owner decree 2026-08-02). Derived from the
+ * real provider codes above, not invented: each member names the ONE user
+ * action that clears the failure. `null` remains the honest answer for
+ * failures with no user-side remedy (refusals, malformed requests, unknowns).
+ */
+export const ENGINE_ERROR_REMEDIES = [
+  /** 402 / payment_required - top up provider credits. */
+  "insufficient-funds",
+  /** 401/403 / authentication / permission_denied - fix provider setup. */
+  "config-invalid",
+  /** 429 / rate_limit_exceeded - wait, then retry. */
+  "rate-limited",
+  /** Overload, 5xx, timeouts, transport errnos - wait for the provider. */
+  "provider-down",
+  /** Context-window overflow - compact or start a new session. */
+  "compact-session",
+  /** A rejected image attachment - remove or replace it. */
+  "remove-attachment",
+] as const;
+
+export type EngineErrorRemedy = (typeof ENGINE_ERROR_REMEDIES)[number];
+
+/** The account category splits by cause: 402 is funds, 401/403 is config. */
+function isInsufficientFunds(signals: EngineFailureSignals): boolean {
+  return (
+    signals.errorType === "payment_required" ||
+    signals.errorClass === "PaymentRequiredResponseError" ||
+    signals.statusCode === 402
+  );
+}
+
+/** The capacity category splits by cause: 429 waits out a limit, the rest wait out the provider. */
+function isRateLimited(signals: EngineFailureSignals): boolean {
+  return (
+    signals.errorType === "rate_limit_exceeded" ||
+    signals.errorClass === "TooManyRequestsResponseError" ||
+    signals.statusCode === 429
+  );
+}
+
+/**
+ * Classify the user-side remedy for a failure, or `null` when there is none.
+ * Built ON TOP of `classifyEngineFailure` so the two vocabularies can never
+ * disagree about what a signal means - remedy only refines a category into the
+ * action that clears it.
+ */
+export function classifyEngineRemedy(
+  signals: EngineFailureSignals,
+): EngineErrorRemedy | null {
+  switch (classifyEngineFailure(signals)) {
+    case "account":
+      return isInsufficientFunds(signals) ? "insufficient-funds" : "config-invalid";
+    case "capacity":
+      return isRateLimited(signals) ? "rate-limited" : "provider-down";
+    case "context":
+      return "compact-session";
+    case "media":
+      return "remove-attachment";
+    case "policy":
+    case "request":
+    case "unreadable_response":
+    case "unknown":
+      return null;
+  }
+}

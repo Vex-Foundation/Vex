@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CopyIcon, VexIcon } from "../../components/icons/index.js";
+import { IconCopy } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LinuxManualInstructionsProps {
@@ -64,7 +64,7 @@ export function LinuxManualInstructions({
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
-        <pre className="max-h-72 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 pr-12 text-xs leading-relaxed text-[var(--color-text-primary)]">
+        <pre className="max-h-72 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 pr-12 text-xs leading-relaxed text-ink-primary">
           <code className="font-mono">{instructions}</code>
         </pre>
         <button
@@ -72,9 +72,9 @@ export function LinuxManualInstructions({
           onClick={() => void handleCopy()}
           aria-label="Copy install commands to clipboard"
           className={cn(
-            "absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--vex-onboarding-bg,var(--color-bg-primary))] px-2.5 py-1 vex-micro text-[var(--color-text-primary)] transition-colors duration-150",
-            "hover:border-[var(--color-text-muted)] hover:bg-[var(--color-bg-elevated)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
+            "absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--vex-onboarding-bg,var(--color-surface-base))] px-2.5 py-1 vex-micro text-ink-primary transition-colors duration-150",
+            "hover:border-ink-tertiary hover:bg-surface-1",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base",
             copyState === "ok"
               ? "border-[color-mix(in_oklab,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
               : copyState === "fail"
@@ -82,14 +82,14 @@ export function LinuxManualInstructions({
                 : "",
           )}
         >
-          <VexIcon icon={CopyIcon} size={12} aria-hidden />
+          <IconCopy size={12} />
           <span aria-live="polite">{copyLabel}</span>
         </button>
       </div>
 
-      <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <p className="text-xs leading-relaxed text-ink-secondary">
         After install: log out and back in (or reboot) so your user joins the{" "}
-        <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[var(--color-text-primary)]">
+        <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-ink-primary">
           docker
         </code>{" "}
         group, then click Recheck below.

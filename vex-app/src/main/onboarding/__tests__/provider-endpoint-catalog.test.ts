@@ -177,7 +177,7 @@ describe("provider endpoint catalogue", () => {
     ]);
   });
 
-  it("caches per model — a second model triggers its own request", async () => {
+  it("caches per model - a second model triggers its own request", async () => {
     const client = clientFactory([endpoint()]);
     await loadProviderEndpointCatalog("anthropic/claude-sonnet-4.5", {
       clientFactory: client.factory,

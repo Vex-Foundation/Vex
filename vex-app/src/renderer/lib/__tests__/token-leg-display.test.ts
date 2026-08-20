@@ -18,12 +18,12 @@
 import { describe, expect, it } from "vitest";
 import { amountDisplay, tokenDisplay } from "../token-leg-display.js";
 
-describe("amountDisplay — default (legacy/untrusted) source", () => {
+describe("amountDisplay - default (legacy/untrusted) source", () => {
   it("renders a dotted decimal that parses to a finite positive number", () => {
     expect(amountDisplay("1.5")).toBe("1.5");
   });
 
-  it("renders nothing for a whole-number string with no decimal point (untrusted — could be raw atomic)", () => {
+  it("renders nothing for a whole-number string with no decimal point (untrusted - could be raw atomic)", () => {
     expect(amountDisplay("50")).toBeNull();
   });
 
@@ -45,7 +45,7 @@ describe("amountDisplay — default (legacy/untrusted) source", () => {
   });
 });
 
-describe("amountDisplay — trustedHuman: true (agent_activity-sourced)", () => {
+describe("amountDisplay - trustedHuman: true (agent_activity-sourced)", () => {
   it("renders a whole-number string with no decimal point (C27)", () => {
     expect(amountDisplay("50", true)).toBe("50");
   });
@@ -74,7 +74,7 @@ describe("amountDisplay — trustedHuman: true (agent_activity-sourced)", () => 
   });
 });
 
-describe("amountDisplay — the whole string must be a canonical decimal", () => {
+describe("amountDisplay - the whole string must be a canonical decimal", () => {
   it.each([
     ["a valid prefix with trailing junk", "240.31garbage"],
     ["markup smuggled after the number", "1.5<script>alert(1)</script>"],
@@ -101,7 +101,7 @@ describe("amountDisplay — the whole string must be a canonical decimal", () =>
 
 // ── tokenDisplay brand gating (inherited from the deleted MovesBlock suite) ──
 
-describe("tokenDisplay — only a known mint may borrow a brand", () => {
+describe("tokenDisplay - only a known mint may borrow a brand", () => {
   const SOL_MINT = "So11111111111111111111111111111111111111112";
 
   it("grants ticker AND brand mark to a KNOWN mint, with the full mint on hover", () => {
@@ -112,7 +112,7 @@ describe("tokenDisplay — only a known mint may borrow a brand", () => {
     });
   });
 
-  it("ignores a scam mint's captured brand claim — the known mint wins", () => {
+  it("ignores a scam mint's captured brand claim - the known mint wins", () => {
     expect(tokenDisplay(SOL_MINT, "USDC", null).text).toBe("SOL");
   });
 
@@ -131,7 +131,7 @@ describe("tokenDisplay — only a known mint may borrow a brand", () => {
     expect(display.iconSymbol).toBe("BONK");
   });
 
-  it("gives the local balances-derived symbol TEXT ONLY — never even a monogram", () => {
+  it("gives the local balances-derived symbol TEXT ONLY - never even a monogram", () => {
     const display = tokenDisplay(null, null, "BONK");
     expect(display.text).toBe("BONK");
     expect(display.iconSymbol).toBeNull();

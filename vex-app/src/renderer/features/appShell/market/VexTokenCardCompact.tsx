@@ -32,7 +32,7 @@ import {
 } from "../../../lib/format.js";
 
 const CARD_CLASS =
-  "rounded-xl border border-[var(--vex-line)] bg-[var(--vex-surface-1)] px-3 py-2.5";
+  "rounded-xl border border-line-2 bg-surface-1 px-3 py-2.5";
 
 // The $VEX DexScreener pair — a renderer-local literal by design: the
 // market IPC schema (`@shared/schemas/market.js`) deliberately carries no
@@ -59,10 +59,10 @@ export function VexTokenCardCompact(): JSX.Element {
         <div className="flex items-center gap-2">
           <VexMark />
           <div className="flex min-w-0 flex-col">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
               $VEX
             </span>
-            <span className="text-[11px] text-[var(--vex-warn-text)]">
+            <span className="text-[11px] text-warning-label">
               Market data unavailable.
             </span>
           </div>
@@ -83,12 +83,12 @@ export function VexTokenCardCompact(): JSX.Element {
         <div className="flex items-center gap-2">
           <VexMark />
           <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
               $VEX
             </span>
             <span
               aria-hidden
-              className="h-4 w-20 animate-pulse rounded bg-[var(--vex-line-strong)]"
+              className="h-4 w-20 animate-pulse rounded bg-line-3"
             />
           </div>
         </div>
@@ -128,18 +128,18 @@ function CompactBody({
         aria-label="Open $VEX on DexScreener"
         className={cn(
           CARD_CLASS,
-          "block transition-colors hover:border-[var(--vex-accent-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+          "block transition-colors hover:border-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
         )}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <VexMark />
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+              <span className="flex items-center gap-1.5 font-doto text-[9px] uppercase tracking-[0.14em] text-ink-tertiary">
                 $VEX
                 {snapshot.stale ? <StaleMarker /> : null}
               </span>
-              <span className="truncate font-display text-[15px] font-extrabold leading-none tracking-[-0.02em] tabular-nums text-[var(--vex-text)]">
+              <span className="truncate font-display text-[15px] font-extrabold leading-none tracking-[-0.02em] tabular-nums text-ink-primary">
                 {priceLabel}
               </span>
             </div>
@@ -169,8 +169,8 @@ function StaleMarker(): JSX.Element {
   return (
     <span
       data-vex-area="vex-token-stale"
-      className="flex items-center gap-1 text-[var(--vex-text-3)]"
-      title="Live feed delayed — showing the last known price."
+      className="flex items-center gap-1 text-ink-tertiary"
+      title="Live feed delayed - showing the last known price."
     >
       <span
         aria-hidden
@@ -206,10 +206,10 @@ function DeltaFigure({
       data-vex-area="vex-token-delta"
       data-shimmer-text={label}
       className={cn(
-        "vex-delta-shimmer inline-flex shrink-0 items-center font-mono text-[11px] font-medium tabular-nums",
-        up && "text-[var(--color-success)]",
-        down && "text-[var(--vex-warn-text)]",
-        !up && !down && "text-[var(--vex-text-3)]",
+        "vex-delta-shimmer inline-flex shrink-0 items-center text-[11px] font-semibold tabular-nums",
+        up && "text-success",
+        down && "text-warning-label",
+        !up && !down && "text-ink-tertiary",
       )}
     >
       {label}

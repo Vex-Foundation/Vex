@@ -200,7 +200,7 @@ describe("the preview CAS", () => {
     expect(createWith).toHaveBeenCalledOnce();
   });
 
-  it("proceeds when only the ANCHOR BLOCK moved and the figure is identical — the live regression", async () => {
+  it("proceeds when only the ANCHOR BLOCK moved and the figure is identical - the live regression", async () => {
     // Two derivations five blocks apart with the same fee refused every honest
     // Deploy under literal id equality (funded UI-path probe, 2026-08-02).
     const executor = vi.fn().mockResolvedValue(CONFIRMED);
@@ -277,7 +277,7 @@ describe("the authorized intent row", () => {
    * authorizes. The create path is now reached ONLY when there is no drafted
    * row; the authorize-existing path is covered in its own block below.
    */
-  it("only ever CREATES for a user-origin launch — an agent draft is authorized in place", async () => {
+  it("only ever CREATES for a user-origin launch - an agent draft is authorized in place", async () => {
     await submitLaunch(
       submitInput({ intentId: "int_from_agent_form" }),
       vi.fn().mockResolvedValue(CONFIRMED),
@@ -573,7 +573,7 @@ describe("an agent-requested intent authorizes the EXISTING row", () => {
     expect(sessionId).toBe(SESSION_ID);
   });
 
-  it("preserves origin by never passing one — authorizeWith cannot rewrite it", async () => {
+  it("preserves origin by never passing one - authorizeWith cannot rewrite it", async () => {
     const executor = vi.fn().mockResolvedValue(CONFIRMED);
 
     await submitLaunch(submitInput({ intentId: DRAFTED_INTENT }), executor);
@@ -666,7 +666,7 @@ describe("an agent-requested intent authorizes the EXISTING row", () => {
     );
   });
 
-  it("refuses without signing when the CAS misses — a lapsed or already-answered form", async () => {
+  it("refuses without signing when the CAS misses - a lapsed or already-answered form", async () => {
     // `null` is the repo's "race lost" signal: the predicate requires
     // `awaiting_user_form` AND an unexpired window.
     authorizeWith.mockResolvedValue(null);

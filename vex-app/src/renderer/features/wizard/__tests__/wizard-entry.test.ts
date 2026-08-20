@@ -36,7 +36,7 @@ const COMPLETED = state({
   ],
 });
 
-describe("resolveWizardEntry — completed setup", () => {
+describe("resolveWizardEntry - completed setup", () => {
   it("locked vault routes to unlock, resuming to appShell", () => {
     expect(
       resolveWizardEntry({
@@ -71,7 +71,7 @@ describe("resolveWizardEntry — completed setup", () => {
   });
 });
 
-describe("resolveWizardEntry — mid-setup", () => {
+describe("resolveWizardEntry - mid-setup", () => {
   it("past keystore with a locked vault unlocks first, resuming to wizard", () => {
     expect(
       resolveWizardEntry({

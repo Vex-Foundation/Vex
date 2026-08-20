@@ -50,7 +50,7 @@ export function gatedReason(status: MissionRunStatus | null): string {
     case "paused_plan_acceptance":
       return "Mission is paused for plan acceptance. Review and accept the action plan to resume.";
     case "paused_user_form":
-      return "Mission is waiting on a form you opened. Submit or dismiss it to resume — dismissing tells the agent you declined.";
+      return "Mission is waiting on a form you opened. Submit or dismiss it to resume - dismissing tells the agent you declined.";
     default:
       return "Composer is gated until the mission run reaches a free state.";
   }

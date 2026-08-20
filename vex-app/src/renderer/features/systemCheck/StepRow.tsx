@@ -62,16 +62,16 @@ export function StepRow({
     >
       <span
         aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center text-[var(--color-text-secondary)]"
+        className="flex h-8 w-8 shrink-0 items-center justify-center text-ink-secondary"
       >
         {icon}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+        <span className="truncate text-sm font-medium text-ink-primary">
           {label}
         </span>
         {detail ? (
-          <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+          <span className="truncate font-mono text-xs text-ink-tertiary">
             {detail}
           </span>
         ) : null}
@@ -79,7 +79,7 @@ export function StepRow({
       {status === "loading" ? (
         <span className="flex shrink-0 items-center gap-2">
           <VexLoader size={16} stroke={2} tone="paper" label="Checking" />
-          <span className="vex-micro text-[var(--color-text-secondary)]">
+          <span className="vex-micro text-ink-secondary">
             {labelText}
           </span>
         </span>

@@ -123,7 +123,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("SessionRuntimeCard — model", () => {
+describe("SessionRuntimeCard - model", () => {
   it("shows the model id and the 'via {provider}' routing line", () => {
     setup();
     render(<SessionRuntimeCard sessionId={SESSION} />);
@@ -147,7 +147,7 @@ describe("SessionRuntimeCard — model", () => {
   });
 });
 
-describe("SessionRuntimeCard — usage", () => {
+describe("SessionRuntimeCard - usage", () => {
   it("renders IN / OUT / CACHE / REASONING and the session cost", () => {
     setup({
       lastTurn: TURN,
@@ -176,7 +176,7 @@ describe("SessionRuntimeCard — usage", () => {
   });
 });
 
-describe("SessionRuntimeCard — context meter", () => {
+describe("SessionRuntimeCard - context meter", () => {
   function meter(container: HTMLElement): HTMLElement {
     return container.querySelector(
       '[data-vex-area="session-context-meter"]',
@@ -199,7 +199,7 @@ describe("SessionRuntimeCard — context meter", () => {
     expect(marks).toEqual(["85%", "88%", "92%"]);
   });
 
-  it("draws NO markers when the payload predates the fields — never invented positions", () => {
+  it("draws NO markers when the payload predates the fields - never invented positions", () => {
     setup({
       context: { sessionId: SESSION, tokensUsed: 50_000, contextLimit: 200_000 },
     });
@@ -222,7 +222,7 @@ describe("SessionRuntimeCard — context meter", () => {
     expect(container.textContent).toContain("approx, lags one turn");
   });
 
-  it("degrades to a bare token count when the limit is null — no fabricated denominator", () => {
+  it("degrades to a bare token count when the limit is null - no fabricated denominator", () => {
     setup({
       context: { sessionId: SESSION, tokensUsed: 50_000, contextLimit: null },
     });
@@ -241,7 +241,7 @@ describe("SessionRuntimeCard — context meter", () => {
   });
 });
 
-describe("SessionRuntimeCard — compaction", () => {
+describe("SessionRuntimeCard - compaction", () => {
   it("names the remote path accessibly while a compaction runs", () => {
     setup({
       compaction: { activeCount: 1, latest: { status: "running" } },

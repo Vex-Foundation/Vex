@@ -3,7 +3,7 @@
  *
  * Continue is the stock `Button` (a cobalt pill with a white label on the
  * pre-shell plate, via the `[data-vex-gate]` token re-projection —
- * `global-css/setup-gate.css`), disabled until every probe
+ * `global-css/chronos-gate.css`), disabled until every probe
  * resolves. When it enables, focus lands on it so Enter/Space continues
  * immediately — the one piece of NOTARY-era choreography worth keeping,
  * because it is a real keyboard-flow win, not decoration.

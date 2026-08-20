@@ -172,7 +172,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     minWidth,
     minHeight,
     show: false,
-    backgroundColor: "#0A0E27",
+    // CONTRACT: must equal the chronos --vex-alias-bg-base (gray-1000) in
+    // renderer tokens.css, so the pre-paint window plate matches first paint.
+    backgroundColor: "#0a0d18",
     // Window title is the fixed product name — the agent's display name is
     // no longer user-configurable (retired persona.md mechanism).
     title: "Vex",

@@ -72,7 +72,7 @@ describe("useScrollbarVisibility", () => {
     expect(setAttribute).toHaveBeenCalledTimes(1);
   });
 
-  it("re-shows after an idle gap — a later scroll arms it again", () => {
+  it("re-shows after an idle gap - a later scroll arms it again", () => {
     vi.useFakeTimers();
     render(<Harness />);
     const el = scroller();

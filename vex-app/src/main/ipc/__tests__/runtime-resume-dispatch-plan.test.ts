@@ -60,7 +60,7 @@ beforeEach(() => {
   mockEmitControlState.mockResolvedValue(undefined);
 });
 
-describe("runResumeDispatch — plan-acceptance gate", () => {
+describe("runResumeDispatch - plan-acceptance gate", () => {
   it("REFUSES resuming a paused run whose plan is NOT accepted", async () => {
     mockGetActivePlan.mockResolvedValue({ enabled: true, accepted: false, planMd: "x" });
     const result = await runResumeDispatch({ sessionId: "s1" }, CTX);

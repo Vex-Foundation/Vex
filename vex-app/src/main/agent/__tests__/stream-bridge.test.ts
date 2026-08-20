@@ -168,26 +168,26 @@ describe("stream bridge", () => {
     }
   });
 
-  it("replaces raw provider error text with a safe generic, keeping code", () => {
+  it("sanitizes raw provider error text - the prose crosses, the key does not", () => {
     const teardown = setupStreamBridge();
     try {
       streamDeltaBus.emit(
         baseEvent({
           deltaType: "error",
-          delta: { kind: "error", message: "FAKE_SECRET_sk-abc123 rate limited", code: 429 },
+          delta: { kind: "error", message: "key sk-fake-secret-abc123 rate limited", code: 429 },
         }) as never,
       );
       expect(broadcastMock).toHaveBeenCalledTimes(1);
       const payload = lastBroadcast();
       expect(payload.delta).toEqual({
         kind: "error",
-        message: "Stream error",
+        // Decree 2026-08-02: the sanitized REAL cause crosses; the sk- key
+        // is stripped by the shared sanitizer, never forwarded.
+        message: "key [key] rate limited",
         code: 429,
-        // Bounded enum label now crosses beside the code; `null` when the
-        // provider reported no type. The generic message is unchanged.
         errorType: null,
       });
-      expect(JSON.stringify(payload)).not.toContain("FAKE_SECRET");
+      expect(JSON.stringify(payload)).not.toContain("sk-fake-secret");
     } finally {
       teardown();
     }

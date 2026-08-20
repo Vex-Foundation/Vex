@@ -37,6 +37,7 @@ function livePreview(over: Partial<StreamPreview> = {}): StreamPreview {
     reasoningTokens: null,
     startedAtMs: Date.now(),
     errorType: null,
+    errorDetail: null,
     status: "working",
     ...over,
   };
@@ -65,7 +66,7 @@ function userAnchor(over: Partial<TurnPreviewInput> = {}): TurnPreviewInput {
   });
 }
 
-describe("useTurnPreview — the centred scene latch", () => {
+describe("useTurnPreview - the centred scene latch", () => {
   it("stays OFF at the send edge while the OLD transcript is still rendered", () => {
     const { result, rerender } = renderHook(useTurnPreview, {
       initialProps: input(),
@@ -226,7 +227,7 @@ describe("useTurnPreview — the centred scene latch", () => {
   });
 });
 
-describe("useTurnPreview — the turn-scoped preview itself (unchanged behaviour)", () => {
+describe("useTurnPreview - the turn-scoped preview itself (unchanged behaviour)", () => {
   it("returns null when no turn is in flight", () => {
     const { result } = renderHook(useTurnPreview, { initialProps: input() });
     expect(result.current.preview).toBeNull();

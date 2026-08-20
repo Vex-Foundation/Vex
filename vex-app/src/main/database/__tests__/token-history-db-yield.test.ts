@@ -106,7 +106,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — agent_activity yield (Pendle, migration 053)", () => {
+describe("getTokenHistory - agent_activity yield (Pendle, migration 053)", () => {
   /** A confirmed `py.mint`: 100 USDC in → PT (leg 1) AND YT (leg 2) out. */
   function pyMintRow(overrides: Partial<Record<string, unknown>> = {}) {
     return {
@@ -147,7 +147,7 @@ describe("getTokenHistory — agent_activity yield (Pendle, migration 053)", () 
     };
   }
 
-  it("includes ONLY the five logical yield roles — an allowance leg is never a history entry", async () => {
+  it("includes ONLY the five logical yield roles - an allowance leg is never a history entry", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({ chainId: ARBITRUM_CHAIN_ID, tokenAddress: PT_TOKEN, cursor: null });
     const { sql } = pageQueryCall();
@@ -165,7 +165,7 @@ describe("getTokenHistory — agent_activity yield (Pendle, migration 053)", () 
     expect(sql).toContain("aa.token_out2_address");
   });
 
-  it("maps kind 'yield' to product 'yield' — never falls through to 'spot'", async () => {
+  it("maps kind 'yield' to product 'yield' - never falls through to 'spot'", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({ chainId: ARBITRUM_CHAIN_ID, tokenAddress: PT_TOKEN, cursor: null });
     const { sql } = pageQueryCall();

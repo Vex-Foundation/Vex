@@ -32,12 +32,11 @@
  * plain `<div>` so transitions are not double-wrapped.
  */
 
-import type { FormEvent, JSX, ReactNode } from "react";
+import type { ComponentType, FormEvent, JSX, ReactNode } from "react";
 
 import {
-  ArrowUpRightIcon,
-  type IconGlyph,
-  VexIcon,
+  IconArrowUpRight,
+  type GlyphProps,
 } from "../../components/icons/index.js";
 import {
   WIZARD_STEP_IDS,
@@ -47,7 +46,7 @@ import {
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
 import { cn } from "../../lib/utils.js";
 
-type IconDescriptor = IconGlyph;
+type IconDescriptor = ComponentType<GlyphProps>;
 
 export type WizardPanelDataAttr =
   | { readonly kind: "keystore"; readonly value: "form" | "skip" }
@@ -115,11 +114,11 @@ function stepIndexFor(kind: PanelKind): number {
  * quiet. */
 const ICON_CIRCLE_CHROME = cn(
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-  "border border-[var(--color-border)] text-[var(--color-text-primary)]",
+  "border border-[var(--color-border)] text-ink-primary",
 );
 
 const META_CHROME = cn(
-  "flex items-center gap-3 vex-micro text-[var(--color-text-muted)]",
+  "flex items-center gap-3 vex-micro text-ink-tertiary",
 );
 
 function TrailingMeta({
@@ -145,20 +144,20 @@ function TrailingMeta({
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
-          "inline-flex items-center gap-1 text-[var(--color-text-secondary)] transition-colors",
-          "hover:text-[var(--color-text-primary)]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+          "inline-flex items-center gap-1 text-ink-secondary transition-colors",
+          "hover:text-ink-primary",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         )}
       >
         Your data stays yours
-        <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
+        <IconArrowUpRight size={10} />
       </a>
     </div>
   );
 }
 
 export function WizardStepPanel({
-  icon,
+  icon: Icon,
   title,
   description,
   panelDataAttr,
@@ -175,20 +174,20 @@ export function WizardStepPanel({
 
   // `vex-step-header` / `vex-step-lede` are STYLE HOOKS, not styles: they
   // carry declarations only inside the `[data-vex-gate]` scope
-  // (global-css/setup-gate.css), where the header becomes a centered stack
+  // (global-css/chronos-gate.css), where the header becomes a centered stack
   // and the lede goes up to 18px. In Settings — which renders this same
   // component — they match nothing, so the left-aligned composition below
   // is what ships there. Keep the Tailwind classes as the Settings truth.
   const headerNode = (
     <header className="vex-step-header flex items-start gap-4">
       <span aria-hidden className={ICON_CIRCLE_CHROME}>
-        <VexIcon icon={icon} size={20} aria-hidden />
+        <Icon size={20} />
       </span>
       <div className="flex flex-col gap-1.5 pt-0.5">
-        <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
+        <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
           {title}
         </h1>
-        <p className="vex-step-lede text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
           {description}
         </p>
       </div>

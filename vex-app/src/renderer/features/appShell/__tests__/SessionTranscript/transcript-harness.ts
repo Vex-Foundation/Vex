@@ -153,6 +153,7 @@ export function livePreview(
     reasoningTokens: null,
     startedAtMs: Date.now(),
     errorType: null,
+    errorDetail: null,
     status: "working",
     ...over,
   };

@@ -75,7 +75,7 @@ describe("setupLaunchFormBridge", () => {
     teardown();
   });
 
-  it("DROPS a non-uuid sessionId — the renderer scopes a modal by it", () => {
+  it("DROPS a non-uuid sessionId - the renderer scopes a modal by it", () => {
     const teardown = setupLaunchFormBridge();
     launchFormBus.emit({ ...VALID, sessionId: "not-a-session" });
 

@@ -84,10 +84,15 @@ export interface StreamPreview {
    * OpenRouter's canonical `ApiErrorType` from the error delta that ended this
    * stream, or `null`. An OPEN enum carried verbatim — the bubble maps it
    * through `classifyEngineFailure` (total default) and never switches on it.
-   * Kept so an errored preview can say WHY instead of only "Stream error";
-   * the delta's `message` is a safe generic by design and says nothing.
+   * Kept so an errored preview can classify WHY without parsing prose.
    */
   readonly errorType: string | null;
+  /**
+   * SANITIZED provider error text from the error delta (the main bridge
+   * strips URLs/tokens/keys/hex, decree 2026-08-02), or `null` when the
+   * bridge could only send its "Stream error" fallback.
+   */
+  readonly errorDetail: string | null;
 }
 
 interface StreamStoreState {
@@ -118,6 +123,7 @@ function startPreview(streamId: string): StreamPreview {
     startedAtMs: Date.now(),
     status: "working",
     errorType: null,
+    errorDetail: null,
   };
 }
 
@@ -150,6 +156,7 @@ function startRound(prev: StreamPreview, streamId: string): StreamPreview {
     toolName: null,
     status: "working",
     errorType: null,
+    errorDetail: null,
   };
 }
 
@@ -246,8 +253,17 @@ export function reducePreview(
       };
     case "done":
       return { ...base, phase: "done" };
-    case "error":
-      return { ...base, phase: "error", errorType: event.delta.errorType ?? null };
+    case "error": {
+      // "Stream error" is the bridge's fallback when the raw text sanitized
+      // away to nothing - it names nothing, so it stays out of the preview.
+      const message = event.delta.kind === "error" ? event.delta.message : "";
+      return {
+        ...base,
+        phase: "error",
+        errorType: event.delta.errorType ?? null,
+        errorDetail: message.length > 0 && message !== "Stream error" ? message : null,
+      };
+    }
     case "aborted":
       // The preview is retired by the live-sync hook, which owns the clear and
       // the streamId correlation. The reducer only records that the stream is

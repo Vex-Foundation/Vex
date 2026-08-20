@@ -35,7 +35,7 @@ async function loadStore() {
 
 const VALID_ID = "img_0123456789abcdef0123456789abcdef";
 
-describe("resolveImagePath — containment", () => {
+describe("resolveImagePath - containment", () => {
   it.each([
     ["../../../etc/passwd", "posix traversal"],
     ["..\\..\\evil", "windows traversal"],
@@ -71,7 +71,7 @@ describe("resolveImagePath — containment", () => {
  * only when the ladder re-encoded, so it is a second file in the same
  * directory, never a suffix a caller concatenates onto an id.
  */
-describe("resolveOnchainVariantPath — the derived copy", () => {
+describe("resolveOnchainVariantPath - the derived copy", () => {
   it("lands in the locker directory, named from the id and marked as the copy", async () => {
     const store = await loadStore();
     const resolved = store.resolveOnchainVariantPath(VALID_ID);

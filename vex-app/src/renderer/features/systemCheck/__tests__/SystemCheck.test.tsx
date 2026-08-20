@@ -180,7 +180,7 @@ describe("SystemCheck", () => {
     expect(button.getAttribute("disabled")).not.toBeNull();
   });
 
-  it("does NOT surface the legacy DMR advisory (M11.5.4 — bundled runtime)", () => {
+  it("does NOT surface the legacy DMR advisory (M11.5.4 - bundled runtime)", () => {
     mockHooks.useDockerStatus.mockReturnValue(happyDocker("inactive"));
     const { queryByText } = render(<SystemCheck />);
     act(() => {

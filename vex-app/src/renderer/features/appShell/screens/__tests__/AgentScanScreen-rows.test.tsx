@@ -31,14 +31,6 @@ import {
   ROW_PX,
 } from "./_agent-scan-fixtures.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-}));
-
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
@@ -76,7 +68,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("AgentScanScreen — virtualization", () => {
+describe("AgentScanScreen - virtualization", () => {
   /** 3 pages × 100 rows, all on distinct days so dividers are in the mix too. */
   function largeFeed(): readonly Result<AgentScanDto>[] {
     const page = (offset: number): Result<AgentScanDto> =>
@@ -133,7 +125,7 @@ describe("AgentScanScreen — virtualization", () => {
   });
 });
 
-describe("AgentScanScreen — rows and audit detail", () => {
+describe("AgentScanScreen - rows and audit detail", () => {
   it("renders a row with its badge, legs, quote-time USD marker and main-resolved explorer link", () => {
     mockQuery([availablePage([entry({ id: "1" })])]);
     mountScreen();
@@ -215,7 +207,7 @@ describe("AgentScanScreen — rows and audit detail", () => {
     expect(screen.queryByText(/destination fill reverted/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
 
-    expect(screen.getByText(/bridge_failed — destination fill reverted/)).not.toBeNull();
+    expect(screen.getByText(/bridge_failed - destination fill reverted/)).not.toBeNull();
     expect(screen.getByText(/0\.05 USDC/)).not.toBeNull();
     expect(screen.getByText("ord_9")).not.toBeNull();
     // Both legs listed; only the one main resolved a URL for is a link.
@@ -278,7 +270,7 @@ describe("AgentScanScreen — rows and audit detail", () => {
     expect(screen.getByText(/Could not conclude: no_safe_rpc/)).not.toBeNull();
   });
 
-  it("a stalled row does not ALSO claim tracking delayed — one chip, the more specific one", () => {
+  it("a stalled row does not ALSO claim tracking delayed - one chip, the more specific one", () => {
     mockQuery([
       availablePage([
         entry({

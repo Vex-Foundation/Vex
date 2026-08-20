@@ -93,7 +93,7 @@ describe("reasoning propagation (contract C1)", () => {
     expect(toTranscriptRow(dto({ role: "assistant", kind: "text" })).reasoning).toBeNull();
   });
 
-  it("puts reasoning on the PROSE row only when a tool_call splits — never both", () => {
+  it("puts reasoning on the PROSE row only when a tool_call splits - never both", () => {
     const rows = toTranscriptRows([
       dto({
         id: 5,
@@ -149,7 +149,7 @@ describe("durationMs propagation (contract C1)", () => {
     expect(row.toolActs?.[0]?.durationMs).toBe(2340);
   });
 
-  it("a measured ZERO still merges — 0 ms is a measurement, unlike null", () => {
+  it("a measured ZERO still merges - 0 ms is a measurement, unlike null", () => {
     const entries = groupTranscriptRows(
       toTranscriptRows([
         callDto(1, ["wallet_balances"]),

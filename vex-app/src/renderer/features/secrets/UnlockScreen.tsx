@@ -4,10 +4,10 @@
  * onboarding).
  *
  * Visual system (Chronos rebrand, A2 plate + AMENDMENT A3 boxless): the
- * cobalt continuum plate (`SetupFrame`), the particle `VexSigil` in the
- * gate's paper/ice palette above a serif "Welcome back." statement, and
- * the form DISSOLVED directly onto the plate — no card, no box; the
- * plate and the sigil are the whole ceremony. No grid, no scanlines, no
+ * ink continuum plate (`SetupFrame`), the white vx mark above a serif
+ * "Welcome back." statement, and the form DISSOLVED directly onto the
+ * plate — no card, no box; the plate and the mark are the whole
+ * ceremony. No grid, no scanlines, no
  * gate readout, no wordmark. Throttle/error alerts speak the A3 rail
  * grammar (left color rail, no fill). The signature rail under the
  * password field runs the `.vex-sign-stroke--signing` ink loop ONLY
@@ -32,7 +32,7 @@
  *   - `data-vex-unlock-throttle="active"` (throttle alert),
  *   - `<label htmlFor="vex-unlock-password">Master password</label>`,
  *   - button text "Unlock" / "Unlocking…",
- *   - `img[src="/logo_clean.png"]` (SetupFrame brand mark).
+ *   - `img[src="/brand/vex-mark-white.svg"]` (SetupFrame brand mark).
  */
 
 import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
@@ -40,8 +40,6 @@ import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PasswordField } from "../../components/common/PasswordField.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
-import { VexSigil } from "../appShell/VexSigil.js";
-import { GATE_SIGIL_PALETTE } from "../setup/gate-sigil-palette.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { PASSWORD_MIN_LENGTH } from "@shared/schemas/secrets.js";
 import { getErrorCopy } from "../../lib/errors/error-copy.js";
@@ -181,22 +179,25 @@ export function UnlockScreen(): JSX.Element {
         aria-labelledby="vex-unlock-title"
         className="mx-auto flex w-full max-w-[440px] flex-col"
       >
-        {/* THE SIGIL — the mark draws itself in the gate's paper/ice
-          palette; decorative only (aria-hidden root inside VexSigil). */}
-        <VexSigil
-          className="vex-rise mx-auto h-24 w-24"
-          palette={GATE_SIGIL_PALETTE}
+        {/* THE MARK — the vx script above the greeting (rebrand: the
+          particle sigil is retired from the pre-shell). */}
+        <img
+          src="/brand/vex-mark-white.svg"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="vex-rise mx-auto h-16 w-auto select-none"
         />
 
         <h1
           id="vex-unlock-title"
-          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-[var(--color-text-primary)]"
+          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-ink-primary"
         >
           Welcome back.
         </h1>
         {/* Bespoke header (this screen passes no SetupFrame title), so the
          * subline steps up to 18px here rather than through the scaffold. */}
-        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-ink-secondary">
           Your master password decrypts the local vault on this machine.
         </p>
 
@@ -213,7 +214,7 @@ export function UnlockScreen(): JSX.Element {
             <div className="flex flex-col gap-2.5">
               <Label
                 htmlFor="vex-unlock-password"
-                className="vex-micro font-medium text-[var(--color-text-muted)]"
+                className="vex-micro font-medium text-ink-tertiary"
               >
                 Master password
               </Label>
@@ -291,9 +292,9 @@ export function UnlockScreen(): JSX.Element {
             variant="ghost"
             disabled={inputsDisabled}
             onClick={() => setResetDialogOpen(true)}
-            className="mt-3 w-full text-[var(--color-text-muted)]"
+            className="mt-3 w-full text-ink-tertiary"
           >
-            I forgot my password — set up a new vault
+            I forgot my password - set up a new vault
           </Button>
         </div>
       </section>
@@ -351,7 +352,7 @@ export function UnlockScreen(): JSX.Element {
               </Button>
               <Button
                 type="button"
-                variant="destructive"
+                variant="danger"
                 disabled={!resetAcknowledged || resetPending}
                 onClick={() => void requestFreshVault()}
               >

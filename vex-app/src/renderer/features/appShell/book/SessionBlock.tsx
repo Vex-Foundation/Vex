@@ -7,9 +7,19 @@
 
 import type { JSX, ReactNode } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
-import { cn } from "../../../lib/utils.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
+import {
+  StateDot,
+  type StateDotState,
+} from "../../../components/ui/state-dot.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
+
+/** Mission-activity tone → StateDot state (word + dot, never color alone). */
+const ACTIVITY_DOT: Record<"active" | "paused" | "stopped", StateDotState> = {
+  active: "ongoing",
+  paused: "warning",
+  stopped: "done",
+};
 
 /** Key/value row: muted label, stronger tabular value, hairline-separated. */
 function Row({
@@ -20,9 +30,9 @@ function Row({
   readonly children: ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0 last:pb-0.5">
-      <span className="text-[10.5px] text-[var(--vex-text-3)]">{label}</span>
-      <span className="min-w-0 truncate text-right text-[11.5px] tabular-nums text-[var(--vex-text)]">
+    <div className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
+      <span className="text-[10.5px] text-ink-tertiary">{label}</span>
+      <span className="min-w-0 truncate text-right text-[11.5px] tabular-nums text-ink-primary">
         {children}
       </span>
     </div>
@@ -60,10 +70,9 @@ export function SessionBlock({
         {activity !== null ? (
           <Row label="Status">
             <span className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className={cn("h-1.5 w-1.5 rounded-full", activity.dotClass)}
-              />
+              {/* Status grammar: the word carries the meaning, the StateDot
+                * carries the motion (ongoing = pixel chase). */}
+              <StateDot state={ACTIVITY_DOT[activity.tone]} size={8} />
               {activity.label}
             </span>
           </Row>

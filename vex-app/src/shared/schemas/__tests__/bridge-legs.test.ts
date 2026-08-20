@@ -50,7 +50,7 @@ describe("bridge leg vocabulary parity with the migrations", () => {
     );
   });
 
-  it("accepts a bridge_fee leg — a fee row must never drop out of coerceBridgeLegs", () => {
+  it("accepts a bridge_fee leg - a fee row must never drop out of coerceBridgeLegs", () => {
     const legs = coerceBridgeLegs([
       { role: "bridge_fee", chainId: 8453, chainFamily: "eip155", txHash: "0xfee", status: "confirmed", failureCode: null },
     ]);
@@ -100,7 +100,7 @@ describe("coerceBridgeLegs", () => {
     expect(coerceBridgeLegs("nope")).toEqual([]);
   });
 
-  it("preserves EVERY well-formed leg in order (OWNER RULE — no truncation)", () => {
+  it("preserves EVERY well-formed leg in order (OWNER RULE - no truncation)", () => {
     const raw = [
       { role: "allowance", chainId: 8453, chainFamily: "eip155", txHash: "0xa", status: "confirmed", failureCode: null },
       { role: "bridge_deposit", chainId: 8453, chainFamily: "eip155", txHash: "0xb", status: "confirmed", failureCode: null },

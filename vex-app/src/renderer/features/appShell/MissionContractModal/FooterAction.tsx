@@ -42,16 +42,16 @@ export function FooterAction({
 
   if (kind === "setup-needed") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
+      <DialogFooter className="justify-start border-line-2 text-xs text-ink-tertiary">
         Add a goal, constraints, and stop conditions to enable Accept.
       </DialogFooter>
     );
   }
   if (kind === "accepted") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
+      <DialogFooter className="justify-start border-line-2 text-xs text-ink-tertiary">
         Use the{" "}
-        <span className="text-[var(--vex-accent-text)]">Start mission</span>{" "}
+        <span className="text-accent-primary">Start mission</span>{" "}
         button to dispatch.
       </DialogFooter>
     );
@@ -62,7 +62,7 @@ export function FooterAction({
   // action the engine is known to reject right now.
   if (planGate.kind === "loading") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)]">
+      <DialogFooter className="justify-start border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -78,7 +78,7 @@ export function FooterAction({
   // Retry the user would be stranded here.
   if (planGate.kind === "failed") {
     return (
-      <DialogFooter className="justify-between border-[var(--vex-line)]">
+      <DialogFooter className="justify-between border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -103,7 +103,7 @@ export function FooterAction({
   // first (matches the engine `plan_missing`).
   if (planGate.kind === "missing") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)]">
+      <DialogFooter className="justify-start border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -132,9 +132,9 @@ export function FooterAction({
         : "Accept contract";
 
   return (
-    <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-col">
+    <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-[var(--vex-text-3)]">{helperText}</span>
+        <span className="text-xs text-ink-tertiary">{helperText}</span>
         {/* THE single primary action — filled cobalt pill (Button default). */}
         <Button
           type="button"

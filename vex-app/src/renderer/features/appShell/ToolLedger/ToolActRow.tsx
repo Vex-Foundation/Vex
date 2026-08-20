@@ -26,10 +26,10 @@
 
 import { useId, useMemo, useState, type JSX } from "react";
 import {
-  ChevronRightIcon,
-  CircleCheckIcon,
-  VexIcon,
+  IconChevronRight,
+  IconCircleCheck,
 } from "../../../components/icons/index.js";
+import { JsonTree } from "../../../components/ui/json-tree.js";
 import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
@@ -89,7 +89,7 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <VexIcon icon={CircleCheckIcon} size={12} aria-hidden />
+      <IconCircleCheck size={12} />
       Confirmed
     </span>
   );
@@ -117,27 +117,43 @@ function DurationChip({
   );
 }
 
-/** Section label inside the expanded well — mono microtype (10px floor). */
+/** Section label inside the expanded well — mono microtype (10px floor).
+ * Sticky against the section's own scroll so the label stays readable while
+ * its payload scrolls underneath. */
 function SectionHeading({
   children,
-  topGap = false,
 }: {
   readonly children: string;
-  readonly topGap?: boolean;
 }): JSX.Element {
   return (
-    <span
-      className={cn(
-        "block font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]",
-        topGap && "mt-2",
-      )}
-    >
+    <span className="sticky top-0 block bg-[var(--vex-surface-down)] font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
       {children}
     </span>
   );
 }
 
-/** Pre-wrapped TEXT body for sanitized args/output; hint when empty. */
+/**
+ * Bounded JSON read for the payload viewer (C9): the same 20k gate the
+ * confirm-stamp reader applies — a multi-megabyte payload must never cost a
+ * synchronous parse per visible card. Non-JSON, oversized, or primitive
+ * payloads return null and render as inert text.
+ */
+function parseJsonPayload(text: string): object | readonly unknown[] | null {
+  if (text.length > MAX_PARSE_CHARS) return null;
+  const first = text.trimStart()[0];
+  if (first !== "{" && first !== "[") return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Section body: a JSON payload renders as the collapsible inspector tree
+ * (copy-raw included); anything else stays pre-wrapped inert text.
+ */
 function SectionBody({
   text,
   emptyHint,
@@ -145,6 +161,10 @@ function SectionBody({
   readonly text: string | null;
   readonly emptyHint: string;
 }): JSX.Element {
+  const json = useMemo(
+    () => (text === null ? null : parseJsonPayload(text)),
+    [text],
+  );
   if (text === null || text.length === 0) {
     return (
       <span className="font-mono text-[11px] leading-relaxed text-[var(--vex-text-3)]">
@@ -152,8 +172,11 @@ function SectionBody({
       </span>
     );
   }
+  if (json !== null) {
+    return <JsonTree data={json} />;
+  }
   return (
-    <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
+    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
       {text}
     </pre>
   );
@@ -217,13 +240,15 @@ export function ToolActRow({
     [operation, legs, act.toolArgs, act.output, act.success, act.displayStatus],
   );
   return (
+    // §7 row anatomy: a quiet 24px header line (no boxed card), the expanded
+    // body a SIBLING ioCard below it. `group` scopes the leading crossfade.
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
       data-vex-tool-category={identity.category}
-      className="overflow-hidden rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
+      className="group flex flex-col"
     >
-      <div className="flex items-center gap-2 pr-2">
+      <div className="flex min-h-6 items-center gap-2">
         <button
           type="button"
           aria-expanded={open}
@@ -231,31 +256,46 @@ export function ToolActRow({
           onClick={() => setOpen((v) => !v)}
           // The raw symbol stays reachable even though the card shows prose.
           title={act.toolName}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:rounded-[4px] focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <ProtocolMark
-            protocol={identity.protocol}
-            fallbackGlyph={toolGlyph(act.toolName)}
-            size={16}
-          />
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="min-w-0 truncate text-[12.5px] text-foreground">
-              {identity.title}
+          {/* DisclosureRow house pattern: the 16px leading box crossfades the
+              tool mark to a chevron on hover/focus - "this row expands"
+              without a resting chevron. 100ms opacity, no layout shift. */}
+          <span className="relative mr-1.5 inline-grid h-4 w-4 flex-none place-items-center">
+            <span className="col-start-1 row-start-1 inline-flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
+              <ProtocolMark
+                protocol={identity.protocol}
+                fallbackGlyph={toolGlyph(act.toolName)}
+                size={16}
+              />
+            </span>
+            <span
+              aria-hidden
+              className={cn(
+                "col-start-1 row-start-1 inline-flex items-center justify-center text-[var(--vex-text-2)] opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
+                open && "rotate-90",
+              )}
+            >
+              <IconChevronRight size={12} />
+            </span>
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center">
+              <span className="flex-none truncate text-[14px] leading-6 text-[var(--vex-text-2)]">
+                {identity.title}
+              </span>
+              {/* 2x2 separator dot before the trailing measurement. */}
+              {formatToolDuration(act.durationMs ?? null) !== null ? (
+                <span
+                  aria-hidden
+                  className="mx-2 h-[2px] w-[2px] flex-none rounded-[1px] bg-ink-caption"
+                />
+              ) : null}
+              <DurationChip durationMs={act.durationMs} />
             </span>
             {legs !== null ? <ToolLegLine legs={legs} /> : null}
             {singleLeg !== null ? <ToolSingleLegLine leg={singleLeg} /> : null}
           </span>
-          <DurationChip durationMs={act.durationMs} />
-          {/* Chevron stays even when stamped — it is the expand affordance. */}
-          <VexIcon
-            icon={ChevronRightIcon}
-            size={12}
-            aria-hidden
-            className={cn(
-              "shrink-0 text-[var(--vex-text-3)] transition-transform",
-              open && "rotate-90",
-            )}
-          />
         </button>
         {/* Explorer links are SIBLINGS of the disclosure button — anchors must
             never nest inside a button (invalid HTML). Rendered only when a
@@ -268,17 +308,24 @@ export function ToolActRow({
         ) : null}
       </div>
       {open ? (
+        // ioCard: l1 hairline, r12, the recessed code surface; each section
+        // caps and scrolls alone so a long input never buries a short output.
         <div
           id={bodyId}
-          className="vex-entry-settle border-t border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-2.5 py-2"
+          className="vex-entry-settle ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-[var(--vex-surface-down)]"
         >
-          <SectionHeading>Args</SectionHeading>
-          <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
+          <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+            <SectionHeading>Args</SectionHeading>
+            <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
+          </div>
           {/* Output renders ONLY when a result actually merged (null = none). */}
           {act.output !== null ? (
             <>
-              <SectionHeading topGap>Output</SectionHeading>
-              <SectionBody text={act.output} emptyHint="(no output)" />
+              <div aria-hidden className="h-px flex-none bg-line-2" />
+              <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+                <SectionHeading>Output</SectionHeading>
+                <SectionBody text={act.output} emptyHint="(no output)" />
+              </div>
             </>
           ) : null}
         </div>

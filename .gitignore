@@ -83,3 +83,6 @@ vex-app/test-results/
 
 # Local expansion/research materials (brand assets, vendored references, screenshots)
 vex-expand/
+
+# TypeScript incremental build state (generated)
+vex-app/*.tsbuildinfo

@@ -38,7 +38,7 @@ export function legSymbolText(leg: AgentScanTokenLeg): string {
     return leg.displaySymbol;
   }
   if (leg.symbol !== null && leg.symbol.length > 0) return leg.symbol;
-  return leg.address !== null ? truncateAddress(leg.address) : "—";
+  return leg.address !== null ? truncateAddress(leg.address) : "-";
 }
 
 /**

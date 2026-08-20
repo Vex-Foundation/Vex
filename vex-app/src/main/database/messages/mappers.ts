@@ -185,6 +185,11 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   // surface it as normal text so it renders as a user/assistant turn instead
   // of the centered-uppercase notice styling.
   if (row.message_type === "mission_setup") return "text";
+  // A33: a user message steered into a live turn is the user's prose, not a
+  // system marker - it renders as a user row with a "steered" register mark.
+  if (row.role === "user" && row.message_type === "operator_interrupt") {
+    return "steering";
+  }
   if (row.message_type !== null && row.message_type !== "chat") {
     // Other engine markers (wake banners, LEGACY pre-D-4 overflow stubs from
     // the removed blob mechanism, runtime notices) surface as the catch-all

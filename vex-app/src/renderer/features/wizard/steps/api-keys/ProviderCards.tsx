@@ -15,7 +15,7 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
-import { VexIcon, WaypointsIcon } from "../../../../components/icons/index.js";
+import { IconWaypoints } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
@@ -48,8 +48,8 @@ export function JupiterCard({
       description="Prices and swaps tokens on Solana."
       detail={
         <>
-          The key is free — open the portal, then{" "}
-          <span className="font-medium text-[var(--color-text-primary)]">
+          The key is free - open the portal, then{" "}
+          <span className="font-medium text-ink-primary">
             API Keys → Create new API key
           </span>
           . Without it, Solana swaps stay unavailable; everything else
@@ -70,10 +70,10 @@ export function JupiterCard({
         autoComplete="new-password"
         ref={inputRef}
       />
-      <p className="text-xs text-[var(--color-text-muted)]">
+      <p className="text-xs text-ink-tertiary">
         {configured
           ? "Leave blank to keep the saved key, or paste a new one to overwrite it."
-          : "Leave blank to add later — Solana swaps stay unavailable until you set it."}
+          : "Leave blank to add later - Solana swaps stay unavailable until you set it."}
       </p>
     </ProviderCard>
   );
@@ -98,7 +98,7 @@ export function TavilyCard({
       detail={
         <>
           Free tier:{" "}
-          <span className="font-medium text-[var(--color-text-primary)]">
+          <span className="font-medium text-ink-primary">
             1,000 queries a month
           </span>
           . Open the dashboard, then click the + next to API Keys.
@@ -140,10 +140,10 @@ export function RettiwtCard({
       detail={
         <>
           The key is your X session cookie, so use a{" "}
-          <span className="font-medium text-[var(--color-text-primary)]">
+          <span className="font-medium text-ink-primary">
             secondary X account
           </span>{" "}
-          — Vex keeps the key encrypted locally, but X may still flag
+          - Vex keeps the key encrypted locally, but X may still flag
           automation activity (~1 in 100k risk). Sign in in an incognito
           window, then click the extension to generate the key. It stays
           valid for 5 years from login.
@@ -155,18 +155,18 @@ export function RettiwtCard({
           href="https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          className="font-medium text-ink-primary underline underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
         >
           Chrome: X Auth Helper ↗
         </a>
-        <span aria-hidden className="text-[var(--color-text-muted)]">
+        <span aria-hidden className="text-ink-tertiary">
           ·
         </span>
         <a
           href="https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          className="font-medium text-ink-primary underline underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
         >
           Firefox: Rettiwt Auth Helper ↗
         </a>
@@ -200,10 +200,7 @@ export function RelayCard({
     <ProviderCard
       slug="relay"
       iconSlot={
-        // strokeWidth 2 (lucide's own default), not the shell's 1.75: this card
-        // imported the glyph directly until now, so 2 is what it has always
-        // drawn. Routing it through the facade must not restyle it.
-        <VexIcon icon={WaypointsIcon} size={18} strokeWidth={2} aria-hidden />
+        <IconWaypoints size={18} />
       }
       name="Relay"
       status={status}

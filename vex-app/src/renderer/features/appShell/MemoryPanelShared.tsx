@@ -15,16 +15,16 @@
 import type { JSX } from "react";
 
 export const SECTION =
-  "flex flex-col gap-3 border-b border-[var(--vex-line)] py-6 first:pt-0 last:border-b-0";
+  "flex flex-col gap-3 border-b border-line-2 py-6 first:pt-0 last:border-b-0";
 export const PILL =
-  "inline-flex items-center rounded-[3px] border border-[var(--vex-line)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--vex-text-2)]";
+  "inline-flex items-center rounded-[3px] border border-line-2 px-1.5 py-0.5 font-mono text-[10px] text-ink-secondary";
 
 export function Loading({ label }: { readonly label: string }): JSX.Element {
   return (
     <div
       role="status"
       aria-live="polite"
-      className="rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 text-xs text-[var(--vex-text-2)]"
+      className="rounded-[6px] border border-line-2 bg-surface-1 px-3 py-2 text-xs text-ink-secondary"
     >
       {label}
     </div>
@@ -48,7 +48,7 @@ export function ErrorState({
 
 export function Empty({ label }: { readonly label: string }): JSX.Element {
   return (
-    <p className="px-1 py-2 text-xs text-[var(--vex-text-3)]">{label}</p>
+    <p className="px-1 py-2 text-xs text-ink-tertiary">{label}</p>
   );
 }
 

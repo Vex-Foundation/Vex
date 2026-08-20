@@ -160,7 +160,7 @@ describe("upload", () => {
   it("surfaces a refusal so the user knows what to change", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     uploadMock.mockResolvedValue(
-      vexError("images.too_large", "That image is 250.0 KB — the limit is 20.0 KB."),
+      vexError("images.too_large", "That image is 250.0 KB - the limit is 20.0 KB."),
     );
     renderCard();
     fireEvent.click(await screen.findByRole("button", { name: /add image/i }));
@@ -191,7 +191,7 @@ describe("delete", () => {
     expect(await screen.findByText(/MOONSHOT/)).toBeTruthy();
   });
 
-  it("does NOT refresh the list after a refusal — nothing changed", async () => {
+  it("does NOT refresh the list after a refusal - nothing changed", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
     readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
     deleteMock.mockResolvedValue(vexError("images.in_use", "still in use (MOONSHOT)"));

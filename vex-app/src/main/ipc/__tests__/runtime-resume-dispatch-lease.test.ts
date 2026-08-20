@@ -82,7 +82,7 @@ beforeEach(() => {
   mockEmitControlState.mockResolvedValue(undefined);
 });
 
-describe("runResumeDispatch — running status + lease liveness", () => {
+describe("runResumeDispatch - running status + lease liveness", () => {
   it("reports already_running for a running run with a LIVE lease (unchanged)", async () => {
     mockGetActiveRun.mockResolvedValue(activeState("running", true));
 
@@ -120,7 +120,7 @@ describe("runResumeDispatch — running status + lease liveness", () => {
     );
   });
 
-  it("returns lease_busy — does not lie — when a live runner reclaims the dead lease first (race)", async () => {
+  it("returns lease_busy - does not lie - when a live runner reclaims the dead lease first (race)", async () => {
     mockGetActiveRun.mockResolvedValue(activeState("running", false));
     mockEnqueueRequest.mockResolvedValue({ id: "audit-1" });
     mockClaim.mockResolvedValue({

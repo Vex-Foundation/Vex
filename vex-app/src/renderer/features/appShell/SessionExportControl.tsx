@@ -21,9 +21,8 @@
 
 import { useEffect, useState, type JSX } from "react";
 import {
-  CircleCheckBigIcon,
-  DownloadIcon,
-  VexIcon,
+  IconCircleCheck,
+  IconDownload,
 } from "../../components/icons/index.js";
 import { useExportSessionMarkdown, useSession } from "../../lib/api/sessions.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
@@ -83,6 +82,8 @@ export function SessionExportControl({
     );
   }
 
+  const ExportGlyph = exportStatus === "saved" ? IconCircleCheck : IconDownload;
+
   return (
     <>
       <span
@@ -103,10 +104,8 @@ export function SessionExportControl({
         onClick={() => setExportConfirmOpen(true)}
         className="grid size-7 shrink-0 place-items-center rounded-md text-[var(--vex-text-3)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)] disabled:cursor-wait disabled:opacity-50"
       >
-        <VexIcon
-          icon={exportStatus === "saved" ? CircleCheckBigIcon : DownloadIcon}
+        <ExportGlyph
           size={15}
-          aria-hidden
           className={exportMutation.isPending ? "animate-pulse" : undefined}
         />
       </button>

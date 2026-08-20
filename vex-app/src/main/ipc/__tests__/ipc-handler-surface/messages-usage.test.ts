@@ -355,7 +355,7 @@ describe("usage handlers", () => {
     });
   });
 
-  it("getContextWindow leaves a NULL window null — no bands on a session that does not exist", async () => {
+  it("getContextWindow leaves a NULL window null - no bands on a session that does not exist", async () => {
     mocks.getContextWindow.mockResolvedValueOnce({ ok: true, data: null });
     const result = await call(CH.usage.getContextWindow, { sessionId: SESSION });
     expect(result.ok).toBe(true);

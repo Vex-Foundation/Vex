@@ -31,7 +31,7 @@
 import { useState, type JSX } from "react";
 import type { VexError } from "@shared/ipc/result.js";
 import type { ImageOnchainVariant } from "@shared/schemas/images.js";
-import { PlusIcon, VexIcon } from "../../../components/icons/index.js";
+import { IconPlus } from "../../../components/icons/index.js";
 import {
   useDeleteLockerImage,
   useLockerImages,
@@ -145,7 +145,7 @@ export function ImageLockerCard({
       )}
 
       {notice !== null ? (
-        <p className="mt-2 text-[11px] leading-relaxed text-[var(--vex-warn-text)]">
+        <p className="mt-2 text-[11px] leading-relaxed text-warning-label">
           {notice}
         </p>
       ) : null}
@@ -154,16 +154,16 @@ export function ImageLockerCard({
         type="button"
         onClick={runUpload}
         disabled={busy}
-        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] disabled:opacity-50"
+        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-line-2 py-1.5 font-doto text-[10px] uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary disabled:opacity-50"
       >
-        <VexIcon icon={PlusIcon} size={12} aria-hidden />
+        <IconPlus size={12} />
         {busy ? "Adding…" : "Add image"}
       </button>
 
       {/* The ONLY way a user reaches the launch dialog, now inside the card
           that holds the image every launch needs. The chips sit beside it so
           the launchpad is chosen where the picture is. */}
-      <div className="mt-2.5 flex flex-col gap-2 border-t border-[var(--vex-line)] pt-2.5">
+      <div className="mt-2.5 flex flex-col gap-2 border-t border-line-2 pt-2.5">
         <LaunchPlatformChips value={platform} onChange={setPlatform} />
         <TokenLaunchButton
           sessionId={sessionId}

@@ -16,7 +16,10 @@
  * `retryAfterSeconds`, a bounded integer.
  */
 
-import type { EngineErrorCategory } from "./engine-error-classification.js";
+import type {
+  EngineErrorCategory,
+  EngineErrorRemedy,
+} from "./engine-error-classification.js";
 
 export interface EngineErrorCopy {
   /** Short label for the banner heading. Sentence case, no trailing period. */
@@ -90,4 +93,25 @@ export function engineErrorRetryHint(
     return `Retry in ${retryAfterSeconds}s.`;
   }
   return engineErrorCopy(category).retryable ? "Retry when ready." : null;
+}
+
+/**
+ * Action hint per remedy - the ONE user action that clears the failure,
+ * phrased as an imperative. A `Record` over the closed enum so a new remedy
+ * without copy is a compile error, exactly like the category table above.
+ */
+const REMEDY_HINT: Readonly<Record<EngineErrorRemedy, string>> = {
+  "insufficient-funds": "Top up your provider credits, then retry.",
+  "config-invalid": "Check the API key and permissions in provider setup.",
+  "rate-limited": "Wait out the rate limit, then retry.",
+  "provider-down": "Wait for the provider to recover, then retry.",
+  "compact-session": "Compact this session or start a new one.",
+  "remove-attachment": "Remove or replace the attached image, then retry.",
+};
+
+/** Imperative action hint for a remedy; null when there is none to suggest. */
+export function engineErrorRemedyHint(
+  remedy: EngineErrorRemedy | null,
+): string | null {
+  return remedy === null ? null : REMEDY_HINT[remedy];
 }

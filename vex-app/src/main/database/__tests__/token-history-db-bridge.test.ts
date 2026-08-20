@@ -238,7 +238,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — agent_activity bridge (Agent Scan Phase 2)", () => {
+describe("getTokenHistory - agent_activity bridge (Agent Scan Phase 2)", () => {
   function bridgeAgentRow(overrides: Partial<Record<string, unknown>> = {}) {
     return {
       source_kind: "agent_activity",

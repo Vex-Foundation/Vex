@@ -48,12 +48,12 @@ export function DesktopInstallBody({
         detail={`Vex needs Docker Desktop on ${platformLabel}.`}
       />
 
-      <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <p className="text-xs leading-relaxed text-ink-secondary">
         If Docker is installed, enable Docker Desktop&apos;s CLI symlinks
         (Settings → Advanced) or reinstall Docker Desktop, then click Recheck.
       </p>
 
-      <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-ink-secondary">
         <li>Click Download installer (Vex fetches the official build for you).</li>
         <li>Run the installer with admin privileges.</li>
         <li>Launch Docker Desktop.</li>

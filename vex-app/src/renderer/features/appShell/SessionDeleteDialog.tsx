@@ -49,29 +49,29 @@ export function SessionDeleteDialog({
       {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
        * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent className="max-w-md">
-        <DialogHeader className="border-[var(--vex-line)]">
+        <DialogHeader className="border-line-2">
           <DialogTitle>Remove session?</DialogTitle>
-          <DialogDescription className="text-[var(--vex-text-2)]">
+          <DialogDescription className="text-ink-secondary">
             {describeOutcome(title, blockedOutcome)}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody className="gap-3" />
 
-        <DialogFooter className="border-[var(--vex-line)]">
+        <DialogFooter className="border-line-2">
           <Button
             type="button"
             variant="ghost"
             onClick={onCancel}
             disabled={pending}
             autoFocus
-            className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             Cancel
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant="danger"
             onClick={onConfirm}
             disabled={pending}
           >
@@ -88,10 +88,10 @@ function describeOutcome(
   outcome: SessionDeleteOutcome | null,
 ): string {
   if (outcome === "blocked_active_mission") {
-    return `Can't remove "${title}" — this mission is still active. Stop the mission first, then try again.`;
+    return `Can't remove "${title}" - this mission is still active. Stop the mission first, then try again.`;
   }
   if (outcome === "blocked_pending_approval") {
-    return `Can't remove "${title}" — this session has a pending approval. Resolve it first, then try again.`;
+    return `Can't remove "${title}" - this session has a pending approval. Resolve it first, then try again.`;
   }
   if (outcome === "state_changed") {
     return "Session state changed since you opened this dialog. Try again.";

@@ -3,26 +3,15 @@
  * ============================================================ */
 
 /* ─────────────────────────────────────────────────────────────────────────
- * THE TYPOGRAPHY REGISTER (White House pass, owner decree 2026-07-29)
+ * THE TYPOGRAPHY REGISTER (tokens v2, 2026-08 rebrand)
  *
- * The app-wide voice is the whitehouse.gov pair: Instrument Serif (voice) +
- * Instrument Sans (support). JetBrains Mono is DEMOTED to strictly technical
- * artifacts only — code blocks, raw JSON args/output, addresses, tx hashes.
- * The mono-uppercase micro-label language is retired shell-wide, which is why
- * the two classes below flip family at the CLASS level: every one of their
- * ~40 call sites changes register in one edit, and no new mono uppercase
- * label may be added anywhere.
- *
- * SUPPORT-SIDE (sans small caps), NOT serif — the sanctioned fallback:
- * Instrument Serif is a high-contrast display face whose hairline strokes
- * disappear at the 10px these two classes render at, and it has NO weight
- * axis, so the ~6 call sites that pair `.vex-micro` with `font-semibold` /
- * `font-medium` would have forced the browser to SYNTHESIZE a bold the
- * register explicitly forbids. Instrument Sans is the support half of the
- * same whitehouse.gov pair, carries a real 400–700 axis, and stays crisp at
- * micro sizes — so the small-caps stamp is sans and the serif is reserved
- * for headings, display and the reasoning aside. See `.vex-chat-prose`
- * below for the reading side, and `.vex-reasoning-prose` for the aside.
+ * The app-wide voice is Inter Tight (--font-sans: UI + reading), Doto
+ * (--font-doto: display micro-labels, stats - applied per scope, e.g. the
+ * [data-vex-gate] pre-shell re-pins `.vex-micro`), and JetBrains Mono for
+ * strictly technical artifacts only - code blocks, raw JSON args/output,
+ * addresses, tx hashes. Instrument Serif survives ONLY as the gate voice
+ * (pre-shell surfaces). The two classes below flip family at the CLASS
+ * level so their ~40 call sites change register in one edit.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* Eyebrow — the section/group label. Formerly carried a leading ::before rule
@@ -54,7 +43,7 @@
  * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
  * worlds can size the stamp independently: the shell keeps the 10px/0.14em
  * default below, the pre-shell re-pins both vars in the
- * `[data-vex-gate="true"]` scope (global-css/setup-gate.css) to 12px/0.14em.
+ * `[data-vex-gate="true"]` scope (global-css/chronos-gate.css) to 12px/0.14em.
  * That split matters because most of those call sites live in wizard step
  * files, which the app shell's Settings screen renders too.
  *
@@ -78,23 +67,18 @@
  * narrow counters close up, and the owner's first live session reported the
  * body as plainly hard to read.
  *
- * So the register splits, exactly as the source does:
- *   BODY      → Instrument Sans, 15px/1.65 (the pre-redesign reading metric).
- *   HEADINGS  → Instrument Serif, set per-node in `MarkdownContent`.
- *   DISPLAY   → Instrument Serif, set per-node (position totals, hero figures).
- *   REASONING → Instrument Serif ITALIC (`.vex-reasoning-prose` below) — a
- *               deliberately different voice for a different kind of speech.
- *   TECHNICAL → mono (code, raw JSON, addresses, tx hashes) / sans+tabular
- *               (numeric columns). Unchanged.
- *
- * Consequence of leaving the serif: Instrument Sans HAS a real 400–700 weight
- * axis, so `strong` is a genuine semibold again instead of the italic
- * substitution the weightless serif forced. `font-synthesis-weight` is
- * therefore no longer needed here — it survives on the serif subtrees below,
- * which still cannot be synthesized. */
+
+ * The register (tokens v2, 2026-08-20):
+ *   BODY      -> Inter Tight 15.5px/1.65 (reading scale).
+ *   HEADINGS  -> Inter Tight 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> Inter Tight ITALIC (`.vex-reasoning-prose` below) - a
+ *                different voice for a different kind of speech; the serif
+ *                is confined to the gate.
+ *   TECHNICAL -> mono (code, raw JSON, addresses, tx hashes) / sans+tabular
+ *                (numeric columns). Unchanged. */
 .vex-chat-prose {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 15.5px;
   line-height: 1.65;
 }
 .vex-chat-prose strong,
@@ -121,23 +105,22 @@
 }
 
 /* Reasoning prose — the SECOND voice (owner decree 2026-07-30: "inna
- * czcionka"). Vex thinking aloud is not Vex speaking, so it is not set in the
- * speaking register: Instrument Serif ITALIC at a muted tone, the editorial
- * convention for an aside. Worn by all three reasoning surfaces so they read
+ * czcionka"). Vex thinking aloud is not Vex speaking, so the aside stays
+ * ITALIC and muted — but in Inter Tight (tokens v2: the serif voice is
+ * confined to the gate). Worn by all three reasoning surfaces so they read
  * as one object — the live segment streaming in the island, the settled
  * segment stamps, and the persisted `ReasonedBlock`.
  *
  * The same technical opt-outs apply: a tool name, a JSON fragment or an
  * address quoted inside a trace must not be italicised into illegibility. */
 .vex-reasoning-prose {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-style: italic;
-  font-synthesis-weight: none;
   color: var(--vex-text-2);
 }
 .vex-reasoning-prose strong,
 .vex-reasoning-prose b {
-  font-weight: 400;
+  font-weight: 600;
 }
 .vex-reasoning-prose :is(code, pre) {
   font-family: var(--font-mono);

@@ -8,7 +8,7 @@
 
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
-import { BugIcon, VexIcon } from "../../components/icons/index.js";
+import { IconBug } from "../../components/icons/index.js";
 import { Button } from "../../components/ui/button.js";
 import { ReportIssueDialog } from "./ReportIssueDialog.js";
 
@@ -32,7 +32,7 @@ export function ReportIssueButton({
         aria-haspopup="dialog"
         className="border border-[var(--vex-line-strong)] bg-transparent text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
       >
-        <VexIcon icon={BugIcon} size={16} aria-hidden />
+        <IconBug size={16} />
         {compact ? null : <span>Report issue</span>}
       </Button>
       <ReportIssueDialog open={open} onOpenChange={onOpenChange} />

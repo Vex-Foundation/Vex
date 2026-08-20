@@ -49,6 +49,8 @@ function memoryFailure(over: Partial<EngineErrorEvent> = {}): EngineErrorEvent {
     retryAfterSeconds: null,
     occurredAt: "2026-07-29T10:00:00.000Z",
     correlationId: null,
+    detail: null,
+    remedy: null,
     ...over,
   };
 }
@@ -158,7 +160,7 @@ describe("GlobalErrorBanner", () => {
   });
 });
 
-describe("null-session routing — both directions", () => {
+describe("null-session routing - both directions", () => {
   it("a session-less failure NEVER reaches a session banner", () => {
     const client = new QueryClient();
     mountRetention();

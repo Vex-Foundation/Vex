@@ -1,5 +1,8 @@
 import type { AbortableInvocation } from "../common.js";
+import type { Result } from "../../../ipc/result.js";
 import type {
+  ChatSteerInput,
+  ChatSteerResult,
   ChatSubmitInput,
   ChatSubmitResult,
 } from "../../../schemas/chat.js";
@@ -19,4 +22,13 @@ export interface ChatBridge {
   readonly submit: (
     input: ChatSubmitInput
   ) => AbortableInvocation<ChatSubmitResult>;
+  /**
+   * Steer a LIVE turn (A33): persist one `operator_interrupt` row for
+   * delivery at the next tool-batch boundary. `no_active_turn` means
+   * nothing persisted - submit normally instead. Never auto-retry:
+   * `queued_live` wrote a row.
+   */
+  readonly steer: (
+    input: ChatSteerInput
+  ) => Promise<Result<ChatSteerResult>>;
 }

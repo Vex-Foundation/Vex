@@ -26,7 +26,7 @@
  * the run lifecycle.
  */
 
-import { emitEngineError } from "@vex-agent/engine/runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "@vex-agent/engine/runtime/error-bus.js";
 import type { EngineErrorScope } from "@vex-agent/engine/runtime/error-bus.js";
 import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
 import { log } from "../../logger/index.js";
@@ -67,8 +67,8 @@ export function dispatchPreparedMission(
       );
       // Bounded push FIRST: it needs no I/O and must not be lost if the
       // bug-report sink below is unreachable. `readMissionErrorSignal` reads
-      // own-properties only and never walks `.cause`, so nothing from the raw
-      // provider error can ride along.
+      // own-properties only and never walks `.cause`; the raw message rides as
+      // `detail` and is sanitized at the error bridge (decree 2026-08-02).
       try {
         const signal = readMissionErrorSignal(cause);
         emitEngineError({
@@ -80,6 +80,7 @@ export function dispatchPreparedMission(
           statusCode: signal.status,
           causeCode: signal.causeCode,
           retryAfterSeconds: signal.retryAfterSeconds,
+          detail: errorDetailOf(cause),
           correlationId: refs.correlationId,
         });
       } catch (emitErr) {

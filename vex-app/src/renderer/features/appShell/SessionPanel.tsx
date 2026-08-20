@@ -4,9 +4,8 @@
  * Two layouts, branched on whether a session is active:
  *   - no active session → the WELCOME STAGE: the
  *     center column is TRANSPARENT — the procedural WebGL sky mounted behind
- *     the shell shows through. `SessionWelcomeHero` paints the Grok-style
- *     logo row (sigil + PREVIEW wordmark — the H1 is deleted, owner decree
- *     2026-07-21) and the absolute bottom band against this panel's relative
+ *     the shell shows through. `SessionWelcomeHero` paints the
+ *     vx-mark + greeting stack and the absolute bottom band against this panel's relative
  *     frame; the composer sits directly beneath the logo row, centered at
  *     min(760px, 92%), inside a FIXED-HEIGHT growth band (owner smoothness
  *     decree 2026-07-22): the band's layout height equals the composer's
@@ -61,6 +60,8 @@ import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
 import { SessionSleepBanner } from "./SessionSleepBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
+import { useWindowTitleSync } from "../../lib/window-title.js";
+import { useTurnCompleteNotification } from "../../lib/turn-notification.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
@@ -124,6 +125,20 @@ export function SessionPanel({
     return detailQuery.data.data;
   }, [activeSessionId, detailQuery.data]);
 
+  // E15 + A34: the native window title mirrors the active session, with the
+  // unseen-turn badge while an answer landed unfocused; the same signal asks
+  // main for the OS-native notification (narrow notifyTurnComplete contract,
+  // main re-checks focus itself). The user TITLE alone rides in the body -
+  // initialGoal is free prose and can exceed the title schema's 80-char cap.
+  const unseenTurn = useTurnCompleteNotification(
+    activeSessionId,
+    activeSession?.title ?? null,
+  );
+  useWindowTitleSync(
+    activeSession?.title ?? activeSession?.initialGoal ?? null,
+    unseenTurn,
+  );
+
   const detailError =
     detailQuery.data && detailQuery.data.ok === false
       ? detailQuery.data.error.message
@@ -179,8 +194,8 @@ export function SessionPanel({
         {/* THE INSTRUMENT — directly below the logo row, one centered
             column (Grok's ~760px input slot), inside the ANCHORED GROWTH
             BAND (owner smoothness decree 2026-07-22): the band's layout
-            height is FIXED at the composer's resting stack — mt-6 (24px) +
-            resting pill (56px) + chips slot (60px) = 140px — so the flex-1
+            height is FIXED at the composer's resting stack - mt-6 (24px) +
+            resting pill (56px) + chips slot (60px) = 140px - so the flex-1
             crown zone above and spacer below split a CONSTANT leftover.
             When the pill auto-grows, the extra height overflows the band
             DOWNWARD into the empty spacer zone instead of re-centering the
@@ -269,7 +284,7 @@ export function SessionPanel({
               {/* The mission contract + action plan no longer render inline:
                   the two tall cards used to push MissionControls + the Accept
                   footer below the fold. They now live in the DESK RULE
-                  header's badge cluster (`MissionRail`) — PremiumBadge →
+                  header's badge cluster (`MissionRail`) - PremiumBadge →
                   top-layer dialog (`MissionContractModal` /
                   `PlanDisplayModal`), which keeps the Accept action pinned and
                   reachable. The transcript now owns the full column height. */}
@@ -283,7 +298,7 @@ export function SessionPanel({
                 ) : null}
               </div>
               {/* FULL-BLEED: the transcript owns the panel's width so its
-                  scroller — and therefore the native scrollbar — reaches the
+                  scroller - and therefore the native scrollbar - reaches the
                   panel's right edge. The reading column is re-applied INSIDE
                   it, around the rows. */}
               {activeSession !== null ? (
@@ -304,7 +319,7 @@ export function SessionPanel({
             composer's tree position stays stable across the idle↔tape
             switch. On the idle stage the OUTER div is the same ANCHORED
             GROWTH BAND as the welcome stage (fixed h-[140px] = the resting
-            composer stack — see the welcome branch): pill auto-grow
+            composer stack - see the welcome branch): pill auto-grow
             overflows downward instead of re-centering the column, so the
             crown never moves; the INNER div seats the instrument in the
             centered column (min(760px, 92%)) rising with the d2 stagger.
@@ -326,7 +341,7 @@ export function SessionPanel({
             )}
           >
             {/* The composer is ONE instrument on every stage (the old `stage`
-                presence prop is retired with the Grok pill — same 56px
+                presence prop is retired with the Grok pill - same 56px
                 geometry welcome, idle, and tape). */}
             <SessionComposer
               activeSession={activeSession}

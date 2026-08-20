@@ -8,8 +8,8 @@
  * forwarded onto the panel root.
  */
 
-import type { JSX } from "react";
-import type { IconGlyph } from "../../../../components/icons/index.js";
+import type { ComponentType, JSX } from "react";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import { EMBEDDING_DIM } from "@shared/embedding-defaults.js";
 import { type WizardFlowMode } from "../../../../lib/api/wizard.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -21,7 +21,7 @@ interface EmbeddingsState {
 }
 
 export interface EmbeddingSkipCardProps {
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly embeddingsState: EmbeddingsState | null;
   readonly flowMode: WizardFlowMode;
   readonly isPending: boolean;
@@ -49,12 +49,12 @@ export function EmbeddingSkipCard({
         embeddingsState?.baseUrlRedacted ? (
           <>
             Vex is using <code>{embeddingsState.baseUrlRedacted}</code>{" "}
-            (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}) —{" "}
+            (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}) -{" "}
             {embeddingsState.reachable ? (
-              <span className="text-[var(--color-success)]">reachable</span>
+              <span className="text-success">reachable</span>
             ) : (
               <>
-                <span className="text-[var(--color-warning)]">
+                <span className="text-warning">
                   not reachable
                 </span>{" "}
                 yet; the runtime may still be loading the model
@@ -89,11 +89,11 @@ export function EmbeddingSkipCard({
       }
     >
       {advanceError ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {advanceError}
         </p>
       ) : (
-        <p className="text-sm text-[var(--color-text-secondary)]">
+        <p className="text-sm text-ink-secondary">
           Override to point at a different OpenAI-compatible endpoint.
         </p>
       )}

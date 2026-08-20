@@ -41,30 +41,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 // The proven icon set for a real-SessionComposer mount (copied from
-// composer-console.test.tsx — the quick-action chips consume FlameIcon/
-// ChartLineData01Icon/PercentIcon, the send/stop key the arrows).
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  DownloadIcon: "DownloadIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  WalletIcon: "WalletIcon",
-  MapPinIcon: "MapPinIcon",
-  BrainCircuitIcon: "BrainCircuitIcon",
-  CircleStopIcon: "CircleStopIcon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  PercentIcon: "PercentIcon",
-}));
-
+// composer-console.test.tsx — the quick-action chips consume IconFlame/
+// ChartLineData01Icon/IconPercent, the send/stop key the arrows).
 const mockSubmitChat = {
   isPending: false as boolean,
   mutateAsync: vi.fn(),
@@ -203,7 +182,7 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(slot?.contains(field)).toBe(true);
 }
 
-describe("SessionPanel welcome — crown anchored above a downward growth band", () => {
+describe("SessionPanel welcome - crown anchored above a downward growth band", () => {
   it("seats the crown zone as a sibling ABOVE the fixed-height composer band", () => {
     const { container } = renderWelcome();
     expectAnchoredStructure(container);
@@ -266,7 +245,7 @@ describe("SessionPanel welcome — crown anchored above a downward growth band",
   });
 });
 
-describe("composer growth glide — globals.css contract (raw scan)", () => {
+describe("composer growth glide - globals.css contract (raw scan)", () => {
   /** First rule block for a selector (the composer-console.test helper). */
   function blockFor(selector: string): string {
     const start = GLOBALS_CSS.indexOf(`${selector} {`);
@@ -287,13 +266,13 @@ describe("composer growth glide — globals.css contract (raw scan)", () => {
     expect(grow).not.toContain("animation");
   });
 
-  it("the console holds a CONSTANT radius — no border-radius relax left to sync with", () => {
-    // The height glide above used to share its 220ms clock with the pill's
-    // rounded-full ⇄ rounded-[28px] relax, so the two moved as one gesture.
-    // The rebuilt console (owner decree 2026-07-29) is a constant rounded-2xl
-    // surface, so that second moving part is gone. Assert its ABSENCE: a
-    // reintroduced relax would otherwise silently drift off this clock.
-    const host = blockFor(".vex-console");
-    expect(host).not.toContain("border-radius");
+  it("the capsule holds a CONSTANT r22 radius - no border-radius relax left to sync with", () => {
+    // The height glide above used to share its 220ms clock with a radius
+    // relax once; the capsule (catalog geometry) is a constant 22px surface,
+    // so that second moving part stays gone: the radius is a static value
+    // and nothing transitions it.
+    const host = blockFor(".vex-composer-card");
+    expect(host).toContain("border-radius: 22px");
+    expect(host).not.toContain("transition");
   });
 });

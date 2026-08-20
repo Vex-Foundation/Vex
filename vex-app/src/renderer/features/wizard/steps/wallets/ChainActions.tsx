@@ -141,17 +141,17 @@ export function ChainActions({
         data-vex-wallet-chain={chain}
       >
         <div>
-          <p className="vex-micro text-muted-foreground">
+          <p className="vex-micro text-ink-tertiary">
             {chainLabel(chain)} wallet
           </p>
           <AddressDisplay address={address} className="mt-1" />
         </div>
         {backupDir !== null ? (
           <div className={cn("py-1", RAIL_WARNING_CHROME)}>
-            <p className="text-sm font-medium text-foreground">
-              Backup created — save it to a safe location now.
+            <p className="text-sm font-medium text-ink-primary">
+              Backup created - save it to a safe location now.
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-ink-tertiary">
               Losing this device <em>and</em> your master password means
               your wallet is unrecoverable. The backup at{" "}
               <code className="font-mono">.../backups/&lt;timestamp&gt;</code>{" "}
@@ -186,7 +186,7 @@ export function ChainActions({
           </Button>
         </div>
         {actionError !== null ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {actionError}
           </p>
         ) : null}
@@ -202,10 +202,10 @@ export function ChainActions({
         data-vex-wallet-state="empty"
         data-vex-wallet-chain={chain}
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-ink-tertiary">
           Set up your {chainLabel(chain)} wallet by generating fresh keys,
           importing an existing private key, or restoring from a backup
-          file. Keys are created and encrypted locally — Vex never sends
+          file. Keys are created and encrypted locally - Vex never sends
           them anywhere.
         </p>
         <div className="flex flex-wrap gap-2">
@@ -231,7 +231,7 @@ export function ChainActions({
           </Button>
         </div>
         {actionError !== null ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {actionError}
           </p>
         ) : null}
@@ -264,12 +264,12 @@ export function ChainActions({
           aria-invalid={importError !== null ? true : undefined}
           aria-describedby={importError !== null ? importErrorId : undefined}
         />
-        <p className="text-xs text-muted-foreground">{importHint(chain)}</p>
+        <p className="text-xs text-ink-tertiary">{importHint(chain)}</p>
       </div>
       {importError !== null ? (
         <p
           id={importErrorId}
-          className="text-xs text-[var(--color-danger)]"
+          className="text-xs text-danger"
           role="alert"
         >
           {importError}

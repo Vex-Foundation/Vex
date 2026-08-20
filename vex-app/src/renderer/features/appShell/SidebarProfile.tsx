@@ -1,68 +1,41 @@
 /**
- * SIDEBAR PROFILE — the rail's footer identity element (Chronos redesign,
- * 2026-07-20). One avatar row whose anchored side-panel menu owns the app's
- * destinations, so the rail ends in a single calm line instead of a stack of
- * registry rows.
+ * SIDEBAR PROFILE — the rail's footer identity element. One avatar row (the
+ * Vex mark, the user's display name or the personalize ask, a state-voiced
+ * subtitle) whose portal Menu owns the app's destinations: Personalize,
+ * Memory, Sessions, Agent Scan, How Vex works, Settings, plus a read-only
+ * runtime provenance row pinned in the menu footer. The trigger row keeps
+ * the rail's glass; the menu card is the shared `Menu` primitive chrome.
  *
- * The row: the Vex mark (`/icon.png`), a NAME line, a state-voiced subtitle —
- * the Chronos hallmark ("The night shift is active.", serif italic) while the
- * runtime is verifiably healthy, plain mono telemetry the moment it is not —
- * and a chevron (the clickability affordance; the old avatar status dot is
- * gone, runtime state lives in the menu's status row).
- *
- * The name line is the user's own "Vex setup" `displayName`
- * (`@shared/schemas/user-profile.js`, via `useUserProfile`) once set; before
- * that it is a gentle ask ("What should Vex call you?"). The trigger's own
- * `aria-label` keeps the stable "Vex" brand regardless — it names the menu,
- * not the person.
- *
- * The menu follows the repo-native anchored-panel pattern (GlobalApprovals /
- * components/ui/select-menu.tsx): no portals, outside pointerdown + Escape
- * close, focus moved into the panel on open and restored to the trigger on
- * close. The panel is `absolute bottom-full` — OUT of flow, deliberately
- * WIDER than the rail (340px, overflowing to the right; the rail must not
- * clip it), so opening it can never displace the session list (the previous
- * round's `.vex-distorted-glass` class carried an unlayered
- * `position: relative` that beat the layered `absolute` utility and dropped
- * the panel INTO flow — the "whole sidebar jumps" bug). Entries carry hint
- * sublines; Personalize opens the "Vex setup" dialog (with a STATIC cobalt
- * attention dot while no display name is set), Memory / Sessions / Agent Scan
- * / How Vex works open their full-app ShellScreens (measuring the row rect as
- * the screen's expand origin; Missions is retired — Sessions covers it), and
- * Settings opens the in-shell Settings ShellScreen (Phase 2b — the
- * reconfigure-wizard door is retired). The footer status row speaks
- * one short word ("Connected" / "Connecting" / …) beside the Docker/Postgres
- * provenance marks — no dots anywhere (the pulse-dot law is retired).
+ * The name line is the user's own "Vex setup" `displayName` once set; before
+ * that it is a gentle ask ("What should Vex call you?"). The healthy-runtime
+ * subtitle speaks the serif hallmark; any other state speaks plain
+ * telemetry. Screen rows route through `setShellRoute` with the trigger
+ * row's rect as the expand origin.
  */
 
 import {
   useCallback,
-  useEffect,
-  useId,
   useRef,
   useState,
   type JSX,
-  type KeyboardEvent,
-  type MouseEvent,
+  type ReactNode,
 } from "react";
-import { AnimatePresence, motion, type Variants } from "motion/react";
 import {
-  MessageSquareIcon,
-  ArrowUpIcon,
-  BookOpenIcon,
-  BrainIcon,
-  type IconGlyph,
-  RadarIcon,
-  Settings2Icon,
-  UserPenIcon,
-  VexIcon,
+  IconChevronUp,
+  IconInspect,
+  IconNewChat,
+  IconQuestion,
+  IconSettings,
+  IconThink,
+  IconUser,
+  type GlyphProps,
 } from "../../components/icons/index.js";
 import { Docker, Postgresql } from "@thesvg/react";
 import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { cn } from "../../lib/utils.js";
-import { EASE_STANDARD, SPRING_SNAPPY } from "../../lib/motion.js";
+import { Menu, type MenuEntry } from "../../components/ui/menu.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
@@ -78,41 +51,30 @@ type ProfileMenuScreen = "memory" | "sessions" | "agentScan" | "howItWorks";
 /** Chronos hallmark — the healthy-runtime subtitle. Test-pinned copy. */
 export const NIGHT_SHIFT_MESSAGE = "The night shift is active.";
 
-/** jsdom-safe reduced-motion probe (matchMedia may be absent in jsdom). */
-function prefersReducedMotion(): boolean {
+/** Two-line menu row body: label over its hint subline. */
+function entryLabel(label: string, hint: string, attention = false): ReactNode {
   return (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[13px] leading-tight">{label}</span>
+        <span className="truncate text-[11px] leading-tight text-ink-tertiary">
+          {hint}
+        </span>
+      </span>
+      {attention ? (
+        <span
+          aria-hidden
+          data-vex-attention-dot
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-primary"
+        />
+      ) : null}
+    </span>
   );
 }
 
-// macOS-menu pop (cult SidePanel DNA on the shared constants): the panel
-// springs open from the trigger corner (`origin-bottom-left` in the
-// className), then rows cascade on the EASE_STANDARD tween at ~0.05s.
-const panelVariants: Variants = {
-  hidden: { opacity: 0, y: 8, scale: 0.92 },
-  show: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      ...SPRING_SNAPPY,
-      delayChildren: 0.08,
-      staggerChildren: 0.05,
-    },
-  },
-  exit: {
-    opacity: 0,
-    y: 6,
-    scale: 0.96,
-    transition: { duration: 0.15, ease: EASE_STANDARD },
-  },
-};
-
-const rowVariants: Variants = {
-  hidden: { opacity: 0, y: 6 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.25, ease: EASE_STANDARD } },
-};
+function entryIcon(Icon: (props: GlyphProps) => ReactNode): ReactNode {
+  return <Icon size={15} />;
+}
 
 export function SidebarProfile({
   sidebarOpen,
@@ -135,56 +97,81 @@ export function SidebarProfile({
 
   const [open, setOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
-  // Sampled once per mount — the menu is tiny, a live OS-preference flip can
-  // wait for the next mount.
-  const [reduced] = useState(prefersReducedMotion);
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const panelId = useId();
 
-  const closeMenu = useCallback((): void => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  }, []);
+  const items: MenuEntry[] = [
+    {
+      id: "personalize",
+      icon: entryIcon(IconUser),
+      label: entryLabel(
+        "Personalize",
+        nameLine.asksToPersonalize
+          ? "You didn't set up your name"
+          : "Name, tone, instructions",
+        nameLine.asksToPersonalize,
+      ),
+    },
+    ...(memoryEnabled
+      ? [
+          {
+            id: "memory",
+            icon: entryIcon(IconThink),
+            label: entryLabel("Memory", "What Vex has learned"),
+          },
+        ]
+      : []),
+    {
+      id: "sessions",
+      icon: entryIcon(IconNewChat),
+      label: entryLabel("Sessions", "Find any conversation"),
+    },
+    {
+      id: "agentScan",
+      icon: entryIcon(IconInspect),
+      label: entryLabel("Agent Scan", "Every move, verified on-chain"),
+    },
+    {
+      id: "howItWorks",
+      icon: entryIcon(IconQuestion),
+      label: entryLabel("How Vex works", "Start here - the five-minute tour"),
+    },
+    {
+      id: "settings",
+      icon: entryIcon(IconSettings),
+      label: entryLabel("Settings", "Wallets, keys, model"),
+    },
+  ];
 
-  // Outside pointerdown collapses the menu (no focus restore — the user is
-  // deliberately interacting elsewhere). Only wired while open.
-  useEffect((): (() => void) | undefined => {
-    if (!open) return undefined;
-    const onPointerDown = (event: PointerEvent): void => {
-      const root = rootRef.current;
-      if (root !== null && !root.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+  // Runtime provenance row — read-only, pinned behind the footer hairline.
+  const footer: MenuEntry[] = [
+    {
+      id: "runtime-status",
+      disabled: true,
+      label: (
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[12.5px]">
+            {runtime.label}
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-ink-tertiary">
+            <Docker width={14} height={14} aria-hidden focusable={false} />
+            <Postgresql width={14} height={14} aria-hidden focusable={false} />
+          </span>
+        </span>
+      ),
+    },
+  ];
 
-  // Move focus into the panel on open; the root's Escape handler below then
-  // closes from anywhere within and restores the trigger.
-  useEffect((): void => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      closeMenu();
-    }
-  };
-
-  // Screen rows measure their own rect on click — the ShellScreen expands
-  // out of the exact row the user pressed.
-  const openScreenFromRow = useCallback(
-    (screen: ProfileMenuScreen, event: MouseEvent<HTMLButtonElement>): void => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      setOpen(false);
-      const origin = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  const openScreen = useCallback(
+    (screen: ProfileMenuScreen): void => {
+      // The trigger row's rect is the screen's expand origin: the menu row is
+      // portaled and already dismissed by the time the screen mounts.
+      const rect = triggerRef.current?.getBoundingClientRect();
+      const origin =
+        rect !== undefined
+          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          : { x: 0, y: 0, width: 0, height: 0 };
       // Agent Scan carries a session scope (C4). Opened from the PROFILE menu
-      // it is always the FULL global feed — the session-narrowed preset comes
-      // only from the session rail's Activity card.
+      // it is always the FULL global feed.
       setShellRoute(
         screen === "agentScan"
           ? { kind: "agentScan", origin, sessionId: null }
@@ -194,237 +181,122 @@ export function SidebarProfile({
     [setShellRoute],
   );
 
-  const openPersonalize = useCallback((): void => {
-    setOpen(false);
-    setSetupOpen(true);
-  }, []);
+  const openSettings = useCallback((): void => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    setShellRoute({
+      kind: "settings",
+      origin:
+        rect !== undefined
+          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          : { x: 0, y: 0, width: 0, height: 0 },
+      section: null,
+    });
+  }, [setShellRoute]);
 
-  // Settings expands out of its own row too — same rect capture as the
-  // screen rows, but the settings route carries a deep-link `section`
-  // payload (null here: the profile row lands on the register).
-  const openSettings = useCallback(
-    (event: MouseEvent<HTMLButtonElement>): void => {
-      const rect = event.currentTarget.getBoundingClientRect();
+  const onSelect = useCallback(
+    (id: string): void => {
       setOpen(false);
-      setShellRoute({
-        kind: "settings",
-        origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        section: null,
-      });
+      if (id === "personalize") {
+        setSetupOpen(true);
+        return;
+      }
+      if (id === "settings") {
+        openSettings();
+        return;
+      }
+      if (
+        id === "memory" ||
+        id === "sessions" ||
+        id === "agentScan" ||
+        id === "howItWorks"
+      ) {
+        openScreen(id);
+      }
     },
-    [setShellRoute],
+    [openScreen, openSettings],
+  );
+
+  const trigger = (
+    <button
+      ref={triggerRef}
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-label={`Vex - ${runtime.label}. Open menu`}
+      title={sidebarOpen ? undefined : runtime.label}
+      onClick={() => setOpen((prev) => !prev)}
+      className={cn(
+        "flex w-full items-center transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary",
+        sidebarOpen ? "h-14 gap-2.5 px-4 text-left" : "h-12 justify-center px-0",
+      )}
+    >
+      {/* Collapsed rail stays clean: the mark alone, no dot, no chevron. */}
+      <img
+        src={AVATAR_SRC}
+        alt=""
+        aria-hidden
+        draggable={false}
+        className="h-7 w-7 shrink-0 select-none rounded-full"
+      />
+      {sidebarOpen ? (
+        <>
+          <span className="flex min-w-0 flex-1 flex-col">
+            {nameLine.asksToPersonalize ? (
+              // Gentle call-to-action voice — NOT semibold, so it never
+              // reads as the confident brand name it is standing in for.
+              <span className="truncate text-[12.5px] font-normal leading-tight text-ink-secondary">
+                {nameLine.text}
+              </span>
+            ) : (
+              <span className="truncate text-[13px] font-medium leading-tight text-foreground">
+                {nameLine.text}
+              </span>
+            )}
+            {runtime.live ? (
+              // The hallmark earns the serif voice ONLY while the runtime is
+              // verifiably healthy; any other state speaks plain telemetry.
+              <span className="truncate font-serif text-[12px] italic leading-tight text-ink-secondary">
+                {NIGHT_SHIFT_MESSAGE}
+              </span>
+            ) : (
+              <span className="vex-micro truncate leading-tight text-ink-tertiary">
+                {runtime.label}
+              </span>
+            )}
+          </span>
+          {/* Chevron affordance — the menu opens upward, so the closed state
+           * points up and rotates when open. */}
+          <IconChevronUp
+            size={15}
+            className={cn(
+              "shrink-0 text-ink-tertiary transition-transform duration-200",
+              open && "rotate-180",
+            )}
+          />
+        </>
+      ) : null}
+    </button>
   );
 
   return (
     <div
-      ref={rootRef}
-      onKeyDown={onKeyDown}
       data-vex-area="sidebar-profile"
       className="relative border-t border-[var(--vex-line)] bg-[var(--vex-rail-strong)]"
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        aria-label={`Vex — ${runtime.label}. Open menu`}
-        title={sidebarOpen ? undefined : runtime.label}
-        onClick={() => (open ? closeMenu() : setOpen(true))}
-        className={cn(
-          "flex w-full items-center transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]",
-          sidebarOpen ? "h-14 gap-2.5 px-4 text-left" : "h-12 justify-center px-0",
-        )}
-      >
-        {/* Collapsed rail stays clean: the mark alone, no dot, no chevron. */}
-        <img
-          src={AVATAR_SRC}
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-7 w-7 shrink-0 select-none rounded-full"
-        />
-        {sidebarOpen ? (
-          <>
-            <span className="flex min-w-0 flex-1 flex-col">
-              {nameLine.asksToPersonalize ? (
-                // Gentle call-to-action voice — NOT semibold, so it never
-                // reads as the confident brand name it is standing in for.
-                <span className="truncate text-[12.5px] font-normal leading-tight text-[var(--vex-text-2)]">
-                  {nameLine.text}
-                </span>
-              ) : (
-                <span className="truncate text-[13px] font-semibold leading-tight text-foreground">
-                  {nameLine.text}
-                </span>
-              )}
-              {runtime.live ? (
-                // The hallmark earns the serif voice ONLY while the runtime is
-                // verifiably healthy; any other state speaks plain telemetry.
-                <span className="truncate font-serif text-[12px] italic leading-tight text-[var(--vex-text-2)]">
-                  {NIGHT_SHIFT_MESSAGE}
-                </span>
-              ) : (
-                <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.14em] leading-tight text-[var(--vex-text-3)]">
-                  {runtime.label}
-                </span>
-              )}
-            </span>
-            {/* Chevron affordance — the menu opens upward, so the closed state
-             * points up and rotates when open. */}
-            <VexIcon
-              icon={ArrowUpIcon}
-              size={15}
-              aria-hidden
-              className={cn(
-                "shrink-0 text-[var(--vex-text-3)] transition-transform duration-200",
-                open && "rotate-180",
-              )}
-            />
-          </>
-        ) : null}
-      </button>
-
-      <AnimatePresence>
-        {open ? (
-          <motion.div
-            ref={panelRef}
-            id={panelId}
-            role="menu"
-            aria-label="Vex menu"
-            data-vex-area="sidebar-profile-menu"
-            tabIndex={-1}
-            variants={panelVariants}
-            initial={reduced ? false : "hidden"}
-            animate="show"
-            exit={reduced ? undefined : "exit"}
-            // Floating Chronos glass panel (owner correction round,
-            // 2026-07-20): ink glass + blur carries legibility, a static
-            // grain overlay decorates — never a filter on content (the
-            // previous DistortedGlass displacement filter warped this menu's
-            // text into illegible squiggles and is retired). Directional
-            // drop shadow, never a resting glow. 340px — deliberately WIDER
-            // than the rail, overflowing to the right (the rail's z-20 keeps
-            // the overflow painted above the center column); absolute = out
-            // of flow, zero layout shift.
-            className="absolute bottom-full left-3 z-40 mb-2 w-[340px] origin-bottom-left overflow-hidden rounded-xl border border-[var(--vex-line-strong)] bg-[var(--vex-glass-strong)] py-1.5 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.8)] backdrop-blur-xl focus-visible:outline-none"
-          >
-            <div
-              aria-hidden
-              className="vex-noise vex-noise--panel pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
-            />
-            <ProfileMenuItem
-              icon={UserPenIcon}
-              label="Personalize"
-              hint={
-                nameLine.asksToPersonalize
-                  ? "You didn't set up your name"
-                  : "Name, tone, instructions"
-              }
-              attention={nameLine.asksToPersonalize}
-              onSelect={() => openPersonalize()}
-            />
-            {memoryEnabled ? (
-              <ProfileMenuItem
-                icon={BrainIcon}
-                label="Memory"
-                hint="What Vex has learned"
-                onSelect={(event) => openScreenFromRow("memory", event)}
-              />
-            ) : null}
-            <ProfileMenuItem
-              icon={MessageSquareIcon}
-              label="Sessions"
-              hint="Find any conversation"
-              onSelect={(event) => openScreenFromRow("sessions", event)}
-            />
-            <ProfileMenuItem
-              icon={RadarIcon}
-              label="Agent Scan"
-              hint="Every move, verified on-chain"
-              onSelect={(event) => openScreenFromRow("agentScan", event)}
-            />
-            <ProfileMenuItem
-              icon={BookOpenIcon}
-              label="How Vex works"
-              hint="Start here — the five-minute tour"
-              onSelect={(event) => openScreenFromRow("howItWorks", event)}
-            />
-            <ProfileMenuItem
-              icon={Settings2Icon}
-              label="Settings"
-              hint="Wallets, keys, model"
-              onSelect={(event) => openSettings(event)}
-            />
-            <motion.div
-              variants={rowVariants}
-              aria-hidden
-              className="mx-3 my-1.5 h-px bg-[var(--vex-line)]"
-            />
-            {/* Runtime provenance row — one short word + the Docker/Postgres
-             * marks. Read-only, dot-free by decree. */}
-            <motion.div
-              variants={rowVariants}
-              className="flex items-center gap-2 px-4 py-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--vex-text-2)]">
-                {runtime.label}
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-[var(--vex-text-3)]">
-                <Docker width={14} height={14} aria-hidden focusable={false} />
-                <Postgresql width={14} height={14} aria-hidden focusable={false} />
-              </span>
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
+      <Menu
+        open={open}
+        anchor={trigger}
+        items={items}
+        footer={footer}
+        onSelect={onSelect}
+        onClose={() => setOpen(false)}
+        portal
+        side="top"
+        align="start"
+        className="block w-full"
+      />
       <VexSetupDialog open={setupOpen} onOpenChange={setSetupOpen} />
     </div>
-  );
-}
-
-function ProfileMenuItem({
-  icon,
-  label,
-  hint,
-  attention = false,
-  onSelect,
-}: {
-  readonly icon: IconGlyph;
-  readonly label: string;
-  readonly hint: string;
-  /** Static cobalt attention dot on the row edge — color only, never motion. */
-  readonly attention?: boolean;
-  readonly onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
-}): JSX.Element {
-  return (
-    <motion.button
-      variants={rowVariants}
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
-    >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] text-[var(--vex-text-2)]">
-        <VexIcon icon={icon} size={15} aria-hidden />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[13px] leading-tight text-foreground">
-          {label}
-        </span>
-        <span className="truncate text-[11px] leading-tight text-[var(--vex-text-3)]">
-          {hint}
-        </span>
-      </span>
-      {attention ? (
-        <span
-          aria-hidden
-          data-vex-attention-dot
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent)]"
-        />
-      ) : null}
-    </motion.button>
   );
 }
 
@@ -433,8 +305,7 @@ interface RuntimeStatusInput {
   readonly result: Result<HealthReport> | undefined;
 }
 
-/** Status derivation — the same health fork the retired RuntimeLedger used,
- * now speaking ONE short word (test-pinned; visual casing is CSS-only). */
+/** Status derivation — ONE short word (test-pinned; casing is CSS-only). */
 function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
   readonly label: string;
   /** True only when the runtime is verifiably connected and healthy. */
@@ -465,8 +336,7 @@ interface NameLineInput {
  * Name-line derivation. Deliberately fails closed to the stable "Vex"
  * fallback for every non-success state (loading, IPC error, or a resolved
  * `Result.ok === false`) so the personalize ask never flashes before the
- * profile has actually loaded — the ask is a positive statement ("this user
- * has no name set yet"), not a default we can assume mid-fetch.
+ * profile has actually loaded.
  */
 function getNameLine({ loading, error, result }: NameLineInput): {
   readonly asksToPersonalize: boolean;

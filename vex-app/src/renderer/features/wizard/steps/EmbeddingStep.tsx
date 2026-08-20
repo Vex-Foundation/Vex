@@ -172,7 +172,7 @@ export function EmbeddingStep({
         <>
           Embeddings power Vex&apos;s long-term memory. The bundled model
           (EmbeddingGemma 300M) runs entirely on this machine at{" "}
-          <code>127.0.0.1:{DEFAULT_EMBED_PORT}</code> — nothing leaves it.
+          <code>127.0.0.1:{DEFAULT_EMBED_PORT}</code> - nothing leaves it.
           Point Base URL at your own OpenAI-compatible endpoint only if
           you&apos;re comfortable sending memory content there. Optional;
           you can configure this later.
@@ -220,7 +220,7 @@ export function EmbeddingStep({
             role="status"
             data-vex-embedding-configure-later-alert
             className={cn(
-              "py-0.5 text-sm text-[var(--color-warning)]",
+              "py-0.5 text-sm text-warning",
               RAIL_WARNING_CHROME,
             )}
           >

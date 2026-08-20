@@ -66,21 +66,21 @@ export function ExportWalletPicker({
 
   if (query.isLoading) {
     return (
-      <p className="text-sm text-[var(--color-text-secondary)]" role="status">
+      <p className="text-sm text-ink-secondary" role="status">
         Loading wallets…
       </p>
     );
   }
   if (query.data?.ok !== true) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-sm text-danger" role="alert">
         Couldn&apos;t load your wallets. Close and reopen, or retry.
       </p>
     );
   }
   if (wallets.length === 0) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-sm text-danger" role="alert">
         No {chain === "evm" ? "EVM" : "Solana"} wallet to export.
       </p>
     );
@@ -91,14 +91,14 @@ export function ExportWalletPicker({
   return (
     <div className="flex flex-col gap-1.5" data-vex-export-wallet-picker={chain}>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-[var(--color-text-secondary)]">Wallet</span>
+        <span className="text-ink-secondary">Wallet</span>
         <select
           value={effectiveId ?? wallets[0]!.id}
           disabled={disabled}
           onChange={(e) => setSelectedId(e.target.value)}
           className={cn(
-            "h-9 rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-sm text-foreground",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
+            "h-9 rounded-xl border border-line-input bg-surface-deep px-2 text-sm text-ink-primary",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
           data-vex-export-wallet-select
@@ -110,7 +110,7 @@ export function ExportWalletPicker({
           ))}
         </select>
       </label>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-ink-tertiary">
         Exporting key for{" "}
         <code className="font-mono" data-vex-export-wallet-address>
           {truncateAddress(current.address)}

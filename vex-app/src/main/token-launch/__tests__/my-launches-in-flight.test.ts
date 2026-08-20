@@ -86,7 +86,7 @@ describe("an in-flight launch appears in My Launches", () => {
     expect(inFlight).toMatchObject({ name: "Waiting", symbol: "WAIT" });
   });
 
-  it("puts in-flight launches AHEAD of confirmed ones — the newest news first", async () => {
+  it("puts in-flight launches AHEAD of confirmed ones - the newest news first", async () => {
     mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
@@ -95,7 +95,7 @@ describe("an in-flight launch appears in My Launches", () => {
     expect(launches[1]?.createTxHash).toBe("0xconfirmed");
   });
 
-  it("shows only the AUTHORIZED prebuy — nothing was decoded, so nothing else is claimed", async () => {
+  it("shows only the AUTHORIZED prebuy - nothing was decoded, so nothing else is claimed", async () => {
     mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const [inFlight] = await listMyLaunches([WALLET], CHAIN_ID, 25);
@@ -105,7 +105,7 @@ describe("an in-flight launch appears in My Launches", () => {
     expect(inFlight).toMatchObject({ initialBuyRaw: "300000000000000", initialBuyDecimals: 18 });
   });
 
-  it("pairs a null prebuy with null decimals — never a bare raw or a lone scale", async () => {
+  it("pairs a null prebuy with null decimals - never a bare raw or a lone scale", async () => {
     mockListUnsettled.mockResolvedValue([
       { ...IN_FLIGHT_INTENT, prebuyRaw: null, prebuyDecimals: 18 },
     ]);
@@ -116,7 +116,7 @@ describe("an in-flight launch appears in My Launches", () => {
     expect(inFlight?.initialBuyDecimals).toBeNull();
   });
 
-  it("never invents a row for a launch with no tx hash — nothing was broadcast", async () => {
+  it("never invents a row for a launch with no tx hash - nothing was broadcast", async () => {
     mockListUnsettled.mockResolvedValue([{ ...IN_FLIGHT_INTENT, txHash: null }]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
@@ -191,7 +191,7 @@ describe("a proven launch is unchanged", () => {
 });
 
 describe("the strict DTO carries every merged row", () => {
-  it("parses BOTH shapes — a drifted field would drop the whole payload", async () => {
+  it("parses BOTH shapes - a drifted field would drop the whole payload", async () => {
     mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);

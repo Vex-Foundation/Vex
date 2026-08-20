@@ -87,7 +87,7 @@ describe("messages-db mapper", () => {
                 privateKey: `0x${"a".repeat(64)}`, // secret KEY → dropped entirely
                 note: `0x${"b".repeat(64)}`, // benign key, secret-shaped VALUE → redacted
               },
-              extraField: "private", // sibling of args — never crosses
+              extraField: "private", // sibling of args - never crosses
             },
           ],
           created_at: "2026-05-21T10:00:00.000Z",
@@ -351,6 +351,55 @@ describe("messages-db mapper", () => {
     if (!result.ok) return;
     expect(result.data.items[0]!.kind).toBe("text");
     expect(result.data.items[0]!.role).toBe("user");
+  });
+
+  it("maps a user operator_interrupt row to the steering kind - a steered user turn, not a notice (A33)", async () => {
+    vi.mocked(mocks.query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 9,
+          session_id: SESSION,
+          role: "user",
+          content: "actually, check the fees first",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-20T10:00:00.000Z",
+          source: "user",
+          message_type: "operator_interrupt",
+          metadata: null,
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("steering");
+    expect(result.data.items[0]!.role).toBe("user");
+  });
+
+  it("the ENGINE operator cue row stays a runtime notice - only the USER steered text wears the steering kind", async () => {
+    vi.mocked(mocks.query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          session_id: SESSION,
+          role: "system",
+          content: "[Engine: operator_interrupt]",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-20T10:00:01.000Z",
+          source: "engine",
+          message_type: "operator_interrupt",
+          metadata: null,
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("runtime_notice");
   });
 
   it("maps a compaction_committed marker row to the compaction kind (8-4)", async () => {

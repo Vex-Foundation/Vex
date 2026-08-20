@@ -19,6 +19,7 @@ import {
 } from "@shared/schemas/system.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
+import { registerSystemNotifyTurnCompleteHandler } from "./system/notify-turn-complete.js";
 import { isAppTranslocated } from "../system/translocation.js";
 
 const empty = z.object({}).strict();
@@ -92,6 +93,8 @@ async function setupCompleteFlag(): Promise<boolean> {
 
 export function registerSystemHandlers(): Array<() => void> {
   const handlers: Array<() => void> = [];
+
+  handlers.push(registerSystemNotifyTurnCompleteHandler());
 
   handlers.push(
     registerHandler({

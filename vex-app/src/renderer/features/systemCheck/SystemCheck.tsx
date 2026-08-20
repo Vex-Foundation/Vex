@@ -24,8 +24,8 @@
  * still runs but no rendered surface consumes it.
  *
  * CSP: brand icons come from `@thesvg/react` (typed React components,
- * no `dangerouslySetInnerHTML`); generic UI glyphs from
- * `VexIcon`. All animation is stylesheet @keyframes.
+ * no `dangerouslySetInnerHTML`); generic UI glyphs are the inline-SVG set in
+ * `components/icons`. All animation is stylesheet @keyframes.
  */
 
 import { useMemo } from "react";

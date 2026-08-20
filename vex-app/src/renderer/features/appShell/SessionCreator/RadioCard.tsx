@@ -22,7 +22,7 @@ interface RadioCardProps {
   readonly description: string;
   /**
    * Caution register: when checked, the consequence line takes the pin
-   * amber (--vex-pin) instead of muted ink. Set by the "Full access"
+   * warning amber instead of muted ink. Set by the "Full access"
    * permission option only — amber is a register, not a new warning.
    */
   readonly caution?: boolean;
@@ -41,13 +41,15 @@ export function RadioCard({
   return (
     <label
       className={cn(
-        "relative flex min-h-[96px] cursor-pointer flex-col gap-1.5 rounded-lg border px-4 py-3.5 transition-colors",
+        "relative flex min-h-[96px] cursor-pointer flex-col gap-1.5 rounded-xl border px-4 py-3.5 transition-colors",
         // Keyboard focus on the sr-only radio lights the card (hairline law:
         // the ring is the accent, never a glow).
-        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
+        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
+        // Selected reads as a solid raised card with the accent bar as the
+        // marker (check-not-fill law) - never an accent-tinted surface.
         checked
-          ? "border-[var(--vex-accent-border)] bg-[var(--vex-accent-fill-8)]"
-          : "border-[var(--vex-line)] hover:bg-white/[0.03]",
+          ? "border-line-4 bg-interactive-solid"
+          : "border-line-2 hover:bg-interactive-hover",
       )}
     >
       <input
@@ -64,23 +66,23 @@ export function RadioCard({
       {checked ? (
         <span
           aria-hidden
-          className="absolute bottom-[16%] left-0 top-[16%] w-[3px] rounded-r-[3px] bg-[var(--vex-accent)]"
+          className="absolute bottom-[16%] left-0 top-[16%] w-[3px] rounded-r-[3px] bg-accent-primary"
         />
       ) : null}
       <span
         className={cn(
-          "font-mono text-[10px] tracking-[0.24em] tabular-nums",
+          "font-doto text-[11px] font-medium tracking-[0.24em] tabular-nums",
           checked
-            ? "text-[var(--vex-accent-text)]"
-            : "text-[var(--vex-text-3)]",
+            ? "text-accent-primary"
+            : "text-ink-tertiary",
         )}
       >
         {index}
       </span>
       <span
         className={cn(
-          "font-display text-[15px] font-semibold tracking-[-0.01em]",
-          checked ? "text-white" : "text-[var(--vex-text)]",
+          "font-display text-[15px] font-medium tracking-[-0.01em]",
+          "text-ink-primary",
         )}
       >
         {title}
@@ -89,8 +91,8 @@ export function RadioCard({
         className={cn(
           "text-xs leading-relaxed",
           checked && caution
-            ? "text-[var(--vex-pin)]"
-            : "text-[var(--vex-text-3)]",
+            ? "text-warning"
+            : "text-ink-tertiary",
         )}
       >
         {description}

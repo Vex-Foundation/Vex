@@ -217,7 +217,7 @@ describe("when the agent has drafted a launch", () => {
     expect((screen.getByLabelText("Symbol") as HTMLInputElement).value).toBe("RKT");
   });
 
-  it("CANCELS the intent on dismiss — which is what resumes the parked agent", async () => {
+  it("CANCELS the intent on dismiss - which is what resumes the parked agent", async () => {
     cancelMock.mockResolvedValue({
       ok: true,
       data: { cancelled: true, resumedAgentTurn: true },
@@ -287,7 +287,7 @@ describe("the push", () => {
     });
   });
 
-  it("IGNORES another session's event — a modal must not hijack the screen", async () => {
+  it("IGNORES another session's event - a modal must not hijack the screen", async () => {
     renderHost();
     await waitFor(() => {
       expect(getAwaitingMock).toHaveBeenCalledTimes(1);
@@ -496,7 +496,7 @@ describe("the snapshot", () => {
     }
   });
 
-  it("is never stranded BUSY — a later idle form still hides for another session's form", async () => {
+  it("is never stranded BUSY - a later idle form still hides for another session's form", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const { switchTo } = renderSwitchableHost();
@@ -634,7 +634,7 @@ describe("the snapshot", () => {
       error: {
         code: "tokenLaunch.launch_refused",
         domain: "tokenLaunch",
-        message: "This launch request is no longer open — it expired.",
+        message: "This launch request is no longer open - it expired.",
         retryable: false,
         userActionable: true,
         redacted: true,
@@ -645,7 +645,7 @@ describe("the snapshot", () => {
     expect(dialogTitle()).not.toBeNull();
 
     await deploy();
-    await screen.findByText("This launch request is no longer open — it expired.");
+    await screen.findByText("This launch request is no longer open - it expired.");
     // No false success, and the expiry cancelled nothing.
     expect(cancelMock).not.toHaveBeenCalled();
     expect(dialogTitle()).not.toBeNull();

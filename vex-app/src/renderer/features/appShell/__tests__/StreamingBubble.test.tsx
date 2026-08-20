@@ -33,6 +33,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     startedAtMs: Date.now(),
     status: "working",
     errorType: null,
+    errorDetail: null,
     ...overrides,
   };
 }
@@ -46,7 +47,7 @@ function islandState(container: HTMLElement): string | null {
   );
 }
 
-describe("StreamingBubble — answer stream", () => {
+describe("StreamingBubble - answer stream", () => {
   it("renders streamed markdown text with the semantic stream-preview contract (photo-free)", () => {
     const { container } = render(
       createElement(StreamingBubble, {
@@ -78,8 +79,8 @@ describe("StreamingBubble — answer stream", () => {
   });
 });
 
-describe("TurnIsland — state transitions", () => {
-  it("starts in the compact working state, captioned 'vexing…' — the legacy word is retired", () => {
+describe("TurnIsland - state transitions", () => {
+  it("starts in the compact working state, captioned 'vexing…' - the legacy word is retired", () => {
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
@@ -122,7 +123,7 @@ describe("TurnIsland — state transitions", () => {
     expect(reasoning?.querySelector("strong")?.textContent).toBe("ledger");
   });
 
-  it("retires the ephemerality label — reasoning is persisted now", () => {
+  it("retires the ephemerality label - reasoning is persisted now", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ status: "thinking", reasoningText: "trace" }),
@@ -177,7 +178,7 @@ describe("TurnIsland — state transitions", () => {
   });
 });
 
-describe("TurnIsland — freeze, error, and settle", () => {
+describe("TurnIsland - freeze, error, and settle", () => {
   it("FREEZES into the awaiting-signature register while an approval is pending", () => {
     const { container } = render(
       createElement(StreamingBubble, {

@@ -53,7 +53,7 @@ export function NumericRow({
         {envName ? (
           <span
             aria-hidden
-            className="font-mono text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]"
+            className="font-mono text-[10px] tracking-[0.08em] text-ink-tertiary"
           >
             {envName}
           </span>
@@ -90,7 +90,7 @@ export function NumericRow({
           {cleared ? "Undo reset" : "Reset"}
         </Button>
       </div>
-      <p className="text-xs text-[var(--color-text-muted)]">
+      <p className="text-xs text-ink-tertiary">
         {cleared
           ? `Will clear on save → ${defaultLabel}`
           : (hint ?? `Default: ${defaultLabel}`)}

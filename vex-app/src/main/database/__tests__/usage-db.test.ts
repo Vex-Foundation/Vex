@@ -144,7 +144,7 @@ describe("usage-db mapper", () => {
     expect(result.data.requestCount).toBe(5);
   });
 
-  it("preserves a NEGATIVE cached-savings sum (write-heavy session — never clamped)", async () => {
+  it("preserves a NEGATIVE cached-savings sum (write-heavy session - never clamped)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {

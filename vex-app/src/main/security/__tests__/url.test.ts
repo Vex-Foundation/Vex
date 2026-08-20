@@ -183,7 +183,7 @@ describe("isAllowedExternalUrl", () => {
     expect(isAllowedExternalUrl(u, allowlist)).toBe(false);
   });
 
-  it("URL spec normalizes hostname to lowercase — mixed case still allowed", () => {
+  it("URL spec normalizes hostname to lowercase - mixed case still allowed", () => {
     expect(isAllowedExternalUrl("https://VEX.AI/", allowlist)).toBe(true);
     expect(
       isAllowedExternalUrl("https://PROJECTvex.ai/releases", allowlist)

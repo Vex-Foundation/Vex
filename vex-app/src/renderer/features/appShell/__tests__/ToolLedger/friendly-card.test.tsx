@@ -27,7 +27,7 @@ function act(over: Partial<ToolCallActView> = {}): ToolCallActView {
   };
 }
 
-describe("ToolActRow — friendly card presentation", () => {
+describe("ToolActRow - friendly card presentation", () => {
   it("prints a human title and keeps the raw symbol reachable as the tooltip", () => {
     render(
       createElement(ToolActRow, {
@@ -47,7 +47,7 @@ describe("ToolActRow — friendly card presentation", () => {
     ).not.toBeNull();
   });
 
-  it("falls back to the category glyph — never a borrowed brand — with no venue", () => {
+  it("falls back to the category glyph - never a borrowed brand - with no venue", () => {
     const { container } = render(
       createElement(ToolActRow, { act: act({ toolName: "wallet_balances" }) }),
     );
@@ -360,7 +360,7 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(screen.getByRole("button", { name: /Execute tool/ })).not.toBeNull();
   });
 
-  it("shows NO legs when the payload cannot be parsed — never a guessed trade", () => {
+  it("shows NO legs when the payload cannot be parsed - never a guessed trade", () => {
     const { container } = render(
       createElement(ToolActRow, {
         act: act({
@@ -520,14 +520,20 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
   });
 
-  it("keeps Args/Output as inert <pre> text inside the expanded body", () => {
+  it("keeps a NON-JSON payload as inert <pre> text; JSON gets the inspector tree", () => {
     const { container } = render(
       createElement(ToolActRow, {
-        act: act({ toolName: "swap_execute_uniswap", output: "{}" }),
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: "plain text args",
+          output: "{}",
+        }),
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: /Swap · Uniswap/ }));
-    const pres = container.querySelectorAll("pre");
-    expect(pres.length).toBe(2);
+    // Non-JSON args stay inert pre text; the "{}" output is a primitive-empty
+    // object and renders as a (single-row) tree.
+    expect(container.querySelectorAll("pre").length).toBe(1);
+    expect(container.querySelector("[data-vex-json-tree]")).not.toBeNull();
   });
 });

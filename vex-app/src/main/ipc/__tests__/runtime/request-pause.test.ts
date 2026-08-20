@@ -114,7 +114,7 @@ describe("runtime.requestPause", () => {
     expect(mockEnqueueRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("returns already_parked for a running run whose lease is NOT active — never enqueues", async () => {
+  it("returns already_parked for a running run whose lease is NOT active - never enqueues", async () => {
     mockGetActiveRunForSession.mockResolvedValueOnce(
       activeState("running", false),
     );

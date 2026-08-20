@@ -21,10 +21,7 @@
  */
 
 import type { JSX } from "react";
-import {
-  ArrowUpRightIcon,
-  VexIcon,
-} from "../../../../components/icons/index.js";
+import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type {
   AmountField,
   TokenHistoryEntry,
@@ -99,7 +96,7 @@ function LegText({
 }): JSX.Element {
   const display = tokenDisplay(token, symbol, localSymbol);
   const quantity = quantityText(amount);
-  const shown = estimated && quantity !== "—" ? `~${quantity}` : quantity;
+  const shown = estimated && quantity !== "-" ? `~${quantity}` : quantity;
   return (
     <span
       title={display.full ?? undefined}
@@ -146,18 +143,18 @@ function bridgeStatusChip(
         tone: "settling",
         title:
           checked !== null
-            ? `Tracking delayed — last checked ${checked}`
-            : "Tracking delayed — not yet checked since the bridge started",
+            ? `Tracking delayed - last checked ${checked}`
+            : "Tracking delayed - not yet checked since the bridge started",
       };
     }
-    return { text: "settling", tone: "settling", title: "Still settling — tracked automatically" };
+    return { text: "settling", tone: "settling", title: "Still settling - tracked automatically" };
   }
   if (entry.status === "failed") {
     if (entry.failureCode === "bridge_refunded") {
       return {
         text: "refunded",
         tone: "refunded",
-        title: "Funds returned to the origin chain — not a completed bridge",
+        title: "Funds returned to the origin chain - not a completed bridge",
       };
     }
     return { text: "failed", tone: "failed", title: entry.failureCode ?? undefined };
@@ -215,7 +212,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
   const bridgeEstimated = entry.kind === "bridge" && entry.amountBasis === "estimated";
 
   return (
-    <li className="border-b border-[var(--vex-line)] py-2 last:border-b-0">
+    <li className="border-b border-line-2 py-2 last:border-b-0">
       <div className="flex items-center gap-2">
         {/* Fixed-width slot so rows stay aligned whether or not the venue
          * resolves to a mark (a transfer has no venue at all). */}
@@ -241,11 +238,11 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
             title={bridgeChip.title}
           />
         ) : null}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-[var(--vex-text)]">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-ink-primary">
           {entry.kind === "transfer" ? (
             <>
               <span className="truncate">{quantityText(entry.amount)}</span>
-              <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+              <span className="shrink-0 text-ink-tertiary">→</span>
               <span className="truncate" title={entry.toAddress}>
                 {truncateAddress(entry.toAddress)}
               </span>
@@ -259,7 +256,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
                 amount={entry.input.amount}
                 estimated={bridgeEstimated}
               />
-              <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+              <span className="shrink-0 text-ink-tertiary">→</span>
               <LegText
                 token={entry.output.token}
                 symbol={entry.output.symbol}
@@ -268,7 +265,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
                 estimated={bridgeEstimated}
               />
               {bridgeEstimated ? (
-                <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                <span className="shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
                   est.
                 </span>
               ) : null}
@@ -276,15 +273,15 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
           )}
         </span>
         {usdPrimary !== null && usdPrimary.value !== null ? (
-          <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-[var(--vex-text)]">
+          <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-primary">
             {usdText(usdPrimary)}
             {unitPrice !== null ? (
-              <span className="text-[var(--vex-text-3)]"> @ {unitPrice}</span>
+              <span className="text-ink-tertiary"> @ {unitPrice}</span>
             ) : null}
           </span>
         ) : null}
       </div>
-      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-ink-tertiary">
         {meta.length > 0 ? <span className="truncate">{meta.join(" · ")}</span> : null}
         {date !== null ? <span className="shrink-0">{date}</span> : null}
         {links.map(({ ref, url }, index) => (
@@ -294,10 +291,10 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`Open transaction on block explorer${links.length > 1 ? ` (${index + 1} of ${links.length})` : ""}`}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             TX{links.length > 1 ? ` ${index + 1}` : ""}
-            <VexIcon icon={ArrowUpRightIcon} size={11} aria-hidden />
+            <IconArrowUpRight size={11} />
           </a>
         ))}
       </div>

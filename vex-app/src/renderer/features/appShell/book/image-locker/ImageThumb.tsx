@@ -26,7 +26,7 @@
 
 import type { JSX } from "react";
 import type { LockerImage } from "@shared/schemas/images.js";
-import { Trash2Icon, VexIcon } from "../../../../components/icons/index.js";
+import { IconTrash } from "../../../../components/icons/index.js";
 import { useLockerImageThumb } from "../../../../lib/api/images.js";
 
 export function ImageThumb({
@@ -46,7 +46,7 @@ export function ImageThumb({
   const dataUrl = result?.ok === true ? result.data.dataUrl : null;
 
   return (
-    <li className="group relative aspect-square overflow-hidden rounded-lg border border-[var(--vex-line)] bg-[var(--vex-surface-0)]">
+    <li className="group relative aspect-square overflow-hidden rounded-lg border border-line-2 bg-surface-base">
       {dataUrl !== null ? (
         <img
           src={dataUrl}
@@ -57,9 +57,9 @@ export function ImageThumb({
       ) : (
         <span
           aria-hidden
-          className="flex h-full w-full items-center justify-center font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]"
+          className="flex h-full w-full items-center justify-center font-doto text-[9px] uppercase tracking-[0.14em] text-ink-tertiary"
         >
-          {hasOnchainCopy && thumb.isLoading ? "…" : "—"}
+          {hasOnchainCopy && thumb.isLoading ? "…" : "-"}
         </span>
       )}
 
@@ -68,7 +68,7 @@ export function ImageThumb({
       {!hasOnchainCopy ? (
         <span
           title="Too large for a Trench launch, which stores the image on-chain. Usable on pools.fun."
-          className="pointer-events-none absolute left-1 top-1 rounded-full bg-[var(--vex-surface-0)]/90 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]"
+          className="pointer-events-none absolute left-1 top-1 rounded-full bg-surface-base/90 px-1.5 py-0.5 font-doto text-[8px] uppercase tracking-[0.14em] text-ink-tertiary"
         >
           pools only
         </span>
@@ -76,7 +76,7 @@ export function ImageThumb({
 
       {/* The label rides a bottom scrim rather than a solid bar so a light
        * image stays readable without hiding what the user chose. */}
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[var(--vex-surface-0)] to-transparent px-1.5 pb-1 pt-3 text-[9.5px] text-[var(--vex-text-2)]">
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-surface-base to-transparent px-1.5 pb-1 pt-3 text-[9.5px] text-ink-secondary">
         {image.label}
       </span>
 
@@ -87,10 +87,10 @@ export function ImageThumb({
         // Always reachable by keyboard (focus-visible), revealed on hover for
         // the mouse — a destructive control that only exists on hover is a
         // control a keyboard user does not have.
-        className="absolute right-1 top-1 rounded-full bg-[var(--vex-surface-0)]/90 p-1 text-[var(--vex-text-3)] opacity-0 transition-opacity hover:text-[var(--vex-warn-text)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+        className="absolute right-1 top-1 rounded-full bg-surface-base/90 p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-warning-label focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
         aria-label={`Remove ${image.label} from the locker`}
       >
-        <VexIcon icon={Trash2Icon} size={12} aria-hidden />
+        <IconTrash size={12} />
       </button>
     </li>
   );

@@ -43,7 +43,7 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
         />
       </div>
 
-      <p className="text-center vex-micro text-[var(--color-text-secondary)]">
+      <p className="text-center vex-micro text-ink-secondary">
         {progressLabel(current)}
       </p>
 
@@ -59,14 +59,14 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
             label={`Migration ${current.version} in progress`}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+            <span className="truncate text-sm font-medium text-ink-primary">
               Migration v{current.version}
             </span>
-            <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+            <span className="truncate font-mono text-xs text-ink-tertiary">
               {current.file}
             </span>
           </div>
-          <span className="shrink-0 vex-micro text-[var(--color-text-secondary)]">
+          <span className="shrink-0 vex-micro text-ink-secondary">
             {current.phase}
           </span>
         </div>

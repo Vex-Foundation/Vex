@@ -53,7 +53,7 @@ export function WalletsCard({
                 copiedLabel="Address copied"
               />
             ) : (
-              <span>{evmOk ? "—" : "missing"}</span>
+              <span>{evmOk ? "-" : "missing"}</span>
             )}
           </div>
         </div>
@@ -68,7 +68,7 @@ export function WalletsCard({
                 copiedLabel="Address copied"
               />
             ) : (
-              <span>{solOk ? "—" : "missing"}</span>
+              <span>{solOk ? "-" : "missing"}</span>
             )}
           </div>
         </div>

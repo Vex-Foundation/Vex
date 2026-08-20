@@ -46,7 +46,7 @@ describe("PostStopRedirectHint", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("announces politely — a stop is not an error", () => {
+  it("announces politely - a stop is not an error", () => {
     const { container } = render(
       <PostStopRedirectHint onRedirect={vi.fn()} onDismiss={vi.fn()} />,
     );

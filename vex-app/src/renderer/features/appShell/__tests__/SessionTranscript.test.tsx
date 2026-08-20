@@ -163,6 +163,7 @@ describe("SessionTranscript", () => {
           phase: "streaming",
           toolName: null,
           errorType: null,
+          errorDetail: null,
           reasoningText: "",
           reasoningSegments: [],
             reasoningTokens: null,

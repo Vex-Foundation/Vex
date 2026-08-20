@@ -45,7 +45,7 @@ const DISJUNCTS = [
   "hasOutstandingUserForm",
 ] as const;
 
-describe("isStoppable — the control-gating policy", () => {
+describe("isStoppable - the control-gating policy", () => {
   it("is FALSE only when every fact is false", () => {
     expect(isStoppable(facts())).toBe(false);
   });
@@ -78,7 +78,7 @@ describe("isStoppable — the control-gating policy", () => {
    * active/paused status set. Pinned here so a future reader does not "fix"
    * the policy by adding a status check it must not own.
    */
-  it("does not inspect the run status — the aggregate already bounded it", () => {
+  it("does not inspect the run status - the aggregate already bounded it", () => {
     expect(isStoppable(facts({ hasActiveRun: false, status: "completed" }))).toBe(
       false,
     );

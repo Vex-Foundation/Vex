@@ -183,7 +183,7 @@ async function fillMinimalForm(): Promise<void> {
   fireEvent.click(tile);
 }
 
-describe("TokenLaunchDialog — arming the consent", () => {
+describe("TokenLaunchDialog - arming the consent", () => {
   it("keeps Deploy disabled while the form cannot be priced", async () => {
     renderDialog();
     expect(deployButton().disabled).toBe(true);
@@ -215,7 +215,7 @@ describe("TokenLaunchDialog — arming the consent", () => {
   });
 });
 
-describe("TokenLaunchDialog — the three cost numbers", () => {
+describe("TokenLaunchDialog - the three cost numbers", () => {
   it("renders the authorized figure, broken into its two proven components", async () => {
     renderDialog();
     await fillMinimalForm();
@@ -307,11 +307,11 @@ describe("TokenLaunchDialog — the three cost numbers", () => {
     });
     renderDialog();
     await fillMinimalForm();
-    await screen.findByText(/Vex fee: none — 25 bps of this amount rounds to zero\./);
+    await screen.findByText(/Vex fee: none - 25 bps of this amount rounds to zero\./);
   });
 });
 
-describe("TokenLaunchDialog — refusals", () => {
+describe("TokenLaunchDialog - refusals", () => {
   it("drops into RE-REVIEW on a stale preview and takes Deploy away", async () => {
     submitMock.mockResolvedValue({
       ok: false,
@@ -362,7 +362,7 @@ describe("TokenLaunchDialog — refusals", () => {
     expect(alert.textContent).toMatch(/0\.051 ETH/);
   });
 
-  it("submits the form and the previewId — never a renderer-computed amount", async () => {
+  it("submits the form and the previewId - never a renderer-computed amount", async () => {
     submitMock.mockResolvedValue({
       ok: true,
       data: {
@@ -403,8 +403,8 @@ describe("TokenLaunchDialog — refusals", () => {
   });
 });
 
-describe("TokenLaunchDialog — the honesty ladder", () => {
-  it("says pricing is unavailable — not 'error' — when the bridge is not mounted", async () => {
+describe("TokenLaunchDialog - the honesty ladder", () => {
+  it("says pricing is unavailable - not 'error' - when the bridge is not mounted", async () => {
     installBridge({ tokenLaunch: false });
     renderDialog();
     await screen.findByText(/Pricing is unavailable right now/);
@@ -452,7 +452,7 @@ describe("TokenLaunchDialog — the honesty ladder", () => {
  * intent the launch already consumed, or leaving the second launch stuck on the
  * first one's receipt.
  */
-describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
+describe("TokenLaunchDialog - auto-dismiss after a completed deploy", () => {
   const TX_HASH = `0x${"a".repeat(64)}`;
 
   function submitResult(
@@ -508,7 +508,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
     ["confirmed_pending_identity", "only the token address is undecoded"],
     // Dismissible since B-PRE: the resumed turn no longer claims it is done.
     ["pending", "the broadcast is unproven but the receipt outlives the modal"],
-  ])("closes itself on %s — %s", async (status) => {
+  ])("closes itself on %s - %s", async (status) => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const onOpenChange = vi.fn();
@@ -530,7 +530,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
     }
   });
 
-  it("HOLDS a reverted launch open, in a failure tone — gas burned, no token", async () => {
+  it("HOLDS a reverted launch open, in a failure tone - gas burned, no token", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const onOpenChange = vi.fn();
@@ -552,7 +552,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
   it.each([
     ["null", null],
     ["an empty string", ""],
-  ])("HOLDS open when the hash is %s — there is no receipt to find", async (_l, hash) => {
+  ])("HOLDS open when the hash is %s - there is no receipt to find", async (_l, hash) => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const onOpenChange = vi.fn();
@@ -568,7 +568,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
     }
   });
 
-  it("renders main's message verbatim — never JSON, and the hash exactly once", async () => {
+  it("renders main's message verbatim - never JSON, and the hash exactly once", async () => {
     const onOpenChange = vi.fn();
     submitMock.mockResolvedValue(
       submitResult("confirmed", TX_HASH, `Your launch confirmed. Transaction ${TX_HASH}.`),
@@ -614,7 +614,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
     expect(screen.queryByText("Your launch confirmed.")).toBeNull();
   });
 
-  it("cleans up its timer once closed — it never fires at an absent dialog", async () => {
+  it("cleans up its timer once closed - it never fires at an absent dialog", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const onOpenChange = vi.fn();
@@ -643,7 +643,7 @@ describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
  * the open transition would leave the second launch stuck on the first one's
  * receipt. Re-rendering the dialog directly cannot prove that.
  */
-describe("TokenLaunchButton — the user-origin dialog dismisses itself too", () => {
+describe("TokenLaunchButton - the user-origin dialog dismisses itself too", () => {
   const TX_HASH = `0x${"a".repeat(64)}`;
 
   it("auto-dismisses, then reopens as a fresh editable form", async () => {
@@ -712,7 +712,7 @@ describe("TokenLaunchButton — the user-origin dialog dismisses itself too", ()
  * Both dismissal routes are pinned, because they are separate handlers in the
  * shared component and a fix at one is not a fix at the other.
  */
-describe("TokenLaunchDialog — an in-flight deploy cannot be dismissed", () => {
+describe("TokenLaunchDialog - an in-flight deploy cannot be dismissed", () => {
   const TX_HASH = `0x${"a".repeat(64)}`;
 
   /** Deploy, and leave the submit UNRESOLVED so the dialog stays `submitting`. */
@@ -760,7 +760,7 @@ describe("TokenLaunchDialog — an in-flight deploy cannot be dismissed", () => 
     return release;
   }
 
-  it("refuses ESCAPE mid-signature — no cancel, no close", async () => {
+  it("refuses ESCAPE mid-signature - no cancel, no close", async () => {
     const onOpenChange = vi.fn();
     await deployAndHang(onOpenChange);
 
@@ -773,7 +773,7 @@ describe("TokenLaunchDialog — an in-flight deploy cannot be dismissed", () => 
     expect(screen.queryByText("Launch a token")).not.toBeNull();
   });
 
-  it("refuses a BACKDROP CLICK mid-signature — no cancel, no close", async () => {
+  it("refuses a BACKDROP CLICK mid-signature - no cancel, no close", async () => {
     const onOpenChange = vi.fn();
     await deployAndHang(onOpenChange);
 
@@ -786,7 +786,7 @@ describe("TokenLaunchDialog — an in-flight deploy cannot be dismissed", () => 
     expect(screen.queryByText("Launch a token")).not.toBeNull();
   });
 
-  it("still dismisses a DRAFT by Escape — the refusal is scoped to the submit", async () => {
+  it("still dismisses a DRAFT by Escape - the refusal is scoped to the submit", async () => {
     cancelMock.mockResolvedValue({
       ok: true,
       data: { cancelled: true, resumedAgentTurn: true },

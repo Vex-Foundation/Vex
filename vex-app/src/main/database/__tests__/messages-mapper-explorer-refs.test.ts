@@ -45,7 +45,7 @@ function row(p: {
   };
 }
 
-describe("toDto — explorerRefs projection", () => {
+describe("toDto - explorerRefs projection", () => {
   it("selects ONLY the metadata sub-key (never raw metadata) in the column tuple", () => {
     expect(MESSAGE_ROW_COLUMNS).toContain(
       "metadata -> 'explorerRefs' AS explorer_refs",
@@ -105,7 +105,7 @@ describe("toDto — explorerRefs projection", () => {
   });
 });
 
-describe("toDto — reasoning projection (metadata -> 'reasoning')", () => {
+describe("toDto - reasoning projection (metadata -> 'reasoning')", () => {
   it("selects only the sub-key in the column tuple", () => {
     expect(MESSAGE_ROW_COLUMNS).toContain("metadata -> 'reasoning' AS reasoning");
   });
@@ -132,7 +132,7 @@ describe("toDto — reasoning projection (metadata -> 'reasoning')", () => {
   });
 });
 
-describe("toDto — durationMs projection (metadata -> 'durationMs')", () => {
+describe("toDto - durationMs projection (metadata -> 'durationMs')", () => {
   it("selects only the sub-key in the column tuple", () => {
     expect(MESSAGE_ROW_COLUMNS).toContain("metadata -> 'durationMs' AS duration_ms");
   });
@@ -165,7 +165,7 @@ describe("toDto — durationMs projection (metadata -> 'durationMs')", () => {
     ).toBeNull();
   });
 
-  it("collapses malformed durations to null — a never-executed call must not read as 0", () => {
+  it("collapses malformed durations to null - a never-executed call must not read as 0", () => {
     const bad = (duration_ms: unknown) =>
       toDto(row({ role: "tool", explorer_refs: null, duration_ms })).durationMs;
     expect(bad(null)).toBeNull();

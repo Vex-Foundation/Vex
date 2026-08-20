@@ -42,7 +42,7 @@ function makeWrapper(client: QueryClient) {
 afterEach(resetTranscriptEnv);
 
 describe("SessionTranscript scroll model", () => {
-  it("never auto-follows a new assistant row — it raises the ↓ latest pill instead", async () => {
+  it("never auto-follows a new assistant row - it raises the ↓ latest pill instead", async () => {
     let withExtra = false;
     listMock.mockImplementation((input: { readonly cursor: unknown }) => {
       if (input.cursor !== null) return Promise.resolve(failure); // older fails
@@ -176,6 +176,7 @@ describe("SessionTranscript scroll model", () => {
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
+            errorDetail: null,
             status: "writing",
           },
         },
@@ -228,6 +229,7 @@ describe("SessionTranscript scroll model", () => {
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
+            errorDetail: null,
             status: "thinking",
           },
         },
@@ -248,6 +250,7 @@ describe("SessionTranscript scroll model", () => {
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
+            errorDetail: null,
             status: "thinking",
           },
         },

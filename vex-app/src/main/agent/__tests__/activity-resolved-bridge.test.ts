@@ -73,7 +73,7 @@ describe("setupActivityResolvedBridge", () => {
     teardown();
   });
 
-  it("forwards a provider-lane resolution too — both lanes terminalize a row", () => {
+  it("forwards a provider-lane resolution too - both lanes terminalize a row", () => {
     const teardown = setupActivityResolvedBridge();
     pendingActivityBus.emit({ ...RESOLVED, lane: "provider", chainId: null });
 
@@ -81,7 +81,7 @@ describe("setupActivityResolvedBridge", () => {
     teardown();
   });
 
-  it("ignores the `armed` half of the bus — it is a sync-layer concern", () => {
+  it("ignores the `armed` half of the bus - it is a sync-layer concern", () => {
     const teardown = setupActivityResolvedBridge();
     pendingActivityBus.emit({ ...RESOLVED, kind: "armed", status: null });
 

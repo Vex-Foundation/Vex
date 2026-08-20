@@ -64,42 +64,42 @@ export function AssetsScreen({
        * screen width. */}
       <div className="mx-auto w-full max-w-[640px]">
         <div className="mb-4 flex items-center justify-end">
-          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--vex-text-2)]">
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-ink-secondary">
             <input
               type="checkbox"
               checked={hideDustBalances}
               onChange={(event) =>
                 setHideDustBalances(event.currentTarget.checked)
               }
-              className="h-3.5 w-3.5 accent-[var(--vex-accent)]"
+              className="h-3.5 w-3.5 accent-accent-primary"
             />
             Hide dust (&lt; $0.01)
           </label>
         </div>
         {query.isLoading ? (
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <p className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary">
             Loading…
           </p>
         ) : (result !== undefined && !result.ok) || query.isError ? (
-          <p className="text-[12.5px] text-[var(--vex-warn-text)]">
+          <p className="text-[12.5px] text-warning-label">
             Couldn&apos;t load your assets.
           </p>
         ) : portfolio === null || portfolio.tokens.length === 0 ? (
-          <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
+          <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
             {sessionId === null
-              ? "No balances yet — fund a wallet and every asset appears here."
-              : "No balances in this session's wallets yet — fund them and every asset appears here."}
+              ? "No balances yet - fund a wallet and every asset appears here."
+              : "No balances in this session's wallets yet - fund them and every asset appears here."}
           </p>
         ) : (
           <>
             {hiddenCount > 0 ? (
-              <p className="mb-2 text-[11px] text-[var(--vex-text-3)]">
+              <p className="mb-2 text-[11px] text-ink-tertiary">
                 {hiddenCount} dust asset{hiddenCount === 1 ? "" : "s"} hidden
               </p>
             ) : null}
             {visible.length === 0 ? (
-              <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
-                Every asset here is dust — uncheck &quot;Hide dust&quot; to
+              <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
+                Every asset here is dust - uncheck &quot;Hide dust&quot; to
                 view.
               </p>
             ) : (

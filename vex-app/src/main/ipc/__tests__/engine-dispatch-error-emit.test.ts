@@ -40,7 +40,7 @@ function capture(): EngineErrorEvent[] {
   return seen;
 }
 
-describe("dispatchPreparedMission — engine error emit", () => {
+describe("dispatchPreparedMission - engine error emit", () => {
   it("emits nothing when the continuation succeeds", async () => {
     const seen = capture();
     dispatchPreparedMission(() => Promise.resolve("ok"), {
@@ -86,10 +86,14 @@ describe("dispatchPreparedMission — engine error emit", () => {
     });
   });
 
-  it("never carries the exception message — the provider text stays server-side", async () => {
+  it("carries the sanitized message as `detail` only - no `message` field, secret-free from the first subscriber", async () => {
+    // Sanitize-at-emit law: the bus strips secrets from `detail` BEFORE any
+    // subscriber sees the event, so every consumer is secret-free by
+    // construction. The renderer bridge sanitizes again as defense in depth;
+    // that second pass must be a no-op, which both halves assert here.
     const seen = capture();
     dispatchPreparedMission(
-      () => Promise.reject(new Error("secret-bearing provider text sk-abc123")),
+      () => Promise.reject(new Error("provider refused key sk-fake-abc12345")),
       {
         sessionId: SESSION,
         correlationId: "corr-3",
@@ -100,8 +104,14 @@ describe("dispatchPreparedMission — engine error emit", () => {
     await settle();
 
     expect(seen).toHaveLength(1);
-    expect(JSON.stringify(seen[0])).not.toContain("sk-abc123");
     expect(Object.keys(seen[0] ?? {})).not.toContain("message");
+    expect(seen[0]?.detail).toBe("provider refused key [key]");
+    const { sanitizeEngineErrorDetail } = await import(
+      "@shared/engine-error-sanitizer.js"
+    );
+    expect(sanitizeEngineErrorDetail(seen[0]?.detail)).toBe(
+      "provider refused key [key]",
+    );
     // No mission run in scope for a chat-session approval.
     expect(seen[0]?.missionRunId).toBeNull();
     expect(seen[0]?.scope).toBe("approval");

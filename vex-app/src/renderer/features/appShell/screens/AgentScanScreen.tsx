@@ -46,8 +46,8 @@ const SCREEN_TITLE = "Agent Scan";
 /** Header subtitle — it must say when the feed is narrowed to one session. */
 function screenSubtitle(sessionId: string | null): string {
   return sessionId === null
-    ? "Every action Vex executed on-chain, newest first — each row links to its transaction."
-    : "Everything Vex executed on-chain in THIS session, newest first — each row links to its transaction.";
+    ? "Every action Vex executed on-chain, newest first - each row links to its transaction."
+    : "Everything Vex executed on-chain in THIS session, newest first - each row links to its transaction.";
 }
 
 /** Starting height guess per row; real heights are measured after mount. */
@@ -171,7 +171,7 @@ export function AgentScanScreen({
     // Timeout degradation: NEVER rendered as an empty history.
     body = (
       <FeedNote tone="calm">
-        Activity is unavailable right now — try again shortly.
+        Activity is unavailable right now - try again shortly.
       </FeedNote>
     );
   } else if (query.isError) {
@@ -186,7 +186,7 @@ export function AgentScanScreen({
       </FeedNote>
     ) : (
       <FeedNote tone="quiet">
-        No activity recorded yet — everything Vex executes appears here.
+        No activity recorded yet - everything Vex executes appears here.
       </FeedNote>
     );
   } else {
@@ -209,10 +209,10 @@ export function AgentScanScreen({
             >
               {row.kind === "day" ? (
                 <div className="flex items-center gap-3 pb-1.5 pt-4">
-                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--vex-text-3)]">
+                  <span className="shrink-0 font-doto text-[10px] uppercase tracking-[0.2em] text-ink-tertiary">
                     {row.label}
                   </span>
-                  <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
+                  <span aria-hidden className="h-px flex-1 bg-line-2" />
                 </div>
               ) : (
                 <AgentScanRow entry={row.entry} />
@@ -231,10 +231,10 @@ export function AgentScanScreen({
       onClose={onClose}
       header={
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="font-serif text-[30px] leading-none text-foreground">
+          <h1 className="font-display text-[26px] font-medium leading-8 text-ink-primary">
             {SCREEN_TITLE}
           </h1>
-          <p className="text-[11.5px] leading-snug text-[var(--vex-text-3)]">
+          <p className="text-[11.5px] leading-snug text-ink-tertiary">
             {screenSubtitle(sessionId)}
           </p>
         </div>
@@ -245,7 +245,7 @@ export function AgentScanScreen({
         <div ref={scrollRef} className="vex-scroll min-h-0 flex-1 overflow-y-auto">
           {body}
           {laterPageDegraded ? (
-            <p className="mt-2 text-[11px] text-[var(--vex-text-3)]">
+            <p className="mt-2 text-[11px] text-ink-tertiary">
               Couldn&apos;t load more activity right now.
             </p>
           ) : null}
@@ -254,7 +254,7 @@ export function AgentScanScreen({
               type="button"
               onClick={() => void fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="mt-3 w-full rounded-lg border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-60"
+              className="mt-3 w-full rounded-xl border border-line-2 py-1.5 font-doto text-[11px] uppercase tracking-[0.14em] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
             >
               {isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
@@ -274,17 +274,17 @@ function FeedNote({
   readonly children: React.ReactNode;
 }): JSX.Element {
   if (tone === "warn") {
-    return <p className="text-[12.5px] text-[var(--vex-warn-text)]">{children}</p>;
+    return <p className="text-[12.5px] text-warning-label">{children}</p>;
   }
   if (tone === "calm") {
     return (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
+      <p className="text-[12.5px] leading-relaxed text-ink-secondary">
         {children}
       </p>
     );
   }
   return (
-    <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
+    <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
       {children}
     </p>
   );

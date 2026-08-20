@@ -24,8 +24,7 @@
 
 import type { JSX, ReactNode } from "react";
 import {
-  ArrowUpRightIcon,
-  VexIcon,
+  IconArrowUpRight,
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 
@@ -63,13 +62,13 @@ const CARD_CHROME = cn(
 
 const ICON_TILE_CHROME = cn(
   "flex h-9 w-9 shrink-0 items-center justify-center",
-  "text-[var(--color-text-primary)]",
+  "text-ink-primary",
 );
 
 const STATUS_WORD_COLOR: Record<ProviderCardStatusTone, string> = {
-  set: "text-[var(--color-success)]",
-  partial: "text-[var(--color-warning)]",
-  unset: "text-[var(--color-text-muted)]",
+  set: "text-success",
+  partial: "text-warning",
+  unset: "text-ink-tertiary",
 };
 
 function StatusWord({ status }: { status: ProviderCardStatus }): JSX.Element {
@@ -93,13 +92,13 @@ function GetKeyLink({ getKey }: { getKey: ProviderCardGetKey }): JSX.Element {
       rel="noopener noreferrer"
       className={cn(
         "inline-flex w-fit items-center gap-1.5 text-xs font-medium",
-        "text-[var(--color-text-primary)] underline underline-offset-2 transition-colors",
-        "hover:text-[var(--color-text-secondary)]",
+        "text-ink-primary underline underline-offset-2 transition-colors",
+        "hover:text-ink-secondary",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
       )}
     >
       {getKey.label}
-      <VexIcon icon={ArrowUpRightIcon} size={12} aria-hidden />
+      <IconArrowUpRight size={12} />
     </a>
   );
 }
@@ -128,17 +127,17 @@ export function ProviderCard({
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h3
               id={`vex-apikeys-card-${slug}-name`}
-              className="text-sm font-semibold text-[var(--color-text-primary)]"
+              className="text-sm font-semibold text-ink-primary"
             >
               {name}
             </h3>
             <StatusWord status={status} />
           </div>
-          <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+          <p className="text-sm leading-relaxed text-ink-secondary">
             {description}
           </p>
           {detail ? (
-            <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+            <p className="text-xs leading-relaxed text-ink-tertiary">
               {detail}
             </p>
           ) : null}

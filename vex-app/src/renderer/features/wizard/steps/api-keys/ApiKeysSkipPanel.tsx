@@ -12,13 +12,13 @@
  * from the inlined branch.
  */
 
-import type { JSX } from "react";
-import type { IconGlyph } from "../../../../components/icons/index.js";
+import type { ComponentType, JSX } from "react";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import { Button } from "../../../../components/ui/button.js";
 import { WizardStepPanel } from "../../WizardStepPanel.js";
 
 export interface ApiKeysSkipPanelProps {
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly formError: string | null;
   readonly advancePending: boolean;
   readonly onContinue: () => void;
@@ -35,7 +35,7 @@ export function ApiKeysSkipPanel({
       panelDataAttr={{ kind: "apikeys", value: "skip" }}
       icon={icon}
       title="API keys already configured"
-      description="A Jupiter API key is already saved on this install. Continue to keep using it — Tavily and Rettiwt stay editable from the review at the end, or later in Settings."
+      description="A Jupiter API key is already saved on this install. Continue to keep using it - Tavily and Rettiwt stay editable from the review at the end, or later in Settings."
       footer={
         <Button
           onClick={() => {
@@ -48,7 +48,7 @@ export function ApiKeysSkipPanel({
       }
     >
       {formError ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {formError}
         </p>
       ) : null}

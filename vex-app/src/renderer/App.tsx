@@ -1,10 +1,10 @@
 /**
  * Top-level renderer state machine.
  *
- * Boot (Chronos Gate, PR1): the `SetupGate` overlay covers the window
- * from first paint while its orchestrator runs the launch pipeline, then
- * hands off to a view beneath itself and curtain-reveals it. The view
- * machine itself is unchanged:
+ * Boot: the `ChronosGate` overlay covers the window from first paint
+ * while its orchestrator runs the launch pipeline, then hands off to a
+ * view beneath itself and curtain-reveals it. The view machine itself
+ * is unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
  *   composeBootstrap → migrations → wizard → unlock → appShell —
  * a healthy returning user skips straight from the gate to
@@ -25,8 +25,13 @@
  */
 
 import { useEffect, useState, type JSX } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { SetupGate } from "./features/setup/SetupGate.js";
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion,
+  useReducedMotion,
+} from "motion/react";
+import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
 import { EASE_STANDARD } from "./lib/motion.js";
@@ -38,6 +43,7 @@ import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
 import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
 import { UpdateLayer } from "./features/updates/UpdateLayer.js";
+import { ToastHost } from "./components/ui/toast-host.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -70,7 +76,7 @@ export function App(): JSX.Element {
     splash: () => (
       <main
         data-vex-screen="boot-void"
-        className="h-screen w-screen bg-[var(--color-bg-primary)]"
+        className="h-screen w-screen bg-surface-base"
       />
     ),
     systemCheck: () => <SystemCheck />,
@@ -83,7 +89,11 @@ export function App(): JSX.Element {
   };
 
   return (
-    <>
+    // reducedMotion="user": every Motion transform/layout animation in the
+    // tree obeys the OS setting by construction (opacity still animates),
+    // backstopping the per-surface useReducedMotion branches and matching
+    // the CSS side's global kill-switch in base.css.
+    <MotionConfig reducedMotion="user">
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
@@ -126,11 +136,10 @@ export function App(): JSX.Element {
           resolves and the curtain reveal completes, then unmounts for the
           rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
           critical update toast stays visible over the boot ritual. */}
-      {/* The nonce is a REMOUNT key, not just data: the gate decides its
-          prologue variant once per mount (a lazy initialiser), so the dev
-          tour's replay only re-runs the cinematic if the whole gate is a
-          fresh mount. It stays 0 for the entire life of a real launch. */}
-      <SetupGate key={prologueReplayNonce} />
+      {/* The nonce is a REMOUNT key: the dev tour's replay re-runs the
+          gate choreography only if the whole gate is a fresh mount. It
+          stays 0 for the entire life of a real launch. */}
+      <ChronosGate key={prologueReplayNonce} />
       {/* Unlock-success exit curtain — armed by UnlockScreen after the
           unlock IPC succeeds; flips the view to unlockReturnView while the
           cobalt plate is opaque, then splits open over the revealed view.
@@ -146,12 +155,15 @@ export function App(): JSX.Element {
       {/* Global, view-independent: a user-triggered update prompt can appear
           over any screen. No-ops when the updater bridge is absent. */}
       <UpdateLayer />
+      {/* Single mount of both toast slots (transient + sticky). The update
+          layer and feature showToast callers all render through it. */}
+      <ToastHost />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
       {/* Diagnostic screen tour — renders only when VITE_VEX_SETUP_TOUR=1
           is baked into the build (owner request: view every pre-shell
           screen regardless of configured state). */}
       <SetupTour />
-    </>
+    </MotionConfig>
   );
 }
 
@@ -195,13 +207,13 @@ function DevDiagnostics(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-secondary)] hover:text-foreground"
+        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-ink-secondary hover:text-foreground"
       >
         dev · {open ? "hide" : "diagnostics"}
       </button>
       {open ? (
         <section className="mt-2 w-72 rounded-md border border-border bg-card p-3 text-xs">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-secondary">
             M0 diagnostics
           </h2>
           {capabilities ? (

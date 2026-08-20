@@ -170,6 +170,23 @@ export const sessionSetPinnedResultSchema = sessionListItemSchema.nullable();
 export type SessionSetPinnedResult = z.infer<typeof sessionSetPinnedResultSchema>;
 
 /**
+ * IPC input for `vex.sessions.rename`. The name rides the same
+ * `sessionTitleSchema` bound the create path uses (trimmed, 1-80 chars).
+ * Renaming an unknown or soft-deleted id returns `ok(null)` rather than an
+ * error (caller had a stale view).
+ */
+export const sessionRenameInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: sessionTitleSchema,
+  })
+  .strict();
+export type SessionRenameInput = z.infer<typeof sessionRenameInputSchema>;
+
+export const sessionRenameResultSchema = sessionListItemSchema.nullable();
+export type SessionRenameResult = z.infer<typeof sessionRenameResultSchema>;
+
+/**
  * IPC input for `vex.sessions.delete` (soft delete). The renderer asks
  * to hide a session; main decides whether that is safe.
  */
@@ -211,6 +228,57 @@ export const sessionDeleteResultSchema = z
   })
   .strict();
 export type SessionDeleteResult = z.infer<typeof sessionDeleteResultSchema>;
+
+/**
+ * IPC input for `vex.sessions.branch` (A14). Fork = a NEW session seeded
+ * with a copy of the source transcript prefix up to and including
+ * `messageId`; the source session is never rewritten. `name` is the new
+ * session's title; when absent main falls back to the source title.
+ */
+export const sessionBranchInputSchema = z
+  .object({
+    sourceId: z.string().uuid(),
+    /** Anchor `messages.id` (SERIAL) — the last copied message, inclusive. */
+    messageId: z.number().int().positive(),
+    name: sessionTitleSchema.optional(),
+  })
+  .strict();
+export type SessionBranchInput = z.infer<typeof sessionBranchInputSchema>;
+
+/**
+ * Discriminated outcome of `vex.sessions.branch`. Every blocked state is
+ * named, fail-closed, and mutates nothing:
+ *   - `not_found` — source session unknown or soft-deleted.
+ *   - `unsupported_mode` — mission sessions cannot branch: the frozen
+ *     mission contract, approval queue, and wallet policy are
+ *     session-scoped state a transcript copy would desynchronize.
+ *   - `anchor_not_found` — the anchor id is not a message of the source.
+ *   - `anchor_compacted` — the anchor was archived by compaction; only the
+ *     live tape can seed a branch.
+ *   - `open_tool_batch` — the prefix would cut a tool call off its result
+ *     (e.g. an approval is still pending); no auto-repair by design.
+ */
+export const sessionBranchBlockedOutcomeSchema = z.enum([
+  "not_found",
+  "unsupported_mode",
+  "anchor_not_found",
+  "anchor_compacted",
+  "open_tool_batch",
+]);
+export type SessionBranchBlockedOutcome = z.infer<
+  typeof sessionBranchBlockedOutcomeSchema
+>;
+
+export const sessionBranchResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("created"),
+      session: sessionListItemSchema,
+    })
+    .strict(),
+  z.object({ outcome: sessionBranchBlockedOutcomeSchema }).strict(),
+]);
+export type SessionBranchResult = z.infer<typeof sessionBranchResultSchema>;
 
 /**
  * Native Markdown export. Main owns both the save dialog and the destination
