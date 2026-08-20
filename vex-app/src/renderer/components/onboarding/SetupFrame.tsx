@@ -18,9 +18,9 @@
  *   - `data-vex-onboarding="true"` keeps the shared onboarding accent
  *     scope (scrollbars, `--vex-onboarding-accent`) alive.
  *   - `data-vex-gate="true"` applies the pre-shell token re-projection
- *     from `global-css/setup-gate.css`: stock Button = cobalt pill with a
- *     white label, cobalt focus rings, visible white-alpha hairlines, the
- *     solid text tiers, AND the pre-shell type scale.
+ *     from `global-css/chronos-gate.css`: visible white-alpha hairlines,
+ *     accent-as-text tokens, the Doto micro-label voice, AND the
+ *     pre-shell type scale.
  */
 
 import { type JSX, type ReactNode } from "react";
@@ -62,11 +62,11 @@ export function SetupFrame({
        * no "VEX" wordmark text beside it), version bottom-right. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10">
         <img
-          src="/logo_clean.png"
+          src="/brand/vex-mark-white.svg"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-7 w-7 select-none object-contain"
+          className="h-6 w-auto select-none"
         />
       </div>
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
@@ -80,7 +80,7 @@ export function SetupFrame({
       <div
         className={cn(
           // max-w = readable measure (640/560) + 4rem for .vex-gate-page's
-          // symmetric scrollbar gutter (setup-gate.css) — keeps the thumb
+          // symmetric scrollbar gutter (chronos-gate.css) — keeps the thumb
           // off the text column without narrowing or de-centering it.
           "vex-gate-page relative z-10 flex max-h-full w-full flex-col",
           maxWidth === "lg" ? "max-w-[704px]" : "max-w-[624px]",

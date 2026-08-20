@@ -4,9 +4,9 @@
  * screen." Set `VITE_VEX_SETUP_TOUR=1` (e.g. `VITE_VEX_SETUP_TOUR=1 pnpm
  * vex:dev`, or a line in `vex-app/.env.local` — gitignored) and a small
  * mono navigator docks bottom-left with one key per pre-shell view, plus
- * "Replay prologue" (re-arms the boot gate and forces the FULL cinematic
- * cold open, ignoring — and never writing — the play policy's version key)
- * and "Reload boot" (replays the whole Chronos Gate cold open naturally).
+ * "Replay gate" (re-arms the boot gate so the Chronos Gate acts replay
+ * from the first frame) and "Reload boot" (replays the whole cold open
+ * naturally).
  *
  * Scope guarantees:
  *  - Renderer view-routing ONLY. No IPC, no main-process behavior, no
@@ -72,18 +72,16 @@ export function SetupTour(): JSX.Element | null {
           {view}
         </button>
       ))}
-      {/* Cinematic prologue, on demand. The play policy condenses the cold
-          open after its first run, so previewing the FULL 3.5s sequence
-          needs a door that ignores the policy: `replayPrologue` re-arms the
-          gate and forces the full variant WITHOUT persisting the version
-          key, so it stays repeatable click after click. */}
+      {/* Gate choreography, on demand: `replayPrologue` re-arms the boot
+          gate and bumps its remount nonce, so the four acts replay from
+          the first frame click after click. */}
       <button
         type="button"
         data-vex-tour-prologue
         onClick={replayPrologue}
         className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
       >
-        Replay prologue
+        Replay gate
       </button>
       <button
         type="button"
