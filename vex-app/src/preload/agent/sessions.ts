@@ -5,6 +5,7 @@ import {
   sessionExportMarkdownInputSchema,
   sessionGetInputSchema,
   sessionGetModelInputSchema,
+  sessionRenameInputSchema,
   sessionSetPinnedInputSchema,
 } from "../../shared/schemas/sessions.js";
 import type {
@@ -13,6 +14,7 @@ import type {
   SessionExportMarkdownInput,
   SessionGetInput,
   SessionGetModelInput,
+  SessionRenameInput,
   SessionSetPinnedInput,
 } from "../../shared/schemas/sessions.js";
 import {
@@ -43,6 +45,13 @@ export const sessions = {
       CH.sessions.setPinned,
       input,
       sessionSetPinnedInputSchema
+    );
+  },
+  rename(input: SessionRenameInput) {
+    return invokeWithSchema(
+      CH.sessions.rename,
+      input,
+      sessionRenameInputSchema
     );
   },
   delete(input: SessionDeleteInput) {

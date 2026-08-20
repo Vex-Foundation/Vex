@@ -236,6 +236,8 @@ describe("uiStore", () => {
     expect(parsed.state).toEqual({
       themePreference: "chronos",
       sidebarOpen: true,
+      sidebarWidth: 280,
+      bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
       prologueVersion: null,
@@ -480,6 +482,8 @@ describe("uiStore", () => {
     expect(parsed.state).toEqual({
       themePreference: "chronos",
       sidebarOpen: false,
+      sidebarWidth: 280,
+      bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
       prologueVersion: null,

@@ -170,6 +170,23 @@ export const sessionSetPinnedResultSchema = sessionListItemSchema.nullable();
 export type SessionSetPinnedResult = z.infer<typeof sessionSetPinnedResultSchema>;
 
 /**
+ * IPC input for `vex.sessions.rename`. The name rides the same
+ * `sessionTitleSchema` bound the create path uses (trimmed, 1-80 chars).
+ * Renaming an unknown or soft-deleted id returns `ok(null)` rather than an
+ * error (caller had a stale view).
+ */
+export const sessionRenameInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: sessionTitleSchema,
+  })
+  .strict();
+export type SessionRenameInput = z.infer<typeof sessionRenameInputSchema>;
+
+export const sessionRenameResultSchema = sessionListItemSchema.nullable();
+export type SessionRenameResult = z.infer<typeof sessionRenameResultSchema>;
+
+/**
  * IPC input for `vex.sessions.delete` (soft delete). The renderer asks
  * to hide a session; main decides whether that is safe.
  */

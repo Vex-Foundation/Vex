@@ -37,6 +37,8 @@ const EXPECTED_FUNCTION_EXPORTS = [
   "softDeleteSession",
   "setSessionPinnedWithClient",
   "setSessionPinned",
+  "renameSessionWithClient",
+  "renameSession",
 ] as const;
 
 describe("sessions-db façade surface", () => {

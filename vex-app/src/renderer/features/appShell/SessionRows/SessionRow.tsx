@@ -1,42 +1,28 @@
 /**
- * A single dense ledger row (48px): two text lines (title + time/activity,
- * subtitle + exception stamps), hairline-separated — no card box, no resting
- * glow. Selection is the landing's workspace beam (`.vex-select-beam`,
- * globals.css): a cobalt gradient sweep with a white ledger bar on the left
- * edge, text lifted to white (stamps flip to white-ink via `onBeam` so they
- * stay legible on the gradient). Mode/permission badge pairs are gone, and
- * stamps appear only when state deviates from the default (restricted / live /
- * paused — terminal sessions earn silence).
- *
- * THE MODE GLYPH IS COLLAPSED-RAIL ONLY (owner, 2026-08-05: "te ikony z
- * historii sesji są niepotrzebnie wyświetlane obok nazwy"). Beside a name it
- * said nothing the subtitle did not already say in words — "Agent
- * conversation" / "Mission setup" — so an EXPANDED row is text flush to the
- * gutter. Collapsed, there is no name and no subtitle: the glyph is the row's
- * entire content AND the anchor for the live/paused activity dot, so it stays
- * exactly as it was. Nothing about a11y turns on it either way — it is
- * `aria-hidden`, and a collapsed row is named by the button's `aria-label`.
- *
- * The row-select control and the row actions (trash + pin) are SIBLINGS
- * inside a non-interactive wrapper — never nested buttons — so Enter/Space
- * on an action cannot bubble into row selection.
+ * One session row on the generic RailRow primitive: leading state slot (the
+ * pixel-chase dot while a mission runs, a solid warn dot while paused),
+ * single-line title, quiet trailing time that yields to the Remove + Pin
+ * cluster on hover. The whole row anchors a HoverCard preview (full title,
+ * started time, mode, permission) — the sidebar's truncation stops costing
+ * information. Double-click swaps the row for an inline rename input (Enter
+ * commits via `onRename`, Escape cancels, empty/unchanged drafts are a
+ * cancel). Collapsed rail: the mode glyph is the row's entire content plus
+ * the activity dot.
  */
 
-import type { JSX, MouseEvent } from "react";
-import {
-  MessageSquareIcon,
-  TargetIcon,
-  VexIcon,
-} from "../../../components/icons/index.js";
+import { useState, type JSX, type KeyboardEvent, type MouseEvent } from "react";
+import { IconGoal, IconNewChat } from "../../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { cn } from "../../../lib/utils.js";
+import { HoverCard } from "../../../components/ui/hover-card.js";
+import { RailRow } from "../../../components/ui/rail-list.js";
+import { StateDot } from "../../../components/ui/state-dot.js";
 import {
   formatSessionTime,
   getMissionActivity,
-  getSessionSubtitle,
   getSessionTitle,
 } from "../sessionListModel.js";
-import { Stamp } from "./Stamp.js";
+import { SessionHoverContent } from "./SessionHoverContent.js";
 import { RemoveButton } from "./RemoveButton.js";
 import { PinToggle } from "./PinToggle.js";
 
@@ -47,6 +33,7 @@ export function SessionRow({
   onSelect,
   onTogglePin,
   onRequestRemove,
+  onRename,
   pinPending,
 }: {
   readonly row: SessionListItem;
@@ -55,14 +42,16 @@ export function SessionRow({
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
   readonly onRequestRemove: (row: SessionListItem) => void;
+  /** Persist a new display title (trimmed, non-empty, <= 80 chars). Absent = rename unavailable (library view). */
+  readonly onRename?: (id: string, name: string) => void;
   readonly pinPending: boolean;
 }): JSX.Element {
-  const startedLabel = formatSessionTime(row.startedAt);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   const title = getSessionTitle(row);
-  const subtitle = getSessionSubtitle(row);
   const activity = getMissionActivity(row);
-  const Icon = row.mode === "mission" ? TargetIcon : MessageSquareIcon;
   const isPinned = row.pinnedAt !== null;
+  const Icon = row.mode === "mission" ? IconGoal : IconNewChat;
 
   const handlePinClick = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
@@ -77,147 +66,102 @@ export function SessionRow({
     onRequestRemove(row);
   };
 
-  // Row select control and pin toggle are SIBLINGS inside a non-interactive
-  // wrapper. This is the only safe layout: a button inside a button is
-  // invalid HTML, and a custom `role="button"` parent would let Enter/Space
-  // bubble from the pin into a row-level keydown handler. Container holds
-  // the visual styling; both children focus / click independently.
-  return (
-    <li className="border-b border-[var(--vex-line)] last:border-b-0">
-      <div
-        className={cn(
-          "group relative flex w-full transition-colors",
-          // Selection = the landing beam (accent gradient + ledger bar,
-          // globals.css `.vex-select-beam`); hover stays a quiet surface lift.
-          // Text on the beam reads `--vex-accent-contrast` (white on cobalt,
-          // ink on a light accent beam), never a raw white.
-          selected
-            ? "vex-select-beam text-[var(--vex-accent-contrast)]"
-            : "hover:bg-white/[0.035]",
-          // Fixed height drives the fit-to-height packer; see
-          // SIDEBAR_ROW_HEIGHT_PX in sessionListLayout.ts.
-          sidebarOpen ? "h-12" : "h-11",
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => onSelect(row.id)}
-          aria-current={selected ? "true" : undefined}
-          aria-label={!sidebarOpen ? title : undefined}
-          className={cn(
-            "flex h-full w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-            // Actions-take-priority hover (Chronos): at rest the title owns
-            // the full width; the moment the row is hovered/focused, pr-14
-            // reserves the right slot for the Trash + Pin sibling cluster and
-            // the title truncates earlier (the timestamp yields — see the
-            // group-hover:opacity-0 on the right-slot spans below). The
-            // padding swap is deliberately instant (no transition) so the
-            // truncation never smears mid-reflow. Collapsed sidebar hides
-            // both actions, so no reservation.
-            // No `gap` on the expanded arm any more: the text column is the
-            // button's only child once the mode glyph is gone.
-            sidebarOpen
-              ? "items-center px-2.5 group-focus-within:pr-14 group-hover:pr-14"
-              : "items-center justify-center px-0",
-          )}
-          title={sidebarOpen ? undefined : title}
-        >
-          {!sidebarOpen ? (
-            <span
-              className={cn(
-                "relative flex h-7 w-7 shrink-0 items-center justify-center",
-                selected
-                  ? "text-[var(--vex-accent-contrast)]"
-                  : "text-[var(--vex-text-3)]",
-              )}
-            >
-              <VexIcon icon={Icon} size={15} aria-hidden />
-              {activity !== null ? (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
-                    // On the selected beam the tone dot flips to the beam's
-                    // contrast ink (white on cobalt, ink on lime) — an accent
-                    // dot would vanish into the gradient.
-                    selected
-                      ? "bg-[var(--vex-accent-contrast)]"
-                      : activity.dotClass,
-                  )}
-                />
-              ) : null}
-            </span>
-          ) : null}
+  const commitRename = (): void => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    // Empty or unchanged drafts are a cancel, not a write.
+    if (trimmed.length === 0 || trimmed === title) return;
+    onRename?.(row.id, trimmed);
+  };
 
-          {sidebarOpen ? (
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-[13px] font-medium",
-                    selected ? "text-[var(--vex-accent-contrast)]" : "text-foreground",
-                  )}
-                >
-                  {title}
-                </span>
-                {/* Owner decree — no pulsing dots anywhere: the right slot
-                 * ALWAYS shows the timestamp now. A running mission's signal
-                 * lives entirely in the "live" Stamp on the subtitle line
-                 * below, so dropping the dot loses no information. */}
-                <span
-                  className={cn(
-                    "shrink-0 font-mono text-[10px] tabular-nums transition-opacity group-hover:opacity-0 group-focus-within:opacity-0",
-                    selected
-                      ? "text-[color-mix(in_oklab,var(--vex-accent-contrast)_80%,transparent)]"
-                      : "text-[var(--vex-text-2)]",
-                  )}
-                >
-                  {startedLabel}
-                </span>
-              </span>
-              <span className="mt-0.5 flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-[11px]",
-                    // Metadata line: text-3 at rest (quiet ledger), lifted to
-                    // the beam's contrast ink at 85% so it stays legible on the
-                    // gradient in both themes.
-                    selected
-                      ? "text-[color-mix(in_oklab,var(--vex-accent-contrast)_85%,transparent)]"
-                      : "text-[var(--vex-text-3)]",
-                  )}
-                >
-                  {subtitle}
-                </span>
-                {row.permission !== "full" ? (
-                  <Stamp tone="warn" onBeam={selected}>restricted</Stamp>
-                ) : null}
-                {activity?.tone === "active" ? (
-                  <Stamp tone="accent" onBeam={selected}>live</Stamp>
-                ) : null}
-                {activity?.tone === "paused" ? (
-                  <Stamp tone="warn" onBeam={selected}>paused</Stamp>
-                ) : null}
-              </span>
-            </span>
-          ) : null}
-        </button>
+  const onRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRename();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setEditing(false);
+    }
+  };
 
-        {sidebarOpen ? (
-          // Trash + Pin live in a sibling cluster outside the select
-          // button. Native buttons inside a non-interactive wrapper —
-          // no nested buttons, no role="button" parent, so Enter/Space
-          // on either action cannot bubble into a row-select handler.
-          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-            <RemoveButton onClick={handleRemoveClick} />
-            <PinToggle
-              pinned={isPinned}
-              pending={pinPending}
-              onClick={handlePinClick}
-            />
-          </div>
-        ) : null}
+  // Inline rename replaces the whole row while active: an input nested in
+  // the select button would be invalid interactive markup.
+  if (editing && sidebarOpen) {
+    return (
+      <div className="flex h-8 items-center rounded-lg bg-interactive-hover px-2">
+        <input
+          autoFocus
+          value={draft}
+          maxLength={80}
+          aria-label="Rename session"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={onRenameKeyDown}
+          onBlur={commitRename}
+          className="min-w-0 flex-1 rounded border border-line-2 bg-surface-1 px-0.5 text-[14px] leading-[20px] text-ink-primary focus:outline-none"
+        />
       </div>
-    </li>
+    );
+  }
+
+  const railRow = (
+    <RailRow
+      selected={selected}
+      collapsed={!sidebarOpen}
+      label={title}
+      title={title}
+      onSelect={() => onSelect(row.id)}
+      onDoubleClick={
+        sidebarOpen && onRename !== undefined
+          ? () => {
+              setDraft(title);
+              setEditing(true);
+            }
+          : undefined
+      }
+      icon={
+        <span className="relative flex h-7 w-7 items-center justify-center">
+          <Icon size={15} />
+          {activity !== null ? (
+            <span
+              aria-hidden
+              className={cn(
+                "absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full",
+                activity.dotClass,
+              )}
+            />
+          ) : null}
+        </span>
+      }
+      leading={
+        activity !== null && activity.tone !== "stopped" ? (
+          <StateDot
+            state={activity.tone === "active" ? "ongoing" : "warning"}
+            size={10}
+          />
+        ) : undefined
+      }
+      trailing={formatSessionTime(row.startedAt)}
+      actions={
+        <>
+          <RemoveButton onClick={handleRemoveClick} />
+          <PinToggle
+            pinned={isPinned}
+            pending={pinPending}
+            onClick={handlePinClick}
+          />
+        </>
+      }
+    />
+  );
+
+  // Collapsed rail rows keep the native title tooltip instead of the card —
+  // a 56px anchor pushes the card over the content column.
+  if (!sidebarOpen) return railRow;
+  return (
+    <HoverCard
+      anchor={railRow}
+      content={<SessionHoverContent row={row} />}
+      openDelayMs={500}
+    />
   );
 }

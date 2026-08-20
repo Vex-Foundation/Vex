@@ -84,6 +84,16 @@
   --color-muted-foreground: var(--vex-text-3);
 }
 
+/* Celeris glass: the rail/console glass flips to white over the day
+ * artwork. Alpha literals stay literals (glass is a veil over a photo, not
+ * a solid surface token); both themes' values live here side by side. */
+[data-vex-shell="true"][data-vex-theme="celeris"] {
+  --vex-rail: rgba(255, 255, 255, 0.6);
+  --vex-rail-strong: rgba(255, 255, 255, 0.78);
+  --vex-glass: rgba(255, 255, 255, 0.66);
+  --vex-glass-strong: rgba(255, 255, 255, 0.85);
+}
+
 /* Shell scrollbar — the onboarding recipe (38%/60% accent thumb) under the
  * shell scope; wins specificity over the global `*` fallback
  * (global-css/scrollbars.css). */
@@ -121,6 +131,145 @@
 [data-vex-shell="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
+/* THE SHELL FRAME — three grid tracks (sidebar | center | BOOK) solved by
+ * lib/shell-columns.ts. Collapse/expand animates the tracks on the standard
+ * curve; a drag writes widths at pointer cadence, so easing them would
+ * detach the column edge from the handle. */
+.vex-shell-frame {
+  position: relative; /* anchors the drag handles, which straddle column borders */
+  display: grid;
+  grid-template-rows: 100%;
+  overflow: hidden;
+  transition: grid-template-columns 300ms var(--vex-ease-inout);
+}
+.vex-shell-frame[data-dragging] {
+  transition: none;
+}
+
+/* Drag handles are frame children (columns clip overflow): an 8px hit strip
+ * centered on the column border via inline left, above column content. The
+ * BOOK side adds a visible 12x32 pill at vertical center; the sidebar keeps
+ * only the hit strip. The strip rides the same curve as the tracks so it
+ * stays on the moving border during collapse/expand. */
+.vex-shell-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+  z-index: 30;
+  touch-action: none;
+  transition: left 300ms var(--vex-ease-inout);
+}
+.vex-shell-frame[data-dragging] .vex-shell-handle {
+  transition: none;
+}
+.vex-shell-handle[data-side="book"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 32px;
+  border-radius: 10px;
+  box-sizing: border-box;
+  background: var(--vex-surface-2);
+  border: 1px solid var(--vex-line-strong);
+  opacity: 0;
+  transition: opacity 300ms var(--vex-ease-inout);
+}
+.vex-shell-handle[data-side="book"]:hover::after,
+.vex-shell-handle[data-side="book"][data-dragging]::after {
+  opacity: 1;
+  border-color: var(--vex-alias-border-l3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-shell-frame,
+  .vex-shell-handle,
+  .vex-shell-handle[data-side="book"]::after {
+    transition: none;
+  }
+}
+
+/* Backdrop artwork per theme — the swap is CSS on data-vex-theme (stamped on
+ * the shell root and documentElement), never a JS theme read, so the
+ * pre-paint frame already shows the right artwork. */
+.vex-backdrop-celeris {
+  display: none;
+}
+[data-vex-theme="celeris"] .vex-backdrop-celeris {
+  display: block;
+}
+[data-vex-theme="celeris"] .vex-backdrop-chronos {
+  display: none;
+}
+
+/* SIDEBAR COLLAPSE CHOREOGRAPHY — slide + crossfade, not a morph: the
+ * content holds its frozen expanded layout (inline width set by the
+ * component) and fades in place (.vex-sidebar-fading) while the sliding
+ * grid track clips it; the rail layout only applies after the fade settles
+ * (COLLAPSE_SETTLE_MS in SessionsList.tsx = the 150ms here). At settle the
+ * rail controls enter the 56px spine from the former rail-edge offset over
+ * the track transition's second half; the bottom-pinned foot only fades.
+ * A cold-collapsed render gets neither class (static rail). */
+.vex-sidebar-fading > * {
+  opacity: 0;
+  transition: opacity 150ms var(--vex-ease-inout);
+}
+.vex-sidebar-rail-in [data-rail-control] {
+  animation: vex-rail-in 150ms var(--vex-ease-inout) backwards;
+}
+.vex-sidebar-rail-in [data-rail-foot] {
+  animation: vex-rail-fade-in 150ms var(--vex-ease-inout) backwards;
+}
+@keyframes vex-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(49px);
+  }
+}
+@keyframes vex-rail-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Sidebar scrollbars are a pointer affordance: the column seeds the l2
+ * indirection pair, .vex-quiet-bars rebinds it to transparent while the
+ * pointer is elsewhere (lib/useQuietScrollbars). `transparent` rather than
+ * hiding the bar keeps the gutter reservation, so revealing the thumb never
+ * reflows a row. The descendant rules below out-specify the shell-scope
+ * accent thumb so the column's regions read the pair. */
+.vex-sidebar {
+  --vex-scrollbar-thumb: var(--vex-alias-scrollbar-l2);
+  --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
+}
+.vex-sidebar.vex-quiet-bars {
+  --vex-scrollbar-thumb: transparent;
+  --vex-scrollbar-thumb-hover: transparent;
+}
+[data-vex-shell="true"] .vex-sidebar *::-webkit-scrollbar-thumb {
+  background: var(--vex-scrollbar-thumb);
+  border-radius: 4px;
+  border: 0;
+  background-clip: border-box;
+}
+[data-vex-shell="true"] .vex-sidebar *::-webkit-scrollbar-thumb:hover {
+  background: var(--vex-scrollbar-thumb-hover);
+  background-clip: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-sidebar-fading > *,
+  .vex-sidebar-rail-in [data-rail-control],
+  .vex-sidebar-rail-in [data-rail-foot] {
+    transition: none;
+    animation: none;
+  }
+}
+
 /* Standard-property fallback ONLY where the webkit pseudo-elements do not
  * exist: a non-auto scrollbar-color makes Chromium drop every
  * ::-webkit-scrollbar* rule above, hover included (scrollbars.css gate). */
