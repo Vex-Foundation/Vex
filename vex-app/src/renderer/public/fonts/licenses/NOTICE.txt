@@ -1,26 +1,30 @@
-Vex bundled fonts — license notice
+Vex bundled fonts - license notice
 ==================================
 
 The font files in this directory tree are redistributed under the
-SIL Open Font License, Version 1.1 (see OFL-*.txt alongside this file).
+SIL Open Font License, Version 1.1 (see OFL-*.txt / *-OFL.txt alongside
+this file).
 
 Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
-  /fonts/instrument-sans-latin-wght.woff2             — "Instrument Sans" (body/UI/display)
-  /fonts/instrument-sans-latin-ext-wght.woff2
-  /fonts/instrument-sans-italic-latin-wght.woff2
-  /fonts/instrument-sans-italic-latin-ext-wght.woff2
-  /fonts/jetbrains-mono-latin-wght.woff2              — "JetBrains Mono" (labels/code)
+  /fonts/inter-tight-latin-wght.woff2                 - "Inter Tight" (UI + reading)
+  /fonts/inter-tight-latin-ext-wght.woff2
+  /fonts/inter-tight-italic-latin-wght.woff2
+  /fonts/inter-tight-italic-latin-ext-wght.woff2
+  /fonts/doto-latin-wght.woff2                        - "Doto" (micro-labels/stats)
+  /fonts/doto-latin-ext-wght.woff2
+  /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (code)
   /fonts/jetbrains-mono-latin-ext-wght.woff2
 
 Shipped (static WOFF2, latin + latin-ext subsets, 400 regular + italic):
-  /fonts/instrument-serif-latin.woff2                 — "Instrument Serif" (display serif)
+  /fonts/instrument-serif-latin.woff2                 - "Instrument Serif" (gate voice)
   /fonts/instrument-serif-latin-ext.woff2
   /fonts/instrument-serif-italic-latin.woff2
   /fonts/instrument-serif-italic-latin-ext.woff2
 
-JetBrains Mono is the Fontsource-packaged build (fontsource.org) of the
-upstream OFL JetBrains/JetBrainsMono. Instrument Sans and Instrument Serif
-are the Google Fonts / gstatic subset builds of the upstream
-Instrument/instrument-sans and Instrument/instrument-serif families
-(© 2022 The Instrument Sans / Instrument Serif Project Authors).
-Archivo and Inter Tight were retired in the Chronos rebrand (2026-07-20).
+Inter Tight and Doto are the Google Fonts / gstatic subset builds of the
+upstream rsms/inter-tight (c) 2022 The Inter Project Authors and
+oliverlalan/Doto (c) 2024 The Doto Project Authors families. JetBrains Mono
+is the Fontsource-packaged build (fontsource.org) of the upstream OFL
+JetBrains/JetBrainsMono. Instrument Serif is the Google Fonts / gstatic
+subset build of Instrument/instrument-serif ((c) 2022 The Instrument Serif
+Project Authors). Instrument Sans was retired in the 2026-08 rebrand.

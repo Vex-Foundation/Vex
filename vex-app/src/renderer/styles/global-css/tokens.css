@@ -1,85 +1,334 @@
+/* VEX design tokens v2 - the three-tier system (rebrand 2026-08-20).
+ *
+ *   static  -> @theme primitives (gray/blue ramps + statuses). NEVER consumed
+ *              by components; the design-guard bans raw hexes in TSX.
+ *   alias   -> semantic CSS vars on :root (chronos = default) with a
+ *              [data-vex-theme="celeris"] override block. Named --vex-alias-*.
+ *   utility -> `@theme inline` projects aliases into Tailwind utilities.
+ *
+ * Utility namespace mapping (alias -> utility color name):
+ *   --vex-alias-bg-*          -> --color-surface-*   (bg-surface-1, ...)
+ *   --vex-alias-label-*       -> --color-ink-*       (text-ink-secondary, ...)
+ *   --vex-alias-border-l*     -> --color-line-*      (border-line-2, ...)
+ *   --vex-alias-accent-*      -> --color-accent-*    (bg-accent-primary, ...)
+ *   --vex-alias-interactive-* -> --color-interactive-* (hover washes)
+ *   --vex-alias-state-*       -> --color-success/warning/danger (+ -wash)
+ *
+ * Legacy names (--color-bg-primary, --color-text-*, shadcn aliases, ...) are
+ * kept as projections of the SAME aliases so existing consumers re-skin
+ * without edits; they retire when phases 1-4 migrate call sites.
+ *
+ * Accent family: root #0000c0 (the vx logo). Chronos interactive accent is
+ * blue-400 #7a8cff (readable on ink), celeris is blue-700 #0000c0. The old
+ * #1f44ff/#0a23b8 cobalt family is retired and guard-banned. */
 @theme {
-  /* Vex semantic palette — the landing-page (projectvex.ai) brand family.
-   * Ink scale from the landing dark stage (--ink #0a0d18, .frame gradient
-   * #11162a→#0b0f1d, .frame-cell #0f1424) and ONE electric-cobalt accent
-   * (--blue #1f44ff, deep #0a23b8). Status colors are the landing's:
-   * live-green #1fb954 (.get-row/.wl-ok), amber #febc2e (.ws-alert), and
-   * danger stays #ef4444 (the landing defines no red; blocked states there
-   * use ink). The retired Protocol Desk palette (#04060f canvas, #3275f8
-   * accent, #161b3f/#1f2552 navy) is banned in shell sources — pinned by
-   * features/appShell/__tests__/shell-design-guard.test.ts. */
-  --color-bg-primary: #0a0d18;
-  --color-bg-elevated: #11162a;
-  --color-bg-overlay: #171e38;
-  --color-accent-primary: #1f44ff;
-  --color-accent-deep: #0a23b8;
-  --color-accent-secondary: color-mix(in oklab, #1f44ff 55%, white);
-  /* Text — the landing's paper (#f3f4f7) as ink-surface foreground, with a
-   * three-step solid hierarchy (never opacity-stacked). */
-  --color-text-primary: #f3f4f7;
-  --color-text-secondary: #c9cdd8;
-  --color-text-muted: #939aad;
-  --color-success: #1fb954;
-  --color-warning: #febc2e;
-  --color-danger: #ef4444;
-  /* DotMatrix solid-theme preset color (referenced by
-   * components/ui/dotmatrix-core/color.ts). */
-  --color-dot-on: var(--color-accent-primary);
+  /* Kill Tailwind's default palette: a stray bg-slate-500 is a build error,
+   * not a silent brand leak. white/black are re-declared because the shell
+   * legitimately composes white/black alpha washes. */
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
 
-  /* shadcn semantic aliases — Vex palette projected through the
-   * naming shadcn upstream components expect (background/foreground/
-   * card/border/ring/etc). Vex tokens above stay the source of truth;
-   * any palette change propagates automatically. */
-  --color-background: var(--color-bg-primary);
-  --color-foreground: var(--color-text-primary);
-  --color-card: var(--color-bg-elevated);
-  --color-card-foreground: var(--color-text-primary);
-  --color-popover: var(--color-bg-overlay);
-  --color-popover-foreground: var(--color-text-primary);
-  --color-primary: var(--color-accent-primary);
-  --color-primary-foreground: #ffffff;
-  --color-secondary: var(--color-accent-secondary);
-  --color-secondary-foreground: #0a0d18;
-  --color-muted: var(--color-bg-overlay);
-  --color-muted-foreground: var(--color-text-muted);
-  --color-accent: var(--color-bg-overlay);
-  --color-accent-foreground: var(--color-text-primary);
-  --color-destructive: var(--color-danger);
-  --color-destructive-foreground: #ffffff;
-  --color-border: var(--color-bg-overlay);
-  --color-input: var(--color-bg-overlay);
-  --color-ring: var(--color-accent-primary);
+  /* Static tier - cool gray ramp with the ink-blue cast (one ramp serves
+   * both themes). */
+  --color-gray-0: #ffffff;
+  --color-gray-50: #f7f8fb;
+  --color-gray-100: #eef1f6;
+  --color-gray-200: #e3e7ef;
+  --color-gray-300: #c9cfdd;
+  --color-gray-400: #a7aec1;
+  --color-gray-500: #7d8598;
+  --color-gray-600: #5f6678;
+  --color-gray-700: #454b5c;
+  --color-gray-800: #2b3040;
+  --color-gray-850: #202435;
+  --color-gray-875: #1a1e2e;
+  --color-gray-900: #141827;
+  --color-gray-950: #0e111d;
+  --color-gray-1000: #0a0d18;
+
+  /* Static tier - the blue family anchored at the logo color. */
+  --color-blue-100: #e9edff;
+  --color-blue-200: #d4dcff;
+  --color-blue-300: #a9b8ff;
+  --color-blue-400: #7a8cff;
+  --color-blue-500: #2b3eff;
+  --color-blue-700: #0000c0;
+  --color-blue-900: #000080;
+  --color-blue-950: #131a4d;
+
+  /* Static tier - statuses (primaries theme-invariant; washes flip). */
+  --color-green-100: #e6f8ec;
+  --color-green-500: #1fb954;
+  --color-green-900: #12301d;
+  --color-amber-100: #fdf3dd;
+  --color-amber-500: #febc2e;
+  --color-amber-700: #b97e08;
+  --color-amber-900: #2e2618;
+  --color-red-100: #fdeaea;
+  --color-red-400: #f26d6d;
+  --color-red-500: #ef4444;
+  --color-red-900: #3a1518;
 
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
+  /* Capsule controls: radius = height / 2; 9999px clamps to that. */
+  --radius-capsule: 9999px;
 
-  /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (owner decree
-   * 2026-07-29), the whitehouse.gov 2026 pair:
-   *   --font-serif = DISPLAY: markdown headings, display figures, the
-   *     composer's italic resting prompt, and the reasoning aside
-   *     (`.vex-reasoning-prose`). Static 400 + italic, NO weight axis — never
-   *     a synthesized bold. NOT body copy: the readability round (2026-07-30)
-   *     moved message bodies off it, matching the source register, where the
-   *     face is a heading face only.
-   *   --font-sans  = the READING + SUPPORT face: message body copy
-   *     (`.vex-chat-prose`, 15px/1.65), UI chrome, controls, the small-caps
-   *     micro labels (`.vex-eyebrow` / `.vex-micro`), and scanned numeric
-   *     columns with `tabular-nums` (variable 400-700; `font-black` → 700).
-   *   --font-mono  = DEMOTED to technical artifacts ONLY: code blocks, raw
-   *     JSON args/output, addresses, tx hashes. No new mono uppercase labels.
-   * Archivo + Inter Tight are retired. */
+  /* Elevation shadows, theme-invariant. The 1px first layer of lv3 is a
+   * hairline substitute - it draws the card edge even on dark surfaces
+   * where the soft shadow is invisible. */
+  --shadow-lv1: 0 2px 4px 0 rgba(10, 13, 24, 0.05);
+  --shadow-lv2:
+    0 4px 12px 0 rgba(10, 13, 24, 0.02), 0 2px 8px 0 rgba(10, 13, 24, 0.04);
+  --shadow-lv3:
+    0 0 1px 0 rgba(10, 13, 24, 0.2), 0 0 4px 0 rgba(10, 13, 24, 0.02),
+    0 12px 32px 0 rgba(10, 13, 24, 0.08);
+
+  /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (rebrand
+   * 2026-08-20):
+   *   --font-sans / --font-display = Inter Tight (variable 400-700 + italic):
+   *     UI chrome, reading copy, and display statements.
+   *   --font-doto  = Doto (variable 400-900): dot-matrix micro-labels,
+   *     eyebrows, and numeric statistics ONLY — the brand's dot signature.
+   *   --font-mono  = technical artifacts ONLY: code blocks, raw JSON
+   *     args/output, addresses, tx hashes. No new mono uppercase labels.
+   *   --font-serif = Instrument Serif, the GATE voice only. Static 400 +
+   *     italic, NO weight axis — never a synthesized bold. */
   --font-sans:
-    "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-display:
-    "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* Display serif — Instrument Serif (static 400 + italic only): the hero
-   * statement voice of the Chronos shell. Falls back to the platform serifs
-   * so a font-load miss still reads as a serif. */
+  --font-doto: "Doto", "Inter Tight", monospace;
+  /* Falls back to the platform serifs so a font-load miss still reads as a
+   * serif. */
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
 }
 
+/* Alias tier - CHRONOS (dark) is the default on :root. The theme attribute
+ * rides on documentElement (`data-vex-theme`, written pre-paint by
+ * public/theme-boot.js and kept current by the uiStore theme runtime). */
+:root {
+  /* Backgrounds: chronos elevation = the luminance ladder. */
+  --vex-alias-bg-base: var(--color-gray-1000);
+  --vex-alias-bg-deep: var(--color-gray-950);
+  --vex-alias-bg-layer-1: var(--color-gray-875);
+  --vex-alias-bg-layer-2: var(--color-gray-850);
+  --vex-alias-bg-layer-3: var(--color-gray-800);
+  --vex-alias-bg-overlay: var(--color-gray-700);
+  --vex-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
+  /* Sidebar: the only tinted surface - sits between base and deep. */
+  --vex-alias-sidebar-fill: #0d101c;
+  /* The two "user surfaces": message bubble + composer share one plate. */
+  --vex-alias-bubble: var(--color-gray-850);
+  --vex-alias-composer: var(--color-gray-850);
+
+  /* Borders: ALWAYS alpha so they compose over any surface. */
+  --vex-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --vex-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --vex-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --vex-alias-border-l4: rgba(255, 255, 255, 0.2);
+
+  /* Labels: solid four-step ladder, never opacity-stacked. Caption is for
+   * disabled states and decoration ONLY - placeholders, secondary amounts,
+   * timestamps and stats lines read tertiary (calibration 2026-08-20). */
+  --vex-alias-label-primary: #f3f4f7;
+  --vex-alias-label-secondary: #c9cdd8;
+  --vex-alias-label-tertiary: var(--color-gray-400);
+  --vex-alias-label-caption: var(--color-gray-600);
+  --vex-alias-label-dimmed: var(--color-gray-700);
+  /* Text painted on the primary (paper/ink) button fill. */
+  --vex-alias-label-on-primary: #12141c;
+  /* Text painted on a solid accent fill: chronos accent is the LIGHT
+   * blue-400, so its foreground is ink; celeris flips to white on #0000c0. */
+  --vex-alias-label-on-accent: var(--color-gray-1000);
+
+  /* Buttons: primary is INK/PAPER (base.org discipline) - the accent marks
+   * only the main action (send/CTA). */
+  --vex-alias-button-primary-fill: #f3f4f7;
+  --vex-alias-button-primary-hover: var(--color-gray-100);
+
+  /* Accent family. */
+  --vex-alias-accent-primary: var(--color-blue-400);
+  --vex-alias-accent-hover: var(--color-blue-300);
+  --vex-alias-accent-brand: var(--color-blue-500);
+  --vex-alias-accent-wash: var(--color-blue-950);
+
+  /* Interactive washes. */
+  --vex-alias-interactive-hover: rgba(255, 255, 255, 0.08);
+  --vex-alias-interactive-active: rgba(255, 255, 255, 0.14);
+  --vex-alias-interactive-solid: var(--color-gray-800);
+  --vex-alias-interactive-danger: rgba(242, 109, 109, 0.15);
+
+  /* Statuses: primaries theme-invariant except error (pure red is harsh on
+   * ink, so chronos lightens it); washes flip per theme. */
+  --vex-alias-state-success: var(--color-green-500);
+  --vex-alias-state-success-wash: var(--color-green-900);
+  --vex-alias-state-warn: var(--color-amber-500);
+  --vex-alias-state-warn-label: var(--color-amber-500);
+  --vex-alias-state-warn-wash: var(--color-amber-900);
+  --vex-alias-state-error: var(--color-red-400);
+  --vex-alias-state-error-wash: var(--color-red-900);
+
+  /* Chrome plates: tooltips and toasts are DARK in both themes. */
+  --vex-alias-tooltip-bg: var(--color-gray-800);
+  --vex-alias-toast-bg: var(--color-gray-850);
+
+  /* Scrollbar tint pairs (consumed through the runtime indirection in
+   * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
+  --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
+  --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
+  --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
+  --vex-alias-scrollbar-l2-hover: rgba(255, 255, 255, 0.3);
+}
+
+/* Alias tier - CELERIS (light). Surfaces stay WHITE: separation comes from
+ * borders + shadows, never a gray elevation ladder. The sidebar is the only
+ * tinted surface. */
+[data-vex-theme="celeris"] {
+  --vex-alias-bg-base: var(--color-gray-0);
+  --vex-alias-bg-deep: var(--color-gray-50);
+  --vex-alias-bg-layer-1: var(--color-gray-0);
+  --vex-alias-bg-layer-2: var(--color-gray-0);
+  --vex-alias-bg-layer-3: var(--color-gray-0);
+  --vex-alias-bg-overlay: var(--color-gray-200);
+  --vex-alias-bg-skeleton: rgba(10, 13, 24, 0.04);
+  --vex-alias-sidebar-fill: var(--color-gray-50);
+  --vex-alias-bubble: var(--color-blue-100);
+  --vex-alias-composer: var(--color-gray-0);
+
+  --vex-alias-border-l1: rgba(10, 13, 24, 0.04);
+  --vex-alias-border-l2: rgba(10, 13, 24, 0.1);
+  --vex-alias-border-l3: rgba(10, 13, 24, 0.12);
+  --vex-alias-border-l4: rgba(10, 13, 24, 0.16);
+
+  /* Celeris caption (#a7aec1) sits ~2:1 on white - below the readability
+   * floor, so it serves disabled/decoration only; running metadata uses
+   * tertiary (#7d8598, ~4.5:1). */
+  --vex-alias-label-primary: #12141c;
+  --vex-alias-label-secondary: var(--color-gray-600);
+  --vex-alias-label-tertiary: var(--color-gray-500);
+  --vex-alias-label-caption: var(--color-gray-400);
+  --vex-alias-label-dimmed: var(--color-gray-300);
+  --vex-alias-label-on-primary: #ffffff;
+  --vex-alias-label-on-accent: #ffffff;
+
+  --vex-alias-button-primary-fill: #12141c;
+  --vex-alias-button-primary-hover: var(--color-gray-700);
+
+  --vex-alias-accent-primary: var(--color-blue-700);
+  --vex-alias-accent-hover: var(--color-blue-900);
+  --vex-alias-accent-brand: var(--color-blue-500);
+  --vex-alias-accent-wash: var(--color-blue-100);
+
+  /* Light hover tint is BLUE-black, not neutral gray - subtle but carries
+   * the cool cast. */
+  --vex-alias-interactive-hover: rgba(20, 28, 64, 0.06);
+  --vex-alias-interactive-active: rgba(20, 28, 64, 0.1);
+  --vex-alias-interactive-solid: var(--color-gray-50);
+  --vex-alias-interactive-danger: rgba(239, 68, 68, 0.06);
+
+  --vex-alias-state-success-wash: var(--color-green-100);
+  --vex-alias-state-warn-label: var(--color-amber-700);
+  --vex-alias-state-warn-wash: var(--color-amber-100);
+  --vex-alias-state-error: var(--color-red-500);
+  --vex-alias-state-error-wash: var(--color-red-100);
+
+  --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
+  --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);
+  --vex-alias-scrollbar-l2: rgba(10, 13, 24, 0.24);
+  --vex-alias-scrollbar-l2-hover: rgba(10, 13, 24, 0.36);
+}
+
+/* Utility tier - alias projections. `@theme inline` is REQUIRED here: the
+ * tokens reference CSS vars, and inline makes the emitted utility carry the
+ * var() (so the theme attribute re-points every utility live). */
+@theme inline {
+  --color-surface-base: var(--vex-alias-bg-base);
+  --color-surface-deep: var(--vex-alias-bg-deep);
+  --color-surface-1: var(--vex-alias-bg-layer-1);
+  --color-surface-2: var(--vex-alias-bg-layer-2);
+  --color-surface-3: var(--vex-alias-bg-layer-3);
+  --color-surface-overlay: var(--vex-alias-bg-overlay);
+  --color-surface-skeleton: var(--vex-alias-bg-skeleton);
+  --color-surface-sidebar: var(--vex-alias-sidebar-fill);
+  --color-surface-bubble: var(--vex-alias-bubble);
+  --color-surface-composer: var(--vex-alias-composer);
+
+  --color-ink-primary: var(--vex-alias-label-primary);
+  --color-ink-secondary: var(--vex-alias-label-secondary);
+  --color-ink-tertiary: var(--vex-alias-label-tertiary);
+  --color-ink-caption: var(--vex-alias-label-caption);
+  --color-ink-dimmed: var(--vex-alias-label-dimmed);
+  --color-ink-on-primary: var(--vex-alias-label-on-primary);
+  --color-ink-on-accent: var(--vex-alias-label-on-accent);
+
+  --color-line-1: var(--vex-alias-border-l1);
+  --color-line-2: var(--vex-alias-border-l2);
+  --color-line-3: var(--vex-alias-border-l3);
+  --color-line-4: var(--vex-alias-border-l4);
+
+  --color-accent-primary: var(--vex-alias-accent-primary);
+  --color-accent-hover: var(--vex-alias-accent-hover);
+  --color-accent-brand: var(--vex-alias-accent-brand);
+  --color-accent-wash: var(--vex-alias-accent-wash);
+
+  --color-button-primary: var(--vex-alias-button-primary-fill);
+  --color-button-primary-hover: var(--vex-alias-button-primary-hover);
+
+  --color-interactive-hover: var(--vex-alias-interactive-hover);
+  --color-interactive-active: var(--vex-alias-interactive-active);
+  --color-interactive-solid: var(--vex-alias-interactive-solid);
+  --color-interactive-danger: var(--vex-alias-interactive-danger);
+
+  --color-success: var(--vex-alias-state-success);
+  --color-success-wash: var(--vex-alias-state-success-wash);
+  --color-warning: var(--vex-alias-state-warn);
+  --color-warning-label: var(--vex-alias-state-warn-label);
+  --color-warning-wash: var(--vex-alias-state-warn-wash);
+  --color-danger: var(--vex-alias-state-error);
+  --color-danger-wash: var(--vex-alias-state-error-wash);
+
+  --color-tooltip: var(--vex-alias-tooltip-bg);
+  --color-toast: var(--vex-alias-toast-bg);
+
+  /* Legacy projections - pre-rebrand consumer names, re-pointed at the new
+   * aliases so every existing call site re-skins without an edit. Phases
+   * 1-4 migrate call sites; F6 deletes these. */
+  --color-bg-primary: var(--vex-alias-bg-base);
+  --color-bg-elevated: var(--vex-alias-bg-layer-1);
+  --color-bg-overlay: var(--vex-alias-bg-layer-2);
+  --color-accent-deep: var(--vex-alias-accent-hover);
+  --color-accent-secondary: var(--vex-alias-accent-hover);
+  --color-text-primary: var(--vex-alias-label-primary);
+  --color-text-secondary: var(--vex-alias-label-secondary);
+  --color-text-muted: var(--vex-alias-label-tertiary);
+  /* DotMatrix solid-theme preset color (components/ui/dotmatrix-core). */
+  --color-dot-on: var(--vex-alias-accent-primary);
+
+  /* shadcn aliases - stock Button/Input/Dialog speak the brand. */
+  --color-background: var(--vex-alias-bg-base);
+  --color-foreground: var(--vex-alias-label-primary);
+  --color-card: var(--vex-alias-bg-layer-1);
+  --color-card-foreground: var(--vex-alias-label-primary);
+  --color-popover: var(--vex-alias-bg-layer-2);
+  --color-popover-foreground: var(--vex-alias-label-primary);
+  --color-primary: var(--vex-alias-accent-primary);
+  --color-primary-foreground: var(--vex-alias-label-on-accent);
+  --color-secondary: var(--vex-alias-bg-layer-2);
+  --color-secondary-foreground: var(--vex-alias-label-primary);
+  --color-muted: var(--vex-alias-bg-layer-2);
+  --color-muted-foreground: var(--vex-alias-label-tertiary);
+  --color-accent: var(--vex-alias-bg-layer-3);
+  --color-accent-foreground: var(--vex-alias-label-primary);
+  --color-destructive: var(--vex-alias-state-error);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--vex-alias-border-l2);
+  --color-input: var(--vex-alias-border-l2);
+  --color-ring: var(--vex-alias-accent-primary);
+}

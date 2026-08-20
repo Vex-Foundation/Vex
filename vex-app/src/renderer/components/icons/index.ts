@@ -8,3 +8,4 @@
 
 export { VexIcon, type IconGlyph, type VexIconProps } from "./VexIcon.js";
 export * from "./icon-glyphs.js";
+export * from "./glyphs.js";

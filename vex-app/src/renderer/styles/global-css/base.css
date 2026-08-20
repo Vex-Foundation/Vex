@@ -8,7 +8,7 @@
 /* Text selection speaks the accent — same as the landing (::selection). */
 ::selection {
   background: var(--color-accent-primary);
-  color: #ffffff;
+  color: var(--vex-alias-label-on-accent);
 }
 
 html,

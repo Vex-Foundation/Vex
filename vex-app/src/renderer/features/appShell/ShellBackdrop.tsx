@@ -37,7 +37,8 @@ import { cn } from "../../lib/utils.js";
 /**
  * Owner-supplied artwork (2026-07-31): the midnight lake — dark mountain
  * silhouettes mirrored in still water, a cold glow on the horizon. Source
- * of record: `backdrops/midnight-lake.src.png` (as-delivered, 5120×2560).
+ * of record: `midnight-lake.src.png` (as-delivered, 5120x2560) - removed
+ * from the bundle 2026-08-20, recover it from git history.
  * Served derivative: 4K lanczos downscale + light unsharp, regenerate with:
  *   ffmpeg -i midnight-lake.src.png \
  *     -vf "scale=4320:2160:flags=lanczos,unsharp=5:5:0.35:5:5:0.0" \

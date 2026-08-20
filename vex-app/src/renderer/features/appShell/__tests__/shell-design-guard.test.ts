@@ -1,23 +1,25 @@
 /**
- * Shell design-language guard — THE SIGNAL DESK (landing rebrand) stays
- * locked.
+ * Shell design-language guard — the VEX tokens-v2 law (rebrand 2026-08-20)
+ * stays locked.
  *
- * The shell's visual law (globals.css `[data-vex-shell]` scope): the
- * projectvex.ai landing DNA on ink surfaces — depth is solid luminance +
- * hairlines, never glass or resting glow; one accent family (the landing
- * cobalt #1f44ff via the --vex-accent tokens) and ZERO raw legacy hexes;
- * no ShinyText gradient chrome. The only sanctioned gradient is the
- * `.vex-select-beam` utility (globals.css) — the landing's selected-item
- * beam. This test turns each law into a red build instead of a review
- * comment:
+ * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 —
+ * the --vex-alias-* vars, their --color-* utility projections, and the
+ * shell's --vex-* scope tokens). One accent family rooted at the vx-logo
+ * #0000c0 (chronos interactive = blue-400 #7a8cff, celeris = blue-700);
+ * the RETIRED cobalt family #1f44ff/#0a23b8 is banned outright, alongside
+ * every older legacy hex. Depth is luminance + hairlines (or border+shadow
+ * in celeris), never glass or resting glow; no ShinyText gradient chrome.
+ * This test turns each law into a red build instead of a review comment:
  *
  *   1. /backdrop-blur(?!-none)/ — no backdrop-filter glass anywhere in the
  *      shell. `backdrop-blur-none` is EXEMPT by the lookahead (the dialog
  *      base itself is blur-free since the rebrand).
  *   2. /ShinyText|vex-shiny-text/ — the shine chrome died in S7 (component
  *      + @keyframes deleted); nothing may re-import it.
- *   3. the legacy gray-blue hex family + the retired Protocol Desk accent
- *      #3275f8 — replaced by --vex-accent tokens rooted at #1f44ff.
+ *   3. legacy hex families: the gray-blue set, the Protocol Desk accent
+ *      #3275f8, AND the retired cobalt accent pair #1f44ff/#0a23b8. Raw
+ *      hexes never appear in shell sources — the static palette lives in
+ *      tokens.css only (CSS files are outside this scan by design).
  *   4. /shadow-\[0_0_/ — resting glow. Depth never comes from shadows
  *      (directional shadows and the select-beam's lit-item shadow live in
  *      globals.css, outside this scan by design).
@@ -92,10 +94,13 @@ const BANNED: readonly BannedPattern[] = [
   { name: "legacy indigo/violet accent", regex: /#(?:6366f1|8b5cf6)/i },
   { name: "raw pin/warn status hex", regex: /#(?:ffd35c|ffce5a|f0a0a0)/i },
   // Landing rebrand: the Protocol Desk accent root retired repo-wide in the
-  // shell. The new root #1f44ff lives ONLY in globals.css token definitions
-  // (CSS files are out of this scan's scope) — components go through
-  // var(--vex-accent*).
+  // shell — components go through var(--vex-accent*).
   { name: "retired Protocol Desk accent (#3275f8)", regex: /#3275f8/i },
+  // Tokens v2 (2026-08-20): the cobalt #1f44ff/#0a23b8 family is retired in
+  // favour of the #0000c0-rooted blue ramp, which lives ONLY in tokens.css
+  // (CSS is out of this scan's scope). Any raw re-introduction in shell
+  // sources is a red build — fix the file with var(), never whitelist.
+  { name: "retired cobalt accent (#1f44ff/#0a23b8)", regex: /#(?:1f44ff|0a23b8)/i },
 ];
 
 /**
@@ -267,9 +272,18 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("bg-[#3275F8]")).toContain(
       "retired Protocol Desk accent (#3275f8)",
     );
-    // #1f44ff is the accent ROOT — it lives in globals.css token definitions
-    // and is not part of this hex ban (CSS is out of scope here).
-    expect(matchNames("#1f44ff")).toEqual([]);
+  });
+
+  it("flags the retired cobalt accent family (tokens v2 law)", () => {
+    expect(matchNames("bg-[#1f44ff]")).toContain(
+      "retired cobalt accent (#1f44ff/#0a23b8)",
+    );
+    expect(matchNames("text-[#0A23B8]")).toContain(
+      "retired cobalt accent (#1f44ff/#0a23b8)",
+    );
+    // The new accent is consumed as aliases, never as a raw hex.
+    expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
+    expect(matchNames("var(--vex-accent)")).toEqual([]);
   });
 
   it("flags the retired indigo/violet accent and raw pin/warn status hexes", () => {
@@ -283,7 +297,6 @@ describe("shell design guard (S7)", () => {
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
     expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
-    expect(matchNames("#1f44ff")).toEqual([]);
   });
 
   it("flags resting glow and shine chrome", () => {
