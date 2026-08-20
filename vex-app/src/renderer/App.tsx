@@ -1,10 +1,10 @@
 /**
  * Top-level renderer state machine.
  *
- * Boot (Chronos Gate, PR1): the `SetupGate` overlay covers the window
- * from first paint while its orchestrator runs the launch pipeline, then
- * hands off to a view beneath itself and curtain-reveals it. The view
- * machine itself is unchanged:
+ * Boot: the `ChronosGate` overlay covers the window from first paint
+ * while its orchestrator runs the launch pipeline, then hands off to a
+ * view beneath itself and curtain-reveals it. The view machine itself
+ * is unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
  *   composeBootstrap → migrations → wizard → unlock → appShell —
  * a healthy returning user skips straight from the gate to
@@ -26,7 +26,7 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { SetupGate } from "./features/setup/SetupGate.js";
+import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
 import { EASE_STANDARD } from "./lib/motion.js";
@@ -126,11 +126,10 @@ export function App(): JSX.Element {
           resolves and the curtain reveal completes, then unmounts for the
           rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
           critical update toast stays visible over the boot ritual. */}
-      {/* The nonce is a REMOUNT key, not just data: the gate decides its
-          prologue variant once per mount (a lazy initialiser), so the dev
-          tour's replay only re-runs the cinematic if the whole gate is a
-          fresh mount. It stays 0 for the entire life of a real launch. */}
-      <SetupGate key={prologueReplayNonce} />
+      {/* The nonce is a REMOUNT key: the dev tour's replay re-runs the
+          gate choreography only if the whole gate is a fresh mount. It
+          stays 0 for the entire life of a real launch. */}
+      <ChronosGate key={prologueReplayNonce} />
       {/* Unlock-success exit curtain — armed by UnlockScreen after the
           unlock IPC succeeds; flips the view to unlockReturnView while the
           cobalt plate is opaque, then splits open over the revealed view.

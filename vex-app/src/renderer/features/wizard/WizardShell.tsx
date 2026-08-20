@@ -105,11 +105,11 @@ function WizardChrome(): JSX.Element {
       {/* The mark alone — owner decree 2026-07-22: no "VEX" text beside it. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10">
         <img
-          src="/logo_clean.png"
+          src="/brand/vex-mark-white.svg"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-7 w-7 select-none object-contain"
+          className="h-6 w-auto select-none"
         />
       </div>
       <div className="pointer-events-none absolute bottom-7 left-10 z-10">
@@ -336,7 +336,7 @@ export function WizardShell(): JSX.Element {
         {/* A3 boxless: the page scrolls here (quiet onboarding scrollbar),
             not inside a bordered panel well. max-w = 640px of readable
             measure + 4rem for .vex-gate-page's symmetric scrollbar gutter
-            (setup-gate.css), which keeps the thumb off the text column. */}
+            (chronos-gate.css), which keeps the thumb off the text column. */}
         <div className="vex-gate-page min-h-0 w-full max-w-[704px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div

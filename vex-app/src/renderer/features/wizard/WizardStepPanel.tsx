@@ -175,7 +175,7 @@ export function WizardStepPanel({
 
   // `vex-step-header` / `vex-step-lede` are STYLE HOOKS, not styles: they
   // carry declarations only inside the `[data-vex-gate]` scope
-  // (global-css/setup-gate.css), where the header becomes a centered stack
+  // (global-css/chronos-gate.css), where the header becomes a centered stack
   // and the lede goes up to 18px. In Settings — which renders this same
   // component — they match nothing, so the left-aligned composition below
   // is what ships there. Keep the Tailwind classes as the Settings truth.

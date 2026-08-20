@@ -54,7 +54,7 @@
  * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
  * worlds can size the stamp independently: the shell keeps the 10px/0.14em
  * default below, the pre-shell re-pins both vars in the
- * `[data-vex-gate="true"]` scope (global-css/setup-gate.css) to 12px/0.14em.
+ * `[data-vex-gate="true"]` scope (global-css/chronos-gate.css) to 12px/0.14em.
  * That split matters because most of those call sites live in wizard step
  * files, which the app shell's Settings screen renders too.
  *

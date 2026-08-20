@@ -176,7 +176,7 @@ describe("UnlockScreen", () => {
     const root = view.container.querySelector('[data-vex-screen="unlock"]');
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
     expect(
-      view.container.querySelector('img[src="/logo_clean.png"]'),
+      view.container.querySelector('img[src="/brand/vex-mark-white.svg"]'),
     ).not.toBeNull();
   });
 
