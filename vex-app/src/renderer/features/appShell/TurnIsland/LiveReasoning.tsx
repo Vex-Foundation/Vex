@@ -24,19 +24,23 @@
  */
 
 import { memo, type JSX } from "react";
-import { MarkdownContent } from "../../../lib/markdown/MarkdownContent.js";
+import { StreamingMarkdownContent } from "../../../lib/markdown/StreamingMarkdownContent.js";
+import { useFrameThrottledValue } from "../../../lib/use-throttled-visual-update.js";
 
 export const LiveReasoning = memo(function LiveReasoning({
   text,
 }: {
   readonly text: string;
 }): JSX.Element {
+  // A5/A6: the live trace streams at token rate; render the frame-throttled
+  // snapshot through the incremental renderer (settled blocks lex once).
+  const throttledText = useFrameThrottledValue(text);
   return (
     <div
       data-vex-island-reasoning=""
       className="vex-reasoning-prose break-words text-[14px] leading-[1.6]"
     >
-      <MarkdownContent text={text} />
+      <StreamingMarkdownContent text={throttledText} />
     </div>
   );
 });

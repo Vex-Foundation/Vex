@@ -78,23 +78,18 @@
  * narrow counters close up, and the owner's first live session reported the
  * body as plainly hard to read.
  *
- * So the register splits, exactly as the source does:
- *   BODY      → Instrument Sans, 15px/1.65 (the pre-redesign reading metric).
- *   HEADINGS  → Instrument Serif, set per-node in `MarkdownContent`.
- *   DISPLAY   → Instrument Serif, set per-node (position totals, hero figures).
- *   REASONING → Instrument Serif ITALIC (`.vex-reasoning-prose` below) — a
- *               deliberately different voice for a different kind of speech.
- *   TECHNICAL → mono (code, raw JSON, addresses, tx hashes) / sans+tabular
- *               (numeric columns). Unchanged.
- *
- * Consequence of leaving the serif: Instrument Sans HAS a real 400–700 weight
- * axis, so `strong` is a genuine semibold again instead of the italic
- * substitution the weightless serif forced. `font-synthesis-weight` is
- * therefore no longer needed here — it survives on the serif subtrees below,
- * which still cannot be synthesized. */
+
+ * The register (tokens v2, 2026-08-20):
+ *   BODY      -> Inter Tight 15.5px/1.65 (reading scale).
+ *   HEADINGS  -> Inter Tight 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> Inter Tight ITALIC (`.vex-reasoning-prose` below) - a
+ *                different voice for a different kind of speech; the serif
+ *                is confined to the gate.
+ *   TECHNICAL -> mono (code, raw JSON, addresses, tx hashes) / sans+tabular
+ *                (numeric columns). Unchanged. */
 .vex-chat-prose {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 15.5px;
   line-height: 1.65;
 }
 .vex-chat-prose strong,
@@ -121,23 +116,22 @@
 }
 
 /* Reasoning prose — the SECOND voice (owner decree 2026-07-30: "inna
- * czcionka"). Vex thinking aloud is not Vex speaking, so it is not set in the
- * speaking register: Instrument Serif ITALIC at a muted tone, the editorial
- * convention for an aside. Worn by all three reasoning surfaces so they read
+ * czcionka"). Vex thinking aloud is not Vex speaking, so the aside stays
+ * ITALIC and muted — but in Inter Tight (tokens v2: the serif voice is
+ * confined to the gate). Worn by all three reasoning surfaces so they read
  * as one object — the live segment streaming in the island, the settled
  * segment stamps, and the persisted `ReasonedBlock`.
  *
  * The same technical opt-outs apply: a tool name, a JSON fragment or an
  * address quoted inside a trace must not be italicised into illegibility. */
 .vex-reasoning-prose {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-style: italic;
-  font-synthesis-weight: none;
   color: var(--vex-text-2);
 }
 .vex-reasoning-prose strong,
 .vex-reasoning-prose b {
-  font-weight: 400;
+  font-weight: 600;
 }
 .vex-reasoning-prose :is(code, pre) {
   font-family: var(--font-mono);

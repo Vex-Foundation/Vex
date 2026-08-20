@@ -14,9 +14,17 @@
  * inject markup.
  */
 
-import { memo, type JSX, type ReactNode } from "react";
-import { CircleStopIcon, VexIcon } from "../../components/icons/index.js";
+import { memo, useMemo, type JSX, type ReactNode } from "react";
+import {
+  CircleStopIcon,
+  IconCheck,
+  IconCopy,
+  VexIcon,
+} from "../../components/icons/index.js";
+import { StateDot } from "../../components/ui/state-dot.js";
+import { useCopyFeedback } from "../../lib/use-copy-feedback.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
+import { extractMarkdownPlainText } from "../../lib/markdown/plain-text.js";
 import { cn } from "../../lib/utils.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
@@ -49,10 +57,16 @@ function formatClock(iso: string): string | null {
  * nothing for an unparseable timestamp. Pairs with a speaker label to form a
  * tape stamp: the time leads on the assistant rail and trails on the user rail.
  */
-function TapeClock({ createdAt }: { readonly createdAt: string }): JSX.Element | null {
+function TapeClock({
+  createdAt,
+  className,
+}: {
+  readonly createdAt: string;
+  readonly className?: string;
+}): JSX.Element | null {
   const clock = formatClock(createdAt);
   return clock === null ? null : (
-    <span className="text-[var(--vex-text-2)]">{clock}</span>
+    <span className={cn("text-[var(--vex-text-2)]", className)}>{clock}</span>
   );
 }
 
@@ -100,14 +114,54 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
 const VEX_SPEAKER = "VEX";
 
 /**
+ * Hover-revealed copy-message key (gap A13). Assistant rows copy the PLAIN
+ * TEXT projection of their markdown (display-only extractor — the clipboard
+ * is a reading surface); user rows pass their literal text through. The
+ * button is keyboard-reachable at all times (`.vex-action-reveal` reveals on
+ * :focus-within too, and touch devices always show it).
+ */
+function CopyMessageAction({
+  text,
+  markdown = false,
+}: {
+  readonly text: string;
+  readonly markdown?: boolean;
+}): JSX.Element | null {
+  const plain = useMemo(
+    () => (markdown ? extractMarkdownPlainText(text) : text),
+    [markdown, text],
+  );
+  const { copied, onCopy } = useCopyFeedback(plain);
+  if (plain.length === 0) return null;
+  return (
+    <button
+      type="button"
+      data-vex-copy-message=""
+      aria-label={copied ? "Message copied" : "Copy message"}
+      onClick={onCopy}
+      className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--vex-text-3)] transition-colors hover:bg-interactive-hover hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+    >
+      {copied ? (
+        <IconCheck size={12} aria-hidden />
+      ) : (
+        <IconCopy size={12} aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/**
  * Tape stamp above an assistant document block. The time LEADS (the readout)
  * and the speaker label trails (chrome) — the left-aligned HH:MM forms a clock
  * column down the assistant rail of the tape.
  */
 function AssistantCaption({
   createdAt,
+  copyText,
 }: {
   readonly createdAt: string;
+  /** Markdown source for the hover copy key; omitted = no copy affordance. */
+  readonly copyText?: string;
 }): JSX.Element {
   return (
     // Register C2: a speaker caption is HUMAN chrome, so it wears the support
@@ -123,14 +177,19 @@ function AssistantCaption({
     // status word, so one gesture means one thing everywhere — Vex is here.
     // The class family stills itself under `prefers-reduced-motion`, leaving
     // the solid wordmark; `data-shimmer-text` must equal the rendered string.
-    <span className="vex-micro mb-1 flex items-baseline gap-2 tabular-nums">
-      <TapeClock createdAt={createdAt} />
+    <span className="vex-micro mb-1 flex items-center gap-2 tabular-nums">
+      {/* A15 — the clock is hover-revealed chrome (80ms, hover:hover +
+          focus-within; always visible on touch). */}
+      <TapeClock createdAt={createdAt} className="vex-time-reveal" />
       <span
         className="vex-preview-shimmer text-[var(--vex-text-3)]"
         data-shimmer-text={VEX_SPEAKER}
       >
         {VEX_SPEAKER}
       </span>
+      {copyText !== undefined ? (
+        <CopyMessageAction text={copyText} markdown />
+      ) : null}
     </span>
   );
 }
@@ -179,27 +238,40 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   switch (row.variant) {
     case "user":
       return (
-        <div data-vex-message-role="user" className="flex flex-col items-end">
+        <div
+          data-vex-message-role="user"
+          data-time-hover-root=""
+          className="flex flex-col items-end"
+        >
           {/* Operator prose shares the READING register with the assistant
               body (owner readability round 2026-07-30): Instrument Sans
               15px/1.65. This row renders as plain text, not markdown, so it
               carries the metric itself instead of inheriting
               `.vex-chat-prose` — keep the two in sync. */}
-          <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-xl border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 text-[15px] leading-[1.65] text-foreground">
+          {/* r22 = the composer card's radius (the two "user surfaces" share
+              one shape); 525px cap inside the column, percentage keeps narrow
+              windows sane. 44px single-line bubble: 24 line + 10 padding each
+              side. */}
+          <div className="max-w-[min(525px,82%)] whitespace-pre-wrap break-words rounded-[22px] bg-surface-bubble px-4 py-2.5 text-[16px] leading-6 text-ink-primary">
             {row.content}
           </div>
           {/* Same C2 human-caption register as the assistant stamp. */}
-          <span className="vex-micro mt-1 flex items-baseline justify-end gap-2 tabular-nums">
+          <span className="vex-micro mt-1 flex items-center justify-end gap-2 tabular-nums">
+            <CopyMessageAction text={row.content} />
             <span className="text-[var(--vex-text-3)]">You</span>
-            <TapeClock createdAt={row.createdAt} />
+            <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
           </span>
         </div>
       );
     case "assistant":
       return (
-        <div data-vex-message-role="assistant" className="relative pl-9">
+        <div
+          data-vex-message-role="assistant"
+          data-time-hover-root=""
+          className="relative pl-9"
+        >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption createdAt={row.createdAt} />
+          <AssistantCaption createdAt={row.createdAt} copyText={row.content} />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
         </div>
@@ -209,10 +281,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         <div
           data-vex-message-role="assistant"
           data-vex-stopped=""
+          data-time-hover-root=""
           className="relative pl-9"
         >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption createdAt={row.createdAt} />
+          <AssistantCaption createdAt={row.createdAt} copyText={row.content} />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
@@ -325,8 +398,10 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
 }
 
 /**
- * Runtime/error notice — the marker mono grammar without hairlines. Error
- * notices carry the destructive tone with the one sanctioned fill (danger/10).
+ * Runtime/error notice. A runtime notice keeps the quiet mono stamp. An error
+ * notice wears the turn-error ROW grammar (A20 — in the flow, not a box):
+ * error dot / bold "Error" title / the persisted sanitized message at 13/20.
+ * The session-level banner remains the session-scope surface.
  */
 function NoticeBody({
   tone,
@@ -335,15 +410,23 @@ function NoticeBody({
   readonly tone: "runtime" | "error";
   readonly children: ReactNode;
 }): JSX.Element {
+  if (tone === "error") {
+    return (
+      <div
+        role="alert"
+        data-vex-turn-error=""
+        className="grid w-full grid-cols-[10px_minmax(0,1fr)] items-start gap-2 py-0.5 text-[13px] leading-5"
+      >
+        <StateDot state="error" size={8} className="mt-1.5" />
+        <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+          <span className="mr-1.5 font-semibold text-destructive">Error</span>
+          <span className="text-[var(--vex-text-2)]">{children}</span>
+        </span>
+      </div>
+    );
+  }
   return (
-    <div
-      className={cn(
-        "max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em]",
-        tone === "error"
-          ? "border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 text-destructive"
-          : "bg-white/[0.03] text-[var(--vex-text-3)]",
-      )}
-    >
+    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.03] px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
       {children}
     </div>
   );

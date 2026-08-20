@@ -127,10 +127,10 @@ describe("TranscriptMessage tool acts (S5)", () => {
     ).not.toBeNull();
     const btn = screen.getByRole("button", { name: /Wallet read/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
-    expect(screen.queryByText('{"chain":"base"}')).toBeNull();
+    expect(document.querySelector("[data-vex-json-tree]")).toBeNull();
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText('{"chain":"base"}')).not.toBeNull(); // params on expand
+    expect(document.querySelector("[data-vex-json-tree]")).not.toBeNull(); // params on expand (C9 tree)
     expect(screen.getByText("Args")).not.toBeNull(); // S5 section heading
     // No result merged → the quiet row shows no Output section.
     expect(screen.queryByText("Output")).toBeNull();
