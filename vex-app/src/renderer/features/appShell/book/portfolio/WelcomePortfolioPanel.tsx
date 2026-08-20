@@ -26,12 +26,12 @@
  * at the same spot in both states. The only transient overlap left is the
  * ~0.15s stack exit fade painting over the re-expanding center — decay,
  * not occlusion. The moment a session materializes the real rail at narrow
- * width, `useAutoCollapseBook`'s stage-aware edge collapses it once.
+ * width, the shell-columns solver's derived auto-close folds it once.
  *
  * The handle deliberately carries NO glass blur (the design-guard scans raw
  * text, so even naming the banned utility here would redden the build): at
- * 44px the effect is imperceptible, and skipping it keeps the guard's glass
- * whitelist at exactly ONE portfolio file (`PortfolioCard.tsx`); the
+ * 44px the effect is imperceptible, and portfolio cards are solid on tokens
+ * v2 (no portfolio file holds a glass exemption any more); the
  * solid-leaning `--vex-rail-strong` ink reads clean over the Eclipse.
  * Reduced motion is sampled once per mount (SidebarProfile pattern): the
  * stack renders and removes its final frame instantly.

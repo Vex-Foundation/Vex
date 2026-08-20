@@ -29,8 +29,9 @@
  * the DESK RULE toggle uses. When collapsed the panel keeps the header bar
  * mounted (chevron-only spine) and hides the stack via CSS (no remount), so
  * the BOOK slide-in keyframe never replays on expand. The version stamp is
- * shown only when expanded. `useAutoCollapseBook` (mounted in `AppShell`)
- * still owns the stage/viewport collapse edges — unchanged by this redesign.
+ * shown only when expanded. Width is owned by the AppShell grid track (the
+ * shell-columns solver derives auto-close and the 48px spine); the rail
+ * only fills its track.
  */
 
 import {
@@ -172,8 +173,10 @@ export function BookPanel({
         // glass, NO separating stroke (owner review round 2: even the
         // edge-fading hairline still read as a dividing line). macOS-clean ink
         // glass: the rail carries ONLY the ink tint + blur, no grain overlay.
-        "vex-book-enter relative flex h-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        bookOpen ? "w-[340px] gap-3 p-3" : "w-12 p-0",
+        // Width is OWNED by the AppShell grid track (shell-columns solver:
+        // 300-520 open, 48px spine closed) - the rail only fills it.
+        "vex-book-enter relative flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl",
+        bookOpen ? "gap-3 p-3" : "p-0",
       )}
     >
       {/* Collapse header bar — version stamp + chevron. When collapsed the bar
