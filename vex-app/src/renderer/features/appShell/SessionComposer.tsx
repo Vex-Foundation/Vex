@@ -1,76 +1,34 @@
 /**
- * Session composer — THE SIGNAL CONSOLE, rebuilt CLEAN (owner decree
- * 2026-07-29).
- *
- * ONE SOLID rounded-2xl surface (--vex-surface-1, opaque) with a flat 1px
- * --vex-line border. The previous build was a translucent glass pill whose
- * border was painted by a masked pseudo-element carrying a TRAVELING conic
- * shimmer; the owner's verdict was that the shimmer looked wrong, so the
- * entire mechanism is deleted (see console.css). Focus now steps the border
- * to --vex-accent-border and deepens a DIRECTIONAL drop shadow — no glow, no
- * animation. Dropping the glass also retired this file's shell-design-guard
- * glass whitelist entry. Left→right inside the surface:
- *   - the transparent-bg textarea (auto-grow, 16px type, one geometry for
- *     welcome AND session — the Grok pill is the same instrument on both
- *     stages, so the old `stage` presence prop is retired) opens the pill
- *     with a generous left inset — no "+" toggle, no attach, no mic
- *     (owner-excluded). Its DEFAULT welcome/agent prompt rotates through
- *     crypto orders (`usePlaceholderRotator`) rendered as an aria-hidden
- *     FAUX-PLACEHOLDER OVERLAY (a native placeholder attribute cannot
- *     animate): each phrase swaps with a soft ~300ms crossfade + upward
- *     drift (owner: the hard attribute swap read as broken). Starter chips
- *     render detached below whenever an empty conversation has starters,
- *     and DISAPPEAR while the user is typing (draft non-empty → fade/scale
- *     out; empty again → return) inside a fixed-height slot so the pill
- *     never reflows,
- *   - the right cluster: the quiet reasoning-effort selector
- *     (`ReasoningEffortSelect`, the Grok "Szybki ⌄" slot — mounted ONLY for
- *     an agent-stage session/welcome whose model reports a normalized
- *     capability from the GLOBAL model query (`useAvailableModels`, the
- *     same one-global-model fact `sessions.getModel` echoes — sourcing
- *     both stages from the always-warm global query removes the welcome
- *     gap AND the first-message cold-query race); mission sessions never
- *     see it. A quiet inert placeholder fills the slot while that query is
- *     still unresolved so the row never reflows once it settles) and the
- *     round accent send/stop/stopping control (Grok's round key). The row
- *     is `items-center`, so the resting single-line state reads perfectly
- *     level.
- * Owns: mounting + wiring the pill's sub-parts together and the starter
- * chips. The chat-turn submit state machine, the mission-run gate, and the
- * composer notice (success / error / inline Retry on a retryable error)
- * live in `composer-submit.ts` — this file never parses commands itself.
- *
- * The flat border, the focus step to the accent hairline, the directional
- * drop shadow and the amber approval recolor all live in `.vex-console`
- * (globals.css) — token-only, so both themes recolor from `--vex-accent`.
- * Keeping them in the stylesheet is deliberate: the design guard scans .tsx
- * sources for box-shadow chrome. The context strip is gone, so the two
- * transient states it carried survive as a tiny tag FLOATING above the pill:
- * amber "AWAITING SIGNATURE" while a run is parked for approval or muted
- * "Stopping…" while a stop settles. Active work is shown on the agent avatar
- * in the transcript instead of adding another label above the input.
- *
- * Pure helpers: gating reasons + placeholders in `composer-helpers.ts`.
- * Submit orchestration lives in `composer-submit.ts`; reasoning-effort
- * resolution in `composer-reasoning.ts`; the auto-grow field sizing in
- * `composer-field-grow.ts`. The field slot is `ComposerField.tsx`; the
- * right cluster (brand mark + effort selector + send/stop key) is
- * `ComposerSendControl.tsx`. Mission controls (start/continue/recover/stop/
- * edit/renew) are buttons in `MissionControls.tsx`, mounted by the parent.
+ * Session composer - the floating capsule (catalog geometry: r22 card,
+ * max-w 780, thin-in-dark border, shadow lv2, no focus ring). One component
+ * serves the welcome hero and the docked session stage (`variant` names the
+ * stage; the textarea DOM survives a hero->docked move because the parent
+ * keeps the mount position stable). Owns wiring only: drafts (per-session
+ * store), submit + queue (composer-submit), slash commands (commands/),
+ * seats (SessionComposer/), and the starter chips. Chrome lives in
+ * console.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { DragEvent, JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   flattenTranscriptPages,
   useTranscriptInfinite,
 } from "../../lib/api/messages.js";
+import {
+  useExportSessionMarkdown,
+  useSessionPlan,
+} from "../../lib/api/sessions.js";
+import { clearDraft, draftKeyFor } from "../../lib/composer-drafts.js";
+import { showToast } from "../../lib/toast.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
 import {
   CHAT_STOPPED_NOTICE_TEXT,
   placeholderFor,
+  readRunStatus,
 } from "./composer-helpers.js";
 import { PostStopRedirectHint } from "./PostStopRedirectHint.js";
 import { useComposerFieldGrow } from "./composer-field-grow.js";
@@ -80,6 +38,29 @@ import { ComposerField } from "./ComposerField.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
 import { ComposerSendControl } from "./ComposerSendControl.js";
 import { usePlaceholderRotator } from "./composer-placeholders.js";
+import {
+  ReasoningEffortPlaceholder,
+  ReasoningEffortSelect,
+} from "./ReasoningEffortSelect.js";
+import {
+  ComposerCommandMenu,
+  composerCommandActiveDescendant,
+} from "./commands/ComposerCommandMenu.js";
+import {
+  useSlashCommandMenu,
+  type SlashMenuPick,
+} from "./commands/use-slash-command-menu.js";
+import type { ComposerCommandContext } from "./commands/directory.js";
+import { useRuntimeState } from "../../lib/api/runtime.js";
+import {
+  ComposerModelChip,
+  ComposerPermissionChip,
+  ComposerPlanChip,
+} from "./SessionComposer/ComposerSeats.js";
+import { ComposerContextRing } from "./SessionComposer/ComposerContextRing.js";
+import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
+import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
+import { SessionExportDialog } from "./SessionExportDialog.js";
 import { EASE_STANDARD } from "../../lib/motion.js";
 
 /** jsdom-safe reduced-motion probe (the SidebarProfile pattern). */
@@ -93,19 +74,26 @@ function prefersReducedMotion(): boolean {
 export interface SessionComposerProps {
   readonly activeSession: SessionListItem | null;
   readonly activeSessionId: string | null;
+  /**
+   * Stage the capsule is seated on. "hero" is the welcome/idle centered
+   * scene, "docked" the session tape. Defaults from `activeSessionId` so
+   * existing mounts keep their behavior; Curie's welcome scene passes it
+   * explicitly.
+   */
+  readonly variant?: "hero" | "docked";
 }
 
 export function SessionComposer({
   activeSession,
   activeSessionId,
+  variant,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
-  // so a turn can be sent the moment a session is active — even while the
-  // `sessions.get` detail query is still loading or errored (this was the
-  // "send button permanently disabled" bug). `activeSession` stays for
-  // soft, detail-derived UI only (placeholder, quick-action visibility).
+  // so a turn can be sent the moment a session is active. `activeSession`
+  // stays for soft, detail-derived UI only.
   const sessionId = activeSessionId;
+  const stage = variant ?? (sessionId === null ? "hero" : "docked");
   const {
     reasoningCapability,
     globalModelId,
@@ -127,6 +115,8 @@ export function SessionComposer({
     onSubmit,
     onRetry,
     onStop,
+    sendNowAvailable,
+    sendQueuedNow,
   } = useComposerSubmit(
     sessionId,
     activeSession,
@@ -134,39 +124,72 @@ export function SessionComposer({
     effectiveReasoningEffort,
   );
 
-  // Focus flag for the placeholder rotator: the rotating welcome placeholder
-  // freezes on its current phrase while the field is focused or holds a draft,
-  // so it never shuffles under an operator mid-thought.
   const [focused, setFocused] = useState<boolean>(false);
-  // Sampled once per mount (the WelcomePortfolioPanel idiom) — the chips'
-  // enter/exit declaration must not flip mid-animation.
+  // Sampled once per mount - the chips' enter/exit declaration must not flip
+  // mid-animation.
   const [reducedMotion] = useState(prefersReducedMotion);
-  // `multiline` is deliberately NOT consumed any more: the surface holds ONE
-  // constant rounded-2xl radius, so there is no rounded-full ⇄ rounded-[28px]
-  // relax left to drive. The height glide (`.vex-composer-grow`) is unchanged.
   const { textareaRef, fieldSlotRef, armCaretSeed } =
     useComposerFieldGrow(draft);
   const formRef = useRef<HTMLFormElement>(null);
+  const [dropActive, setDropActive] = useState(false);
 
-  // Post-stop redirect hint. Keyed off the notice the stop already produces —
-  // no extra state machine, and no way for it to appear when nothing stopped.
-  // Dismissal resets on each NEW stop so a user who dismissed it once still
-  // gets the offer the next time they interrupt the agent.
+  // ── slash commands (B9/B12) ────────────────────────────────────────────
+  const theme = useUiStore((s) => s.theme);
+  const setThemePreference = useUiStore((s) => s.setThemePreference);
+  const runtimeQuery = useRuntimeState(sessionId);
+  const runStatus = readRunStatus(runtimeQuery.data);
+  const planQuery = useSessionPlan(sessionId);
+  const plan = planQuery.data?.ok ? planQuery.data.data : null;
+  const [planOpen, setPlanOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportMutation = useExportSessionMarkdown();
+
+  const commandContext: ComposerCommandContext = useMemo(
+    () => ({
+      sessionId,
+      hasLegacyPlan: plan !== null && plan.enabled,
+      clearDraft: () => clearDraft(draftKeyFor(sessionId)),
+      openPlan: () => setPlanOpen(true),
+      openExport: () => setExportOpen(true),
+      toggleTheme: () => {
+        const next = theme === "chronos" ? "celeris" : "chronos";
+        setThemePreference(next);
+        return next === "celeris" ? "Celeris (light)" : "Chronos (dark)";
+      },
+    }),
+    [sessionId, plan, theme, setThemePreference],
+  );
+
+  const onCommandPick = useCallback(
+    (pick: SlashMenuPick): void => {
+      setDraft(pick.draftWithoutToken);
+      const toastText = pick.command.run(commandContext);
+      if (toastText !== null) showToast(toastText);
+    },
+    [setDraft, commandContext],
+  );
+  const slashMenu = useSlashCommandMenu(draft, onCommandPick);
+
+  // /plan opens the same review modal the plan chip owns - a second mount
+  // would double-render the dialog, so the chip stays the single owner and
+  // the command drives it through this shared open state.
+  const activeDescendant = composerCommandActiveDescendant(
+    slashMenu.open,
+    slashMenu.items,
+    slashMenu.highlight,
+  );
+
+  // Post-stop redirect hint, keyed off the notice the stop already produces.
   const justStopped =
-    notice !== null
-    && notice.tone === "info"
-    && notice.text === CHAT_STOPPED_NOTICE_TEXT;
+    notice !== null &&
+    notice.tone === "info" &&
+    notice.text === CHAT_STOPPED_NOTICE_TEXT;
   const [redirectHintDismissed, setRedirectHintDismissed] = useState(false);
   useEffect(() => {
     if (justStopped) setRedirectHintDismissed(false);
   }, [justStopped]);
 
-  // Quick-action chips are starters for an EMPTY conversation. Show them on the
-  // welcome screen and in a freshly created, still-empty session; hide them
-  // once the session has any messages (reuses the transcript query already
-  // mounted by SessionTranscript — same cache key, no extra fetch). Gated on
-  // a resolved `activeSession` + a SUCCEEDED transcript query so a loading or
-  // errored session never flickers the chips in or out.
+  // Starter chips: welcome + a freshly created, still-empty agent session.
   const transcriptQuery = useTranscriptInfinite(sessionId ?? "");
   const transcriptPages = transcriptQuery.data?.pages;
   const transcriptEmpty = useMemo(
@@ -187,10 +210,6 @@ export function SessionComposer({
     (prompt: string): void => {
       setDraft(prompt);
       clearNotice();
-      // One fluid gesture (owner smoothness decree 2026-07-22): the chips
-      // fade, the pill grows, AND the caret lands at the end of the seeded
-      // draft — armed here, executed by the auto-grow layout effect once the
-      // controlled value has committed to the DOM.
       armCaretSeed();
     },
     [setDraft, clearNotice, armCaretSeed],
@@ -198,14 +217,8 @@ export function SessionComposer({
 
   const draftEmpty = draft.trim().length === 0;
   const submitDisabled = draftEmpty || submitPending;
-  // Stop acknowledged and the turn still in flight — the send key goes
-  // inert and the chrome-row hint swaps to the STOPPING… label.
   const stopping = stopAvailable && stopRequested;
 
-  // Mission-mode placeholders stay owned by `placeholderFor`; the welcome /
-  // agent default is the rotating crypto-utility set (`usePlaceholderRotator`).
-  // Pause the rotator whenever a non-rotating override is visible so returning
-  // from mission copy does not immediately jump to a hidden background tick.
   const rotatorPaused =
     focused || draft.length > 0 || activeSession?.mode === "mission";
   const welcomePlaceholder = usePlaceholderRotator(rotatorPaused);
@@ -214,26 +227,27 @@ export function SessionComposer({
       ? placeholderFor(activeSession)
       : welcomePlaceholder;
 
+  // File-drag visual only: attachments are not supported yet, so the drop
+  // ring signals the surface and the drop itself answers honestly.
+  const dragHasFiles = (event: DragEvent): boolean =>
+    Array.from(event.dataTransfer.types).includes("Files");
+
   return (
     <>
-      <div className="relative mt-6">
-        {/* TRANSIENT SIGNAL TAG — floats above the pill's right side. An
-         * approval pause wins over a requested stop. The active-work signal
-         * lives on the agent avatar in the transcript, so the composer stays
-         * visually quiet while a turn is running. */}
+      <div data-vex-composer-stage={stage} className="relative mt-6">
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-pin-border)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-sans text-[9px] uppercase tracking-[0.16em] text-[var(--vex-pin)]"
+            className="absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 font-doto text-[9px] uppercase tracking-[0.16em] text-warning-label"
           >
             AWAITING SIGNATURE
           </span>
         ) : stopping ? (
-          // Exact "Stopping…" text — the stop-acknowledgment contract pinned by
-          // the composer stop test (source casing stays).
+          // Exact "Stopping…" text - the stop-acknowledgment contract pinned
+          // by the composer stop test (source casing stays).
           <span
             data-vex-console-status="stopping"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-sans text-[9px] uppercase tracking-[0.16em] text-[var(--vex-text-2)]"
+            className="absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 font-doto text-[9px] uppercase tracking-[0.16em] text-ink-tertiary"
           >
             Stopping…
           </span>
@@ -249,26 +263,75 @@ export function SessionComposer({
           />
         ) : null}
 
+        {sessionId !== null && activeSession?.mode === "mission" ? (
+          <ComposerMissionStrip
+            sessionId={sessionId}
+            missionStatus={runStatus}
+          />
+        ) : null}
+        {sessionId !== null ? (
+          <ComposerQueueDock
+            sessionId={sessionId}
+            onSendNow={sendQueuedNow}
+            sendNowAvailable={sendNowAvailable}
+          />
+        ) : null}
+
+        {/* Notice strip - above the card (reference geometry: r8, pad 4 8,
+         * 12/18, mb 6px), error tone on the danger wash. */}
+        {notice !== null ? (
+          <div
+            role={notice.tone === "error" ? "alert" : "status"}
+            className={cn(
+              "mx-auto mb-1.5 flex w-full max-w-[780px] items-center gap-2 rounded-lg px-2 py-1 text-[12px] leading-[18px]",
+              notice.tone === "error"
+                ? "bg-interactive-danger text-danger"
+                : "bg-interactive-hover text-ink-secondary",
+            )}
+          >
+            <span>{notice.text}</span>
+            {notice.retry !== undefined ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={submitPending}
+                aria-label="Retry sending the message"
+                className="ml-2 inline-flex shrink-0 items-center rounded border border-current bg-transparent px-2 text-[12px] transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         <form
           ref={formRef}
           onSubmit={onSubmit}
           data-vex-area="chat-composer"
-          data-vex-console-state={awaitingApproval ? "approval" : "input"}
-          className={cn(
-            // THE SIGNAL CONSOLE — one SOLID ink row (owner decree
-            // 2026-07-29). `--vex-surface-1` is opaque, so no backdrop filter
-            // and no glass whitelist entry; the radius is a CONSTANT
-            // rounded-2xl (the rounded-full ⇄ rounded-[28px] relax is retired
-            // with the pill). The flat 1px border, the focus step to the
-            // accent hairline and the directional drop shadow are owned by
-            // `.vex-console` (globals.css), so no shadow chrome lands in a
-            // className. `items-center`: the round send shares the field's
-            // height, so the resting single-line row reads perfectly level (a
-            // tall multiline field centers it — the deliberate trade-off).
-            "vex-console relative flex items-center gap-1.5 overflow-visible rounded-2xl bg-[var(--vex-surface-1)] p-1.5",
-          )}
+          data-vex-composer-state={awaitingApproval ? "approval" : "input"}
+          data-vex-drop={dropActive ? "active" : undefined}
+          className="vex-composer-card mx-auto flex w-full max-w-[780px] flex-col gap-1 pt-2.5"
+          onDragOver={(event) => {
+            if (!dragHasFiles(event)) return;
+            event.preventDefault();
+            setDropActive(true);
+          }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(event) => {
+            if (!dragHasFiles(event)) return;
+            event.preventDefault();
+            setDropActive(false);
+            showToast("Attachments aren't supported yet.");
+          }}
         >
+          <ComposerCommandMenu
+            open={slashMenu.open}
+            items={slashMenu.items}
+            highlight={slashMenu.highlight}
+            onPickAt={slashMenu.pickAt}
+          />
           <ComposerField
+            hero={stage === "hero"}
             fieldSlotRef={fieldSlotRef}
             textareaRef={textareaRef}
             draft={draft}
@@ -281,62 +344,91 @@ export function SessionComposer({
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onSubmitRequest={() => formRef.current?.requestSubmit()}
+            onCaretChange={slashMenu.onCaretChange}
+            onMenuKeyDown={slashMenu.handleKeyDown}
+            activeDescendant={activeDescendant}
           />
 
-          <ComposerSendControl
-            reasoningCapability={reasoningCapability}
-            reasoningStageIsAgent={reasoningStageIsAgent}
-            effectiveReasoningEffort={effectiveReasoningEffort}
-            modelsResolved={modelsResolved}
-            globalModelId={globalModelId}
-            onReasoningPick={handleReasoningPick}
-            stopAvailable={stopAvailable}
-            stopRequested={stopRequested}
-            onStop={onStop}
-            submitDisabled={submitDisabled}
-          />
+          {/* Toolbar row (catalog: space-between, gap 12, pad 2 8 6). */}
+          <div className="flex items-center justify-between gap-3 px-2 pb-1.5 pt-0.5">
+            <div className="flex min-w-0 items-center gap-1">
+              <ComposerModelChip modelId={globalModelId} />
+              <ComposerPermissionChip
+                permission={activeSession?.permission ?? null}
+              />
+              <ComposerPlanChip
+                sessionId={sessionId}
+                missionStatus={runStatus}
+                open={planOpen}
+                onOpenChange={setPlanOpen}
+              />
+              {reasoningCapability !== null &&
+              reasoningStageIsAgent &&
+              effectiveReasoningEffort !== null ? (
+                <ReasoningEffortSelect
+                  capability={reasoningCapability}
+                  value={effectiveReasoningEffort}
+                  onChange={handleReasoningPick}
+                />
+              ) : reasoningStageIsAgent && !modelsResolved ? (
+                <ReasoningEffortPlaceholder />
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Pending dot beside the key - Stop occupies the key slot
+               * while a turn runs, so the in-flight signal sits next to it. */}
+              {submitPending ? (
+                <span
+                  aria-hidden
+                  data-vex-composer-pending
+                  className="inline-flex h-7 w-4 items-center justify-center text-accent-primary"
+                >
+                  <span className="vex-composer-pending-dot" />
+                </span>
+              ) : null}
+              {sessionId !== null ? (
+                <ComposerContextRing sessionId={sessionId} />
+              ) : null}
+              <ComposerSendControl
+                stopAvailable={stopAvailable}
+                stopRequested={stopRequested}
+                onStop={onStop}
+                submitDisabled={submitDisabled}
+              />
+            </div>
+          </div>
         </form>
       </div>
 
-      {notice !== null ? (
-        <div
-          role={notice.tone === "error" ? "alert" : "status"}
-          className="mt-3 flex items-center gap-2 text-xs"
-        >
-          <span
-            className={
-              notice.tone === "error"
-                ? "text-destructive"
-                : "text-[var(--vex-accent-text)]"
-            }
-          >
-            {notice.text}
-          </span>
-          {notice.retry !== undefined ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              disabled={submitPending}
-              aria-label="Retry sending the message"
-              className="vex-micro inline-flex shrink-0 items-center rounded-[3px] border border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] px-2 py-0.5 text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)]"
-            >
-              Retry
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <SessionExportDialog
+        session={exportOpen ? activeSession : null}
+        pending={exportMutation.isPending}
+        onCancel={() => setExportOpen(false)}
+        onConfirm={() => {
+          if (activeSession === null) return;
+          exportMutation.mutate(
+            { id: activeSession.id },
+            {
+              onSuccess: (result) => {
+                setExportOpen(false);
+                if (result.ok && result.data.outcome === "saved") {
+                  showToast("Session exported.");
+                } else if (!result.ok) {
+                  showToast("Export failed.", { tone: "error" });
+                }
+                // A cancelled native save dialog stays silent by contract.
+              },
+              onError: () => {
+                setExportOpen(false);
+                showToast("Export failed.", { tone: "error" });
+              },
+            },
+          );
+        }}
+      />
 
-      {/* STARTER CHIPS — detached below the pill, and gone WHILE THE USER IS
-       * TYPING (owner decree 2026-07-21): any draft content fades/scales the
-       * row out; clearing the field brings it back. The row lives inside a
-       * FIXED-HEIGHT slot that stays mounted for the whole welcome/idle
-       * stage, so the chips' unmount can never reflow the centered column —
-       * the input does not jump (owner report 2026-07-21 round 2). h-[60px]
-       * = the glass band (~44px) + its mt-4. AnimatePresence with
-       * transform/opacity only (MOTION-POLICY: `layout`/`layoutId` are
-       * banned under CSP style-src 'self'); `initial={false}` leaves the
-       * stage load-in to the chips' own one-shot .vex-rise choreography.
-       * Reduced motion: instant add/remove, no tween. */}
+      {/* Starter chips - gone WHILE THE USER IS TYPING; fixed-height slot so
+       * the capsule never reflows. Transform/opacity only (MOTION-POLICY). */}
       {showQuickActions ? (
         <div className="h-[60px]">
           <AnimatePresence initial={false}>

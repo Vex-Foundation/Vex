@@ -49,19 +49,17 @@ describe("ComposerQuickActions", () => {
     expect(container.textContent).not.toMatch(/\b0[123]\b/);
   });
 
-  it("wears a SOLID ink band on its root — no glass (composer rebuild)", () => {
+  it("renders bare capsule chips - no band, no glass behind the row (tokens v2)", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // The row's own root (not a new wrapper) carries the surface. It is now
-    // OPAQUE ink + a hairline border, matching the rebuilt console above it.
-    // The translucent-glass legibility assist is retired, and this file's
-    // shell-design-guard exemption was deleted with it — so the ABSENCE of a
-    // backdrop filter here is a contract, not an omission.
+    // The row root carries NO surface of its own: the chips are the surface
+    // (capsule geometry, hairline border). No backdrop filter anywhere.
     const root = container.firstElementChild;
     expect(root).not.toBeNull();
-    expect(root?.className).toContain("bg-[var(--vex-surface-1)]");
-    expect(root?.className).not.toMatch(/backdrop-blur/);
-    expect(root?.className).toContain("border-[var(--vex-line)]");
+    expect(root?.className).not.toMatch(/bg-|backdrop-blur/);
+    const chip = root?.querySelector("button");
+    expect(chip?.className).toContain("rounded-capsule");
+    expect(chip?.className).toContain("border-line-2");
   });
 
   it("seeds the draft with the chip's full prompt", () => {

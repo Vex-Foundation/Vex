@@ -1,60 +1,29 @@
 /**
- * The composer's right cluster: the provider brand mark, the quiet
- * reasoning-effort selector (mounted ONLY for an agent-stage session whose
- * model reports a normalized capability; mission sessions never see it), and
- * the round send/stop control (owner decree 2026-07-21: attach and mic stay
- * excluded). Vertically centered against the field so the resting row reads
- * level.
- *
- * Presentational only — `SessionComposer` owns every state transition; this
- * component renders the three hard-cut send-key states (send / stop /
- * stopping) in one fixed circle so every swap holds its slot in the input
- * row, and stays a `type="submit"` descendant of the composer's own `<form>`
- * so Enter-to-submit keeps working across the component boundary.
+ * The capsule's send/stop key: one fixed 34px round control (catalog
+ * geometry - r999, accent fill, background-color 100ms) rendering three
+ * hard-cut states in one slot: send, stop, and stopping. The in-flight
+ * pending dot lives beside this key (SessionComposer) because Stop
+ * occupies the slot while a turn runs. Presentational only - the parent
+ * owns every state transition; the send state stays a `type="submit"`
+ * descendant of the composer's own `<form>`.
  */
 
 import type { JSX } from "react";
-import {
-  ArrowUpIcon,
-  CircleStopIcon,
-  VexIcon,
-} from "../../components/icons/index.js";
-import type { ReasoningCapability, ReasoningEffort } from "@shared/schemas/reasoning.js";
+import { IconSend, IconStopFill } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
-import {
-  ReasoningEffortPlaceholder,
-  ReasoningEffortSelect,
-} from "./ReasoningEffortSelect.js";
-import { ModelBrandIcon } from "../wizard/steps/provider/ModelBrandIcon.js";
 
-/**
- * Shared geometry for the send control's three states (send / stop /
- * stopping) — one fixed 40px key so every hard-cut swap holds its slot in the
- * input row. `rounded-xl` echoes the surface's rounded-2xl instead of the
- * retired pill's circle (composer rebuild, owner decree 2026-07-29). Send
- * fills the accent with the accent-contrast glyph; the disabled (empty) send
- * is a ghost hairline key; stop keeps the accent rim; stopping goes inert
- * while the floating tag above the surface carries the "Stopping…" label.
- */
+// -translate-y-0.5: the key opts out of the toolbar row's 2px downward
+// shift (reference geometry) - the circle keeps its seat while the smaller
+// chips sit lower.
 const SEND_KEY_BASE =
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "inline-flex h-[34px] w-[34px] shrink-0 -translate-y-0.5 items-center justify-center rounded-full transition-colors duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-composer";
 
 export interface ComposerSendControlProps {
-  readonly reasoningCapability: ReasoningCapability | null;
-  readonly reasoningStageIsAgent: boolean;
-  readonly effectiveReasoningEffort: ReasoningEffort | null;
-  readonly modelsResolved: boolean;
-  readonly globalModelId: string | null;
-  readonly onReasoningPick: (effort: ReasoningEffort) => void;
   /**
-   * Render the Stop key. Broader than `submitPending`, and broader than "a
-   * lease is held": autonomous work alternates between lease-held slices and
-   * lease-less parks on a pending wake, so a control keyed on either alone
-   * disappears while the agent is still running and still stoppable.
-   *
-   * The owner (`composer-submit.ts`) computes this from main's authoritative
-   * `stoppable`, and fails toward SHOWING the key when the runtime state is
-   * unknown. Do NOT re-derive it here.
+   * Render the Stop key. Broader than `submitPending` and broader than "a
+   * lease is held" - the owner (`composer-submit.ts`) computes this from
+   * main's authoritative `stoppable` and fails toward SHOWING the key when
+   * the runtime state is unknown. Do NOT re-derive it here.
    */
   readonly stopAvailable: boolean;
   readonly stopRequested: boolean;
@@ -63,92 +32,52 @@ export interface ComposerSendControlProps {
 }
 
 export function ComposerSendControl({
-  reasoningCapability,
-  reasoningStageIsAgent,
-  effectiveReasoningEffort,
-  modelsResolved,
-  globalModelId,
-  onReasoningPick,
   stopAvailable,
   stopRequested,
   onStop,
   submitDisabled,
 }: ComposerSendControlProps): JSX.Element {
-  return (
-    <div className="flex shrink-0 items-center gap-1.5">
-      {/* PROVIDER BRAND MARK — the model's @thesvg mark (the SessionRuntimeBar
-       * treatment) seated LEFT of the effort slot on both stages; decorative,
-       * the model id rides the title. */}
-      {globalModelId !== null && reasoningStageIsAgent ? (
-        <span
-          aria-hidden
-          data-vex-model-brand={globalModelId}
-          title={globalModelId}
-          className="inline-flex shrink-0 items-center opacity-70"
-        >
-          <ModelBrandIcon modelId={globalModelId} size={16} />
-        </span>
-      ) : null}
-      {/* REASONING SELECT — the Grok "Szybki ⌄" slot, LEFT of the round key
-       * (D4). While the global models query is still unresolved, a quiet
-       * inert placeholder fills the same box instead (no reflow once it
-       * settles either way) — Send stays enabled the whole time. */}
-      {reasoningCapability !== null &&
-      reasoningStageIsAgent &&
-      effectiveReasoningEffort !== null ? (
-        <ReasoningEffortSelect
-          capability={reasoningCapability}
-          value={effectiveReasoningEffort}
-          onChange={onReasoningPick}
-        />
-      ) : reasoningStageIsAgent && !modelsResolved ? (
-        <ReasoningEffortPlaceholder />
-      ) : null}
-      {/* THE SEND CONTROL — three hard-cut states in one round slot. */}
-      {stopAvailable ? (
-        stopRequested ? (
-          <button
-            type="button"
-            disabled
-            aria-label="Stopping"
-            className={cn(
-              SEND_KEY_BASE,
-              "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]",
-            )}
-          >
-            <VexIcon icon={CircleStopIcon} size={16} aria-hidden />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onStop}
-            aria-label="Stop generating"
-            className={cn(
-              SEND_KEY_BASE,
-              "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]",
-            )}
-          >
-            <VexIcon icon={CircleStopIcon} size={16} aria-hidden />
-          </button>
-        )
-      ) : (
+  if (stopAvailable) {
+    if (stopRequested) {
+      return (
         <button
-          type="submit"
-          disabled={submitDisabled}
-          aria-label="Send message"
+          type="button"
+          disabled
+          aria-label="Stopping"
           className={cn(
             SEND_KEY_BASE,
-            // Ghost hairline circle while the field is empty; solid accent
-            // fill with the accent-contrast glyph once there is an order to
-            // send.
-            submitDisabled
-              ? "border-[var(--vex-line-strong)] bg-transparent text-[var(--vex-text-3)]"
-              : "border-transparent bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)] hover:bg-[var(--vex-accent-hover)] active:scale-[0.96]",
+            "bg-interactive-hover text-ink-tertiary opacity-40",
           )}
         >
-          <VexIcon icon={ArrowUpIcon} size={16} aria-hidden />
+          <IconStopFill size={16} />
         </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={onStop}
+        aria-label="Stop generating"
+        className={cn(
+          SEND_KEY_BASE,
+          "bg-accent-primary text-white hover:bg-accent-hover",
+        )}
+      >
+        <IconStopFill size={16} />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="submit"
+      disabled={submitDisabled}
+      aria-label="Send message"
+      className={cn(
+        SEND_KEY_BASE,
+        "bg-accent-primary text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-primary",
       )}
-    </div>
+    >
+      <IconSend size={16} />
+    </button>
   );
 }
