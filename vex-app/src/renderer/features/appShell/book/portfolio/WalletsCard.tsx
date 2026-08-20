@@ -16,7 +16,7 @@
  */
 
 import type { JSX } from "react";
-import { PlusIcon, VexIcon } from "../../../../components/icons/index.js";
+import { IconPlus } from "../../../../components/icons/index.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import { useWalletPortfolio } from "../../../../lib/api/portfolio.js";
 import { formatUsd } from "../../../../lib/format.js";
@@ -29,8 +29,19 @@ import {
   flattenPortfolioWallets,
   type PortfolioWallet,
 } from "./wallet-scope.js";
+import type { PortfolioCardScope } from "./portfolio-scope.js";
 
-export function WalletsCard(): JSX.Element {
+export function WalletsCard({
+  scope: _scope,
+}: {
+  /**
+   * Wallet scope input (studio seam #3). The card's only wallet source today
+   * is the global inventory, so a global scope changes nothing — the prop
+   * exists so a future project scope narrows the read instead of forking the
+   * card.
+   */
+  readonly scope: PortfolioCardScope;
+}): JSX.Element {
   const walletsQuery = useAvailableWallets();
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const result = walletsQuery.data;
@@ -73,9 +84,9 @@ export function WalletsCard(): JSX.Element {
                 section: "wallets",
               });
             }}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--vex-line)] py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-line-strong)] hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line-2 py-1.5 text-[12px] text-ink-secondary transition-colors hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
           >
-            <VexIcon icon={PlusIcon} size={13} aria-hidden />
+            <IconPlus size={13} />
             Add wallet
           </button>
         </>
@@ -91,7 +102,7 @@ export function WalletsCard(): JSX.Element {
  */
 export function PrimaryBadge(): JSX.Element {
   return (
-    <span className="shrink-0 rounded-[4px] border border-[var(--vex-line)] px-1 py-px font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+    <span className="shrink-0 rounded-[4px] border border-line-2 px-1 py-px font-doto text-[8px] uppercase tracking-[0.14em] text-ink-tertiary">
       Primary
     </span>
   );
@@ -112,23 +123,23 @@ function WalletRow({
   const total = query.data?.ok ? query.data.data.liveTotalUsd : null;
   const { wallet } = entry;
   return (
-    <li className="flex flex-col gap-1.5 border-b border-[var(--vex-line)] py-2 first:pt-0.5 last:border-b-0 last:pb-1">
+    <li className="flex flex-col gap-1.5 border-b border-line-1 py-2 first:pt-0.5 last:border-b-0 last:pb-1">
       <div className="flex items-center gap-2">
         <ChainIcon chainId={entry.chainId} size={13} />
         {wallet.label.length > 0 ? (
-          <span className="min-w-0 truncate text-[12px] text-[var(--vex-text)]">
+          <span className="min-w-0 truncate text-[12px] text-ink-primary">
             {wallet.label}
           </span>
         ) : (
-          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
+          <span className="font-doto text-[9px] uppercase tracking-[0.18em] text-ink-tertiary">
             {wallet.family === "evm" ? "EVM" : "SOL"}
           </span>
         )}
         {entry.showPrimaryBadge ? <PrimaryBadge /> : null}
         <span
           className={cn(
-            "ml-auto shrink-0 font-mono text-[11px] tabular-nums",
-            total === null ? "text-[var(--vex-text-3)]" : "text-[var(--vex-text)]",
+            "ml-auto shrink-0 text-[11px] font-semibold tabular-nums",
+            total === null ? "text-ink-tertiary" : "text-ink-primary",
           )}
         >
           {formatUsd(total)}

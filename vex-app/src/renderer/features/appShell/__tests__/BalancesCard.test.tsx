@@ -85,7 +85,13 @@ function mountWith(
     isError: false,
     data: { ok: true, data: portfolio(tokens) },
   });
-  return render(<BalancesCard sessionId={sessionId} />);
+  return render(
+    <BalancesCard
+      scope={
+        sessionId === null ? { kind: "global" } : { kind: "session", sessionId }
+      }
+    />,
+  );
 }
 
 beforeEach(() => {

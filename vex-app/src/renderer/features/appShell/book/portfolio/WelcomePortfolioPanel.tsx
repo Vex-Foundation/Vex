@@ -40,12 +40,13 @@
 import { useId, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ChevronDownIcon,
+  IconChevronDown,
   VexIcon,
   WalletIcon,
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
+import { GLOBAL_PORTFOLIO_SCOPE } from "./portfolio-scope.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
 import { WalletsCard } from "./WalletsCard.js";
 import { BalancesCard } from "./BalancesCard.js";
@@ -97,9 +98,9 @@ export function WelcomePortfolioPanel({
             // origin-bottom-right = the morph's anchor at the handle below.
             className="vex-scroll pointer-events-auto mb-4 flex min-h-0 w-full origin-bottom-right flex-col gap-3 overflow-y-auto"
           >
-            <PortfolioOverviewCard />
-            <WalletsCard />
-            <BalancesCard />
+            <PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            <WalletsCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            <BalancesCard scope={GLOBAL_PORTFOLIO_SCOPE} />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -113,13 +114,15 @@ export function WelcomePortfolioPanel({
         // shrink-0: in the height-constrained justify-end column the button
         // must never be squashed by flex shrink (owner report 2026-07-21:
         // the stack rode over a shrunken handle).
-        className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] bg-[var(--vex-rail-strong)] text-[var(--vex-text-2)] shadow-[0_14px_32px_-16px_rgba(0,0,0,0.85)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line-2 bg-[var(--vex-rail-strong)] text-ink-secondary shadow-lv2 transition-colors hover:border-line-3 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
-        <VexIcon
-          icon={bookOpen ? ChevronDownIcon : WalletIcon}
-          size={17}
-          aria-hidden
-        />
+        {bookOpen ? (
+          <IconChevronDown size={17} />
+        ) : (
+          // Wallet has no glyph yet (F0 named gap) - the lucide gate covers
+          // it until the F6 icon sweep.
+          <VexIcon icon={WalletIcon} size={17} aria-hidden />
+        )}
       </button>
       </div>
     </aside>

@@ -33,8 +33,17 @@ vi.mock("../book/SessionWalletsCard.js", () => ({
   SessionWalletsCard: () => <div data-testid="card-wallets" />,
 }));
 vi.mock("../book/portfolio/BalancesCard.js", () => ({
-  BalancesCard: ({ sessionId }: { readonly sessionId?: string | null }) => (
-    <div data-testid="card-balances" data-session-id={sessionId ?? ""} />
+  BalancesCard: ({
+    scope,
+  }: {
+    readonly scope:
+      | { readonly kind: "global" }
+      | { readonly kind: "session"; readonly sessionId: string };
+  }) => (
+    <div
+      data-testid="card-balances"
+      data-session-id={scope.kind === "session" ? scope.sessionId : ""}
+    />
   ),
 }));
 vi.mock("../book/SessionActivityCard.js", () => ({

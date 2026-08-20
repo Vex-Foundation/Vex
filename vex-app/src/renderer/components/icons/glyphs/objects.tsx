@@ -140,3 +140,14 @@ export const IconLink = ({ size = 16, className }: GlyphProps): JSX.Element => (
     </g>
   </svg>
 );
+
+export const IconLock = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M12 2.8C9.18335 2.8 6.9 5.08335 6.9 7.9V9.7H5.5C4.83726 9.7 4.3 10.2373 4.3 10.9V19.9C4.3 20.5627 4.83726 21.1 5.5 21.1H18.5C19.1627 21.1 19.7 20.5627 19.7 19.9V10.9C19.7 10.2373 19.1627 9.7 18.5 9.7H17.1V7.9C17.1 5.08335 14.8167 2.8 12 2.8ZM15.5 9.7H8.5V7.9C8.5 5.96701 10.067 4.4 12 4.4C13.933 4.4 15.5 5.96701 15.5 7.9V9.7ZM11.2 13.3H12.8V17.5H11.2V13.3Z"
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+    />
+  </svg>
+);

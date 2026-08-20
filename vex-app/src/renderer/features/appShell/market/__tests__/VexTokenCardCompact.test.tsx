@@ -93,7 +93,7 @@ describe("VexTokenCardCompact", () => {
     expect(delta).not.toBeNull();
     expect(delta?.classList.contains("vex-delta-shimmer")).toBe(true);
     expect(delta?.getAttribute("data-shimmer-text")).toBe("+113.00%");
-    expect(delta?.className).toContain("text-[var(--color-success)]");
+    expect(delta?.className).toContain("text-success");
     expect(delta?.className).not.toContain("border");
     expect(
       container.querySelector(

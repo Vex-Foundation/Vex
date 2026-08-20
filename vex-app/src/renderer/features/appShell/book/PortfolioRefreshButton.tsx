@@ -61,17 +61,17 @@ export function PortfolioRefreshButton(): JSX.Element {
         disabled={inFlight}
         aria-label="Refresh portfolio"
         title="Refresh portfolio"
-        className="rounded p-1 text-[var(--vex-text-3)] transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded p-1 text-ink-tertiary transition-colors hover:text-ink-primary disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <RefreshCwIcon spinning={inFlight} />
+        <RefreshGlyph spinning={inFlight} />
       </button>
       {feedback.kind === "throttled" ? (
-        <span className="text-[10px] tabular-nums text-[var(--vex-text-3)]">
+        <span className="text-[10px] tabular-nums text-ink-tertiary">
           just refreshed — retry in {feedback.retryAfterSeconds}s
         </span>
       ) : null}
       {feedback.kind === "unavailable" ? (
-        <span className="text-[10px] text-[var(--vex-warn-text)]">
+        <span className="text-[10px] text-warning-label">
           could not refresh — showing last known
         </span>
       ) : null}
@@ -79,7 +79,7 @@ export function PortfolioRefreshButton(): JSX.Element {
   );
 }
 
-function RefreshCwIcon({ spinning }: { readonly spinning: boolean }): JSX.Element {
+function RefreshGlyph({ spinning }: { readonly spinning: boolean }): JSX.Element {
   return (
     <svg
       width="13"

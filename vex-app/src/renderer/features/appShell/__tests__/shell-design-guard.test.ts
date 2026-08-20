@@ -170,21 +170,12 @@ const WHITELIST: readonly WhitelistEntry[] = [
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than
   // kept as a stale sanction.
-  {
-    // Welcome Portfolio tab (approved harness plan v6, 2026-07-20): the
-    // welcome stage's floating card stack (Overview / Wallets / Balances)
-    // joins the Chronos glass family. Deliberately scoped to the SINGLE
-    // PortfolioCard chrome every card composes (the HvZone precedent) — no
-    // other portfolio file may carry backdrop-blur; the round handle button
-    // is intentionally blur-free ink.
-    file: "features/appShell/book/portfolio/PortfolioCard.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Approved welcome Portfolio tab (plan v6, 2026-07-20): the floating " +
-      "portfolio cards wear translucent ink (--vex-rail) with " +
-      "backdrop-blur + static grain over the current shell backdrop, via this " +
-      "one card chrome that every card composes.",
-  },
+  // REMOVED (rebrand phase 3, 2026-08-20): PortfolioCard is a solid
+  // layer-1 card on tokens v2 (border + lv1 shadow) — its backdrop-blur
+  // exemption became inert when the glass chrome retired, so the entry is
+  // deleted rather than kept as a stale sanction. Glass remains sanctioned
+  // ONLY on the two side rails, the ShellScreen overlays, and the profile
+  // menu.
 ];
 
 interface Violation {

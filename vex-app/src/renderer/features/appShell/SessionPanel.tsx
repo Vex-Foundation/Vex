@@ -61,6 +61,8 @@ import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
 import { SessionSleepBanner } from "./SessionSleepBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
+import { useWindowTitleSync } from "../../lib/window-title.js";
+import { useTurnCompleteNotification } from "../../lib/turn-notification.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
@@ -123,6 +125,15 @@ export function SessionPanel({
     if (!detailQuery.data?.ok) return null;
     return detailQuery.data.data;
   }, [activeSessionId, detailQuery.data]);
+
+  // E15 + A34: the native window title mirrors the active session, with the
+  // unseen-turn badge while an answer landed unfocused (existing transcript
+  // spine only — no new IPC).
+  const unseenTurn = useTurnCompleteNotification(activeSessionId);
+  useWindowTitleSync(
+    activeSession?.title ?? activeSession?.initialGoal ?? null,
+    unseenTurn,
+  );
 
   const detailError =
     detailQuery.data && detailQuery.data.ok === false
