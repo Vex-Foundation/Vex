@@ -95,8 +95,9 @@ describe("wake tick engine-error emit", () => {
     expect(event.sessionId).toBe(SESSION);
     expect(event.missionRunId).toBe(RUN);
     expect(event.statusCode).toBe(503);
-    // No free text anywhere in the payload.
-    expect(JSON.stringify(event)).not.toContain("provider said no");
+    // Decree 2026-08-02: sanitized prose crosses, secrets never do - the
+    // bus emit strips the key before any subscriber sees the event.
+    expect(event.detail).toBe("provider said no: [key]");
     expect(JSON.stringify(event)).not.toContain("SECRET");
   });
 

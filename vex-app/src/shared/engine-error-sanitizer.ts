@@ -8,6 +8,11 @@
  * Order matters: URLs first (they can embed keys and hex), then tokens and
  * keys, then hex - so a secret inside a URL is gone before the narrower
  * patterns run.
+ *
+ * INVARIANT twin: `src/vex-agent/engine/runtime/error-detail-sanitizer.ts`
+ * applies the SAME rules at bus emit. The two files cannot import each other
+ * across the package boundary - keep patterns, constants and behavior
+ * identical, and change both together with their boundary-case tests.
  */
 
 /** Hard cap on a sanitized detail string. */
