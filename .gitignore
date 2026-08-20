@@ -69,6 +69,9 @@ local/vex-shell.log.*
 # Local upstream checkout used for Rettiwt API inspection.
 Rettiwt-API-dev/
 
+# Local reference checkouts for the CLI-mode research (vscode, deepseek-harness, ...)
+agents-colab/
+
 # Vex Electron desktop app build outputs
 vex-app/node_modules/
 vex-app/dist/
