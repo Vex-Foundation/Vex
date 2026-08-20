@@ -113,6 +113,23 @@ vi.mock("../../../../lib/api/models.js", () => ({
   useAvailableModels: (...a: unknown[]) => mockUseAvailableModels(...a),
 }));
 
+// Capsule seats (F3): the plan/export/context queries and their heavy leaf
+// surfaces are out of scope for the reasoning contract - stub them so the
+// composer mounts without a QueryClient.
+vi.mock("../../../../lib/api/usage.js", () => ({
+  useContextWindow: () => ({ data: undefined }),
+}));
+vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionPlan: () => ({ data: { ok: true, data: null } }),
+  useExportSessionMarkdown: () => ({ isPending: false, mutate: vi.fn() }),
+}));
+vi.mock("../../PlanDisplayModal.js", () => ({
+  PlanDisplayModal: () => null,
+}));
+vi.mock("../../SessionExportDialog.js", () => ({
+  SessionExportDialog: () => null,
+}));
+
 const { SessionComposer } = await import("../../SessionComposer.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000cc01";

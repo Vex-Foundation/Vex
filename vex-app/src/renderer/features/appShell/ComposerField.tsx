@@ -1,31 +1,26 @@
 /**
- * The composer's field slot: the auto-growing textarea plus its rotating
- * FAUX-PLACEHOLDER OVERLAY (a native placeholder attribute cannot animate).
- *
- * Each keyed phrase crossfades in with a slight upward drift (~300ms,
- * EASE_STANDARD) while the outgoing one drifts up and out — AnimatePresence
- * with transform/opacity only (MOTION-POLICY safe). The overlay shows
- * exactly when a native placeholder would (empty draft), is
- * click-transparent, and the field keeps its aria-label accessible name.
- * The overlay's pl-4/py-[9px]/15px SERIF metrics MIRROR the textarea's so
- * the faux prompt sits exactly on the caret line (change one, change both).
- * The prompt is italic, the draft upright. The slot wears `.vex-composer-grow`
- * (globals.css): `useComposerFieldGrow`'s layout effect mirrors the
- * textarea's measured height onto it as a TRANSITIONED px value, so the
- * pill glides through grow/shrink on the same curve as its radius relax
- * instead of snapping.
- *
- * Extracted out of `SessionComposer.tsx` so the parent stays under the
- * file-size budget. Presentational only — the parent owns draft/focus
- * state and the auto-grow refs (`useComposerFieldGrow`).
+ * The composer capsule's field slot: the auto-growing textarea plus its
+ * rotating faux-placeholder overlay (a native placeholder attribute cannot
+ * animate). The overlay shows exactly when a native placeholder would
+ * (empty draft), is click-transparent, and mirrors the textarea's metrics
+ * (16px/24 sans, padding 4/12/0/16) so the prompt sits exactly on the caret
+ * line - change one, change both. Keyboard: the slash-command menu gets
+ * first refusal on a keydown (combobox - focus stays here), then the
+ * submission policy resolves Enter into submit or newline (B13).
  */
 
-import type { JSX, RefObject } from "react";
+import type { JSX, KeyboardEvent, RefObject } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { EASE_STANDARD } from "../../lib/motion.js";
+import {
+  resolveSubmitKeyGesture,
+  useSubmitKeyBehavior,
+} from "../../lib/composer-submission-policy.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 
 export interface ComposerFieldProps {
+  /** Hero stage keeps the catalog's 52px two-line floor; docked collapses. */
+  readonly hero: boolean;
   readonly fieldSlotRef: RefObject<HTMLDivElement | null>;
   readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
   readonly draft: string;
@@ -34,11 +29,18 @@ export interface ComposerFieldProps {
   readonly onDraftChange: (value: string) => void;
   readonly onFocus: () => void;
   readonly onBlur: () => void;
-  /** Enter (no shift, not IME-composing) requests a form submit. */
+  /** The submission policy resolved Enter into a submit. */
   readonly onSubmitRequest: () => void;
+  /** Combobox seam: report the live caret offset to the slash menu. */
+  readonly onCaretChange: (caret: number) => void;
+  /** Combobox seam: menu keydown handler; true = the key was consumed. */
+  readonly onMenuKeyDown: (event: KeyboardEvent) => boolean;
+  /** DOM id of the highlighted slash-menu option, while the menu is open. */
+  readonly activeDescendant: string | undefined;
 }
 
 export function ComposerField({
+  hero,
   fieldSlotRef,
   textareaRef,
   draft,
@@ -48,27 +50,30 @@ export function ComposerField({
   onFocus,
   onBlur,
   onSubmitRequest,
+  onCaretChange,
+  onMenuKeyDown,
+  activeDescendant,
 }: ComposerFieldProps): JSX.Element {
-  // The draft field is the third consumer of the overlay bar (see its class
-  // list below).
   useScrollbarVisibility(textareaRef);
+  const submitKeyBehavior = useSubmitKeyBehavior();
+
+  const reportCaret = (): void => {
+    const el = textareaRef.current;
+    if (el !== null) onCaretChange(el.selectionStart);
+  };
 
   return (
-    <div ref={fieldSlotRef} className="vex-composer-grow relative min-w-0 flex-1">
+    <div ref={fieldSlotRef} className="vex-composer-grow relative min-w-0">
       {draft.length === 0 ? (
         <span
           aria-hidden
           data-vex-composer-placeholder
-          // Serif italic prompt (typography register, owner decree
-          // 2026-07-29): the faux placeholder is the composer's VOICE at rest,
-          // set in the same Instrument Serif as the draft it stands in for,
-          // italicised so it still reads as a prompt rather than typed text.
-          className="pointer-events-none absolute inset-0 overflow-hidden font-serif text-[15px] italic leading-[1.65] text-[var(--vex-text-3)]"
+          className="pointer-events-none absolute inset-0 overflow-hidden font-sans text-[16px] leading-6 text-ink-tertiary"
         >
           <AnimatePresence initial={false}>
             <motion.span
               key={placeholder}
-              className="absolute inset-0 truncate py-[9px] pl-4 pr-1"
+              className="absolute inset-0 truncate pb-0 pl-4 pr-3 pt-1"
               initial={reducedMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={
@@ -88,37 +93,43 @@ export function ComposerField({
         value={draft}
         onFocus={onFocus}
         onBlur={onBlur}
-        onChange={(event) => onDraftChange(event.target.value)}
+        onChange={(event) => {
+          onDraftChange(event.target.value);
+          reportCaret();
+        }}
+        onSelect={reportCaret}
         onKeyDown={(event) => {
-          // Enter sends; Shift+Enter and IME composition insert a newline.
-          if (
-            event.key === "Enter" &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
+          // The open slash menu owns arrows/Enter/Tab/Escape first.
+          if (onMenuKeyDown(event)) {
+            event.preventDefault();
+            return;
+          }
+          const resolution = resolveSubmitKeyGesture(submitKeyBehavior, {
+            key: event.key,
+            shiftKey: event.shiftKey,
+            modKey: event.metaKey || event.ctrlKey,
+            isComposing: event.nativeEvent.isComposing,
+          });
+          if (resolution === "submit") {
             event.preventDefault();
             onSubmitRequest();
           }
+          // "newline" and "pass" fall through to the native insertion.
         }}
         rows={1}
         aria-label="Session draft"
+        role="combobox"
+        aria-expanded={activeDescendant !== undefined}
+        aria-autocomplete="list"
+        aria-controls="vex-composer-command-listbox"
+        aria-activedescendant={activeDescendant}
+        // Catalog capsule metrics: 16/24 reading size, padding 4/12/0/16
+        // inside the card's 10px top pad, 336px cap (14 lines) then scroll;
+        // accent caret; NO focus ring by design - the capsule has no focus
+        // treatment at all. The overlay above MUST mirror these paddings.
         className={
-          "block w-full resize-none overflow-y-auto bg-transparent font-sans leading-[1.65] text-foreground caret-[var(--vex-accent)] outline-none " +
-          // TYPED text is set in the READING register (Instrument Sans
-          // 15px/1.65, owner readability round 2026-07-30) — the draft is set
-          // in the same face the reply comes back in, and a long draft is
-          // read, not displayed. The RESTING PROMPT stays serif italic (see
-          // the placeholder overlay above): a prompt is display, typing is
-          // reading. Both keep the SAME 15px/1.65 line box, so the caret line
-          // and the overlay still share one origin — the two metrics MUST
-          // stay mirrored. The vertical padding builds the resting
-          // single-line height instead of a min-height. pl-4: breathing room
-          // off the rounded-2xl edge.
-          // The draft caps at 200px and scrolls — intentional, but it was
-          // wearing the GLOBAL 8px always-on thumb, which is the stray bar the
-          // owner spotted beside the composer. Same overlay treatment as the
-          // transcript: present only while the draft is actually scrolling.
-          "vex-scroll vex-scroll-overlay max-h-[200px] py-[9px] pr-1 text-[15px] pl-4"
+          "vex-scroll vex-scroll-overlay block max-h-[336px] w-full resize-none overflow-y-auto bg-transparent pb-0 pl-4 pr-3 pt-1 font-sans text-[16px] leading-6 text-ink-primary caret-accent-primary outline-none" +
+          (hero ? " min-h-[52px]" : "")
         }
       />
     </div>

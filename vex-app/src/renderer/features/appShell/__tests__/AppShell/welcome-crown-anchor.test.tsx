@@ -287,13 +287,13 @@ describe("composer growth glide — globals.css contract (raw scan)", () => {
     expect(grow).not.toContain("animation");
   });
 
-  it("the console holds a CONSTANT radius — no border-radius relax left to sync with", () => {
-    // The height glide above used to share its 220ms clock with the pill's
-    // rounded-full ⇄ rounded-[28px] relax, so the two moved as one gesture.
-    // The rebuilt console (owner decree 2026-07-29) is a constant rounded-2xl
-    // surface, so that second moving part is gone. Assert its ABSENCE: a
-    // reintroduced relax would otherwise silently drift off this clock.
-    const host = blockFor(".vex-console");
-    expect(host).not.toContain("border-radius");
+  it("the capsule holds a CONSTANT r22 radius — no border-radius relax left to sync with", () => {
+    // The height glide above used to share its 220ms clock with a radius
+    // relax once; the capsule (catalog geometry) is a constant 22px surface,
+    // so that second moving part stays gone: the radius is a static value
+    // and nothing transitions it.
+    const host = blockFor(".vex-composer-card");
+    expect(host).toContain("border-radius: 22px");
+    expect(host).not.toContain("transition");
   });
 });
