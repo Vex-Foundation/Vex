@@ -1,11 +1,15 @@
 import { CH } from "../../shared/ipc/channels.js";
-import { chatSubmitInputSchema } from "../../shared/schemas/chat.js";
+import {
+  chatSteerInputSchema,
+  chatSubmitInputSchema,
+} from "../../shared/schemas/chat.js";
 import type {
+  ChatSteerInput,
   ChatSubmitInput,
   ChatSubmitResult,
 } from "../../shared/schemas/chat.js";
 import type { ChatBridge } from "../../shared/types/bridge/agent/chat.js";
-import { abortableInvoke } from "../_dispatch.js";
+import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 export const chat = {
   submit(input: ChatSubmitInput) {
@@ -17,5 +21,8 @@ export const chat = {
       input,
       chatSubmitInputSchema,
     );
+  },
+  steer(input: ChatSteerInput) {
+    return invokeWithSchema(CH.chat.steer, input, chatSteerInputSchema);
   },
 } satisfies ChatBridge;

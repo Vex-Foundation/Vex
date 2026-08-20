@@ -39,6 +39,9 @@ const EXPECTED_FUNCTION_EXPORTS = [
   "setSessionPinned",
   "renameSessionWithClient",
   "renameSession",
+  // A14 branching: the prefix-copy fork vertical.
+  "branchSessionWithClient",
+  "branchSession",
 ] as const;
 
 describe("sessions-db façade surface", () => {

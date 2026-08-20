@@ -353,6 +353,55 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]!.role).toBe("user");
   });
 
+  it("maps a user operator_interrupt row to the steering kind - a steered user turn, not a notice (A33)", async () => {
+    vi.mocked(mocks.query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 9,
+          session_id: SESSION,
+          role: "user",
+          content: "actually, check the fees first",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-20T10:00:00.000Z",
+          source: "user",
+          message_type: "operator_interrupt",
+          metadata: null,
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("steering");
+    expect(result.data.items[0]!.role).toBe("user");
+  });
+
+  it("the ENGINE operator cue row stays a runtime notice - only the USER steered text wears the steering kind", async () => {
+    vi.mocked(mocks.query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          session_id: SESSION,
+          role: "system",
+          content: "[Engine: operator_interrupt]",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-20T10:00:01.000Z",
+          source: "engine",
+          message_type: "operator_interrupt",
+          metadata: null,
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("runtime_notice");
+  });
+
   it("maps a compaction_committed marker row to the compaction kind (8-4)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [

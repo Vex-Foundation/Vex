@@ -39,6 +39,8 @@ import {
 } from "../../../../lib/composer-submission-policy.js";
 import { getToastSnapshot } from "../../../../lib/toast.js";
 
+const mockChatSteer = vi.fn();
+
 const mockSubmitChat = {
   isPending: false as boolean,
   mutateAsync: vi.fn(),
@@ -128,6 +130,15 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // A33: the busy-branch steers before queueing; default to "no live turn"
+  // so pre-steering scenarios keep their queue semantics.
+  mockChatSteer.mockResolvedValue({ ok: true, data: { outcome: "no_active_turn" } });
+  const bridge = (window as unknown as { vex?: { chat?: Record<string, unknown> } }).vex;
+  if (bridge !== undefined) {
+    bridge.chat = { ...(bridge.chat ?? {}), steer: mockChatSteer };
+  } else {
+    (window as unknown as { vex: unknown }).vex = { chat: { steer: mockChatSteer } };
+  }
   mockSubmitChat.isPending = false;
   mockSubmitChat.mutateAsync.mockResolvedValue({
     ok: true,
@@ -363,7 +374,11 @@ describe("composer capsule — submission policy (B13)", () => {
 });
 
 describe("composer capsule — queue on busy (A27)", () => {
-  it("a submit while a turn is in flight queues the message into the visible dock instead of dropping it", () => {
+  it("a submit while a turn is in flight queues the message into the visible dock instead of dropping it", async () => {
+    // A33 changed this path's first resort: a mid-turn submit STEERS the
+    // live turn, and the A27 queue is the fallback. This test pins the
+    // fallback: steering refused (no_active_turn) -> the dock gets the row.
+    mockChatSteer.mockResolvedValue({ ok: true, data: { outcome: "no_active_turn" } });
     mockSubmitChat.isPending = true;
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -375,15 +390,18 @@ describe("composer capsule — queue on busy (A27)", () => {
       ) as HTMLFormElement,
     );
     expect(mockSubmitChat.mutateAsync).not.toHaveBeenCalled();
-    const dock = container.querySelector(
-      '[data-vex-area="composer-queue-dock"]',
-    );
-    expect(dock?.textContent).toContain("follow-up while busy");
+    await waitFor(() => {
+      const dock = container.querySelector(
+        '[data-vex-area="composer-queue-dock"]',
+      );
+      expect(dock?.textContent).toContain("follow-up while busy");
+    });
     // The field cleared - the message lives in the queue now.
     expect(draftField().value).toBe("");
   });
 
-  it("removing a queued row deletes it from the dock", () => {
+  it("removing a queued row deletes it from the dock", async () => {
+    mockChatSteer.mockResolvedValue({ ok: true, data: { outcome: "no_active_turn" } });
     mockSubmitChat.isPending = true;
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -395,7 +413,7 @@ describe("composer capsule — queue on busy (A27)", () => {
       ) as HTMLFormElement,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove queued message" }),
+      await screen.findByRole("button", { name: "Remove queued message" }),
     );
     expect(
       container.querySelector('[data-vex-area="composer-queue-dock"]'),

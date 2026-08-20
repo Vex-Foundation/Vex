@@ -14,20 +14,18 @@
  * inject markup.
  */
 
-import { memo, useMemo, useState, type JSX, type ReactNode } from "react";
-import {
-  CircleStopIcon,
-  IconCheck,
-  IconCopy,
-  IconDislike,
-  VexIcon,
-} from "../../components/icons/index.js";
-import { ReportIssueDialog } from "./ReportIssueDialog.js";
+import { memo, type JSX, type ReactNode } from "react";
+import { CircleStopIcon, VexIcon } from "../../components/icons/index.js";
 import { StateDot } from "../../components/ui/state-dot.js";
-import { useCopyFeedback } from "../../lib/use-copy-feedback.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
-import { extractMarkdownPlainText } from "../../lib/markdown/plain-text.js";
 import { cn } from "../../lib/utils.js";
+import {
+  BranchMessageAction,
+  CopyMessageAction,
+  EditMessageAction,
+  FeedbackMessageAction,
+  type MessageFeedbackContext,
+} from "./TranscriptMessage/MessageIconActions.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
@@ -115,81 +113,10 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
 /** The speaker name, as Vex signs it. */
 const VEX_SPEAKER = "VEX";
 
-/**
- * Hover-revealed copy-message key (gap A13). Assistant rows copy the PLAIN
- * TEXT projection of their markdown (display-only extractor — the clipboard
- * is a reading surface); user rows pass their literal text through. The
- * button is keyboard-reachable at all times (`.vex-action-reveal` reveals on
- * :focus-within too, and touch devices always show it).
- */
-function CopyMessageAction({
-  text,
-  markdown = false,
-}: {
-  readonly text: string;
-  readonly markdown?: boolean;
-}): JSX.Element | null {
-  const plain = useMemo(
-    () => (markdown ? extractMarkdownPlainText(text) : text),
-    [markdown, text],
-  );
-  const { copied, onCopy } = useCopyFeedback(plain);
-  if (plain.length === 0) return null;
-  return (
-    <button
-      type="button"
-      data-vex-copy-message=""
-      aria-label={copied ? "Message copied" : "Copy message"}
-      onClick={onCopy}
-      className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--vex-text-3)] transition-colors hover:bg-interactive-hover hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-    >
-      {copied ? (
-        <IconCheck size={12} aria-hidden />
-      ) : (
-        <IconCopy size={12} aria-hidden />
-      )}
-    </button>
-  );
-}
-
-/** Per-message feedback context - the transcript owner supplies it (G7). */
-export interface MessageFeedbackContext {
-  readonly sessionId: string;
-  readonly messageKey: string;
-}
-
-/**
- * Hover-revealed per-message feedback key (gap G7). Opens the EXISTING
- * ReportIssueDialog carrying the session id + message key, so a report about
- * one specific reply lands with the row identified - no new channels.
- */
-function FeedbackMessageAction({
-  context,
-}: {
-  readonly context: MessageFeedbackContext;
-}): JSX.Element {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        data-vex-message-feedback=""
-        aria-label="Report an issue with this message"
-        onClick={() => setOpen(true)}
-        className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--vex-text-3)] transition-colors hover:bg-interactive-hover hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-      >
-        <IconDislike size={12} aria-hidden />
-      </button>
-      {open ? (
-        <ReportIssueDialog
-          open={open}
-          onOpenChange={setOpen}
-          messageContext={context}
-        />
-      ) : null}
-    </>
-  );
-}
+// Caption action buttons (copy A13, feedback G7, branch A14, edit A18) live
+// in `TranscriptMessage/MessageIconActions.tsx`; the context type is
+// re-exported so existing consumers keep their import path.
+export type { MessageFeedbackContext };
 
 /**
  * Tape stamp above an assistant document block. The time LEADS (the readout)
@@ -200,12 +127,15 @@ function AssistantCaption({
   createdAt,
   copyText,
   feedback,
+  onBranch,
 }: {
   readonly createdAt: string;
   /** Markdown source for the hover copy key; omitted = no copy affordance. */
   readonly copyText?: string;
   /** Per-message feedback context; omitted = no feedback affordance. */
   readonly feedback?: MessageFeedbackContext;
+  /** Fork-after-this-reply key (A14); omitted = no branch affordance. */
+  readonly onBranch?: () => void;
 }): JSX.Element {
   return (
     // Register C2: a speaker caption is HUMAN chrome, so it wears the support
@@ -233,6 +163,9 @@ function AssistantCaption({
       </span>
       {copyText !== undefined ? (
         <CopyMessageAction text={copyText} markdown />
+      ) : null}
+      {onBranch !== undefined ? (
+        <BranchMessageAction label="Branch from here" onBranch={onBranch} />
       ) : null}
       {feedback !== undefined ? (
         <FeedbackMessageAction context={feedback} />
@@ -274,6 +207,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   agentWorking = false,
   feedbackSessionId,
   feedbackMessageKey,
+  onEditMessage,
+  onEditInNewBranch,
+  onBranchFrom,
 }: {
   readonly row: TranscriptEntry;
   /**
@@ -290,6 +226,15 @@ export const TranscriptMessage = memo(function TranscriptMessage({
    */
   readonly feedbackSessionId?: string;
   readonly feedbackMessageKey?: string;
+  /**
+   * Fork/edit callbacks (A14/A18) — row-agnostic STABLE references (the
+   * message id travels in the call, not the prop) so the memo boundary's
+   * shallow comparison keeps holding at streaming rate. All omitted = no
+   * affordances (read-only transcript surfaces).
+   */
+  readonly onEditMessage?: (messageId: number, content: string) => void;
+  readonly onEditInNewBranch?: (messageId: number, content: string) => void;
+  readonly onBranchFrom?: (messageId: number) => void;
 }): JSX.Element {
   const feedbackContext: MessageFeedbackContext | undefined =
     feedbackSessionId !== undefined && feedbackMessageKey !== undefined
@@ -315,10 +260,32 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <div className="max-w-[min(525px,82%)] whitespace-pre-wrap break-words rounded-[22px] bg-surface-bubble px-4 py-2.5 text-[16px] leading-6 text-ink-primary">
             {row.content}
           </div>
+          {/* A33 - a steered message says WHEN it reaches the model, in
+              words: delivery happens at the live loop's next tool-step
+              boundary, never mid tool call. */}
+          {row.steering === true ? (
+            <span
+              data-vex-steering-mark=""
+              className="vex-stat-doto mt-1 text-[var(--vex-text-3)]"
+            >
+              Steered · read at the agent's next step
+            </span>
+          ) : null}
           {/* Same C2 human-caption register as the assistant stamp. */}
           <span className="vex-micro mt-1 flex items-center justify-end gap-2 tabular-nums">
             {feedbackContext !== undefined ? (
               <FeedbackMessageAction context={feedbackContext} />
+            ) : null}
+            {onEditInNewBranch !== undefined ? (
+              <BranchMessageAction
+                label="Edit in a new branch"
+                onBranch={() => onEditInNewBranch(row.id, row.content)}
+              />
+            ) : null}
+            {onEditMessage !== undefined ? (
+              <EditMessageAction
+                onEdit={() => onEditMessage(row.id, row.content)}
+              />
             ) : null}
             <CopyMessageAction text={row.content} />
             <span className="text-[var(--vex-text-3)]">You</span>
@@ -338,6 +305,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             createdAt={row.createdAt}
             copyText={row.content}
             feedback={feedbackContext}
+            onBranch={
+              onBranchFrom !== undefined
+                ? () => onBranchFrom(row.id)
+                : undefined
+            }
           />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
@@ -356,6 +328,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             createdAt={row.createdAt}
             copyText={row.content}
             feedback={feedbackContext}
+            onBranch={
+              onBranchFrom !== undefined
+                ? () => onBranchFrom(row.id)
+                : undefined
+            }
           />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />

@@ -37,7 +37,12 @@ export {
   type SweepResult,
 } from "./core/approval-runtime.js";
 
-export { routeUserMessage, submitOperatorInstruction } from "./ingress.js";
+export {
+  routeUserMessage,
+  submitOperatorInstruction,
+  submitSteeringMessage,
+  type SteeringOutcome,
+} from "./ingress.js";
 export type { TurnRequestOptions } from "./core/runner.js";
 
 export { startWakeExecutor } from "./wake/executor.js";

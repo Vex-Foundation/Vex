@@ -51,6 +51,7 @@ import {
   TranscriptLoadingState,
 } from "./SessionTranscript/TranscriptStates.js";
 import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
+import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
 import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 
@@ -83,6 +84,8 @@ export function SessionTranscript({
     [items],
   );
   const workingAgentEntryKey = findWorkingAgentEntryKey(rows, chatSubmitting);
+  // A14/A18 - branch + edit hover keys on prose rows.
+  const forkActions = useMessageForkActions({ sessionId, rows });
 
   // S5 — pending approvals drive two quiet signals: per-act "Awaiting
   // signature" stamps (matched by toolCallId) and the working strip's
@@ -232,6 +235,7 @@ export function SessionTranscript({
           settledIds={settledIds}
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
+          forkActions={forkActions}
         />
         {/* A17 — the settled turn's tail wears its usage stats. Mounted only
             between turns; a user-tail (message sent, reply not begun) or a

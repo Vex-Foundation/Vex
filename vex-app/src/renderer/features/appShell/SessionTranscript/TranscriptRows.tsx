@@ -25,6 +25,7 @@ import { TranscriptMessage } from "../TranscriptMessage.js";
 import { transcriptEntryKey as entryKey } from "../agentActivity.js";
 import type { TranscriptEntry } from "../transcriptRowModel.js";
 import { crossesLocalDay, dayLabel } from "./daySeparator.js";
+import type { MessageForkActions } from "./useMessageForkActions.js";
 
 /**
  * G12 — a quiet Doto date stamp between rows from different LOCAL calendar
@@ -53,6 +54,7 @@ export function TranscriptRows({
   settledIds,
   pendingApprovals,
   workingAgentEntryKey,
+  forkActions,
 }: {
   readonly rows: readonly TranscriptEntry[];
   /** Owning session - stamps each row's per-message feedback context (G7). */
@@ -61,6 +63,8 @@ export function TranscriptRows({
   readonly settledIds: ReadonlySet<number> | null;
   readonly pendingApprovals: ReadonlyMap<string, string>;
   readonly workingAgentEntryKey: string | null;
+  /** Branch/edit hover keys (A14/A18); omitted = read-only transcript. */
+  readonly forkActions?: MessageForkActions;
 }): JSX.Element {
   return (
     <>
@@ -93,6 +97,9 @@ export function TranscriptRows({
                 agentWorking={workingAgentEntryKey === entryKey(row)}
                 feedbackSessionId={sessionId}
                 feedbackMessageKey={entryKey(row)}
+                onEditMessage={forkActions?.onEditMessage}
+                onEditInNewBranch={forkActions?.onEditInNewBranch}
+                onBranchFrom={forkActions?.onBranchFrom}
               />
             </div>
           </div>

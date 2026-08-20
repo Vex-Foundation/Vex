@@ -30,8 +30,13 @@ import {
   useComposerQueue,
   type QueuedComposerMessage,
 } from "../../lib/composer-queue.js";
+import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
+import {
+  STEERED_TOAST_TEXT,
+  trySteerLiveTurn,
+} from "./composer-submit/steering.js";
 import {
   FREE_TEXT_DISALLOWED,
   gatedReason,
@@ -381,12 +386,19 @@ export function useComposerSubmit(
         openCreateSession(message, effectiveReasoningEffort);
         return;
       }
-      // A submit while a turn is already in flight QUEUES the message (A27)
-      // instead of dropping it: the dock above the card shows the row, and
-      // the drain effect dispatches it when the session goes idle.
+      // A submit while a turn is already in flight STEERS the live turn
+      // (A33): the engine persists the message as an interrupt the loop
+      // reads at its next tool-step boundary, and the transcript shows the
+      // steered row. When steering is refused (turn just ended, parked run)
+      // the message QUEUES instead (A27) - never dropped, never doubled.
       if (submitPending || inFlightRef.current) {
-        enqueueMessage(sessionId, message);
         setDraft("");
+        const steerOutcome = await trySteerLiveTurn(sessionId, message);
+        if (steerOutcome === "steered") {
+          showToast(STEERED_TOAST_TEXT);
+          return;
+        }
+        enqueueMessage(sessionId, message);
         return;
       }
       // Free text is gated while a mission run is active — mission controls

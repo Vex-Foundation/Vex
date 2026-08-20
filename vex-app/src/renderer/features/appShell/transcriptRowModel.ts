@@ -46,6 +46,12 @@ export interface TranscriptRowModel {
    */
   readonly noticeTone?: "runtime" | "error";
   /**
+   * User rows only (A33): the message was steered into a LIVE turn
+   * (`operator_interrupt`) and is delivered at the loop's next tool-batch
+   * boundary - the row wears a register mark saying so in words.
+   */
+  readonly steering?: true;
+  /**
    * Tool rows only. `"call"` → `content` is assistant prose and `toolCalls`
    * carries the per-call param disclosures; `"result"` → `content` is the
    * tool output and `label` is `<toolName>_output`. Undefined elsewhere.
@@ -146,6 +152,8 @@ function resolveVariant(
       return "recall";
     case "assistant_stopped":
       return "assistant_stopped";
+    case "steering":
+      return "user";
     case "text":
       return resolveTextVariant(role);
     default:
@@ -271,6 +279,9 @@ export function toTranscriptRow(
     content: dto.content,
     createdAt: dto.createdAt,
     reasoning: dto.reasoning,
+    // A33: the steered mark survives into the row so the user row can wear
+    // its "read at the agent's next step" register stamp.
+    ...(dto.kind === "steering" ? { steering: true as const } : {}),
   };
 }
 

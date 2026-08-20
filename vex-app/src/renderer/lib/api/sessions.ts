@@ -22,6 +22,8 @@ import {
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  SessionBranchInput,
+  SessionBranchResult,
   SessionCreateInput,
   SessionCreateResult,
   SessionDeleteInput,
@@ -161,6 +163,35 @@ export function useRenameSession(): UseMutationResult<
           { ok: true, data: result.data } satisfies Result<SessionListItem>,
         );
       }
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
+    },
+  });
+}
+
+/**
+ * Fork a session at a message (A14). `retry: false` is contract, not
+ * preference: each successful call creates a NEW session, so an auto-retry
+ * after an ambiguous transport failure could mint duplicates. On
+ * `created`, cache handling mirrors `useCreateSession`; blocked outcomes
+ * change nothing and are surfaced by the caller.
+ */
+export function useBranchSession(): UseMutationResult<
+  Result<SessionBranchResult>,
+  Error,
+  SessionBranchInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SessionBranchInput) =>
+      window.vex.sessions.branch(input),
+    retry: false,
+    onSuccess: (result) => {
+      if (!result.ok || result.data.outcome !== "created") return;
+      const session = result.data.session;
+      queryClient.setQueryData(
+        sessionKeys.detail(session.id),
+        { ok: true, data: session } satisfies Result<SessionListItem>,
+      );
       void queryClient.invalidateQueries({ queryKey: sessionKeys.list() });
     },
   });

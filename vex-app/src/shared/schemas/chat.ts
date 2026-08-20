@@ -60,6 +60,44 @@ export type ChatSubmitInput = z.infer<typeof chatSubmitInputSchema>;
  * turns a successful turn into an `internal.unexpected` IPC error (S7 fix
  * for the S6 finding; pinned by sessions-chat.test.ts).
  */
+/**
+ * IPC input for `vex.chat.steer` (A33). Same session/message bounds as
+ * `chat.submit`; no reasoningEffort — a steer joins the LIVE turn's
+ * configuration instead of choosing its own.
+ */
+export const chatSteerInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    message: z
+      .string()
+      .trim()
+      .min(1, "Message is required.")
+      .max(
+        CHAT_MESSAGE_MAX_LENGTH,
+        `Message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or less.`,
+      ),
+  })
+  .strict();
+export type ChatSteerInput = z.infer<typeof chatSteerInputSchema>;
+
+/**
+ * Discriminated outcome of `vex.chat.steer`:
+ *   - `queued_live` — exactly one `operator_interrupt` row was persisted
+ *     (logged before it can become model-visible); the live loop delivers
+ *     it at the next tool-batch boundary, never mid tool call.
+ *   - `no_active_turn` — nothing persisted; the caller submits normally.
+ * Not idempotent on `queued_live` (one row per call): never auto-retry.
+ */
+export const chatSteerOutcomeSchema = z.enum(["queued_live", "no_active_turn"]);
+export type ChatSteerOutcome = z.infer<typeof chatSteerOutcomeSchema>;
+
+export const chatSteerResultSchema = z
+  .object({
+    outcome: chatSteerOutcomeSchema,
+  })
+  .strict();
+export type ChatSteerResult = z.infer<typeof chatSteerResultSchema>;
+
 export const chatStopReasonSchema = z.enum([
   "goal_reached",
   "deadline_reached",

@@ -1,5 +1,6 @@
 import { CH } from "../../shared/ipc/channels.js";
 import {
+  sessionBranchInputSchema,
   sessionCreateInputSchema,
   sessionDeleteInputSchema,
   sessionExportMarkdownInputSchema,
@@ -9,6 +10,7 @@ import {
   sessionSetPinnedInputSchema,
 } from "../../shared/schemas/sessions.js";
 import type {
+  SessionBranchInput,
   SessionCreateInput,
   SessionDeleteInput,
   SessionExportMarkdownInput,
@@ -52,6 +54,13 @@ export const sessions = {
       CH.sessions.rename,
       input,
       sessionRenameInputSchema
+    );
+  },
+  branch(input: SessionBranchInput) {
+    return invokeWithSchema(
+      CH.sessions.branch,
+      input,
+      sessionBranchInputSchema
     );
   },
   delete(input: SessionDeleteInput) {

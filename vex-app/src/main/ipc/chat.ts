@@ -7,71 +7,24 @@
  * the turn through the canonical Vex Agent ingress.
  */
 
-import { URL } from "node:url";
 import { CH } from "@shared/ipc/channels.js";
-import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
+import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   chatSubmitInputSchema,
   chatSubmitResultSchema,
   type ChatSubmitResult,
 } from "@shared/schemas/chat.js";
-import { closePool } from "@vex-agent/db/client.js";
+import { ensureEngineDbUrl } from "./chat/engine-db-url.js";
 import {
   classifyEngineError,
   sessionNotFoundError,
 } from "./chat/engine-failure-copy.js";
-import { buildPoolConfig } from "../database/db-config.js";
 import {
   getSessionById,
   setInitialMissionGoalIfUnset,
 } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
-
-function dbUnavailableError(correlationId: string): VexError {
-  return {
-    code: "internal.unexpected",
-    domain: "database",
-    message: "Database unavailable. Verify services are running and retry.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function makePostgresUrl(args: {
-  readonly host: string;
-  readonly port: number;
-  readonly database: string;
-  readonly user: string;
-  readonly password: string;
-}): string {
-  const url = new URL(`postgresql://${args.host}:${args.port}/${args.database}`);
-  url.username = args.user;
-  url.password = args.password;
-  return url.toString();
-}
-
-async function ensureEngineDbUrl(
-  correlationId: string,
-): Promise<Result<void, VexError>> {
-  try {
-    const cfg = await buildPoolConfig();
-    if (cfg === null) return err(dbUnavailableError(correlationId));
-    const nextUrl = makePostgresUrl(cfg);
-    if (process.env.VEX_DB_URL === nextUrl) return ok(undefined);
-
-    process.env.VEX_DB_URL = nextUrl;
-    await closePool();
-    log.info(
-      `[ipc:vex:chat:submit] engine database connection refreshed correlationId=${correlationId}`,
-    );
-    return ok(undefined);
-  } catch {
-    return err(dbUnavailableError(correlationId));
-  }
-}
 
 export function registerChatSubmitHandler(): () => void {
   return registerHandler({
