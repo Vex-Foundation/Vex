@@ -42,6 +42,15 @@ import {
 interface ReportIssueDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
+  /**
+   * Per-message feedback context (gap G7). When set, the report rides with
+   * the session ref and the message key so triage can find the exact row -
+   * the user never has to paste identifiers by hand.
+   */
+  readonly messageContext?: {
+    readonly sessionId: string;
+    readonly messageKey: string;
+  };
 }
 
 type Severity = "info" | "warning" | "error" | "critical";
@@ -78,6 +87,7 @@ const DESCRIPTION_MAX = 8000;
 export function ReportIssueDialog({
   open,
   onOpenChange,
+  messageContext,
 }: ReportIssueDialogProps): JSX.Element {
   const [category, setCategory] = useState<ManualCategory>("user_reported_bug");
   const [severity, setSeverity] = useState<Severity>("error");
@@ -130,8 +140,14 @@ export function ReportIssueDialog({
         severity,
         title: trimmedTitle,
         description,
-        context: {},
-        refs: {},
+        context:
+          messageContext !== undefined
+            ? { messageKey: messageContext.messageKey }
+            : {},
+        refs:
+          messageContext !== undefined
+            ? { sessionId: messageContext.sessionId }
+            : {},
       });
 
       setSubmitting(false);
@@ -153,6 +169,7 @@ export function ReportIssueDialog({
     [
       category,
       description,
+      messageContext,
       onOpenChange,
       severity,
       submitDisabled,

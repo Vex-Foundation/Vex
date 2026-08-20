@@ -14,12 +14,12 @@
  * provider 429 surfaced to the user as "Unable to process the message". This
  * bus is the engine end of the channel that makes those visible.
  *
- * BOUNDED CODES, NEVER PROSE. The payload carries ids, enums, a status number
- * and a retry hint — no provider message, no `stop_summary`, no exception
- * text. That is the repo's pinned doctrine (`memory_jobs.last_error` is
- * excluded from every DTO as untrusted free text, with a test asserting the
- * omission); `stop_summary` is the same class of data. The human-readable
- * error message stays server-side in the logs and in mission evidence.
+ * BOUNDED CODES, PLUS ONE RAW DETAIL. The payload carries ids, enums, a
+ * status number, a retry hint - and, since owner decree 2026-08-02, the raw
+ * thrown-error message as `detail`. The bus itself never leaves the
+ * privileged process; the ONLY way `detail` crosses to the renderer is
+ * through the main-side bridge's sanitizer. `stop_summary` and
+ * `memory_jobs.last_error` stay server-side as before.
  *
  * The `category` is deliberately NOT computed here. Classification into the
  * user-facing vocabulary is the app's job and lives in ONE place on the
@@ -89,6 +89,15 @@ export interface EngineErrorEvent {
   readonly retryAfterSeconds: number | null;
   readonly occurredAt: string;
   readonly correlationId: string | null;
+  /**
+   * RAW failure message, in-process only (owner decree 2026-08-02). This bus
+   * never leaves the privileged process; the main-side `error-bridge` runs
+   * this through `sanitizeEngineErrorDetail` (URLs, tokens, keys, long hex
+   * stripped, length capped) before anything crosses to the renderer. Emit
+   * sites pass the thrown error's message here so the user can learn what
+   * actually happened instead of a bare category.
+   */
+  readonly detail: string | null;
 }
 
 export type EngineErrorListener = (event: EngineErrorEvent) => void;
@@ -202,6 +211,8 @@ export function emitEngineError(input: {
   readonly causeCode?: string | null;
   readonly retryAfterSeconds?: number | null;
   readonly correlationId?: string | null;
+  /** Raw thrown-error message; sanitized at the main-side bridge. */
+  readonly detail?: string | null;
 }): void {
   engineErrorBus.emit({
     type: ENGINE_ERROR_EVENT_TYPE,
@@ -218,5 +229,18 @@ export function emitEngineError(input: {
     retryAfterSeconds: boundedRetryAfterSeconds(input.retryAfterSeconds),
     occurredAt: new Date().toISOString(),
     correlationId: input.correlationId ?? null,
+    detail: typeof input.detail === "string" && input.detail.length > 0
+      ? input.detail
+      : null,
   });
+}
+
+/**
+ * The raw message of a thrown value, for `emitEngineError`'s `detail`. Own
+ * `message` only - never `.cause`, never a stringified object, so a non-Error
+ * throw contributes nothing rather than "[object Object]".
+ */
+export function errorDetailOf(err: unknown): string | null {
+  if (err instanceof Error && err.message.length > 0) return err.message;
+  return typeof err === "string" && err.length > 0 ? err : null;
 }

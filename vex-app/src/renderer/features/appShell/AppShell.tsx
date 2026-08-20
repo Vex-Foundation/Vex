@@ -35,6 +35,8 @@ import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
+import { ConnectionBanner } from "../../components/ui/connection-banner.js";
+import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
@@ -195,6 +197,8 @@ function ShellFrame({
     [setBookWidth],
   );
 
+  const networkOnline = useNetworkOnline();
+
   return (
     <div
       ref={frameRef}
@@ -208,6 +212,11 @@ function ShellFrame({
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
     >
+      {/* G10 - fixed strip; only an actual outage renders it. */}
+      <ConnectionBanner
+        reconnecting={!networkOnline}
+        label="Offline - waiting for the network to come back"
+      />
       <div className="relative z-20 min-w-0 overflow-visible">
         <SessionsList
           onCreate={onCreate}

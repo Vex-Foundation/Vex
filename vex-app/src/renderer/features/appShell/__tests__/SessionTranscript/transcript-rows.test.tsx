@@ -47,6 +47,7 @@ function renderRows(
 ) {
   return render(
     <TranscriptRows
+      sessionId="00000000-0000-4000-8000-00000000aaaa"
       rows={rows}
       settledIds={settledIds}
       pendingApprovals={new Map()}

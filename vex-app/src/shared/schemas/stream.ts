@@ -12,11 +12,10 @@
  *    evades regex), so the renderer-facing payload simply has no field for
  *    them — the canonical, redacted args arrive later via the persisted
  *    `tool_call` message DTO.
- *  - `error` deltas carry a safe generic message (the bridge replaces the
- *    raw provider string); only the numeric `code` and the bounded
- *    `errorType` enum label are preserved. The label is what lets the preview
- *    say "rate-limited" instead of only "Stream error"; it is an enum member,
- *    not provider prose.
+ *  - `error` deltas carry the SANITIZED provider message (the bridge runs the
+ *    raw string through `sanitizeEngineErrorDetail`, owner decree 2026-08-02),
+ *    plus the numeric `code` and the bounded `errorType` enum label. The label
+ *    still lets consumers classify without parsing prose.
  *  - every object is `.strict()` so any drift in the engine payload is
  *    dropped at the boundary rather than forwarded.
  *
@@ -52,7 +51,7 @@ export type StreamUsageDto = z.infer<typeof streamUsageSchema>;
 
 /**
  * Discriminated delta payload. `tool_call` deliberately omits any argument
- * field; `error.message` is a safe generic set by the bridge.
+ * field; `error.message` is sanitized prose set by the bridge.
  */
 export const streamDeltaPayloadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }).strict(),

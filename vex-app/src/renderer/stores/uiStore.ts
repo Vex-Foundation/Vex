@@ -236,6 +236,12 @@ export interface UiState {
    */
   readonly hideDustBalances: boolean;
   /**
+   * OS-native turn-complete notifications (A34). TRUE by default; the
+   * settings surface owns the toggle. Persisted (see partialize) and coerced
+   * on every rehydrate - the payload is user-writable localStorage.
+   */
+  readonly notificationsEnabled: boolean;
+  /**
    * Build version whose gate prologue last COMPLETED (or was skipped), or
    * null if never. COSMETIC — `gate-prologue/prologue-policy.ts` condenses
    * the cinematic on a repeat launch of the same version. Persisted (see
@@ -328,6 +334,7 @@ export interface UiState {
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setHideDustBalances: (value: boolean) => void;
+  readonly setNotificationsEnabled: (value: boolean) => void;
   readonly setBookSectionOrder: (order: readonly string[]) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
@@ -365,6 +372,7 @@ export const useUiStore = create<UiState>()(
       reasoningEffortBySession: {},
       reviewModal: "none",
       hideDustBalances: true,
+      notificationsEnabled: true,
       prologueVersion: null,
       bookSectionOrder: [],
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -423,6 +431,7 @@ export const useUiStore = create<UiState>()(
       setSigningState: (signingState) => set({ signingState }),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
+      setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
       appendLog: (entry) =>
         set((state) => ({
@@ -432,7 +441,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 10,
+      version: 11,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

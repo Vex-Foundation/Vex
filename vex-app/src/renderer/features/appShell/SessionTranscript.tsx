@@ -228,6 +228,7 @@ export function SessionTranscript({
         {olderError ? <OlderPageErrorStrip /> : null}
         <TranscriptRows
           rows={rows}
+          sessionId={sessionId}
           settledIds={settledIds}
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}

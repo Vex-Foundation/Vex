@@ -12,6 +12,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import type { JSX } from "react";
 import { composeWindowTitle, useWindowTitleSync } from "../window-title.js";
 import { useTurnCompleteNotification } from "../turn-notification.js";
+import { useUiStore } from "../../stores/uiStore.js";
 
 type AppendListener = (event: {
   sessionId: string;
@@ -21,6 +22,7 @@ type AppendListener = (event: {
 
 let appendListener: AppendListener | null = null;
 const offMock = vi.fn();
+const notifyMock = vi.fn(() => Promise.resolve({ ok: true, data: { shown: true } }));
 
 function installVexBridge(): void {
   Object.defineProperty(window, "vex", {
@@ -33,6 +35,9 @@ function installVexBridge(): void {
           return offMock;
         },
       },
+      system: {
+        notifyTurnComplete: notifyMock,
+      },
     },
   });
 }
@@ -44,7 +49,7 @@ function TitleHarness({
   readonly sessionId: string | null;
   readonly sessionTitle: string | null;
 }): JSX.Element | null {
-  const unseen = useTurnCompleteNotification(sessionId);
+  const unseen = useTurnCompleteNotification(sessionId, sessionTitle);
   useWindowTitleSync(sessionTitle, unseen);
   return null;
 }
@@ -61,6 +66,8 @@ beforeEach(() => {
   installVexBridge();
   appendListener = null;
   offMock.mockReset();
+  notifyMock.mockClear();
+  useUiStore.setState({ notificationsEnabled: true });
   document.title = "Vex";
 });
 
@@ -127,5 +134,38 @@ describe("useWindowTitleSync + useTurnCompleteNotification", () => {
       />,
     );
     expect(document.title).toBe("Other - Vex");
+  });
+});
+
+describe("useTurnCompleteNotification - OS-native notify request (A34)", () => {
+  it("asks main for the OS notification when an unfocused turn lands and the preference is on", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    render(<TitleHarness sessionId={SESSION} sessionTitle="Research" />);
+    emitAssistantRow(SESSION);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({ sessionTitle: "Research" });
+  });
+
+  it("stays silent when notificationsEnabled is off - the badge still works", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    useUiStore.setState({ notificationsEnabled: false });
+    render(<TitleHarness sessionId={SESSION} sessionTitle="Research" />);
+    emitAssistantRow(SESSION);
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(document.title.startsWith("\u25CF")).toBe(true);
+  });
+
+  it("never fires for a focused window or a missing title", () => {
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { unmount } = render(
+      <TitleHarness sessionId={SESSION} sessionTitle="Research" />,
+    );
+    emitAssistantRow(SESSION);
+    expect(notifyMock).not.toHaveBeenCalled();
+    unmount();
+    hasFocus.mockReturnValue(false);
+    render(<TitleHarness sessionId={SESSION} sessionTitle={null} />);
+    emitAssistantRow(SESSION);
+    expect(notifyMock).not.toHaveBeenCalled();
   });
 });

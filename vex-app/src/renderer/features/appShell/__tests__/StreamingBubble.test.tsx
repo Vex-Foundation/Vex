@@ -33,6 +33,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     startedAtMs: Date.now(),
     status: "working",
     errorType: null,
+    errorDetail: null,
     ...overrides,
   };
 }

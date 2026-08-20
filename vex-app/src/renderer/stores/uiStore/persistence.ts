@@ -26,6 +26,7 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
     sidebarWidth: state.sidebarWidth,
     bookWidth: state.bookWidth,
     hideDustBalances: state.hideDustBalances,
+    notificationsEnabled: state.notificationsEnabled,
     prologueVersion: state.prologueVersion,
     bookSectionOrder: state.bookSectionOrder,
   };
@@ -50,6 +51,8 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
 //   v10: `sidebarWidth`/`bookWidth` added (shell column drag) — seed the
 //       contract defaults so an upgrading install hydrates into defined
 //       widths, not `undefined`.
+//   v11: `notificationsEnabled` added (A34 native turn notification) - seed
+//       TRUE, the same default a fresh install gets.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -76,6 +79,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
       bookWidth: coerceBookWidth(next["bookWidth"]),
     };
   }
+  if (version < 11 && !("notificationsEnabled" in next)) {
+    next = { ...next, notificationsEnabled: true };
+  }
   return next;
 }
 
@@ -95,6 +101,12 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
   const hideDustBalances: boolean =
     typeof incoming?.hideDustBalances === "boolean"
       ? incoming.hideDustBalances
+      : true;
+  // Same TRUE-default coercion as dust: a hand-edited non-boolean can never
+  // reach the notify call path.
+  const notificationsEnabled: boolean =
+    typeof incoming?.notificationsEnabled === "boolean"
+      ? incoming.notificationsEnabled
       : true;
   // A non-string, empty or absurdly long hand-edited value degrades to null —
   // which the play policy resolves to the FULL prologue, never a crash.
@@ -124,6 +136,7 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     theme,
     themePreference,
     hideDustBalances,
+    notificationsEnabled,
     prologueVersion,
     bookSectionOrder,
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),

@@ -1,23 +1,30 @@
 /**
- * Turn-complete notification (A34), title-badge form. The signal is the
- * EXISTING transcript spine (`engine.onTranscriptAppend`): an assistant chat
- * row for the active session landing while the window is unfocused marks an
- * unseen turn; regaining focus clears it. The HTML5 Notification API is
- * intentionally NOT used — main's permission policy is deny-all
- * (`src/main/permissions.ts`), and an OS-native path would need a new IPC
- * contract (named gap, coordinator's call); the title badge ships now on
- * existing contracts only.
+ * Turn-complete notification (A34): title badge + OS-native notification.
+ * The signal is the EXISTING transcript spine (`engine.onTranscriptAppend`):
+ * an assistant chat row for the active session landing while the window is
+ * unfocused marks an unseen turn; regaining focus clears it. The same moment
+ * also asks main for an OS notification over the narrow
+ * `vex.system.notifyTurnComplete` contract - main re-checks focus itself, so
+ * this call is a request, never an authorization. Gated by the persisted
+ * `notificationsEnabled` preference. The HTML5 Notification API stays unused
+ * (deny-all web permissions in `src/main/permissions.ts`).
  */
 
 import { useEffect, useState } from "react";
+import { useUiStore } from "../stores/uiStore.js";
 
 /**
  * True while a turn completed for `sessionId` without window focus and the
  * user has not refocused since. Pure subscription — no render output beyond
  * the flag; feed it to `useWindowTitleSync`.
  */
-export function useTurnCompleteNotification(sessionId: string | null): boolean {
+export function useTurnCompleteNotification(
+  sessionId: string | null,
+  /** Display title for the OS notification body; null = badge only. */
+  sessionTitle: string | null = null,
+): boolean {
   const [unseen, setUnseen] = useState(false);
+  const notificationsEnabled = useUiStore((s) => s.notificationsEnabled);
 
   // Session switch: an unseen marker never carries across sessions.
   useEffect(() => {
@@ -35,7 +42,14 @@ export function useTurnCompleteNotification(sessionId: string | null): boolean {
       // A plain assistant chat row is the turn's answer; engine markers
       // (compaction, memory, …) are not user-facing turn completions.
       if (event.role !== "assistant" || event.messageType !== null) return;
-      if (!document.hasFocus()) setUnseen(true);
+      if (!document.hasFocus()) {
+        setUnseen(true);
+        // Fire-and-forget: main measures focus again and owns the decision;
+        // a failed call degrades to the title badge alone.
+        if (notificationsEnabled && sessionTitle !== null) {
+          void window.vex?.system?.notifyTurnComplete?.({ sessionTitle });
+        }
+      }
     });
     const onFocus = (): void => setUnseen(false);
     window.addEventListener("focus", onFocus);
@@ -43,7 +57,7 @@ export function useTurnCompleteNotification(sessionId: string | null): boolean {
       off();
       window.removeEventListener("focus", onFocus);
     };
-  }, [sessionId]);
+  }, [sessionId, sessionTitle, notificationsEnabled]);
 
   return unseen;
 }

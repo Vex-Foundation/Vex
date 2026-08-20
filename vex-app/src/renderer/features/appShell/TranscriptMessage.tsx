@@ -14,13 +14,15 @@
  * inject markup.
  */
 
-import { memo, useMemo, type JSX, type ReactNode } from "react";
+import { memo, useMemo, useState, type JSX, type ReactNode } from "react";
 import {
   CircleStopIcon,
   IconCheck,
   IconCopy,
+  IconDislike,
   VexIcon,
 } from "../../components/icons/index.js";
+import { ReportIssueDialog } from "./ReportIssueDialog.js";
 import { StateDot } from "../../components/ui/state-dot.js";
 import { useCopyFeedback } from "../../lib/use-copy-feedback.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
@@ -150,6 +152,45 @@ function CopyMessageAction({
   );
 }
 
+/** Per-message feedback context - the transcript owner supplies it (G7). */
+export interface MessageFeedbackContext {
+  readonly sessionId: string;
+  readonly messageKey: string;
+}
+
+/**
+ * Hover-revealed per-message feedback key (gap G7). Opens the EXISTING
+ * ReportIssueDialog carrying the session id + message key, so a report about
+ * one specific reply lands with the row identified - no new channels.
+ */
+function FeedbackMessageAction({
+  context,
+}: {
+  readonly context: MessageFeedbackContext;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        data-vex-message-feedback=""
+        aria-label="Report an issue with this message"
+        onClick={() => setOpen(true)}
+        className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--vex-text-3)] transition-colors hover:bg-interactive-hover hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      >
+        <IconDislike size={12} aria-hidden />
+      </button>
+      {open ? (
+        <ReportIssueDialog
+          open={open}
+          onOpenChange={setOpen}
+          messageContext={context}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Tape stamp above an assistant document block. The time LEADS (the readout)
  * and the speaker label trails (chrome) — the left-aligned HH:MM forms a clock
@@ -158,10 +199,13 @@ function CopyMessageAction({
 function AssistantCaption({
   createdAt,
   copyText,
+  feedback,
 }: {
   readonly createdAt: string;
   /** Markdown source for the hover copy key; omitted = no copy affordance. */
   readonly copyText?: string;
+  /** Per-message feedback context; omitted = no feedback affordance. */
+  readonly feedback?: MessageFeedbackContext;
 }): JSX.Element {
   return (
     // Register C2: a speaker caption is HUMAN chrome, so it wears the support
@@ -189,6 +233,9 @@ function AssistantCaption({
       </span>
       {copyText !== undefined ? (
         <CopyMessageAction text={copyText} markdown />
+      ) : null}
+      {feedback !== undefined ? (
+        <FeedbackMessageAction context={feedback} />
       ) : null}
     </span>
   );
@@ -225,6 +272,8 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   row,
   pendingApprovals,
   agentWorking = false,
+  feedbackSessionId,
+  feedbackMessageKey,
 }: {
   readonly row: TranscriptEntry;
   /**
@@ -234,7 +283,18 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   readonly pendingApprovals?: ReadonlyMap<string, string>;
   /** True only for the newest assistant avatar in the currently active turn. */
   readonly agentWorking?: boolean;
+  /**
+   * Per-message feedback identifiers (G7); both omitted = no affordance.
+   * Two PRIMITIVES rather than one object so the memo boundary's shallow
+   * comparison keeps holding at streaming rate (owner decree 2026-08-03).
+   */
+  readonly feedbackSessionId?: string;
+  readonly feedbackMessageKey?: string;
 }): JSX.Element {
+  const feedbackContext: MessageFeedbackContext | undefined =
+    feedbackSessionId !== undefined && feedbackMessageKey !== undefined
+      ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
+      : undefined;
   switch (row.variant) {
     case "user":
       return (
@@ -257,6 +317,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           </div>
           {/* Same C2 human-caption register as the assistant stamp. */}
           <span className="vex-micro mt-1 flex items-center justify-end gap-2 tabular-nums">
+            {feedbackContext !== undefined ? (
+              <FeedbackMessageAction context={feedbackContext} />
+            ) : null}
             <CopyMessageAction text={row.content} />
             <span className="text-[var(--vex-text-3)]">You</span>
             <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
@@ -271,7 +334,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           className="relative pl-9"
         >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption createdAt={row.createdAt} copyText={row.content} />
+          <AssistantCaption
+            createdAt={row.createdAt}
+            copyText={row.content}
+            feedback={feedbackContext}
+          />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
         </div>
@@ -285,7 +352,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           className="relative pl-9"
         >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption createdAt={row.createdAt} copyText={row.content} />
+          <AssistantCaption
+            createdAt={row.createdAt}
+            copyText={row.content}
+            feedback={feedbackContext}
+          />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">

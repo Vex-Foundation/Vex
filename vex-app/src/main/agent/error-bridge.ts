@@ -19,9 +19,12 @@
  * SDK upgrade that introduces a new class drops the event rather than
  * smuggling an unknown token into the renderer.
  *
- * NO PROSE CROSSES HERE. There is no message field to forward — by
- * construction, at every layer. The human-readable provider message stays in
- * the logs and in `mission_runs` evidence, server-side.
+ * ONE SANITIZED PROSE FIELD CROSSES HERE (owner decree 2026-08-02). The raw
+ * in-process `detail` goes through `sanitizeEngineErrorDetail` - URLs, bearer
+ * tokens, sk- keys and long hex stripped, length capped - so the renderer can
+ * say what actually happened without ever seeing a secret. Everything else
+ * remains bounded codes; the unsanitized message stays in the logs and in
+ * `mission_runs` evidence, server-side.
  *
  * Import discipline: the bus is imported DIRECTLY from `error-bus.js`, not the
  * engine barrel, which would pull the DB client into the main-process graph at
@@ -29,7 +32,11 @@
  */
 
 import { EV } from "@shared/ipc/channels.js";
-import { classifyEngineFailure } from "@shared/engine-error-classification.js";
+import {
+  classifyEngineFailure,
+  classifyEngineRemedy,
+} from "@shared/engine-error-classification.js";
+import { sanitizeEngineErrorDetail } from "@shared/engine-error-sanitizer.js";
 import {
   ENGINE_ERROR_EVENT_TYPE,
   engineErrorClassSchema,
@@ -63,12 +70,13 @@ export function toRendererEngineError(
   // Defensive: the bus is typed, but this bridge is the trust boundary.
   if (event === null || typeof event !== "object") return null;
 
-  const category = classifyEngineFailure({
+  const signals = {
     errorType: event.errorType,
     errorClass: event.errorClass,
     statusCode: event.statusCode,
     causeCode: event.causeCode,
-  });
+  };
+  const category = classifyEngineFailure(signals);
 
   return {
     type: ENGINE_ERROR_EVENT_TYPE,
@@ -88,6 +96,10 @@ export function toRendererEngineError(
     retryAfterSeconds: event.retryAfterSeconds,
     occurredAt: event.occurredAt,
     correlationId: event.correlationId,
+    // THE sanitizing seam (owner decree 2026-08-02): the raw in-process
+    // message becomes renderer-safe prose here, or null - never verbatim.
+    detail: sanitizeEngineErrorDetail(event.detail),
+    remedy: classifyEngineRemedy(signals),
   };
 }
 

@@ -49,6 +49,8 @@ function memoryFailure(over: Partial<EngineErrorEvent> = {}): EngineErrorEvent {
     retryAfterSeconds: null,
     occurredAt: "2026-07-29T10:00:00.000Z",
     correlationId: null,
+    detail: null,
+    remedy: null,
     ...over,
   };
 }

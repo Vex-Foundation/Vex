@@ -41,7 +41,7 @@ import {
 import { loadArchivedPrefix } from "./archived-prefix.js";
 import { callChunkerLLM } from "./chunker-call.js";
 import { emitCompactWorkerPermanentlyFailedBug } from "./bug-emit.js";
-import { emitEngineError } from "../runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
 import { processChunkerOutput } from "./chunk-processing.js";
 import { shouldEmitHeartbeatFailure } from "./heartbeat-rate-limit.js";
@@ -313,9 +313,9 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       // channel existed this produced a bug report and a log line and nothing
       // the window could render.
       //
-      // Bounded codes only — `errorMsg` is raw provider/exception text and
-      // stays in the bug report, server-side. `readMissionErrorSignal` reads
-      // own-properties only and never walks `.cause`.
+      // Codes plus the raw message as `detail` - sanitized at the main-side
+      // bridge before it can reach the renderer (owner decree 2026-08-02).
+      // `readMissionErrorSignal` reads own-properties only, never `.cause`.
       const signal = readMissionErrorSignal(err);
       emitEngineError({
         sessionId: job.sessionId,
@@ -325,6 +325,7 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
         statusCode: signal.status,
         causeCode: signal.causeCode,
         retryAfterSeconds: signal.retryAfterSeconds,
+        detail: errorDetailOf(err),
       });
       await emitCompactWorkerPermanentlyFailedBug({
         jobId: job.id,

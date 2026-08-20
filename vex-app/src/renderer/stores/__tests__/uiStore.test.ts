@@ -34,6 +34,7 @@ function resetStoreToDefaults(): void {
     createSessionInitialTurn: null,
     reviewModal: "none",
     hideDustBalances: true,
+      notificationsEnabled: true,
     bookSectionOrder: [],
   });
 }
@@ -118,6 +119,42 @@ describe("uiStore", () => {
     );
     await useUiStore.persist.rehydrate();
     expect(useUiStore.getState().hideDustBalances).toBe(true);
+  });
+
+  it("migrate v10→v11 seeds notificationsEnabled TRUE for a pre-v11 install (no field yet)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { sidebarOpen: true, bookOpen: true, themePreference: "chronos" },
+        version: 10,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(true);
+  });
+
+  it("coerces a non-boolean persisted notificationsEnabled to true on rehydrate (a tampered payload can never reach the notify path)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { notificationsEnabled: "yes please" },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(true);
+  });
+
+  it("a persisted notificationsEnabled FALSE survives rehydrate - the opt-out sticks", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { notificationsEnabled: false },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
   });
 
   it("coerces a non-boolean persisted hideDustBalances to true on rehydrate (tampered localStorage must not crash the shell)", async () => {
@@ -240,6 +277,7 @@ describe("uiStore", () => {
       bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
+      notificationsEnabled: true,
       prologueVersion: null,
       bookSectionOrder: [],
     });
@@ -486,6 +524,7 @@ describe("uiStore", () => {
       bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
+      notificationsEnabled: true,
       prologueVersion: null,
       bookSectionOrder: [],
     });

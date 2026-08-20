@@ -39,6 +39,8 @@ export interface TurnIslandView {
   readonly tone: "neutral" | "accent" | "pin" | "error";
   /** Classified error explanation (error state only) — fixed copy, never the trace. */
   readonly errorBody?: string;
+  /** Sanitized real cause from the stream error delta (error state only). */
+  readonly errorDetail?: string;
   /** Whether any in-island motion may run at all (the freeze kills it). */
   readonly animated: boolean;
   /** Whether the elapsed m:ss counter is mounted. */
@@ -112,6 +114,9 @@ export function resolveTurnIslandView(
       size: "row",
       label: copy.title,
       errorBody: copy.body,
+      // The sanitized REAL cause (decree 2026-08-02) rides beside the fixed
+      // copy - already stripped of secrets at the main bridge.
+      ...(preview.errorDetail !== null ? { errorDetail: preview.errorDetail } : {}),
       tone: "error",
       animated: false,
       showElapsed: false,
