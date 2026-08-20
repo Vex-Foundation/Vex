@@ -41,6 +41,7 @@ import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
 import { PortfolioRefreshButton } from "./PortfolioRefreshButton.js";
+import { hasUnpricedHoldings } from "./portfolio/valuation.js";
 
 export function PositionBlock({
   activeSessionId,
@@ -161,6 +162,7 @@ function TotalFigure({
   readonly portfolio: PortfolioDto;
 }): JSX.Element {
   const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
+  const partial = hasUnpricedHoldings(portfolio.tokens);
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start justify-between gap-2">
@@ -169,9 +171,21 @@ function TotalFigure({
       </div>
       {/* Serif is rationed to this ONE display figure (typography law, C2). */}
       <span className="font-serif text-[34px] leading-none tracking-[-0.01em] tabular-nums text-foreground">
-        {formatUsd(liveTotalUsd)}
+        <span>{formatUsd(liveTotalUsd)}</span>
+        {partial ? (
+          <span
+            className="ml-0.5 font-mono text-[13px] text-[var(--vex-text-3)]"
+            aria-label="Partial valuation"
+          >
+            +
+          </span>
+        ) : null}
       </span>
-      {snapshotTotalUsd !== null ? (
+      {partial ? (
+        <span className="font-mono text-[10px] text-[var(--vex-text-3)]">
+          partial · unpriced assets excluded
+        </span>
+      ) : snapshotTotalUsd !== null ? (
         <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-[var(--vex-text-3)]">
           <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
           {pnlVsPrev !== null ? (

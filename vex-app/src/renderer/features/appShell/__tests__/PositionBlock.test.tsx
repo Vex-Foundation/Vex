@@ -221,6 +221,10 @@ describe("PositionBlock zero-balance display", () => {
     expect(screen.getByText("ETH")).not.toBeNull();
     expect(screen.getByText("0.005 ETH")).not.toBeNull();
     expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByLabelText("Partial valuation")).not.toBeNull();
+    expect(
+      screen.getByText("partial · unpriced assets excluded"),
+    ).not.toBeNull();
     expect(screen.queryByText("$0.00")).toBeNull();
     expect(screen.queryByText("No priced balances.")).toBeNull();
     expect(container.querySelectorAll("li")).toHaveLength(1);

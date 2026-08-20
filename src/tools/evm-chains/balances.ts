@@ -21,14 +21,11 @@
 
 import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
-import { getDexScreenerClient } from "../dexscreener/client.js";
 import { ERC20_READ_ABI } from "./erc20-reads.js";
 import { getLocalPublicClient } from "./evm-client.js";
 import type { LocalChainConfig } from "./registry.js";
+import { fetchEvmTokenPricesByAddress } from "./token-prices.js";
 import logger from "../../utils/logger.js";
-
-/** DexScreener tokens/v1 caps at 30 addresses per request. */
-const DEXSCREENER_TOKENS_BATCH = 30;
 
 interface TokenMeta {
   decimals: number;
@@ -95,7 +92,10 @@ export async function readLocalChainBalances(
   const meta = await loadTokenMetadata(client, config.id, tokenAddrs);
   const balances = await readErc20Balances(client, walletAddress, tokenAddrs);
   const nativeWei = await client.getBalance({ address: getAddress(walletAddress) });
-  const priceByLower = await fetchPricesByLowerAddress(config, tokenAddrs);
+  const priceByLower = await fetchEvmTokenPricesByAddress({
+    chainSlug: config.dexscreenerSlug,
+    tokenAddresses: tokenAddrs,
+  });
 
   const wrappedNativeLower = config.seedTokens
     .find((token) => token.label.toUpperCase() === `W${config.nativeCurrency.symbol.toUpperCase()}`)
@@ -186,66 +186,6 @@ async function readErc20Balances(
     }
   }
   return result;
-}
-
-// ── Pricing ─────────────────────────────────────────────────────────
-
-/**
- * Best-liquidity DexScreener USD price per token (lowercase address → price).
- * See the module doc for the base-vs-quote-side pricing rule. Fail-soft: any
- * error (incl. a chain slug DexScreener doesn't index) yields an empty map,
- * and priceless tokens simply keep a null USD value downstream.
- */
-async function fetchPricesByLowerAddress(
-  config: LocalChainConfig,
-  tokenAddrs: readonly `0x${string}`[],
-): Promise<Map<string, number>> {
-  const priceByLower = new Map<string, number>();
-  if (tokenAddrs.length === 0) return priceByLower;
-
-  const wanted = new Set(tokenAddrs.map((address) => address.toLowerCase()));
-  // Track the deepest liquidity seen per token so the chosen price is the
-  // best-liquidity venue rather than an arbitrary pair (both sides compete
-  // through the same comparison — the deepest pool wins regardless of side).
-  const bestLiquidity = new Map<string, number>();
-  const consider = (lower: string, price: number, liquidity: number): void => {
-    if (!Number.isFinite(price) || price < 0) return;
-    if (!priceByLower.has(lower) || liquidity > (bestLiquidity.get(lower) ?? -Infinity)) {
-      priceByLower.set(lower, price);
-      bestLiquidity.set(lower, liquidity);
-    }
-  };
-
-  const client = getDexScreenerClient();
-  for (let i = 0; i < tokenAddrs.length; i += DEXSCREENER_TOKENS_BATCH) {
-    const batch = tokenAddrs.slice(i, i + DEXSCREENER_TOKENS_BATCH);
-    try {
-      const pairs = await client.getTokens(config.dexscreenerSlug, batch.join(","));
-      for (const pair of pairs) {
-        if (pair.priceUsd == null) continue;
-        const priceUsd = Number(pair.priceUsd);
-        if (!Number.isFinite(priceUsd) || priceUsd < 0) continue;
-        const liquidity = pair.liquidity?.usd ?? 0;
-
-        const base = pair.baseToken?.address?.toLowerCase();
-        if (base && wanted.has(base)) consider(base, priceUsd, liquidity);
-
-        const quote = pair.quoteToken?.address?.toLowerCase();
-        if (quote && wanted.has(quote)) {
-          const priceNative = Number(pair.priceNative);
-          if (Number.isFinite(priceNative) && priceNative > 0) {
-            consider(quote, priceUsd / priceNative, liquidity);
-          }
-        }
-      }
-    } catch (err) {
-      logger.debug("evm_chains.balances.price_batch_failed", {
-        slug: config.dexscreenerSlug,
-        error: err instanceof Error ? err.name : "unknown",
-      });
-    }
-  }
-  return priceByLower;
 }
 
 /** Test-only: clear the in-process metadata cache. */
