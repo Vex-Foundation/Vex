@@ -16,9 +16,9 @@
  *     before opening (the trigger).
  *
  * CSP: NO inline `style` attributes anywhere. Every effect is Tailwind
- * + classes from `globals.css`. Backdrop styling rides on the native
- * `::backdrop` pseudo-element via a Tailwind arbitrary variant
- * `backdrop:bg-...` so we don't need a separate sibling div.
+ * + classes from `globals.css`. Backdrop styling (mask + blur) rides on the
+ * native `::backdrop` pseudo-element via the `.vex-dialog` rules in
+ * `global-css/ui-primitives.css`, so we don't need a separate sibling div.
  *
  * Sub-components mirror shadcn naming so application code reads the
  * same as the rest of the project (`<DialogContent>`, `<DialogHeader>`,
@@ -216,29 +216,17 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // Center the dialog box itself — keeps backdrop-target clicks
           // on the dialog element, not the inner content (so the
           // currentTarget check above is reliable).
-          "fixed inset-0 m-auto max-h-[85vh] w-full max-w-md overflow-hidden",
-          // Brand chrome (Chronos glass, owner correction round 2026-07-20):
-          // floating glass surface — translucent ink + backdrop-blur carries
-          // legibility, a static grain overlay decorates (never a filter on
-          // content — the previous DistortedGlass displacement filter warped
-          // dialog text and is retired), and the white/10 hairline +
-          // rounded-2xl mark it as a floating surface. The rgba fallbacks
-          // keep dialogs identical OUTSIDE the shell scope (wizard/unlock),
-          // where the --vex-* tokens are undefined.
-          "rounded-2xl border border-[var(--vex-line-strong,rgba(255,255,255,0.1))] bg-[var(--vex-glass-strong,rgba(11,15,29,0.82))] p-0 text-card-foreground shadow-none backdrop-blur-xl",
-          "backdrop:bg-black/70 backdrop:backdrop-blur-none",
+          "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden",
+          // Tokens-v2 chrome: solid layer-2 card, the system's boldest
+          // radius (24), lv3 elevation (its 1px layer draws the edge on
+          // dark). The backdrop mask + blur ride the .vex-dialog class in
+          // ui-primitives.css (native ::backdrop pseudo-element).
+          "vex-dialog rounded-[24px] border border-line-1 bg-surface-2 p-0 text-ink-primary shadow-lv3",
           "open:flex open:flex-col",
           className,
         )}
         {...rest}
       >
-        {/* Decorative static grain over the panel — an empty overlay (no
-         * filter, no defs), so it works identically in wizard/unlock dialogs
-         * mounted outside the shell. -z-10 keeps it under the content. */}
-        <div
-          aria-hidden
-          className="vex-noise vex-noise--panel pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
-        />
         {children}
       </dialog>
     );
@@ -253,7 +241,9 @@ export const DialogHeader = forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex shrink-0 flex-col gap-1.5 border-b border-border px-6 py-4",
+      // Asymmetric header: 22 top / 14 right (close-control seat) / 12
+      // bottom / 24 left; no divider - whitespace separates.
+      "flex shrink-0 flex-col gap-1.5 pt-[22px] pr-3.5 pb-3 pl-6",
       className,
     )}
     {...props}
@@ -270,13 +260,9 @@ export const DialogTitle = forwardRef<
     <h2
       ref={ref}
       id={id ?? ctx.titleId}
-      // Brand modal title — the Chronos editorial serif (Instrument Serif),
-      // consistent across every dialog (2026-07-20 redesign; the mono stamp
-      // register is retired for dialog titles).
-      className={cn(
-        "font-serif text-[24px] font-normal leading-tight",
-        className,
-      )}
+      // Chrome register, weight capped at 500 (the serif voice is gate-only
+      // since the tokens-v2 rebrand).
+      className={cn("text-[16px] font-medium leading-6", className)}
       {...props}
     />
   );
@@ -292,7 +278,7 @@ export const DialogDescription = forwardRef<
     <p
       ref={ref}
       id={id ?? ctx.descriptionId}
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-ink-secondary", className)}
       {...props}
     />
   );
@@ -306,6 +292,7 @@ export const DialogBody = forwardRef<
   <div
     ref={ref}
     className={cn(
+      // 24px side padding keeps the 332px content column at max-w 380.
       "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5",
       className,
     )}
@@ -321,7 +308,7 @@ export const DialogFooter = forwardRef<
   <div
     ref={ref}
     className={cn(
-      "flex shrink-0 flex-row justify-end gap-2 border-t border-border px-6 py-3",
+      "flex shrink-0 flex-row justify-end gap-2 px-6 pt-3 pb-6",
       className,
     )}
     {...props}

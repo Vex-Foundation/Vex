@@ -175,9 +175,22 @@
   --vex-alias-state-error: var(--color-red-400);
   --vex-alias-state-error-wash: var(--color-red-900);
 
+  /* Input stroke: one step weaker than l2 in dark only - a full l2 stroke
+   * reads loud on the luminance ladder; celeris re-points this at l2. */
+  --vex-alias-border-input: rgba(255, 255, 255, 0.06);
+
+  /* Overlay masks: dialog/lightbox dim (mask-1) and the frosted drop sheet. */
+  --vex-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
+  --vex-alias-bg-mask-drop: rgba(14, 17, 29, 0.7);
+  /* Backdrop blur behind modal surfaces; paired with mask-1. */
+  --vex-mask-blur: blur(2px);
+
   /* Chrome plates: tooltips and toasts are DARK in both themes. */
   --vex-alias-tooltip-bg: var(--color-gray-800);
   --vex-alias-toast-bg: var(--color-gray-850);
+  /* Text painted on the theme-invariant dark chrome plates above; stays
+   * white in celeris too, so it lives only on :root. */
+  --vex-alias-label-on-chrome: #ffffff;
 
   /* Scrollbar tint pairs (consumed through the runtime indirection in
    * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
@@ -206,6 +219,10 @@
   --vex-alias-border-l2: rgba(10, 13, 24, 0.1);
   --vex-alias-border-l3: rgba(10, 13, 24, 0.12);
   --vex-alias-border-l4: rgba(10, 13, 24, 0.16);
+  --vex-alias-border-input: rgba(10, 13, 24, 0.1);
+
+  --vex-alias-bg-mask-1: rgba(10, 13, 24, 0.24);
+  --vex-alias-bg-mask-drop: rgba(255, 255, 255, 0.7);
 
   /* Celeris caption (#a7aec1) sits ~2:1 on white - below the readability
    * floor, so it serves disabled/decoration only; running metadata uses
@@ -272,6 +289,10 @@
   --color-line-2: var(--vex-alias-border-l2);
   --color-line-3: var(--vex-alias-border-l3);
   --color-line-4: var(--vex-alias-border-l4);
+  --color-line-input: var(--vex-alias-border-input);
+  --color-mask-1: var(--vex-alias-bg-mask-1);
+  --color-mask-drop: var(--vex-alias-bg-mask-drop);
+  --color-ink-on-chrome: var(--vex-alias-label-on-chrome);
 
   --color-accent-primary: var(--vex-alias-accent-primary);
   --color-accent-hover: var(--vex-alias-accent-hover);

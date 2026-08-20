@@ -166,19 +166,10 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
   },
-  {
-    // Owner decree 2026-07-20, Chronos glass law: the shared Dialog base
-    // (a shell primitive also scanned here) wears the same floating glass
-    // chrome — every modal is a Chronos glass surface per the approved
-    // Personalize mock.
-    file: "components/ui/dialog.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the Dialog " +
-      "base is a floating glass panel (translucent ink + backdrop-blur + " +
-      "grain, white/10 hairline, rounded-2xl). The ::backdrop dim itself " +
-      "stays blur-free (backdrop:backdrop-blur-none).",
-  },
+  // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
+  // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
+  // when the glass chrome retired, so the entry is deleted rather than
+  // kept as a stale sanction.
   {
     // Welcome Portfolio tab (approved harness plan v6, 2026-07-20): the
     // welcome stage's floating card stack (Overview / Wallets / Balances)
