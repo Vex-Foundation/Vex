@@ -1,67 +1,89 @@
-
 /* Self-hosted brand fonts (CSP font-src 'self'). Files live in
  * public/fonts/ so publicDir copies them verbatim into dist/renderer/fonts/
  * (license text ships alongside under fonts/licenses/, OFL 1.1).
  *
- * THE REGISTER (owner decree 2026-07-29 — the whitehouse.gov 2026 pair):
- *   - Instrument Serif = the VOICE. Prose (assistant/user/composer body copy)
- *     and display statements. See `.vex-reasoning-prose` in landing-motifs.css; body copy is sans (`.vex-chat-prose`).
- *   - Instrument Sans  = the SUPPORT. UI chrome, controls, small-caps micro
- *     labels (`.vex-eyebrow` / `.vex-micro`), and every scanned numeric column
- *     (with `tabular-nums`).
- *   - JetBrains Mono   = DEMOTED to strictly technical artifacts ONLY: code
- *     blocks, raw JSON args/output, addresses, tx hashes. It is no longer the
- *     micro-label face, and no new mono uppercase label may be introduced.
- * Instrument Sans + JetBrains Mono ship as single variable files (wght axis)
- * in latin + latin-ext subsets (latin-ext covers Polish diacritics).
- * `font-display: swap` avoids invisible text on first paint (matches the
- * splash budget). */
+ * THE REGISTER (rebrand 2026-08-20):
+ *   - Inter Tight     = UI chrome + reading face (variable wght 400-700,
+ *     normal + italic). Tokens --font-sans and --font-display.
+ *   - Doto            = dot-matrix display face for micro-labels, eyebrows
+ *     and statistics ONLY (variable wght 400-900). Token --font-doto.
+ *   - JetBrains Mono  = strictly technical artifacts: code blocks, raw JSON
+ *     args/output, addresses, tx hashes.
+ *   - Instrument Serif = the gate/brand voice only (static 400 + italic,
+ *     NO weight axis - see the note above its faces).
+ * All faces ship latin + latin-ext subsets (latin-ext covers Polish
+ * diacritics). `font-display: block` - fonts are local files with
+ * zero-latency loads, so blocking eliminates the fallback-swap flash. */
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("/fonts/instrument-sans-latin-wght.woff2") format("woff2");
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-latin-wght.woff2") format("woff2");
   font-weight: 400 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("/fonts/instrument-sans-latin-ext-wght.woff2") format("woff2");
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-latin-ext-wght.woff2") format("woff2");
   font-weight: 400 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("/fonts/instrument-sans-italic-latin-wght.woff2") format("woff2");
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-italic-latin-wght.woff2") format("woff2");
   font-weight: 400 700;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Instrument Sans";
-  src: url("/fonts/instrument-sans-italic-latin-ext-wght.woff2") format("woff2");
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-italic-latin-ext-wght.woff2") format("woff2");
   font-weight: 400 700;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+
+/* Doto - dot-matrix display face, the brand's "dot" signature. UPPERCASE
+ * micro-labels and numeric statistics only; never body copy. */
+@font-face {
+  font-family: "Doto";
+  src: url("/fonts/doto-latin-wght.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Doto";
+  src: url("/fonts/doto-latin-ext-wght.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @font-face {
   font-family: "JetBrains Mono";
   src: url("/fonts/jetbrains-mono-latin-wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
@@ -71,33 +93,23 @@
   src: url("/fonts/jetbrains-mono-latin-ext-wght.woff2") format("woff2");
   font-weight: 100 800;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Instrument Serif — the editorial display serif accent (© 2022 The
- * Instrument Serif Project Authors, OFL 1.1; license text ships in
- * fonts/licenses/).
- * Unlike the two brand families above, Instrument Serif has NO weight axis:
- * it ships as static 400 Regular + 400 Italic, so four subset WOFF2 files
- * (latin / latin-ext × normal / italic). Same subset unicode-ranges as the
- * others (latin-ext covers Polish diacritics), same `font-display: swap`.
- *
- * NO WEIGHT AXIS IS A HARD CONSTRAINT, not a footnote: any `font-weight`
- * above 400 on serif text is SYNTHESIZED (faked) by the browser. Every serif
- * subtree therefore sets `font-synthesis-weight: none` and expresses emphasis
- * with the ITALIC (see `.vex-reasoning-prose`, landing-motifs.css).
- *
- * This is the voice face of the register: prose and display statements. Never
- * a scanned numeric column — those are Instrument Sans + `tabular-nums`. */
+/* Instrument Serif - the gate/brand voice (OFL 1.1, license in
+ * fonts/licenses/). It has NO weight axis: static 400 Regular + 400 Italic
+ * only, so any `font-weight` above 400 would be SYNTHESIZED by the browser.
+ * Every serif subtree sets `font-synthesis-weight: none` and expresses
+ * emphasis with the italic. */
 @font-face {
   font-family: "Instrument Serif";
   src: url("/fonts/instrument-serif-latin.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
@@ -107,7 +119,7 @@
   src: url("/fonts/instrument-serif-latin-ext.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
@@ -117,7 +129,7 @@
   src: url("/fonts/instrument-serif-italic-latin.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
@@ -127,9 +139,8 @@
   src: url("/fonts/instrument-serif-italic-latin-ext.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-

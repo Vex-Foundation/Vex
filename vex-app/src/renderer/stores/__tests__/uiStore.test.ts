@@ -85,12 +85,12 @@ describe("uiStore", () => {
     expect(parsed.state.reviewModal).toBeUndefined();
   });
 
-  it("theme defaults to 'chronos' and stays in the persist whitelist", () => {
+  it("theme defaults to 'chronos'; the persisted slot is themePreference", () => {
     expect(useUiStore.getState().theme).toBe("chronos");
-    // The slot persists (so the planned `celeris` lands migration-free).
     useUiStore.getState().setSidebarOpen(false);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
-    expect(parsed.state.theme).toBe("chronos");
+    expect(parsed.state.themePreference).toBe("chronos");
+    expect("theme" in parsed.state).toBe(false);
   });
 
   it("migrate v2→v5 collapses the retired theme pair to 'chronos' without disturbing v2 fields", async () => {
@@ -234,7 +234,7 @@ describe("uiStore", () => {
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed.state).toEqual({
-      theme: "chronos",
+      themePreference: "chronos",
       sidebarOpen: true,
       bookOpen: true,
       hideDustBalances: true,
@@ -478,7 +478,7 @@ describe("uiStore", () => {
     const parsed = JSON.parse(raw!);
 
     expect(parsed.state).toEqual({
-      theme: "chronos",
+      themePreference: "chronos",
       sidebarOpen: false,
       bookOpen: true,
       hideDustBalances: true,

@@ -8,12 +8,11 @@
  *  - logBuffer is bounded to MAX_RENDER_LOGS to honor skill §11 (no
  *    unbounded buffers).
  *
- * Shell theme (`theme`) IS persisted (partialize whitelist below): today the
- * union holds only "chronos" (the dark Eclipse desk), but the slot and its
- * persistence survive so the planned "celeris" light theme lands without
- * another storage migration. It drives the `data-vex-theme` attribute on the
- * shell root. Everything else here stays UI-only per skill §5 (domain/IPC
- * data belongs in TanStack Query).
+ * Theme: the persisted slot is `themePreference` ("chronos" | "celeris" |
+ * "system"); `theme` is the RESOLVED value driving `data-vex-theme` on
+ * documentElement (runtime logic in uiStore/theme.ts; pre-paint twin in
+ * public/theme-boot.js). Everything else here stays UI-only per skill §5
+ * (domain/IPC data belongs in TanStack Query).
  */
 
 import { create } from "zustand";
@@ -27,14 +26,28 @@ const MAX_BOOK_SECTION_ENTRIES = 32;
 const MAX_BOOK_SECTION_ID_LENGTH = 32;
 
 /**
- * Shell colour theme. `chronos` = the dark Eclipse desk (Focused · Quiet ·
- * Precise) — currently the only theme; the planned light `celeris` (Bright ·
- * Clear · Fast, Aurora backdrop) will widen this union. App-wide by
- * construction — the value rides on the shell root's `data-vex-theme`
- * attribute. (The retired `vex`/`robinhood` pair coerces to `chronos` on
- * rehydrate.)
+ * Theme runtime types + logic live in the same-named sibling module
+ * (`uiStore/theme.ts`); re-exported so the store stays the single public
+ * entry point. `theme` is the RESOLVED value that rides on documentElement's
+ * `data-vex-theme`; `themePreference` is the persisted user choice
+ * ("system" tracks the OS scheme live).
  */
-export type VexTheme = "chronos";
+export type { VexTheme, VexThemePreference } from "./uiStore/theme.js";
+export type { RuntimeMode } from "./uiStore/runtime-mode.js";
+
+import {
+  applyThemeToDocument,
+  bindSystemThemeListener,
+  coerceThemePreference,
+  resolveTheme,
+  systemPrefersDark,
+  type VexTheme,
+  type VexThemePreference,
+} from "./uiStore/theme.js";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type RuntimeMode,
+} from "./uiStore/runtime-mode.js";
 
 /**
  * Which mission/plan review dialog (if any) the DESK RULE header cluster
@@ -105,12 +118,12 @@ export interface CreateSessionInitialTurn {
 }
 
 interface UiState {
-  /**
-   * Shell colour theme, persisted (see the VexTheme doc — the slot outlives
-   * the single-value union so the planned `celeris` lands migration-free).
-   * Defaults to `chronos`.
-   */
+  /** Resolved shell theme = f(themePreference, OS scheme). NOT persisted. */
   readonly theme: VexTheme;
+  /** Persisted theme choice; "system" re-resolves on OS scheme changes. */
+  readonly themePreference: VexThemePreference;
+  /** vex-studio seam: no UI logic reads this yet. NOT persisted. */
+  readonly runtimeMode: RuntimeMode;
   readonly sidebarOpen: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
@@ -221,6 +234,8 @@ interface UiState {
    * whitelist and never crosses IPC (the `prologueVersion` doctrine).
    */
   readonly bookSectionOrder: readonly string[];
+  /** Set the theme choice: resolves + writes documentElement in one step. */
+  readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
@@ -297,7 +312,14 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      theme: "chronos",
+      theme: resolveTheme("chronos", systemPrefersDark()),
+      themePreference: "chronos",
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      setThemePreference: (themePreference) => {
+        const theme = resolveTheme(themePreference, systemPrefersDark());
+        applyThemeToDocument(theme);
+        set({ themePreference, theme });
+      },
       sidebarOpen: true,
       bookOpen: true,
       currentView: "splash",
@@ -379,10 +401,16 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 8,
+      version: 9,
+      // Re-stamp the document root once the coerced, resolved theme is
+      // known - theme-boot.js painted the pre-bundle frame from the RAW
+      // payload, and a tampered value must not survive on <html>.
+      onRehydrateStorage: () => (state) => {
+        if (state !== undefined) applyThemeToDocument(state.theme);
+      },
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        theme: state.theme,
+        themePreference: state.themePreference,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
         hideDustBalances: state.hideDustBalances,
@@ -432,19 +460,32 @@ export const useUiStore = create<UiState>()(
         if (version < 8 && !("bookSectionOrder" in next)) {
           next = { ...next, bookSectionOrder: [] };
         }
+        //   v9: `theme` (always "chronos") became `themePreference`
+        //       ("chronos" | "celeris" | "system"). Seed from the old key
+        //       through the coercion so every historical value (including
+        //       the retired "vex"/"robinhood") lands on a legal preference.
+        if (version < 9) {
+          next = { ...next, themePreference: coerceThemePreference(next["theme"]) };
+        }
         return next;
       },
       // localStorage is user-writable (untrusted input), and `migrate` only
       // runs on version hops — a hand-edited current-version payload skips it.
-      // Coerce on EVERY rehydrate: any off-union `theme` (including the
-      // retired "vex"/"robinhood" values) degrades to "chronos" instead of
-      // reaching `data-vex-theme` with an unknown value.
+      // Coerce on EVERY rehydrate: any off-union `themePreference` (including
+      // the retired "vex"/"robinhood" values) degrades to the default instead
+      // of reaching `data-vex-theme` with an unknown value.
       merge: (persisted, current) => {
         const incoming =
           persisted !== null && typeof persisted === "object"
             ? (persisted as Partial<UiState>)
             : undefined;
-        const theme: VexTheme = "chronos";
+        const themePreference = coerceThemePreference(
+          incoming?.themePreference,
+        );
+        const theme: VexTheme = resolveTheme(
+          themePreference,
+          systemPrefersDark(),
+        );
         // Same coercion for the dust filter: anything that is not a boolean
         // degrades to the TRUE default, never a crash or a stray non-boolean
         // reaching the checkbox's `checked` prop.
@@ -480,6 +521,7 @@ export const useUiStore = create<UiState>()(
           ...current,
           ...incoming,
           theme,
+          themePreference,
           hideDustBalances,
           prologueVersion,
           bookSectionOrder,
@@ -488,3 +530,17 @@ export const useUiStore = create<UiState>()(
     }
   )
 );
+
+// Keep the document root current: theme-boot.js painted the pre-bundle
+// frame from raw localStorage; once the store has rehydrated (synchronous
+// with localStorage), its coerced resolution is authoritative. The system
+// listener re-resolves a "system" preference live; an explicit preference
+// ignores OS changes by construction (resolveTheme). Both are no-ops in
+// environments without a DOM/matchMedia (tests).
+applyThemeToDocument(useUiStore.getState().theme);
+bindSystemThemeListener((prefersDark) => {
+  const { themePreference } = useUiStore.getState();
+  const theme = resolveTheme(themePreference, prefersDark);
+  applyThemeToDocument(theme);
+  useUiStore.setState({ theme });
+});

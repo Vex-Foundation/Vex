@@ -171,6 +171,12 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
 check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTML/eval in our code", () => {
   const srcDir = path.join(root, "src", "renderer");
   if (!existsSync(srcDir)) throw new Error(`missing: ${srcDir}`);
+  // The pre-paint theme stamp reads (never writes) the Zustand persist
+  // payload before the bundle loads; CSP forbids inlining it. This is the
+  // ONE sanctioned localStorage reader outside the persist middleware.
+  const SANCTIONED_LOCALSTORAGE_FILES = new Set([
+    path.join(srcDir, "public", "theme-boot.js"),
+  ]);
   const violations = [];
   const walk = (dir) => {
     for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -186,7 +192,10 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
         walk(full);
       } else if (/\.(tsx?|jsx?|mts|cts)$/.test(ent.name)) {
         const src = readFileSync(full, "utf8");
-        if (/\blocalStorage\.(setItem|getItem|removeItem)\b/.test(src)) {
+        if (
+          /\blocalStorage\.(setItem|getItem|removeItem)\b/.test(src) &&
+          !SANCTIONED_LOCALSTORAGE_FILES.has(full)
+        ) {
           violations.push(`${full}: uses localStorage (allowed only via Zustand persist whitelist)`);
         }
         if (/\bsessionStorage\.(setItem|getItem|removeItem)\b/.test(src)) {

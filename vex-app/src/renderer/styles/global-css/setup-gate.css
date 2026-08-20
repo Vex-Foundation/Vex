@@ -318,9 +318,14 @@
   background: color-mix(in oklab, var(--color-accent-primary) 75%, transparent);
   background-clip: content-box;
 }
-[data-vex-gate="true"] {
-  scrollbar-color: color-mix(in oklab, var(--color-accent-primary) 45%, transparent)
-    transparent;
+/* Standard-property fallback gated off WebKit engines - see the measured
+ * Chromium drop-behavior note in scrollbars.css. */
+@supports not selector(::-webkit-scrollbar) {
+  [data-vex-gate="true"],
+  [data-vex-gate="true"] * {
+    scrollbar-color: color-mix(in oklab, var(--color-accent-primary) 45%, transparent)
+      transparent;
+  }
 }
 
 /* Vignette — still a whisper of depth toward the edges, but inverted in

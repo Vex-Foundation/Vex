@@ -10,40 +10,43 @@
  * (.vex-select-beam, global-css/landing-motifs.css). Pinned by
  * features/appShell/__tests__/shell-design-guard.test.ts. */
 [data-vex-shell="true"] {
-  /* canvas + 3-layer luminance model (landing ink scale) */
-  --vex-surface-0: #0a0d18; /* canvas — the landing --ink */
-  --vex-surface-1: #0b0f1d; /* working panel: sidebar rail, composer, cards */
-  --vex-surface-2: #11162a; /* raised/active: popovers, expanded tool bodies */
-  --vex-surface-down: #060810; /* recessed: code blocks, args/output wells */
+  /* Canvas + 3-layer luminance model. The --vex-* NAMES are the shell's
+   * stable consumer contract; the VALUES resolve to the tokens.css alias
+   * tier so both themes re-point them (tokens v2, 2026-08-20). */
+  --vex-surface-0: var(--vex-alias-bg-base); /* canvas */
+  --vex-surface-1: var(--vex-alias-bg-layer-1); /* working panel: rails, cards */
+  --vex-surface-2: var(--vex-alias-bg-layer-2); /* raised/active: popovers */
+  --vex-surface-down: var(--vex-alias-bg-deep); /* recessed: code wells */
   /* hairlines — layering is luminance step + hairline, never shadow */
-  --vex-line: rgba(255, 255, 255, 0.06);
-  --vex-line-strong: rgba(255, 255, 255, 0.1);
+  --vex-line: var(--vex-alias-border-l1);
+  --vex-line-strong: var(--vex-alias-border-l2);
   /* text — re-pins the global trio; NEVER opacity-stacked */
-  --vex-text: #f3f4f7; /* all body/content — the landing paper */
-  --vex-text-2: #c9cdd8; /* true metadata only (timestamps, sublines) */
-  --vex-text-3: #939aad; /* placeholders, disabled, group headers */
-  /* accent scale — the ONLY blue family in the shell */
-  --vex-accent: #1f44ff;
-  --vex-accent-hover: color-mix(in oklab, #1f44ff 82%, white);
-  --vex-accent-active: color-mix(in oklab, #1f44ff 85%, black);
-  --vex-accent-text: color-mix(in oklab, #1f44ff 55%, white);
-  --vex-accent-border: color-mix(in oklab, #1f44ff 55%, transparent);
-  --vex-accent-border-strong: color-mix(in oklab, #1f44ff 85%, transparent);
-  --vex-accent-fill-8: color-mix(in oklab, #1f44ff 8%, transparent);
-  --vex-accent-fill-12: color-mix(in oklab, #1f44ff 12%, transparent);
+  --vex-text: var(--vex-alias-label-primary);
+  --vex-text-2: var(--vex-alias-label-secondary);
+  --vex-text-3: var(--vex-alias-label-tertiary);
+  /* accent scale — the ONLY blue family in the shell (root #0000c0 family:
+   * chronos interactive = blue-400, celeris = blue-700) */
+  --vex-accent: var(--vex-alias-accent-primary);
+  --vex-accent-hover: var(--vex-alias-accent-hover);
+  --vex-accent-active: color-mix(in oklab, var(--vex-alias-accent-primary) 85%, black);
+  --vex-accent-text: var(--vex-alias-accent-primary);
+  --vex-accent-border: color-mix(in oklab, var(--vex-alias-accent-primary) 55%, transparent);
+  --vex-accent-border-strong: color-mix(in oklab, var(--vex-alias-accent-primary) 85%, transparent);
+  --vex-accent-fill-8: color-mix(in oklab, var(--vex-alias-accent-primary) 8%, transparent);
+  --vex-accent-fill-12: color-mix(in oklab, var(--vex-alias-accent-primary) 12%, transparent);
   /* Foreground on a SOLID accent fill (text, icon, knob, dot painted directly
    * on `--vex-accent`). White reads on the dark cobalt fill; a future
    * light-accent theme scope would flip this to ink. Every shell element
    * that sits on a solid accent surface reads this token instead of a raw
    * `white`, so a theme flip carries the contrast automatically. */
-  --vex-accent-contrast: #ffffff;
+  --vex-accent-contrast: var(--vex-alias-label-on-accent);
   /* pin flag — tokenized warm semantic; the landing's alert amber
    * (#ffce5a, .ws-alert-t). A sanctioned NON-blue status (like
    * success/warning/danger), deliberately outside the single accent family. */
-  --vex-pin: #ffce5a;
-  --vex-pin-border: color-mix(in oklab, #ffce5a 40%, transparent);
-  --vex-pin-fill: color-mix(in oklab, #ffce5a 10%, transparent);
-  --vex-pin-fill-hover: color-mix(in oklab, #ffce5a 16%, transparent);
+  --vex-pin: var(--vex-alias-state-warn);
+  --vex-pin-border: color-mix(in oklab, var(--vex-alias-state-warn) 40%, transparent);
+  --vex-pin-fill: color-mix(in oklab, var(--vex-alias-state-warn) 10%, transparent);
+  --vex-pin-fill-hover: color-mix(in oklab, var(--vex-alias-state-warn) 16%, transparent);
   /* compaction permanently-failed text — danger family (unrecoverable). */
   --vex-warn-text: color-mix(in oklab, var(--color-danger) 70%, white);
   /* Glass instrument surface — user-sanctioned translucent ink for the
@@ -118,9 +121,15 @@
 [data-vex-shell="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
-[data-vex-shell="true"] {
-  scrollbar-color: color-mix(in oklab, var(--vex-accent) 38%, transparent)
-    transparent;
-  scrollbar-width: thin;
+/* Standard-property fallback ONLY where the webkit pseudo-elements do not
+ * exist: a non-auto scrollbar-color makes Chromium drop every
+ * ::-webkit-scrollbar* rule above, hover included (scrollbars.css gate). */
+@supports not selector(::-webkit-scrollbar) {
+  [data-vex-shell="true"],
+  [data-vex-shell="true"] * {
+    scrollbar-color: color-mix(in oklab, var(--vex-accent) 38%, transparent)
+      transparent;
+    scrollbar-width: thin;
+  }
 }
 
