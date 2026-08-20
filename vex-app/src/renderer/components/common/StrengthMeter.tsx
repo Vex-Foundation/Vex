@@ -44,7 +44,7 @@ const LABEL_TEXT: Record<PasswordStrengthLabel, string> = {
 };
 
 const LABEL_COLOR: Record<PasswordStrengthLabel, string> = {
-  weak: "bg-destructive",
+  weak: "bg-danger",
   fair: "bg-warning",
   good: "bg-success",
   strong: "bg-success",
@@ -80,17 +80,17 @@ export function StrengthMeter({
   return (
     <div id={id} className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">
+        <span className="text-ink-tertiary">
           10 characters minimum. Must score at least &quot;Good&quot;.
         </span>
-        <span className="vex-micro text-muted-foreground">
+        <span className="vex-micro text-ink-tertiary">
           {labelText}
         </span>
       </div>
-      {/* Empty track is a quiet white-alpha well — never an ink slab. */}
+      {/* Empty track is the quiet skeleton well token — never an ink slab. */}
       <div
         aria-hidden
-        className="h-1 w-full overflow-hidden rounded-full bg-white/[0.10]"
+        className="h-1 w-full overflow-hidden rounded-full bg-surface-skeleton"
       >
         <div
           className={cn(
@@ -101,7 +101,7 @@ export function StrengthMeter({
         />
       </div>
       {feedbackText ? (
-        <p className="text-xs text-[var(--color-warning)]" role="status">
+        <p className="text-xs text-warning" role="status">
           {feedbackText}
         </p>
       ) : null}

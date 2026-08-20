@@ -20,10 +20,7 @@
  */
 
 import { useState, type JSX } from "react";
-import {
-  ArrowUpRightIcon,
-  VexIcon,
-} from "../../../../components/icons/index.js";
+import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
@@ -70,10 +67,10 @@ function DetailLine({
 }): JSX.Element {
   return (
     <div className="flex gap-2">
-      <span className="w-[92px] shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <span className="w-[92px] shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
         {label}
       </span>
-      <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-[var(--vex-text-2)]">
+      <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-secondary">
         {children}
       </span>
     </div>
@@ -132,7 +129,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
   // A plain <div>: the virtualized feed owns the <ul>/<li> structure, because
   // each row must sit in an absolutely-positioned measured wrapper.
   return (
-    <div className="border-b border-[var(--vex-line)] px-1 py-2">
+    <div className="border-b border-line-2 px-1 py-2">
       <div className="flex items-center gap-2">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <ProtocolMark mark={protocolMark} size={14} />
@@ -196,33 +193,33 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           />
         ) : null}
 
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-[var(--vex-text)]">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-ink-primary">
           <LegText
             amount={legAmountText(entry.input)}
             symbol={legSymbolText(entry.input)}
             estimated={estimated}
           />
-          <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+          <span className="shrink-0 text-ink-tertiary">→</span>
           <LegText
             amount={legAmountText(entry.output)}
             symbol={legSymbolText(entry.output)}
             estimated={estimated}
           />
           {estimated ? (
-            <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            <span className="shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
               est.
             </span>
           ) : null}
         </span>
 
         {usd !== null ? (
-          <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-[var(--vex-text)]">
+          <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-primary">
             {usd}
           </span>
         ) : null}
       </div>
 
-      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-ink-tertiary">
         {route !== null ? <span className="truncate">{route}</span> : null}
         {clock !== null ? <span className="shrink-0">{clock}</span> : null}
         {entry.explorerUrl !== null ? (
@@ -231,10 +228,10 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Open transaction on block explorer"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             TX
-            <VexIcon icon={ArrowUpRightIcon} size={11} aria-hidden />
+            <IconArrowUpRight size={11} />
           </a>
         ) : null}
         {hasDetail ? (
@@ -243,7 +240,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={`${open ? "Hide" : "Show"} details for this activity`}
-            className="ml-auto shrink-0 uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="ml-auto shrink-0 uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             {open ? "Hide" : "Details"}
           </button>
@@ -251,10 +248,10 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
       </div>
 
       {open ? (
-        <div className="mt-2 flex flex-col gap-1.5 rounded-lg border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2.5">
+        <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-line-1 bg-surface-1 px-3 py-2.5">
           {entry.failureCode !== null || entry.failureReason !== null ? (
             <DetailLine label="Failure">
-              <span className="text-[var(--vex-warn-text)]">
+              <span className="text-warning-label">
                 {entry.failureCode ?? "unknown"}
                 {entry.failureReason !== null ? ` — ${entry.failureReason}` : ""}
               </span>
@@ -264,7 +261,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             <DetailLine label="Vex fee">
               {fee}
               {feeUsd !== null ? (
-                <span className="text-[var(--vex-text-3)]"> ({feeUsd})</span>
+                <span className="text-ink-tertiary"> ({feeUsd})</span>
               ) : null}
             </DetailLine>
           ) : null}
@@ -317,9 +314,9 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
                 {entry.legs.map((leg, index) => (
                   <li
                     key={`${leg.role ?? "leg"}:${index}:${leg.txHash ?? "none"}`}
-                    className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+                    className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-ink-tertiary"
                   >
-                    <span className="inline-flex h-3.5 min-w-[92px] shrink-0 items-center justify-center rounded-[3px] border border-[var(--vex-line)] px-1 uppercase tracking-[0.14em]">
+                    <span className="inline-flex h-3.5 min-w-[92px] shrink-0 items-center justify-center rounded-[3px] border border-line-2 px-1 uppercase tracking-[0.14em]">
                       {leg.role ?? "leg"}
                     </span>
                     <span className="shrink-0">
@@ -329,7 +326,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
                       <span className="shrink-0">{leg.status}</span>
                     ) : null}
                     {leg.failureCode !== null ? (
-                      <span className="shrink-0 text-[var(--vex-warn-text)]">
+                      <span className="shrink-0 text-warning-label">
                         {leg.failureCode}
                       </span>
                     ) : null}
@@ -339,10 +336,10 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label={`Open ${leg.role ?? "leg"} on block explorer`}
-                        className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+                        className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
                       >
                         TX
-                        <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
+                        <IconArrowUpRight size={10} />
                       </a>
                     ) : null}
                   </li>

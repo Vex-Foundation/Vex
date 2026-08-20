@@ -44,7 +44,7 @@ export function LongMemorySection(): JSX.Element {
     <section data-vex-section="long-memory" className={SECTION}>
       <div>
         <h2 className="vex-eyebrow">Long-term memory</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           What the agent knows — durable lessons across all sessions. Sources,
           maturity, and statuses are shown so low-confidence entries are
           visible but labeled. The lifecycle is managed automatically by the
@@ -59,10 +59,10 @@ export function LongMemorySection(): JSX.Element {
             type="button"
             onClick={() => setStatus(f.value)}
             data-active={status === f.value}
-            className={`rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] ${
+            className={`rounded-[3px] px-2 py-1 font-doto text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
               status === f.value
-                ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-                : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
+                ? "bg-accent-wash text-accent-primary"
+                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             }`}
           >
             {f.label}
@@ -74,7 +74,7 @@ export function LongMemorySection(): JSX.Element {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search title / summary / kind"
           aria-label="Search long-term memory"
-          className="ml-auto min-w-[160px] flex-1 rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] px-2 py-1 text-xs text-foreground placeholder:text-[var(--vex-text-3)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]"
+          className="ml-auto min-w-[160px] flex-1 rounded-[6px] border border-line-3 bg-surface-1 px-2 py-1 text-xs text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary"
         />
       </div>
 
@@ -131,10 +131,10 @@ function LongMemoryRow({
     <li
       data-vex-long-memory-id={entry.id}
       data-status={entry.status}
-      className="border-b border-[var(--vex-line)] px-1 py-2 last:border-b-0"
+      className="border-b border-line-2 px-1 py-2 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-foreground">
+        <span className="truncate text-xs font-medium text-ink-primary">
           {entry.title}
         </span>
         <span className={PILL}>{entry.kind}</span>
@@ -151,13 +151,13 @@ function LongMemoryRow({
         <span
           data-vex-created
           title={entry.createdAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
         >
           {fmtDate(entry.createdAt)}
         </span>
       </div>
       {entry.summary.length > 0 ? (
-        <p className="mt-1 line-clamp-2 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 line-clamp-2 text-xs text-ink-secondary">
           {entry.summary}
         </p>
       ) : null}
@@ -166,7 +166,7 @@ function LongMemoryRow({
           {entry.tags.map((t) => (
             <span
               key={t}
-              className="rounded-[3px] px-1 py-0.5 font-mono text-[10px] text-[var(--vex-text-3)]"
+              className="rounded-[3px] px-1 py-0.5 font-mono text-[10px] text-ink-tertiary"
             >
               #{t}
             </span>

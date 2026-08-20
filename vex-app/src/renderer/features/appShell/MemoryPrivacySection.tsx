@@ -28,21 +28,21 @@ export function MemoryPrivacySection(): JSX.Element {
         <h2 className="vex-eyebrow">
           Memory &amp; privacy
         </h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           How Vex builds long-term memory, and what leaves your machine.
         </p>
       </div>
 
       <p
         data-vex-memory-model
-        className="text-xs text-[var(--vex-text-2)]"
+        className="text-xs text-ink-secondary"
       >
         {models.isLoading ? (
           "Checking the configured model…"
         ) : model !== null ? (
           <>
             Memory is built by{" "}
-            <span className="font-mono text-foreground">{model.modelId}</span>{" "}
+            <span className="font-mono text-ink-primary">{model.modelId}</span>{" "}
             via OpenRouter.
           </>
         ) : (
@@ -50,10 +50,10 @@ export function MemoryPrivacySection(): JSX.Element {
         )}
       </p>
 
-      <div className="flex flex-col gap-2 text-xs text-[var(--vex-text-2)]">
+      <div className="flex flex-col gap-2 text-xs text-ink-secondary">
         <p>
           When older messages are compacted into memory, Vex sends a{" "}
-          <span className="text-foreground">redacted</span> copy of that
+          <span className="text-ink-primary">redacted</span> copy of that
           archived transcript to your OpenRouter model. Before it leaves your
           machine, secrets — wallet seeds, private keys, API keys, and JWTs —
           are removed, and wallet/contract addresses and transaction hashes are
@@ -64,7 +64,7 @@ export function MemoryPrivacySection(): JSX.Element {
           support reports never include unredacted memory payloads: raw
           transcript text and embeddings are not attached to them.
         </p>
-        <p className="text-[var(--vex-text-3)]">
+        <p className="text-ink-tertiary">
           This runs automatically in the background (enabled by default).
         </p>
       </div>

@@ -115,11 +115,11 @@ function stepIndexFor(kind: PanelKind): number {
  * quiet. */
 const ICON_CIRCLE_CHROME = cn(
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-  "border border-[var(--color-border)] text-[var(--color-text-primary)]",
+  "border border-[var(--color-border)] text-ink-primary",
 );
 
 const META_CHROME = cn(
-  "flex items-center gap-3 vex-micro text-[var(--color-text-muted)]",
+  "flex items-center gap-3 vex-micro text-ink-tertiary",
 );
 
 function TrailingMeta({
@@ -145,9 +145,9 @@ function TrailingMeta({
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
-          "inline-flex items-center gap-1 text-[var(--color-text-secondary)] transition-colors",
-          "hover:text-[var(--color-text-primary)]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+          "inline-flex items-center gap-1 text-ink-secondary transition-colors",
+          "hover:text-ink-primary",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         )}
       >
         Your data stays yours
@@ -185,10 +185,10 @@ export function WizardStepPanel({
         <VexIcon icon={icon} size={20} aria-hidden />
       </span>
       <div className="flex flex-col gap-1.5 pt-0.5">
-        <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
+        <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
           {title}
         </h1>
-        <p className="vex-step-lede text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
           {description}
         </p>
       </div>

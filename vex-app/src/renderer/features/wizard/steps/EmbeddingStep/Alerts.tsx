@@ -29,17 +29,17 @@ export function EmbeddingAlerts({
   return (
     <>
       {validationError ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {validationError}
         </p>
       ) : null}
       {!isDimLocked && !isDbDown && serverError?.message ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {serverError.message}
         </p>
       ) : null}
       {advanceError ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {advanceError}
         </p>
       ) : null}

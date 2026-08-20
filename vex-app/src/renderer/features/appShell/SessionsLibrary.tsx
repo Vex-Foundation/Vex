@@ -13,11 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import {
-  CircleAlertIcon,
-  SearchIcon,
-  VexIcon,
-} from "../../components/icons/index.js";
+import { IconSearch, IconWarning } from "../../components/icons/index.js";
 import type {
   SessionDeleteOutcome,
   SessionListItem,
@@ -151,14 +147,14 @@ export function SessionsLibrary(): JSX.Element {
       <span
         aria-live="polite"
         aria-atomic="true"
-        className="text-[12.5px] text-[var(--vex-text-2)]"
+        className="text-[12.5px] text-ink-secondary"
       >
         {countLabel}
       </span>
 
       <div
         data-vex-sessions-library-toolbar
-        className="flex flex-wrap items-center gap-3 border-b border-[var(--vex-line)] pb-4"
+        className="flex flex-wrap items-center gap-3 border-b border-line-2 pb-4"
       >
         <div
           role="group"
@@ -173,10 +169,10 @@ export function SessionsLibrary(): JSX.Element {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setSessionModeFilter(filter.value)}
-                className={`rounded-[3px] px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] ${
+                className={`rounded-full px-2.5 py-1.5 font-doto text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
                   active
-                    ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-                    : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
+                    ? "bg-accent-wash text-accent-primary"
+                    : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
                 }`}
               >
                 {filter.label}
@@ -186,11 +182,9 @@ export function SessionsLibrary(): JSX.Element {
         </div>
 
         <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
-          <VexIcon
-            icon={SearchIcon}
+          <IconSearch
             size={14}
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--vex-text-3)]"
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-tertiary"
           />
           <input
             ref={searchRef}
@@ -199,7 +193,7 @@ export function SessionsLibrary(): JSX.Element {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search session titles"
             aria-label="Search session titles"
-            className="h-8 w-full rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] py-1 pl-8 pr-14 text-xs text-foreground placeholder:text-[var(--vex-text-3)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)]"
+            className="h-8 w-full rounded-xl border border-line-input bg-surface-1 py-1 pl-8 pr-14 text-xs text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary"
           />
           {searchActive ? (
             <button
@@ -208,7 +202,7 @@ export function SessionsLibrary(): JSX.Element {
                 setSearch("");
                 searchRef.current?.focus();
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+              className="absolute right-2 top-1/2 -translate-y-1/2 font-doto text-[10px] uppercase tracking-[0.12em] text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
             >
               Clear
             </button>
@@ -217,27 +211,27 @@ export function SessionsLibrary(): JSX.Element {
       </div>
 
       {query.isLoading ? (
-        <p className="text-sm text-[var(--vex-text-2)]">
+        <p className="text-sm text-ink-secondary">
           Loading sessions…
         </p>
       ) : query.data && query.data.ok === false ? (
-        <div className="flex items-center gap-2 rounded-[6px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <VexIcon icon={CircleAlertIcon} size={15} aria-hidden />
+        <div className="flex items-center gap-2 rounded-xl border border-line-2 bg-danger-wash px-3 py-2 text-sm text-danger">
+          <IconWarning size={15} />
           <span>{query.data.error.message}</span>
         </div>
       ) : totalRows === 0 ? (
-        <p className="text-sm text-[var(--vex-text-3)]">
+        <p className="text-sm text-ink-tertiary">
           Create a session from the sidebar to get started.
         </p>
       ) : visibleRows === 0 ? (
         <div className="flex flex-col items-start gap-2 py-3">
-          <p className="text-sm text-[var(--vex-text-2)]">
+          <p className="text-sm text-ink-secondary">
             No sessions match your current search and filters.
           </p>
           <button
             type="button"
             onClick={clearFilters}
-            className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="font-doto text-[11px] uppercase tracking-[0.14em] text-accent-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             Reset filters
           </button>

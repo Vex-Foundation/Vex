@@ -38,6 +38,7 @@ import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
 import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
 import { UpdateLayer } from "./features/updates/UpdateLayer.js";
+import { ToastHost } from "./components/ui/toast-host.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -145,6 +146,9 @@ export function App(): JSX.Element {
       {/* Global, view-independent: a user-triggered update prompt can appear
           over any screen. No-ops when the updater bridge is absent. */}
       <UpdateLayer />
+      {/* Single mount of both toast slots (transient + sticky). The update
+          layer and feature showToast callers all render through it. */}
+      <ToastHost />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
       {/* Diagnostic screen tour — renders only when VITE_VEX_SETUP_TOUR=1
           is baked into the build (owner request: view every pre-shell

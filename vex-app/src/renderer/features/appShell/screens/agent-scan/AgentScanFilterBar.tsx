@@ -117,22 +117,18 @@ export function toggleValue(
 }
 
 /**
- * REGISTER (C2): the chip stamp is Instrument Sans small caps, NOT mono —
- * mono is reserved for technical artifacts (code, raw JSON, addresses, tx
- * hashes), and no new mono uppercase label may be added anywhere. `.vex-micro`
- * is the class for this stamp, but it is UNLAYERED and therefore beats a
- * Tailwind `text-[…]` utility, so a call site that needs a size other than its
- * 10px default (these chips are 9px) spells the register out instead — the
- * `font-sans text-[9px] uppercase` pattern the composer pins use.
+ * Chip register: Inter Tight small caps for the interactive chips (Doto is
+ * reserved for the non-interactive eyebrow labels beside them); mono remains
+ * banned outside technical artifacts.
  */
 const CHIP_BASE =
-  "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-sans text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]";
+  "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-sans text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
 
 const CHIP_IDLE =
-  "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]";
+  "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary";
 
 const CHIP_ACTIVE =
-  "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]";
+  "border-accent-primary bg-accent-wash text-accent-primary";
 
 function FilterChip({
   label,
@@ -165,7 +161,7 @@ function FilterGroup({
 }): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="w-[58px] shrink-0 font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <span className="w-[58px] shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
         {label}
       </span>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
@@ -193,7 +189,7 @@ export function AgentScanFilterBar({
   return (
     <section
       aria-label="Filters"
-      className="flex flex-col gap-2 border-b border-[var(--vex-line)] pb-3"
+      className="flex flex-col gap-2 border-b border-line-1 pb-3"
     >
       <FilterGroup label="Kind">
         {AGENT_ACTIVITY_KINDS.map((kind) => (
@@ -272,7 +268,7 @@ export function AgentScanFilterBar({
             </span>
           ) : null}
           {active > 0 ? (
-            <span className="font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)]">
+            <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-accent-primary">
               {active} filter{active === 1 ? "" : "s"} active
             </span>
           ) : null}
@@ -282,7 +278,7 @@ export function AgentScanFilterBar({
             // Clear resets the user-chosen filters and PRESERVES the session
             // scope — clearing must not silently widen an audit feed.
             onClick={() => onChange({ ...EMPTY_FILTER_STATE, sessionId: state.sessionId })}
-            className="font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] underline-offset-2 transition-colors hover:text-[var(--vex-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="font-sans text-[9px] uppercase tracking-[0.14em] text-ink-tertiary underline-offset-2 transition-colors hover:text-ink-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             Clear
           </button>

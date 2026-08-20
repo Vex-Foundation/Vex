@@ -86,12 +86,12 @@ export function LaunchPreviewCard({
   return (
     <section
       aria-label="Launch preview"
-      className="flex flex-col gap-3 rounded-2xl border border-[var(--vex-line)] bg-[var(--vex-surface-down)] p-4"
+      className="flex flex-col gap-3 rounded-xl border border-line-2 bg-surface-deep p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
         <h3 className="vex-eyebrow">Launch preview</h3>
         {state === "ready" && preview !== null ? (
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+          <span className="font-mono text-[10px] tabular-nums text-ink-tertiary">
             block {preview.anchorBlockNumber}
           </span>
         ) : null}
@@ -114,7 +114,7 @@ function PreviewBody({
 }: LaunchPreviewCardProps): JSX.Element {
   if (state === "idle") {
     return (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
         Fill in the name, symbol and image and the exact cost of this launch
         will be priced here before you can deploy.
       </p>
@@ -123,7 +123,7 @@ function PreviewBody({
 
   if (state === "loading") {
     return (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <p className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
         Pricing…
       </p>
     );
@@ -134,7 +134,7 @@ function PreviewBody({
   if (state === "unavailable") {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
+        <p className="text-[12.5px] leading-relaxed text-ink-secondary">
           Pricing is unavailable right now, so this launch can&apos;t be
           deployed yet. Nothing has been sent.
         </p>
@@ -146,7 +146,7 @@ function PreviewBody({
   if (state === "error" || preview === null) {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-[12.5px] text-[var(--vex-warn-text)]" role="alert">
+        <p className="text-[12.5px] text-warning" role="alert">
           {errorMessage ?? "Couldn't price this launch."}
         </p>
         <RetryButton onRetry={onRetry} />
@@ -162,7 +162,7 @@ function RetryButton({ onRetry }: { readonly onRetry: () => void }): JSX.Element
     <button
       type="button"
       onClick={onRetry}
-      className="rounded-full border border-[var(--vex-line)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="rounded-full border border-line-2 px-3 py-1 font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
     >
       Try again
     </button>
@@ -184,7 +184,7 @@ function PreviewAmounts({
     <div className="flex flex-col gap-3">
       {preview.predictedTokenAddress !== null ? (
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[12px] text-[var(--vex-text-3)]">
+          <span className="text-[12px] text-ink-tertiary">
             Predicted address
           </span>
           <AddressDisplay address={preview.predictedTokenAddress} />
@@ -193,12 +193,12 @@ function PreviewAmounts({
 
       {/* (1) THE AUTHORIZED FIGURE. Its own bordered block, so it can never be
        * skim-read as one line item among several. */}
-      <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--vex-line-strong)] px-3 py-2.5">
+      <div className="flex flex-col gap-1.5 rounded-xl border border-line-3 px-3 py-2.5">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[12.5px] font-medium text-[var(--vex-text)]">
+          <span className="text-[12.5px] font-medium text-ink-primary">
             You authorize
           </span>
-          <span className="font-mono text-[15px] tabular-nums text-[var(--vex-text)]">
+          <span className="font-mono text-[15px] tabular-nums text-ink-primary">
             {formatWeiEthWithUnit(preview.msgValueWei)}
           </span>
         </div>
@@ -208,7 +208,7 @@ function PreviewAmounts({
           subdued
         />
         <AmountRow label="Prebuy" value={preview.prebuyWei} subdued />
-        <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+        <p className="text-[11px] leading-relaxed text-ink-tertiary">
           This is the exact amount the launch transaction sends. Deploying also
           authorizes Vex&apos;s 25 bps fee below, as a separate transfer once
           the launch confirms, and the network&apos;s gas — nothing else.
@@ -219,16 +219,16 @@ function PreviewAmounts({
        * Its label counts the TRANSACTIONS this consent causes: a charged fee
        * leg is a second one, and main budgets its gas into this same figure. */}
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[12px] text-[var(--vex-text-2)]">
+        <span className="text-[12px] text-ink-secondary">
           {preview.vexFeeCharged
             ? "Network fees, 2 transactions (estimated)"
             : "Network fee (estimated)"}
         </span>
-        <span className="font-mono text-[12px] tabular-nums text-[var(--vex-text-2)]">
+        <span className="font-mono text-[12px] tabular-nums text-ink-secondary">
           ~{formatWeiEth(preview.estimatedNetworkFeeWei)} ETH
         </span>
       </div>
-      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">
         Paid to the network, not to us, and only an estimate — it is not part of
         the amount above. Gas scales with your image size
         {preview.vexFeeCharged ? ", and covers the fee transfer as well" : ""}.
@@ -238,15 +238,15 @@ function PreviewAmounts({
       <VexFeeDisclosure preview={preview} />
 
       {/* (4) THE WHOLE COST. Below the authorized figure, never instead of it. */}
-      <div className="flex items-baseline justify-between gap-3 border-t border-[var(--vex-line)] pt-2">
-        <span className="text-[12.5px] font-medium text-[var(--vex-text)]">
+      <div className="flex items-baseline justify-between gap-3 border-t border-line-2 pt-2">
+        <span className="text-[12.5px] font-medium text-ink-primary">
           Estimated total cost
         </span>
-        <span className="font-mono text-[13px] tabular-nums text-[var(--vex-text)]">
+        <span className="font-mono text-[13px] tabular-nums text-ink-primary">
           {totalCost === null ? UNKNOWN_AMOUNT : `~${formatWeiEthWithUnit(totalCost)}`}
         </span>
       </div>
-      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">
         The amount you authorize, plus the Vex fee, plus the estimated gas for
         every transaction this sends. An estimate, because the gas is one.
       </p>
@@ -267,7 +267,7 @@ function VexFeeDisclosure({
 }): JSX.Element | null {
   if (preview.vexFeeCharged === false) {
     return (
-      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">
         Vex fee: none — 25 bps of this amount rounds to zero.
       </p>
     );
@@ -277,7 +277,7 @@ function VexFeeDisclosure({
   if (amount === UNKNOWN_AMOUNT) return null;
 
   return (
-    <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+    <p className="text-[11px] leading-relaxed text-ink-tertiary">
       Vex fee: {amount} ETH (25 bps) — charged separately after your launch
       confirms; a launch that does not happen is never charged.
     </p>
@@ -293,7 +293,7 @@ function AmountRow({
   readonly value: string;
   readonly subdued?: boolean;
 }): JSX.Element {
-  const tone = subdued === true ? "text-[var(--vex-text-3)]" : "text-[var(--vex-text-2)]";
+  const tone = subdued === true ? "text-ink-tertiary" : "text-ink-secondary";
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className={`text-[11.5px] ${tone}`}>{label}</span>

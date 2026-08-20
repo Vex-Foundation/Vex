@@ -220,7 +220,7 @@ export function EmbeddingStep({
             role="status"
             data-vex-embedding-configure-later-alert
             className={cn(
-              "py-0.5 text-sm text-[var(--color-warning)]",
+              "py-0.5 text-sm text-warning",
               RAIL_WARNING_CHROME,
             )}
           >

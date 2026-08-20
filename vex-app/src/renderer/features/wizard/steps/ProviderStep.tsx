@@ -295,7 +295,7 @@ export function ProviderStep({
           <p
             role="status"
             data-vex-provider-configure-later-alert
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-[var(--color-warning)]"
+            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
           >
             The agent cannot run any inference without a provider — it will
             stay idle until you add an OpenRouter key and model. You can do
@@ -310,13 +310,13 @@ export function ProviderStep({
             placeholder="sk-or-..."
             autoFocus
           />
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             Create or copy your key at{" "}
             <a
               href="https://openrouter.ai/keys"
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
             >
               openrouter.ai/keys
             </a>
@@ -345,14 +345,14 @@ export function ProviderStep({
               void providerModels.refetch();
             }}
           />
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             Browse tool-capable models or enter any OpenRouter model id. View
             the full catalogue at{" "}
             <a
               href="https://openrouter.ai/models"
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
             >
               openrouter.ai/models
             </a>
@@ -377,7 +377,7 @@ export function ProviderStep({
         ) : null}
 
         {clientError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {clientError}
           </p>
         ) : null}
@@ -393,7 +393,7 @@ export function ProviderStep({
           <div
             role="status"
             data-vex-provider-success="true"
-            className="text-sm text-[var(--color-success)]"
+            className="text-sm text-success"
           >
             OpenRouter verified ({successLatencyMs}ms). Changes apply the
             next time the agent starts.

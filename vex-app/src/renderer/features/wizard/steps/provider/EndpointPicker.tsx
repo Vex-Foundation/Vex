@@ -50,7 +50,7 @@ export interface EndpointPickerProps {
 }
 
 const ROW_CLASS =
-  "flex w-full cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-left";
+  "flex w-full cursor-pointer items-start gap-3 rounded-xl border px-3 py-2 text-left";
 
 /**
  * Bounded to roughly five rows. Expressed in `rem` rather than a row count
@@ -97,7 +97,7 @@ export function EndpointPicker({
 
       {loading ? (
         <p
-          className="text-xs text-[var(--color-text-muted)]"
+          className="text-xs text-ink-tertiary"
           data-vex-provider-endpoints-state="loading"
         >
           Loading providers for this model…
@@ -107,13 +107,13 @@ export function EndpointPicker({
           className="flex items-center justify-between gap-3"
           data-vex-provider-endpoints-state="failed"
         >
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-ink-secondary">
             Provider list unavailable. Auto routing still works.
           </p>
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+            className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
           >
             <VexIcon icon={RefreshCwIcon} size={12} aria-hidden />
             Retry
@@ -141,13 +141,13 @@ export function EndpointPicker({
             className={cn(
               ROW_CLASS,
               value === null
-                ? "border-[var(--vex-accent,var(--color-accent-primary))] text-foreground"
-                : "border-[var(--color-border)] text-[var(--color-text-secondary)]",
+                ? "border-accent-primary text-ink-primary"
+                : "border-[var(--color-border)] text-ink-secondary",
             )}
           >
             <span className="min-w-0 flex-1">
               <span className="block text-sm">Auto (recommended)</span>
-              <span className="block text-[11px] text-[var(--color-text-muted)]">
+              <span className="block text-[11px] text-ink-tertiary">
                 OpenRouter picks and fails over between providers.
               </span>
             </span>
@@ -167,8 +167,8 @@ export function EndpointPicker({
                 className={cn(
                   ROW_CLASS,
                   value === endpoint.tag
-                    ? "border-[var(--vex-accent,var(--color-accent-primary))] text-foreground"
-                    : "border-[var(--color-border)] text-[var(--color-text-secondary)]",
+                    ? "border-accent-primary text-ink-primary"
+                    : "border-[var(--color-border)] text-ink-secondary",
                 )}
               >
                 <span className="min-w-0 flex-1">
@@ -179,17 +179,17 @@ export function EndpointPicker({
                     {suggestedEndpointTag === endpoint.tag ? (
                       <span
                         data-vex-provider-endpoint-suggested
-                        className="shrink-0 rounded-full border border-[var(--vex-accent,var(--color-accent-primary))] px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--vex-accent,var(--color-accent-primary))]"
+                        className="shrink-0 rounded-full border border-accent-primary px-1.5 py-px text-[9px] uppercase tracking-wide text-accent-primary"
                       >
                         Suggested
                       </span>
                     ) : null}
                   </span>
-                  <span className="block truncate font-mono text-[10px] text-[var(--color-text-muted)]">
+                  <span className="block truncate font-mono text-[10px] text-ink-tertiary">
                     {endpoint.tag}
                   </span>
                   {meta ? (
-                    <span className="block truncate text-[10px] text-[var(--color-text-muted)]">
+                    <span className="block truncate text-[10px] text-ink-tertiary">
                       {meta}
                     </span>
                   ) : null}
@@ -200,7 +200,7 @@ export function EndpointPicker({
         </div>
       )}
 
-      <p className="text-xs text-[var(--color-text-muted)]">
+      <p className="text-xs text-ink-tertiary">
         Only providers that support tool calling are listed — Vex cannot run on
         the others. Ordered by recent uptime, most available first; providers
         OpenRouter reports no uptime for are listed last. Prices are base rates

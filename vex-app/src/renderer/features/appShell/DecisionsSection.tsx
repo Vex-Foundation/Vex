@@ -54,7 +54,7 @@ export function DecisionsSection(): JSX.Element {
     <section data-vex-section="memory-decisions" className={SECTION}>
       <div>
         <h2 className="vex-eyebrow">Manager decisions</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           The memory manager&apos;s decision audit — every promote, merge,
           reject, or reconcile verdict, append-only and immutable.
         </p>
@@ -67,10 +67,10 @@ export function DecisionsSection(): JSX.Element {
             type="button"
             onClick={() => setDecisionType(f.value)}
             data-active={decisionType === f.value}
-            className={`rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] ${
+            className={`rounded-[3px] px-2 py-1 font-doto text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
               decisionType === f.value
-                ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-                : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
+                ? "bg-accent-wash text-accent-primary"
+                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             }`}
           >
             {f.label}
@@ -120,7 +120,7 @@ function DecisionRow({
     <li
       data-vex-decision-id={decision.id}
       data-decision-type={decision.decisionType}
-      className="border-b border-[var(--vex-line)] px-1 py-2 last:border-b-0"
+      className="border-b border-line-2 px-1 py-2 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className={PILL} data-vex-decision-type>
@@ -154,7 +154,7 @@ function DecisionRow({
         <span
           data-vex-decided
           title={decision.decidedAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
         >
           {fmtDate(decision.decidedAt)}
         </span>

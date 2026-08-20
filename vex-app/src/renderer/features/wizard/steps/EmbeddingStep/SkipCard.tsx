@@ -51,10 +51,10 @@ export function EmbeddingSkipCard({
             Vex is using <code>{embeddingsState.baseUrlRedacted}</code>{" "}
             (bundled EmbeddingGemma 300M, dim {EMBEDDING_DIM}) —{" "}
             {embeddingsState.reachable ? (
-              <span className="text-[var(--color-success)]">reachable</span>
+              <span className="text-success">reachable</span>
             ) : (
               <>
-                <span className="text-[var(--color-warning)]">
+                <span className="text-warning">
                   not reachable
                 </span>{" "}
                 yet; the runtime may still be loading the model
@@ -89,11 +89,11 @@ export function EmbeddingSkipCard({
       }
     >
       {advanceError ? (
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {advanceError}
         </p>
       ) : (
-        <p className="text-sm text-[var(--color-text-secondary)]">
+        <p className="text-sm text-ink-secondary">
           Override to point at a different OpenAI-compatible endpoint.
         </p>
       )}

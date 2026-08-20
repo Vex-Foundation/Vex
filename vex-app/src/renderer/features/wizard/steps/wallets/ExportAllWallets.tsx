@@ -41,12 +41,12 @@ export function ExportAllWallets(): JSX.Element {
         {exportMutation.isPending ? "Exporting…" : "Export all wallets"}
       </Button>
       {message !== null ? (
-        <p className="text-xs text-muted-foreground" role="status">
+        <p className="text-xs text-ink-tertiary" role="status">
           {message}
         </p>
       ) : null}
       {error !== null ? (
-        <p className="text-xs text-[var(--color-danger)]" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {error}
         </p>
       ) : null}

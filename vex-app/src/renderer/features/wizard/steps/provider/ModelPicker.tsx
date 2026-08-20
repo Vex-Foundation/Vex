@@ -175,14 +175,14 @@ export function ModelPicker({
           size={15}
           aria-hidden
           className={cn(
-            "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] transition-transform",
+            "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-tertiary transition-transform",
             showPanel && "rotate-180",
           )}
         />
       </div>
 
       {selected !== null && !showPanel ? (
-        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-tertiary">
           <ModelBrandIcon modelId={selected.modelId} size={13} />
           <span>{selected.displayName}</span>
           {formatModelMeta(selected) ? <span>· {formatModelMeta(selected)}</span> : null}
@@ -194,28 +194,28 @@ export function ModelPicker({
           id={listboxId}
           role="listbox"
           aria-label="OpenRouter models"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground"
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-line-2 bg-surface-1 p-1 text-ink-primary shadow-lv3"
         >
           {loading ? (
-            <p className="px-2.5 py-3 text-xs text-[var(--color-text-muted)]">
+            <p className="px-2.5 py-3 text-xs text-ink-tertiary">
               Loading tool-capable models from OpenRouter…
             </p>
           ) : failed ? (
             <div className="flex items-center justify-between gap-3 px-2.5 py-2">
-              <p className="text-xs text-[var(--color-text-secondary)]">
+              <p className="text-xs text-ink-secondary">
                 Catalogue unavailable. Manual entry still works.
               </p>
               <button
                 type="button"
                 onClick={onRetry}
-                className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+                className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
               >
                 <VexIcon icon={RefreshCwIcon} size={12} aria-hidden />
                 Retry
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <p className="px-2.5 py-3 text-xs text-[var(--color-text-muted)]">
+            <p className="px-2.5 py-3 text-xs text-ink-tertiary">
               No match. Press Enter to use this model id.
             </p>
           ) : (
@@ -231,26 +231,26 @@ export function ModelPicker({
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(model)}
                   className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2",
+                    "flex cursor-pointer items-start gap-2 rounded-[10px] px-2.5 py-2",
                     isActive
-                      ? "bg-[var(--vex-accent-fill-12,color-mix(in_oklab,var(--color-accent-primary)_12%,transparent))] text-foreground"
-                      : "text-[var(--color-text-secondary)]",
+                      ? "bg-accent-wash text-ink-primary"
+                      : "text-ink-secondary",
                   )}
                 >
                   <ModelBrandIcon modelId={model.modelId} size={16} className="mt-0.5 shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{model.displayName}</span>
-                    <span className="block truncate font-mono text-[10px] text-[var(--color-text-muted)]">
+                    <span className="block truncate font-mono text-[10px] text-ink-tertiary">
                       {model.modelId}
                     </span>
                     {formatModelMeta(model) ? (
-                      <span className="block truncate text-[10px] text-[var(--color-text-muted)]">
+                      <span className="block truncate text-[10px] text-ink-tertiary">
                         {formatModelMeta(model)}
                       </span>
                     ) : null}
                   </span>
                   {isSelected ? (
-                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent,var(--color-accent-primary))]" />
+                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-primary" />
                   ) : null}
                 </div>
               );

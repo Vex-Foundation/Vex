@@ -191,13 +191,13 @@ export function UnlockScreen(): JSX.Element {
 
         <h1
           id="vex-unlock-title"
-          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-[var(--color-text-primary)]"
+          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-ink-primary"
         >
           Welcome back.
         </h1>
         {/* Bespoke header (this screen passes no SetupFrame title), so the
          * subline steps up to 18px here rather than through the scaffold. */}
-        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-ink-secondary">
           Your master password decrypts the local vault on this machine.
         </p>
 
@@ -214,7 +214,7 @@ export function UnlockScreen(): JSX.Element {
             <div className="flex flex-col gap-2.5">
               <Label
                 htmlFor="vex-unlock-password"
-                className="vex-micro font-medium text-[var(--color-text-muted)]"
+                className="vex-micro font-medium text-ink-tertiary"
               >
                 Master password
               </Label>
@@ -292,7 +292,7 @@ export function UnlockScreen(): JSX.Element {
             variant="ghost"
             disabled={inputsDisabled}
             onClick={() => setResetDialogOpen(true)}
-            className="mt-3 w-full text-[var(--color-text-muted)]"
+            className="mt-3 w-full text-ink-tertiary"
           >
             I forgot my password — set up a new vault
           </Button>

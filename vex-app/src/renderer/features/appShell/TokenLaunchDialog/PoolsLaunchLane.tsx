@@ -209,7 +209,7 @@ export function PoolsLaunchLane({
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}>
       <DialogContent className="max-w-[640px]">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-[var(--vex-line)]">
+          <DialogHeader className="border-line-2">
             <DialogTitle className="text-[17px] font-semibold">
               Launch a token
             </DialogTitle>
@@ -218,7 +218,7 @@ export function PoolsLaunchLane({
               onChange={onPlatformChange}
               disabled={frozen}
             />
-            <DialogDescription className="text-[11px] text-[var(--vex-text-3)]">
+            <DialogDescription className="text-[11px] text-ink-tertiary">
               pools.fun · Robinhood Chain. The whole supply goes into a locked
               SushiSwap V3 pool, so the token trades from its first block.
               Deploying sends a real transaction and cannot be undone.
@@ -233,8 +233,8 @@ export function PoolsLaunchLane({
             <StateNote state={state} bridgeMissing={!bridgeMounted} />
           </DialogBody>
 
-          <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[12px] text-[var(--vex-text-2)]">
+          <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[12px] text-ink-secondary">
               {fingerprint !== null
                 ? "Deploy authorizes exactly the figures above. Changing any field prepares them again."
                 : "Nothing is authorized until this launch has been prepared and checked."}
@@ -245,7 +245,7 @@ export function PoolsLaunchLane({
                 variant="ghost"
                 onClick={requestClose}
                 disabled={state.kind === "deploying"}
-                className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+                className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
               >
                 {state.kind === "done" ? "Close" : "Cancel"}
               </Button>
@@ -283,7 +283,7 @@ function StateNote({
 }): JSX.Element | null {
   if (bridgeMissing) {
     return (
-      <p className="text-[12px] leading-relaxed text-[var(--vex-warn-text)]" role="status">
+      <p className="text-[12px] leading-relaxed text-warning" role="status">
         Launching on pools.fun is not available in this build yet. You can fill
         the form in, but Vex cannot prepare or deploy it.
       </p>
@@ -292,8 +292,8 @@ function StateNote({
   if (state.kind === "re_review") {
     return (
       <div className="flex flex-col items-start gap-2" role="alert">
-        <p className="text-sm text-[var(--vex-warn-text)]">{state.message}</p>
-        <p className="text-[12px] leading-relaxed text-[var(--vex-text-2)]">
+        <p className="text-sm text-warning">{state.message}</p>
+        <p className="text-[12px] leading-relaxed text-ink-secondary">
           Those figures are no longer what Vex would sign. Prepare the launch
           again and read the new ones before deploying.
         </p>
@@ -302,7 +302,7 @@ function StateNote({
   }
   if (state.kind === "refused") {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-sm text-danger" role="alert">
         {state.message}
       </p>
     );
@@ -312,8 +312,8 @@ function StateNote({
       <p
         className={
           state.tone === "failure"
-            ? "text-sm break-all text-destructive"
-            : "text-sm break-all text-[var(--color-success)]"
+            ? "text-sm break-all text-danger"
+            : "text-sm break-all text-success"
         }
         role={state.tone === "failure" ? "alert" : "status"}
       >

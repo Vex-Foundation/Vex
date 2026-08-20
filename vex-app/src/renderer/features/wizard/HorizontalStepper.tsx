@@ -60,8 +60,8 @@ function resolveStatus(
  * with a fallback for anything that defines neither. */
 const DOT_CHROME: Record<StepDotStatus, string> = {
   pending: "bg-white/[0.28]",
-  active: "bg-[var(--vex-accent-text,var(--color-accent-secondary))]",
-  completed: "bg-[var(--color-text-primary)]",
+  active: "bg-accent-primary",
+  completed: "bg-ink-primary",
 };
 
 export function HorizontalStepper({
@@ -90,9 +90,9 @@ export function HorizontalStepper({
           );
         })}
       </ol>
-      <p className="vex-micro text-[var(--color-text-secondary)]">
+      <p className="vex-micro text-ink-secondary">
         Step {currentIndex + 1} of {WIZARD_STEP_IDS.length}
-        <span className="text-[var(--color-text-muted)]">
+        <span className="text-ink-tertiary">
           {" "}
           · {WIZARD_STEP_META[currentStepId].label}
         </span>

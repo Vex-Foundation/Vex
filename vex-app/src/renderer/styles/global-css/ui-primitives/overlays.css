@@ -92,6 +92,60 @@ dialog.vex-dialog::backdrop {
   }
 }
 
+/* ── Sticky toast ──────────────────────────────────────────────────────────
+ * Persistent bottom-right sibling of .vex-toast on the same dark plate in
+ * BOTH themes. No timed exit: the owning feature clears the store entry.
+ * Hit-testable (it carries actions), unlike the transient announcement. */
+.vex-toast-sticky {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100vw - 48px);
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--vex-alias-toast-bg);
+  color: var(--vex-alias-label-on-chrome);
+  box-shadow: var(--shadow-lv3);
+  animation: vex-toast-sticky-in 160ms ease-out;
+}
+
+@keyframes vex-toast-sticky-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-toast-sticky {
+    animation: none;
+  }
+}
+
+/* White-alpha literals: the plate is dark in both themes, so the theme-
+ * flipping interactive/skeleton aliases would go invisible in celeris. */
+.vex-toast-sticky-ghost {
+  transition: background-color 100ms ease;
+}
+
+.vex-toast-sticky-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vex-toast-sticky-track {
+  background: rgba(255, 255, 255, 0.14);
+}
+
 /* ── Tooltip ───────────────────────────────────────────────────────────────
  * Dark plate + white text in both themes; fade only, no arrow. */
 .vex-tooltip {

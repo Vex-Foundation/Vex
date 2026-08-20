@@ -144,7 +144,7 @@ export function ReviewStep({
             // A3 boxless: a quiet row above the sub-step, hairline only.
             "flex items-center justify-between gap-3",
             "border-b border-[var(--color-border)] pb-3",
-            "text-xs text-[var(--color-text-secondary)]",
+            "text-xs text-ink-secondary",
           )}
           data-vex-wizard-review-editing={editingStep}
         >
@@ -155,12 +155,12 @@ export function ReviewStep({
             type="button"
             onClick={() => setEditingStep(null)}
             className={cn(
-              "inline-flex items-center gap-1 rounded-md",
+              "inline-flex items-center gap-1 rounded-full",
               "border border-[var(--color-border)] bg-white/[0.08] px-2 py-1",
               "vex-micro",
-              "text-[var(--color-text-secondary)]",
-              "hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+              "text-ink-secondary",
+              "hover:border-ink-tertiary hover:text-ink-primary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
             )}
           >
             <VexIcon icon={ChevronLeftIcon} size={11} aria-hidden />
@@ -257,13 +257,13 @@ export function ReviewStep({
         />
 
         {serverError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {serverError}
           </p>
         ) : null}
         {warning ? (
           <p
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-[var(--color-warning)]"
+            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
             role="status"
           >
             {warning}

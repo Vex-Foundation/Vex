@@ -166,9 +166,9 @@ export function ReportIssueDialog({
        * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent className="max-w-lg">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-[var(--vex-line)]">
+          <DialogHeader className="border-line-2">
             <DialogTitle>Report an issue</DialogTitle>
-            <DialogDescription className="text-[var(--vex-text-3)]">
+            <DialogDescription className="text-ink-tertiary">
               The report is saved locally on this machine. Secrets are
               automatically redacted before storage. Nothing is sent to a
               remote server in this build.
@@ -200,11 +200,11 @@ export function ReportIssueDialog({
                     key={opt.value}
                     className={cn(
                       // Landing chip: mono micro-label pill on a hairline.
-                      "cursor-pointer rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors",
-                      "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
+                      "cursor-pointer rounded-full border px-3 py-1.5 font-doto text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
+                      "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
                       severity === opt.value
-                        ? "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] text-[var(--vex-accent-text)]"
-                        : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground",
+                        ? "border-accent-primary/85 bg-accent-primary/8 text-accent-primary"
+                        : "border-line-3 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
                     )}
                   >
                     <input
@@ -231,7 +231,7 @@ export function ReportIssueDialog({
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Short summary of the issue"
               />
-              <div className="flex items-center justify-end font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+              <div className="flex items-center justify-end font-mono text-[10px] tabular-nums text-ink-tertiary">
                 <span aria-live="polite">{title.length} / {TITLE_MAX}</span>
               </div>
             </div>
@@ -246,12 +246,12 @@ export function ReportIssueDialog({
                 rows={6}
                 placeholder="What happened? What did you expect to happen?"
                 className={cn(
-                  "min-h-24 w-full rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] px-3 py-2 text-sm shadow-none",
-                  "placeholder:text-[var(--vex-text-3)]",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+                  "min-h-24 w-full rounded-xl border border-line-3 bg-surface-deep px-3 py-2 text-sm shadow-none",
+                  "placeholder:text-ink-tertiary",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
                 )}
               />
-              <div className="flex items-center justify-between gap-3 text-xs text-[var(--vex-text-2)]">
+              <div className="flex items-center justify-between gap-3 text-xs text-ink-secondary">
                 <p>
                   Don&apos;t paste passwords, mnemonics, or private keys —
                   redaction is a safety net, not a guarantee.
@@ -263,24 +263,24 @@ export function ReportIssueDialog({
             </div>
 
             {submitError !== null ? (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="text-sm text-danger" role="alert">
                 {submitError}
               </p>
             ) : null}
             {submitInfo !== null ? (
-              <p className="text-sm text-[var(--color-success)]" role="status">
+              <p className="text-sm text-success" role="status">
                 {submitInfo}
               </p>
             ) : null}
           </DialogBody>
 
-          <DialogFooter className="border-[var(--vex-line)]">
+          <DialogFooter className="border-line-2">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
-              className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+              className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             >
               Cancel
             </Button>
@@ -314,11 +314,11 @@ function CategoryRadio({
   return (
     <label
       className={cn(
-        "flex cursor-pointer flex-col gap-1 rounded-[6px] border px-3 py-2 text-sm transition-colors",
-        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--vex-accent)]",
+        "flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-2 text-sm transition-colors",
+        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
         checked
-          ? "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)]"
-          : "border-[var(--vex-line-strong)] hover:bg-white/[0.04]",
+          ? "border-accent-primary/85 bg-accent-primary/8"
+          : "border-line-3 hover:bg-interactive-hover",
       )}
     >
       <input
@@ -330,7 +330,7 @@ function CategoryRadio({
         className="sr-only"
       />
       <span className="font-medium">{title}</span>
-      <span className="text-xs text-[var(--vex-text-2)]">
+      <span className="text-xs text-ink-secondary">
         {description}
       </span>
     </label>

@@ -52,7 +52,7 @@ export function ExportPrivateKeyForm({
         onSelect={onSelect}
       />
       <p
-        className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+        className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-sm text-danger"
         role="alert"
       >
         Your private key will be copied to the system clipboard. Vex{" "}
@@ -96,7 +96,7 @@ export function ExportPrivateKeyForm({
 
       {error !== null ? (
         <p
-          className="text-sm text-destructive"
+          className="text-sm text-danger"
           role="alert"
           data-vex-export-error
         >

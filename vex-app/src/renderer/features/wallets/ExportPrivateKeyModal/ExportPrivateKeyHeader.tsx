@@ -6,7 +6,7 @@
 
 import type { JSX } from "react";
 import { DialogHeader, DialogTitle } from "../../../components/ui/dialog.js";
-import { ExportLockIcon } from "../ExportLockIcon.js";
+import { IconLock } from "../../../components/icons/index.js";
 import { CHAIN_LABEL, type Chain } from "./types.js";
 
 export interface ExportPrivateKeyHeaderProps {
@@ -19,12 +19,12 @@ export function ExportPrivateKeyHeader({
   return (
     <DialogHeader>
       <div className="flex items-center gap-2">
-        <ExportLockIcon />
+        <IconLock size={20} className="shrink-0 text-danger" />
         <DialogTitle>
           Export private key — {CHAIN_LABEL[chain]}
         </DialogTitle>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-ink-tertiary">
         Choose a wallet, then re-enter your master password.
       </p>
     </DialogHeader>

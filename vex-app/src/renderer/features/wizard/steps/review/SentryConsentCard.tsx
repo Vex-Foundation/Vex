@@ -67,13 +67,13 @@ export function SentryConsentCard({
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
-          className="mt-1 accent-[var(--color-accent-primary)]"
+          className="mt-1 accent-accent-primary"
         />
         <span className="flex flex-col">
-          <span className="text-sm font-medium text-[var(--color-text-primary)]">
+          <span className="text-sm font-medium text-ink-primary">
             Send anonymous error reports to help improve Vex
           </span>
-          <span className="text-xs text-[var(--color-text-secondary)]">
+          <span className="text-xs text-ink-secondary">
             Default: off. Nothing is sent unless you tick this box.
           </span>
         </span>
@@ -84,12 +84,12 @@ export function SentryConsentCard({
         onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
         className="border-y border-[var(--color-border)] py-3"
       >
-        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-primary)]">
+        <summary className="cursor-pointer text-xs font-medium text-ink-primary">
           What we collect / never collect
         </summary>
-        <div className="mt-3 flex flex-col gap-3 text-xs text-[var(--color-text-secondary)]">
+        <div className="mt-3 flex flex-col gap-3 text-xs text-ink-secondary">
           <div>
-            <p className="font-semibold text-[var(--color-text-primary)]">
+            <p className="font-semibold text-ink-primary">
               Collected (only with this opt-in):
             </p>
             <ul className="mt-1 list-disc pl-5">
@@ -99,7 +99,7 @@ export function SentryConsentCard({
             </ul>
           </div>
           <div>
-            <p className="font-semibold text-[var(--color-success)]">
+            <p className="font-semibold text-success">
               Never sent (regardless of consent):
             </p>
             <ul className="mt-1 list-disc pl-5">
@@ -108,7 +108,7 @@ export function SentryConsentCard({
               ))}
             </ul>
           </div>
-          <p className="text-[var(--color-text-muted)]">
+          <p className="text-ink-tertiary">
             Stack traces and breadcrumbs are scrubbed in the main process
             before they leave your machine — see <code>main/logger/redact.ts</code>{" "}
             and <code>main/telemetry/before-send.ts</code> in the source.

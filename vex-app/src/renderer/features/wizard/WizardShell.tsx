@@ -8,9 +8,8 @@
  * (`.vex-gate-plate` + vignette + grain) and carries the
  * `data-vex-gate` token scope, so stock Buttons inside step forms are
  * cobalt pills and the step forms pick up the pre-shell type scale
- * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`
- * (plus the "Backed by · Virtuals" partner mark, wizard-only). The
- * centered column hosts the minimal `HorizontalStepper` rail above
+ * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`.
+ * The centered column hosts the minimal `HorizontalStepper` rail above
  * `WizardStepPanel`. Loading state is the VexLoader ring.
  *
  * Per-step chrome lives in `WizardStepPanel`; each step returns a
@@ -111,19 +110,6 @@ function WizardChrome(): JSX.Element {
           draggable={false}
           className="h-6 w-auto select-none"
         />
-      </div>
-      <div className="pointer-events-none absolute bottom-7 left-10 z-10">
-        {/* Static backed-by line — a quiet monochrome partner mark. */}
-        <span className="flex items-center gap-2 opacity-70">
-          <span className="vex-micro text-[var(--color-text-muted)]">
-            Backed by
-          </span>
-          <img
-            src="/logo/virtuals.svg"
-            alt="Virtuals"
-            className="h-3.5 w-3.5"
-          />
-        </span>
       </div>
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
         v{__VEX_APP_VERSION__}

@@ -100,9 +100,9 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Preparing",
         toneClass:
-          "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)]",
-        iconClass: "text-[var(--vex-text-3)]",
-        markClass: "bg-[var(--vex-text-3)]",
+          "border-line-3 text-ink-tertiary hover:border-line-3",
+        iconClass: "text-ink-tertiary",
+        markClass: "bg-ink-tertiary",
         icon: TargetIcon,
         dataState: "preparing",
       };
@@ -110,9 +110,9 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Ready",
         toneClass:
-          "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
-        iconClass: "text-[var(--vex-accent-text)]",
-        markClass: "bg-[var(--vex-accent)]",
+          "border-accent-primary/55 text-accent-primary hover:bg-accent-primary/8",
+        iconClass: "text-accent-primary",
+        markClass: "bg-accent-primary",
         icon: InfoIcon,
         dataState: "ready",
       };
@@ -120,7 +120,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Accepted",
         toneClass:
-          "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success hover:bg-[color-mix(in_oklab,var(--color-success)_8%,transparent)]",
+          "border-success/40 text-success hover:bg-success/8",
         iconClass: "text-success",
         markClass: "bg-success",
         icon: CircleCheckBigIcon,
@@ -130,7 +130,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Review again",
         toneClass:
-          "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
+          "border-warning/40 text-warning hover:bg-warning/8",
         iconClass: "text-warning",
         markClass: "bg-warning",
         icon: InfoIcon,
@@ -140,7 +140,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
       return {
         caption: "Action needed",
         toneClass:
-          "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
+          "border-warning/40 text-warning hover:bg-warning/8",
         iconClass: "text-warning",
         markClass: "bg-warning",
         icon: CircleAlertIcon,
@@ -152,7 +152,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
 /** Full layout (icon + stacked label/caption) — identical for both
  * interactive variants. */
 const BADGE_LAYOUT =
-  "group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left";
+  "group flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left";
 
 /** Compact layout — the DESK RULE header pill: ledger tick + label +
  * caption on one h-7 line (the landing's pill silhouette). */
@@ -175,7 +175,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
         aria-hidden
         className={cn("h-2.5 w-[2px] shrink-0 rounded-full", meta.markClass)}
       />
-      <span className="vex-micro font-medium text-foreground">{label}</span>
+      <span className="vex-micro font-medium text-ink-primary">{label}</span>
       <span className="vex-micro">{meta.caption}</span>
     </>
   ) : (
@@ -190,7 +190,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
         {/* Register: the key's name is a sans small-caps micro-label
          * (white); the state caption beneath carries the tone. Mono
          * uppercase is retired shell-wide (landing-motifs.css). */}
-        <span className="vex-micro truncate font-medium text-foreground">
+        <span className="vex-micro truncate font-medium text-ink-primary">
           {label}
         </span>
         <span className="vex-micro">{meta.caption}</span>
@@ -228,7 +228,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
       data-vex-action="open-mission-detail"
       className={cn(
         layoutClass,
-        "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+        "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
         meta.toneClass,
         showShimmer && "vex-badge--shimmer",
       )}

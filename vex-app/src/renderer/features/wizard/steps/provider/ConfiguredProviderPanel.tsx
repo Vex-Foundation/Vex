@@ -77,11 +77,11 @@ function StatusRow({
     <div className={ROW_CLASS} data-vex-provider-status={testValue}>
       {icon ?? null}
       <div className="flex min-w-0 flex-col">
-        <span className="vex-micro text-[var(--color-text-muted)]">
+        <span className="vex-micro text-ink-tertiary">
           {label}
         </span>
         {typeof children === "string" ? (
-          <span className="truncate text-sm text-[var(--color-text-primary)]">
+          <span className="truncate text-sm text-ink-primary">
             {children}
           </span>
         ) : (
@@ -357,7 +357,7 @@ export function ConfiguredProviderPanel({
                 ref={apiKeyRef}
                 placeholder="sk-or-..."
               />
-              <p className="text-xs text-[var(--color-text-muted)]">
+              <p className="text-xs text-ink-tertiary">
                 Leave blank to keep the current key. Your saved key is never
                 shown here — it stays in the encrypted vault on this machine.
               </p>
@@ -374,7 +374,7 @@ export function ConfiguredProviderPanel({
                 testValue="model"
                 icon={<ModelBrandIcon modelId={activeModel} size={22} />}
               >
-                <code className="truncate font-mono text-sm text-[var(--color-text-primary)]">
+                <code className="truncate font-mono text-sm text-ink-primary">
                   {activeModel}
                 </code>
               </StatusRow>
@@ -386,7 +386,7 @@ export function ConfiguredProviderPanel({
         )}
 
         {(clientError ?? advanceError) !== null ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {clientError ?? advanceError}
           </p>
         ) : null}
@@ -402,7 +402,7 @@ export function ConfiguredProviderPanel({
           <div
             role="status"
             data-vex-provider-success="true"
-            className="text-sm text-[var(--color-success)]"
+            className="text-sm text-success"
           >
             OpenRouter verified ({savedLatencyMs}ms). Changes apply the next
             time the agent starts.

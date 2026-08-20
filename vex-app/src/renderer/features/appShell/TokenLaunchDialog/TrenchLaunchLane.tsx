@@ -290,13 +290,13 @@ export function TrenchLaunchLane({
        * (`dialog.tsx` sets max-w-md as a default, not a rule). */}
       <DialogContent className="max-w-[640px]">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-[var(--vex-line)]">
+          <DialogHeader className="border-line-2">
             <div className="flex items-center gap-2.5">
               <ProtocolMark mark={resolveProtocolMark("trench")} size={20} />
               <DialogTitle className="text-[17px] font-semibold">
                 Launch a token
               </DialogTitle>
-              <span className="text-[13px] text-[var(--vex-text-3)]">
+              <span className="text-[13px] text-ink-tertiary">
                 (Trench Express · Robinhood Chain)
               </span>
             </div>
@@ -305,7 +305,7 @@ export function TrenchLaunchLane({
               onChange={onPlatformChange}
               disabled={busy || phase.kind === "done"}
             />
-            <DialogDescription className="text-[11px] text-[var(--vex-text-3)]">
+            <DialogDescription className="text-[11px] text-ink-tertiary">
               ETH curve only. Deploying sends a real transaction from your
               wallet and cannot be undone.
             </DialogDescription>
@@ -336,21 +336,21 @@ export function TrenchLaunchLane({
             <MyLaunchesBlock />
           </DialogBody>
 
-          <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-row sm:items-center sm:justify-between">
+          <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-row sm:items-center sm:justify-between">
             {/* The authorized figure, restated at the point of the click —
              * because this click IS the consent. */}
-            <p className="text-[12px] text-[var(--vex-text-2)]">
+            <p className="text-[12px] text-ink-secondary">
               {preview !== null ? (
                 <>
                   You authorize:{" "}
-                  <span className="font-mono tabular-nums text-[var(--vex-text)]">
+                  <span className="font-mono tabular-nums text-ink-primary">
                     {formatWeiEthWithUnit(preview.msgValueWei)}
                   </span>
                   {preview.vexFeeCharged ? (
                     <>
                       {" "}
                       plus a separate Vex fee of{" "}
-                      <span className="font-mono tabular-nums text-[var(--vex-text)]">
+                      <span className="font-mono tabular-nums text-ink-primary">
                         {formatWeiEthWithUnit(preview.vexFeeWei)}
                       </span>{" "}
                       after it confirms, and network gas.
@@ -369,7 +369,7 @@ export function TrenchLaunchLane({
                 variant="ghost"
                 onClick={requestClose}
                 disabled={busy}
-                className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+                className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
               >
                 {/* After a completed submit there is nothing left to cancel —
                  * and the button stays enabled so the user never has to wait

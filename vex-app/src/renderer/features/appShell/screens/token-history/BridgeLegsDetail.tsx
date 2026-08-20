@@ -13,10 +13,7 @@
  */
 
 import { useState, type JSX } from "react";
-import {
-  ArrowUpRightIcon,
-  VexIcon,
-} from "../../../../components/icons/index.js";
+import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 
@@ -68,7 +65,7 @@ export function BridgeLegs({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
         {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
       </button>
@@ -80,9 +77,9 @@ export function BridgeLegs({
             return (
               <li
                 key={`${leg.role}:${index}:${leg.txHash ?? "none"}`}
-                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-ink-tertiary"
               >
-                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-[var(--vex-line)] px-1 uppercase tracking-[0.14em]">
+                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-line-2 px-1 uppercase tracking-[0.14em]">
                   {legRoleLabel(leg.role)}
                 </span>
                 <span className="shrink-0">{leg.chainFamily === "solana" ? "solana" : leg.chainId}</span>
@@ -93,10 +90,10 @@ export function BridgeLegs({
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`Open ${legRoleLabel(leg.role)} leg on block explorer`}
-                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
                   >
                     TX
-                    <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
+                    <IconArrowUpRight size={10} />
                   </a>
                 ) : null}
               </li>

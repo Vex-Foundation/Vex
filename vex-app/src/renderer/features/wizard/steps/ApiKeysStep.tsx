@@ -187,7 +187,7 @@ export function ApiKeysStep({
             role="status"
             data-vex-apikeys-warning="jupiter-missing"
             className={cn(
-              "py-0.5 text-sm text-[var(--color-warning)]",
+              "py-0.5 text-sm text-warning",
               RAIL_WARNING_CHROME,
             )}
           >
@@ -216,7 +216,7 @@ export function ApiKeysStep({
         />
 
         {formError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {formError}
           </p>
         ) : null}

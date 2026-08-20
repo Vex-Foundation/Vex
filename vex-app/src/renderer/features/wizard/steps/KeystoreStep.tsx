@@ -173,13 +173,13 @@ export function KeystoreStep({
         }
       >
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-[var(--color-text-secondary)]">
+          <p className="text-sm text-ink-secondary">
             The master password can&apos;t be rotated from this screen.
             Wallet keystores keep their current encryption — they are not
             re-encrypted automatically if the password ever changes.
           </p>
           {advanceError ? (
-            <p className="text-sm text-[var(--color-danger)]" role="alert">
+            <p className="text-sm text-danger" role="alert">
               {advanceError}
             </p>
           ) : null}
@@ -245,7 +245,7 @@ export function KeystoreStep({
           {passwordError ? (
             <p
               id={PASSWORD_ERROR_ID}
-              className="text-xs text-[var(--color-danger)]"
+              className="text-xs text-danger"
               role="alert"
             >
               {passwordError}
@@ -270,7 +270,7 @@ export function KeystoreStep({
           {confirmError ? (
             <p
               id={CONFIRM_ERROR_ID}
-              className="text-xs text-[var(--color-danger)]"
+              className="text-xs text-danger"
               role="alert"
             >
               {confirmError}
@@ -279,7 +279,7 @@ export function KeystoreStep({
         </div>
 
         {advanceError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {advanceError}
           </p>
         ) : null}

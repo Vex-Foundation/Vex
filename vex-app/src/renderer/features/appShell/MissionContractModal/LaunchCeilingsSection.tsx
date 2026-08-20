@@ -102,28 +102,28 @@ export function LaunchCeilingsSection({
 
   return (
     <div
-      className="border-t border-[var(--vex-line)] px-4 py-3"
+      className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3"
       data-vex-area="launch-ceilings"
     >
-      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <div className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
         Autonomous launch ceilings
       </div>
-      <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+      <p className="mt-1 text-xs text-ink-secondary">
         You set these, not the agent. Both are required before this mission can
         create a token unattended — leaving either blank means it refuses every
         autonomous launch. Saving them requires accepting the contract again.
       </p>
 
-      <dl className="mt-2 space-y-0.5 text-xs text-[var(--vex-text-2)]">
+      <dl className="mt-2 space-y-0.5 text-xs text-ink-secondary">
         <div className="flex flex-wrap gap-x-2">
-          <dt className="text-[var(--vex-text-3)]">Max launch value:</dt>
-          <dd data-vex-field="stored-max-launch-value">
+          <dt className="text-ink-tertiary">Max launch value:</dt>
+          <dd data-vex-field="stored-max-launch-value" className="font-semibold tabular-nums text-ink-primary">
             {storedCeilingLabel(constraints)}
           </dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="text-[var(--vex-text-3)]">Max launch count:</dt>
-          <dd data-vex-field="stored-max-launch-count">
+          <dt className="text-ink-tertiary">Max launch count:</dt>
+          <dd data-vex-field="stored-max-launch-count" className="font-semibold tabular-nums text-ink-primary">
             {storedCountLabel(constraints)}
           </dd>
         </div>
@@ -131,8 +131,8 @@ export function LaunchCeilingsSection({
 
       {editable ? (
         <div className="mt-3 space-y-2">
-          <label className="block text-xs text-[var(--vex-text-2)]">
-            <span className="text-[var(--vex-text-3)]">
+          <label className="block text-xs text-ink-secondary">
+            <span className="text-ink-tertiary">
               Max launch value (ETH, per launch — creation fee + prebuy + Vex fee)
             </span>
             <input
@@ -143,11 +143,11 @@ export function LaunchCeilingsSection({
               aria-label="Max launch value in ETH"
               data-vex-field="max-launch-value-eth"
               onChange={(e) => setValueEth(e.target.value)}
-              className="mt-1 w-full rounded-md border border-white/[0.12] bg-white/[0.04] px-2 py-1 font-mono text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+              className="mt-1 w-full rounded-xl border border-line-input bg-surface-deep px-2 py-1 font-mono text-xs text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
             />
           </label>
-          <label className="block text-xs text-[var(--vex-text-2)]">
-            <span className="text-[var(--vex-text-3)]">
+          <label className="block text-xs text-ink-secondary">
+            <span className="text-ink-tertiary">
               Max launch count (tokens this mission may create)
             </span>
             <input
@@ -158,7 +158,7 @@ export function LaunchCeilingsSection({
               aria-label="Max launch count"
               data-vex-field="max-launch-count"
               onChange={(e) => setCount(e.target.value)}
-              className="mt-1 w-full rounded-md border border-white/[0.12] bg-white/[0.04] px-2 py-1 font-mono text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+              className="mt-1 w-full rounded-xl border border-line-input bg-surface-deep px-2 py-1 font-mono text-xs text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
             />
           </label>
           <div className="flex items-center justify-end">
@@ -175,7 +175,7 @@ export function LaunchCeilingsSection({
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-[var(--vex-text-3)]">
+        <p className="mt-2 text-xs text-ink-tertiary">
           This mission has started. Its run enforces the ceilings frozen when it
           began — editing them here would change what is shown, not what is
           enforced.

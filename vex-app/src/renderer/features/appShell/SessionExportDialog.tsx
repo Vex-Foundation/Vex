@@ -43,23 +43,23 @@ export function SessionExportDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader className="border-[var(--vex-line)]">
+        <DialogHeader className="border-line-2">
           <DialogTitle>Export session as Markdown?</DialogTitle>
-          <DialogDescription className="text-[var(--vex-text-2)]">
+          <DialogDescription className="text-ink-secondary">
             {`Save a readable transcript of "${title}" to a file you choose. Secrets are redacted automatically on a best-effort basis — review the file before sharing it.`}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody className="gap-3" />
 
-        <DialogFooter className="border-[var(--vex-line)]">
+        <DialogFooter className="border-line-2">
           <Button
             type="button"
             variant="ghost"
             onClick={onCancel}
             disabled={pending}
             autoFocus
-            className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             Cancel
           </Button>

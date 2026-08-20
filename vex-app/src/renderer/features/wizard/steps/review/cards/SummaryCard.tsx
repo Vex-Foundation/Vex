@@ -22,11 +22,11 @@ export type SummaryStatus = "ok" | "missing" | "partial" | "warning" | "info";
 /* Status is a colored WORD (design law: state = color + words, never a
  * dot) — the statusLabel itself carries the tone. */
 const STATUS_WORD_COLOR: Record<SummaryStatus, string> = {
-  ok: "text-[var(--color-success)]",
-  missing: "text-[var(--color-danger)]",
-  partial: "text-[var(--color-warning)]",
-  warning: "text-[var(--color-warning)]",
-  info: "text-[var(--color-text-muted)]",
+  ok: "text-success",
+  missing: "text-danger",
+  partial: "text-warning",
+  warning: "text-warning",
+  info: "text-ink-tertiary",
 };
 
 export interface SummaryCardProps {
@@ -59,7 +59,7 @@ export function SummaryCard({
       )}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-[var(--color-text-primary)]">
+        <span className="text-sm font-medium text-ink-primary">
           {title}
         </span>
         <div className="flex items-center gap-2">
@@ -85,7 +85,7 @@ export function SummaryCard({
         </div>
       </div>
       {children ? (
-        <div className="text-xs text-[var(--color-text-secondary)]">
+        <div className="text-xs text-ink-secondary">
           {children}
         </div>
       ) : null}

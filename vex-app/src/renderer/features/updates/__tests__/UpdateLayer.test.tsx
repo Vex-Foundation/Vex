@@ -1,7 +1,7 @@
 /**
  * UpdateLayer (updater redesign Part A). Verifies the defensive no-op when
- * the updater bridge is absent, that the bottom-right `UpdateToast` renders
- * for an `available` status, that "Later" snoozes ONLY the current version
+ * the updater bridge is absent, that the sticky update toast renders through
+ * the global ToastHost for an `available` status, that "Later" snoozes ONLY the current version
  * while a NEWER version pushed over `onStatus` still surfaces (item 2 —
  * snooze must not suppress discovery of a newer release), that "Try again"
  * on `blockedByOperation` re-invokes the correct action per `blockedAction`,
@@ -15,13 +15,19 @@ import type { ReactNode } from "react";
 import { createElement } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 
-// Isolate from the icon layer (toast glyphs render nothing) —
-// same convention as the appShell modal tests.
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 const { UpdateLayer } = await import("../UpdateLayer.js");
+const { ToastHost } = await import("../../../components/ui/toast-host.js");
+const { clearStickyToast } = await import("../../../lib/toast.js");
+
+/** The layer writes the sticky slot; the host renders it - mount both. */
+function layerWithHost(): ReactNode {
+  return createElement(
+    "div",
+    null,
+    createElement(UpdateLayer),
+    createElement(ToastHost),
+  );
+}
 
 interface UpdaterBridgeStub {
   readonly getStatus: ReturnType<typeof vi.fn>;
@@ -83,6 +89,9 @@ function withClient(children: ReactNode): ReactNode {
 afterEach(() => {
   // @ts-expect-error — test cleanup
   delete window.vex;
+  // The sticky slot is module-level; a torn-down layer's cleanup already
+  // ran, but clear defensively so one test can never leak into the next.
+  clearStickyToast();
 });
 
 describe("UpdateLayer", () => {
@@ -98,7 +107,7 @@ describe("UpdateLayer", () => {
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     expect(await screen.findByText("Vex 1.1.0 available")).toBeTruthy();
   });
 
@@ -109,7 +118,7 @@ describe("UpdateLayer", () => {
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     await screen.findByText("Vex 1.1.0 available");
 
     fireEvent.click(screen.getByText("Later"));
@@ -148,7 +157,7 @@ describe("UpdateLayer", () => {
       severity: "normal",
       wasDownloaded: false,
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() =>
       expect(bridge.startUpdateNow).toHaveBeenCalledTimes(1),
@@ -166,7 +175,7 @@ describe("UpdateLayer", () => {
       severity: "normal",
       wasDownloaded: true,
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() =>
       expect(bridge.restartAndInstallNow).toHaveBeenCalledTimes(1),
@@ -181,7 +190,7 @@ describe("UpdateLayer", () => {
       message: "Update failed. Check your connection and try again.",
       retryable: true,
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() => expect(bridge.checkNow).toHaveBeenCalledTimes(1));
   });
@@ -193,7 +202,7 @@ describe("UpdateLayer", () => {
       message: "Update failed. Check your connection and try again.",
       retryable: true,
     });
-    render(withClient(<UpdateLayer />));
+    render(withClient(layerWithHost()));
     await screen.findByLabelText("Dismiss update notification");
     fireEvent.click(screen.getByLabelText("Dismiss update notification"));
     await waitFor(() =>

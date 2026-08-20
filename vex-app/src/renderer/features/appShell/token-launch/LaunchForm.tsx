@@ -202,9 +202,9 @@ export function LaunchForm({
           rows={3}
           placeholder="What is this token?"
           className={cn(
-            "min-h-24 w-full rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] px-3 py-2 text-sm shadow-none",
-            "placeholder:text-[var(--vex-text-3)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
+            "min-h-24 w-full rounded-xl border border-line-3 bg-surface-deep px-3 py-2 text-sm shadow-none",
+            "placeholder:text-ink-tertiary",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
             "disabled:opacity-50",
           )}
         />
@@ -240,11 +240,11 @@ export function LaunchForm({
           className="font-mono tabular-nums"
         />
         {!prebuyIsAmount ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm text-danger" role="alert">
             Enter a plain ETH amount, like 0.05 — up to 18 decimal places.
           </p>
         ) : (
-          <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+          <p className="text-[11px] leading-relaxed text-ink-tertiary">
             Bought for you in the same transaction that creates the token.
             Leave it at 0 to launch without buying.
           </p>
@@ -268,7 +268,7 @@ function LinkRows({
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor="vex-launch-link-0">Links</Label>
-      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">
         Optional, up to {LAUNCH_LINKS_MAX}. Must start with https://
       </p>
       {links.map((link, index) => {
@@ -287,7 +287,7 @@ function LinkRows({
             {hasForbiddenTokenMetadataText(link) ? (
               <ForbiddenTextWarning value={link} />
             ) : invalid ? (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="text-sm text-danger" role="alert">
                 Only https:// links are accepted.
               </p>
             ) : null}
@@ -299,7 +299,7 @@ function LinkRows({
           type="button"
           onClick={onAddRow}
           disabled={disabled}
-          className="w-fit rounded-full border border-[var(--vex-line)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50"
+          className="w-fit rounded-full border border-line-2 px-3 py-1 font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
         >
           Add link
         </button>
@@ -315,7 +315,7 @@ function LinkRows({
 function ForbiddenTextWarning({ value }: { readonly value: string }): JSX.Element | null {
   if (!hasForbiddenTokenMetadataText(value)) return null;
   return (
-    <p className="text-sm text-destructive" role="alert">
+    <p className="text-sm text-danger" role="alert">
       {FORBIDDEN_TEXT_MESSAGE}
     </p>
   );
@@ -329,7 +329,7 @@ function FieldCounter({
   readonly max: number;
 }): JSX.Element {
   return (
-    <div className="flex items-center justify-end font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+    <div className="flex items-center justify-end font-mono text-[10px] tabular-nums text-ink-tertiary">
       <span aria-live="polite">
         {length} / {max}
       </span>

@@ -47,7 +47,7 @@ export function EmbeddingFields({
           autoFocus
           className="h-11"
         />
-        <p className="text-xs text-[var(--color-text-muted)]">
+        <p className="text-xs text-ink-tertiary">
           A non-local URL sends memory content to that endpoint.
         </p>
       </div>
@@ -79,7 +79,7 @@ export function EmbeddingFields({
             onChange={(e) => setForm({ ...form, dim: e.target.value })}
             className="h-11"
           />
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             {MIN_EMBEDDING_DIM}–{MAX_EMBEDDING_DIM}. Common: 384, 768, 1024,
             1536. Locks once memories exist — changing it later would
             strand them.

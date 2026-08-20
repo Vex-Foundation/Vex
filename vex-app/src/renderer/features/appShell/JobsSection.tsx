@@ -42,7 +42,7 @@ export function JobsSection(): JSX.Element {
     <section data-vex-section="memory-jobs" className={SECTION}>
       <div>
         <h2 className="vex-eyebrow">Memory jobs</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           The memory manager&apos;s work queue — consolidation sweeps and
           reconcile passes. Retries are handled automatically by the manager.
         </p>
@@ -97,10 +97,10 @@ function JobRow({ job }: { readonly job: MemoryJobDto }): JSX.Element {
     <li
       data-vex-job-id={job.id}
       data-status={job.status}
-      className="border-b border-[var(--vex-line)] px-1 py-2 last:border-b-0"
+      className="border-b border-line-2 px-1 py-2 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-foreground">#{job.id}</span>
+        <span className="font-mono text-xs text-ink-primary">#{job.id}</span>
         <span className={PILL}>{job.jobKind}</span>
         <span className={PILL} data-vex-job-status>
           {job.status}
@@ -122,7 +122,7 @@ function JobRow({ job }: { readonly job: MemoryJobDto }): JSX.Element {
           title={
             job.completedAt ?? job.startedAt ?? job.createdAt
           }
-          className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
         >
           {fmtDate(job.completedAt ?? job.startedAt ?? job.createdAt)}
         </span>
