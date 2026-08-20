@@ -1,7 +1,6 @@
 /**
  * SettingsPreferences - the Appearance theme switcher, the composer
- * Enter-key row, and the presence-gated notifications toggle on the
- * Settings register.
+ * Enter-key row, and the notifications toggle on the Settings register.
  *
  * Pins:
  *   - clicking a theme cube writes the persisted preference AND stamps the
@@ -10,8 +9,7 @@
  *     ("system" stays pressed while the OS resolves the paint),
  *   - the Enter-key choice round-trips through the composer submission
  *     policy's public API,
- *   - the notifications row renders on the merged store slot and
- *     round-trips through its setter.
+ *   - the notifications row round-trips through the typed uiStore slot.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -71,9 +69,7 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
-  it("the notifications row renders on the merged store slot and a click round-trips through its setter", () => {
-    // The errors lane's slot is merged: the row is always present and the
-    // probe resolves the real typed slot (default true).
+  it("the notifications row reads the typed uiStore slot and a click round-trips through its setter", () => {
     useUiStore.setState({ notificationsEnabled: true });
 
     render(<SettingsPreferences />);

@@ -28,15 +28,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  XIcon: "XIcon",
-}));
-
 // Sibling screens pull heavy registers; only the settings branch is under test.
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));

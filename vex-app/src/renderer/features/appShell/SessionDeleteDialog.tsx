@@ -71,7 +71,7 @@ export function SessionDeleteDialog({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant="danger"
             onClick={onConfirm}
             disabled={pending}
           >

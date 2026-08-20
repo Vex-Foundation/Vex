@@ -10,9 +10,6 @@
  *
  * Setup mirrors `MissionContractCard.test.tsx`: real QueryClient + a window.vex
  * bridge. The native <dialog> is polyfilled (jsdom has no showModal/close).
- *
- * VexIcon is mocked to render nothing so the PremiumBadge header marker
- * (and CardBody/AutoRetry icons) don't pull the ESM icon lib.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,10 +17,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 
 const { MissionContractModal } = await import("../MissionContractModal.js");
 

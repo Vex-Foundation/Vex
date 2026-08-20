@@ -1,10 +1,9 @@
 /**
  * The Preferences group on the Settings register: the Appearance theme
  * switcher (chronos | celeris | system cubes), the composer Enter-key row,
- * and - once the errors lane lands its uiStore slot - the notifications
- * toggle. Appearance selection follows the PERSISTED preference, never the
- * resolved active theme, so "System" stays selected while the OS decides
- * the paint.
+ * and the notifications toggle. Appearance selection follows the PERSISTED
+ * preference, never the resolved active theme, so "System" stays selected
+ * while the OS decides the paint.
  */
 
 import { type JSX } from "react";
@@ -22,11 +21,6 @@ import {
   type SubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
 import { cn } from "../../../../lib/utils.js";
-import {
-  notificationsSlotPresent,
-  setNotificationsEnabled,
-  useNotificationsEnabled,
-} from "./notifications-slot.js";
 
 interface ThemeCube {
   readonly id: VexThemePreference;
@@ -139,7 +133,10 @@ function SubmitKeyRow(): JSX.Element {
 }
 
 function NotificationsRow(): JSX.Element {
-  const enabled = useNotificationsEnabled();
+  const enabled = useUiStore((state) => state.notificationsEnabled);
+  const setNotificationsEnabled = useUiStore(
+    (state) => state.setNotificationsEnabled,
+  );
   return (
     <div
       className="flex items-center justify-between gap-3 border-t border-line-1 py-4"
@@ -189,7 +186,7 @@ export function SettingsPreferences(): JSX.Element {
       <GroupTitle>Preferences</GroupTitle>
       <AppearanceRow />
       <SubmitKeyRow />
-      {notificationsSlotPresent() ? <NotificationsRow /> : null}
+      <NotificationsRow />
     </section>
   );
 }

@@ -5,7 +5,7 @@
 > see `src/renderer/styles/globals.css` for current law.
 >
 > Also retired since this spec was written, and named throughout it: the
-> `@hugeicons/*` packages (icons now come from `lucide-react` behind
+> `@hugeicons/*` packages (icons are now the inline-SVG set owned by
 > `renderer/components/icons/`), `SessionRuntimeBar` (replaced by the Runtime &
 > Cost card), the MOVES block and its `listMoves` pipeline, and the
 > `vex-signal-resolve` / `vex-fade-top` CSS rules (deleted with their last

@@ -42,7 +42,7 @@ import {
 } from "react";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "./portfolio/portfolio-motion.js";
-import { GripVerticalIcon, VexIcon } from "../../../components/icons/index.js";
+import { IconGripVertical } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import {
   BOOK_SECTION_LABEL,
@@ -279,7 +279,7 @@ export function ReorderableSection({
         aria-label={`Reorder ${BOOK_SECTION_LABEL[id]} — position ${index + 1} of ${count}`}
         className="absolute right-2 top-2 z-10 cursor-grab rounded p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-ink-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary group-hover:opacity-100"
       >
-        <VexIcon icon={GripVerticalIcon} size={12} aria-hidden />
+        <IconGripVertical size={12} />
       </button>
       {children}
     </motion.li>

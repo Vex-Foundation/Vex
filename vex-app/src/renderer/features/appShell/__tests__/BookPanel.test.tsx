@@ -23,9 +23,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 vi.mock("../book/PositionBlock.js", () => ({
   PositionBlock: () => <div data-testid="card-position" />,
 }));

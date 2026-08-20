@@ -4,9 +4,8 @@
  * Two layouts, branched on whether a session is active:
  *   - no active session → the WELCOME STAGE: the
  *     center column is TRANSPARENT — the procedural WebGL sky mounted behind
- *     the shell shows through. `SessionWelcomeHero` paints the Grok-style
- *     logo row (sigil + PREVIEW wordmark — the H1 is deleted, owner decree
- *     2026-07-21) and the absolute bottom band against this panel's relative
+ *     the shell shows through. `SessionWelcomeHero` paints the
+ *     vx-mark + greeting stack and the absolute bottom band against this panel's relative
  *     frame; the composer sits directly beneath the logo row, centered at
  *     min(760px, 92%), inside a FIXED-HEIGHT growth band (owner smoothness
  *     decree 2026-07-22): the band's layout height equals the composer's

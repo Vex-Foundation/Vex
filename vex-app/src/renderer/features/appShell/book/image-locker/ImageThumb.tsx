@@ -26,7 +26,7 @@
 
 import type { JSX } from "react";
 import type { LockerImage } from "@shared/schemas/images.js";
-import { Trash2Icon, VexIcon } from "../../../../components/icons/index.js";
+import { IconTrash } from "../../../../components/icons/index.js";
 import { useLockerImageThumb } from "../../../../lib/api/images.js";
 
 export function ImageThumb({
@@ -90,7 +90,7 @@ export function ImageThumb({
         className="absolute right-1 top-1 rounded-full bg-surface-base/90 p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-warning-label focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
         aria-label={`Remove ${image.label} from the locker`}
       >
-        <VexIcon icon={Trash2Icon} size={12} aria-hidden />
+        <IconTrash size={12} />
       </button>
     </li>
   );

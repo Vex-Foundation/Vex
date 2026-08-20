@@ -8,33 +8,33 @@
  * a persisted row has no reliable "recalling…" state.
  */
 
-import type { JSX } from "react";
+import type { ComponentType, JSX } from "react";
 import {
-  BookOpenIcon,
-  BrainIcon,
-  type IconGlyph,
-  SparklesIcon,
+  IconBookOpen,
+  IconBrain,
+  type GlyphProps,
+  IconSparkle,
 } from "../../components/icons/index.js";
 import { ProvenanceMarker } from "./ProvenanceMarker.js";
 
 interface RecallCopy {
   readonly label: string;
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
 }
 
 function recallCopy(toolName: string | null): RecallCopy {
   switch (toolName) {
     case "session_memory_search":
-      return { label: "Recalled session memory", icon: BrainIcon };
+      return { label: "Recalled session memory", icon: IconBrain };
     case "long_memory_search":
     case "long_memory_get":
     case "long_memory_history":
       return {
         label: "Recalled long-term memory",
-        icon: BookOpenIcon,
+        icon: IconBookOpen,
       };
     default:
-      return { label: "Recalled context", icon: SparklesIcon };
+      return { label: "Recalled context", icon: IconSparkle };
   }
 }
 

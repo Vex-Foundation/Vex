@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { CopyIcon, VexIcon } from "../../../components/icons/index.js";
+import { IconCopy } from "../../../components/icons/index.js";
 import { highlightLines } from "../highlight.js";
 
 const KIND_CLASS = {
@@ -91,7 +91,7 @@ export function CodeBlock({
           className="flex items-center text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {copyState === "idle" ? (
-            <VexIcon icon={CopyIcon} size={12} aria-hidden />
+            <IconCopy size={12} />
           ) : (
             <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
               {copyState === "copied" ? "Copied" : "Copy failed"}

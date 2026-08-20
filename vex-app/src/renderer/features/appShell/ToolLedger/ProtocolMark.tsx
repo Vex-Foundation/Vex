@@ -13,21 +13,21 @@
  * card's adjacent title carries the accessible name.
  */
 
-import type { JSX } from "react";
+import type { ComponentType, JSX } from "react";
 import { ProtocolMark as VenueMark } from "../../../components/common/ProtocolMark.js";
-import { VexIcon, type IconGlyph } from "../../../components/icons/index.js";
+import type { GlyphProps } from "../../../components/icons/index.js";
 import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
 import { cn } from "../../../lib/utils.js";
 
 export function ProtocolMark({
   protocol,
-  fallbackGlyph,
+  fallbackGlyph: FallbackGlyph,
   size = 16,
   className,
 }: {
   readonly protocol: string | null;
   /** Category glyph shown when no venue is proven. */
-  readonly fallbackGlyph: IconGlyph;
+  readonly fallbackGlyph: ComponentType<GlyphProps>;
   readonly size?: number;
   readonly className?: string;
 }): JSX.Element {
@@ -35,10 +35,8 @@ export function ProtocolMark({
 
   if (mark === null) {
     return (
-      <VexIcon
-        icon={fallbackGlyph}
+      <FallbackGlyph
         size={size}
-        aria-hidden
         className={cn("shrink-0 text-[var(--vex-text-3)]", className)}
       />
     );

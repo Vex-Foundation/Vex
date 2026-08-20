@@ -3,26 +3,15 @@
  * ============================================================ */
 
 /* ─────────────────────────────────────────────────────────────────────────
- * THE TYPOGRAPHY REGISTER (White House pass, owner decree 2026-07-29)
+ * THE TYPOGRAPHY REGISTER (tokens v2, 2026-08 rebrand)
  *
- * The app-wide voice is the whitehouse.gov pair: Instrument Serif (voice) +
- * Instrument Sans (support). JetBrains Mono is DEMOTED to strictly technical
- * artifacts only — code blocks, raw JSON args/output, addresses, tx hashes.
- * The mono-uppercase micro-label language is retired shell-wide, which is why
- * the two classes below flip family at the CLASS level: every one of their
- * ~40 call sites changes register in one edit, and no new mono uppercase
- * label may be added anywhere.
- *
- * SUPPORT-SIDE (sans small caps), NOT serif — the sanctioned fallback:
- * Instrument Serif is a high-contrast display face whose hairline strokes
- * disappear at the 10px these two classes render at, and it has NO weight
- * axis, so the ~6 call sites that pair `.vex-micro` with `font-semibold` /
- * `font-medium` would have forced the browser to SYNTHESIZE a bold the
- * register explicitly forbids. Instrument Sans is the support half of the
- * same whitehouse.gov pair, carries a real 400–700 axis, and stays crisp at
- * micro sizes — so the small-caps stamp is sans and the serif is reserved
- * for headings, display and the reasoning aside. See `.vex-chat-prose`
- * below for the reading side, and `.vex-reasoning-prose` for the aside.
+ * The app-wide voice is Inter Tight (--font-sans: UI + reading), Doto
+ * (--font-doto: display micro-labels, stats - applied per scope, e.g. the
+ * [data-vex-gate] pre-shell re-pins `.vex-micro`), and JetBrains Mono for
+ * strictly technical artifacts only - code blocks, raw JSON args/output,
+ * addresses, tx hashes. Instrument Serif survives ONLY as the gate voice
+ * (pre-shell surfaces). The two classes below flip family at the CLASS
+ * level so their ~40 call sites change register in one edit.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* Eyebrow — the section/group label. Formerly carried a leading ::before rule

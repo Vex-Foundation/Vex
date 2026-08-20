@@ -27,7 +27,6 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
     bookWidth: state.bookWidth,
     hideDustBalances: state.hideDustBalances,
     notificationsEnabled: state.notificationsEnabled,
-    prologueVersion: state.prologueVersion,
     bookSectionOrder: state.bookSectionOrder,
   };
 }
@@ -44,8 +43,8 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
 //       to `chronos` (the merge coercion also enforces this on rehydrate).
 //   v6: `hideDustBalances` added (Portfolio tab dust filter) — seed TRUE,
 //       the same default a fresh install gets.
-//   v7: `prologueVersion` added (gate-prologue play policy) — seed null,
-//       which resolves to the full play.
+//   v7: `prologueVersion` added (gate-prologue play policy), later removed
+//       in v12 — an old payload's key is dropped there.
 //   v8: `bookSectionOrder` added (BOOK rail drag-to-reorder) — seed [].
 //   v9: `theme` became `themePreference` — seed through the coercion.
 //   v10: `sidebarWidth`/`bookWidth` added (shell column drag) — seed the
@@ -53,6 +52,8 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
 //       widths, not `undefined`.
 //   v11: `notificationsEnabled` added (A34 native turn notification) - seed
 //       TRUE, the same default a fresh install gets.
+//   v12: `prologueVersion` removed (the gate-prologue play policy retired
+//       with the orb cluster) - drop the stale key from old payloads.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -62,9 +63,6 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 5) next = { ...next, theme: "chronos" };
   if (version < 6 && !("hideDustBalances" in next)) {
     next = { ...next, hideDustBalances: true };
-  }
-  if (version < 7 && !("prologueVersion" in next)) {
-    next = { ...next, prologueVersion: null };
   }
   if (version < 8 && !("bookSectionOrder" in next)) {
     next = { ...next, bookSectionOrder: [] };
@@ -81,6 +79,10 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   }
   if (version < 11 && !("notificationsEnabled" in next)) {
     next = { ...next, notificationsEnabled: true };
+  }
+  if (version < 12 && "prologueVersion" in next) {
+    const { prologueVersion: _dropped, ...rest } = next;
+    next = rest;
   }
   return next;
 }
@@ -108,14 +110,6 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     typeof incoming?.notificationsEnabled === "boolean"
       ? incoming.notificationsEnabled
       : true;
-  // A non-string, empty or absurdly long hand-edited value degrades to null —
-  // which the play policy resolves to the FULL prologue, never a crash.
-  const prologueVersion: string | null =
-    typeof incoming?.prologueVersion === "string" &&
-    incoming.prologueVersion.length > 0 &&
-    incoming.prologueVersion.length <= 64
-      ? incoming.prologueVersion
-      : null;
   // HARD BOUND on both the list and each entry so a hand-written payload
   // cannot make the resolver walk an unbounded array. Anything off-shape
   // degrades to [] — the default order, never a crash and never a blank rail.
@@ -137,7 +131,6 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     themePreference,
     hideDustBalances,
     notificationsEnabled,
-    prologueVersion,
     bookSectionOrder,
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),
     bookWidth: coerceBookWidth(incoming?.bookWidth),

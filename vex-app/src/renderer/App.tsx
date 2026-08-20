@@ -25,7 +25,12 @@
  */
 
 import { useEffect, useState, type JSX } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion,
+  useReducedMotion,
+} from "motion/react";
 import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
@@ -71,7 +76,7 @@ export function App(): JSX.Element {
     splash: () => (
       <main
         data-vex-screen="boot-void"
-        className="h-screen w-screen bg-[var(--color-bg-primary)]"
+        className="h-screen w-screen bg-surface-base"
       />
     ),
     systemCheck: () => <SystemCheck />,
@@ -84,7 +89,11 @@ export function App(): JSX.Element {
   };
 
   return (
-    <>
+    // reducedMotion="user": every Motion transform/layout animation in the
+    // tree obeys the OS setting by construction (opacity still animates),
+    // backstopping the per-surface useReducedMotion branches and matching
+    // the CSS side's global kill-switch in base.css.
+    <MotionConfig reducedMotion="user">
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
@@ -154,7 +163,7 @@ export function App(): JSX.Element {
           is baked into the build (owner request: view every pre-shell
           screen regardless of configured state). */}
       <SetupTour />
-    </>
+    </MotionConfig>
   );
 }
 
@@ -198,13 +207,13 @@ function DevDiagnostics(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-secondary)] hover:text-foreground"
+        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-ink-secondary hover:text-foreground"
       >
         dev · {open ? "hide" : "diagnostics"}
       </button>
       {open ? (
         <section className="mt-2 w-72 rounded-md border border-border bg-card p-3 text-xs">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-secondary">
             M0 diagnostics
           </h2>
           {capabilities ? (

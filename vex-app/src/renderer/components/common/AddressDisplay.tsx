@@ -84,7 +84,7 @@ export function AddressDisplay({
         data-vex-address-copy={copied ? "copied" : "idle"}
       >
         <code
-          className="font-mono text-[11px] text-[var(--color-text-secondary)]"
+          className="font-mono text-[11px] text-ink-secondary"
           title={truncate ? address : undefined}
         >
           {displayed}
@@ -96,8 +96,8 @@ export function AddressDisplay({
           className={cn(
             "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px]",
             "border border-white/[0.08] bg-white/[0.025]",
-            "text-[var(--color-text-muted)] transition-colors",
-            "hover:border-white/[0.16] hover:text-[var(--color-text-primary)]",
+            "text-ink-tertiary transition-colors",
+            "hover:border-white/[0.16] hover:text-ink-primary",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)]",
             copied &&
               "border-[color-mix(in_oklab,var(--color-success)_35%,transparent)] text-[var(--color-success)]",

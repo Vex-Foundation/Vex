@@ -29,7 +29,7 @@
  */
 
 import { useEffect, useRef, type JSX } from "react";
-import { RefreshCwIcon, VexIcon } from "../../../../components/icons/index.js";
+import { IconRefresh } from "../../../../components/icons/index.js";
 import type { ProviderEndpointOption } from "@shared/schemas/provider-endpoints.js";
 import { Label } from "../../../../components/ui/label.js";
 import { cn } from "../../../../lib/utils.js";
@@ -115,7 +115,7 @@ export function EndpointPicker({
             onClick={onRetry}
             className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
           >
-            <VexIcon icon={RefreshCwIcon} size={12} aria-hidden />
+            <IconRefresh size={12} />
             Retry
           </button>
         </div>

@@ -352,7 +352,7 @@ export function UnlockScreen(): JSX.Element {
               </Button>
               <Button
                 type="button"
-                variant="destructive"
+                variant="danger"
                 disabled={!resetAcknowledged || resetPending}
                 onClick={() => void requestFreshVault()}
               >

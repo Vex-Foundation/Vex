@@ -28,28 +28,6 @@ import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  DownloadIcon: "DownloadIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  PercentIcon: "PercentIcon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  BrainCircuitIcon: "BrainCircuitIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  MapPinIcon: "MapPinIcon",
-  CircleStopIcon: "CircleStopIcon",
-}));
-
 // Brand-icon lib mocked per sibling suites — keeps this suite immune to
 // transitive TokenIcon/ModelBrandIcon imports reaching "@thesvg/react".
 vi.mock("@thesvg/react", () => ({

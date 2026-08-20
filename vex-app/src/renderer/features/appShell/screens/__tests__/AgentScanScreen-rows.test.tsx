@@ -31,14 +31,6 @@ import {
   ROW_PX,
 } from "./_agent-scan-fixtures.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-}));
-
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,

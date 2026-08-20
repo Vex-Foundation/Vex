@@ -85,7 +85,7 @@ function renderStep(
 
 const SHELL_CHROME = cn(
   "relative flex h-screen w-screen overflow-hidden",
-  "text-[var(--color-text-primary)]",
+  "text-ink-primary",
 );
 
 /* Error state is an open composition on the plate (AMENDMENT A3 —
@@ -111,7 +111,7 @@ function WizardChrome(): JSX.Element {
           className="h-6 w-auto select-none"
         />
       </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
         v{__VEX_APP_VERSION__}
       </span>
     </>
@@ -245,15 +245,15 @@ export function WizardShell(): JSX.Element {
         <WizardChrome />
         <div className={ERROR_STACK_CHROME}>
           <div className="flex flex-col gap-2">
-            <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
+            <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
               Setup unavailable
             </h1>
             {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
-            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[var(--color-text-secondary)]">
+            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-ink-secondary">
               {message}
             </p>
           </div>
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             Most setup-state failures are transient — retry once, then
             restart Vex if the problem persists.
           </p>

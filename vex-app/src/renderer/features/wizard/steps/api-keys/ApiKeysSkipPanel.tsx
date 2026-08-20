@@ -12,13 +12,13 @@
  * from the inlined branch.
  */
 
-import type { JSX } from "react";
-import type { IconGlyph } from "../../../../components/icons/index.js";
+import type { ComponentType, JSX } from "react";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import { Button } from "../../../../components/ui/button.js";
 import { WizardStepPanel } from "../../WizardStepPanel.js";
 
 export interface ApiKeysSkipPanelProps {
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly formError: string | null;
   readonly advancePending: boolean;
   readonly onContinue: () => void;

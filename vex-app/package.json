@@ -57,7 +57,6 @@
     "electron-log": "~5.4.3",
     "electron-updater": "~6.8.3",
     "lightweight-charts": "5.2.0",
-    "lucide-react": "~1.27.0",
     "marked": "~18.0.3",
     "motion": "~13.1.0",
     "pg": "~8.20.0",

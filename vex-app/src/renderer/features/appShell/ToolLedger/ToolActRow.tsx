@@ -26,9 +26,8 @@
 
 import { useId, useMemo, useState, type JSX } from "react";
 import {
-  ChevronRightIcon,
-  CircleCheckIcon,
-  VexIcon,
+  IconChevronRight,
+  IconCircleCheck,
 } from "../../../components/icons/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
 import { cn } from "../../../lib/utils.js";
@@ -90,7 +89,7 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <VexIcon icon={CircleCheckIcon} size={12} aria-hidden />
+      <IconCircleCheck size={12} />
       Confirmed
     </span>
   );
@@ -277,7 +276,7 @@ export function ToolActRow({
                 open && "rotate-90",
               )}
             >
-              <VexIcon icon={ChevronRightIcon} size={12} />
+              <IconChevronRight size={12} />
             </span>
           </span>
           <span className="flex min-w-0 flex-1 flex-col">

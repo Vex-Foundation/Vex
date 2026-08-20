@@ -35,10 +35,10 @@ const defaultWord: Record<SetupStatusTone, string> = {
 
 const wordInk: Record<SetupStatusTone, string> = {
   ok: "text-[var(--color-success)]",
-  info: "text-[var(--color-text-secondary)]",
+  info: "text-ink-secondary",
   warn: "text-[var(--color-warning)]",
   error: "text-[var(--color-danger)]",
-  muted: "text-[var(--color-text-muted)]",
+  muted: "text-ink-tertiary",
 };
 
 const alertRail: Partial<Record<SetupStatusTone, string>> = {
@@ -75,11 +75,11 @@ export function SetupStatusCard({
       >
         {word ?? defaultWord[tone]}
       </span>
-      <span className="text-lg font-medium text-[var(--color-text-primary)]">
+      <span className="text-lg font-medium text-ink-primary">
         {title}
       </span>
       {detail ? (
-        <span className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+        <span className="text-xs leading-relaxed text-ink-secondary">
           {detail}
         </span>
       ) : null}

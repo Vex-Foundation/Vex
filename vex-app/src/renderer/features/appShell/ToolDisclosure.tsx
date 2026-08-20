@@ -8,7 +8,7 @@
  */
 
 import { useId, useState, type JSX } from "react";
-import { ChevronRightIcon, VexIcon } from "../../components/icons/index.js";
+import { IconChevronRight } from "../../components/icons/index.js";
 
 export function ToolDisclosure({
   label,
@@ -32,12 +32,9 @@ export function ToolDisclosure({
         aria-controls={bodyId}
         className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
-        <VexIcon
-          icon={ChevronRightIcon}
+        <IconChevronRight
           size={12}
-          aria-hidden
-          className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-        />
+          className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
         <span className="truncate font-mono text-[12px]">{label}</span>
       </button>
       {open ? (

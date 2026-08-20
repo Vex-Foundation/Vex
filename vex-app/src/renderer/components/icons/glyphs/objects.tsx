@@ -1,10 +1,10 @@
-/** Domain-object glyphs: places, files, people, code, data. */
+/** Domain-object glyphs: places, files, people, code, data, hardware, tools. */
 
 import type { JSX } from "react";
 import type { GlyphProps } from "./props.js";
 
 export const IconNewChat = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M8.00003 0.3237C3.76075 0.3237 0.32373 3.76072 0.32373 8C0.32373 9.17603 0.589121 10.2922 1.0632 11.2901L1.35291 11.8989L2.5705 11.3205L2.28079 10.7117C1.89079 9.89074 1.67301 8.97167 1.67301 8C1.67301 4.50546 4.50549 1.67298 8.00003 1.67298C11.4946 1.67298 14.3271 4.50546 14.3271 8C14.3271 11.4945 11.4946 14.327 8.00003 14.327C7.28473 14.327 6.76077 14.277 6.29621 14.1487C5.83857 14.0224 5.40441 13.8109 4.88514 13.4488C4.12569 12.919 3.03778 12.7316 2.141 13.2978L2.12682 13.307L2.11264 13.3171L1.34886 13.854L1.79659 15.188L2.86122 14.4384C3.19068 14.2305 3.68325 14.2542 4.11326 14.5539C4.72789 14.9826 5.30042 15.2724 5.93762 15.4484C6.56803 15.6224 7.22776 15.6763 8.00003 15.6763C12.2393 15.6763 15.6763 12.2393 15.6763 8C15.6763 3.76072 12.2393 0.3237 8.00003 0.3237ZM7.32033 4.82535V7.32536H4.82538V8.67464H7.32033V11.1747H8.6696V8.67464H11.1747V7.32536H8.6696V4.82535H7.32033Z"
@@ -15,7 +15,7 @@ export const IconNewChat = ({ size = 16, className }: GlyphProps): JSX.Element =
 );
 
 export const IconGlobe = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           fillRule="evenodd"
@@ -28,7 +28,7 @@ export const IconGlobe = ({ size = 16, className }: GlyphProps): JSX.Element => 
 );
 
 export const IconSettings = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <g clipPath="url(#clip0_1450_63327)">
           <path
@@ -50,7 +50,7 @@ export const IconSettings = ({ size = 16, className }: GlyphProps): JSX.Element 
 );
 
 export const IconUser = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M11.0307 5.46369C11.0305 3.78995 9.6734 2.43357 7.99961 2.43357C6.32601 2.43379 4.96972 3.79009 4.96949 5.46369C4.96949 7.13748 6.32587 8.49455 7.99961 8.49477C9.67354 8.49477 11.0307 7.13762 11.0307 5.46369ZM12.3163 5.46369C12.3163 7.84777 10.3837 9.78042 7.99961 9.78042C5.61572 9.7802 3.68288 7.84763 3.68288 5.46369C3.6831 3.07993 5.61586 1.14718 7.99961 1.14695C10.3836 1.14695 12.3161 3.0798 12.3163 5.46369Z"
@@ -65,7 +65,7 @@ export const IconUser = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconFolderOpen = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path d="M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z" fill="currentColor"/>
         <path opacity="0.2" d="M13.6602 7.75525C13.9618 7.7556 14.1815 8.04179 14.1045 8.33337L13.0508 12.3031C12.9304 12.7567 12.5191 13.0725 12.0498 13.0726H2.91701C2.23744 13.0725 1.7417 12.4287 1.91603 11.7719L2.77834 8.52478C2.89898 8.07146 3.31018 7.75532 3.77931 7.75525H13.6602ZM5.1963 2.95154C5.34985 2.95159 5.49377 3.02803 5.57912 3.15564L6.0508 3.86365C6.39205 4.37553 6.96685 4.68385 7.58205 4.68396H12.1699C12.7416 4.68396 13.2049 5.14754 13.2051 5.71912V6.37439H3.77931C3.02267 6.37444 2.33067 6.72671 1.88283 7.29333V3.98669C1.88299 3.4152 2.34649 2.95168 2.91798 2.95154H5.1963Z" fill="currentColor"/>
@@ -74,7 +74,7 @@ export const IconFolderOpen = ({ size = 16, className }: GlyphProps): JSX.Elemen
 );
 
 export const IconFolderClose = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path transform="translate(1.5 2.429)" d="M5.05582 0.518756L4.50669 0.86654L5.05582 0.518756ZM13 9.4837L13.65 9.4837L13.65 3.53962L13 3.53962L12.35 3.53962L12.35 9.4837L13 9.4837ZM11.3264 1.86603L11.3264 1.21603L6.52313 1.21603L6.52313 1.86603L6.52313 2.51603L11.3264 2.51603L11.3264 1.86603ZM5.58054 1.34727L6.12968 0.999489L5.60495 0.170972L5.05582 0.518756L4.50669 0.86654L5.03141 1.69506L5.58054 1.34727ZM4.11323 1.23058e-13L4.11323 -0.65L1.67359 -0.65L1.67359 5.00699e-14L1.67359 0.65L4.11323 0.65L4.11323 1.23058e-13ZM0 1.67359L-0.65 1.67359L-0.65 9.4837L0 9.4837L0.65 9.4837L0.65 1.67359L0 1.67359ZM11.3264 11.1573L11.3264 10.5073L1.67359 10.5073L1.67359 11.1573L1.67359 11.8073L11.3264 11.8073L11.3264 11.1573ZM0 9.4837L-0.65 9.4837C-0.65 10.767 0.390308 11.8073 1.67359 11.8073L1.67359 11.1573L1.67359 10.5073C1.10828 10.5073 0.65 10.049 0.65 9.4837L0 9.4837ZM1.67359 5.00699e-14L1.67359 -0.65C0.390307 -0.65 -0.65 0.390309 -0.65 1.67359L0 1.67359L0.65 1.67359C0.65 1.10828 1.10828 0.65 1.67359 0.65L1.67359 5.00699e-14ZM5.05582 0.518756L5.60495 0.170972C5.28121 -0.340193 4.71829 -0.65 4.11323 -0.65L4.11323 1.23058e-13L4.11323 0.65C4.27282 0.65 4.4213 0.731715 4.50669 0.86654L5.05582 0.518756ZM6.52313 1.86603L6.52313 1.21603C6.36354 1.21603 6.21507 1.13431 6.12968 0.999489L5.58054 1.34727L5.03141 1.69506C5.35515 2.20622 5.91808 2.51603 6.52313 2.51603L6.52313 1.86603ZM13 3.53962L13.65 3.53962C13.65 2.25634 12.6097 1.21603 11.3264 1.21603L11.3264 1.86603L11.3264 2.51603C11.8917 2.51603 12.35 2.97431 12.35 3.53962L13 3.53962ZM13 9.4837L12.35 9.4837C12.35 10.049 11.8917 10.5073 11.3264 10.5073L11.3264 11.1573L11.3264 11.8073C12.6097 11.8073 13.65 10.767 13.65 9.4837L13 9.4837Z" fill="currentColor"/>
     </g>
@@ -82,7 +82,7 @@ export const IconFolderClose = ({ size = 16, className }: GlyphProps): JSX.Eleme
 );
 
 export const IconCode = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           fillRule="evenodd"
@@ -95,7 +95,7 @@ export const IconCode = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconData = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           fillRule="evenodd"
@@ -114,7 +114,7 @@ export const IconData = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconBranch = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           fillRule="evenodd"
@@ -127,7 +127,7 @@ export const IconBranch = ({ size = 16, className }: GlyphProps): JSX.Element =>
 );
 
 export const IconLink = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M9.94133 6.50173C11.3218 7.99603 11.3218 10.3011 9.94128 11.7954C9.88691 11.8542 9.82125 11.9196 9.72099 12.0198L7.75707 13.9838C7.65709 14.0838 7.592 14.1491 7.53334 14.2034C6.03906 15.5843 3.7327 15.5854 2.23827 14.2048C2.17933 14.1503 2.11374 14.0844 2.01315 13.9838C1.91318 13.8839 1.84922 13.8188 1.79495 13.7601C0.413857 12.2657 0.413909 9.95948 1.795 8.46503C1.84923 8.4064 1.91335 8.34115 2.01321 8.24129L3.79275 6.46313C3.71814 7.08101 3.75236 7.71445 3.90115 8.33518L3.00344 9.23151C2.89398 9.34097 2.8535 9.38307 2.82251 9.41658C1.93771 10.3744 1.93704 11.8514 2.82179 12.8092C2.85279 12.8427 2.89383 12.884 3.0034 12.9936C3.11272 13.1029 3.15429 13.1442 3.18777 13.1752C4.14561 14.0603 5.62381 14.0608 6.58178 13.1758C6.61532 13.1448 6.65722 13.1032 6.76685 12.9935L8.73077 11.0296C8.83999 10.9204 8.88142 10.8787 8.91238 10.8452C9.79744 9.88728 9.7969 8.40911 8.91173 7.45124C8.88074 7.41775 8.83944 7.3762 8.73011 7.26687C8.62082 7.15757 8.58061 7.11623 8.54712 7.08526C8.37347 6.92477 8.18243 6.79361 7.98088 6.69165L9.00289 5.66964C9.17506 5.78373 9.34035 5.91265 9.49663 6.05703C9.55538 6.11135 9.62026 6.17652 9.72036 6.27662C9.82094 6.3772 9.88686 6.4428 9.94133 6.50173Z"
@@ -142,12 +142,142 @@ export const IconLink = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconLock = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path
       d="M12 2.8C9.18335 2.8 6.9 5.08335 6.9 7.9V9.7H5.5C4.83726 9.7 4.3 10.2373 4.3 10.9V19.9C4.3 20.5627 4.83726 21.1 5.5 21.1H18.5C19.1627 21.1 19.7 20.5627 19.7 19.9V10.9C19.7 10.2373 19.1627 9.7 18.5 9.7H17.1V7.9C17.1 5.08335 14.8167 2.8 12 2.8ZM15.5 9.7H8.5V7.9C8.5 5.96701 10.067 4.4 12 4.4C13.933 4.4 15.5 5.96701 15.5 7.9V9.7ZM11.2 13.3H12.8V17.5H11.2V13.3Z"
       fill="currentColor"
       fillRule="evenodd"
       clipRule="evenodd"
     />
+  </svg>
+);
+
+/* The domain marks below are drawn native on the 24 grid with a 1.5 stroke,
+ * which matches the ring weight of the filled outlines above. */
+
+export const IconWallet = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="3.25" y="6" width="17.5" height="12.75" rx="2.5" />
+    <path d="M16 6v12.75" />
+    <circle cx="18.35" cy="12.4" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const IconKey = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="15.25" cy="8.75" r="3.75" />
+    <path d="M12.6 11.4 4.5 19.5v1.75h2.5V19.3h2v-2h2v-1.6" />
+  </svg>
+);
+
+export const IconCpu = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="4.75" y="4.75" width="14.5" height="14.5" rx="2" />
+    <rect x="9" y="9" width="6" height="6" rx="1" />
+    <path d="M9 2v2.75M12 2v2.75M15 2v2.75M9 19.25V22M12 19.25V22M15 19.25V22M2 9h2.75M2 12h2.75M2 15h2.75M19.25 9H22M19.25 12H22M19.25 15H22" />
+  </svg>
+);
+
+export const IconFile = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M13.5 3.25H7.5A2.25 2.25 0 0 0 5.25 5.5v13a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25V8.5Z" />
+    <path d="M13.5 3.25V8.5h5.25" />
+  </svg>
+);
+
+export const IconBookOpen = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M12 7.5v12.25" />
+    <path d="M12 7.5c-1.4-1.6-3.6-2.25-7.25-2.25v12.25c3.65 0 5.85.65 7.25 2.25" />
+    <path d="M12 7.5c1.4-1.6 3.6-2.25 7.25-2.25v12.25c-3.65 0-5.85.65-7.25 2.25" />
+  </svg>
+);
+
+export const IconBrain = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M12 5.75C10.6 4.4 8.2 4.6 7.1 6.1 5.4 6.3 4.4 7.9 4.9 9.4 3.8 10.6 4.1 12.6 5.5 13.4 5.2 15.2 6.7 16.9 8.6 16.8c.7 1.4 2.6 1.8 3.4.8Z" />
+    <path d="M12 5.75c1.4-1.35 3.8-1.15 4.9.35 1.7.2 2.7 1.8 2.2 3.3 1.1 1.2.8 3.2-.6 4 .3 1.8-1.2 3.5-3.1 3.4-.7 1.4-2.6 1.8-3.4.8Z" />
+    <path d="M12 5.75v11.85" />
+  </svg>
+);
+
+export const IconBrainCircuit = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M11.5 5.75C10.1 4.4 7.7 4.6 6.6 6.1 4.9 6.3 3.9 7.9 4.4 9.4 3.3 10.6 3.6 12.6 5 13.4c-.3 1.8 1.2 3.5 3.1 3.4.7 1.4 2.6 1.8 3.4.8Z" />
+    <path d="M11.5 5.75v11.85" />
+    <path d="M11.5 9.5h3.85v3.9h-2.3" />
+    <circle cx="16.75" cy="9.5" r="1.45" />
+    <circle cx="15.35" cy="16.4" r="1.45" />
+    <path d="M15.35 13.4v1.55" />
+  </svg>
+);
+
+export const IconBug = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="7.5" y="8" width="9" height="11.5" rx="4.5" />
+    <path d="M9 4.75 10.9 7.6M15 4.75 13.1 7.6" />
+    <path d="M7.5 11.25H4.25M7.5 14H4M7.5 16.9 5 18.6M16.5 11.25h3.25M16.5 14h3.5M16.5 16.9 19 18.6" />
+  </svg>
+);
+
+export const IconCable = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M4.25 3.5v4.25a3.75 3.75 0 0 0 7.5 0V3.5" />
+    <path d="M4.25 3.25v1.5M11.75 3.25v1.5" />
+    <path d="M8 11.5v3.25a4.5 4.5 0 0 0 4.5 4.5h3.25" />
+    <rect x="15.75" y="16.5" width="5" height="5.5" rx="1.5" />
+  </svg>
+);
+
+export const IconTerminal = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M5.5 7.25 10.5 12l-5 4.75" />
+    <path d="M12.5 17.25h6.25" />
+  </svg>
+);
+
+export const IconWrench = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M15.5 3.25a5.25 5.25 0 0 0-4.7 7.6L3.9 17.75a1.9 1.9 0 0 0 2.7 2.7l6.9-6.9a5.25 5.25 0 0 0 6.6-6.9l-2.9 2.9-2.6-.7-.7-2.6 2.9-2.9a5.3 5.3 0 0 0-1.3-.16Z" />
+  </svg>
+);
+
+export const IconWifi = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M2.75 9.4a13.9 13.9 0 0 1 18.5 0" />
+    <path d="M6 12.9a9.4 9.4 0 0 1 12 0" />
+    <path d="M9.25 16.4a5 5 0 0 1 5.5 0" />
+    <circle cx="12" cy="19.6" r="1.2" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const IconRocket = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M12 3.25c3 2 4.75 5.4 4.75 9.1L14.5 15.1h-5L7.25 12.35c0-3.7 1.75-7.1 4.75-9.1Z" />
+    <path d="M9.5 15.1 7 16.85l.75 3.25L10 18.6M14.5 15.1l2.5 1.75-.75 3.25L14 18.6" />
+    <circle cx="12" cy="9.9" r="1.6" />
+  </svg>
+);
+
+export const IconFlame = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M12 3.25c.6 3.2 2.3 4.4 3.9 6A6.6 6.6 0 0 1 18 14a6 6 0 0 1-12 0c0-1.9.9-3.5 2.2-4.6.2 1.2.8 2 1.7 2.4C9.3 9 9.8 5.9 12 3.25Z" />
+  </svg>
+);
+
+export const IconPercent = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M19 5 5 19" />
+    <circle cx="7.4" cy="7.4" r="2.4" />
+    <circle cx="16.6" cy="16.6" r="2.4" />
+  </svg>
+);
+
+export const IconWaypoints = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="12" cy="4.75" r="2.5" />
+    <circle cx="5" cy="18.5" r="2.5" />
+    <circle cx="19" cy="18.5" r="2.5" />
+    <path d="M10.85 7 6.15 16.25M13.15 7l4.7 9.25M7.5 18.5h9" />
   </svg>
 );

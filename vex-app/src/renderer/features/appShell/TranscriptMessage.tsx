@@ -15,7 +15,7 @@
  */
 
 import { memo, type JSX, type ReactNode } from "react";
-import { CircleStopIcon, VexIcon } from "../../components/icons/index.js";
+import { IconCircleStop } from "../../components/icons/index.js";
 import { StateDot } from "../../components/ui/state-dot.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
@@ -178,12 +178,12 @@ function AssistantCaption({
  * Document-typography wrapper around the safe markdown renderer.
  *
  * TYPOGRAPHY LAW (owner readability round 2026-07-30): message BODY copy is
- * Instrument Sans 15px/1.65. Instrument Serif is a condensed display face and
- * is now confined to headings, display figures and the reasoning aside — the
- * previous serif body was the "chujowo się czyta" report. The metrics are
- * declared once on `.vex-chat-prose` (landing-motifs.css) and reach the body
- * through `MarkdownContent`; this wrapper only owns the tone and wrapping, so
- * the two can never drift apart.
+ * the sans reading register, Inter Tight. Instrument Serif is a condensed
+ * display face and is now confined to headings, display figures and the
+ * reasoning aside — the previous serif body was the "chujowo się czyta"
+ * report. The face and metrics are declared once on `.vex-chat-prose`
+ * (landing-motifs.css) and reach the body through `MarkdownContent`; this
+ * wrapper only owns the tone and wrapping, so the two can never drift apart.
  */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   return (
@@ -249,9 +249,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           className="flex flex-col items-end"
         >
           {/* Operator prose shares the READING register with the assistant
-              body (owner readability round 2026-07-30): Instrument Sans
-              15px/1.65. This row renders as plain text, not markdown, so it
-              carries the metric itself instead of inheriting
+              body (owner readability round 2026-07-30): the sans face, Inter
+              Tight. This row renders as plain text, not markdown, so it
+              carries its own metric instead of inheriting
               `.vex-chat-prose` — keep the two in sync. */}
           {/* r22 = the composer card's radius (the two "user surfaces" share
               one shape); 525px cap inside the column, percentage keeps narrow
@@ -337,7 +337,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
-            <VexIcon icon={CircleStopIcon} size={12} aria-hidden />
+            <IconCircleStop size={12} />
             <span>Stopped</span>
           </div>
         </div>

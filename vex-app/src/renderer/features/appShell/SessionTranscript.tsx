@@ -18,7 +18,7 @@
  */
 
 import { useMemo, useRef, type JSX } from "react";
-import { ChevronDownIcon, VexIcon } from "../../components/icons/index.js";
+import { IconChevronDown } from "../../components/icons/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -284,7 +284,7 @@ export function SessionTranscript({
           aria-label="Jump to latest message"
           className="absolute bottom-4 left-1/2 z-10 inline-flex h-[34px] w-[34px] -translate-x-1/2 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-ink-primary shadow-md transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <VexIcon icon={ChevronDownIcon} size={14} aria-hidden />
+          <IconChevronDown size={14} />
         </button>
       ) : null}
     </div>

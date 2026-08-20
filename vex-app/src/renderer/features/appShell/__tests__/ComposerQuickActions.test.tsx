@@ -4,23 +4,17 @@
  * numbering is GONE (parallel starters, not an ordered sequence), and picking a
  * chip seeds the draft with its full prompt.
  *
- * VexIcon is stubbed to a span that surfaces the icon reference as a
- * `data-icon` attribute so the per-chip glyph is assertable in jsdom.
+ * The three intent glyphs are stubbed to spans carrying a `data-icon`
+ * attribute so the per-chip glyph is assertable in jsdom.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: ({ icon }: { icon: unknown }) => (
-    <span data-icon={String(icon)} />
-  ),
-}));
-
-vi.mock("../../../components/icons/icon-glyphs.js", () => ({
-  FlameIcon: "FlameIcon",
-  PercentIcon: "PercentIcon",
-  RocketIcon: "RocketIcon",
+vi.mock("../../../components/icons/index.js", () => ({
+  IconFlame: () => <span data-icon="IconFlame" />,
+  IconPercent: () => <span data-icon="IconPercent" />,
+  IconRocket: () => <span data-icon="IconRocket" />,
 }));
 
 const { ComposerQuickActions } = await import("../ComposerQuickActions.js");
@@ -35,11 +29,11 @@ describe("ComposerQuickActions", () => {
     expect(chips).toHaveLength(3);
 
     // Each intent icon is present (flame / percent square / rocket).
-    expect(container.querySelector('[data-icon="FlameIcon"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="IconFlame"]')).not.toBeNull();
     expect(
-      container.querySelector('[data-icon="PercentIcon"]'),
+      container.querySelector('[data-icon="IconPercent"]'),
     ).not.toBeNull();
-    expect(container.querySelector('[data-icon="RocketIcon"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="IconRocket"]')).not.toBeNull();
 
     // The numbering was dropped — no 01/02/03 marks in the chip text.
     for (const n of ["01", "02", "03"]) {

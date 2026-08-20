@@ -14,9 +14,9 @@
  *   --vex-alias-interactive-* -> --color-interactive-* (hover washes)
  *   --vex-alias-state-*       -> --color-success/warning/danger (+ -wash)
  *
- * Legacy names (--color-bg-primary, --color-text-*, shadcn aliases, ...) are
- * kept as projections of the SAME aliases so existing consumers re-skin
- * without edits; they retire when phases 1-4 migrate call sites.
+ * The pre-rebrand legacy names (--color-bg-*, --color-text-*, ...) are gone:
+ * every call site now consumes the semantic utilities above. Only the shadcn
+ * aliases with a live consumer remain, so stock primitives speak the brand.
  *
  * Accent family: root #0000c0 (the vx logo). Chronos interactive accent is
  * blue-400 #7a8cff (readable on ink), celeris is blue-700 #0000c0. The old
@@ -318,37 +318,21 @@
   --color-tooltip: var(--vex-alias-tooltip-bg);
   --color-toast: var(--vex-alias-toast-bg);
 
-  /* Legacy projections - pre-rebrand consumer names, re-pointed at the new
-   * aliases so every existing call site re-skins without an edit. Phases
-   * 1-4 migrate call sites; F6 deletes these. */
-  --color-bg-primary: var(--vex-alias-bg-base);
-  --color-bg-elevated: var(--vex-alias-bg-layer-1);
-  --color-bg-overlay: var(--vex-alias-bg-layer-2);
-  --color-accent-deep: var(--vex-alias-accent-hover);
-  --color-accent-secondary: var(--vex-alias-accent-hover);
-  --color-text-primary: var(--vex-alias-label-primary);
-  --color-text-secondary: var(--vex-alias-label-secondary);
-  --color-text-muted: var(--vex-alias-label-tertiary);
   /* DotMatrix solid-theme preset color (components/ui/dotmatrix-core). */
   --color-dot-on: var(--vex-alias-accent-primary);
 
-  /* shadcn aliases - stock Button/Input/Dialog speak the brand. */
+  /* shadcn aliases - stock Button/Input/Dialog speak the brand. Only the
+   * names with a live consumer survive; the unused ones retired in F6. */
   --color-background: var(--vex-alias-bg-base);
   --color-foreground: var(--vex-alias-label-primary);
   --color-card: var(--vex-alias-bg-layer-1);
-  --color-card-foreground: var(--vex-alias-label-primary);
   --color-popover: var(--vex-alias-bg-layer-2);
   --color-popover-foreground: var(--vex-alias-label-primary);
   --color-primary: var(--vex-alias-accent-primary);
   --color-primary-foreground: var(--vex-alias-label-on-accent);
-  --color-secondary: var(--vex-alias-bg-layer-2);
-  --color-secondary-foreground: var(--vex-alias-label-primary);
   --color-muted: var(--vex-alias-bg-layer-2);
   --color-muted-foreground: var(--vex-alias-label-tertiary);
-  --color-accent: var(--vex-alias-bg-layer-3);
-  --color-accent-foreground: var(--vex-alias-label-primary);
   --color-destructive: var(--vex-alias-state-error);
-  --color-destructive-foreground: #ffffff;
   --color-border: var(--vex-alias-border-l2);
   --color-input: var(--vex-alias-border-l2);
   --color-ring: var(--vex-alias-accent-primary);

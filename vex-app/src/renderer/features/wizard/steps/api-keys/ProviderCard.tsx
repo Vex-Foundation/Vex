@@ -24,8 +24,7 @@
 
 import type { JSX, ReactNode } from "react";
 import {
-  ArrowUpRightIcon,
-  VexIcon,
+  IconArrowUpRight,
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 
@@ -99,7 +98,7 @@ function GetKeyLink({ getKey }: { getKey: ProviderCardGetKey }): JSX.Element {
       )}
     >
       {getKey.label}
-      <VexIcon icon={ArrowUpRightIcon} size={12} aria-hidden />
+      <IconArrowUpRight size={12} />
     </a>
   );
 }

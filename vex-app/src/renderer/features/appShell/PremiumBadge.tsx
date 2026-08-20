@@ -33,14 +33,13 @@
  * static frame (global rule). The contract holds for both geometries.
  */
 
-import type { JSX } from "react";
+import type { ComponentType, JSX } from "react";
 import {
-  CircleAlertIcon,
-  CircleCheckBigIcon,
-  type IconGlyph,
-  InfoIcon,
-  TargetIcon,
-  VexIcon,
+  type GlyphProps,
+  IconCircleAlert,
+  IconCircleCheck,
+  IconInfo,
+  IconTarget,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
@@ -57,7 +56,7 @@ interface PremiumBadgeBaseProps {
   readonly state: PremiumBadgeState;
   /** Optional leading icon — defaults to the per-state icon. Full variant
    * only; the compact pill renders a ledger tick instead. */
-  readonly icon?: IconGlyph;
+  readonly icon?: ComponentType<GlyphProps>;
   /** Opt-in to the "ready" opacity pulse. Ignored unless state === "ready". */
   readonly shimmer?: boolean;
   /** h-7 single-line header pill (tick + label + caption) instead of the
@@ -90,7 +89,7 @@ interface StateMeta {
   /** Compact-pill ledger-tick fill — the same tone as the icon/text. */
   readonly markClass: string;
   /** Default per-state icon (overridable via the `icon` prop). */
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly dataState: string;
 }
 
@@ -103,7 +102,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-line-3 text-ink-tertiary hover:border-line-3",
         iconClass: "text-ink-tertiary",
         markClass: "bg-ink-tertiary",
-        icon: TargetIcon,
+        icon: IconTarget,
         dataState: "preparing",
       };
     case "ready":
@@ -113,7 +112,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-accent-primary/55 text-accent-primary hover:bg-accent-primary/8",
         iconClass: "text-accent-primary",
         markClass: "bg-accent-primary",
-        icon: InfoIcon,
+        icon: IconInfo,
         dataState: "ready",
       };
     case "accepted":
@@ -123,7 +122,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-success/40 text-success hover:bg-success/8",
         iconClass: "text-success",
         markClass: "bg-success",
-        icon: CircleCheckBigIcon,
+        icon: IconCircleCheck,
         dataState: "accepted",
       };
     case "stale":
@@ -133,7 +132,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-warning/40 text-warning hover:bg-warning/8",
         iconClass: "text-warning",
         markClass: "bg-warning",
-        icon: InfoIcon,
+        icon: IconInfo,
         dataState: "stale",
       };
     case "error":
@@ -143,7 +142,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-warning/40 text-warning hover:bg-warning/8",
         iconClass: "text-warning",
         markClass: "bg-warning",
-        icon: CircleAlertIcon,
+        icon: IconCircleAlert,
         dataState: "error",
       };
   }
@@ -180,12 +179,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
     </>
   ) : (
     <>
-      <VexIcon
-        icon={Icon}
-        size={16}
-        aria-hidden
-        className={cn("shrink-0", meta.iconClass)}
-      />
+      <Icon size={16} className={cn("shrink-0", meta.iconClass)} />
       <span className="flex min-w-0 flex-col gap-0.5">
         {/* Register: the key's name is a sans small-caps micro-label
          * (white); the state caption beneath carries the tone. Mono

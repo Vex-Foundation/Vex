@@ -6,19 +6,19 @@
  * (files, skills, provider context) reuse this chrome with their own label.
  */
 
-import type { JSX } from "react";
-import { VexIcon, type IconGlyph } from "../../components/icons/index.js";
+import type { ComponentType, JSX } from "react";
+import type { GlyphProps } from "../../components/icons/index.js";
 
 export function ProvenanceMarker({
   marker,
   label,
-  icon,
+  icon: Glyph,
   content,
 }: {
   /** `data-vex-marker` value — the row's semantic kind (e.g. "recall"). */
   readonly marker: string;
   readonly label: string;
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly content: string;
 }): JSX.Element {
   return (
@@ -30,7 +30,7 @@ export function ProvenanceMarker({
       <div className="flex items-center gap-3">
         <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
         <span className="flex min-w-0 items-center gap-1.5 text-[var(--vex-text-3)]">
-          <VexIcon icon={icon} size={12} aria-hidden />
+          <Glyph size={12} />
           <span className="break-words font-mono text-[10px] uppercase tracking-[0.3em]">
             {label}
           </span>

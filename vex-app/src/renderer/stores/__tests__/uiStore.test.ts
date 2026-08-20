@@ -278,7 +278,6 @@ describe("uiStore", () => {
       bookOpen: true,
       hideDustBalances: true,
       notificationsEnabled: true,
-      prologueVersion: null,
       bookSectionOrder: [],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
@@ -419,7 +418,36 @@ describe("uiStore", () => {
     expect(state.sidebarOpen).toBe(false);
     expect(state.bookOpen).toBe(false);
     expect(state.hideDustBalances).toBe(false);
-    expect(state.prologueVersion).toBe("0.1.9");
+    // v12 drops the retired `prologueVersion` key on the way through.
+    expect("prologueVersion" in state).toBe(false);
+  });
+
+  it("migrate v11→v12 drops the retired prologueVersion key and preserves every other pref", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: {
+          themePreference: "chronos",
+          sidebarOpen: false,
+          bookOpen: false,
+          sidebarWidth: 280,
+          bookWidth: 360,
+          hideDustBalances: false,
+          notificationsEnabled: false,
+          prologueVersion: "0.2.5",
+          bookSectionOrder: ["position"],
+        },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    const state = useUiStore.getState();
+    expect("prologueVersion" in state).toBe(false);
+    expect(state.sidebarOpen).toBe(false);
+    expect(state.bookOpen).toBe(false);
+    expect(state.hideDustBalances).toBe(false);
+    expect(state.notificationsEnabled).toBe(false);
+    expect(state.bookSectionOrder).toEqual(["position"]);
   });
 
   it("coerces every off-shape persisted bookSectionOrder back to [] (a tampered payload must not blank the rail)", async () => {
@@ -525,7 +553,6 @@ describe("uiStore", () => {
       bookOpen: true,
       hideDustBalances: true,
       notificationsEnabled: true,
-      prologueVersion: null,
       bookSectionOrder: [],
     });
     expect(parsed.state.logBuffer).toBeUndefined();

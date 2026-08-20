@@ -8,7 +8,6 @@ import { type JSX } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import {
   IconChevronRight,
-  VexIcon,
 } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 import { cn } from "../../../../lib/utils.js";
@@ -43,6 +42,7 @@ export function SettingsRegister({
       <ul className="flex flex-col" data-vex-settings-register>
         {SETTINGS_SECTIONS.map((meta) => {
           const status = settingsSectionStatus(meta.id, env);
+          const StepGlyph = WIZARD_STEP_META[meta.stepId].icon;
           return (
             <li key={meta.id} className="border-b border-line-1 last:border-b-0">
               <button
@@ -52,11 +52,7 @@ export function SettingsRegister({
                 className="flex w-full items-center gap-4 rounded-xl px-3 py-4 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line-2 text-ink-secondary">
-                  <VexIcon
-                    icon={WIZARD_STEP_META[meta.stepId].icon}
-                    size={17}
-                    aria-hidden
-                  />
+                  <StepGlyph size={17} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-[14px] leading-[22px] text-ink-primary">

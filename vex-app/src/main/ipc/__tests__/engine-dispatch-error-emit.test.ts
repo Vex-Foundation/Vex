@@ -86,11 +86,11 @@ describe("dispatchPreparedMission — engine error emit", () => {
     });
   });
 
-  it("carries the raw message as in-process `detail` only - no `message` field, and the renderer bridge sanitizes it", async () => {
-    // Decree 2026-08-02 changed the old "never carries the exception message"
-    // pin: the BUS (in-process, privileged) now carries the raw text as
-    // `detail`, and the ONLY renderer-bound exit - the error bridge - strips
-    // secrets from it. Both halves are asserted here.
+  it("carries the sanitized message as `detail` only - no `message` field, secret-free from the first subscriber", async () => {
+    // Sanitize-at-emit law: the bus strips secrets from `detail` BEFORE any
+    // subscriber sees the event, so every consumer is secret-free by
+    // construction. The renderer bridge sanitizes again as defense in depth;
+    // that second pass must be a no-op, which both halves assert here.
     const seen = capture();
     dispatchPreparedMission(
       () => Promise.reject(new Error("provider refused key sk-fake-abc12345")),
@@ -105,7 +105,7 @@ describe("dispatchPreparedMission — engine error emit", () => {
 
     expect(seen).toHaveLength(1);
     expect(Object.keys(seen[0] ?? {})).not.toContain("message");
-    expect(seen[0]?.detail).toBe("provider refused key sk-fake-abc12345");
+    expect(seen[0]?.detail).toBe("provider refused key [key]");
     const { sanitizeEngineErrorDetail } = await import(
       "@shared/engine-error-sanitizer.js"
     );

@@ -8,7 +8,6 @@
  */
 
 import type { JSX } from "react";
-import { VexIcon } from "../../components/icons/index.js";
 import { QUICK_ACTIONS } from "./composer-quick-actions.js";
 
 export function ComposerQuickActions({
@@ -30,12 +29,7 @@ export function ComposerQuickActions({
           className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-capsule border border-line-2 px-3 text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           {/* Intent glyph - decorative accent mark, not part of the label. */}
-          <VexIcon
-            icon={action.icon}
-            size={13}
-            className="shrink-0 text-accent-primary"
-            aria-hidden
-          />
+          <action.icon size={13} className="shrink-0 text-accent-primary" />
           <span className="truncate">{action.label}</span>
         </button>
       ))}

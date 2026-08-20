@@ -31,18 +31,6 @@ import {
   USDC_BASE,
 } from "./_token-history-fixtures.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-  EyeIcon: "EyeIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  BridgeIcon: "BridgeIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-}));
-
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
   Bnb: () => null,

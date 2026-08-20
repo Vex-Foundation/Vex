@@ -41,8 +41,7 @@ import { useId, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconChevronDown,
-  VexIcon,
-  WalletIcon,
+  IconWallet,
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
@@ -119,9 +118,7 @@ export function WelcomePortfolioPanel({
         {bookOpen ? (
           <IconChevronDown size={17} />
         ) : (
-          // Wallet has no glyph yet (F0 named gap) - the lucide gate covers
-          // it until the F6 icon sweep.
-          <VexIcon icon={WalletIcon} size={17} aria-hidden />
+          <IconWallet size={17} />
         )}
       </button>
       </div>

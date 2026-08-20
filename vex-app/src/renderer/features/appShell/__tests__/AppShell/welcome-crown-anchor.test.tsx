@@ -41,30 +41,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 // The proven icon set for a real-SessionComposer mount (copied from
-// composer-console.test.tsx — the quick-action chips consume FlameIcon/
-// ChartLineData01Icon/PercentIcon, the send/stop key the arrows).
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  DownloadIcon: "DownloadIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  WalletIcon: "WalletIcon",
-  MapPinIcon: "MapPinIcon",
-  BrainCircuitIcon: "BrainCircuitIcon",
-  CircleStopIcon: "CircleStopIcon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  PercentIcon: "PercentIcon",
-}));
-
+// composer-console.test.tsx — the quick-action chips consume IconFlame/
+// ChartLineData01Icon/IconPercent, the send/stop key the arrows).
 const mockSubmitChat = {
   isPending: false as boolean,
   mutateAsync: vi.fn(),

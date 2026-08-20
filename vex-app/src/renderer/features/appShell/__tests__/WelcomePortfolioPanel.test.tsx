@@ -27,10 +27,6 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
   Bnb: () => null,

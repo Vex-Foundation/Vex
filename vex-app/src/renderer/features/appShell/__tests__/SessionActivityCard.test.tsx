@@ -23,7 +23,6 @@ const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
 }));
-vi.mock("../../../components/icons/VexIcon.js", () => ({ VexIcon: () => null }));
 
 const { SessionActivityCard } = await import("../book/SessionActivityCard.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");

@@ -44,9 +44,8 @@ import {
 } from "react";
 import { motion } from "motion/react";
 import {
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
-  VexIcon,
+  IconPanelRightClose,
+  IconPanelRightOpen,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { useSession } from "../../lib/api/sessions.js";
@@ -158,6 +157,8 @@ export function BookPanel({
   const inspecting =
     inspect !== null && inspect.sessionId === activeSessionId;
 
+  const PanelGlyph = bookOpen ? IconPanelRightClose : IconPanelRightOpen;
+
   // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
   if (activeSessionId === null) {
     return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
@@ -196,11 +197,7 @@ export function BookPanel({
           label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
           onClick={onToggle}
         >
-          <VexIcon
-            icon={bookOpen ? PanelRightCloseIcon : PanelRightOpenIcon}
-            size={17}
-            aria-hidden
-          />
+          <PanelGlyph size={17} />
         </SidebarIconButton>
       </div>
 

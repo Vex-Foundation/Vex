@@ -24,14 +24,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ShellScreen } from "../ShellScreen.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-}));
-
 const ORIGIN = { x: 10, y: 620, width: 240, height: 44 };
 
 const realMatchMedia = window.matchMedia;

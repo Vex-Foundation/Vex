@@ -53,10 +53,10 @@ function resolveStatus(
  * the cobalt accent family so "you are here" is the one colored thing on the
  * rail; done stays paper and upcoming stays a faint white.
  *
- * The active dot is the accent's lighter mix, not raw #1f44ff: these dots are
- * 6px, and raw cobalt on the #070b1e plate is 3.09:1 — the same reason the
- * plate's rule forbids raw accent for text and thin strokes. The mix is
- * 7.99:1. `--vex-accent-text` is defined by both the gate and shell scopes,
+ * The active dot is the accent's lighter mix (`--vex-accent-text`), never the
+ * raw accent: these dots are 6px, and raw accent on the #070b1e plate falls
+ * well short of contrast — the same reason the plate's rule forbids raw
+ * accent for text and thin strokes. `--vex-accent-text` is defined by both the gate and shell scopes,
  * with a fallback for anything that defines neither. */
 const DOT_CHROME: Record<StepDotStatus, string> = {
   pending: "bg-white/[0.28]",

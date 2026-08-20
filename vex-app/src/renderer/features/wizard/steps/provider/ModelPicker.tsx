@@ -11,9 +11,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
-  ChevronDownIcon,
-  RefreshCwIcon,
-  VexIcon,
+  IconChevronDown,
+  IconRefresh,
 } from "../../../../components/icons/index.js";
 import type { ProviderModelOption } from "@shared/schemas/provider.js";
 import { Input } from "../../../../components/ui/input.js";
@@ -170,15 +169,12 @@ export function ModelPicker({
           onKeyDown={onKeyDown}
           className="pr-10 font-mono text-xs"
         />
-        <VexIcon
-          icon={ChevronDownIcon}
+        <IconChevronDown
           size={15}
-          aria-hidden
           className={cn(
             "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-tertiary transition-transform",
             showPanel && "rotate-180",
-          )}
-        />
+          )} />
       </div>
 
       {selected !== null && !showPanel ? (
@@ -210,7 +206,7 @@ export function ModelPicker({
                 onClick={onRetry}
                 className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
               >
-                <VexIcon icon={RefreshCwIcon} size={12} aria-hidden />
+                <IconRefresh size={12} />
                 Retry
               </button>
             </div>

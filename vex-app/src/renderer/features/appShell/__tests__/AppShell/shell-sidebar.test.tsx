@@ -21,65 +21,6 @@ import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  AnalyticsUpIcon: "AnalyticsUpIcon",
-  DownloadIcon: "DownloadIcon",
-  MessageSquareIcon: "MessageSquareIcon",
-  // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
-  GlobeIcon: "GlobeIcon",
-  FileIcon: "FileIcon",
-  TerminalIcon: "TerminalIcon",
-  WrenchIcon: "WrenchIcon",
-  CircleAlertIcon: "CircleAlertIcon",
-  ArchiveIcon: "ArchiveIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-  // Chronos: SidebarProfile's "How Vex works" menu entry.
-  BookOpenIcon: "BookOpenIcon",
-  BridgeIcon: "BridgeIcon",
-  BubbleChatSparkIcon: "BubbleChatSparkIcon",
-  BugIcon: "BugIcon",
-  XIcon: "XIcon",
-  ChartCandlestickIcon: "ChartCandlestickIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  Clock03Icon: "Clock03Icon",
-  DatabaseLightningIcon: "DatabaseLightningIcon",
-  Trash2Icon: "Trash2Icon",
-  FlameIcon: "FlameIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  FilterHorizontalIcon: "FilterHorizontalIcon",
-  BrainIcon: "BrainIcon",
-  MapPinIcon: "MapPinIcon",
-  PanelLeftCloseIcon: "PanelLeftCloseIcon",
-  PanelLeftOpenIcon: "PanelLeftOpenIcon",
-  PanelRightCloseIcon: "PanelRightCloseIcon",
-  PanelRightOpenIcon: "PanelRightOpenIcon",
-  SearchIcon: "SearchIcon",
-  CircleStopIcon: "CircleStopIcon",
-  RadarIcon: "RadarIcon",
-  Settings2Icon: "Settings2Icon",
-  Shield02Icon: "Shield02Icon",
-  SparklesIcon: "SparklesIcon",
-  StarIcon: "StarIcon",
-  TargetIcon: "TargetIcon",
-  PercentIcon: "PercentIcon",
-  // Chronos: SidebarProfile's "Personalize" menu entry (opens VexSetupDialog).
-  UserPenIcon: "UserPenIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  ZapIcon: "ZapIcon",
-}));
-
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
 // partial mocks. The screen has its own suite; a stub keeps THIS suite's

@@ -16,6 +16,8 @@ the release hardening track).
 ## Related
 
 - vex-app dependency audit + license posture: [`../dependency-audit.md`](../dependency-audit.md).
+- Third-party attribution (UI patterns and icon glyphs adapted from
+  deepseek-harness, MIT): [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 - Renderer motion / accessibility policy: [`../MOTION-POLICY.md`](../MOTION-POLICY.md).
 - Local-only agent guidance (NOT committed — gitignored by repo policy):
   `/AGENTS.md` (repo root) and `.claude/skills/vex-*`. These exist on

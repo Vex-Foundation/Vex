@@ -15,7 +15,7 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
-import { VexIcon, WaypointsIcon } from "../../../../components/icons/index.js";
+import { IconWaypoints } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
@@ -200,10 +200,7 @@ export function RelayCard({
     <ProviderCard
       slug="relay"
       iconSlot={
-        // strokeWidth 2 (lucide's own default), not the shell's 1.75: this card
-        // imported the glyph directly until now, so 2 is what it has always
-        // drawn. Routing it through the facade must not restyle it.
-        <VexIcon icon={WaypointsIcon} size={18} strokeWidth={2} aria-hidden />
+        <IconWaypoints size={18} />
       }
       name="Relay"
       status={status}

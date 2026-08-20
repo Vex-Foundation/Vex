@@ -4,7 +4,7 @@ import type { JSX } from "react";
 import type { GlyphProps } from "./props.js";
 
 export const IconChevronDown = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z"
@@ -15,7 +15,7 @@ export const IconChevronDown = ({ size = 16, className }: GlyphProps): JSX.Eleme
 );
 
 export const IconChevronUp = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           d="M2.15137 8.5L2.57617 8.07617L5.30273 5.34863C5.55843 5.09294 5.78438 4.86618 5.98828 4.70215C6.20088 4.53117 6.44405 4.38244 6.75 4.33398C6.91565 4.30778 7.08435 4.30778 7.25 4.33398C7.55595 4.38244 7.79912 4.53117 8.01172 4.70215C8.21561 4.86618 8.44157 5.09294 8.69727 5.34863L11.4238 8.07617L11.8486 8.5L11 9.34863L10.5762 8.92383L7.84863 6.19727C7.57405 5.92269 7.40124 5.75152 7.25977 5.6377C7.12709 5.53096 7.07728 5.52187 7.0625 5.51953C7.02105 5.51297 6.97895 5.51297 6.9375 5.51953C6.92272 5.52187 6.87291 5.53096 6.74023 5.6377C6.59876 5.75152 6.42595 5.92268 6.15137 6.19727L3.42383 8.92383L3 9.34863L2.15137 8.5Z"
@@ -26,7 +26,7 @@ export const IconChevronUp = ({ size = 16, className }: GlyphProps): JSX.Element
 );
 
 export const IconChevronLeft = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           d="M8.5 2.15137L8.07617 2.57617L5.34863 5.30273C5.09294 5.55843 4.86618 5.78438 4.70215 5.98828C4.53117 6.20088 4.38244 6.44405 4.33398 6.75C4.30778 6.91565 4.30778 7.08435 4.33398 7.25C4.38244 7.55595 4.53117 7.79912 4.70215 8.01172C4.86618 8.21561 5.09294 8.44157 5.34863 8.69727L8.07617 11.4238L8.5 11.8486L9.34863 11L8.92383 10.5762L6.19727 7.84863C5.92268 7.57405 5.75151 7.40124 5.6377 7.25977C5.53096 7.12709 5.52187 7.07728 5.51953 7.0625C5.51297 7.02105 5.51297 6.97895 5.51953 6.9375C5.52187 6.92272 5.53096 6.87291 5.6377 6.74023C5.75152 6.59876 5.92268 6.42595 6.19727 6.15137L8.92383 3.42383L9.34863 3L8.5 2.15137Z"
@@ -37,7 +37,7 @@ export const IconChevronLeft = ({ size = 16, className }: GlyphProps): JSX.Eleme
 );
 
 export const IconChevronRight = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           d="M5.5 2.15137L5.92383 2.57617L8.65137 5.30273C8.90706 5.55843 9.13382 5.78438 9.29785 5.98828C9.46883 6.20088 9.61756 6.44405 9.66602 6.75C9.69222 6.91565 9.69222 7.08435 9.66602 7.25C9.61756 7.55595 9.46883 7.79912 9.29785 8.01172C9.13382 8.21561 8.90706 8.44157 8.65137 8.69727L5.92383 11.4238L5.5 11.8486L4.65137 11L5.07617 10.5762L7.80273 7.84863C8.07732 7.57405 8.24849 7.40124 8.3623 7.25977C8.46904 7.12709 8.47813 7.07728 8.48047 7.0625C8.48703 7.02105 8.48703 6.97895 8.48047 6.9375C8.47813 6.92272 8.46904 6.87291 8.3623 6.74023C8.24848 6.59876 8.07732 6.42595 7.80273 6.15137L5.07617 3.42383L4.65137 3L5.5 2.15137Z"
@@ -48,7 +48,7 @@ export const IconChevronRight = ({ size = 16, className }: GlyphProps): JSX.Elem
 );
 
 export const IconTriangleRight = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.714286)">
         <path
           d="M4.25 2.82782L4.25 11.1722C4.25 11.6622 4.84243 11.9076 5.18891 11.5611L9.36109 7.38891C9.57588 7.17412 9.57588 6.82588 9.36109 6.61109L5.18891 2.43891C4.84243 2.09243 4.25 2.33782 4.25 2.82782Z"
@@ -59,7 +59,7 @@ export const IconTriangleRight = ({ size = 16, className }: GlyphProps): JSX.Ele
 );
 
 export const IconPanelLeft = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           fillRule="evenodd"
@@ -72,7 +72,7 @@ export const IconPanelLeft = ({ size = 16, className }: GlyphProps): JSX.Element
 );
 
 export const IconFullscreen = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M2.58875 12.3407L6.59167 8.33777L7.66296 9.40808L3.66003 13.411H7.99988V14.8065H3.05457C2.02633 14.8065 1.19324 13.9734 1.19324 12.9452V7.99988H2.58875V12.3407Z"
@@ -87,7 +87,7 @@ export const IconFullscreen = ({ size = 16, className }: GlyphProps): JSX.Elemen
 );
 
 export const IconEllipsis = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M4.55146 8.00001C4.55146 8.63513 4.03659 9.15001 3.40146 9.15001C2.76634 9.15001 2.25146 8.63513 2.25146 8.00001C2.25146 7.36488 2.76634 6.85001 3.40146 6.85001C4.03659 6.85001 4.55146 7.36488 4.55146 8.00001Z"
@@ -106,12 +106,44 @@ export const IconEllipsis = ({ size = 16, className }: GlyphProps): JSX.Element 
 );
 
 export const IconArrowUpRight = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">
         <path
           d="M13.588429 5.147807C13.588429 4.739638 13.587271 4.403003 13.582013 4.118684L1.703098 15.99968L0.85155 15.148178L0 14.294485L11.878915 2.413442C11.594721 2.408199 11.257569 2.409154 10.849776 2.409154H2.400594V0.000001H10.849776C11.644471 0.000001 12.338899 -0.001059 12.901622 0.059909C13.486363 0.123352 14.071136 0.265493 14.598303 0.648292C14.886598 0.857751 15.141981 1.110984 15.351433 1.399281C15.734578 1.926807 15.876362 2.512925 15.939743 3.098105C16.000775 3.660718 15.99968 4.353347 15.99968 5.147807V13.599133H13.588429V5.147807Z"
           fill="currentColor"
         />
+    </g>
+  </svg>
+);
+
+/* Panel-right pair and the drag grip are drawn native on the 24 grid with a
+ * 1.5 stroke, which matches the ring weight of the filled outlines above. */
+
+export const IconPanelRightOpen = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="2.5" />
+    <path d="M14.75 4.25v15.5" />
+    <path d="M11 9.25 8.25 12 11 14.75" />
+  </svg>
+);
+
+export const IconPanelRightClose = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="2.5" />
+    <path d="M14.75 4.25v15.5" />
+    <path d="M8.25 9.25 11 12l-2.75 2.75" />
+  </svg>
+);
+
+export const IconGripVertical = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g fill="currentColor">
+      <circle cx="9.5" cy="6.5" r="1.15" />
+      <circle cx="14.5" cy="6.5" r="1.15" />
+      <circle cx="9.5" cy="12" r="1.15" />
+      <circle cx="14.5" cy="12" r="1.15" />
+      <circle cx="9.5" cy="17.5" r="1.15" />
+      <circle cx="14.5" cy="17.5" r="1.15" />
     </g>
   </svg>
 );

@@ -17,8 +17,8 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
+  background-color: var(--color-surface-base);
+  color: var(--color-ink-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

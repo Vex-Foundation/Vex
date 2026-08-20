@@ -1,11 +1,11 @@
 /**
- * glyphs — the rebrand's inline-SVG icon set (public entry point; the
- * drawings live in the same-named sibling folder, split by category).
+ * glyphs - the shell's inline-SVG icon set (public entry point; the drawings
+ * live in the same-named sibling folder, split by category).
  *
  * Contract: every glyph is a React component taking `{size?, className?}`,
- * drawn on a 24 viewBox, painted with currentColor. Consumers migrate here
- * from the lucide-backed `icon-glyphs` gate during phases 1-4; both gates
- * export through `components/icons/index.ts` until the sweep in F6.
+ * drawn on a 24 viewBox, painted with currentColor, and marked `aria-hidden`
+ * so it never enters an accessible name. Call sites import glyphs from
+ * `components/icons/index.js`, never from this file directly.
  */
 
 export type { GlyphProps } from "./glyphs/props.js";

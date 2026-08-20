@@ -5,7 +5,7 @@
  * tempo (1.4s/rev). The center is a `children` slot; inline sizes leave
  * it empty.
  *
- * The center is a `children` slot (not a baked-in sigil import) so this
+ * The center is a `children` slot (no baked-in feature artwork) so this
  * shared ui primitive never imports from `features/` — import direction
  * stays one-way (features → components), and ring-only consumers pay
  * zero canvas cost.

@@ -23,23 +23,6 @@ const mockUseSessionWallets = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/session-wallets.js", () => ({
   useSessionWallets: mockUseSessionWallets,
 }));
-vi.mock("../../../components/icons/VexIcon.js", () => ({ VexIcon: () => null }));
-vi.mock("@thesvg/react", () => ({
-  Bitcoin: () => null,
-  Bnb: () => null,
-  BnbChain: () => null,
-  Chainlink: () => null,
-  Circle: () => null,
-  DaiStablecoin: () => null,
-  Ethereum: () => null,
-  Optimism: () => null,
-  Polygon: () => null,
-  Robinhood: () => null,
-  Solana: () => null,
-  Tether: () => null,
-  Usdc: () => null,
-}));
-
 const { SessionWalletsCard } = await import("../book/SessionWalletsCard.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000ddaa";

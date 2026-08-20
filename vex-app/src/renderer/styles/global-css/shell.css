@@ -5,8 +5,8 @@
  * "zero photography" law); the columns float over it as glass (the two
  * rails + composer, guard-whitelisted backdrop-blur). Depth on solid
  * surfaces still comes from the three luminance steps + white hairlines —
- * never resting glow. One accent family derived from the landing cobalt
- * #1f44ff; the only sanctioned gradient is the selection beam
+ * never resting glow. One accent family rooted at the brand #0000c0
+ * (tokens v2); the only sanctioned gradient is the selection beam
  * (.vex-select-beam, global-css/landing-motifs.css). Pinned by
  * features/appShell/__tests__/shell-design-guard.test.ts. */
 [data-vex-shell="true"] {

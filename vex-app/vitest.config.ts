@@ -47,18 +47,6 @@ export default defineConfig({
             "src/renderer/**/__tests__/**/*.test.tsx",
           ],
           setupFiles: [path.resolve(__dirname, "src/renderer/test/setup.ts")],
-          /**
-           * `lucide-react` ships one ES module per icon (~2000 of them) behind
-           * a barrel. Loaded unbundled, every renderer test file pays for the
-           * whole barrel and the suite slows down by roughly half (measured:
-           * 137s → 208s, with timeouts). Prebundling collapses it to one
-           * module. Vite already prebundles it for dev/build.
-           */
-          deps: {
-            optimizer: {
-              web: { enabled: true, include: ["lucide-react"] },
-            },
-          },
         },
       },
     ],

@@ -159,10 +159,8 @@ export interface UiState {
   readonly setupGateActive: boolean;
   /**
    * Bumped by the dev Setup Tour to replay the gate's cinematic prologue on
-   * demand. Any value > 0 means "this gate mount is a tour replay": it forces
-   * the FULL variant regardless of the play policy and does NOT persist the
-   * version key, so the preview stays repeatable. It is also the remount key
-   * for the gate, which is what makes a second click replay rather than no-op.
+   * demand. It is the remount key for `ChronosGate` in App, which is what
+   * makes a second click replay from the first frame rather than no-op.
    * Dev-only in practice (the tour is build-flag gated). NOT persisted.
    */
   readonly prologueReplayNonce: number;
@@ -242,21 +240,13 @@ export interface UiState {
    */
   readonly notificationsEnabled: boolean;
   /**
-   * Build version whose gate prologue last COMPLETED (or was skipped), or
-   * null if never. COSMETIC — `gate-prologue/prologue-policy.ts` condenses
-   * the cinematic on a repeat launch of the same version. Persisted (see
-   * partialize) via this store's Zustand persist — the only sanctioned
-   * renderer localStorage path (`check-build-artifacts.mjs`); coerced on
-   * every rehydrate in `merge` below because the payload is user-writable.
-   */
-  readonly prologueVersion: string | null;
-  /**
    * User's custom order for the session-stage BOOK rail sections. `[]` means
    * "no custom order — use the default". Stored as an ID LIST, never component
    * references, so a renamed component cannot invalidate a saved layout, and an
    * unknown id from an older/newer build is simply dropped by
    * `resolveBookSectionOrder`. COSMETIC, so it stays in the renderer's persist
-   * whitelist and never crosses IPC (the `prologueVersion` doctrine).
+   * whitelist and never crosses IPC (this store's Zustand persist is the only
+   * sanctioned renderer localStorage path — `check-build-artifacts.mjs`).
    */
   readonly bookSectionOrder: readonly string[];
   /** Set the theme choice: resolves + writes documentElement in one step. */
@@ -275,8 +265,6 @@ export interface UiState {
   readonly dismissSetupGate: () => void;
   /** Re-arm the boot gate and replay its full prologue (dev Setup Tour). */
   readonly replayPrologue: () => void;
-  /** Record the version whose prologue just finished (or was skipped). */
-  readonly setPrologueVersion: (version: string) => void;
   /** Arm the unlock-success curtain — called ONLY after the unlock IPC succeeds. */
   readonly beginUnlockCurtain: () => void;
   /** The curtain finished its reveal and unmounts. */
@@ -373,7 +361,6 @@ export const useUiStore = create<UiState>()(
       reviewModal: "none",
       hideDustBalances: true,
       notificationsEnabled: true,
-      prologueVersion: null,
       bookSectionOrder: [],
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
@@ -390,7 +377,6 @@ export const useUiStore = create<UiState>()(
           setupGateActive: true,
           prologueReplayNonce: state.prologueReplayNonce + 1,
         })),
-      setPrologueVersion: (prologueVersion) => set({ prologueVersion }),
       beginUnlockCurtain: () => set({ unlockCurtainActive: true }),
       dismissUnlockCurtain: () => set({ unlockCurtainActive: false }),
       openWizard: (wizardEntryMode) =>
@@ -441,7 +427,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 11,
+      version: 12,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

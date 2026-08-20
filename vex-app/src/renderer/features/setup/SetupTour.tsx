@@ -48,9 +48,9 @@ export function SetupTour(): JSX.Element | null {
   return (
     <div
       data-vex-setup-tour
-      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[rgba(8,11,24,0.85)] p-2 vex-micro text-[var(--color-text-secondary)]"
+      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[rgba(8,11,24,0.85)] p-2 vex-micro text-ink-secondary"
     >
-      <span className="px-1 text-[9px] text-[var(--color-text-muted)]">
+      <span className="px-1 text-[9px] text-ink-tertiary">
         Setup tour
       </span>
       {TOUR_VIEWS.map((view) => (
@@ -65,7 +65,7 @@ export function SetupTour(): JSX.Element | null {
           }}
           className={
             view === currentView
-              ? "rounded bg-white/[0.14] px-2 py-1 text-left text-[var(--color-text-primary)]"
+              ? "rounded bg-white/[0.14] px-2 py-1 text-left text-ink-primary"
               : "rounded px-2 py-1 text-left hover:bg-white/[0.08]"
           }
         >

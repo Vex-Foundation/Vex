@@ -70,7 +70,7 @@ export function WalletSelect({
       </span>
       <span aria-hidden className="flex items-center gap-1.5">
         {icon}
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-tertiary">
           {caption}
         </span>
       </span>

@@ -14,8 +14,7 @@
  *
  * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
  * a marker that echoes its `open` prop, so the cluster's own logic is exercised
- * in isolation. VexIcon is mocked (ESM-heavy; the badge glyph is
- * irrelevant to behaviour).
+ * in isolation.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,10 +26,6 @@ import type {
 } from "@shared/schemas/mission.js";
 import type { PlanGetResult } from "@shared/schemas/session-plan.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 
 const mockUseSession = vi.fn();
 const mockUseMissionDraft = vi.fn();

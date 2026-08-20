@@ -8,7 +8,7 @@
  * dismiss.
  *
  * Visual: the landing ink dialog language — solid elevated panel
- * (--color-bg-elevated) behind a hairline border, black/70 backdrop with
+ * (--color-surface-1) behind a hairline border, black/70 backdrop with
  * NO blur, no inset shadows; mono-uppercase title; pill actions (quiet
  * hairline Cancel, filled cobalt Continue). Accent tracks
  * `--vex-onboarding-accent`.
@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { ArrowUpRightIcon, VexIcon } from "../../components/icons/index.js";
+import { IconArrowUpRight } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LicenseNoticeProps {
@@ -105,7 +105,7 @@ export function LicenseNotice({
           // One-shot rise-and-settle on mount (the landing dialog law:
           // modals never pop); reduced motion collapses it globally.
           "vex-entry-settle",
-          "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-6 text-[var(--color-text-primary)]",
+          "rounded-xl border border-[var(--color-border)] bg-surface-1 p-6 text-ink-primary",
         )}
         onClick={(event) => event.stopPropagation()}
       >
@@ -115,32 +115,32 @@ export function LicenseNotice({
         >
           Docker Desktop license
         </h2>
-        <p className="mb-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
           Docker Desktop is a third-party product distributed by Docker, Inc.
           Larger commercial and government use may require a paid Docker
           subscription. By downloading and installing it you agree to
           Docker&rsquo;s terms.
         </p>
-        <p className="mb-4 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
           Vex does not manage your Docker license — it only starts and stops
           its own local services through Docker&rsquo;s public CLI.
         </p>
         <button
           type="button"
           onClick={openDocs}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]"
+          className="mb-5 inline-flex items-center gap-1 text-sm text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
         >
           Docker Desktop license terms
-          <VexIcon icon={ArrowUpRightIcon} size={14} aria-hidden />
+          <IconArrowUpRight size={14} />
         </button>
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={onDismiss}
             className={cn(
-              "inline-flex h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-transparent px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-text-secondary)]",
-              "hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]",
+              "inline-flex h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-transparent px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-ink-secondary",
+              "hover:border-ink-tertiary hover:text-ink-primary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1",
               "transition-colors duration-150",
             )}
           >
@@ -157,7 +157,7 @@ export function LicenseNotice({
               // re-projects to paper.
               "inline-flex h-9 items-center justify-center rounded-full bg-[var(--color-primary)] px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-primary-foreground)]",
               "hover:bg-[color-mix(in_oklab,var(--color-primary)_88%,transparent)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1",
               "active:scale-[0.98] transition-colors duration-150",
             )}
           >

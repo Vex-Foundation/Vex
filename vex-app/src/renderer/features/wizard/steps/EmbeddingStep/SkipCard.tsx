@@ -8,8 +8,8 @@
  * forwarded onto the panel root.
  */
 
-import type { JSX } from "react";
-import type { IconGlyph } from "../../../../components/icons/index.js";
+import type { ComponentType, JSX } from "react";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import { EMBEDDING_DIM } from "@shared/embedding-defaults.js";
 import { type WizardFlowMode } from "../../../../lib/api/wizard.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -21,7 +21,7 @@ interface EmbeddingsState {
 }
 
 export interface EmbeddingSkipCardProps {
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly embeddingsState: EmbeddingsState | null;
   readonly flowMode: WizardFlowMode;
   readonly isPending: boolean;

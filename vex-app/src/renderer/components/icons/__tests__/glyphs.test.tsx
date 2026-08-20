@@ -1,7 +1,8 @@
 /**
  * Smoke test for the rebrand glyph set: every exported glyph renders an SVG
  * honoring the shared contract (24 viewBox, size prop on width/height,
- * className passthrough, currentColor paint - no hardcoded fills).
+ * className passthrough, currentColor paint - no hardcoded fills, and
+ * `aria-hidden` so a glyph never enters an accessible name).
  */
 
 import { describe, expect, it } from "vitest";
@@ -20,8 +21,10 @@ const entries = Object.entries(glyphs).filter(
 );
 
 describe("icon glyphs", () => {
-  it("exports a non-trivial set", () => {
-    expect(entries.length).toBeGreaterThan(40);
+  it("covers the whole shell vocabulary", () => {
+    // The set is the renderer's ONLY icon source since the vendor gate was
+    // retired; a drop below this floor means a call site lost its glyph.
+    expect(entries.length).toBeGreaterThanOrEqual(81);
   });
 
   it.each(entries.map(([name]) => name))("%s renders per contract", (name) => {
@@ -33,6 +36,7 @@ describe("icon glyphs", () => {
     expect(svg!.getAttribute("width")).toBe("20");
     expect(svg!.getAttribute("height")).toBe("20");
     expect(svg!.classList.contains("probe")).toBe(true);
+    expect(svg!.getAttribute("aria-hidden")).toBe("true");
     // Paint rides currentColor: no hex/rgb literals anywhere in the glyph.
     expect(svg!.outerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}|rgb\(/);
   });

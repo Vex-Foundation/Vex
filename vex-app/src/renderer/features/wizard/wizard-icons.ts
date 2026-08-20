@@ -11,62 +11,63 @@
  * Wallets EVM/Solana tabs).
  */
 
+import type { ComponentType } from "react";
 import {
-  BrainCircuitIcon,
-  BadgeCheckIcon,
-  CableIcon,
-  CpuIcon,
-  type IconGlyph,
-  KeyRoundIcon,
-  LockIcon,
-  WalletIcon,
+  type GlyphProps,
+  IconBrainCircuit,
+  IconBadgeCheck,
+  IconCable,
+  IconCpu,
+  IconKey,
+  IconLock,
+  IconWallet,
 } from "../../components/icons/index.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 
 export interface WizardStepMeta {
-  readonly icon: IconGlyph;
+  readonly icon: ComponentType<GlyphProps>;
   readonly label: string;
   readonly description: string;
 }
 
 export const WIZARD_STEP_META: Readonly<Record<WizardStepId, WizardStepMeta>> = {
   keystore: {
-    icon: LockIcon,
+    icon: IconLock,
     label: "Master password",
     description:
       "Unlock the encrypted local vault that protects your wallet keystores.",
   },
   wallets: {
-    icon: WalletIcon,
+    icon: IconWallet,
     label: "Wallets",
     description:
       "Generate, import, or restore your EVM and Solana wallets. Encrypted with the master password.",
   },
   apiKeys: {
-    icon: KeyRoundIcon,
+    icon: IconKey,
     label: "API keys",
     description:
       "Connect Jupiter and optional integrations (Tavily, Rettiwt).",
   },
   embedding: {
-    icon: BrainCircuitIcon,
+    icon: IconBrainCircuit,
     label: "Embedding",
     description:
       "Pick the embedding endpoint that powers long-term memory recall.",
   },
   agentCore: {
-    icon: CpuIcon,
+    icon: IconCpu,
     label: "Agent core",
     description:
       "Tune context and output-token limits, plus sampling temperature. All optional.",
   },
   provider: {
-    icon: CableIcon,
+    icon: IconCable,
     label: "Provider",
     description: "Verify your OpenRouter API key and pick a model.",
   },
   review: {
-    icon: BadgeCheckIcon,
+    icon: IconBadgeCheck,
     label: "Review",
     description:
       "Confirm your setup and finalize. Nothing leaves this machine until you invoke a tool.",

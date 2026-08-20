@@ -22,16 +22,7 @@ const buttonVariants = cva(
         outline:
           "border border-line-2 bg-transparent enabled:hover:bg-interactive-hover",
         toolbar: "bg-surface-overlay/50 text-ink-on-chrome",
-        // Legacy names kept until phases 3-4 migrate call sites: `default`
-        // was the solid CTA (now the accent action), `secondary` the quiet
-        // pair (now outline), `destructive` the danger action.
-        default:
-          "bg-accent-primary text-ink-on-accent enabled:hover:bg-accent-hover",
-        secondary:
-          "border border-line-2 bg-transparent enabled:hover:bg-interactive-hover",
-        destructive:
-          "bg-danger text-ink-on-accent enabled:hover:bg-danger/90",
-        link: "text-accent-primary underline-offset-4 enabled:hover:underline",
+        danger: "bg-danger text-ink-on-accent enabled:hover:bg-danger/90",
       },
       size: {
         default: "h-9 px-3.5",

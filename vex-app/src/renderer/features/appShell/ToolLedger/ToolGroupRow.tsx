@@ -12,11 +12,10 @@
  * thing waiting on the user's pen.
  */
 
-import { useId, useState, type JSX } from "react";
+import { useId, useState, type ComponentType, type JSX } from "react";
 import {
-  ChevronRightIcon,
-  type IconGlyph,
-  VexIcon,
+  IconChevronRight,
+  type GlyphProps,
 } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
@@ -31,8 +30,10 @@ const MAX_HEADER_GLYPHS = 4;
  * Distinct glyphs (by icon identity, not tool name) — two tools sharing a
  * category must not print the same glyph twice in the header strip.
  */
-function distinctGlyphs(toolNames: readonly string[]): IconGlyph[] {
-  const glyphs: IconGlyph[] = [];
+function distinctGlyphs(
+  toolNames: readonly string[],
+): ComponentType<GlyphProps>[] {
+  const glyphs: ComponentType<GlyphProps>[] = [];
   for (const name of toolNames) {
     const glyph = toolGlyph(name);
     if (!glyphs.includes(glyph)) glyphs.push(glyph);
@@ -73,24 +74,20 @@ export function ToolGroupRow({
           onClick={() => setOpen((v) => !v)}
           className="flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <VexIcon
-            icon={ChevronRightIcon}
+          <IconChevronRight
             size={12}
-            aria-hidden
             className={cn(
               "shrink-0 text-[var(--vex-text-3)] transition-transform",
               open && "rotate-90",
-            )}
-          />
+            )} />
           <span className="shrink-0 font-mono text-[12px] tabular-nums text-foreground">
             {group.calls.length} tool calls
           </span>
           <span aria-hidden className="flex min-w-0 items-center gap-1.5">
-            {glyphs.slice(0, MAX_HEADER_GLYPHS).map((glyph, index) => (
-              <VexIcon
-                // Icon identity is the dedupe key; index keeps React stable.
+            {glyphs.slice(0, MAX_HEADER_GLYPHS).map((Glyph, index) => (
+              // Icon identity is the dedupe key; index keeps React stable.
+              <Glyph
                 key={index}
-                icon={glyph}
                 size={14}
                 className="shrink-0 text-[var(--vex-text-3)]"
               />

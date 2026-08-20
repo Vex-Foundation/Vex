@@ -50,7 +50,7 @@ export function SetupFrame({
       data-vex-onboarding="true"
       data-vex-gate="true"
       data-vex-screen={screen}
-      className="relative flex h-screen w-screen items-center justify-center overflow-hidden px-6 py-16 text-[var(--color-text-primary)]"
+      className="relative flex h-screen w-screen items-center justify-center overflow-hidden px-6 py-16 text-ink-primary"
     >
       {/* THE PLATE — identical paint stack to the SetupGate curtain, so
        * the curtain reveal opens onto the same color it was made of. */}
@@ -69,7 +69,7 @@ export function SetupFrame({
           className="h-6 w-auto select-none"
         />
       </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
         v{__VEX_APP_VERSION__}
       </span>
 
@@ -95,11 +95,11 @@ export function SetupFrame({
          * `text-2xl` is 40px here: the gate re-pins `--text-2xl`. */}
         {title !== undefined ? (
           <header className="vex-rise mb-6 flex flex-col items-center gap-2 text-center">
-            <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
+            <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
               {title}
             </h1>
             {subline !== undefined ? (
-              <p className="text-lg leading-relaxed text-[var(--color-text-secondary)]">
+              <p className="text-lg leading-relaxed text-ink-secondary">
                 {subline}
               </p>
             ) : null}
