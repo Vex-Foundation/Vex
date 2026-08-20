@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
@@ -331,10 +332,16 @@ describe("AppShell", () => {
   it("renders the Vex shell hero and the profile footer with the night-shift hallmark", async () => {
     renderShell();
 
-    // The rebrand hero headline is back (accepted mockup, 2026-08-20),
-    // pinned close-range in SessionWelcomeHero.test.tsx.
+    // The rebrand hero headline is back (accepted mockup, 2026-08-20,
+    // greeting form), pinned close-range in SessionWelcomeHero.test.tsx.
     expect(
-      screen.getByRole("heading", { name: /What should I execute\?/i }),
+      screen.getByRole("heading", {
+        name: (accessibleName: string) =>
+          greetingPoolForHour(new Date().getHours()).some(
+            (variant) =>
+              !variant.withName && variant.text === accessibleName,
+          ),
+      }),
     ).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /New session/i }).length).toBeGreaterThan(0);
     // Healthy runtime → the profile subtitle speaks the Chronos hallmark.
