@@ -570,8 +570,7 @@ describe("AppShell", () => {
     // SidebarHomeSigil.test.tsx; the rail's $VEX widget legitimately says VEX).
     const mark = sidebar?.querySelector("[data-vex-home-mark]");
     expect(mark).not.toBeNull();
-    expect(mark?.tagName).toBe("IMG");
-    expect(mark?.getAttribute("src")).toBe("/logo_clean.png");
+    expect(mark?.querySelector("svg path")).not.toBeNull();
     expect(mark?.textContent).toBe("");
   });
 

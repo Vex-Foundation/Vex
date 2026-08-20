@@ -7,7 +7,7 @@
  * all this hook supplies: a `data-vex-scrolling` attribute the stylesheet keys
  * off, and an idle timer that removes it.
  *
- * Lives in `lib/` for the same reason `sigil-sampler.ts` does: it has three
+ * Lives in `lib/` because it has three
  * consumers across two features (the transcript, the BOOK rail, the composer's
  * draft field), it knows nothing about any of them, and import direction is
  * one-way (features → lib).

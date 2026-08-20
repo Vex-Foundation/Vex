@@ -35,7 +35,7 @@ export interface VexLoaderProps {
   readonly label: string;
   /** Ring stroke width in px (defaults to 2 via CSS). */
   readonly stroke?: number;
-  /** Optional center content (e.g. `<VexSigil />` at hero sizes). */
+  /** Optional center content (e.g. a brand mark at hero sizes). */
   readonly children?: ReactNode;
   readonly className?: string;
 }

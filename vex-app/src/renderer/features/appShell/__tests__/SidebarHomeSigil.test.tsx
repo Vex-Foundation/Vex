@@ -33,8 +33,7 @@ describe("SidebarHomeSigil", () => {
     // Carries the static logo mark (clean monogram), no wordmark.
     const mark = container.querySelector("[data-vex-home-mark]");
     expect(mark).not.toBeNull();
-    expect(mark?.tagName).toBe("IMG");
-    expect(mark?.getAttribute("src")).toBe("/logo_clean.png");
+    expect(mark?.querySelector("svg path")).not.toBeNull();
     expect(screen.queryByText("VEX")).toBeNull();
   });
 
@@ -48,15 +47,19 @@ describe("SidebarHomeSigil", () => {
     expect(useUiStore.getState().activeSessionId).toBeNull();
   });
 
-  it("sizes the mark down: h-6 open, h-5 collapsed (light rail crown)", () => {
+  it("sizes the mark down: 24px open, 20px collapsed (light rail crown)", () => {
     const { container, rerender } = render(<SidebarHomeSigil sidebarOpen />);
-    expect(container.querySelector("[data-vex-home-mark]")?.className).toContain(
-      "h-6",
-    );
+    expect(
+      container
+        .querySelector("[data-vex-home-mark] svg")
+        ?.getAttribute("height"),
+    ).toBe("24");
 
     rerender(<SidebarHomeSigil sidebarOpen={false} />);
-    const collapsed = container.querySelector("[data-vex-home-mark]")?.className;
-    expect(collapsed).toContain("h-5");
-    expect(collapsed).not.toContain("h-6");
+    expect(
+      container
+        .querySelector("[data-vex-home-mark] svg")
+        ?.getAttribute("height"),
+    ).toBe("20");
   });
 });
