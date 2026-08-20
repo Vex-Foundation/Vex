@@ -58,6 +58,7 @@ import {
 import { useSessionModel } from "../../../lib/api/sessions.js";
 import { CompactionApplyButton } from "../CompactionApplyButton.js";
 import { ModelBrandIcon } from "../../wizard/steps/provider/ModelBrandIcon.js";
+import { StateDot } from "../../../components/ui/state-dot.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 
 export function SessionRuntimeCard({
@@ -98,7 +99,7 @@ export function SessionRuntimeCard({
         data-vex-area="runtime-status"
         role="group"
         aria-label="Session runtime status"
-        className="flex w-full flex-col gap-2.5 text-[11px] text-[var(--vex-text-3)]"
+        className="flex w-full flex-col gap-2.5 text-[11px] text-ink-tertiary"
       >
         <ModelLine model={model} />
         <UsageLine lastTurn={lastTurn} totals={totals} />
@@ -116,7 +117,7 @@ export function SessionRuntimeCard({
 }
 
 /** Muted key next to a stronger tabular value — the card's metric grammar. */
-const METRIC_LABEL = "uppercase tracking-[0.16em] text-[var(--vex-text-3)]";
+const METRIC_LABEL = "font-doto uppercase tracking-[0.16em] text-ink-tertiary";
 
 function Metric({
   label,
@@ -128,7 +129,7 @@ function Metric({
   return (
     <span className="inline-flex items-baseline gap-1">
       <span className={METRIC_LABEL}>{label}</span>
-      <span className="tabular-nums text-[var(--vex-text)]">{value}</span>
+      <span className="font-semibold tabular-nums text-ink-primary">{value}</span>
     </span>
   );
 }
@@ -168,7 +169,7 @@ function ModelLine({
         data-vex-area="session-model-indicator"
         data-state="unconfigured"
         aria-label="Model not configured"
-        className="text-[11px] text-[var(--vex-text-3)]"
+        className="text-[11px] text-ink-tertiary"
       >
         Model not configured
       </span>
@@ -184,11 +185,11 @@ function ModelLine({
     >
       <ModelBrandIcon modelId={model.modelId} size={14} />
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className="min-w-0 truncate text-[12px] text-[var(--vex-text)]">
+        <span className="min-w-0 truncate text-[12px] text-ink-primary">
           {model.modelId}
         </span>
         {model.provider !== null ? (
-          <span className="truncate text-[10.5px] text-[var(--vex-text-3)]">
+          <span className="truncate text-[10.5px] text-ink-tertiary">
             via {model.provider}
           </span>
         ) : null}
@@ -222,7 +223,7 @@ function UsageLine({
   return (
     <span
       data-vex-area="usage-meter"
-      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums text-[10.5px] text-[var(--vex-text-3)]"
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums text-[10.5px] text-ink-tertiary"
       title={buildUsageTitle(lastTurn, totals)}
     >
       {lastTurn !== null ? (
@@ -244,7 +245,7 @@ function UsageLine({
       {cost !== null ? (
         <span
           aria-label="session cost"
-          className="ml-auto tabular-nums text-[var(--vex-text)]"
+          className="ml-auto tabular-nums text-ink-primary"
         >
           {fmtCost(cost)}
         </span>
@@ -312,7 +313,7 @@ function BandMarker({
     <span
       aria-hidden
       title={title}
-      className="absolute inset-y-0 w-px bg-[var(--vex-line-strong)]"
+      className="absolute inset-y-0 w-px bg-line-3"
       style={{ left: `${fraction * 100}%` }}
     />
   );
@@ -367,11 +368,11 @@ function ContextMeter({
       >
         <span className={METRIC_LABEL}>ctx</span>
         <span
-          className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.12]"
+          className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-skeleton"
           aria-hidden
         >
           <span
-            className="absolute inset-y-0 left-0 rounded-full bg-[var(--vex-accent)]"
+            className="absolute inset-y-0 left-0 rounded-full bg-accent-primary"
             style={{ width: `${pct}%` }}
           />
           {context.pressureWarningFraction !== undefined ? (
@@ -390,9 +391,9 @@ function ContextMeter({
             />
           ) : null}
         </span>
-        <span className="shrink-0 text-[var(--vex-text)]">{pct}%</span>
+        <span className="shrink-0 text-ink-primary">{pct}%</span>
       </div>
-      <p className="text-[10px] leading-snug text-[var(--vex-text-3)]">
+      <p className="text-[10px] leading-snug text-ink-tertiary">
         {autoCompactPct !== null ? `Auto-compact ~${autoCompactPct}% · ` : ""}
         approx, lags one turn
       </p>
@@ -436,7 +437,16 @@ function CompactionNote({
       data-state={state}
       title={`${label} · ${COMPACTION_REMOTE_NOTE}`}
       aria-label={`Compaction status: ${label}. ${COMPACTION_REMOTE_NOTE}`}
+      className="inline-flex items-center gap-1.5"
     >
+      {/* Status grammar: the word carries the meaning, the StateDot the
+        * motion (running = pixel chase). */}
+      <StateDot
+        state={
+          state === "failed" ? "error" : state === "running" ? "ongoing" : "warning"
+        }
+        size={8}
+      />
       <CardStateNote tone={state === "failed" ? "warn" : "muted"}>
         {label}
       </CardStateNote>

@@ -331,20 +331,19 @@ describe("AppShell", () => {
   it("renders the Vex shell hero and the profile footer with the night-shift hallmark", async () => {
     renderShell();
 
-    // The H1 display statement is DELETED (owner decree 2026-07-21): the
-    // welcome crown is the [sigil + PREVIEW wordmark] logo row, pinned
-    // close-range in SessionWelcomeHero.test.tsx and via the badge below.
+    // The rebrand hero headline is back (accepted mockup, 2026-08-20),
+    // pinned close-range in SessionWelcomeHero.test.tsx.
     expect(
-      screen.queryByRole("heading", { name: /What should I execute\?/i }),
-    ).toBeNull();
+      screen.getByRole("heading", { name: /What should I execute\?/i }),
+    ).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /New session/i }).length).toBeGreaterThan(0);
     // Healthy runtime → the profile subtitle speaks the Chronos hallmark.
     await screen.findByText("The night shift is active.");
     // The bare version stamp lives in the SESSION rail's collapse header;
     // on the welcome stage the right edge is the floating Portfolio tab
-    // (no version chrome) and the hero's PREVIEW badge carries the version.
+    // (no version chrome) and the hero carries only the eyebrow tooltip.
     expect(screen.queryByText("v0.0.0-test")).toBeNull();
-    expect(screen.getByText("PREVIEW · v0.0.0-test")).not.toBeNull();
+    expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
   it("profile menu carries exactly six entries (no Missions — Sessions covers it)", async () => {

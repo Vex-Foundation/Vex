@@ -368,17 +368,15 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("shows the PREVIEW build badge on the no-session welcome stage", async () => {
+  it("shows the rebrand hero headline on the no-session welcome stage", async () => {
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    // The PREVIEW wordmark badge is the welcome sentinel now — the H1
-    // display statement is deleted (owner decree 2026-07-21).
-    await screen.findByText("PREVIEW · v0.0.0-test");
-    expect(
-      screen.queryByRole("heading", { name: /What should I execute/i }),
-    ).toBeNull();
+    // The headline is the welcome sentinel again (accepted mockup,
+    // 2026-08-20); the PREVIEW wordmark retired with the Grok logo row.
+    await screen.findByRole("heading", { name: /What should I execute/i });
+    expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
   it("welcome composer Send opens the creator with the draft carried + name pre-filled (welcome→create)", async () => {

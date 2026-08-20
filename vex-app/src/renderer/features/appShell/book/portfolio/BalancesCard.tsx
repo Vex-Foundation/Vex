@@ -1,11 +1,12 @@
 /**
  * Balances — the top holdings of a portfolio read, in the shared
  * `TokenHoldingRow` grammar (address-verified marks, sanitized names, em-dash
- * unpriced convention). ONE card serves both stages:
+ * unpriced convention). ONE card serves both stages, driven by its
+ * `PortfolioCardScope` input (studio seam #3):
  *
- *  - `sessionId === null` — the welcome Portfolio tab: the five largest-USD
+ *  - global scope — the welcome Portfolio tab: the five largest-USD
  *    lines across every configured wallet.
- *  - `sessionId` a uuid — the session rail: the five largest-USD lines of
+ *  - session scope — the session rail: the five largest-USD lines of
  *    THAT session's wallet scope, flat across chains (the session DTO's
  *    `portfolio.tokens[]`; a `chainId: null` row is a real aggregate line and
  *    renders without a chain suffix, it is never dropped).
@@ -24,12 +25,15 @@
 
 import type { JSX, MouseEvent } from "react";
 import {
-  ChevronRightIcon,
-  VexIcon,
+  IconChevronRight,
 } from "../../../../components/icons/index.js";
 import { usePortfolio } from "../../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
+import {
+  scopeSessionId,
+  type PortfolioCardScope,
+} from "./portfolio-scope.js";
 import {
   filterDustTokens,
   sortTokensByUsdDesc,
@@ -41,11 +45,12 @@ import {
 const TOP_TOKENS = 5;
 
 export function BalancesCard({
-  sessionId = null,
+  scope,
 }: {
-  /** `null` = the global inventory portfolio; a uuid narrows to one session. */
-  readonly sessionId?: string | null;
-} = {}): JSX.Element {
+  /** Wallet scope this card reads (studio seam #3) — never session state read inside. */
+  readonly scope: PortfolioCardScope;
+}): JSX.Element {
+  const sessionId = scopeSessionId(scope);
   const query = usePortfolio(sessionId);
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
@@ -98,10 +103,10 @@ export function BalancesCard({
           <button
             type="button"
             onClick={openAllAssets}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
           >
             View all assets
-            <VexIcon icon={ChevronRightIcon} size={13} aria-hidden />
+            <IconChevronRight size={13} />
           </button>
         </>
       )}
