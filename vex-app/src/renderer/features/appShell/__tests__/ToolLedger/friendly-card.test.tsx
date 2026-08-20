@@ -520,14 +520,20 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
   });
 
-  it("keeps Args/Output as inert <pre> text inside the expanded body", () => {
+  it("keeps a NON-JSON payload as inert <pre> text; JSON gets the inspector tree", () => {
     const { container } = render(
       createElement(ToolActRow, {
-        act: act({ toolName: "swap_execute_uniswap", output: "{}" }),
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: "plain text args",
+          output: "{}",
+        }),
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: /Swap · Uniswap/ }));
-    const pres = container.querySelectorAll("pre");
-    expect(pres.length).toBe(2);
+    // Non-JSON args stay inert pre text; the "{}" output is a primitive-empty
+    // object and renders as a (single-row) tree.
+    expect(container.querySelectorAll("pre").length).toBe(1);
+    expect(container.querySelector("[data-vex-json-tree]")).not.toBeNull();
   });
 });

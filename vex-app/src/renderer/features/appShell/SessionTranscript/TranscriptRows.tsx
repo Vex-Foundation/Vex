@@ -19,11 +19,33 @@
  * parent's border box, so the scroll model always measures an untransformed row.
  */
 
-import type { JSX } from "react";
+import { Fragment, type JSX } from "react";
 import { cn } from "../../../lib/utils.js";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import { transcriptEntryKey as entryKey } from "../agentActivity.js";
 import type { TranscriptEntry } from "../transcriptRowModel.js";
+import { crossesLocalDay, dayLabel } from "./daySeparator.js";
+
+/**
+ * G12 — a quiet Doto date stamp between rows from different LOCAL calendar
+ * days (and above the very first loaded row, so a resumed session names its
+ * day). Chrome, not content: aria-hidden, hairline-flanked.
+ */
+function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
+  const label = dayLabel(iso, Date.now());
+  if (label === null) return null;
+  return (
+    <div
+      aria-hidden
+      data-vex-day-separator=""
+      className="flex items-center gap-3"
+    >
+      <span className="h-px flex-1 bg-line-1" />
+      <span className="vex-stat-doto">{label}</span>
+      <span className="h-px flex-1 bg-line-1" />
+    </div>
+  );
+}
 
 export function TranscriptRows({
   rows,
@@ -39,11 +61,15 @@ export function TranscriptRows({
 }): JSX.Element {
   return (
     <>
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         const liveAppend = settledIds !== null && !settledIds.has(row.id);
+        const prev = index > 0 ? rows[index - 1] : undefined;
+        const startsDay =
+          prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
         return (
+          <Fragment key={entryKey(row)}>
+          {startsDay ? <DaySeparator iso={row.createdAt} /> : null}
           <div
-            key={entryKey(row)}
             data-vex-entry-id={row.id}
             data-vex-entry-variant={row.variant}
             className={cn(row.variant === "user" && "mt-4")}
@@ -65,6 +91,7 @@ export function TranscriptRows({
               />
             </div>
           </div>
+          </Fragment>
         );
       })}
     </>

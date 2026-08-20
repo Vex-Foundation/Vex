@@ -2,7 +2,7 @@
  * WHO SCROLLS, AND WHO IS THE READING COLUMN — the two must not be the same
  * element.
  *
- * The transcript's scroller used to BE the 860px reading column, so the browser
+ * The transcript's scroller used to BE the reading column, so the browser
  * drew its scrollbar at the column's right edge: a bar floating in the middle
  * of the window beside the text, which is not how any browser behaves and is
  * not what a reader reaches for (owner, 2026-08-05). The fix is structural, not
@@ -56,7 +56,7 @@ async function renderTranscript() {
 
 /** The wrapper that carries the reading measure, inside the scroller. */
 function readingColumn(container: HTMLElement): HTMLElement {
-  const el = getScroller(container).querySelector(".max-w-\\[860px\\]");
+  const el = getScroller(container).querySelector(".max-w-\\[780px\\]");
   if (el === null) throw new Error("reading column not found inside scroller");
   return el as HTMLElement;
 }

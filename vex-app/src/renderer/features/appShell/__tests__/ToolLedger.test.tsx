@@ -82,13 +82,16 @@ describe("ToolActRow", () => {
     ).not.toBeNull();
     const btn = screen.getByRole("button", { name: /Wallet balances/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText('{"chain":"base"}')).toBeNull();
+    expect(document.querySelector("[data-vex-json-tree]")).toBeNull();
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
     const controls = btn.getAttribute("aria-controls");
     expect(controls).not.toBeNull();
     expect(document.getElementById(controls!)).not.toBeNull();
-    expect(screen.getByText('{"chain":"base"}')).not.toBeNull();
+    // C9: a JSON payload expands into the inspector tree, not inert text.
+    expect(document.querySelector("[data-vex-json-tree]")).not.toBeNull();
+    expect(container.textContent).toContain("chain");
+    expect(container.textContent).toContain('"base"');
   });
 
   it("renders args/output as TEXT, never HTML (sanitization stays upstream)", () => {
