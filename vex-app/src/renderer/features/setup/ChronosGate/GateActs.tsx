@@ -1,9 +1,11 @@
 /**
  * Chronos Gate acts — the presentational content of the boot choreography
- * (design-language §6a). Act I: diamond wipes cross over the sky. Act II:
- * the vx mark enters as a blur echo, then sharpens. Act III: the white
- * diamond seal stamps, the CHRONOS GATE label appears, and the 2px
- * progress line reports the REAL launch pipeline. All timing lives in the
+ * (design-language §6a; geometry target: VEX 2 frame 0:03). Act I:
+ * diamond wipes enter from the sides and converge into the seal apex.
+ * Act II: the vx mark enters as a blur echo in the open field above.
+ * Act III: the white diamond seal stamps at the convergence point, the
+ * CHRONOS GATE label appears, and the 2px progress line reports the
+ * REAL launch pipeline. All timing lives in the
  * stylesheet keyframes (global-css/chronos-gate.css); reduced motion
  * lands the Act III resting frame instantly.
  */
@@ -31,9 +33,10 @@ export function GateActs({
 }): JSX.Element {
   return (
     <>
-      {/* Act I — the gate opens: two diamond edges cross the sky. */}
-      <div aria-hidden className="chronos-wipe chronos-wipe--down" />
-      <div aria-hidden className="chronos-wipe chronos-wipe--up" />
+      {/* Act I — the gate opens: two diamond edges enter from the screen
+          sides and converge into the seal apex. */}
+      <div aria-hidden className="chronos-wipe chronos-wipe--left" />
+      <div aria-hidden className="chronos-wipe chronos-wipe--right" />
 
       {/* Act II — the mark: soft echo first, sharp on top. */}
       <div aria-hidden className="chronos-mark select-none">
@@ -59,8 +62,9 @@ export function GateActs({
       </div>
       <div aria-hidden className="chronos-seal-ripple" />
 
-      {/* Act III chrome — label + the real pipeline's progress line. */}
-      <div className="absolute inset-x-0 top-[72%] flex flex-col items-center gap-4">
+      {/* Act III chrome — label + the real pipeline's progress line, in
+          the lower wedge beneath the seal apex. */}
+      <div className="absolute inset-x-0 top-[76%] flex flex-col items-center gap-4">
         <span aria-hidden className="chronos-gate-label">
           Chronos Gate
         </span>

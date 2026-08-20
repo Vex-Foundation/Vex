@@ -276,37 +276,41 @@
   }
 }
 
-/* Act 1: two diamond wipes. Each is a huge rotated square whose EDGE is
- * the visible diagonal line and whose translucent fill shades the region
- * beyond it — the crossing pair reads as the gate opening. Values are
- * calibrated to the VEX 2 frames (crossing band around 30-70% height). */
+/* Act 1: two diamond wipes enter from the screen sides and CONVERGE into
+ * the seal apex (owner target: VEX 2 frame 0:03 / frame_007). Each wipe
+ * is a huge square whose TOP edge is the visible line; the square is
+ * rotated ±45° around that edge's midpoint (transform-origin 50% 0),
+ * and the midpoint rests exactly on the seal anchor (50vw, 64vh) — so
+ * the two lines cross AT the seal, which is their lower apex. Each
+ * translucent body shades the half-plane below its own line; the open
+ * sky field is the upper wedge between them, where the mark lives. */
 .chronos-wipe {
   position: absolute;
   left: 50%;
-  width: 200vmax;
-  height: 200vmax;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  top: 64vh;
+  width: 300vmax;
+  height: 300vmax;
+  transform-origin: 50% 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
   background: rgba(6, 8, 40, 0.22);
   pointer-events: none;
 }
-.chronos-wipe--down {
-  top: 72vh;
-  transform: translate3d(-50%, calc(-50% - 141vmax), 0) rotate(45deg);
-  animation: chronos-wipe-down 1.2s var(--vex-gate-ease) backwards;
+.chronos-wipe--left {
+  transform: translate3d(-50%, 0, 0) rotate(45deg);
+  animation: chronos-wipe-left 1.2s var(--vex-gate-ease) backwards;
 }
-@keyframes chronos-wipe-down {
+@keyframes chronos-wipe-left {
   from {
-    transform: translate3d(-50%, calc(-50% - 141vmax - 90vh), 0) rotate(45deg);
+    transform: translate3d(calc(-50% - 110vw), 0, 0) rotate(45deg);
   }
 }
-.chronos-wipe--up {
-  top: 28vh;
-  transform: translate3d(-50%, calc(-50% + 141vmax), 0) rotate(45deg);
-  animation: chronos-wipe-up 1.2s var(--vex-gate-ease) backwards;
+.chronos-wipe--right {
+  transform: translate3d(-50%, 0, 0) rotate(-45deg);
+  animation: chronos-wipe-right 1.2s var(--vex-gate-ease) backwards;
 }
-@keyframes chronos-wipe-up {
+@keyframes chronos-wipe-right {
   from {
-    transform: translate3d(-50%, calc(-50% + 141vmax + 90vh), 0) rotate(45deg);
+    transform: translate3d(calc(-50% + 110vw), 0, 0) rotate(-45deg);
   }
 }
 
@@ -316,7 +320,9 @@
 .chronos-mark {
   position: absolute;
   left: 50%;
-  top: 40%;
+  /* Centered in the open wedge above the 64vh convergence point (the
+   * field the video reserved for OFFICIAL PARTNERS). */
+  top: 34%;
   width: 228px;
   transform: translate3d(-50%, -50%, 0);
 }
@@ -346,13 +352,15 @@
   }
 }
 
-/* Act 3: the white diamond seal STAMPS under the mark — fast scale-in
- * with an overshoot — then one subtle ripple lets go around the stamp
- * point. Star inside counter-rotates to stay upright. */
+/* Act 3: the white diamond seal STAMPS at the wipes' convergence point —
+ * it IS the lines' lower apex (owner target), fast scale-in with an
+ * overshoot, then one subtle ripple lets go around the stamp point.
+ * Star inside counter-rotates to stay upright. The 64vh anchor is the
+ * COUPLED invariant shared with `.chronos-wipe`'s top. */
 .chronos-seal {
   position: absolute;
   left: 50%;
-  top: 62%;
+  top: 64vh;
   width: 48px;
   height: 48px;
   background: #ffffff;
@@ -388,7 +396,7 @@
 .chronos-seal-ripple {
   position: absolute;
   left: 50%;
-  top: 62%;
+  top: 64vh;
   width: 48px;
   height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.55);
@@ -451,8 +459,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chronos-sky,
-  .chronos-wipe--down,
-  .chronos-wipe--up,
+  .chronos-wipe--left,
+  .chronos-wipe--right,
   .chronos-mark__echo,
   .chronos-mark__sharp,
   .chronos-seal,
