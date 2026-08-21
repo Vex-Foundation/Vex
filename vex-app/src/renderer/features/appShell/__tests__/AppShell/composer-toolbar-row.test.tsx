@@ -38,6 +38,9 @@ vi.mock("../../../../lib/api/chat.js", () => ({
     mutateAsync: vi.fn(),
     stop: vi.fn(),
   }),
+  // R3-F1 session-scoped the composer's pending read; this suite never
+  // exercises an in-flight turn, so the scoped read is a constant false.
+  useIsChatSubmitting: () => false,
 }));
 vi.mock("../../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: { ok: true, data: { status: null } } }),
