@@ -217,7 +217,7 @@ export function ReportIssueDialog({
                     key={opt.value}
                     className={cn(
                       // Landing chip: mono micro-label pill on a hairline.
-                      "cursor-pointer rounded-full border px-3 py-1.5 font-doto text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
+                      "cursor-pointer rounded-full border px-3 py-1.5 vex-doto-label uppercase transition-colors",
                       "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
                       severity === opt.value
                         ? "border-accent-primary/85 bg-accent-primary/8 text-accent-primary"

@@ -47,7 +47,7 @@ const SUBMIT_CHOICES: ReadonlyArray<SubmitChoice> = [
 
 function GroupTitle({ children }: { readonly children: string }): JSX.Element {
   return (
-    <h2 className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary">
+    <h2 className="vex-doto-label uppercase text-ink-secondary">
       {children}
     </h2>
   );

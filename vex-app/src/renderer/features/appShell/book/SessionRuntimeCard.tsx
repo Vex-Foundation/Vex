@@ -117,7 +117,7 @@ export function SessionRuntimeCard({
 }
 
 /** Muted key next to a stronger tabular value — the card's metric grammar. */
-const METRIC_LABEL = "font-doto uppercase tracking-[0.16em] text-ink-tertiary";
+const METRIC_LABEL = "vex-doto-label vex-doto-label--wide uppercase text-ink-secondary";
 
 function Metric({
   label,

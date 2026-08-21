@@ -125,6 +125,28 @@ const BANNED: readonly BannedPattern[] = [
     regex:
       /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-black(?![\w-])/,
   },
+  // R2-C Doto register (2026-08-21): `.vex-doto-label` in landing-motifs.css is
+  // now the ONLY sanctioned way to set Doto in the shell. It owns the measured
+  // floor (12px / weight 600 / tracking <= 0.16em / tabular-nums) that ~70
+  // ad-hoc `font-doto` call sites had drifted below (8-11px at weight 400),
+  // which the owner's QA read as invisible in both themes. The raw Tailwind
+  // utility carries no floor, so re-introducing it is a red build - migrate the
+  // call site to the class instead of whitelisting.
+  { name: "bare font-doto utility (use .vex-doto-label)", regex: /\bfont-doto\b/ },
+  // The class sets no color on purpose (this sheet is unlayered and would beat
+  // the call site's `text-*` utility), so the floor TIER is enforced here:
+  // Doto's dot glyphs discard roughly half a solid face's ink coverage, which
+  // puts `text-ink-tertiary` and `text-ink-caption` below the readable
+  // threshold for this face. `text-ink-secondary` is the floor. Variant-
+  // prefixed tiers (`disabled:text-ink-tertiary`, `hover:...`) are EXEMPT by
+  // the lookbehind - a receding disabled state is the correct use of tertiary.
+  // Limitation: the scan is per class string, so it catches the common
+  // single-literal case, not a tier assembled across a conditional expression.
+  {
+    name: "Doto label below the ink-secondary floor tier",
+    regex:
+      /vex-doto-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-doto-label/,
+  },
 ];
 
 /**
@@ -189,6 +211,30 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "side-panel menu floats as translucent ink (--vex-glass-strong) with " +
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
+  },
+  // ── TEMPORARY, wave-scoped (R2-C, 2026-08-21) ──────────────────────────
+  // The Doto register migrated ~70 shell call sites to `.vex-doto-label`. The
+  // composer's two remaining sites are the ONE set this lane must not touch:
+  // the conversation rework (wave 2) rebuilds those files wholesale, and an
+  // edit here would collide with it. The class contract is published on the
+  // round-2 board for that lane.
+  // OWNER: wave-2 builder D1. REMOVAL CONDITION: delete both entries the
+  // moment D1 lands the composer Doto sites on `.vex-doto-label` - the guard
+  // then holds the register with no exemptions at all. These are the only two
+  // sanctioned bare `font-doto` occurrences in the shell; do not add a third.
+  {
+    file: "features/appShell/SessionComposer.tsx",
+    pattern: "bare font-doto utility (use .vex-doto-label)",
+    reason:
+      "Wave-2 handoff: the queue/steering badges (9px Doto) migrate with the " +
+      "conversation rework, which owns this file. Temporary - remove with D1.",
+  },
+  {
+    file: "features/appShell/SessionComposer/ComposerMissionStrip.tsx",
+    pattern: "bare font-doto utility (use .vex-doto-label)",
+    reason:
+      "Wave-2 handoff: the mission strip label migrates with the conversation " +
+      "rework, which owns the composer tree. Temporary - remove with D1.",
   },
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
@@ -333,6 +379,37 @@ describe("shell design guard (S7)", () => {
     // Prose in a file header is not a class: the pattern is anchored on the
     // utility prefix, so an ordinary hyphenated word does not trip it.
     expect(matchNames("an off-white plate, a coal-black rail")).toEqual([]);
+  });
+
+  it("flags the bare font-doto utility but not the sanctioned class", () => {
+    expect(matchNames('className="font-doto text-[10px]"')).toContain(
+      "bare font-doto utility (use .vex-doto-label)",
+    );
+    // The class is the sanctioned register; its name must not self-trigger.
+    expect(matchNames('className="vex-doto-label uppercase"')).toEqual([]);
+    expect(matchNames('className="vex-doto-label vex-doto-label--wide"')).toEqual(
+      [],
+    );
+  });
+
+  it("flags a Doto label below the ink-secondary floor tier, in either order", () => {
+    expect(
+      matchNames('className="vex-doto-label uppercase text-ink-tertiary"'),
+    ).toContain("Doto label below the ink-secondary floor tier");
+    expect(
+      matchNames('className="text-ink-caption vex-doto-label uppercase"'),
+    ).toContain("Doto label below the ink-secondary floor tier");
+    // The floor tier itself is fine, as is a receding DISABLED/hover state.
+    expect(
+      matchNames('className="vex-doto-label uppercase text-ink-secondary"'),
+    ).toEqual([]);
+    expect(
+      matchNames(
+        'className="vex-doto-label text-accent-primary disabled:text-ink-tertiary"',
+      ),
+    ).toEqual([]);
+    // A tertiary tier on a NON-Doto label is untouched by this rule.
+    expect(matchNames('className="vex-micro text-ink-tertiary"')).toEqual([]);
   });
 
   it("flags resting glow and shine chrome", () => {

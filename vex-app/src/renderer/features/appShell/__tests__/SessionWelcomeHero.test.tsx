@@ -61,7 +61,7 @@ describe("SessionWelcomeHero", () => {
 
   it("speaks the date in the Doto eyebrow and keeps the honest preview disclosure as its tooltip", () => {
     const { container } = render(<SessionWelcomeHero />);
-    const eyebrow = container.querySelector(".font-doto");
+    const eyebrow = container.querySelector(".vex-doto-label");
     expect(eyebrow).not.toBeNull();
     // A date, uppercase, e.g. "WEDNESDAY · AUG 20" — pinned by grammar, not
     // by today's value.

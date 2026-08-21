@@ -29,7 +29,7 @@ export function PhaseNote({
         <button
           type="button"
           onClick={onRePrice}
-          className="rounded-full border border-line-3 px-3 py-1 font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          className="rounded-full border border-line-3 px-3 py-1 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           Review new price
         </button>

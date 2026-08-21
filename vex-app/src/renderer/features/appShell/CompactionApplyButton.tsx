@@ -39,7 +39,7 @@ import { useRequestCompactionApply } from "../../lib/api/compaction-preparation.
  * filled button would break it.
  */
 const APPLY_BUTTON =
-  "rounded-[3px] border border-accent-primary px-1.5 py-0.5 font-doto text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary";
+  "rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-doto-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary";
 
 const APPLY_LABEL =
   "Apply prepared compaction: replaces older messages with a summary";

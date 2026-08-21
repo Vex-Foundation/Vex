@@ -154,7 +154,7 @@ export function ImageLockerCard({
         type="button"
         onClick={runUpload}
         disabled={busy}
-        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-line-2 py-1.5 font-doto text-[10px] uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary disabled:opacity-50"
+        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-line-2 py-1.5 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary disabled:opacity-50"
       >
         <IconPlus size={12} />
         {busy ? "Adding…" : "Add image"}

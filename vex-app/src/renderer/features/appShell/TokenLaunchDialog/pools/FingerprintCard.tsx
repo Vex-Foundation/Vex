@@ -32,7 +32,7 @@ export function FingerprintCard({
       data-vex-pools-fingerprint={fingerprint.fingerprintId}
       className="flex flex-col gap-2 rounded-xl border border-line-3 bg-surface-deep p-3"
     >
-      <h3 className="font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-tertiary">
+      <h3 className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
         What you are authorizing
       </h3>
 
@@ -51,7 +51,7 @@ export function FingerprintCard({
         <Mono>{fingerprint.predictedPoolAddress}</Mono>
       </Row>
       <Row label="Paired with">
-        <span className="font-doto text-[11px] font-medium uppercase text-ink-primary">
+        <span className="vex-doto-label uppercase text-ink-primary">
           {fingerprint.pairedAsset}
         </span>
       </Row>

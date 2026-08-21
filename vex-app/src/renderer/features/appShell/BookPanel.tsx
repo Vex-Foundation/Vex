@@ -189,7 +189,7 @@ export function BookPanel({
         )}
       >
         {bookOpen ? (
-          <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
+          <span className="vex-doto-label vex-doto-chip uppercase text-ink-secondary">
             v{__VEX_APP_VERSION__}
           </span>
         ) : null}
