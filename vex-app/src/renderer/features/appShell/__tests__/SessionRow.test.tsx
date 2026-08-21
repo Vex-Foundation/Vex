@@ -101,6 +101,39 @@ describe("an EXPANDED row is one quiet line", () => {
     expect(rowButton?.contains(pin)).toBe(false);
   });
 
+  // The pin glyph shipped as a bare `pinned ? <A/> : <B/>` with no JSX
+  // braces, so React rendered four children: the literal text "pinned ? ",
+  // BOTH stars, and the literal " : ". aria-label and aria-pressed were
+  // correct throughout, which is exactly why the aria-based cases above
+  // never saw it. These two assert what a person looks at.
+  it("renders no stray source text - the pin control is a glyph, not words", () => {
+    renderRow(session(), true);
+    expect(document.body.textContent).not.toContain("pinned");
+    expect(document.body.textContent).not.toContain("?");
+    // The button's own text: a glyph-only control has none at all.
+    expect(
+      screen.getByRole("button", { name: /^pin session$/i }).textContent,
+    ).toBe("");
+  });
+
+  it("shows exactly ONE star on the pin control, and it matches the pin state", () => {
+    // The outline star carries the inner cutout subpath; the filled one is a
+    // single outline. That is what tells the two glyphs apart in jsdom.
+    const cutout = "M12 6.64";
+    const { unmount } = renderRow(session({ pinnedAt: null }), true);
+    const unpinned = screen.getByRole("button", { name: /^pin session$/i });
+    expect(unpinned.querySelectorAll("svg")).toHaveLength(1);
+    expect(unpinned.querySelector("path")?.getAttribute("d")).toContain(cutout);
+    unmount();
+
+    renderRow(session({ pinnedAt: "2026-08-06T10:00:00.000Z" }), true);
+    const pinned = screen.getByRole("button", { name: /unpin session/i });
+    expect(pinned.querySelectorAll("svg")).toHaveLength(1);
+    expect(pinned.querySelector("path")?.getAttribute("d")).not.toContain(
+      cutout,
+    );
+  });
+
   it("anchors a hover-card wrapper around the whole row", () => {
     renderRow(session(), true);
     expect(document.querySelector(".vex-hover-card-root")).not.toBeNull();

@@ -82,7 +82,7 @@ export function ApprovalDecisionActions({
         onClick={onReject}
         disabled={inFlight}
         aria-label={rejectArmed ? "Confirm reject" : "Reject"}
-        className={`${KEY_BASE} text-[var(--vex-text-2)] hover:bg-white/[0.05] hover:text-foreground ${
+        className={`${KEY_BASE} text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground ${
           rejectArmed ? ARMED_BORDER : "border-[var(--vex-line-strong)]"
         }`}
       >

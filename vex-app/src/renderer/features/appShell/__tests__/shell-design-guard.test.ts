@@ -23,6 +23,11 @@
  *   4. /shadow-\[0_0_/ — resting glow. Depth never comes from shadows
  *      (directional shadows and the select-beam's lit-item shadow live in
  *      globals.css, outside this scan by design).
+ *   5. theme-blind `white`/`black` utilities (round 2, owner QA 2026-08-21).
+ *      A `bg-white/[0.04]` hover or a `text-white` glyph describes a colour,
+ *      not a role, so it can only be right in ONE theme. Every such site in
+ *      the shell was migrated to the alias families, so the whitelist for
+ *      this pair is intentionally EMPTY.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
@@ -101,6 +106,25 @@ const BANNED: readonly BannedPattern[] = [
   // (CSS is out of this scan's scope). Any raw re-introduction in shell
   // sources is a red build — fix the file with var(), never whitelist.
   { name: "retired cobalt accent (#1f44ff/#0a23b8)", regex: /#(?:1f44ff|0a23b8)/i },
+  // UIUX round 2 (owner QA 2026-08-21): a `white`/`black` Tailwind colour is
+  // theme-BLIND - it says nothing about the surface under it, so a
+  // `hover:bg-white/[0.05]` hover or a `bg-white/[0.02]` plate that reads on
+  // chronos is invisible on celeris, and a `text-white` glyph on the chronos
+  // accent (light blue-400) lands near 2:1. The theme-aware families are
+  // `interactive-hover`/`interactive-active` (washes), `surface-*` (plates),
+  // `line-*` (strokes) and `ink-on-accent`/`ink-on-primary`/`ink-on-chrome`
+  // (text painted on a known fill). The alpha forms are covered by the same
+  // pattern: `bg-white/[0.05]` matches on the utility, not the value.
+  {
+    name: "theme-blind white literal",
+    regex:
+      /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-white(?![\w-])/,
+  },
+  {
+    name: "theme-blind black literal",
+    regex:
+      /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-black(?![\w-])/,
+  },
 ];
 
 /**
@@ -279,6 +303,36 @@ describe("shell design guard (S7)", () => {
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
     expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
+  });
+
+  it("flags theme-blind white/black utilities, in every alpha and variant form", () => {
+    expect(matchNames("text-white")).toContain("theme-blind white literal");
+    expect(matchNames("hover:bg-white/[0.05]")).toContain(
+      "theme-blind white literal",
+    );
+    expect(matchNames("border-white/[0.08]")).toContain(
+      "theme-blind white literal",
+    );
+    expect(matchNames("bg-black/70")).toContain("theme-blind black literal");
+    expect(matchNames("text-black")).toContain("theme-blind black literal");
+    // The theme-aware replacements are what the law asks for, so none of
+    // them may trip the pattern - including the ink-on-* names that end in
+    // a word the regex must not treat as the colour.
+    for (const ok of [
+      "bg-interactive-hover",
+      "hover:bg-interactive-hover",
+      "text-ink-on-accent",
+      "bg-ink-on-accent",
+      "text-ink-on-chrome",
+      "border-line-2",
+      "bg-mask-1",
+      "bg-surface-1",
+    ]) {
+      expect(matchNames(ok)).toEqual([]);
+    }
+    // Prose in a file header is not a class: the pattern is anchored on the
+    // utility prefix, so an ordinary hyphenated word does not trip it.
+    expect(matchNames("an off-white plate, a coal-black rail")).toEqual([]);
   });
 
   it("flags resting glow and shine chrome", () => {

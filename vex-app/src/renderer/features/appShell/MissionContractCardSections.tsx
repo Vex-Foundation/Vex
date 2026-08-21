@@ -304,11 +304,12 @@ export function AutoRetrySection({
             className={cn(
               "inline-block h-3.5 w-3.5 transform rounded-full transition-transform",
               // Enabled: the knob sits on the solid accent track, so it takes
-              // the accent-contrast ink (white on cobalt, ink on lime). Off:
-              // white knob on the dark track reads in both themes.
+              // the accent-contrast ink. Off: the track is the interactive
+              // wash over the page surface, so the knob takes the page's own
+              // primary ink - light on chronos, dark on celeris.
               enabled
                 ? "translate-x-[18px] bg-ink-on-accent"
-                : "translate-x-[3px] bg-white",
+                : "translate-x-[3px] bg-ink-primary",
             )}
           />
         </button>
