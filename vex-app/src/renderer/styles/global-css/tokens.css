@@ -208,6 +208,13 @@
   /* Text painted on the theme-invariant dark chrome plates above; stays
    * white in celeris too, so it lives only on :root. */
   --vex-alias-label-on-chrome: #ffffff;
+  /* The standalone vx brand mark (owner rule, ratified 2026-08-21):
+   * WHITE everywhere in chronos, BRAND BLUE in celeris. Exceptions live
+   * at their call sites: the Chronos Gate is always white (invariant
+   * dark brand moment) and marks on blue brand discs stay white in both
+   * themes. Standalone marks consume `text-brand-mark`, never a raw
+   * color or an ink tier. */
+  --vex-alias-brand-mark: #ffffff;
 
   /* PRE-SHELL (post-gate setup stack) - the theme-aware group the
    * `[data-vex-gate="true"]` scope in chronos-gate.css re-projects onto the
@@ -302,6 +309,8 @@
   --vex-alias-accent-hover: var(--color-blue-900);
   --vex-alias-accent-brand: var(--color-blue-500);
   --vex-alias-accent-wash: var(--color-blue-100);
+  /* Standalone vx mark rides the brand blue on the light theme. */
+  --vex-alias-brand-mark: var(--color-blue-700);
 
   /* Light hover tint is BLUE-black, not neutral gray - subtle but carries
    * the cool cast. */
@@ -372,6 +381,7 @@
   --color-mask-1: var(--vex-alias-bg-mask-1);
   --color-mask-drop: var(--vex-alias-bg-mask-drop);
   --color-ink-on-chrome: var(--vex-alias-label-on-chrome);
+  --color-brand-mark: var(--vex-alias-brand-mark);
 
   --color-accent-primary: var(--vex-alias-accent-primary);
   --color-accent-hover: var(--vex-alias-accent-hover);

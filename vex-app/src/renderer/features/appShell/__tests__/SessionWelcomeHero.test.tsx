@@ -43,15 +43,15 @@ beforeEach(() => {
 
 describe("SessionWelcomeHero", () => {
   it("renders the vx mark inline on currentColor ink - no theme-swapped image pair", () => {
-    // Owner QA round 3: the celeris welcome mark is BLACK, not brand blue.
-    // One inline SVG on `text-ink-primary` gives white over the chronos night
-    // photo and near-black on celeris from the same element - no img assets,
-    // no theme attribute variants, no JS theme read.
+    // Owner rule 2026-08-21: the standalone mark is WHITE everywhere in
+    // chronos and BRAND BLUE in celeris. One inline SVG on the brand-mark
+    // token carries both - no img assets, no theme-attribute variants, no JS
+    // theme read; the flip lives in tokens.css.
     const { container } = render(<SessionWelcomeHero />);
     expect(container.querySelector("img")).toBeNull();
     const markBox = container.querySelector('span[aria-hidden="true"]');
     expect(markBox).not.toBeNull();
-    expect(markBox?.className).toContain("text-ink-primary");
+    expect(markBox?.className).toContain("text-brand-mark");
     expect(markBox?.querySelector("svg path")).not.toBeNull();
   });
 
