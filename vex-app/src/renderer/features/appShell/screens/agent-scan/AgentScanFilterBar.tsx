@@ -161,7 +161,7 @@ function FilterGroup({
 }): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="w-[58px] shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
+      <span className="w-[58px] shrink-0 vex-doto-label uppercase text-ink-secondary">
         {label}
       </span>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
@@ -268,7 +268,7 @@ export function AgentScanFilterBar({
             </span>
           ) : null}
           {active > 0 ? (
-            <span className="font-doto text-[10px] uppercase tracking-[0.14em] text-accent-primary">
+            <span className="vex-doto-label uppercase text-accent-primary">
               {active} filter{active === 1 ? "" : "s"} active
             </span>
           ) : null}

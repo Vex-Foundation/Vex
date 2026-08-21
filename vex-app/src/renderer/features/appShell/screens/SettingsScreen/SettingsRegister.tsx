@@ -64,7 +64,7 @@ export function SettingsRegister({
                 </span>
                 <span
                   className={cn(
-                    "shrink-0 font-doto text-[11px] uppercase tracking-[0.14em]",
+                    "shrink-0 vex-doto-label uppercase",
                     STATUS_TONE_CLASS[status.tone],
                   )}
                 >

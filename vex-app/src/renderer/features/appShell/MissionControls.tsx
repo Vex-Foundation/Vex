@@ -491,7 +491,7 @@ function ControlButton({
         "inline-flex h-8 items-center rounded-full border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-40",
         tone === "danger"
           ? "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 text-destructive hover:bg-destructive/15"
-          : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground",
+          : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground",
       )}
     >
       {label}

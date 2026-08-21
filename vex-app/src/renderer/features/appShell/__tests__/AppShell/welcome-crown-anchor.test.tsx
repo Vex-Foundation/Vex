@@ -1,38 +1,33 @@
 /**
  * Welcome crown anchor — the owner-decreed "total smoothness" pass
- * (2026-07-22): the crown (logo-row zone) must NOT move when the composer
- * pill grows or shrinks, and a starter-chip pick must read as ONE gesture
- * (chips fade + pill grows + caret lands at the end of the seeded draft).
+ * (2026-07-22), carried into the RESIDENT SHELL (R2-D2): the crown (the hero
+ * chrome) must NOT move when the composer pill grows or shrinks, and a
+ * starter-chip pick must read as ONE gesture (chips fade + pill grows + caret
+ * lands at the end of the seeded draft).
+ *
+ * WHAT RESIDENCY CHANGED, and what it did not. The hero chrome and the
+ * composer used to be siblings in the panel's flex column, with the crown zone
+ * balanced against a trailing spacer. They now live together INSIDE the
+ * resident composer seat, which the scroll body flex-centres in the hero phase
+ * - so the whole stack centres as one unit and the composer's DOM node
+ * survives the move to the docked phase. The anchoring invariant is unchanged
+ * and its mechanism is unchanged in kind: the crown is never inside the box
+ * that grows, and the growing box has a FIXED layout height so growth
+ * overflows DOWNWARD instead of re-centring the stack above it. Only the owner
+ * of that fixed height moved, from a Tailwind class on the band to a
+ * phase-scoped rule on `[data-vex-composer-dock]` in chat-transcript.css.
  *
  * WHY STRUCTURE, NOT PIXELS: jsdom has no layout engine — every element
  * reports offsetTop 0 and the textarea's scrollHeight is 0, so a numeric
- * "crown offsetTop is constant" assertion would pass vacuously even with
- * the co-centered-flex bug present. Instead this suite pins the STRUCTURE
- * that mathematically guarantees the invariant in a real browser:
+ * "crown offsetTop is constant" assertion would pass vacuously even with the
+ * co-centred-flex bug present. This suite pins the structure plus the CSS rule
+ * that together guarantee the invariant in a real browser, and holds both
+ * across the owner-reported chaos path (empty → chip-seeded long draft →
+ * cleared draft) on the SAME nodes.
  *
- *   - the crown zone (`[data-vex-welcome-crown]`) and the composer growth
- *     band (`[data-vex-composer-band]`) are SIBLINGS, crown first — the
- *     crown is never a child of the element that grows;
- *   - the band carries a FIXED layout height (h-[140px], the resting
- *     composer stack: mt-6 24px + 56px pill + 60px chips slot) + shrink-0,
- *     so the flex-1 leftover the crown zone shares is a CONSTANT — pill
- *     auto-grow overflows the band DOWNWARD instead of re-centering the
- *     column (the old bug: [flex-1 crown][auto composer][flex-1 spacer]
- *     re-split the leftover on every height delta, moving the crown
- *     opposite to growth);
- *   - both facts hold, on the SAME nodes (no remount), across the exact
- *     owner-reported chaos path: empty draft → chip-seeded long draft →
- *     cleared draft;
- *   - the field slot wears `.vex-composer-grow`, whose globals.css rule
- *     transitions the measured height on the SAME 220ms clock/curve as
- *     `.vex-console`'s border-radius relax (raw-source scan — the
- *     composer-console.test idiom, since jsdom cannot compute stylesheet
- *     rules).
- *
- * Mount: real SessionPanel + real SessionComposer/ComposerQuickActions
- * (the growth mechanics under test); heavy session-branch children and the
- * hero are stubbed (the crown ZONE div under test belongs to SessionPanel,
- * not the hero) — the SessionPanel-enter-animation harness idiom.
+ * Mount: real SessionPanel + real SessionComposer/ComposerQuickActions (the
+ * growth mechanics under test); heavy session-branch children are stubbed, and
+ * the hero is stubbed because the crown's SEATING belongs to SessionPanel.
  */
 
 import { readFileSync } from "node:fs";
@@ -141,38 +136,50 @@ function renderWelcome(): ReturnType<typeof render> {
 }
 
 function crownOf(container: HTMLElement): HTMLElement {
-  const crown = container.querySelector<HTMLElement>(
-    "[data-vex-welcome-crown]",
-  );
+  const crown = container.querySelector<HTMLElement>("[data-vex-hero-stub]");
   expect(crown).not.toBeNull();
   return crown as HTMLElement;
 }
 
 function bandOf(container: HTMLElement): HTMLElement {
   const band = container.querySelector<HTMLElement>(
-    "[data-vex-composer-band]",
+    "[data-vex-composer-dock]",
   );
   expect(band).not.toBeNull();
   return band as HTMLElement;
+}
+
+function seatOf(container: HTMLElement): HTMLElement {
+  const seat = container.querySelector<HTMLElement>(
+    "[data-vex-composer-seat]",
+  );
+  expect(seat).not.toBeNull();
+  return seat as HTMLElement;
 }
 
 /** The full anchor contract on the current DOM — reused across the cycle. */
 function expectAnchoredStructure(container: HTMLElement): void {
   const crown = crownOf(container);
   const band = bandOf(container);
-  // Siblings — the crown is never inside the element that grows, and the
-  // growth band is never inside the crown zone.
+  const seat = seatOf(container);
+  // Siblings inside the resident seat - the crown is never inside the box
+  // that grows, and the growth band is never inside the crown.
   expect(band.contains(crown)).toBe(false);
   expect(crown.contains(band)).toBe(false);
   expect(crown.parentElement).toBe(band.parentElement);
+  expect(seat.contains(crown)).toBe(true);
+  expect(seat.contains(band)).toBe(true);
   // Crown DIRECTLY above the band in document order (growth expands
-  // downward, away from the crown — nothing re-centerable sits between).
+  // downward, away from the crown - nothing re-centrable sits between).
   expect(crown.nextElementSibling).toBe(band);
-  // FIXED layout height: h-[140px] (the resting composer stack) + shrink-0.
-  // This is what makes the flex leftover — and the crown position —
-  // independent of pill height in a real browser.
-  expect(band.className).toContain("h-[140px]");
-  expect(band.className).toContain("shrink-0");
+  // The band is inside the scrollport the shell flex-centres in hero phase;
+  // the fixed height that keeps growth downward is asserted against the
+  // stylesheet below (it is a phase-scoped rule, not a class).
+  expect(
+    container
+      .querySelector("[data-vex-conversation-scroll]")
+      ?.contains(seat),
+  ).toBe(true);
   // The growing instrument lives INSIDE the band; its field slot wears the
   // transitioned-height class.
   const field = screen.getByLabelText("Session draft");
@@ -257,9 +264,38 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     return GLOBALS_CSS.slice(start, end);
   }
 
+  it("pins the hero growth band's fixed height, so pill growth overflows downward", () => {
+    // The invariant the structural cases above cannot express in jsdom: with
+    // a FIXED band height the flex-centred stack's leftover is constant, so
+    // the crown cannot move opposite to the growth. 140px = mt-6 (24) +
+    // resting pill (56) + starter-chip slot (60).
+    const dock = blockFor(
+      '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock]',
+    );
+    expect(dock).toContain("height: 140px");
+    expect(dock).toContain("overflow: visible");
+  });
+
+  it("centres the hero stack with FLEX, never a transform", () => {
+    // A transform on the scroll body would make it the containing block for
+    // every `position: fixed` descendant (menus, dialogs), silently shrinking
+    // them to this column. Flex centring has no such side effect.
+    // Whitespace-tolerant: the selector spans two lines after formatting, so
+    // this scans for the rule rather than an exact `selector {` prefix.
+    const heroBody =
+      /\[data-phase="hero"\]\s*>\s*\[data-vex-conversation-scroll\]\s*\{([^}]*)\}/.exec(
+        GLOBALS_CSS,
+      );
+    expect(heroBody, "hero scroll-body centring rule missing").not.toBeNull();
+    expect(heroBody?.[1]).toContain("justify-content: center");
+    expect(heroBody?.[1]).not.toContain("transform");
+  });
+
   it("transitions the field slot's measured height on the console's 220ms clock, with a clip mask", () => {
     const grow = blockFor(".vex-composer-grow");
-    expect(grow).toContain("transition: height 220ms cubic-bezier(0.25, 1, 0.5, 1)");
+    // The curve rides the ONE easing family token, not a hand-written
+    // cubic-bezier (R2-D2 consolidation).
+    expect(grow).toContain("transition: height 220ms var(--vex-ease-out)");
     expect(grow).toContain("overflow: clip");
     // No keyframe loop — a property transition, stilled by the global
     // reduced-motion catch-all.

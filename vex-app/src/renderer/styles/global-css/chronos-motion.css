@@ -130,7 +130,7 @@
   }
 }
 .vex-session-enter {
-  animation: vex-session-enter 520ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-session-enter 520ms var(--vex-ease-out) both;
 }
 
 /* Composer growth glide — the composer's auto-grow made macOS-smooth
@@ -151,7 +151,7 @@
  * reduced-motion catch-all collapses it to an instant step. */
 .vex-composer-grow {
   overflow: clip;
-  transition: height 220ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition: height 220ms var(--vex-ease-out);
 }
 
 /* The signing stroke — ink drawing the signature line inside the
@@ -165,7 +165,7 @@
 .vex-sign-stroke {
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 240ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition: transform 240ms var(--vex-ease-out);
 }
 
 @keyframes vex-stroke-signing {

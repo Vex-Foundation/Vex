@@ -1,26 +1,17 @@
 /**
- * ComposerQuickActions — the starter chips detached below the Signal Console.
- * Pins the redesign contract: each chip carries a small INTENT ICON, the 01–03
- * numbering is GONE (parallel starters, not an ordered sequence), and picking a
- * chip seeds the draft with its full prompt.
- *
- * The three intent glyphs are stubbed to spans carrying a `data-icon`
- * attribute so the per-chip glyph is assertable in jsdom.
+ * ComposerQuickActions - the starter chips detached below the Signal Console.
+ * Pins the round-2 contract: a chip is its LABEL AND NOTHING ELSE (owner QA
+ * removed the leading intent glyphs), the 01-03 numbering is GONE (parallel
+ * starters, not an ordered sequence), and picking a chip seeds the draft with
+ * its full prompt.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-
-vi.mock("../../../components/icons/index.js", () => ({
-  IconFlame: () => <span data-icon="IconFlame" />,
-  IconPercent: () => <span data-icon="IconPercent" />,
-  IconRocket: () => <span data-icon="IconRocket" />,
-}));
-
-const { ComposerQuickActions } = await import("../ComposerQuickActions.js");
+import { ComposerQuickActions } from "../ComposerQuickActions.js";
 
 describe("ComposerQuickActions", () => {
-  it("renders the intent chips with icons, no 01–03 numbering", () => {
+  it("renders three text-only chips - no leading glyph, no 01-03 numbering", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
     // Three starter chips (memecoins / Pendle yields / Trench launchpad),
@@ -28,18 +19,16 @@ describe("ComposerQuickActions", () => {
     const chips = screen.getAllByRole("button");
     expect(chips).toHaveLength(3);
 
-    // Each intent icon is present (flame / percent square / rocket).
-    expect(container.querySelector('[data-icon="IconFlame"]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-icon="IconPercent"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('[data-icon="IconRocket"]')).not.toBeNull();
+    // A chip renders its label and no glyph beside it.
+    for (const chip of chips) {
+      expect(chip.querySelector("svg")).toBeNull();
+      expect(chip.childElementCount).toBe(1);
+    }
 
-    // The numbering was dropped — no 01/02/03 marks in the chip text.
+    // The numbering was dropped - no 01/02/03 marks in the chip text.
     for (const n of ["01", "02", "03"]) {
       expect(screen.queryByText(n)).toBeNull();
     }
-    // Sanity: the icon refs are attributes, never rendered text.
     expect(container.textContent).not.toMatch(/\b0[123]\b/);
   });
 

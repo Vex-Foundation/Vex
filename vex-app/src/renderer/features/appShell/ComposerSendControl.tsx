@@ -8,7 +8,7 @@
  * descendant of the composer's own `<form>`.
  */
 
-import type { JSX } from "react";
+import type { JSX, MouseEvent as ReactMouseEvent } from "react";
 import { IconSend, IconStopFill } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
@@ -29,6 +29,14 @@ export interface ComposerSendControlProps {
   readonly stopRequested: boolean;
   readonly onStop: () => void;
   readonly submitDisabled: boolean;
+  /**
+   * KEEP FOCUS. A pointer press on a button steals focus from the draft, so
+   * the next keystroke goes nowhere and the caret is lost. The owner
+   * (`SessionComposer`) suppresses the default at MOUSEDOWN and refocuses the
+   * textarea, so typing continues seamlessly through a send or a stop. Bound
+   * at mousedown, not click: focus moves on the press, not the release.
+   */
+  readonly onKeepFocus?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }
 
 export function ComposerSendControl({
@@ -36,6 +44,7 @@ export function ComposerSendControl({
   stopRequested,
   onStop,
   submitDisabled,
+  onKeepFocus,
 }: ComposerSendControlProps): JSX.Element {
   if (stopAvailable) {
     if (stopRequested) {
@@ -57,10 +66,11 @@ export function ComposerSendControl({
       <button
         type="button"
         onClick={onStop}
+        onMouseDown={onKeepFocus}
         aria-label="Stop generating"
         className={cn(
           SEND_KEY_BASE,
-          "bg-accent-primary text-white hover:bg-accent-hover",
+          "bg-accent-primary text-ink-on-accent hover:bg-accent-hover",
         )}
       >
         <IconStopFill size={16} />
@@ -71,10 +81,11 @@ export function ComposerSendControl({
     <button
       type="submit"
       disabled={submitDisabled}
+      onMouseDown={onKeepFocus}
       aria-label="Send message"
       className={cn(
         SEND_KEY_BASE,
-        "bg-accent-primary text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-primary",
+        "bg-accent-primary text-ink-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-primary",
       )}
     >
       <IconSend size={16} />

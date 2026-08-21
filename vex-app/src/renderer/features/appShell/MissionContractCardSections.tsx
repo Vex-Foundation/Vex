@@ -117,7 +117,7 @@ interface FieldProps {
 function Field({ label, hint, children }: FieldProps): JSX.Element {
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-2 font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
+      <div className="flex items-center gap-2 vex-doto-label uppercase text-ink-secondary">
         <span>{label}</span>
         {hint ? <span className="text-[10px] italic">· {hint}</span> : null}
       </div>
@@ -276,7 +276,7 @@ export function AutoRetrySection({
     <div className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <div className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
+          <div className="vex-doto-label uppercase text-ink-secondary">
             Auto-retry on error
           </div>
           <p className="text-xs text-ink-secondary">
@@ -304,11 +304,12 @@ export function AutoRetrySection({
             className={cn(
               "inline-block h-3.5 w-3.5 transform rounded-full transition-transform",
               // Enabled: the knob sits on the solid accent track, so it takes
-              // the accent-contrast ink (white on cobalt, ink on lime). Off:
-              // white knob on the dark track reads in both themes.
+              // the accent-contrast ink. Off: the track is the interactive
+              // wash over the page surface, so the knob takes the page's own
+              // primary ink - light on chronos, dark on celeris.
               enabled
                 ? "translate-x-[18px] bg-ink-on-accent"
-                : "translate-x-[3px] bg-white",
+                : "translate-x-[3px] bg-ink-primary",
             )}
           />
         </button>

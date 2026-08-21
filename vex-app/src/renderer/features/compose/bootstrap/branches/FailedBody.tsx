@@ -29,7 +29,7 @@ export function FailedBody({
 
       {recentLogs.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-ink-primary">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
             <code>{recentLogs.join("\n")}</code>
           </pre>
         ) : (

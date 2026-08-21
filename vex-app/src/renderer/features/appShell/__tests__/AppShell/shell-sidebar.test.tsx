@@ -457,6 +457,40 @@ describe("AppShell", () => {
     expect(screen.getAllByText("Open BTC Perp Position").length).toBeGreaterThan(0);
   });
 
+  // Owner QA round 2: the rail drew an always-visible native HORIZONTAL bar
+  // along its bottom. Two causes, both closed here - a bare `overflow-y-auto`
+  // computes overflow-x to `auto`, and this was the one long list in the app
+  // that never opted into the overlay treatment the other three use.
+  it("scrolls the session list vertically ONLY, on the app's overlay scrollbar", async () => {
+    sessionsListMock.mockResolvedValueOnce({
+      ok: true,
+      data: makeSessionRows(),
+    });
+
+    renderShell();
+    await screen.findByText("Portfolio Check");
+
+    const scroller = document.querySelector<HTMLElement>(
+      "aside [data-rail-control].overflow-y-auto",
+    );
+    expect(scroller).not.toBeNull();
+    const classes = scroller!.className;
+    // Horizontal overflow is CLIPPED, never a bar.
+    expect(classes).toContain("overflow-x-clip");
+    // The shared thin + auto-hide treatment (scrollbars.css), same as the
+    // transcript, the BOOK rail, and the composer field.
+    expect(classes).toContain("vex-scroll");
+    expect(classes).toContain("vex-scroll-overlay");
+
+    // ...and the JS half is wired: that skin only paints while the element
+    // carries `data-vex-scrolling`.
+    expect(scroller!.hasAttribute("data-vex-scrolling")).toBe(false);
+    act(() => {
+      scroller!.dispatchEvent(new Event("scroll"));
+    });
+    expect(scroller!.hasAttribute("data-vex-scrolling")).toBe(true);
+  });
+
   it("filters the sidebar by mission mode", async () => {
     sessionsListMock.mockResolvedValueOnce({
       ok: true,

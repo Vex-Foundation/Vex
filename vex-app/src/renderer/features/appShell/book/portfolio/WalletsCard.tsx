@@ -102,7 +102,7 @@ export function WalletsCard({
  */
 export function PrimaryBadge(): JSX.Element {
   return (
-    <span className="shrink-0 rounded-[4px] border border-line-2 px-1 py-px font-doto text-[8px] uppercase tracking-[0.14em] text-ink-tertiary">
+    <span className="shrink-0 rounded-[4px] border border-line-2 px-1 py-px vex-micro text-ink-secondary">
       Primary
     </span>
   );
@@ -131,7 +131,7 @@ function WalletRow({
             {wallet.label}
           </span>
         ) : (
-          <span className="font-doto text-[9px] uppercase tracking-[0.18em] text-ink-tertiary">
+          <span className="vex-micro text-ink-secondary">
             {wallet.family === "evm" ? "EVM" : "SOL"}
           </span>
         )}

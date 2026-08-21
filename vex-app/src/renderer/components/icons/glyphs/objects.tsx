@@ -251,28 +251,6 @@ export const IconWifi = ({ size = 16, className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-export const IconRocket = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M12 3.25c3 2 4.75 5.4 4.75 9.1L14.5 15.1h-5L7.25 12.35c0-3.7 1.75-7.1 4.75-9.1Z" />
-    <path d="M9.5 15.1 7 16.85l.75 3.25L10 18.6M14.5 15.1l2.5 1.75-.75 3.25L14 18.6" />
-    <circle cx="12" cy="9.9" r="1.6" />
-  </svg>
-);
-
-export const IconFlame = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M12 3.25c.6 3.2 2.3 4.4 3.9 6A6.6 6.6 0 0 1 18 14a6 6 0 0 1-12 0c0-1.9.9-3.5 2.2-4.6.2 1.2.8 2 1.7 2.4C9.3 9 9.8 5.9 12 3.25Z" />
-  </svg>
-);
-
-export const IconPercent = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M19 5 5 19" />
-    <circle cx="7.4" cy="7.4" r="2.4" />
-    <circle cx="16.6" cy="16.6" r="2.4" />
-  </svg>
-);
-
 export const IconWaypoints = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <circle cx="12" cy="4.75" r="2.5" />

@@ -57,6 +57,75 @@
   text-transform: uppercase;
 }
 
+/* Doto micro-label - THE app-wide Doto register (R2-C, 2026-08-21).
+ *
+ * THE FLOOR AND WHY. Doto is a dot-matrix face: at a given size and weight it
+ * lays down roughly half the ink a solid face does, so the tiers calibrated
+ * for Inter Tight OVERSTATE its perceived contrast. Nominal WCAG ratios agree
+ * with a solid glyph, not with a grid of dots. The pre-shell measured this
+ * first and pinned 12px/600 (`chronos-gate.css:140-146`, "Doto's dot glyphs
+ * thin out below it at 12px"); the shell never adopted it and drifted to ~70
+ * ad-hoc call sites at 8-11px weight 400 on `text-ink-tertiary`, which the
+ * owner's QA read as invisible in both themes. This class is the single owner
+ * of that floor:
+ *
+ *   font-size   >= 12px   (FLOOR - never lower it; a spot that cannot afford
+ *                          12px must stop being Doto and take the Inter Tight
+ *                          micro register `.vex-micro` instead)
+ *   font-weight >= 600    (FLOOR - the pre-shell's measured threshold)
+ *   tracking    <= 0.16em (CAP - letter-spacing is NOT a legibility tool. It
+ *                          isolates already-sparse dot glyphs and makes them
+ *                          WORSE; the fix for thin micro-text is up a size
+ *                          tier and up a weight, never wider tracking. The
+ *                          0.32em welcome date line came down to the default.)
+ *   tabular-nums          (every Doto label carries figures: versions, counts,
+ *                          dates, amounts - they must not jitter column width)
+ *
+ * COLOR IS A CALL-SITE DECISION, deliberately - same law as `.vex-micro`
+ * above. This sheet is unlayered (globals.css keeps every import unlayered on
+ * purpose), so a `color` here would BEAT the Tailwind `text-*` utility at the
+ * call site and the genuine tone deviations (warning / success / accent /
+ * active-state ink) could not be expressed. The contract instead is: the
+ * FLOOR TIER is `text-ink-secondary`; `text-ink-tertiary` and `text-ink-caption`
+ * are below the readable threshold for this face and are a red build
+ * (`shell-design-guard.test.ts`). Uppercase is also a call-site decision - a
+ * value ("V0.2.6", "88.1K IN") is not an eyebrow.
+ *
+ * `--wide` is the ONE sanctioned tracking step, for short all-caps eyebrows
+ * that want more optical separation. It stops at the cap. */
+.vex-doto-label {
+  font-family: var(--font-doto);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+}
+.vex-doto-label--wide {
+  letter-spacing: 0.16em;
+}
+
+/* Rail-glass backing chip (owner decision 5, ratified 2026-08-21).
+ *
+ * Three Doto labels sit on the translucent rails (`--vex-rail`) over the
+ * user's chosen photo backdrop: the $VEX card label + meta, the BOOK version
+ * stamp, and the welcome date line. No fixed ink can guarantee contrast
+ * there, because the effective background is an ARBITRARY IMAGE. The label
+ * therefore gets an opaque backing that re-establishes a known surface under
+ * it, and both the chip and its ink resolve from the ACTIVE THEME's tokens,
+ * never a fixed color.
+ *
+ * Quiet by construction: a backing, not a badge. Layer-1 surface + the l1
+ * hairline + the 4px radius of the small-chip family; no shadow, no fill
+ * tint. Call sites still set their own ink tier on top. */
+.vex-doto-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--vex-surface-1, var(--color-surface-1));
+  border: 1px solid var(--vex-line, var(--color-line-1));
+}
+
 /* Chat prose — the READING register for message bodies.
  *
  * TYPOGRAPHY LAW, CORRECTED (owner readability round, 2026-07-30). The

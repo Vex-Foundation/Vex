@@ -34,6 +34,7 @@ export type { RuntimeMode } from "./uiStore/runtime-mode.js";
 import {
   applyThemeToDocument,
   bindSystemThemeListener,
+  DEFAULT_THEME_PREFERENCE,
   resolveTheme,
   systemPrefersDark,
   type VexTheme,
@@ -331,8 +332,8 @@ export interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      theme: resolveTheme("chronos", systemPrefersDark()),
-      themePreference: "chronos",
+      theme: resolveTheme(DEFAULT_THEME_PREFERENCE, systemPrefersDark()),
+      themePreference: DEFAULT_THEME_PREFERENCE,
       runtimeMode: DEFAULT_RUNTIME_MODE,
       setThemePreference: (themePreference) => {
         const theme = resolveTheme(themePreference, systemPrefersDark());
@@ -427,7 +428,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 12,
+      version: 13,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

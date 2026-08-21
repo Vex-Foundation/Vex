@@ -1,50 +1,53 @@
 /**
- * Welcome / session panel — orchestration only.
+ * THE RESIDENT CONVERSATION SHELL - orchestration only.
  *
- * Two layouts, branched on whether a session is active:
- *   - no active session → the WELCOME STAGE: the
- *     center column is TRANSPARENT — the procedural WebGL sky mounted behind
- *     the shell shows through. `SessionWelcomeHero` paints the
- *     vx-mark + greeting stack and the absolute bottom band against this panel's relative
- *     frame; the composer sits directly beneath the logo row, centered at
- *     min(760px, 92%), inside a FIXED-HEIGHT growth band (owner smoothness
- *     decree 2026-07-22): the band's layout height equals the composer's
- *     RESTING stack, so the trailing flex spacer still centers [logo row +
- *     input + chips] like the Grok home — but when the pill auto-grows the
- *     extra height OVERFLOWS the band downward instead of shrinking the two
- *     flex-1 zones, so the crown never re-centers/moves opposite to growth
- *     (the hero itself no longer bottom-anchors; the crown zone's
- *     justify-end owns the seating);
- *   - active session → full-height chat shell: header (`SessionContext`) + live
- *     transcript (`SessionTranscript`, stage 8-1) + mission controls + bottom
- *     composer. The hero is hidden so a selected session's loading/error/empty
- *     states never sit under onboarding copy.
+ * ONE persistent tree, not two layouts. The welcome hero and the docked
+ * session view are the same DOM in the same positions, told apart only by
+ * `data-phase` on this panel's root:
  *
- * The mission contract + action plan are NOT in this column any more — they
- * moved to the DESK RULE header's badge cluster (`MissionRail`) as clickable
- * badges that open `MissionContractModal` / `PlanDisplayModal`. The two tall
- * cards used to push `MissionControls` + the Accept footer below the fold;
- * pulling them out lets the transcript own the full column height and keeps
- * the controls reachable. With no right rail in the layout, the active-session
- * column (max-w 860px) centers itself (mx-auto) in the freed width.
+ *   hero      no session, or a session whose transcript is provably empty and
+ *             whose turn is not in flight. The composer stack is FLEX-CENTRED
+ *             in the scroll body (never transformed - a transform would become
+ *             the containing block for every `position: fixed` descendant).
+ *   settling  a session is opening and its transcript is still unknown, so
+ *             hero-vs-docked is unknowable. The seat stays MOUNTED but
+ *             invisible, so no wrong layout flashes before the phase lands.
+ *   active    the seat docks as the sticky floor of the scroll body, with the
+ *             transcript dissolving into a 36px px-stop fade mask above it.
  *
- * Fluid session enter (owner decree 2026-07-20): each branch's outer
- * `data-vex-area="session-panel"` div carries `key={activeSessionId ?? "welcome"}`
- * plus the `.vex-session-enter` one-shot class (globals.css) — the CSP-safe
- * idiom already used by `.vex-rise`/`.vex-book-enter`. Changing the key forces
- * React to remount the panel, replaying the resolve-in animation, so welcome→
- * session, session→welcome, AND session→session (a different id) all fade/
- * rise in together with the backdrop veil deepening, instead of jump-cutting.
+ * WHY RESIDENCY. The composer's textarea DOM node and its caret must survive
+ * the hero→active transition, and the first message of a brand-new session
+ * must not be lost across it. The old panel keyed its root on the session id,
+ * so welcome→session remounted the whole instrument and the send survived only
+ * because `composer-submit` replays it through a hand-off effect. Residency
+ * generalizes the older "composer is the stable last child" contract: the seat
+ * and everything in it now live OUTSIDE the keyed region entirely.
+ *
+ * The `.vex-session-enter` one-shot moved with the key onto the SESSION
+ * CONTENT wrapper (header, banners, transcript, controls), which is the part
+ * that genuinely swaps between sessions. Phase transitions themselves carry no
+ * crossfade and no morph: the position change of one persistent tree IS the
+ * transition. Geometry lives in `styles/global-css/chat-transcript.css`.
+ *
+ * WHO SCROLLS. This panel's scroll body (`[data-vex-conversation-scroll]`) is
+ * the conversation scrollport, because it is the only box that can hold both
+ * the transcript and a sticky composer seat. `SessionTranscript` is ordinary
+ * flow content inside it and resolves the scrollport through `scrollportOf`.
+ *
+ * The mission contract + action plan are NOT in this column - they live in the
+ * DESK RULE header's badge cluster (`MissionRail`) as badges that open
+ * `MissionContractModal` / `PlanDisplayModal`, so the transcript owns the full
+ * column height and the Accept action stays reachable.
  *
  * Sub-components keep this file small:
- *   - hero (centered status + H1, vignette, bottom row) → `SessionWelcomeHero`
+ *   - hero (mark + greeting + mode toggle) → `SessionWelcomeHero`
  *   - context strip/header → `SessionContext` (runtime bar now lives in BOOK)
  *   - mission controls     → `MissionControls` (mission sessions only)
  *   - transcript          → `SessionTranscript`
- *   - composer + slash    → `SessionComposer`
+ *   - composer + slash     → `SessionComposer`
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { JSX, ReactNode } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
@@ -63,6 +66,7 @@ import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useWindowTitleSync } from "../../lib/window-title.js";
 import { useTurnCompleteNotification } from "../../lib/turn-notification.js";
 import { useSession } from "../../lib/api/sessions.js";
+import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -119,6 +123,12 @@ export function SessionPanel({
   const preview = useStreamPreview(activeSessionId);
   const chatSubmitting = useIsChatSubmitting(activeSessionId ?? "");
 
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  // macOS-style overlay bar on the conversation scrollport. The transcript
+  // runs the same hook on its own element for the standalone mount; scroll
+  // events do not bubble, so each scrolling box owns its own.
+  useScrollbarVisibility(scrollBodyRef);
+
   const activeSession = useMemo((): SessionListItem | null => {
     if (activeSessionId === null) return null;
     if (!detailQuery.data?.ok) return null;
@@ -169,191 +179,123 @@ export function SessionPanel({
     transcriptPages !== undefined &&
     flattenTranscriptPages(transcriptPages).length === 0;
 
-  // No active session → the welcome stage. The panel is the stage frame:
-  // relative (the hero's absolute bottom band resolves against it)
-  // + overflow-hidden, and TRANSPARENT — the Eclipse backdrop behind the
-  // shell is the backdrop. Grok home composition (owner decree 2026-07-21):
-  // the crown zone seats the logo row at its end (justify-end — the hero no
-  // longer carries mt-auto), the composer sits directly beneath it, and the
-  // trailing flex-1 spacer balances the flex-1 crown zone so [logo row +
-  // input + chips] center vertically as one column.
-  if (activeSessionId === null) {
-    return (
-      <div
-        key="welcome"
-        data-vex-area="session-panel"
-        data-vex-state={panelState}
-        className="vex-session-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden"
-      >
-        <div
-          data-vex-welcome-crown
-          className="flex min-h-0 flex-1 flex-col justify-end"
-        >
-          <SessionWelcomeHero />
-        </div>
-        {/* THE INSTRUMENT — directly below the logo row, one centered
-            column (Grok's ~760px input slot), inside the ANCHORED GROWTH
-            BAND (owner smoothness decree 2026-07-22): the band's layout
-            height is FIXED at the composer's resting stack - mt-6 (24px) +
-            resting pill (56px) + chips slot (60px) = 140px - so the flex-1
-            crown zone above and spacer below split a CONSTANT leftover.
-            When the pill auto-grows, the extra height overflows the band
-            DOWNWARD into the empty spacer zone instead of re-centering the
-            column, so the crown never moves. The live $VEX widget used to
-            sit below the composer here; it moved to the sessions rail
-            (SessionsList) to keep the welcome stage clean. */}
-        <div
-          data-vex-composer-band
-          className="relative z-10 h-[140px] shrink-0"
-        >
-          <div className="vex-rise vex-rise-d2 mx-auto w-[min(760px,92%)]">
-            <SessionComposer activeSession={null} activeSessionId={null} />
-          </div>
-        </div>
-        {/* Trailing spacer — balances the crown zone above (vertical
-            centering) and reserves the band the hero's absolute bottom row
-            occupies, so chips and the row never collide. */}
-        <div aria-hidden className="min-h-16 flex-1" />
-      </div>
-    );
-  }
+  // PHASE. `settling` is the conservative middle: a session is selected but
+  // its transcript has not landed, so we cannot yet know whether it is blank
+  // (hero) or populated (active). Rendering either would flash the wrong
+  // layout, so the seat stays mounted and hidden until the answer arrives.
+  // A turn IN FLIGHT is never hero and never settling, even before its first
+  // row or delta exists: retiring the hero on the send edge is what stops a
+  // fresh session's first send from reading as a no-op (B1).
+  const settling =
+    activeSessionId !== null &&
+    transcriptQuery.isLoading &&
+    preview === null &&
+    !chatSubmitting;
+  const hero = activeSessionId === null || isIdleSession;
+  const phase = settling ? "settling" : hero ? "hero" : "active";
 
-  // Active session. The composer is the STABLE last child of the column, so it
-  // never remounts across the idle↔tape switch — a fresh first send and its
-  // retry survive. The content ABOVE it swaps: an empty, non-mission session
-  // shows the full-bleed welcome stage (same scene as the no-session state);
-  // once messages land it becomes the left-anchored tape.
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
+
   return (
+    // The panel is the stage frame: relative + overflow-hidden, and
+    // TRANSPARENT - the Eclipse backdrop mounted behind the shell is the
+    // backdrop on every phase. NOT keyed: residency is the point.
     <div
-      key={activeSessionId}
       data-vex-area="session-panel"
       data-vex-state={panelState}
-      className={cn(
-        "vex-session-enter flex h-full min-h-0 w-full",
-        // Idle stage: this panel is the stage frame (relative → the hero's
-        // absolute vignette + bottom row resolve against it).
-        isIdleSession ? "relative flex-col overflow-hidden" : "justify-start",
-      )}
+      data-phase={phase}
+      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
     >
       <div
-        className={cn(
-          "flex h-full min-h-0 w-full flex-col",
-          // PANEL-WIDE on both stages. The reading column used to live here,
-          // which made the TRANSCRIPT's scroller only as wide as the column —
-          // so its scrollbar floated mid-screen beside the text instead of at
-          // the panel's edge, which is not how any browser behaves (owner,
-          // 2026-08-05). The column now lives on the individual children, so
-          // the transcript can scroll at full panel width and its native
-          // overlay bar hugs the right edge next to the BOOK rail. The
-          // composer band below already centers itself and is unaffected: the
-          // column was `mx-auto`, so its centre axis and the panel's are the
-          // same one.
-          isIdleSession ? undefined : "py-4",
-        )}
+        ref={scrollBodyRef}
+        data-vex-conversation-scroll=""
+        // THE CONVERSATION SCROLLPORT. One axis only: stating `overflow-x`
+        // explicitly is what removes the horizontal bar, because a box that
+        // scrolls in one axis computes the other to `auto`. The gutter is
+        // reserved unconditionally so the composer card keeps one horizontal
+        // position whether or not the transcript scrolls.
+        className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
       >
-        {/* Content above the composer — swaps the full-bleed idle stage for
-            the left-anchored tape. ONE wrapper element so the composer below
-            keeps a stable index (no remount, no lost first send). Kept
-            position-static so the hero's absolute bottom band resolves
-            against the panel frame above, not this wrapper. On the idle
-            stage justify-end seats the logo row directly above the composer
-            (the hero no longer bottom-anchors itself). */}
-        <div
-          data-vex-welcome-crown={isIdleSession ? "" : undefined}
-          className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            isIdleSession && "justify-end",
-          )}
-        >
-          {isIdleSession ? (
-            <SessionWelcomeHero />
-          ) : (
-            <>
-              {/* Header + banners keep the reading column; only the
-                  transcript goes full-bleed. */}
-              <div className={TAPE_COLUMN}>
-                <SessionContext
-                  activeSession={activeSession}
-                  activeSessionId={activeSessionId}
-                  loading={detailQuery.isLoading}
-                  error={detailError}
-                  trailing={headerTrailing}
-                />
-              {/* The mission contract + action plan no longer render inline:
-                  the two tall cards used to push MissionControls + the Accept
-                  footer below the fold. They now live in the DESK RULE
-                  header's badge cluster (`MissionRail`) - PremiumBadge →
-                  top-layer dialog (`MissionContractModal` /
-                  `PlanDisplayModal`), which keeps the Accept action pinned and
-                  reachable. The transcript now owns the full column height. */}
-              {/* Above the transcript and OUTSIDE the mission-mode gate —
-                  every session gets an error surface. */}
-                {activeSession !== null ? (
-                  <SessionSleepBanner sessionId={activeSession.id} />
-                ) : null}
-                {activeSession !== null ? (
-                  <SessionErrorBanner sessionId={activeSession.id} />
-                ) : null}
-              </div>
-              {/* FULL-BLEED: the transcript owns the panel's width so its
-                  scroller - and therefore the native scrollbar - reaches the
-                  panel's right edge. The reading column is re-applied INSIDE
-                  it, around the rows. */}
-              {activeSession !== null ? (
-                <SessionTranscript sessionId={activeSession.id} />
-              ) : null}
-              <div className={TAPE_COLUMN}>
-                {activeSession !== null ? (
-                  <ApprovalsRegion sessionId={activeSession.id} />
-                ) : null}
-                {showMissionCard && activeSession !== null ? (
-                  <MissionControls sessionId={activeSession.id} />
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-        {/* ALWAYS-PRESENT two-wrapper pair (classNames only change) so the
-            composer's tree position stays stable across the idle↔tape
-            switch. On the idle stage the OUTER div is the same ANCHORED
-            GROWTH BAND as the welcome stage (fixed h-[140px] = the resting
-            composer stack - see the welcome branch): pill auto-grow
-            overflows downward instead of re-centering the column, so the
-            crown never moves; the INNER div seats the instrument in the
-            centered column (min(760px, 92%)) rising with the d2 stagger.
-            On the tape stage both wrappers are plain flow (the classless
-            inner div changes no layout): the pill keeps the same ~760px
-            Grok slot, centered in the transcript column, docked at the
-            bottom and growing upward as before. */}
-        <div
-          data-vex-composer-band={isIdleSession ? "" : undefined}
-          className={cn(
-            isIdleSession
-              ? "relative z-10 h-[140px] shrink-0"
-              : "mx-auto w-full max-w-[760px]",
-          )}
-        >
+        {/* SESSION CONTENT - the part that genuinely swaps between sessions,
+            and the ONLY keyed region. `.vex-session-enter` replays here on a
+            session change; the seat below is deliberately outside the key so
+            the composer node and its caret survive. */}
+        {phase === "hero" ? null : (
           <div
+            key={activeSessionId ?? "none"}
+            data-vex-session-content=""
+            // `flex-[1_0_auto]`: fills the viewport when the conversation is
+            // short (so the seat sits at the floor) and overflows it when the
+            // conversation is long (so the seat sticks).
+            className="vex-session-enter flex w-full flex-[1_0_auto] flex-col py-4"
+          >
+            {/* Header + banners keep the reading column; only the transcript
+                goes full-bleed, so its rows reach the panel's width. */}
+            <div className={TAPE_COLUMN}>
+              <SessionContext
+                activeSession={activeSession}
+                activeSessionId={activeSessionId}
+                loading={detailQuery.isLoading}
+                error={detailError}
+                trailing={headerTrailing}
+              />
+              {activeSession !== null ? (
+                <SessionSleepBanner sessionId={activeSession.id} />
+              ) : null}
+              {activeSession !== null ? (
+                <SessionErrorBanner sessionId={activeSession.id} />
+              ) : null}
+            </div>
+            {activeSession !== null ? (
+              <SessionTranscript sessionId={activeSession.id} />
+            ) : null}
+            <div className={TAPE_COLUMN}>
+              {activeSession !== null ? (
+                <ApprovalsRegion sessionId={activeSession.id} />
+              ) : null}
+              {showMissionCard && activeSession !== null ? (
+                <MissionControls sessionId={activeSession.id} />
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {/* THE COMPOSER SEAT - resident on every phase, at one stable tree
+            position. In hero the scroll body flex-centres it; in active
+            `chat-transcript.css` makes it sticky and paints the fade mask. The
+            hero chrome renders INSIDE it so the whole stack centres as one
+            unit, and its conditional keeps the composer's child index stable
+            either way. */}
+        <div
+          // The scroll model's ResizeObserver finds this by attribute and
+          // republishes its live height as `--vex-composer-height`, so the
+          // jump pill clears a growing draft. Losing the marker degrades the
+          // pill's clearance silently.
+          data-vex-composer-seat=""
+          className="relative z-10 flex shrink-0 flex-col"
+        >
+          {phase === "hero" ? <SessionWelcomeHero /> : null}
+          {/* GROWTH BAND (owner smoothness decree 2026-07-22, carried into
+              residency): in hero this wrapper's layout height is pinned to the
+              composer's RESTING stack, so an auto-growing pill overflows
+              DOWNWARD instead of re-centring the flex-centred stack above it -
+              the crown never moves opposite to the growth. In active it is
+              plain flow. See `chat-transcript.css`. */}
+          <div
+            data-vex-composer-dock=""
             className={cn(
-              isIdleSession && "vex-rise vex-rise-d2 mx-auto w-[min(760px,92%)]",
+              "mx-auto w-full",
+              phase === "hero" ? "w-[min(760px,92%)]" : "max-w-[760px] pb-4",
             )}
           >
-            {/* The composer is ONE instrument on every stage (the old `stage`
-                presence prop is retired with the Grok pill - same 56px
-                geometry welcome, idle, and tape). */}
             <SessionComposer
               activeSession={activeSession}
               activeSessionId={activeSessionId}
+              variant={phase === "hero" ? "hero" : "docked"}
             />
           </div>
         </div>
-        {/* Idle-stage trailing spacer — appears AFTER the composer wrapper so
-            its mount/unmount never shifts the composer's tree position. Same
-            role as on the welcome stage: vertical centering + clearance for
-            the hero's absolute bottom row. */}
-        {isIdleSession ? <div aria-hidden className="min-h-16 flex-1" /> : null}
       </div>
     </div>
   );

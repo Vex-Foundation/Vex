@@ -13,10 +13,19 @@
  *     first call row's id, so its status matches its members'.
  *
  * The animation rides an INNER wrapper, never the element carrying
- * `data-vex-entry-id`: the parent's top-anchor layout effect measures that
- * element's rect before paint, and a transform on it would offset the anchor by
- * the animation's opening frame. A descendant's transform cannot move its
- * parent's border box, so the scroll model always measures an untransformed row.
+ * `data-vex-entry-id` / `data-vex-anchor-key`. That element is the scroll
+ * model's measurement unit: it reads the row's border box with
+ * `getBoundingClientRect()` to capture and restore a paging anchor or a saved
+ * reader position, in the same commit a live row mounts in. A transform on the
+ * row itself would fold the animation's opening offset into the restored
+ * `scrollTop`; a descendant's transform cannot move its parent's border box,
+ * so the model always measures an untransformed row. (The pre-follow model
+ * needed the same rule for its pre-paint top-anchor measurement - the reason
+ * moved with the scroll swap, the rule did not.)
+ *
+ * `data-vex-anchor-key` is `transcriptEntryKey(row)`, not `row.id`: a tool
+ * GROUP borrows its first call's id, so the id alone is not a stable identity
+ * for an anchor that must survive regrouping across a prepend.
  */
 
 import { Fragment, type JSX } from "react";
@@ -42,7 +51,9 @@ function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
       className="flex items-center gap-3"
     >
       <span className="h-px flex-1 bg-line-1" />
-      <span className="vex-stat-doto">{label}</span>
+      <span className="vex-doto-label uppercase text-ink-secondary">
+        {label}
+      </span>
       <span className="h-px flex-1 bg-line-1" />
     </div>
   );
@@ -79,6 +90,7 @@ export function TranscriptRows({
           <div
             data-vex-entry-id={row.id}
             data-vex-entry-variant={row.variant}
+            data-vex-anchor-key={entryKey(row)}
             className={cn(row.variant === "user" && "mt-4")}
           >
             <div

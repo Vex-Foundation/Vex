@@ -48,7 +48,7 @@ export function SidebarHomeSigil({
       onClick={() => setActiveSessionId(null)}
       className={cn(
         "flex items-center justify-center rounded-xl p-1 transition-colors",
-        "hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
+        "hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
       )}
     >
       {mark}

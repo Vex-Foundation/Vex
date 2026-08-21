@@ -85,7 +85,7 @@ export function GlobalWalletAddresses(): JSX.Element | null {
       ) : null}
       {remaining.length > 0 ? (
         <div className="mt-0.5 flex flex-col gap-1 border-t border-line-2 pt-1.5">
-          <span className="font-doto text-[9px] uppercase tracking-[0.18em] text-ink-tertiary">
+          <span className="vex-micro text-ink-secondary">
             {remaining.length} more {remaining.length === 1 ? "wallet" : "wallets"}
           </span>
           {remaining.map((wallet) => (
@@ -121,7 +121,7 @@ function AddressRow({
     <div className="flex items-center gap-2">
       <span className="flex w-11 shrink-0 items-center gap-1.5">
         <ChainIcon chainId={chainId} size={13} />
-        <span className="font-doto text-[9px] uppercase tracking-[0.18em] text-ink-tertiary">
+        <span className="vex-micro text-ink-secondary">
           {caption}
         </span>
       </span>

@@ -54,6 +54,14 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
 //       TRUE, the same default a fresh install gets.
 //   v12: `prologueVersion` removed (the gate-prologue play policy retired
 //       with the orb cluster) - drop the stale key from old payloads.
+//   v13: the default preference became `system` (ratified 2026-08-21 - with
+//       no explicit choice every screen follows the OS). This is a ONE-TIME
+//       re-default of the SEEDED value: `chronos` was not a choice on most
+//       installs, it was the old default written by the v5/v9 hops and by
+//       the store's own initial state, and there is no record separating
+//       the two. A user who deliberately wants chronos re-picks it in
+//       Settings; that choice persists and v13 never runs again. An
+//       explicit `celeris` or `system` is left untouched.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -83,6 +91,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 12 && "prologueVersion" in next) {
     const { prologueVersion: _dropped, ...rest } = next;
     next = rest;
+  }
+  if (version < 13 && next["themePreference"] === "chronos") {
+    next = { ...next, themePreference: "system" };
   }
   return next;
 }

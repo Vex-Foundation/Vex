@@ -71,12 +71,15 @@ export function App(): JSX.Element {
   // module) until M7+ wizard step views need real per-step prop wiring
   // or lazy loading (codex turn 4).
   const views: Record<View, () => JSX.Element> = {
-    // The ink void beneath the SetupGate plate — the gate owns the boot
-    // ritual and flips the view before its curtain reveal.
+    // The void beneath the SetupGate plate - the gate owns the boot ritual
+    // and flips the view before its curtain reveal. It paints the pre-shell
+    // PLATE itself (not `bg-surface-base`) so the two can never drift: one
+    // theme-aware alias means no white flash in chronos and no black flash
+    // in celeris.
     splash: () => (
       <main
         data-vex-screen="boot-void"
-        className="h-screen w-screen bg-surface-base"
+        className="vex-gate-plate h-screen w-screen"
       />
     ),
     systemCheck: () => <SystemCheck />,

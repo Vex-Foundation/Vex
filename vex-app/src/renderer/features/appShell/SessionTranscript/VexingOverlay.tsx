@@ -6,10 +6,12 @@
  * predicate, the same element, the same position.
  *
  * WHERE THIS MUST RENDER, and why it is a component rather than a branch inside
- * the row list: it is a SIBLING of the scroller, never a descendant. Inside the
- * scrolled content it would add height to `scrollHeight` and corrupt the
- * anchor-spacer and "↓ latest" measurements the scroll model depends on. As an
- * absolutely-positioned sibling it changes no layout at all.
+ * the row list: it is a ZERO-HEIGHT STICKY SLOT placed OUTSIDE the row column's
+ * gap (`VexingWorking.tsx` owns the geometry). Given real height inside the
+ * scrolled content it would extend `scrollHeight` and move the very floor the
+ * follow model measures itself against; placed inside the column it would
+ * consume one 16px gap and open a hole between rows. A zero-height box does
+ * neither, in both mounting modes.
  *
  * The decision itself stays split in two on purpose: `turnPreview.ts` owns the
  * transcript-evidence latch (has this send's viewport-safe live user anchor

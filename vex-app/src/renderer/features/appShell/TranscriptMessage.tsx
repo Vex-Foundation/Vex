@@ -5,9 +5,10 @@
  * Switches on the pure `TranscriptEntry.variant`. The transcript reads as
  * an asymmetric register: USER turns are compact right-aligned cards with a
  * persistent "You · HH:MM" caption; ASSISTANT turns are full-width document
- * flow hung off the Signal Tape spine by its 26px avatar in a 36px gutter (no
- * bubble). While the current turn is active, a restrained accent ring rotates
- * around that avatar; settled turns remain still. Assistant prose renders through
+ * flow hung off the Signal Tape spine by the Vex mark in a 36px gutter (no
+ * bubble), with their clock and actions in a tail row BELOW the body. While
+ * the current turn is active, a restrained accent ring rotates around that
+ * mark; settled turns remain still. Assistant prose renders through
  * `MarkdownContent` (stage 8-2a) — safe React elements, never an HTML
  * string; user/tool/notice rows + the `compaction`/`recall` markers (stage
  * 8-4) render as plain React text nodes. Either way model/tool output cannot
@@ -17,6 +18,7 @@
 import { memo, type JSX, type ReactNode } from "react";
 import { IconCircleStop } from "../../components/icons/index.js";
 import { StateDot } from "../../components/ui/state-dot.js";
+import { VexMark } from "../../components/common/VexMark.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
 import {
@@ -72,25 +74,31 @@ function TapeClock({
 
 /**
  * Vex's identity mark on the Signal Tape spine (the monotonic time axis the
- * transcript hangs off). The avatar sits where the settled node used to — a
- * disc at the gutter's left edge with a canvas-colored ring so the spine reads
- * as passing cleanly behind it. Each Vex turn is thus signed by its face.
+ * transcript hangs off). The mark sits at the gutter's left edge, centred in a
+ * 26px square box, so every Vex turn is signed by the brand monogram rather
+ * than by a character portrait (owner QA round 2, item 5).
  *
- * Sized up 18px → 26px (owner visual round 2026-07-30: "powiększyć pfp Vex").
- * The gutter widened with it, `pl-7` → `pl-9` (28px → 36px), so the face keeps
- * a 10px channel to the text instead of crowding it. EVERY row that hangs in
- * this gutter moves together — assistant prose, tool acts, tool groups, the
- * live stream preview — or the column loses its left edge.
+ * GUTTER: unchanged at `pl-9` (36px). `VexMark` is 824:658, so an 18px height
+ * is ~23px wide - it fits the existing 26px box with room to spare, and the
+ * whole `pl-9` family (assistant prose, tool acts, tool groups, the live
+ * stream preview, the turn-stats line) therefore stays where it is. If that
+ * box ever changes, EVERY member of the family moves with it.
  *
- * Decorative: the "VEX" caption carries the name, so the image is aria-hidden.
- * CSP-safe — a same-origin /vex.jpg under the existing `img-src 'self'`.
+ * WORKING RING: still a circle, deliberately. The mark's box is square, but a
+ * spinning rounded rectangle drags its corners through the sweep; a circle
+ * circumscribing the box does not. `-inset-[3px]` on a 26px box gives a 32px
+ * circle, and the mark's 23x18 diagonal is 29.2px, so the glyph clears the
+ * ring at every phase. Reduced motion stills it to a static arc.
+ *
+ * The mark is decorative here - the row's sr-only speaker label names the
+ * turn - so it stays aria-hidden (VexMark sets that itself).
  */
 function AssistantAvatar({ working = false }: { readonly working?: boolean }): JSX.Element {
   return (
     <span
       data-vex-agent-avatar=""
       data-vex-agent-avatar-state={working ? "working" : "settled"}
-      className="absolute left-0 top-[1px] h-[26px] w-[26px]"
+      className="absolute left-0 top-[1px] inline-flex h-[26px] w-[26px] items-center justify-center text-ink-primary"
     >
       {working ? (
         <span
@@ -99,19 +107,21 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
           className="absolute -inset-[3px] rounded-full border border-[var(--vex-accent)] border-r-transparent animate-spin [animation-duration:1200ms] motion-reduce:animate-none"
         />
       ) : null}
-      <img
-        src="/vex.jpg"
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="h-[26px] w-[26px] rounded-full object-cover ring-2 ring-[var(--vex-surface-0)]"
-      />
+      <VexMark size={18} />
     </span>
   );
 }
 
-/** The speaker name, as Vex signs it. */
-const VEX_SPEAKER = "VEX";
+/**
+ * The speaker label, for assistive technology only. The visual wordmark is
+ * gone (owner QA round 2, item 5 - "REMOVE the VEX name text"), but a screen
+ * reader still has to be told whose turn this is, and the mark carries no
+ * accessible name. Mirrors `SidebarHomeSigil`: the mark alone, never a
+ * wordmark, plus a text equivalent.
+ */
+function AssistantSpeakerLabel(): JSX.Element {
+  return <span className="sr-only">Vex</span>;
+}
 
 // Caption action buttons (copy A13, feedback G7, branch A14, edit A18) live
 // in `TranscriptMessage/MessageIconActions.tsx`; the context type is
@@ -119,11 +129,20 @@ const VEX_SPEAKER = "VEX";
 export type { MessageFeedbackContext };
 
 /**
- * Tape stamp above an assistant document block. The time LEADS (the readout)
- * and the speaker label trails (chrome) — the left-aligned HH:MM forms a clock
- * column down the assistant rail of the tape.
+ * The assistant turn's TAIL chrome: clock + per-message actions, below the
+ * body rather than above it.
+ *
+ * It used to be a caption ABOVE the body, and the only thing visible in it at
+ * rest was the "VEX" name. With the name retired, a header row would have
+ * reserved ~24px of permanently blank band between every avatar and its own
+ * first line of prose. Moving the row to the turn's tail (the deepseek
+ * turn-tail position) removes that band, lets the body start level with the
+ * mark, and puts the reveal where a reader already expects end-of-turn chrome.
+ *
+ * Everything in it is hover/focus revealed via opacity, never display, so the
+ * reserved line is paid for once and nothing shifts when it materializes.
  */
-function AssistantCaption({
+function AssistantActionsTail({
   createdAt,
   copyText,
   feedback,
@@ -138,29 +157,16 @@ function AssistantCaption({
   readonly onBranch?: () => void;
 }): JSX.Element {
   return (
-    // Register C2: a speaker caption is HUMAN chrome, so it wears the support
-    // small-caps stamp (`.vex-micro`, sans) — mono is reserved for genuinely
-    // technical strings (code, raw JSON, addresses, tx hashes).
-    //
-    // THE NAME SHIMMERS (owner visual round 2026-07-30: "na napis VEX dodać
-    // taki shimmer jak przy wyborze poziomu reasoningu"). It is the exact
-    // sanctioned class the reasoning-effort selector uses for its value —
-    // `.vex-preview-shimmer` + `data-shimmer-text` (chronos-motion.css): the
-    // base text stays SOLID and an ::after duplicate sweeps a narrow cobalt
-    // band across the glyphs. The same mark rides the Turn Island's live
-    // status word, so one gesture means one thing everywhere — Vex is here.
-    // The class family stills itself under `prefers-reduced-motion`, leaving
-    // the solid wordmark; `data-shimmer-text` must equal the rendered string.
-    <span className="vex-micro mb-1 flex items-center gap-2 tabular-nums">
+    // Register C2: message chrome is HUMAN, so it wears the support small-caps
+    // stamp (`.vex-micro`, sans) - mono is reserved for genuinely technical
+    // strings (code, raw JSON, addresses, tx hashes).
+    <span
+      data-vex-message-tail=""
+      className="vex-micro mt-1 flex h-5 items-center gap-2 tabular-nums"
+    >
       {/* A15 — the clock is hover-revealed chrome (80ms, hover:hover +
           focus-within; always visible on touch). */}
       <TapeClock createdAt={createdAt} className="vex-time-reveal" />
-      <span
-        className="vex-preview-shimmer text-[var(--vex-text-3)]"
-        data-shimmer-text={VEX_SPEAKER}
-      >
-        {VEX_SPEAKER}
-      </span>
       {copyText !== undefined ? (
         <CopyMessageAction text={copyText} markdown />
       ) : null}
@@ -266,7 +272,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {row.steering === true ? (
             <span
               data-vex-steering-mark=""
-              className="vex-stat-doto mt-1 text-[var(--vex-text-3)]"
+              className="vex-doto-label mt-1 text-ink-secondary"
             >
               Steered · read at the agent's next step
             </span>
@@ -301,7 +307,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           className="relative pl-9"
         >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption
+          <AssistantSpeakerLabel />
+          <ReasonedBlock reasoning={row.reasoning} />
+          <AssistantBody content={row.content} />
+          <AssistantActionsTail
             createdAt={row.createdAt}
             copyText={row.content}
             feedback={feedbackContext}
@@ -311,8 +320,6 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                 : undefined
             }
           />
-          <ReasonedBlock reasoning={row.reasoning} />
-          <AssistantBody content={row.content} />
         </div>
       );
     case "assistant_stopped":
@@ -324,7 +331,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           className="relative pl-9"
         >
           <AssistantAvatar working={agentWorking} />
-          <AssistantCaption
+          <AssistantSpeakerLabel />
+          <ReasonedBlock reasoning={row.reasoning} />
+          <AssistantBody content={row.content} />
+          <AssistantActionsTail
             createdAt={row.createdAt}
             copyText={row.content}
             feedback={feedbackContext}
@@ -334,8 +344,6 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                 : undefined
             }
           />
-          <ReasonedBlock reasoning={row.reasoning} />
-          <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
             <IconCircleStop size={12} />
             <span>Stopped</span>
@@ -369,9 +377,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {row.content.length > 0 ? (
             <div className="relative pl-9">
               <AssistantAvatar working={agentWorking} />
-              <AssistantCaption createdAt={row.createdAt} />
+              <AssistantSpeakerLabel />
               <ReasonedBlock reasoning={row.reasoning} />
               <AssistantBody content={row.content} />
+              <AssistantActionsTail createdAt={row.createdAt} />
             </div>
           ) : null}
           {/* A prose-less tool row carries the turn's reasoning itself — the
@@ -468,13 +477,13 @@ function NoticeBody({
         <StateDot state="error" size={8} className="mt-1.5" />
         <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
           <span className="mr-1.5 font-semibold text-destructive">Error</span>
-          <span className="text-[var(--vex-text-2)]">{children}</span>
+          <span className="text-ink-secondary">{children}</span>
         </span>
       </div>
     );
   }
   return (
-    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.03] px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
+    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-interactive-hover px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
       {children}
     </div>
   );

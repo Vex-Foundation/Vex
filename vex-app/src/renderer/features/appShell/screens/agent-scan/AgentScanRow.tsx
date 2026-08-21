@@ -67,7 +67,7 @@ function DetailLine({
 }): JSX.Element {
   return (
     <div className="flex gap-2">
-      <span className="w-[92px] shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
+      <span className="w-[92px] shrink-0 vex-doto-label uppercase text-ink-secondary">
         {label}
       </span>
       <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-secondary">
@@ -206,7 +206,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             estimated={estimated}
           />
           {estimated ? (
-            <span className="shrink-0 font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
+            <span className="shrink-0 vex-doto-label uppercase text-ink-secondary">
               est.
             </span>
           ) : null}

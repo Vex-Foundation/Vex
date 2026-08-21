@@ -65,7 +65,7 @@ export function BookInspectPanel({
       className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-xl border border-line-2 bg-surface-1 p-4 shadow-lv1"
     >
       <header className="flex items-center justify-between gap-2">
-        <h3 className="font-doto text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-tertiary">
+        <h3 className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
           Inspect
         </h3>
         <button
@@ -107,7 +107,7 @@ function PayloadSection({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="font-doto text-[9px] uppercase tracking-[0.18em] text-ink-tertiary">
+      <span className="vex-micro text-ink-secondary">
         {label}
       </span>
       <pre className="overflow-x-auto rounded-lg border border-line-1 p-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap break-words text-ink-secondary">

@@ -1,13 +1,57 @@
 /**
- * The transcript's entire scroll model (owner decree 2026-07-29 — CHAT NEVER
- * AUTO-SCROLLS DURING STREAMING). Exactly ONE arrival moves the viewport: a
- * just-sent USER message anchors at the viewport TOP, so the reply streams
- * into the space below it (the trailing anchor spacer guarantees the scroll
- * range). EVERY other new row — assistant text, tool rows, every growth tick
- * of the live preview — moves nothing at all. When newer content lands out of
- * view, the "latest" pill offers the jump instead of taking it. Session
- * change still jumps to newest. Load-older prepends are held steady by
- * restoring the scrollHeight delta — and ONLY for that intentional prepend.
+ * THE TRANSCRIPT'S SCROLL MODEL - follow-stream with reader ownership
+ * (owner decision 3, 2026-08-21; replaces the top-anchor/never-follow model).
+ *
+ * The rule the whole file exists to enforce: **only reader input may change
+ * follow ownership.** While the reader is pinned to the floor the transcript
+ * follows the tip of the conversation; the moment the reader scrolls away it
+ * stops and offers the jump instead of taking it. Nothing else - not a
+ * streamed delta, not a disclosure toggle, not a growing draft, not a browser
+ * shrink-clamp, not a late programmatic delivery - is allowed to arm or
+ * disarm follow.
+ *
+ * HOW OWNERSHIP IS ATTRIBUTED. Every programmatic write records the resulting
+ * position in `observedTop` synchronously. The scroll handler then asks
+ * whether the delivered position deviates from that ledger by more than half a
+ * pixel; only a deviation is reader input. This covers wheel, touch, drag,
+ * scrollbar and keyboard without naming a single device, and it is exactly why
+ * the two hostile cases behave: a browser shrink-clamp lands on the floor
+ * minimum (inside the ledger, ownership preserved), and a compositor that
+ * advanced geometry before delivering the event still compares against the
+ * ledger rather than against already-moved raw geometry.
+ *
+ * WHEN FOLLOW ACTUALLY FIRES. Not on every render - on every TIP MOVE. The
+ * layout effect compares a `followSig` assembled from the row-order tip, the
+ * preview signature and the steering mark; a chrome-only re-render (the pill
+ * appearing because the reader crossed the threshold) leaves the signature
+ * alone, so entering the threshold never snaps the remaining distance to the
+ * floor. Two arrivals force the scroll unconditionally, pinned or not, because
+ * the reader's OWN WORDS must be visible: a new trailing live user row, and a
+ * new steering mark.
+ *
+ * WHERE IT SCROLLS. `scrollportOf` resolves the nearest
+ * `[data-vex-conversation-scroll]` host - the resident shell's scroll body,
+ * which also holds the sticky composer seat - and falls back to the
+ * transcript's own element when the transcript is mounted alone (unit tests).
+ * Bottom-follow, paging anchors and position persistence always target the
+ * resolved scrollport, never whichever element happens to hold the rows.
+ *
+ * PAGING. A load-older prepend restores a semantic anchor (a stable row
+ * identity plus its offset in scrollport coordinates), not a scrollHeight
+ * delta: reader scrolls WHILE the request is in flight update the anchor, so
+ * the arriving page preserves the reader's latest intent rather than the
+ * position they held at click time. Returning to the floor cancels the anchor.
+ *
+ * PERSISTENCE. A non-pinned reader position is saved per session and restored
+ * against its anchor row, so a remount after a width reflow lands on the same
+ * ROW rather than the same pixel. Pinned saves null: a remount keeps
+ * following.
+ *
+ * DELIBERATE DEVIATION from the deepseek reference this model is ported from:
+ * the paging anchor scans `[data-vex-anchor-key]` rather than hit-testing with
+ * `document.elementsFromPoint`. The mounted row set is already bounded by
+ * `MAX_TRANSCRIPT_PAGES`, and the scan is deterministic in jsdom, where
+ * `elementsFromPoint` reports nothing.
  */
 
 import {
@@ -18,14 +62,57 @@ import {
   useState,
   type RefObject,
 } from "react";
-const PINNED_THRESHOLD_PX = 48;
+
+/** At-bottom band. A reader inside it is still "pinned" and keeps following. */
+const FOLLOW_THRESHOLD_PX = 24;
+/** Proximity to the head that arms an older-page fetch. */
 const LOAD_OLDER_THRESHOLD_PX = 64;
+/** How many sessions' reader positions are retained. Oldest evicted first. */
+const SAVED_POSITION_LIMIT = 32;
 
 /** The slice of the infinite query the scroll model needs (structural). */
 interface OlderPageQuery {
   readonly hasNextPage: boolean;
   readonly isFetchingNextPage: boolean;
   readonly fetchNextPage: () => Promise<unknown>;
+}
+
+/** A reflow-resistant reader position: a row identity plus where it sat. */
+interface SavedScrollPosition {
+  readonly anchorKey: string;
+  readonly anchorTop: number;
+  readonly scrollTop: number;
+}
+
+/**
+ * Per-session reader positions. Renderer-local and display-only: nothing here
+ * reaches main, the model, or durable storage. Bounded so a long session
+ * hopping run cannot grow it without limit.
+ */
+const savedPositions = new Map<string, SavedScrollPosition>();
+
+function savePosition(
+  sessionId: string,
+  position: SavedScrollPosition | null,
+): void {
+  if (position === null) {
+    savedPositions.delete(sessionId);
+    return;
+  }
+  // Re-insert so the entry moves to the tail of the insertion order and the
+  // eviction below always drops the least recently written session.
+  savedPositions.delete(sessionId);
+  savedPositions.set(sessionId, position);
+  while (savedPositions.size > SAVED_POSITION_LIMIT) {
+    const oldest = savedPositions.keys().next();
+    if (oldest.done === true) break;
+    savedPositions.delete(oldest.value);
+  }
+}
+
+/** Test seam: drop every retained position (per-test isolation). */
+export function clearSavedScrollPositions(): void {
+  savedPositions.clear();
 }
 
 interface TranscriptScrollInput {
@@ -38,14 +125,79 @@ interface TranscriptScrollInput {
   readonly newestIsLiveAppend: boolean;
   /** Signature of every VISIBLE preview change; null when no turn is live. */
   readonly previewSig: string | null;
+  /**
+   * Identity of the newest steering mark in the loaded rows, or null. A change
+   * force-scrolls: a steer is the reader's own words entering a running turn.
+   */
+  readonly steeringSig: string | null;
 }
 
 interface TranscriptScroll {
-  readonly scrollRef: RefObject<HTMLDivElement | null>;
-  readonly anchorSpacerRef: RefObject<HTMLDivElement | null>;
+  /**
+   * CALLBACK ref for the transcript's flow root (also the scroller when
+   * mounted standalone). A callback rather than an object ref because the
+   * transcript renders its loading/error/empty branches FIRST: an effect with
+   * a mount-time dependency list would run while the node is still null and
+   * never bind the scroll listener when the rows finally arrive.
+   */
+  readonly scrollRef: (node: HTMLDivElement | null) => void;
+  /** The same node as an object ref, for hooks that take one. */
+  readonly scrollNodeRef: RefObject<HTMLDivElement | null>;
+  /** The message column - the growth this model follows while pinned. */
+  readonly columnRef: (node: HTMLDivElement | null) => void;
   readonly showLatest: boolean;
   readonly jumpToLatest: () => void;
-  readonly onScroll: () => void;
+}
+
+/** The resident shell's scroll body, or this element when mounted alone. */
+function scrollportOf(from: HTMLElement): HTMLElement {
+  return from.closest<HTMLElement>("[data-vex-conversation-scroll]") ?? from;
+}
+
+/** Row position in scrollport coordinates (viewport-independent). */
+function flowTop(row: HTMLElement, scrollport: HTMLElement): number {
+  return (
+    row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
+  );
+}
+
+function anchorElement(list: HTMLElement, key: string): HTMLElement | null {
+  for (const row of list.querySelectorAll<HTMLElement>(
+    "[data-vex-anchor-key]",
+  )) {
+    if (row.dataset.vexAnchorKey === key) return row;
+  }
+  return null;
+}
+
+/** The topmost row still visible in the scrollport; the head row otherwise. */
+function pagingAnchor(
+  list: HTMLElement,
+  scrollport: HTMLElement,
+): HTMLElement | null {
+  const viewport = scrollport.getBoundingClientRect();
+  const rows = [
+    ...list.querySelectorAll<HTMLElement>("[data-vex-anchor-key]"),
+  ];
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom > viewport.top && rect.top < viewport.bottom) return row;
+  }
+  return rows[0] ?? null;
+}
+
+function capturePosition(
+  list: HTMLElement,
+  scrollport: HTMLElement,
+): SavedScrollPosition | null {
+  const row = pagingAnchor(list, scrollport);
+  const anchorKey = row?.dataset.vexAnchorKey;
+  if (row === null || anchorKey === undefined) return null;
+  return {
+    anchorKey,
+    anchorTop: flowTop(row, scrollport),
+    scrollTop: scrollport.scrollTop,
+  };
 }
 
 export function useTranscriptScroll({
@@ -57,193 +209,259 @@ export function useTranscriptScroll({
   newestVariant,
   newestIsLiveAppend,
   previewSig,
+  steeringSig,
 }: TranscriptScrollInput): TranscriptScroll {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const anchorSpacerRef = useRef<HTMLDivElement>(null);
-  const pinnedToBottom = useRef(true);
-  // Set ONLY by an intentional load-older fetch; consumed by the settle effect
-  // below for scroll restoration. It never gates fetching or bottom-follow, so
-  // it cannot wedge the transcript even if the older fetch fails.
-  const prependAnchor = useRef<{
-    readonly prevHeight: number;
-    readonly prevOldestId: number;
-  } | null>(null);
-
-  // "latest" pill visibility. Derived by MEASUREMENT, never by guessing: the
-  // pill exists to say "there is newer content below the fold", so the one
-  // honest source is the live distance from the bottom. Every caller (scroll,
-  // a new row, a preview tick) funnels through here, which is why the pill can
-  // never desync from what the reader can actually see. It also keeps
-  // `pinnedToBottom` — the load-older/anchor bookkeeping — in step.
-  const [showLatest, setShowLatest] = useState(false);
-  const syncLatestVisibility = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const pinned = distanceFromBottom < PINNED_THRESHOLD_PX;
-    pinnedToBottom.current = pinned;
-    setShowLatest(!pinned);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever either node attaches or detaches, so the listener and the
+  // observer below re-bind on the commit the rows actually mount in.
+  const [nodeEpoch, setNodeEpoch] = useState(0);
+  const setScrollNode = useCallback((node: HTMLDivElement | null): void => {
+    scrollRef.current = node;
+    setNodeEpoch((epoch) => epoch + 1);
+  }, []);
+  const setColumnNode = useCallback((node: HTMLDivElement | null): void => {
+    columnRef.current = node;
+    setNodeEpoch((epoch) => epoch + 1);
   }, []);
 
-  // The SAME measurement, coalesced to one per animation frame. Reading
-  // scrollHeight/scrollTop/clientHeight forces a synchronous layout, so doing
-  // it once per streamed growth tick made the reflow the stream's own cost
-  // (owner decree 2026-08-03). A frame is the finest cadence the pill can
-  // actually be seen changing at, and the trailing edge is guaranteed: the
-  // last scheduled frame always runs, so the pill can never settle on a stale
-  // measurement.
-  const latestSyncFrame = useRef<number | null>(null);
-  const scheduleLatestSync = useCallback((): void => {
-    if (latestSyncFrame.current !== null) return;
-    latestSyncFrame.current = window.requestAnimationFrame(() => {
-      latestSyncFrame.current = null;
-      syncLatestVisibility();
-    });
-  }, [syncLatestVisibility]);
-  useEffect(
-    () => () => {
-      if (latestSyncFrame.current !== null) {
-        window.cancelAnimationFrame(latestSyncFrame.current);
-      }
+  const atBottomRef = useRef(true);
+  const [showLatest, setShowLatest] = useState(false);
+  /** Last position delivered or written by this model. See the header. */
+  const observedTopRef = useRef(0);
+  /** Armed at load-older, updated by reader scrolls, consumed by the prepend. */
+  const anchorRef = useRef<{ key: string; top: number } | null>(null);
+
+  const openedFor = useRef<string | null>(null);
+  const prevOldestId = useRef(0);
+  const lastIdRef = useRef(0);
+  const lastSteeringRef = useRef<string | null>(null);
+  const followSigRef = useRef<string | null>(null);
+
+  // The flow TIP. Follow fires only when this moves, never on a chrome
+  // re-render - the difference between "new content arrived" and "the pill
+  // appeared", which is what keeps entering the threshold from snapping.
+  const followSig = `${itemCount}:${oldestId}:${newestId}:${previewSig ?? ""}:${steeringSig ?? ""}`;
+
+  const toBottom = useCallback(
+    (el: HTMLElement): void => {
+      anchorRef.current = null;
+      el.scrollTop = el.scrollHeight;
+      observedTopRef.current = el.scrollTop;
+      atBottomRef.current = true;
+      setShowLatest(false);
+      savePosition(sessionId, null);
     },
-    [],
+    [sessionId],
   );
 
   const jumpToLatest = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
+    const local = scrollRef.current;
+    if (local === null) return;
     // Instant, never smooth — reduced-motion safe by construction.
-    el.scrollTop = el.scrollHeight;
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-  }, []);
+    toBottom(scrollportOf(local));
+  }, [toBottom]);
 
-  // Session change → jump to the newest message. The anchor spacer is zeroed
-  // FIRST so the jump lands on real content, not send-time run-out space.
-  useEffect(() => {
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-    prependAnchor.current = null;
-    const spacer = anchorSpacerRef.current;
-    if (spacer !== null) spacer.style.height = "0px";
-    const el = scrollRef.current;
-    if (el !== null) el.scrollTop = el.scrollHeight;
-  }, [sessionId]);
+  const remember = (): void => {
+    prevOldestId.current = oldestId;
+    lastIdRef.current = newestId;
+    lastSteeringRef.current = steeringSig;
+    followSigRef.current = followSig;
+  };
 
-  // FIRST PAGE LANDED → jump to newest. The session-change effect above can
-  // only reach the scroller when one is already mounted; opening an UNCACHED
-  // session renders the loading branch first, so that effect finds
-  // `scrollRef.current === null` and the transcript would otherwise open at
-  // its OLDEST visible row. This layout effect is the landing counterpart: it
-  // fires once per session, on the commit where rows first exist, before paint.
-  // Declared ABOVE the newest-row effect on purpose — if the same commit also
-  // carries a live user append, that effect runs after and its top-anchor wins.
-  const bottomJumpedFor = useRef<string | null>(null);
+  // Runs on EVERY commit by design (no dependency array): the decision is the
+  // signature comparison above, not React's identity comparison. A dependency
+  // list here would silently re-add the "re-pin on any render" bug.
   useLayoutEffect(() => {
-    if (bottomJumpedFor.current === sessionId || itemCount === 0) return;
-    const el = scrollRef.current;
-    if (el === null) return;
-    bottomJumpedFor.current = sessionId;
-    el.scrollTop = el.scrollHeight;
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-  }, [sessionId, itemCount]);
+    const local = scrollRef.current;
+    if (local === null) return;
+    const el = scrollportOf(local);
 
-  // New newest message. A just-SENT user message (a LIVE append) anchors at
-  // the viewport TOP: the reading position for the reply streaming in below
-  // it, with the trailing spacer guaranteeing the scroll range even when
-  // nothing follows yet. A HISTORICAL user row (opening an old session) never
-  // anchors. EVERY other newest row moves nothing — the old "bottom-follow
-  // while pinned" branch is deliberately gone; it is replaced by the pill,
-  // which offers the jump instead of taking it. A load-older prepend never
-  // changes `newestId`, so this stays quiet during one. Scrolls are instant
-  // (no smooth) — reduced-motion safe.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el === null || newestId === 0) return;
-    if (newestVariant === "user" && newestIsLiveAppend) {
-      const target = el.querySelector(
-        `[data-vex-entry-id="${newestId}"][data-vex-entry-variant="user"]`,
-      );
-      if (target instanceof HTMLElement) {
-        const spacer = anchorSpacerRef.current;
-        if (spacer !== null) {
-          spacer.style.height = `${Math.max(0, el.clientHeight - 96)}px`;
-        }
-        const gap = 12;
-        el.scrollTop =
-          target.getBoundingClientRect().top -
-          el.getBoundingClientRect().top +
-          el.scrollTop -
-          gap;
-        pinnedToBottom.current = false;
-        setShowLatest(false);
-        return;
+    // FIRST LANDING for this session. Deferred until there is something to
+    // land on, so an uncached session (which renders its loading branch first)
+    // does not consume the landing on an empty column and open at its oldest
+    // row. A saved reader position wins over the floor jump.
+    if (openedFor.current !== sessionId) {
+      if (itemCount === 0 && previewSig === null) return;
+      openedFor.current = sessionId;
+      const saved = savedPositions.get(sessionId);
+      if (saved === undefined) {
+        toBottom(el);
+      } else {
+        el.scrollTop = saved.scrollTop;
+        const row = anchorElement(local, saved.anchorKey);
+        if (row !== null) el.scrollTop += flowTop(row, el) - saved.anchorTop;
+        observedTopRef.current = el.scrollTop;
+        // The restore may have been clamped (a narrower window, a shorter
+        // transcript). Re-derive ownership from where it actually landed.
+        const floor = Math.max(0, el.scrollHeight - el.clientHeight);
+        const isAtBottom = floor - el.scrollTop <= FOLLOW_THRESHOLD_PX + 1;
+        atBottomRef.current = isAtBottom;
+        setShowLatest(!isAtBottom);
+        savePosition(
+          sessionId,
+          isAtBottom ? null : capturePosition(local, el),
+        );
       }
+      remember();
+      return;
     }
-    syncLatestVisibility();
-  }, [newestId, newestVariant, newestIsLiveAppend, syncLatestVisibility]);
 
-  // Every visible preview change re-measures whether the growing bubble has
-  // left the viewport. It NEVER drives a scroll.
-  useEffect(() => {
-    if (previewSig === null) return;
-    // Frame-coalesced: a growth tick asks for a measurement, it does not take
-    // one. See `scheduleLatestSync`.
-    scheduleLatestSync();
-  }, [previewSig, scheduleLatestSync]);
-
-  // Turn settled (stream → null): retire the anchor run-out. The spacer's job
-  // was to guarantee scroll range WHILE the reply streamed below the anchored
-  // user message; once the turn is complete, "scrolled to bottom" must mean
-  // the last message sits flush with the bottom edge — no dead space (owner
-  // order). If the viewport was inside the removed range the browser clamps
-  // scrollTop, which lands exactly on that flush state; a reader anchored
-  // above a long reply sees no movement at all.
-  const hadPreview = useRef(false);
-  useEffect(() => {
-    const had = hadPreview.current;
-    hadPreview.current = previewSig !== null;
-    if (!had || previewSig !== null) return;
-    const spacer = anchorSpacerRef.current;
-    if (spacer !== null) spacer.style.height = "0px";
-    // Retiring the spacer CHANGES the scroll geometry (scrollHeight shrinks,
-    // and the browser may clamp scrollTop), so the pill must be re-derived
-    // from the new measurements — a stale pill would point at a bottom that
-    // is already in view.
-    syncLatestVisibility();
-  }, [previewSig, syncLatestVisibility]);
-
-  // After an intentional older-page fetch settles, hold the viewport if a page
-  // was actually prepended (oldest id changed); clear the anchor either way —
-  // success OR failure — so it can never gate a later load or bottom-follow.
-  useLayoutEffect(() => {
-    if (query.isFetchingNextPage) return;
-    const anchor = prependAnchor.current;
-    if (anchor === null) return;
-    const el = scrollRef.current;
-    if (el !== null && oldestId !== anchor.prevOldestId) {
-      el.scrollTop += el.scrollHeight - anchor.prevHeight;
-    }
-    prependAnchor.current = null;
-  }, [query.isFetchingNextPage, oldestId]);
-
-  const onScroll = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    syncLatestVisibility();
+    // PREPEND: the head moved older with an armed anchor. Restore the anchored
+    // row to the offset the reader's LATEST scroll established, which excludes
+    // unrelated tail growth that landed while the request was in flight.
     if (
-      el.scrollTop < LOAD_OLDER_THRESHOLD_PX &&
-      query.hasNextPage &&
-      !query.isFetchingNextPage
+      anchorRef.current !== null &&
+      oldestId !== 0 &&
+      prevOldestId.current !== 0 &&
+      oldestId < prevOldestId.current
     ) {
-      prependAnchor.current = {
-        prevHeight: el.scrollHeight,
-        prevOldestId: oldestId,
-      };
-      void query.fetchNextPage();
+      const anchor = anchorRef.current;
+      anchorRef.current = null;
+      const row = anchorElement(local, anchor.key);
+      if (row !== null) el.scrollTop += flowTop(row, el) - anchor.top;
+      observedTopRef.current = el.scrollTop;
+      remember();
+      return;
     }
-  }, [query, oldestId, syncLatestVisibility]);
 
-  return { scrollRef, anchorSpacerRef, showLatest, jumpToLatest, onScroll };
+    // Own words must be visible. Detected on ARRIVAL rather than armed at the
+    // send, because there is no optimistic echo: the user row reaches the
+    // screen only after main persists it and the transcript refetches.
+    const appendedUser =
+      newestId !== lastIdRef.current &&
+      newestVariant === "user" &&
+      newestIsLiveAppend;
+    const appendedSteering =
+      steeringSig !== null && steeringSig !== lastSteeringRef.current;
+    const tipMoved = followSigRef.current !== followSig;
+    remember();
+    if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) {
+      toBottom(el);
+    }
+  });
+
+  // Reassigned every render so the handler always reads current props without
+  // rebinding the listener (which would drop scroll events mid-gesture).
+  const onScrollRef = useRef(() => {});
+  onScrollRef.current = () => {
+    const local = scrollRef.current;
+    if (local === null) return;
+    const el = scrollportOf(local);
+
+    // PAGING is independent of follow ownership: whether the head came into
+    // reach by a reader gesture or by a clamp, the page below it is missing
+    // either way. Called from BOTH exits of the ownership block below so a
+    // re-pin can never swallow it.
+    const maybeLoadOlder = (): void => {
+      if (el.scrollTop >= LOAD_OLDER_THRESHOLD_PX) return;
+      if (!query.hasNextPage || query.isFetchingNextPage) return;
+      const row = pagingAnchor(local, el);
+      const key = row?.dataset.vexAnchorKey;
+      if (row !== null && key !== undefined) {
+        anchorRef.current = { key, top: flowTop(row, el) };
+      }
+      void query.fetchNextPage();
+    };
+
+    const floor = Math.max(0, el.scrollHeight - el.clientHeight);
+    const movedByReader =
+      Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > 0.5;
+    const isAtBottom = movedByReader
+      ? floor - el.scrollTop <= FOLLOW_THRESHOLD_PX + 1
+      : atBottomRef.current;
+    // A non-reader event that finds us still pinned re-pins: this is the
+    // shrink-clamp delivery, and letting it stand would leave the floor a few
+    // pixels away with follow still armed.
+    if (!movedByReader && isAtBottom) {
+      toBottom(el);
+      maybeLoadOlder();
+      return;
+    }
+    atBottomRef.current = isAtBottom;
+    setShowLatest(!isAtBottom);
+    const position = isAtBottom ? null : capturePosition(local, el);
+    if (isAtBottom) {
+      anchorRef.current = null;
+    } else if (anchorRef.current !== null && position !== null) {
+      anchorRef.current = { key: position.anchorKey, top: position.anchorTop };
+    }
+    // Saved continuously: the ref detaches before unmount, so saving there
+    // would be too late to read the geometry.
+    savePosition(sessionId, position);
+    observedTopRef.current = el.scrollTop;
+    maybeLoadOlder();
+  };
+
+  // One listener per attached scroller, on the RESOLVED scrollport. Reader
+  // attribution rides the observed-top ledger, so no per-device listeners are
+  // needed.
+  useEffect(() => {
+    const local = scrollRef.current;
+    if (local === null) return;
+    const el = scrollportOf(local);
+    const onScroll = (): void => {
+      onScrollRef.current();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, [nodeEpoch]);
+
+  // A failed or empty older page leaves the head unchanged, so once the
+  // request leaves its busy state there is no future prepend for the anchor to
+  // own. Runs AFTER the layout effect above in the same commit, so a page that
+  // did land has already consumed it.
+  useEffect(() => {
+    if (!query.isFetchingNextPage) anchorRef.current = null;
+  }, [query.isFetchingNextPage]);
+
+  // ONE observer owns every dynamic-height consequence:
+  //   - the message column grows (streaming, disclosure toggles) → follow, but
+  //     ONLY while the reader is pinned;
+  //   - the composer seat grows (a growing draft, the queue dock) → follow,
+  //     and republish `--vex-composer-height` so the floating jump pill keeps
+  //     clearing the seat;
+  //   - the scrollport itself resizes (window, rails) → republish
+  //     `--vex-conversation-viewport`, the height the centred working scene
+  //     centres itself in without contributing to `scrollHeight`.
+  // The two variables live here rather than with the seat because this model
+  // is the only consumer of both, and a second writer would be a second source
+  // of truth for the same geometry.
+  useEffect(() => {
+    const local = scrollRef.current;
+    const column = columnRef.current;
+    if (local === null || column === null) return;
+    if (typeof ResizeObserver === "undefined") return;
+    const el = scrollportOf(local);
+    const seat = el.querySelector<HTMLElement>("[data-vex-composer-seat]");
+    const observer = new ResizeObserver(() => {
+      if (seat !== null) {
+        el.style.setProperty("--vex-composer-height", `${seat.offsetHeight}px`);
+      }
+      el.style.setProperty(
+        "--vex-conversation-viewport",
+        `${el.clientHeight}px`,
+      );
+      if (!atBottomRef.current) return;
+      el.scrollTop = el.scrollHeight;
+      observedTopRef.current = el.scrollTop;
+      savePosition(sessionId, null);
+    });
+    observer.observe(column);
+    observer.observe(el);
+    if (seat !== null) observer.observe(seat);
+    return () => {
+      observer.disconnect();
+    };
+  }, [sessionId, nodeEpoch]);
+
+  return {
+    scrollRef: setScrollNode,
+    scrollNodeRef: scrollRef,
+    columnRef: setColumnNode,
+    showLatest,
+    jumpToLatest,
+  };
 }

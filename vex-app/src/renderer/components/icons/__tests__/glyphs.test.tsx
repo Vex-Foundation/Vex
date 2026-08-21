@@ -24,7 +24,9 @@ describe("icon glyphs", () => {
   it("covers the whole shell vocabulary", () => {
     // The set is the renderer's ONLY icon source since the vendor gate was
     // retired; a drop below this floor means a call site lost its glyph.
-    expect(entries.length).toBeGreaterThanOrEqual(81);
+    // Floor 81 -> 78 (R2-A, 2026-08-21): the starter-pill glyphs IconFlame,
+    // IconPercent and IconRocket retired with their last consumer.
+    expect(entries.length).toBeGreaterThanOrEqual(78);
   });
 
   it.each(entries.map(([name]) => name))("%s renders per contract", (name) => {

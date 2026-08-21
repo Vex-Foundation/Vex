@@ -42,7 +42,7 @@ export function PortfolioCard({
       <header className="mb-2.5 flex items-baseline justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2">
           {leading}
-          <h3 className="font-doto text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-tertiary">
+          <h3 className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
             {eyebrow}
           </h3>
         </span>
@@ -73,7 +73,7 @@ export function CardStateNote({
 }): JSX.Element {
   if (tone === "loading") {
     return (
-      <p className="font-doto text-[10px] uppercase tracking-[0.14em] text-ink-tertiary">
+      <p className="vex-doto-label uppercase text-ink-secondary">
         {children}
       </p>
     );

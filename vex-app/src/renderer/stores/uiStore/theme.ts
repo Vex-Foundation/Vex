@@ -13,7 +13,12 @@ export type VexTheme = "chronos" | "celeris";
 /** Persisted user choice; "system" tracks the OS color scheme live. */
 export type VexThemePreference = VexTheme | "system";
 
-export const DEFAULT_THEME_PREFERENCE: VexThemePreference = "chronos";
+/**
+ * No explicit choice = follow the OS (ratified 2026-08-21). Persistence
+ * migration v13 re-defaults an install still carrying the seeded `chronos`
+ * once; a user who deliberately wants chronos re-picks it in Settings.
+ */
+export const DEFAULT_THEME_PREFERENCE: VexThemePreference = "system";
 
 /**
  * Coerce an untrusted (user-writable localStorage) value to the preference

@@ -103,7 +103,7 @@ export function TokenHistoryScreen({
   let body: JSX.Element;
   if (query.isLoading) {
     body = (
-      <p className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary">
+      <p className="vex-doto-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
@@ -150,7 +150,7 @@ export function TokenHistoryScreen({
             type="button"
             onClick={() => void query.fetchNextPage()}
             disabled={query.isFetchingNextPage}
-            className="mt-3 w-full rounded-xl border border-line-2 py-1.5 font-doto text-[11px] uppercase tracking-[0.14em] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
+            className="mt-3 w-full rounded-xl border border-line-2 py-1.5 vex-doto-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
           >
             {query.isFetchingNextPage ? "Loading…" : "Load more"}
           </button>
@@ -188,7 +188,7 @@ export function TokenHistoryScreen({
     >
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
         <section aria-label="Activity">
-          <h2 className="mb-2 font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary">
+          <h2 className="mb-2 vex-doto-label uppercase text-ink-secondary">
             Activity
           </h2>
           {body}

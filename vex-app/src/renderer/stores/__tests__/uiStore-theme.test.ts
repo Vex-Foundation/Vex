@@ -3,11 +3,18 @@
  *   1. resolveTheme matrix - explicit preference wins; "system" follows the
  *      OS scheme.
  *   2. coerceThemePreference - legal values pass, everything else (retired
- *      "vex"/"robinhood", garbage, non-strings) degrades to the default.
+ *      "vex"/"robinhood", garbage, non-strings) degrades to the default,
+ *      which is now "system" (ratified 2026-08-21).
  *   3. setThemePreference - one call updates the store AND documentElement
  *      (data-vex-theme + color-scheme).
- *   4. Rehydrate - a v8 payload's `theme` seeds `themePreference`; a
- *      tampered current-version payload coerces instead of crashing.
+ *   4. Rehydrate - a v8 payload's `theme` seeds `themePreference`; the v13
+ *      hop re-defaults a SEEDED `chronos` to `system` exactly once while an
+ *      explicit `celeris` survives; a tampered current-version payload
+ *      coerces instead of crashing.
+ *
+ * jsdom does not implement `matchMedia`, so `systemPrefersDark()` takes its
+ * documented safe-fail branch and reports DARK: `system` resolves to
+ * `chronos` throughout this file, deterministically.
  *   5. The vex-studio `runtimeMode` seam defaults to "agent" and is not
  *      persisted.
  */
@@ -17,6 +24,7 @@ import { useUiStore } from "../uiStore.js";
 import {
   applyThemeToDocument,
   coerceThemePreference,
+  DEFAULT_THEME_PREFERENCE,
   resolveTheme,
 } from "../uiStore/theme.js";
 
@@ -49,13 +57,14 @@ describe("coerceThemePreference", () => {
     expect(coerceThemePreference("system")).toBe("system");
   });
 
-  it("degrades everything else to the default", () => {
-    expect(coerceThemePreference("robinhood")).toBe("chronos");
-    expect(coerceThemePreference("vex")).toBe("chronos");
-    expect(coerceThemePreference("neon-hack")).toBe("chronos");
-    expect(coerceThemePreference(undefined)).toBe("chronos");
-    expect(coerceThemePreference(null)).toBe("chronos");
-    expect(coerceThemePreference(42)).toBe("chronos");
+  it("degrades everything else to the default ('system')", () => {
+    expect(DEFAULT_THEME_PREFERENCE).toBe("system");
+    expect(coerceThemePreference("robinhood")).toBe("system");
+    expect(coerceThemePreference("vex")).toBe("system");
+    expect(coerceThemePreference("neon-hack")).toBe("system");
+    expect(coerceThemePreference(undefined)).toBe("system");
+    expect(coerceThemePreference(null)).toBe("system");
+    expect(coerceThemePreference(42)).toBe("system");
   });
 });
 
@@ -81,7 +90,7 @@ describe("uiStore theme runtime", () => {
     expect("theme" in parsed.state).toBe(false);
   });
 
-  it("migrates a v8 payload: old `theme` seeds `themePreference`", async () => {
+  it("migrates a v8 payload: old `theme` seeds `themePreference`, then v13 re-defaults the seeded chronos", async () => {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -90,9 +99,40 @@ describe("uiStore theme runtime", () => {
       }),
     );
     await useUiStore.persist.rehydrate();
-    expect(useUiStore.getState().themePreference).toBe("chronos");
+    // v9 seeds themePreference from `theme`; v13 rewrites that SEEDED
+    // chronos to `system` once. The resolved theme is still chronos here
+    // only because jsdom's absent matchMedia reports dark.
+    expect(useUiStore.getState().themePreference).toBe("system");
     expect(useUiStore.getState().theme).toBe("chronos");
     expect(useUiStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it("v13 rewrites a persisted 'chronos' to 'system' exactly once", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ state: { themePreference: "chronos" }, version: 12 }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().themePreference).toBe("system");
+
+    // The re-default is a version hop, not a policy: once the user picks
+    // chronos deliberately at v13 the choice sticks across rehydrates.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ state: { themePreference: "chronos" }, version: 13 }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().themePreference).toBe("chronos");
+  });
+
+  it("v13 leaves an explicit 'celeris' untouched", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ state: { themePreference: "celeris" }, version: 12 }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().themePreference).toBe("celeris");
+    expect(useUiStore.getState().theme).toBe("celeris");
   });
 
   it("coerces a tampered current-version preference on rehydrate", async () => {
@@ -104,7 +144,7 @@ describe("uiStore theme runtime", () => {
       }),
     );
     await useUiStore.persist.rehydrate();
-    expect(useUiStore.getState().themePreference).toBe("chronos");
+    expect(useUiStore.getState().themePreference).toBe("system");
     expect(useUiStore.getState().theme).toBe("chronos");
   });
 

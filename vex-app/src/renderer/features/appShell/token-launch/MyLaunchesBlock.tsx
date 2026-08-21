@@ -71,7 +71,7 @@ function Body({
   }
   if (loading) {
     return (
-      <p className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
+      <p className="vex-doto-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
@@ -108,7 +108,7 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
           <span className="truncate text-[13px] text-ink-primary">
             {row.name}
           </span>
-          <span className="shrink-0 font-doto text-[11px] font-medium uppercase tracking-[0.12em] text-ink-tertiary">
+          <span className="shrink-0 vex-doto-label uppercase text-ink-secondary">
             {row.symbol}
           </span>
         </div>
@@ -132,14 +132,14 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
               unproven. The token may exist.
             */
             <span
-              className="font-doto text-[11px] font-medium uppercase tracking-[0.12em] text-ink-tertiary"
+              className="vex-doto-label uppercase text-ink-secondary"
               title="No longer tracked - Vex stopped checking this transaction and what actually happened was never established. The token may or may not exist; do not launch again without checking."
             >
               no longer tracked - outcome unproven
             </span>
           ) : (
             <span
-              className="font-doto text-[11px] font-medium uppercase tracking-[0.12em] text-ink-tertiary"
+              className="vex-doto-label uppercase text-ink-secondary"
               title="Broadcast - Vex is still checking whether this launch was included on-chain. No token address is proven yet."
             >
               in flight - no token address yet

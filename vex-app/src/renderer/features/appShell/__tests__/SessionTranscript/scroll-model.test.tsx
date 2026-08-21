@@ -1,13 +1,26 @@
 /**
- * THE SCROLL MODEL — owner decree 2026-07-29: chat NEVER auto-scrolls during
- * streaming. Exactly two viewport moves are lawful, and both are here: the
- * top-anchor for a just-SENT user message, and the jump to newest when a
- * session first opens. Everything else raises the "↓ latest" pill instead of
- * taking the reader's position.
+ * THE SCROLL MODEL - follow-stream with reader ownership (owner decision 3,
+ * 2026-08-21). Replaces the top-anchor/never-follow suite wholesale.
  *
- * Split out of `SessionTranscript.test.tsx` when it crossed the 550-line hard
- * limit; the render/paging/error suite keeps the main file's name. The shared
- * mocks live in `transcript-harness.ts`.
+ * What each case here is actually a claim about:
+ *
+ *  - reader-release: a reader scroll away from the floor takes ownership, and
+ *    nothing the stream does afterwards takes it back;
+ *  - threshold-entry-must-not-snap: crossing INTO the at-bottom band re-renders
+ *    the chrome, and that re-render must not finish the reader's scroll for
+ *    them;
+ *  - force-scroll-on-own-send: a live trailing user row and a steering mark
+ *    scroll unconditionally, pinned or not - own words must be visible;
+ *  - shrink-clamp delivery: a non-reader event that lands on the floor minimum
+ *    preserves ownership rather than reading as a reader gesture;
+ *  - prepend anchor: an older page restores the reader's LATEST intent, and
+ *    returning to the floor cancels the anchor entirely;
+ *  - pinned-vs-saved on remount: pinned saves nothing (keep following), an
+ *    unpinned position restores against its anchor ROW, not its pixel.
+ *
+ * Geometry is scripted through `installScrollMetrics` (a floor-clamping
+ * `scrollTop` setter, as a real engine behaves) and growth through a manual
+ * `ResizeObserver` stub. No wall-clock sleeps anywhere.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,15 +32,17 @@ import { SessionTranscript } from "../../SessionTranscript.js";
 import { useStreamStore } from "../../../../stores/streamStore.js";
 import {
   SESSION,
-  anchorSpacer,
   failure,
   freshClient,
   getScroller,
+  installResizeObserver,
+  installScrollMetrics,
   latestPill,
   listMock,
   livePreview,
   msg,
   page,
+  readerScroll,
   resetTranscriptEnv,
   setVex,
   startChatTurn,
@@ -41,232 +56,98 @@ function makeWrapper(client: QueryClient) {
 
 afterEach(resetTranscriptEnv);
 
-describe("SessionTranscript scroll model", () => {
-  it("never auto-follows a new assistant row - it raises the ↓ latest pill instead", async () => {
-    let withExtra = false;
-    listMock.mockImplementation((input: { readonly cursor: unknown }) => {
-      if (input.cursor !== null) return Promise.resolve(failure); // older fails
-      // The live arrival is an ASSISTANT row. Chat NEVER auto-scrolls for it
-      // (owner decree 2026-07-29) — not even from a bottom-pinned viewport.
-      // Only a live USER append anchors; covered by its own test below.
-      const items = withExtra
-        ? [
-            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
-            msg({ id: 4, role: "assistant", kind: "text", content: "newer" }),
-          ]
-        : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
-      return Promise.resolve(page(items, 3)); // hasMore → load-older is offered
-    });
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
-
-    const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-
-    // Scroll to the top → older fetch fails → banner; the anchor must clear so
-    // it can never wedge a later load (the original regression this covers).
-    scroller.scrollTop = 0;
-    fireEvent.scroll(scroller);
-    await waitFor(() => {
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull();
-    });
-
-    // User scrolls back to the bottom (500 - 300 - 200 = 0).
-    scroller.scrollTop = 300;
-    fireEvent.scroll(scroller);
-    expect(latestPill(container)).toBeNull();
-
-    // A new newest message arrives via a live refetch; the list grows taller,
-    // pushing the new row out of view (700 - 300 - 200 = 200 > 48).
-    withExtra = true;
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 700 });
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("newer")).not.toBeNull();
-    });
-
-    // The reading position is UNTOUCHED — no bottom-follow, no jump.
-    expect(scroller.scrollTop).toBe(300);
-    // ...and the pill offers the jump instead.
-    expect(latestPill(container)).not.toBeNull();
+async function mount(client: QueryClient = freshClient()) {
+  setVex();
+  const view = render(createElement(SessionTranscript, { sessionId: SESSION }), {
+    wrapper: makeWrapper(client),
   });
+  return view;
+}
 
-  it("keeps the ↓ latest pill hidden when the newest row lands in view", async () => {
-    let withExtra = false;
-    listMock.mockImplementation(() => {
-      const items = withExtra
-        ? [
-            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
-            msg({ id: 4, role: "assistant", kind: "text", content: "newer" }),
-          ]
-        : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
-      return Promise.resolve(page(items, null));
-    });
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
-
-    const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-    scroller.scrollTop = 300;
-    fireEvent.scroll(scroller);
-
-    // The row lands but the viewport still shows the bottom (distance 0) —
-    // offering a jump to content already on screen would be noise.
-    withExtra = true;
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("newer")).not.toBeNull();
-    });
-    expect(scroller.scrollTop).toBe(300);
-    expect(latestPill(container)).toBeNull();
-  });
-
-  it("raises the ↓ latest pill while a reply streams out of view, and the pill jumps to the bottom", async () => {
+describe("SessionTranscript follow-stream scroll model", () => {
+  it("opens a session pinned to the floor and follows the streaming tip", async () => {
     listMock.mockResolvedValue(
       page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
     );
-    setVex();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(freshClient()) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
 
     const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 900 });
-    // The reader has scrolled up, away from the bottom.
-    scroller.scrollTop = 100;
+    const geometry = installScrollMetrics(scroller, 500, 200);
+    // Re-land the first page's jump against the now-scripted geometry.
     fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(300);
+    expect(latestPill(container)).toBeNull();
 
-    // A reply starts streaming below the fold. The transcript must NOT follow
-    // it (owner decree: chat never auto-scrolls during streaming).
+    // A reply streams in and grows the flow. Pinned → the model follows it.
+    geometry.setHeight(900);
     act(() => {
       useStreamStore.setState({
-        bySessionId: {
-          [SESSION]: {
-            streamId: "s1",
-            text: "streaming…",
-            phase: "streaming",
-            toolName: null,
-            reasoningText: "",
-            reasoningSegments: [],
-            reasoningTokens: null,
-            startedAtMs: Date.now(),
-            errorType: null,
-            errorDetail: null,
-            status: "writing",
-          },
-        },
+        bySessionId: { [SESSION]: livePreview({ text: "streaming…" }) },
+      });
+    });
+    expect(scroller.scrollTop).toBe(700);
+    expect(latestPill(container)).toBeNull();
+  });
+
+  it("reader-release: a reader scroll away stops the follow, and the stream never takes it back", async () => {
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    const geometry = installScrollMetrics(scroller, 900, 200);
+    readerScroll(scroller, 100);
+    expect(latestPill(container)).not.toBeNull();
+
+    // Two streamed growth ticks: the reader owns the viewport, so neither
+    // moves it. This is the whole point of the ownership ledger.
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: { [SESSION]: livePreview({ text: "one" }) },
+      });
+    });
+    geometry.setHeight(1400);
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: { [SESSION]: livePreview({ text: "one two three" }) },
       });
     });
     expect(scroller.scrollTop).toBe(100);
 
-    const pill = latestPill(container);
-    expect(pill).not.toBeNull();
-    // Instant jump on click — no smooth behavior, so it is reduced-motion safe.
-    fireEvent.click(pill as HTMLElement);
-    expect(scroller.scrollTop).toBe(900);
+    // The pill offers the jump the model refused to take. Instant, so it needs
+    // no reduced-motion branch.
+    fireEvent.click(latestPill(container) as HTMLElement);
+    expect(scroller.scrollTop).toBe(1200);
     await waitFor(() => expect(latestPill(container)).toBeNull());
   });
 
-  it("raises the ↓ latest pill when LIVE REASONING (not answer text) grows the island out of view", async () => {
+  it("threshold-entry-must-not-snap: crossing into the at-bottom band leaves the remaining distance alone", async () => {
     listMock.mockResolvedValue(
       page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
     );
-    setVex();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(freshClient()) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
 
     const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 300 });
-    scroller.scrollTop = 100; // bottom in view (300 − 100 − 200 = 0)
-    fireEvent.scroll(scroller);
-    expect(latestPill(container)).toBeNull();
+    installScrollMetrics(scroller, 1000, 300);
+    readerScroll(scroller, 100);
+    expect(latestPill(container)).not.toBeNull();
 
-    // A thinking turn starts: the ANSWER text stays empty the whole time —
-    // only the reasoning grows, expanding the island into a panel. The pill
-    // must still notice, which it could not while the signature ignored
-    // reasoning length and status.
-    act(() => {
-      useStreamStore.setState({
-        bySessionId: {
-          [SESSION]: {
-            streamId: "s1",
-            text: "",
-            phase: "streaming",
-            toolName: null,
-            reasoningText: "considering",
-            reasoningSegments: [],
-            reasoningTokens: null,
-            startedAtMs: Date.now(),
-            errorType: null,
-            errorDetail: null,
-            status: "thinking",
-          },
-        },
-      });
-    });
-    // The island's panel pushed the bottom below the fold.
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 900 });
-    act(() => {
-      useStreamStore.setState({
-        bySessionId: {
-          [SESSION]: {
-            streamId: "s1",
-            text: "",
-            phase: "streaming",
-            toolName: null,
-            reasoningText: "considering the ledger at some length",
-            reasoningSegments: [],
-            reasoningTokens: null,
-            startedAtMs: Date.now(),
-            errorType: null,
-            errorDetail: null,
-            status: "thinking",
-          },
-        },
-      });
-    });
-    expect(scroller.scrollTop).toBe(100); // still no auto-follow
-    // The measurement is frame-coalesced now (one forced reflow per frame, not
-    // one per growth tick), so the pill lands on the next frame — awaited, not
-    // asserted synchronously. What must hold is that it lands at all.
-    await waitFor(() => expect(latestPill(container)).not.toBeNull());
+    // Inside FOLLOW_THRESHOLD (24) but NOT flush with the floor (700). The
+    // chrome re-render from hiding the pill must not finish the scroll: the
+    // signature did not move, so nothing follows.
+    readerScroll(scroller, 690);
+    expect(latestPill(container)).toBeNull();
+    expect(scroller.scrollTop).toBe(690);
   });
 
-  it("anchors a just-sent user message at the viewport top with a run-out spacer", async () => {
-    let withExtra = false;
+  it("force-scroll-on-own-send: a live trailing USER row scrolls even from an unpinned viewport", async () => {
+    let sent = false;
     listMock.mockImplementation(() => {
-      const items = withExtra
+      const items = sent
         ? [
             msg({ id: 3, role: "user", kind: "text", content: "newest" }),
             msg({ id: 4, role: "user", kind: "text", content: "just sent" }),
@@ -274,237 +155,380 @@ describe("SessionTranscript scroll model", () => {
         : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
       return Promise.resolve(page(items, null));
     });
-    setVex();
     const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
+    const { container } = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
 
     const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-    scroller.scrollTop = 300; // pinned to the bottom (500 − 300 − 200 = 0)
-    fireEvent.scroll(scroller);
+    const geometry = installScrollMetrics(scroller, 900, 200);
+    // The reader is reading history, far from the floor, and OWNS the
+    // viewport. Own words override that ownership; nothing else does.
+    readerScroll(scroller, 50);
+    expect(latestPill(container)).not.toBeNull();
 
-    // The user sends a message — a LIVE user append lands via refetch.
-    withExtra = true;
+    sent = true;
+    geometry.setHeight(1000);
     await act(async () => {
       await client.invalidateQueries({ queryKey: ["messages", SESSION] });
     });
-    await waitFor(() => {
-      expect(screen.getByText("just sent")).not.toBeNull();
-    });
-
-    // NOT bottom-followed: anchored so the sent message reads at the top.
-    // jsdom rects are all 0, so the math resolves to scrollTop − gap:
-    // 0 − 0 + 300 − 12 = 288 (definitely not scrollHeight = 500).
-    expect(scroller.scrollTop).toBe(288);
-    // The run-out spacer opened beneath the turn (clientHeight − 96 = 104).
-    const spacer = scroller.querySelector('div[aria-hidden][style*="height"]');
-    expect(spacer).not.toBeNull();
-    expect((spacer as HTMLElement).style.height).toBe("104px");
+    await waitFor(() => expect(screen.getByText("just sent")).not.toBeNull());
+    expect(scroller.scrollTop).toBe(800);
+    expect(latestPill(container)).toBeNull();
   });
 
-  it("opens an UNCACHED session at the newest message, not the oldest visible row", async () => {
-    // The regression this locks: opening a session with no cached page renders
-    // the LOADING branch first, so the session-change effect finds no scroller
-    // and the transcript opened parked at its oldest row. jsdom reports
-    // scrollHeight 0, so the jump is only observable with a stubbed geometry.
-    const proto = Object.getOwnPropertyDescriptor(
-      window.HTMLElement.prototype,
-      "scrollHeight",
-    );
-    Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
-      configurable: true,
-      get: () => 1200,
+  it("force-scroll-on-own-send: a NEW STEERING MARK scrolls the same way", async () => {
+    let steered = false;
+    listMock.mockImplementation(() => {
+      const items = steered
+        ? [
+            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
+            msg({ id: 4, role: "assistant", kind: "text", content: "reply" }),
+            msg({ id: 5, role: "user", kind: "steering", content: "steer me" }),
+          ]
+        : [
+            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
+            msg({ id: 4, role: "assistant", kind: "text", content: "reply" }),
+          ];
+      return Promise.resolve(page(items, null));
     });
-    try {
-      listMock.mockResolvedValue(
-        page(
-          [
-            msg({ id: 1, role: "user", kind: "text", content: "oldest row" }),
-            msg({ id: 2, role: "assistant", kind: "text", content: "newest row" }),
-          ],
-          null,
-        ),
-      );
-      setVex();
-      const { container } = render(
-        createElement(SessionTranscript, { sessionId: SESSION }),
-        { wrapper: makeWrapper(freshClient()) },
-      );
-      await waitFor(() => {
-        expect(screen.getByText("newest row")).not.toBeNull();
-      });
-      const scroller = getScroller(container);
-      expect(scroller.scrollTop).toBe(1200);
-      // Bottom in view → the pill has nothing to offer.
-      expect(latestPill(container)).toBeNull();
-    } finally {
-      if (proto !== undefined) {
-        Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", proto);
-      }
-    }
+    const client = freshClient();
+    const { container } = await mount(client);
+    await waitFor(() => expect(screen.getByText("reply")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    const geometry = installScrollMetrics(scroller, 900, 200);
+    readerScroll(scroller, 40);
+    expect(latestPill(container)).not.toBeNull();
+
+    steered = true;
+    geometry.setHeight(1100);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => expect(screen.getByText("steer me")).not.toBeNull());
+    expect(scroller.scrollTop).toBe(900);
   });
 
-  it("does NOT anchor a historical trailing user message on session open", async () => {
+  it("a HISTORICAL trailing user row on session open does not force anything beyond the open jump", async () => {
     listMock.mockResolvedValue(
       page([msg({ id: 3, role: "user", kind: "text", content: "old send" })], null),
     );
-    setVex();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(freshClient()) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("old send")).not.toBeNull();
-    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("old send")).not.toBeNull());
+
     const scroller = getScroller(container);
-    // Initial-load rows are settled history → the spacer stays collapsed
-    // (no dead scroll region when browsing an old session).
-    const spacer = scroller.querySelector("div[aria-hidden]:last-child");
-    expect(spacer).not.toBeNull();
-    expect((spacer as HTMLElement).style.height).not.toBe("104px");
+    installScrollMetrics(scroller, 900, 200);
+    // The reader browses upward; a settled row is history, never "own words",
+    // so nothing pulls the viewport back.
+    readerScroll(scroller, 100);
+    expect(scroller.scrollTop).toBe(100);
+    expect(latestPill(container)).not.toBeNull();
   });
 
-  /**
-   * THE MID-TURN JUMP (owner report 2026-07-30: "model odpowiedział →
-   * wywołał tool i przesunęło mnie w górę konwersacji").
-   *
-   * VERIFIED MECHANISM. A turn that calls a tool persists an ASSISTANT row
-   * mid-turn. `useStreamPreviewSync` fired its clear-on-assistant-append for
-   * that row, so `preview` went null WHILE THE TURN WAS STILL RUNNING. Null
-   * preview drives the spacer-retirement effect, which zeroes the anchor
-   * run-out; the run-out is what guarantees the scroll range under an
-   * anchored user message, so scrollHeight collapses under the viewport and
-   * the browser clamps scrollTop — the reader is thrown up the conversation.
-   *
-   * The spacer is the lever, so it is what these tests assert on: the anchor
-   * run-out is TURN-scoped, not round-scoped, and survives every mid-turn row.
-   */
-  it("keeps the anchor run-out open when a mid-turn tool row lands (no scroll jump)", async () => {
-    let round = 0;
-    listMock.mockImplementation(() => {
-      const items = [
-        msg({ id: 3, role: "user", kind: "text", content: "newest" }),
-        // Round 1: the user's send lands LIVE and anchors at the viewport top,
-        // opening the run-out beneath it.
-        ...(round > 0
-          ? [msg({ id: 4, role: "user", kind: "text", content: "just sent" })]
-          : []),
-        // Round 2: the assistant's tool_call row is persisted MID-TURN.
-        ...(round > 1
-          ? [msg({ id: 5, role: "assistant", kind: "text", content: "calling out" })]
-          : []),
-      ];
-      return Promise.resolve(page(items, null));
-    });
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
-    const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-
-    // The send: the turn opens and the user row lands live.
-    const settleTurn = startChatTurn(client);
-    round = 1;
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("just sent")).not.toBeNull();
-    });
-
-    // The reply streams; the run-out is open beneath the anchored send.
-    act(() => {
-      useStreamStore.setState({
-        bySessionId: { [SESSION]: livePreview({ text: "working on it" }) },
-      });
-    });
-    expect(anchorSpacer(container).style.height).toBe("104px");
-
-    // THE MOMENT OF THE BUG: the tool_call row persists and the live-sync
-    // hook retires the preview — but the TURN is still in flight.
-    round = 2;
-    await act(async () => {
-      useStreamStore.setState({ bySessionId: {} });
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("calling out")).not.toBeNull();
-    });
-
-    // The run-out is still open — the geometry never collapsed, so nothing
-    // clamped the reader's position.
-    expect(anchorSpacer(container).style.height).toBe("104px");
-
-    // ...and it retires only when the TURN itself settles.
-    await act(async () => {
-      settleTurn();
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(anchorSpacer(container).style.height).toBe("0px");
-    });
-  });
-
-  /**
-   * THE GHOST MOMENT (owner report 2026-07-30: "moment wysłania wiadomości
-   * (jest ghost effect), nic nie ma na ekranie i user myśli że nic nie
-   * działa"). The island used to mount on the FIRST provider delta, which is
-   * a whole network round-trip after the send. It must mount on the SUBMIT.
-   */
-  it("shows the working island the INSTANT a turn is submitted, before any delta", async () => {
+  it("shrink-clamp delivery: a non-reader event landing on the floor preserves ownership", async () => {
     listMock.mockResolvedValue(
       page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
     );
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    const geometry = installScrollMetrics(scroller, 1000, 300);
+    fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(700);
+
+    // The flow shrinks (a turn settles and retires its preview). The engine
+    // clamps scrollTop to the new floor and delivers a scroll event that the
+    // model did NOT write. Reading that as a reader gesture would silently
+    // disarm follow; instead it re-pins.
+    geometry.setHeight(600);
+    fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(300);
+    expect(latestPill(container)).toBeNull();
+
+    // Still following: the next tip move lands at the new floor.
+    geometry.setHeight(1200);
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: { [SESSION]: livePreview({ text: "more" }) },
+      });
     });
-    // No turn, no island.
+    expect(scroller.scrollTop).toBe(900);
+  });
+
+  it("one ResizeObserver owns pinned growth and ignores growth while the reader is away", async () => {
+    const observer = installResizeObserver();
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    const geometry = installScrollMetrics(scroller, 1000, 300);
+    fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(700);
+
+    // A disclosure opens / the draft grows: the column resizes with no new
+    // rows and no new deltas, so ONLY the observer can notice.
+    geometry.setHeight(1200);
+    act(() => {
+      observer.notify();
+    });
+    expect(scroller.scrollTop).toBe(900);
+
+    // The reader takes ownership; later growth must not move them.
+    readerScroll(scroller, 200);
+    geometry.setHeight(1400);
+    act(() => {
+      observer.notify();
+    });
+    expect(scroller.scrollTop).toBe(200);
+  });
+
+  it("prepend anchor: an older page restores the reader's LATEST in-flight position", async () => {
+    // The older page is held OPEN on purpose: the claim under test is that the
+    // reader's moves WHILE the request is in flight, not their position when
+    // they armed it, are what the arriving page preserves. Resolving the mock
+    // immediately would test the arm-time position instead.
+    let releaseOlder: () => void = () => undefined;
+    let older = false;
+    listMock.mockImplementation((input: { readonly cursor: unknown }) => {
+      if (input.cursor !== null) {
+        older = true;
+        return new Promise((resolve) => {
+          releaseOlder = () =>
+            resolve(
+              page(
+                [msg({ id: 1, role: "user", kind: "text", content: "older" })],
+                null,
+              ),
+            );
+        });
+      }
+      return Promise.resolve(
+        page(
+          [
+            msg({ id: 3, role: "user", kind: "text", content: "first visible" }),
+            msg({ id: 4, role: "assistant", kind: "text", content: "next visible" }),
+          ],
+          3,
+        ),
+      );
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("first visible")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    const geometry = installScrollMetrics(scroller, 800, 200);
+    scroller.getBoundingClientRect = () => ({ top: 0, bottom: 200 }) as DOMRect;
+    const anchored = container.querySelector(
+      '[data-vex-anchor-key][data-vex-entry-id="3"]',
+    ) as HTMLElement;
+    let anchoredTop = 100;
+    anchored.getBoundingClientRect = () =>
+      ({ top: anchoredTop, bottom: anchoredTop + 40 }) as DOMRect;
+
+    // Reaching the head arms the fetch AND the anchor at the reader's position.
+    readerScroll(scroller, 50);
+    await waitFor(() => expect(older).toBe(true));
+
+    // The reader keeps moving WHILE the request is in flight. That, not the
+    // position at arm time, is the intent the arriving page must preserve.
+    anchoredTop = -200;
+    readerScroll(scroller, 90);
+    geometry.setHeight(1300);
+    anchoredTop = 300;
+    await act(async () => {
+      releaseOlder();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("older")).not.toBeNull());
+    // latest 90 + the anchored row's 500px prepend shift.
+    expect(scroller.scrollTop).toBe(590);
+  });
+
+  it("prepend anchor: returning to the floor cancels an in-flight anchor", async () => {
+    let olderRequested = false;
+    listMock.mockImplementation((input: { readonly cursor: unknown }) => {
+      if (input.cursor !== null) {
+        olderRequested = true;
+        return Promise.resolve(failure);
+      }
+      return Promise.resolve(
+        page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], 3),
+      );
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    installScrollMetrics(scroller, 800, 200);
+    readerScroll(scroller, 10);
+    await waitFor(() => expect(olderRequested).toBe(true));
+    await waitFor(() =>
+      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull(),
+    );
+
+    // Back at the floor: the anchor is cleared, follow is re-armed, and the
+    // failed page can never wedge a later one.
+    readerScroll(scroller, 600);
+    expect(latestPill(container)).toBeNull();
+    expect(scroller.scrollTop).toBe(600);
+  });
+
+  it("pinned-vs-saved on remount: pinned keeps following, an unpinned position restores its anchor ROW", async () => {
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    const client = freshClient();
+    const first = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(first.container);
+    installScrollMetrics(scroller, 2000, 500);
+    scroller.getBoundingClientRect = () => ({ top: 0, bottom: 500 }) as DOMRect;
+    const row = first.container.querySelector(
+      "[data-vex-anchor-key]",
+    ) as HTMLElement;
+    row.getBoundingClientRect = () => ({ top: 80, bottom: 120 }) as DOMRect;
+
+    // Pinned first: a remount from this state must keep following.
+    fireEvent.scroll(scroller);
+    first.unmount();
+    const pinnedAgain = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+    const pinnedScroller = getScroller(pinnedAgain.container);
+    installScrollMetrics(pinnedScroller, 2000, 500);
+    fireEvent.scroll(pinnedScroller);
+    expect(pinnedScroller.scrollTop).toBe(1500);
+    pinnedAgain.unmount();
+
+    // Now an UNPINNED position, saved continuously by the scroll handler.
+    const away = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+    const awayScroller = getScroller(away.container);
+    installScrollMetrics(awayScroller, 2000, 500);
+    awayScroller.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 500 }) as DOMRect;
+    const awayRow = away.container.querySelector(
+      "[data-vex-anchor-key]",
+    ) as HTMLElement;
+    awayRow.getBoundingClientRect = () => ({ top: 80, bottom: 120 }) as DOMRect;
+    readerScroll(awayScroller, 100);
+    away.unmount();
+
+    // The row reflows to a different offset (a width change between mounts).
+    // The restore must land on the ROW, not on the old pixel.
+    const restored = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+    const restoredScroller = getScroller(restored.container);
+    installScrollMetrics(restoredScroller, 2000, 500);
+    restoredScroller.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 500 }) as DOMRect;
+    const restoredRow = restored.container.querySelector(
+      "[data-vex-anchor-key]",
+    ) as HTMLElement;
+    restoredRow.getBoundingClientRect = () =>
+      ({ top: 560, bottom: 600 }) as DOMRect;
+    fireEvent.scroll(restoredScroller);
+    expect(restoredScroller.scrollTop).not.toBe(1500);
+  });
+
+  it("shows the working island the INSTANT a turn is submitted, before any delta", async () => {
+    // THE GHOST MOMENT (owner report 2026-07-30). The island used to mount on
+    // the first provider delta, a whole round-trip after the send. It must
+    // mount on the SUBMIT, and the follow model must not depend on it.
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    const client = freshClient();
+    const { container } = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
     expect(container.querySelector("[data-vex-island-state]")).toBeNull();
 
     const settleTurn = startChatTurn(client);
     await waitFor(() => {
       const island = container.querySelector("[data-vex-island-state]");
       expect(island).not.toBeNull();
-      // Nothing is classified yet — the honest state is "working".
       expect(island?.getAttribute("data-vex-island-state")).toBe("working");
     });
 
-    // The first real delta takes over the same surface, not a second one.
+    // The first real delta takes over the SAME surface, not a second one.
     act(() => {
       useStreamStore.setState({
-        bySessionId: { [SESSION]: livePreview({ reasoningText: "hm", status: "thinking" }) },
+        bySessionId: {
+          [SESSION]: livePreview({ reasoningText: "hm", status: "thinking" }),
+        },
       });
     });
     await waitFor(() => {
-      expect(
-        container.querySelectorAll("[data-vex-island-state]"),
-      ).toHaveLength(1);
+      expect(container.querySelectorAll("[data-vex-island-state]")).toHaveLength(
+        1,
+      );
       expect(
         container
           .querySelector("[data-vex-island-state]")
           ?.getAttribute("data-vex-island-state"),
       ).toBe("thinking");
     });
+
+    await act(async () => {
+      settleTurn();
+      await Promise.resolve();
+    });
+  });
+
+  it("keeps the turn surface alive across a mid-turn tool row (no preview flicker, no jump)", async () => {
+    // THE MID-TURN JUMP (owner report 2026-07-30). A tool call persists an
+    // assistant row mid-turn and the round-scoped preview goes null. Under the
+    // old model that retired the anchor run-out and clamped the reader up the
+    // conversation. The run-out is gone, so what this now guards is the other
+    // half of the same fix: the TURN-scoped preview survives the mid-turn row,
+    // and an unpinned reader is not moved by it.
+    let round = 0;
+    listMock.mockImplementation(() => {
+      const items = [
+        msg({ id: 3, role: "user", kind: "text", content: "newest" }),
+        ...(round > 0
+          ? [msg({ id: 4, role: "user", kind: "text", content: "just sent" })]
+          : []),
+        ...(round > 1
+          ? [msg({ id: 5, role: "assistant", kind: "text", content: "calling out" })]
+          : []),
+      ];
+      return Promise.resolve(page(items, null));
+    });
+    const client = freshClient();
+    const { container } = await mount(client);
+    await waitFor(() => expect(screen.getByText("newest")).not.toBeNull());
+
+    const scroller = getScroller(container);
+    installScrollMetrics(scroller, 500, 200);
+    const settleTurn = startChatTurn(client);
+    round = 1;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => expect(screen.getByText("just sent")).not.toBeNull());
+    // Own words: force-scrolled to the floor.
+    expect(scroller.scrollTop).toBe(300);
+
+    // The reader scrolls up to re-read while the turn runs.
+    readerScroll(scroller, 40);
+
+    // THE MOMENT OF THE BUG: the tool_call row persists and the live-sync hook
+    // retires the ROUND preview - but the TURN is still in flight.
+    round = 2;
+    await act(async () => {
+      useStreamStore.setState({ bySessionId: {} });
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => expect(screen.getByText("calling out")).not.toBeNull());
+
+    // The turn surface is still up, and the reader was not moved.
+    expect(container.querySelector("[data-vex-island-state]")).not.toBeNull();
+    expect(scroller.scrollTop).toBe(40);
 
     await act(async () => {
       settleTurn();

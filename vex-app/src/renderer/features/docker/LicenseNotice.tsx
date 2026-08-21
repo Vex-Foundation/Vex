@@ -91,7 +91,7 @@ export function LicenseNotice({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-mask-1 px-6"
       onClick={onDismiss}
     >
       <div
@@ -128,7 +128,7 @@ export function LicenseNotice({
         <button
           type="button"
           onClick={openDocs}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
+          className="mb-5 inline-flex items-center gap-1 text-sm text-[var(--vex-accent-text,var(--color-accent-primary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
         >
           Docker Desktop license terms
           <IconArrowUpRight size={14} />
@@ -152,8 +152,8 @@ export function LicenseNotice({
             className={cn(
               // Gate paper-pill system (Phase 2b): --color-primary is paper
               // inside [data-vex-gate], so the label must be the deep-cobalt
-              // primary-foreground — the old accent-fill + text-white pair
-              // would render white-on-paper now that the onboarding accent
+              // primary-foreground: the retired accent-fill + paper-ink pair
+              // would render paper-on-paper now that the onboarding accent
               // re-projects to paper.
               "inline-flex h-9 items-center justify-center rounded-full bg-[var(--color-primary)] px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-primary-foreground)]",
               "hover:bg-[color-mix(in_oklab,var(--color-primary)_88%,transparent)]",

@@ -101,14 +101,23 @@ function WizardChrome(): JSX.Element {
       <div aria-hidden className="vex-gate-vignette absolute inset-0" />
       <div aria-hidden className="vex-noise pointer-events-none absolute inset-0" />
 
-      {/* The mark alone — owner decree 2026-07-22: no "VEX" text beside it. */}
+      {/* The mark alone - owner decree 2026-07-22: no "VEX" text beside it.
+       * Theme-swapped pair: white on the chronos ink plate, brand blue on
+       * the celeris light plate. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10">
         <img
           src="/brand/vex-mark-white.svg"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-6 w-auto select-none"
+          className="h-6 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
+        />
+        <img
+          src="/brand/vex-mark-color.svg"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="hidden h-6 w-auto select-none [[data-vex-theme=celeris]_&]:block"
         />
       </div>
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
