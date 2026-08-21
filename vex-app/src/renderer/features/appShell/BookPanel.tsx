@@ -44,8 +44,7 @@ import {
 } from "react";
 import { motion } from "motion/react";
 import {
-  IconPanelRightClose,
-  IconPanelRightOpen,
+  IconPanelRight,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { PositionBlock } from "./book/PositionBlock.js";
@@ -139,7 +138,9 @@ export function BookPanel({
   const inspecting =
     inspect !== null && inspect.sessionId === activeSessionId;
 
-  const PanelGlyph = bookOpen ? IconPanelRightClose : IconPanelRightOpen;
+  // One static glyph for both states, like the left rail toggle - the
+  // open/close semantic lives in the aria-label.
+  const PanelGlyph = IconPanelRight;
 
   // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
   if (activeSessionId === null) {
