@@ -9,6 +9,7 @@ import { POOLS_UNSUPPORTED_PARAMS } from "./tokens-params.js";
 export const POOLS_SEARCH_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.search",
+    publicName: "pools__tokens_search",
     namespace: "pools",
     lifecycle: "active",
     description:

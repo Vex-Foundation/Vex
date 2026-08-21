@@ -27,6 +27,7 @@ import { MORPHO_VAULT_ROUTES } from "../read-params/vaults.js";
  */
 export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vaults.discover",
+  publicName: "morpho__vaults_discover",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -90,10 +91,11 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "curated USDC vault earned the same gross 4.13% because they allocate into the same markets and differed only "
     + "by fee - 0%, 5%, 10% and 25% giving 4.13%, 3.92%, 3.71% and 3.08% net - while supplying cbBTC/USDC directly "
     + "earned that same 4.13% with no fee and no diversification at all. "
-    + "EVERY OPTION NAMES THE TOOL IT IS ACTED ON WITH. `routing.quote` and `routing.execute` carry a toolId, the "
-    + "params this call already knows, the params still to decide, and an `available` flag - a curated option routes "
-    + "to morpho.vault.quote then morpho.vault.deposit, a direct option to morpho.market.quote then "
-    + "morpho.market.supply. Read-only - it signs nothing and spends nothing.",
+    + "EVERY OPTION NAMES THE TOOL IT IS ACTED ON WITH. `routing.quote` and `routing.execute` carry a `publicName` - "
+    + "the callable name, and the one to emit - the params this call already knows, the params still to decide, and "
+    + "an `available` flag; a curated option routes to `morpho__vault_quote` then `morpho__vault_deposit`, a direct "
+    + "option to `morpho__market_quote` then `morpho__market_supply`. Read-only - it signs nothing and spends "
+    + "nothing.",
   mutating: false,
   actionKind: "read",
   params: [

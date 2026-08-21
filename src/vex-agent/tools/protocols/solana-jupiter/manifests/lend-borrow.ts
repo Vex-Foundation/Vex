@@ -12,6 +12,7 @@ import { SOLANA_LEND_BORROW_DISCOVERY } from "../../embeddings/solana-jupiter/le
 export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "solana.lend.borrowVaults",
+    publicName: "solana__lend_borrow_vaults_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get Jupiter Lend Borrow vault configs — max LTV and liquidation threshold as exact percent strings (with raw provider-scale siblings), available liquidity to borrow/withdraw, minimum borrow size, and BOTH legs' token identity (address, symbol, decimals, provider price) per vault. Every *Raw amount here, and all six solana.lend.borrowOperate amount params, are raw atomic units: use supplyTokenDecimals for the collateral leg and borrowTokenDecimals for the debt leg to read or build them (e.g. a raw \"1047061\" at 6 decimals is 1.047061, at 9 decimals it is 0.001047061). minimumBorrowingRaw is documented in that same debt-token scale, but live vaults with different debt-token decimals disagree by orders of magnitude under that reading — treat it as an unverified provider figure, never as a USD amount. The *PriceUsd fields are Jupiter's own point-in-time quotes, not Vex valuations — treat them as estimates. Read this BEFORE solana.lend.borrowOperate to find a vaultId, its decimals, and its risk thresholds. Covers collateralized Borrow, not solana.lend.rates' simple Earn yields.",
@@ -27,6 +28,7 @@ export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.lend.borrowPositions",
+    publicName: "solana__lend_borrow_positions_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a wallet's open Jupiter Lend Borrow positions — collateral supplied, debt owed, and residual dust debt (raw atomic units), per position. These amounts carry no decimals of their own: cross-reference solana.lend.borrowVaults by vaultId for each leg's symbol, decimals, and risk thresholds before interpreting or acting on them. Use a position's id as solana.lend.borrowOperate's positionId to adjust or close it. Covers collateralized Borrow, not solana.lend.positions' simple Earn positions.",
@@ -43,6 +45,7 @@ export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.lend.borrowOperate",
+    publicName: "solana__lend_borrow_operate",
     namespace: "solana",
     lifecycle: "active",
     description: "Open, adjust, or close a Jupiter Lend Borrow position in ONE call: deposit/withdraw collateral and/or borrow/repay debt, via the six params below (at least one required). You are responsible for the health of this position: read solana.lend.borrowVaults for maxLtvPercent and liquidationThresholdPercent, and solana.lend.borrowPositions for current collateral and debt, and compute the post-operation LTV yourself BEFORE calling this — no preview is shown in an autonomous session. If either risk number is absent or the position reports isLiquidated, treat that as UNKNOWN risk, never as healthy: reduce debt or add collateral rather than increasing exposure. At most one collateral param (depositAmountRaw|withdrawAmountRaw|withdrawAll) and one debt param (borrowAmountRaw|repayAmountRaw|repayAll), and the two must move in OPPOSITE directions: deposit+borrow and withdraw+repay are accepted; deposit+repay and withdraw+borrow are REJECTED before signing, because the ledger records at most one incoming and one outgoing leg per call — run those as two calls. Reads first: solana.lend.borrowVaults for vaultId + thresholds, solana.lend.borrowPositions for an existing positionId. Jupiter's /operate endpoint never wraps or unwraps native SOL — depositing or repaying a leg denominated in native SOL requires WRAPPED SOL (WSOL) already sitting in your wallet; this call fails clearly beforehand if that balance is insufficient, rather than broadcasting. This tool broadcasts and returns truthful-pending — it is tracked automatically, do not resubmit.",

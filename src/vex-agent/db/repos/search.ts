@@ -1,7 +1,7 @@
 /**
  * Search/fetch cache repo — Tavily results cached in Postgres.
  *
- * THE KEY IS THE REQUEST, NOT THE QUERY (W2B). While `web_research` hardcoded
+ * THE KEY IS THE REQUEST, NOT THE QUERY (W2B). While `WebResearch` hardcoded
  * one search shape, hashing the bare query was sufficient. Now that `topic`,
  * `maxResults`, `searchDepth`, `chunksPerSource` and `timeRange` are all
  * agent-settable — and `topic: "news"` is the ONLY way to get publication dates

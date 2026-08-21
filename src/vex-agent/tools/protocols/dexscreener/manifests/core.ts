@@ -25,6 +25,7 @@ import { DEXSCREENER_CHAIN_PARAM } from "../chain-param.js";
 export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "dexscreener.search",
+    publicName: "dexscreener__pairs_search",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -74,6 +75,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.pairs",
+    publicName: "dexscreener__pairs_get",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -109,6 +111,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.tokens",
+    publicName: "dexscreener__tokens_get",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -157,6 +160,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.tokenPairs",
+    publicName: "dexscreener__token_pairs_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:

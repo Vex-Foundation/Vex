@@ -36,8 +36,8 @@ export type AgentActivityKind =
    */
   | "claim"
   /**
-   * An agent WALLET SEND (migration 084) - `wallet_send_prepare` /
-   * `wallet_send_confirm`. Its own kind rather than a `swap` role: a send has no
+   * An agent WALLET SEND (migration 084) - `WalletSendPrepare` /
+   * `WalletSendConfirm`. Its own kind rather than a `swap` role: a send has no
    * route, no price, no slippage and no counterparty, only the one leg that left
    * the wallet, so the `swap` arm's assertions would all describe a trade that
    * never happened. The name matches the on-wire ERC-20 `Transfer` semantics and

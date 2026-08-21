@@ -47,23 +47,33 @@ describe("prompt-stack — protocols prompt", () => {
       }
     });
 
-    it("gives each namespace its prefix, an action count, and example toolIds (scent, not a menu)", () => {
+    it("gives each namespace its prefix, an action count, and example publicNames (scent, not a menu)", () => {
       const prompt = buildProtocolsPrompt();
 
       expect(prompt).toContain("`dexscreener.*`");
       expect(prompt).toMatch(/· \d+ actions/);
-      expect(prompt).toContain("Examples: dexscreener.");
+      // The examples are MODEL-VISIBLE publicNames, never dotted toolIds: the
+      // catalog rejects a dotted id as a call, so a `dexscreener.` example
+      // would teach a name the model cannot call.
+      expect(prompt).toContain("Examples: dexscreener__");
+      expect(prompt).not.toMatch(/Examples: [a-z]+\./);
       // The full per-action documentation lives behind discovery, not here.
       expect(prompt).not.toContain("Paths:");
       expect(prompt).not.toContain("Requires env:");
     });
 
-    it("never advertises a non-advertised namespace (reveal safety)", () => {
+    // The RULE is unchanged: a namespace that is not advertised must not appear
+    // in the protocols prompt. What changed (owner decision D4) is the
+    // membership — `uniswap` moved into the advertised set, so the non-advertised
+    // set may now be EMPTY. The old `expect(hidden.length).toBeGreaterThan(0)`
+    // asserted the existence of a hidden namespace, which was a property of that
+    // one venue rather than of this rule, so it is gone; the rule itself still
+    // runs over whatever the set contains.
+    it("never advertises a non-advertised namespace", () => {
       const prompt = buildProtocolsPrompt().toLowerCase();
       const hidden = PROTOCOL_NAMESPACE_ALLOWLIST.filter(
         (ns) => !(PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(ns),
       );
-      expect(hidden.length).toBeGreaterThan(0);
       for (const ns of hidden) {
         expect(prompt, `non-advertised namespace "${ns}" leaked into the protocols prompt`)
           .not.toContain(ns.toLowerCase());
@@ -200,7 +210,7 @@ describe("prompt-stack — protocols prompt", () => {
       expect(present).not.toBe(absent);
       const presentSolana = present.split("### solana")[1]?.split("###")[0] ?? "";
       expect(presentSolana).not.toContain("· 0 actions");
-      expect(presentSolana).toContain("Examples: solana.");
+      expect(presentSolana).toContain("Examples: solana__");
 
       delete process.env.JUPITER_API_KEY;
       const absentAgain = buildProtocolsPrompt();

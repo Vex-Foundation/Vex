@@ -197,7 +197,7 @@ function stalledVerificationClause(row: TransactionRow): string | null {
 
 /**
  * WHAT THE CHAIN OBSERVATION ESTABLISHED — the clause that answers "why is this
- * not moving?" before the agent spends a `loop_defer` cycle guessing.
+ * not moving?" before the agent spends a `LoopDefer` cycle guessing.
  *
  * It runs BEFORE the stall clause because these are CONCLUSIVE observations: we
  * looked and learned something definite. A stall is the opposite — "we could not

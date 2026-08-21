@@ -15,6 +15,7 @@ import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
  */
 export const MORPHO_MARKET_GET_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.get",
+  publicName: "morpho__market_get",
   namespace: "morpho",
   lifecycle: "active",
   description:

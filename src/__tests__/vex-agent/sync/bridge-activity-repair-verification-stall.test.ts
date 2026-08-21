@@ -90,7 +90,6 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     appendRefundEvidence: vi.fn().mockResolvedValue(observed),
     attachOrderId: vi.fn(),
     enqueueBalanceRefresh: vi.fn().mockResolvedValue(undefined),
-    clearRelayReveal: vi.fn(),
     ...overrides,
   };
 }

@@ -88,7 +88,7 @@ export async function getActivePlan(
 // ── Writes ──────────────────────────────────────────────────────
 
 /**
- * Idempotent upsert of the plan body (called by `plan_write`). Resets
+ * Idempotent upsert of the plan body (called by `PlanWrite`). Resets
  * `accepted_at` to NULL only when the content actually changed (re-accept on
  * edit); a same-content write preserves acceptance.
  *
@@ -97,7 +97,7 @@ export async function getActivePlan(
  * this write (a race), the WHERE misses → no update → returns null, so the
  * handler fails WITHOUT parking the run with a disabled, unaccepted plan. A
  * fresh INSERT (no row yet) marks `enabled = true` (plan-mode is on whenever
- * plan_write runs).
+ * PlanWrite runs).
  */
 export async function upsertPlan(
   sessionId: string,
@@ -129,8 +129,8 @@ export async function upsertPlan(
  * still succeeds (INSERT a disabled row) rather than returning an ambiguous
  * null.
  *
- * This + the `enabled = true` guard on `upsertPlan` make plan_write/disable
- * race-safe in BOTH orderings: disable-first makes the racing `plan_write`
+ * This + the `enabled = true` guard on `upsertPlan` make PlanWrite/disable
+ * race-safe in BOTH orderings: disable-first makes the racing `PlanWrite`
  * return null (no park); write-first makes this disable refuse.
  */
 export async function disableForActiveRun(
@@ -186,7 +186,7 @@ export async function setEnabled(
 /**
  * Mark the current plan as user-accepted — ONLY when the stored `plan_md` still
  * matches `expectedPlanMd` (the content the user actually reviewed). A
- * concurrent `plan_write` that changed the content makes the WHERE miss, so this
+ * concurrent `PlanWrite` that changed the content makes the WHERE miss, so this
  * returns null (caller treats as stale) and the unreviewed version is NOT
  * accepted. Returns null if no plan row exists.
  */

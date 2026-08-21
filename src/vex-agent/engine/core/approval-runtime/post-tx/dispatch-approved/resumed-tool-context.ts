@@ -2,7 +2,7 @@
  * The `InternalToolContext` an APPROVED tool is resumed under.
  *
  * Its own module because the wallet scope here is a security decision, not
- * plumbing: a resumed `wallet_send_confirm` must sign with the SESSION's
+ * plumbing: a resumed `WalletSendConfirm` must sign with the SESSION's
  * selected wallet under the mission policy, never the primary. This is the
  * cold approval-resume path, so nothing is inherited from a live turn — the
  * session is re-hydrated and, if that fails, the policy fails CLOSED

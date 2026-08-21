@@ -17,6 +17,7 @@ import { MORPHO_MAX_PAGE_LIMIT, MORPHO_POSITION_SCOPES } from "@tools/morpho/req
  */
 export const MORPHO_POSITIONS_GET_TOOL: ProtocolToolManifest = {
   toolId: "morpho.positions.get",
+  publicName: "morpho__positions_get",
   namespace: "morpho",
   lifecycle: "active",
   description:

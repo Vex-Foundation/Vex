@@ -38,7 +38,7 @@ import {
 } from "@vex-agent/db/repos/agent-activity.js";
 import { type KhalaniFailureSignal } from "../failure-mapping.js";
 import { projectQuoteRoute } from "../projectors.js";
-import { revealOnEligibleKhalaniFailure } from "./reveal.js";
+import { venueFallbackNoteOnKhalaniFailure } from "./fallback.js";
 import { estimateUsd, humanizeAmount, KHALANI_TOKEN_PRICE_USD_SOURCE } from "./bridge-usd.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolExecutionContext } from "../../types.js";
@@ -115,12 +115,12 @@ export async function executeKhalaniBridge(
   }
   if (prequote.outcome === "no_route") {
     // A nonlocal endpoint is not in Khalani's live registry — we cannot build a
-    // coherent route record for an absent chain, so surface the Relay reveal +
+    // coherent route record for an absent chain, so surface the Relay fallback note +
     // fail WITHOUT a bridge row (the coherent-endpoints no-route records below).
-    const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, sessionId, params);
+    const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "empty_routes" }, sessionId, params);
     return {
       success: false,
-      output: `${toolId} failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${revealSuffix}`,
+      output: `${toolId} failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${fallbackNote}`,
     };
   }
 
@@ -163,7 +163,7 @@ export async function executeKhalaniBridge(
   const failPreSign = async (
     failureCode: AgentActivityFailureCode,
     reason: string,
-    revealSignal?: KhalaniFailureSignal,
+    fallbackSignal?: KhalaniFailureSignal,
   ): Promise<ToolResult> => {
     const { executionId } = await createBridgePreBroadcastFailure({
       toolId, namespace: NAMESPACE, protocol: PROTOCOL, intentParams: params,
@@ -171,8 +171,8 @@ export async function executeKhalaniBridge(
       tokenIn: { tokenAddress: fromToken }, tokenOut: { tokenAddress: toToken },
       failureCode, failureReason: reason,
     });
-    const revealSuffix = revealSignal ? revealOnEligibleKhalaniFailure(revealSignal, sessionId, params) : "";
-    return { success: false, output: `${toolId} failed: ${reason}.${revealSuffix}`, data: { _executionId: executionId } };
+    const fallbackNote = fallbackSignal ? venueFallbackNoteOnKhalaniFailure(fallbackSignal, sessionId, params) : "";
+    return { success: false, output: `${toolId} failed: ${reason}.${fallbackNote}`, data: { _executionId: executionId } };
   };
 
   // 3–5. Fee split, quote, route selection, freshness.

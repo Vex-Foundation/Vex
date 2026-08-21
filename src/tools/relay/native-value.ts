@@ -167,9 +167,9 @@ export function relayNativeValueGuidance(role: RelayStepRole): string {
   return (
     `Vex refused the ${relayStepLabel(role)} because Relay attached native currency it could not `
     + "attribute to a proven cost — this is a Vex policy refusal, NOT a network, provider or transport "
-    + "failure, so re-sending the SAME quote will be refused again. Get a fresh relay.quote.get for this "
-    + "route and retry: Relay's solver routing changes between quotes, and a route that attaches no "
-    + "unexplained native charge is accepted. If the same charge comes back, bridge this route with "
-    + "khalani.bridge instead."
+    + "failure, so re-sending the SAME quote will be refused again. Get a fresh relay__bridge_quote_get "
+    + "for this route and retry: Relay's solver routing changes between quotes, and a route that attaches "
+    + "no unexplained native charge is accepted. If the same charge comes back, bridge this route with "
+    + "khalani__bridge_execute instead."
   );
 }

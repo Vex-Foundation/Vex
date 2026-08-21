@@ -1,5 +1,5 @@
 /**
- * Pendle alias non-routing (spec D) — the generic `swap` / `bridge` aliases are
+ * Pendle alias non-routing (spec D) — the generic `swap` / `BridgeExecute` aliases are
  * venue-specific and NEVER resolve to a pendle.* tool. Pendle PT trades are
  * intent-specific and reachable only via execute_tool({ toolId: "pendle.pt.*" }).
  */
@@ -29,20 +29,20 @@ function aliasRouter(name: string) {
 }
 
 describe("pendle alias non-routing", () => {
-  it("registers NO pendle alias — only swap_execute(+uniswap) + bridge(+relay) exist", () => {
-    // `bridge_execute_relay` is the hidden, route-bound Relay reveal pair's
-    // mutating half (mirrors the `swap_execute_uniswap` reveal pattern) —
+  it("registers NO pendle alias — only SwapExecute(+uniswap) + bridge(+relay) exist", () => {
+    // `BridgeExecuteRelay` is the hidden, route-bound Relay reveal pair's
+    // mutating half (mirrors the `SwapExecuteUniswap` reveal pattern) —
     // still never a pendle route.
     expect(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS).sort()).toEqual([
-      "bridge",
-      "bridge_execute_relay",
-      "swap_execute",
-      "swap_execute_uniswap",
+      "BridgeExecute",
+      "BridgeExecuteRelay",
+      "SwapExecute",
+      "SwapExecuteUniswap",
     ]);
   });
 
   it("the generic swap alias resolves to a venue tool, never pendle", async () => {
-    const target = await aliasRouter("swap_execute")({
+    const target = await aliasRouter("SwapExecute")({
       chain: "ethereum",
       tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       tokenOut: "0x5a19fa369f2895dcd8d2cee62e4ceae58ef92bbb",
@@ -54,7 +54,7 @@ describe("pendle alias non-routing", () => {
 
   it("the generic bridge alias never resolves to pendle", async () => {
     try {
-      const target = await aliasRouter("bridge")({
+      const target = await aliasRouter("BridgeExecute")({
         fromChain: "ethereum",
         toChain: "base",
         fromToken: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",

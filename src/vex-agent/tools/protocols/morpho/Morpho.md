@@ -28,7 +28,7 @@ decisions were made, and what is deliberately absent so a later session does not
 | SDK transitive packages | `MarketParams` and `blueAbi` come from `@morpho-org/blue-sdk@6.5.0` and `blue-sdk-viem`; contract addresses were extracted from `@morpho-org/morpho-ts@2.9.0` into `src/tools/morpho/constants.ts` with provenance comments; `@morpho-org/midnight-sdk@1.3.0` is installed as a transitive package and deliberately UNUSED (Midnight is out of scope) | imported in `src/tools/morpho/mutations/`, declared only transitively - a version bump of the root SDK can move them |
 | Merkl API | Reward reads; Morpho deprecated its own URD, claims go through Merkl | `https://api.merkl.xyz` in `src/tools/merkl/constants.ts`; Distributor contract address pinned there too |
 | Official docs | Product and integration reference | `https://docs.morpho.org` (Blue, MetaMorpho vaults, Midnight), `https://docs.merkl.xyz` |
-| Per-tool parameters | The authoritative parameter list for every tool is its manifest; `describe_tools` renders exactly that | `protocols/morpho/manifests/`; a full rendered export from the 2026-08-18 audit sits in `agents_dm/morpho-audit/catalog.md` (local, gitignored) |
+| Per-tool parameters | The authoritative parameter list for every tool is its manifest; `ToolSearch` select mode makes exactly that callable | `protocols/morpho/manifests/`; a full rendered export from the 2026-08-18 audit sits in `agents_dm/morpho-audit/catalog.md` (local, gitignored) |
 | On-chain reads | Everything a signature depends on | viem clients in `src/tools/morpho/evm-client.ts`, RPC table shared with KyberSwap, fallback transports per chain |
 
 ## What the agent can do

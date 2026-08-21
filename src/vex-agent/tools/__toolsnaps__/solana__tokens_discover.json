@@ -1,0 +1,75 @@
+{
+  "definition": {
+    "function": {
+      "description": "Discover Solana tokens without already knowing a name — freshly launched/new (recent), trending, top-traded, top-organic, verified, tokenized stocks, or liquid staking. THE fastest fresh-token surface on Solana: category=recent measured live (2026-08-17) at 30 rows spanning ages 10-175 SECONDS since mint, every row carrying createdAt as proof of age — where DexScreener's feeds reached ~16 minutes at best. createdAt is provider-optional, so treat a null as unknown age, never as fresh. The response is an accounted window: returned/totalMatched/hasMore plus tokens (a bare recent call measured 27,970 B against the 16,384 B tool-output cap, so limit is applied Vex-side and never silently). Richer signal (organic score, verification, holder data, audit flags) than generic feeds. Use solana.tokens.search instead once you already have a specific symbol, name, or mint to look up.",
+      "name": "solana__tokens_discover",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "description": "Category: recent (freshly launched tokens, newest first — measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora).",
+            "enum": [
+              "toptrending",
+              "toptraded",
+              "toporganicscore",
+              "recent",
+              "lst",
+              "verified",
+              "stocks"
+            ],
+            "type": "string"
+          },
+          "interval": {
+            "description": "Time interval: 5m, 1h, 6h, 24h.",
+            "enum": [
+              "5m",
+              "1h",
+              "6h",
+              "24h"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting — nothing is silently dropped.",
+            "type": "number"
+          },
+          "minLiquidity": {
+            "description": "Only include tokens with liquidity (USD) >= this value. Rejected if negative.",
+            "type": "number"
+          },
+          "minOrganicScore": {
+            "description": "Only include tokens with organicScore >= this value (0-100). Rejected if out of range.",
+            "type": "number"
+          },
+          "statsInterval": {
+            "description": "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: same as interval, or 1h).",
+            "enum": [
+              "5m",
+              "1h",
+              "6h",
+              "24h",
+              "all"
+            ],
+            "type": "string"
+          },
+          "verifiedOnly": {
+            "description": "Only include Jupiter-verified tokens.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.tokens.trending"
+  }
+}

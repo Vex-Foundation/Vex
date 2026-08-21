@@ -159,7 +159,7 @@ export function buildPromptStack(
   staticLayers.push(buildPermissionPrompt({
     // Phase, not just sessionKind: mission SETUP and mission RUN carry
     // different execution policies (setup is draft-first with mutations locked;
-    // only the run gets the proactive loop + `loop_defer`).
+    // only the run gets the proactive loop + `LoopDefer`).
     phase: resolveExecutionPhase({
       sessionKind: context.sessionKind,
       missionRunId: context.missionRunId,
@@ -187,7 +187,7 @@ export function buildPromptStack(
   // 7. Memory & Learning — substrates + learning protocol (single home).
   staticLayers.push(buildMemoryPolicyPrompt());
 
-  // 8. Research — web_research shapes + Capability Orientation vs Operational
+  // 8. Research — WebResearch shapes + Capability Orientation vs Operational
   //    Research discipline.
   staticLayers.push(buildResearchPrompt());
 
@@ -214,7 +214,7 @@ export function buildPromptStack(
   }
 
   // Loaded Content sits at the END of the static prefix so a new
-  // `long_memory_get`-style load busts the cache only from this point.
+  // `MemoryGet`-style load busts the cache only from this point.
   const loadedContent = buildLoadedContentLayer(context);
   if (loadedContent.length > 0) {
     staticLayers.push(loadedContent);
@@ -230,7 +230,7 @@ export function buildPromptStack(
       missionDeadline: context.missionDeadline ?? null,
     }),
     // Lockstep with `ToolVisibility.requiresAutonomousLoop` — the sessions that
-    // can actually call `loop_defer`.
+    // can actually call `LoopDefer`.
     {
       wakeSchedulingAvailable: Boolean(context.missionRunId)
         || (context.sessionKind === "agent" && context.sessionPermission === "full"),
@@ -310,7 +310,7 @@ export function buildPromptStack(
 }
 
 /**
- * Content injected into the prompt by tools this turn (e.g. long_memory_get
+ * Content injected into the prompt by tools this turn (e.g. MemoryGet
  * under a "long_memory:{id}" key). Neutral header — not documents-only.
  * Rendered as the FINAL static-prefix layer (moved out of base.ts).
  */

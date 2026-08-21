@@ -35,7 +35,7 @@ import type { ToolResult } from "../../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
 import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
-import { revealOnEligibleKhalaniFailure } from "./reveal.js";
+import { venueFallbackNoteOnKhalaniFailure } from "./fallback.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
 import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { readStringOrArrayParam } from "../../runtime/list-params.js";
@@ -49,7 +49,7 @@ import { describeKhalaniOrderCorrelation } from "../order-correlation.js";
  * is deliberate and stays closed here: a Khalani read must never treat a
  * local-only chain as Khalani-supported.
  *
- * What DOES change is the answer the agent gets when it names one. `token_find
+ * What DOES change is the answer the agent gets when it names one. `TokenFind
  * chainIds:"robinhood"` used to die on the strict resolver's bare "Unsupported
  * chain: robinhood" — indistinguishable from a typo, and it sent the agent
  * looking for a better spelling of a chain no spelling can reach through this
@@ -68,9 +68,9 @@ function assertNotLocalOnlyChain(part: string, chains: KhalaniChain[]): void {
   throw new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
     `${name} (${localId}) is not in Khalani's registry — this tool cannot resolve tokens there.`,
-    `Use dexscreener.search (chain slug ${part.trim().toLowerCase()}) for a symbol → address lookup, `
-    + 'wallet_track_token action:"list" for the tracked/seed token set, or '
-    + `wallet_balances chainIds:"${part.trim().toLowerCase()}" for the tokens you actually hold.`,
+    `Use dexscreener__pairs_search (chain slug ${part.trim().toLowerCase()}) for a symbol → address lookup, `
+    + 'WalletTrackToken action:"list" for the tracked/seed token set, or '
+    + `WalletBalances chainIds:"${part.trim().toLowerCase()}" for the tokens you actually hold.`,
   );
 }
 
@@ -221,7 +221,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       };
     }
     // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
-    // top-up, like wallet_balances. Only the sync/projection path stays
+    // top-up, like WalletBalances. Only the sync/projection path stays
     // native-free (it full-replaces proj_balances).
     const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
     return {
@@ -277,8 +277,8 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // Pre-quote route guard (R9 — same wiring as the execute handler): a local
     // chain routes statically to Relay; a nonlocal endpoint absent from the
     // LIVE registry is a typed no-route that surfaces the route-bound Relay
-    // reveal (previously the raw resolver throw returned a bare message with
-    // no reveal — coordinator live-smoke finding, 2026-07-23).
+    // fallback note (previously the raw resolver throw returned a bare
+    // message with no alternative — live-smoke finding, 2026-07-23).
     let prequote: Awaited<ReturnType<typeof resolveKhalaniPrequoteRoute>>;
     try {
       prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
@@ -295,10 +295,10 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       };
     }
     if (prequote.outcome === "no_route") {
-      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
       return {
         success: false,
-        output: `khalani.quote.get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${revealSuffix}`,
+        output: `khalani.quote.get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${fallbackNote}`,
       };
     }
 
@@ -377,23 +377,23 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       amount: (chargeFee ? feeSplit.bridgedRaw : feeSplit.totalRaw).toString(),
     };
 
-    // Read-only quote: a Khalani no-route (empty routes[]) or a reveal-eligible
-    // exception is a FAILURE that surfaces the route-bound Relay reveal. No
+    // Read-only quote: a Khalani no-route (empty routes[]) or a fallback-eligible
+    // exception is a FAILURE that surfaces the Relay fallback note. No
     // activity row is written (a read miss records nothing — R15).
     let outcome: ReturnType<typeof classifyKhalaniQuoteResponse>;
     try {
       outcome = classifyKhalaniQuoteResponse(await getKhalaniClient().getQuotes(quoteRequest));
     } catch (err) {
       const externalName = err instanceof VexError ? err.externalName : undefined;
-      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
+      const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
       return {
         success: false,
-        output: `${renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err))}${revealSuffix}`,
+        output: `${renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err))}${fallbackNote}`,
       };
     }
     if (outcome.outcome === "no_route") {
-      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
-      return { success: false, output: `khalani.quote.get: Khalani has no route for this pair.${revealSuffix}` };
+      const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      return { success: false, output: `khalani.quote.get: Khalani has no route for this pair.${fallbackNote}` };
     }
 
     // Fee disclosure (fail-soft token facts — a lookup miss degrades the human

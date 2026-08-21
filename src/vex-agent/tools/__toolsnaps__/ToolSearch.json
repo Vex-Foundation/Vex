@@ -1,0 +1,44 @@
+{
+  "definition": {
+    "function": {
+      "description": "Search the protocol tool catalog and make the tools you pick callable. Three modes: (1) SEARCH - `query` is a short English intent phrase describing what you want to do, with assets, chains, or venue names (Khalani, KyberSwap, Jupiter, DexScreener) as hints. Returns the 5 best-ranked matches by default; raise `limit` up to 20 when the job needs a bigger working set. Optional `namespace` narrows the ranking to one protocol. (2) SELECT - `query: \"select:Name1,Name2\"` makes tools you already know the name of callable, 1 to 40 public names per call. Use it after a namespace listing, and to recover a tool whose schema the conversation compacted away. (3) NAMESPACE LISTING - `namespace` alone, with no `query`, returns EVERY tool of that protocol as one-line rows carrying its required parameter keys. A listing is a menu: it changes nothing until you select from it. SEARCH answers with names, one-line summaries and match evidence. SELECT answers with acknowledgement rows only - the name and whether it is now callable - because you already know what you asked for. Neither returns parameter schemas: each tool they return is added to your tool list as a real function carrying its full schema, callable FROM YOUR NEXT MESSAGE and not from this one. For a curated internal tool, read the Tool Map instead of searching. For a name that is already callable this session, call it directly rather than selecting it again.",
+      "name": "ToolSearch",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Search mode only. Ranked rows to return (default 5, max 20). Ask for as many as the job needs, up to the max; a value above it is rejected by name, not clamped.",
+            "type": "number"
+          },
+          "namespace": {
+            "description": "Protocol filter. Supported namespaces: Cross-chain: khalani, relay; EVM Trading: kyberswap, uniswap, morpho, pendle, trench, pools; Solana: solana; Market Research: dexscreener, virtuals. Reserved namespaces are not discoverable.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Either a short English intent phrase to rank the catalog against, or the reserved form `select:Name1,Name2` to make tools you already know callable. An exact tool name you have already seen is also accepted as a phrase and is returned first, as is an unambiguous prefix of one.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false
+  }
+}

@@ -9,16 +9,16 @@ import type { ProtocolParamDef } from "../protocols/types.js";
  * `khalani_tokens_top` and `khalani_tokens_balances` were removed: each was a
  * tool-on-tool shortcut that no observed live session called, while every one
  * of them cost schema tokens in every request. Their protocol tools are
- * unchanged and still reachable through `discover_tools` + `execute_tool`
+ * unchanged and still reachable through `ToolSearch` + `execute_tool`
  * (`khalani.chains.list`, `khalani.tokens.top`, `khalani.tokens.balances`).
  *
- * `token_find` stays because it is load-bearing: it sits on the hottest path in
+ * `TokenFind` stays because it is load-bearing: it sits on the hottest path in
  * the product (address + decimals resolution before every swap and bridge) and
- * is named by the swap chain-param docs, `chain_read`'s description, and the
+ * is named by the swap chain-param docs, `ChainRead`'s description, and the
  * safety doctrine prose.
  */
 export const KHALANI_INTERNAL_TO_PROTOCOL = {
-  token_find: "khalani.tokens.search",
+  TokenFind: "khalani.tokens.search",
 } as const;
 
 export type KhalaniInternalToolName = keyof typeof KHALANI_INTERNAL_TO_PROTOCOL;
@@ -51,7 +51,7 @@ export const KHALANI_INTERNAL_TOOLS: readonly ToolDef[] = Object.entries(KHALANI
  * Compile manifest params into a provider-facing JSON schema.
  *
  * The ONE ProtocolParamDef → JsonSchema compiler in the repo (protocol tools
- * otherwise reach the model through `discover_tools`, which serialises the
+ * otherwise reach the model through `ToolSearch`, which serialises the
  * ProtocolParamDef itself). Exported so the `acceptsStringArray` union can be
  * proven end-to-end — compiled here, then through
  * `normalizeToolSchemaForProvider` — rather than only where a Khalani alias
@@ -89,8 +89,8 @@ export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSch
 }
 
 function internalDescription(name: string, protocolDescription: string): string {
-  if (name === "token_find") {
-    return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge. It covers KHALANI-REGISTERED CHAINS ONLY, and that set is dynamic - list it with `khalani.chains.list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener.search` (symbol to address lookup on the chain slug), `wallet_track_token` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `wallet_balances` (the tokens the wallet actually holds).";
+  if (name === "TokenFind") {
+    return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge. It covers KHALANI-REGISTERED CHAINS ONLY, and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds).";
   }
   return `${protocolDescription} Direct shortcut to ${KHALANI_INTERNAL_TO_PROTOCOL[name as KhalaniInternalToolName]}.`;
 }

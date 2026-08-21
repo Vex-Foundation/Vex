@@ -12,9 +12,9 @@ export const PENDLE_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use `kyberswap` for ordinary spot swaps; Pendle is specifically for term yield.",
   exampleQueries: [
-    'discover_tools(query="pendle fixed yield", namespace="pendle")',
-    'discover_tools(query="buy YT variable yield", namespace="pendle")',
-    'discover_tools(query="claim pendle rewards", namespace="pendle")',
+    'ToolSearch(query="pendle fixed yield", namespace="pendle")',
+    'ToolSearch(query="buy YT variable yield", namespace="pendle")',
+    'ToolSearch(query="claim pendle rewards", namespace="pendle")',
   ],
   aliases: ["pendle", "fixed yield", "variable yield", "principal token", "yield token", "PT", "YT"],
   discoveryHints: [

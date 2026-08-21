@@ -17,7 +17,7 @@ import { vectorLiteral } from "../knowledge/types.js";
  * the embed call and this UPDATE, the WHERE clause excludes the row and the
  * function returns `false` — the embedding was computed against a body that
  * is no longer current, so writing it would leave a stale vector on a fresh
- * body. The losing caller logs `session_memory_resolve_item.embed_stale`; the
+ * body. The losing caller logs `SessionMemoryResolve.embed_stale`; the
  * winning caller's embedding lands. (codex PR2 round-3 P2 / PR3-final race fix.)
  */
 export async function updateEmbedding(

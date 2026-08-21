@@ -7,16 +7,16 @@
  *   erc721_mint   - extract minted NFT IDs from receipt logs
  *   erc20_balance - direct `balanceOf` for one token and one owner
  *
- * `erc20_balance` is the ONE-contract question `wallet_balances` cannot answer:
+ * `erc20_balance` is the ONE-contract question `WalletBalances` cannot answer:
  * that tool reports a scan-set projection, while this asks the token itself.
  * The live TOM incident (2026-08-10) turned on that difference - a confirmed
  * buy with a decodable Transfer log and a wallet balance of zero.
  *
- * Native balances are owned by `wallet_balances`; token symbol/name by
- * `token_find` (khalani.tokens.search).
+ * Native balances are owned by `WalletBalances`; token symbol/name by
+ * `TokenFind` (khalani.tokens.search).
  *
  * Chain resolution is INCLUSIVE (`resolveInclusiveEvmChain`, same seam
- * `wallet_balances` uses): Khalani-registry chains keep the dynamic Khalani
+ * `WalletBalances` uses): Khalani-registry chains keep the dynamic Khalani
  * client; chains only the local EVM registry knows (e.g. Robinhood Chain 4663)
  * read direct-RPC through `getLocalPublicClient`. This widens READ-ONLY
  * forensics only — quote/bridge paths must keep the STRICT Khalani resolver so
@@ -79,7 +79,7 @@ export async function handleChainRead(
     return {
       success: false,
       output:
-        'chain_read no longer takes "chainId" — the key said Id while the value was usually a slug. '
+        'ChainRead no longer takes "chainId" — the key said Id while the value was usually a slug. '
         + 'Resend it as "chain" (a chain slug or the STRING spelling of a chain id, e.g. "base" or "8453").',
     };
   }

@@ -25,33 +25,38 @@ describe("buildProtocolsPrompt", () => {
   // only authorizes a uniswap execute") is intentionally kept — it is a
   // conditional invariant for the rare revealed case, not an instruction to
   // go use the venue, so it does not violate the hidden-by-default posture.
-  it("never advertises the hidden uniswap namespace section or instructs a fallback to it", () => {
+  // INVERTED by owner decision D4: uniswap is an advertised namespace now, and
+  // the prompt states the PREFERENCE rather than hiding the alternative.
+  it("advertises the uniswap namespace and states the venue preference", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
-    expect(prompt).not.toContain("### uniswap");
-    expect(prompt).not.toMatch(/fall back to `?uniswap/i);
-    expect(prompt).not.toMatch(/switch to (the )?`?uniswap/i);
-    // Positive control: the reveal-consistent replacement wording landed.
-    expect(prompt).toContain("backup venue is now available");
+    expect(prompt).toContain("### uniswap");
+    expect(prompt).toContain("KyberSwap is the PRIMARY swap route");
+    // The preference must never be phrased as a lock.
+    expect(prompt).not.toContain("backup venue is now available");
+    expect(prompt).not.toMatch(/unlocks? it/i);
   });
 
   // The routing line describes the failure CLASS rather than enumerating
   // codes, because the enumeration went stale twice - most recently when a
   // geo-blocked user's 403 matched nothing it listed.
-  it("names the availability class and the conditions that are NOT triggers", () => {
+  it("names the availability class and the conditions that are NOT reasons to switch", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
-    expect(prompt).toContain("KyberSwap being unavailable to us at all");
+    expect(prompt).toContain("the venue being unavailable to us at all");
     expect(prompt).toContain("neither is a slippage, balance, allowance, or deadline failure");
   });
 
-  it("the routing line carries no em dash (owner decree 2026-08-05)", () => {
+  it("the venue-routing lines carry no em dash (owner decree 2026-08-05)", () => {
     resetProtocolsPromptCache();
-    const routingLine = buildProtocolsPrompt()
+    // Re-anchored: the single "backup venue" line the decree originally
+    // policed was replaced by three preference lines (owner decision D4), so
+    // the anchor is now the doctrine they all state.
+    const routingLines = buildProtocolsPrompt()
       .split("\n")
-      .find((line) => line.includes("backup venue is now available"));
-    expect(routingLine).toBeDefined();
-    expect(routingLine).not.toContain("—");
+      .filter((line) => line.includes("PRIMARY swap route") || line.includes("Switch venue when"));
+    expect(routingLines.length).toBeGreaterThan(0);
+    for (const line of routingLines) expect(line).not.toContain("—");
   });
 
   // pools.fun doctrine (P4). The integration shipped every layer except the
@@ -77,7 +82,7 @@ describe("buildProtocolsPrompt", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("pools.fun contrast, same chain");
       expect(prompt).toContain("NO bonding curve and NO graduation");
-      expect(prompt).toContain("Never route a pools.fun token through `trench.trade_*`");
+      expect(prompt).toContain("Never route a pools.fun token through `trench__trade_*`");
       // The Trench exception it contrasts with must still be there.
       expect(prompt).toContain("Trench exception, Robinhood Chain (4663)");
     });
@@ -87,7 +92,7 @@ describe("buildProtocolsPrompt", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("NO holder count and NO liquidity figure ANYWHERE");
       expect(prompt).toContain("indexed as sushiswap v3 on chain robinhood");
-      expect(prompt).toContain("pools.my_launches");
+      expect(prompt).toContain("pools__my_launches_list");
     });
 
     // The address is NOT knowable at preview time (image -> metadata link ->
@@ -100,8 +105,8 @@ describe("buildProtocolsPrompt", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("AN IMAGE IS REQUIRED on the agent path");
-      expect(prompt).toContain("`pools.launch_execute` REFUSES without one and launches nothing");
-      expect(prompt).toContain("`trench.images`");
+      expect(prompt).toContain("`pools__launch_execute` REFUSES without one and launches nothing");
+      expect(prompt).toContain("`trench__images_list`");
       // The blank-token outcome survives only as the user's own manual choice,
       // never as something the agent may elect.
       expect(prompt).toContain("Only the user's own launch form may choose to launch without one");
@@ -110,7 +115,7 @@ describe("buildProtocolsPrompt", () => {
     it("marks the launch preview advisory: no address, dynamic fee", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools.launch_preview` is ADVISORY");
+      expect(prompt).toContain("`pools__launch_preview` is ADVISORY");
       expect(prompt).toContain("Never promise a predicted address from a preview");
       expect(prompt).toContain("THE DEPLOYMENT FEE IS DYNAMIC");
     });
@@ -129,10 +134,10 @@ describe("buildProtocolsPrompt", () => {
     it("routes a restricted session to the launch form and mirrors the authority matrix", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools.launch_request_form` is how you hand the launch DECISION");
+      expect(prompt).toContain("`pools__launch_request_form` is how you hand the launch DECISION");
       expect(prompt).toContain("do not call it again while the form is open");
       expect(prompt).toMatch(
-        /`pools\.launch_execute`[\s\S]*RESTRICTED session it refuses BY NAME - call `pools\.launch_request_form`/,
+        /`pools__launch_execute`[\s\S]*RESTRICTED session it refuses BY NAME - call `pools__launch_request_form`/,
       );
       expect(prompt).toContain("HOST-authored launch ceilings");
     });
@@ -142,7 +147,7 @@ describe("buildProtocolsPrompt", () => {
     it("states dryRun claim semantics: both legs, and alreadyCollected is not the total", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools.claim_fees`");
+      expect(prompt).toContain("`pools__fees_claim`");
       expect(prompt).toContain("`dryRun: true` FIRST");
       expect(prompt).toContain("already-collected figures are fees the locker ALREADY holds and are NOT the claimable total");
       expect(prompt).toContain("costs gas, so say so before claiming a dust balance");

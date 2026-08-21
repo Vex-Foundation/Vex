@@ -33,6 +33,7 @@ import {
  */
 export const MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.supplyCollateral",
+  publicName: "morpho__market_supply_collateral",
   namespace: "morpho",
   lifecycle: "active",
   description:

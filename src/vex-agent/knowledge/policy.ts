@@ -5,7 +5,7 @@
  *
  * Design notes:
  * - `kind` is free-form, agent-defined snake_case. The code never enumerates kinds —
- *   the taxonomy grows organically via `long_memory_suggest` proposals and the prompt
+ *   the taxonomy grows organically via `MemorySuggest` proposals and the prompt
  *   shows "Known kinds" so the agent can reuse instead of creating variants.
  * - Lifecycle (promotion, supersede, invalidation, archival) is owned by the memory
  *   manager; this module only describes the shared shape constraints and the

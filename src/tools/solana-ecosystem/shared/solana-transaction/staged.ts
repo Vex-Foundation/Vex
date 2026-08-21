@@ -117,7 +117,7 @@ export async function signAndSubmitVersionedTxStaged(
 
 // ── Staged legacy transaction helper (puzzle 5 phase 4) ─────────
 //
-// Additive variant for wallet_send_confirm that structurally surfaces the
+// Additive variant for WalletSendConfirm that structurally surfaces the
 // post-broadcast signature even when confirmation fails. Caller can then
 // route to `markFailed(tx_hash=signature)` instead of losing the on-chain
 // trace inside an opaque throw.

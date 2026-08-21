@@ -32,6 +32,7 @@ import {
  */
 export const MORPHO_VAULT_DEPOSIT_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vault.deposit",
+  publicName: "morpho__vault_deposit",
   namespace: "morpho",
   lifecycle: "active",
   description:

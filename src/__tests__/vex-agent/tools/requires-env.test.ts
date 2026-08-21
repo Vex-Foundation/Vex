@@ -28,36 +28,36 @@ describe("requiresEnv filtering", () => {
   // ── Internal tools (registry) ──────────────────────────────────
 
   describe("internal tools (registry)", () => {
-    it("hides web_research when TAVILY_API_KEY not set", async () => {
+    it("hides WebResearch when TAVILY_API_KEY not set", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
-      const hasWebResearch = tools.some(t => t.function.name === "web_research");
+      const hasWebResearch = tools.some(t => t.function.name === "WebResearch");
       expect(hasWebResearch).toBe(false);
     });
 
-    it("shows web_research when TAVILY_API_KEY is set", async () => {
+    it("shows WebResearch when TAVILY_API_KEY is set", async () => {
       process.env.TAVILY_API_KEY = "tvly-test-key-12345678";
       const tools = getOpenAITools(defaultVisibilityContext());
-      const hasWebResearch = tools.some(t => t.function.name === "web_research");
+      const hasWebResearch = tools.some(t => t.function.name === "WebResearch");
       expect(hasWebResearch).toBe(true);
     });
 
-    it("hides twitter_account when RETTIWT_API_KEY is not set", async () => {
+    it("hides TwitterAccount when RETTIWT_API_KEY is not set", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
-      const hasTwitterAccount = tools.some(t => t.function.name === "twitter_account");
+      const hasTwitterAccount = tools.some(t => t.function.name === "TwitterAccount");
       expect(hasTwitterAccount).toBe(false);
     });
 
-    it("shows twitter_account when RETTIWT_API_KEY is set", async () => {
+    it("shows TwitterAccount when RETTIWT_API_KEY is set", async () => {
       process.env.RETTIWT_API_KEY = "rettiwt-test-key";
       const tools = getOpenAITools(defaultVisibilityContext());
-      const hasTwitterAccount = tools.some(t => t.function.name === "twitter_account");
+      const hasTwitterAccount = tools.some(t => t.function.name === "TwitterAccount");
       expect(hasTwitterAccount).toBe(true);
     });
 
     it("non-ENV tools always present regardless of ENV state", async () => {
       const tools = getOpenAITools(defaultVisibilityContext());
-      const hasDiscover = tools.some(t => t.function.name === "discover_tools");
-      const hasLongMemorySearch = tools.some(t => t.function.name === "long_memory_search");
+      const hasDiscover = tools.some(t => t.function.name === "ToolSearch");
+      const hasLongMemorySearch = tools.some(t => t.function.name === "MemorySearch");
       expect(hasDiscover).toBe(true);
       expect(hasLongMemorySearch).toBe(true);
     });
@@ -66,15 +66,20 @@ describe("requiresEnv filtering", () => {
       delete process.env.EMBEDDING_BASE_URL;
       const tools = getOpenAITools(defaultVisibilityContext());
       const names = tools.map(t => t.function.name);
-      expect(names).toContain("long_memory_suggest");
-      expect(names).toContain("long_memory_search");
-      expect(names).toContain("long_memory_get");
-      expect(names).toContain("long_memory_history");
+      expect(names).toContain("MemorySuggest");
+      expect(names).toContain("MemorySearch");
+      expect(names).toContain("MemoryGet");
+      expect(names).toContain("MemoryHistory");
     });
 
-    it("long_memory_* tools have NO requiresEnv field (visible always, fail loud at runtime)", async () => {
+    it("durable-memory tools have NO requiresEnv field (visible always, fail loud at runtime)", async () => {
       const all = getAllTools();
-      const longMemoryTools = all.filter(t => t.name.startsWith("long_memory_"));
+      // Named explicitly rather than matched on a prefix: the Batch 2 rename
+      // dropped the shared `long_memory_` prefix precisely so the durable store
+      // takes the unqualified name, so a prefix filter would now silently match
+      // nothing and assert nothing.
+      const DURABLE_MEMORY_TOOLS = ["MemorySuggest", "MemorySearch", "MemoryGet", "MemoryHistory"];
+      const longMemoryTools = all.filter(t => DURABLE_MEMORY_TOOLS.includes(t.name));
       // suggest (staged write-door) + 3 read tools (search / get / history).
       expect(longMemoryTools.length).toBe(4);
       for (const tool of longMemoryTools) {
@@ -84,10 +89,10 @@ describe("requiresEnv filtering", () => {
 
     it("getAllTools still returns all tools including ENV-gated ones", async () => {
       const all = getAllTools();
-      const webResearch = all.find(t => t.name === "web_research");
+      const webResearch = all.find(t => t.name === "WebResearch");
       expect(webResearch).toBeDefined();
       expect(webResearch!.requiresEnv).toBe("TAVILY_API_KEY");
-      const twitterAccount = all.find(t => t.name === "twitter_account");
+      const twitterAccount = all.find(t => t.name === "TwitterAccount");
       expect(twitterAccount).toBeDefined();
       expect(twitterAccount!.requiresEnv).toBe("RETTIWT_API_KEY");
     });

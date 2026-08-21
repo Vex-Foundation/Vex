@@ -11,9 +11,9 @@ export const SOLANA_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use `khalani` for cross-chain bridging and `kyberswap` for EVM-only execution.",
   exampleQueries: [
-    'discover_tools(query="solana token search", namespace="solana")',
-    'discover_tools(query="swap on solana", namespace="solana")',
-    'discover_tools(query="solana prediction markets", namespace="solana")',
+    'ToolSearch(query="solana token search", namespace="solana")',
+    'ToolSearch(query="swap on solana", namespace="solana")',
+    'ToolSearch(query="solana prediction markets", namespace="solana")',
   ],
   aliases: ["jupiter", "solana swap", "solana lending", "solana prediction"],
   discoveryHints: ["token mint search", "fresh solana launches", "new solana tokens", "solana swap", "jupiter price", "lend rates", "prediction market"],

@@ -58,9 +58,7 @@ Every file has two top-level parts.
   fabricating a definition would snapshot a contract the model never sees.
 - `metadata`: per-kind fields only, never invented.
   - internal: `kind`, `mutating`, `pressureSafety`, `actionKind`, `withheld`
-    (absent from the baseline scenario), `withheldFromModelSurface` (absent from
-    BOTH mission-axis scenarios with every other gate satisfied, which is what
-    the hard-coded model-withheld name set produces), and `gates`:
+    (absent from the baseline scenario), and `gates`:
     `proactive`, `requiresEnv`, `showOnlyWhenEnvMissing`, `declaredVisibility`
     (the `ToolDef.visibility` axes verbatim) and `measured`.
   - protocol: `kind`, `toolId`, `namespace`, `mutating`, `actionKind`,
@@ -71,15 +69,20 @@ Every file has two top-level parts.
 
 ### Measured gates
 
-`gates.measured` exists because two gates have NO declaration to read: the Relay
-alias pair is filtered by a hard-coded name set in `registry/relay-reveal.ts`,
-and the model-withheld list is another hard-coded set inside
-`registry/visibility.ts`. Each boolean is an observation, not a copy of a field:
-the tool's presence in `getVisibleToolDefs` under the baseline is compared
-against a scenario that drops exactly one axis.
+`gates.measured` exists because one gate has NO declaration to read: the
+a gate need not be declared on `ToolDef.visibility` to exist. Each boolean is an
+observation, not a copy of a field: the tool's presence in `getVisibleToolDefs`
+under the baseline is compared against a scenario that drops exactly one axis.
 
-- `hiddenWithoutUniswapReveal`, `hiddenWithoutDescribeToolsReveal`,
-  `hiddenWithoutRelayRouteReveal`: the session-scoped reveals.
+Three axes were REMOVED rather than pinned to `false`. Owner decision D4 retired
+the Uniswap-pair and Relay-route reveals; D2 and the ToolSearch merge retired
+the manifest-fetch reveal along with the tool it hid. With no gate there is no
+scenario that can differ on it, and a permanently `false` boolean would read as
+"the gate exists and is open" rather than "the gate is gone". Their absence in
+every snapshot diff is the record of that change. `withheldFromModelSurface`
+went the same way: `execute_tool` was the only name the withheld set held and
+its `ToolDef` is now deleted outright, so the flag has no subject.
+
 - `hiddenWithoutEnvGates`: every derived `requiresEnv` variable removed.
 - `visibleInMissionSetup`: the same session with `missionRunActive: false`.
 
@@ -117,8 +120,6 @@ context, built in `build-contracts.ts`:
 - mission session with an ACTIVE run, `permission: "full"`, plan mode on,
   session memory present, a prepared compaction summary ready;
 - `contextUsageBand: "normal"`, so no pressure-safety drop applies;
-- the three session-scoped reveals granted to the scenario session: the hidden
-  Uniswap pair, `describe_tools`, and one Relay route;
 - every `requiresEnv` variable the LIVE catalogs declare, collected from
   `ToolDef.requiresEnv` and `ProtocolToolManifest.requiresEnv` on every run and
   never hand-listed, set to a dummy value for the duration of the build and
@@ -129,17 +130,13 @@ context, built in `build-contracts.ts`:
 
 No context can be maximal on every axis: `requiresMissionSetup` and
 `requiresMissionRun` are mutually exclusive. The baseline picks the active run,
-so `mission_draft_update` is invisible under it, as is the model-withheld
-`execute_tool`. Both still get a snapshot, with `metadata.withheld: true`:
-withholding is a visibility decision, not a change to the contract. The two are
-told apart by `withheldFromModelSurface`, which is true only for
-`execute_tool`, because it stays invisible on both mission axes.
+so `MissionDraftUpdate` is invisible under it. It still gets a snapshot, with
+`metadata.withheld: true`: withholding is a visibility decision, not a change to
+the contract.
 
-Five further scenarios exist only to MEASURE gates, never to project a
-definition. Each drops exactly one axis from the baseline: no Uniswap reveal, no
-`describe_tools` reveal, no Relay route reveal, no env gates, and mission setup
-instead of an active run. Reveals are session-scoped, so each scenario uses its
-own session id and the harness clears them on teardown.
+Two further scenarios exist only to MEASURE gates, never to project a
+definition. Each drops exactly one axis from the baseline: no env gates, and
+mission setup instead of an active run.
 
 Protocol tools are injected in batches of `MAX_DISCOVERED_TOOLS_PER_SESSION`
 (40) under throwaway session ids, because a session's discovered set is capped

@@ -1,10 +1,10 @@
 /**
- * wallet_track_token — explicit token pinning for LOCAL (non-Khalani) chains.
+ * WalletTrackToken — explicit token pinning for LOCAL (non-Khalani) chains.
  *
  * Khalani-covered chains discover holdings automatically; LOCAL chains (e.g.
  * Robinhood 4663) scan a fixed set: the chain's seed tokens ∪ the pins in
  * `tracked_tokens`. This tool manages those pins so tokens received by
- * transfer/airdrop become visible to `wallet_balances` and the portfolio.
+ * transfer/airdrop become visible to `WalletBalances` and the portfolio.
  * Swap (uniswap) and bridge (relay) executes auto-pin their tokens — manual
  * pinning covers everything else. DB-only: no on-chain transaction, no
  * approval needed (`actionKind: local_write`, mirrors session-memory writes).
@@ -34,7 +34,7 @@ export async function handleWalletTrackToken(
 ): Promise<ToolResult> {
   const parsed = TrackArgs.safeParse(params);
   if (!parsed.success) {
-    return fail(`wallet_track_token: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
+    return fail(`WalletTrackToken: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
   const { action, chain, token } = parsed.data;
 
@@ -42,7 +42,7 @@ export async function handleWalletTrackToken(
   const config = chainId !== undefined ? getLocalChain(chainId) : undefined;
   if (chainId === undefined || !config) {
     return fail(
-      `wallet_track_token: '${chain}' is not a local chain. Pinning only applies to local chains (e.g. robinhood / 4663) — Khalani-covered chains discover tokens automatically.`,
+      `WalletTrackToken: '${chain}' is not a local chain. Pinning only applies to local chains (e.g. robinhood / 4663) — Khalani-covered chains discover tokens automatically.`,
     );
   }
 
@@ -50,7 +50,7 @@ export async function handleWalletTrackToken(
   try {
     walletAddress = resolveSelectedAddressForRead(context.walletResolution, context.walletPolicy, "eip155");
   } catch (err) {
-    return fail(`wallet_track_token: ${err instanceof Error ? err.message : String(err)}`);
+    return fail(`WalletTrackToken: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (action === "list") {
@@ -66,7 +66,7 @@ export async function handleWalletTrackToken(
 
   if (!token || !isAddress(token)) {
     return fail(
-      "wallet_track_token: `token` must be the ERC-20 contract ADDRESS (0x…). Resolve a symbol to its address first (e.g. dexscreener.search).",
+      "WalletTrackToken: `token` must be the ERC-20 contract ADDRESS (0x…). Resolve a symbol to its address first (e.g. dexscreener.search).",
     );
   }
   const checksummed = getAddress(token);

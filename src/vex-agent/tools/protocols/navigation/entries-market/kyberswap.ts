@@ -29,8 +29,8 @@ export const KYBERSWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use `khalani` to resolve cross-chain token addresses first, `solana` for Solana trading, and `dexscreener` for read-only research.",
   exampleQueries: [
-    'discover_tools(query="swap on base", namespace="kyberswap")',
-    'discover_tools(query="check token honeypot", namespace="kyberswap")',
+    'ToolSearch(query="swap on base", namespace="kyberswap")',
+    'ToolSearch(query="check token honeypot", namespace="kyberswap")',
   ],
   aliases: ["kyber", "evm swap", "honeypot check"],
   discoveryHints: ["swap on ethereum", "honeypot check", "fee on transfer"],

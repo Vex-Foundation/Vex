@@ -5,7 +5,7 @@
  *   score = similarity + recencyBoost + confidenceBoost + pinnedBoost
  *
  * Notable absence: NO `kindWeight`. Kinds grow organically (via
- * `long_memory_suggest`) and the code does not pretend to know which kinds
+ * `MemorySuggest`) and the code does not pretend to know which kinds
  * matter more. Scoring is purely based on signal we actually own (vector
  * distance, freshness, recorded confidence rating, pinned flag).
  */

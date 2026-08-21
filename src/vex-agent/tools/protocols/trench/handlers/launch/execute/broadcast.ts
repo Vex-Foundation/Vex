@@ -186,7 +186,7 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
       output:
         `${TOOL_ID}: the launch transaction (${outcome.txHash}) could not be confirmed yet — it may still `
         + "settle, and it may already have created your token. DO NOT retry; this attempt is recorded as "
-        + "pending and will resolve automatically. Verify with chain_read tx_receipt.",
+        + "pending and will resolve automatically. Verify with ChainRead tx_receipt.",
       data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
     };
   }
@@ -396,7 +396,7 @@ async function finalizeConfirmedLaunch(
 
   const vexFee = await chargeVexFee(x, executionId, feeRowId, outcome);
 
-  // After the money is settled: make the new token visible to `wallet_balances`
+  // After the money is settled: make the new token visible to `WalletBalances`
   // without the agent having to pin it by hand. A local DB write that can never
   // fail, delay or reorder the launch — see `./track.js`.
   await pinLaunchedToken(x.walletAddress, decoded.tokenAddress);

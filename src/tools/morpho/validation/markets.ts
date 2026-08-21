@@ -58,7 +58,7 @@ export function morphoMarketNotFound(): VexError {
   return new VexError(
     ErrorCodes.MORPHO_MARKET_NOT_FOUND,
     "Morpho has no market with that id on that chain.",
-    "Market ids are chain-scoped - confirm both with morpho.markets.discover before reading one.",
+    "Market ids are chain-scoped - confirm both with `morpho__markets_discover` before reading one.",
   );
 }
 

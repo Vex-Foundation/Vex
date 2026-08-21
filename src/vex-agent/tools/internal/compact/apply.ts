@@ -1,5 +1,5 @@
 /**
- * `compact_apply` tool handler — a deliberately thin shell over `requestApply`.
+ * `CompactApply` tool handler — a deliberately thin shell over `requestApply`.
  *
  * Everything that could go wrong in a cutover (the lease, the lock order, the
  * money gate, the two-phase FSM) lives behind `requestApply` and the runner's

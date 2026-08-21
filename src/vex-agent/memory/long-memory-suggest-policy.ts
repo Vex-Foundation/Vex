@@ -1,6 +1,6 @@
 /**
  * Long-memory suggest policy — pure deterministic system-field derivation for
- * the `long_memory_suggest` boundary (S2).
+ * the `MemorySuggest` boundary (S2).
  *
  * S2 stamps ONLY safe, deterministic values on an accepted candidate and defers
  * every nuanced judgement to the stages that consume them:

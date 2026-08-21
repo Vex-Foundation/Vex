@@ -195,7 +195,7 @@ export async function broadcastPoolsLaunch(x: BroadcastPoolsLaunchInput): Promis
       output:
         `${TOOL_ID}: the launch transaction (${outcome.txHash}) could not be confirmed yet - it may still `
         + "settle, and it may already have created your token. DO NOT retry; this attempt is recorded as "
-        + "pending and will resolve automatically. Verify with chain_read tx_receipt.",
+        + "pending and will resolve automatically. Verify with ChainRead tx_receipt.",
       data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
     };
   }

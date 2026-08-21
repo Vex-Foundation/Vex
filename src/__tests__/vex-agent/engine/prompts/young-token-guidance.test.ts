@@ -16,22 +16,22 @@ const SHARED_TOKENS = [
   "CONTRACT ADDRESS",
   "timeRange",
   "dexscreener.*",
-  "twitter_account",
+  "TwitterAccount",
   "virtuals.*",
   "not evidence the token is fake",
 ] as const;
 
 describe("young-token guidance (two-surface contract)", () => {
   beforeEach(() => {
-    // The research prompt only teaches web_research when its env gate is up.
+    // The research prompt only teaches WebResearch when its env gate is up.
     vi.stubEnv("TAVILY_API_KEY", "test-key");
   });
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("the web_research tool description carries the full guidance", () => {
-    const description = WEB_TOOLS.find((t) => t.name === "web_research")?.description;
+  it("the WebResearch tool description carries the full guidance", () => {
+    const description = WEB_TOOLS.find((t) => t.name === "WebResearch")?.description;
     expect(description).toBeDefined();
     for (const token of SHARED_TOKENS) {
       expect(description).toContain(token);

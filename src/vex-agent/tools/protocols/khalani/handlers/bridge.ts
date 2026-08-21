@@ -18,7 +18,7 @@
  * independent RPC verification of the destination fill (B4). W4
  * (`sync/bridge-activity-repair.ts`) owns that checklist + SSRF-controlled RPC
  * fallback; W3a has no verified path, so it leaves the logical row pending and
- * the W4 sweep performs the verified confirm + balance enqueue + reveal clear.
+ * the W4 sweep performs the verified confirm + balance enqueue.
  *
  * SOLANA: a Vex-signed Solana deposit stages its base58 signature in `tx_hash`
  * with `nonce NULL` (chain_family='solana') through the dedicated

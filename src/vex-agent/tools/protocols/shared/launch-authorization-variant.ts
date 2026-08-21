@@ -20,7 +20,7 @@
  *   FULL-PERMISSION CHAT -> `session_full`. No mission, session permission
  *   `full`: the user set that permission and asked for the launch, which is the
  *   same consent basis every other mutating tool spends on in chat
- *   (`swap_execute`). No ceilings apply - the mission ceilings bound UNATTENDED
+ *   (`SwapExecute`). No ceilings apply - the mission ceilings bound UNATTENDED
  *   spending against a host-authored contract.
  *
  *   RESTRICTED -> refused BY NAME, pointing at the launch FORM. THE FORM

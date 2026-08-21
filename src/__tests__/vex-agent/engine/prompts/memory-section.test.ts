@@ -58,9 +58,9 @@ function knowledgeCtx(
 }
 
 const ROUTING_LINES = [
-  "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `agent_scan`).",
-  "- Something earlier in THIS conversation/mission → `session_memory_search` (per-session narrative).",
-  "- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → `long_memory_search`.",
+  "- Current state (balances, prices, gas, positions, quotes) → live tools (`WalletBalances`, `AgentScan`).",
+  "- Something earlier in THIS conversation/mission → `SessionMemorySearch` (per-session narrative).",
+  "- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → `MemorySearch`.",
 ] as const;
 
 describe("buildMemorySection — structure + routing split", () => {
@@ -98,29 +98,29 @@ describe("buildMemorySection — fail-state vs empty-state (fail ≠ empty)", ()
   it("true-zero session stats render the memory empty-state guidance", () => {
     const section = buildMemorySection(ctx());
     expect(section).toContain(
-      "[Session memories: 0 chunks, 0 compact(s) done. Skip session_memory_search — nothing to find.",
+      "[Session memories: 0 chunks, 0 compact(s) done. Skip SessionMemorySearch — nothing to find.",
     );
   });
 
-  it("sessionStats === null (fetch FAILED) omits line (1) — no 'Skip session_memory_search' lie", () => {
+  it("sessionStats === null (fetch FAILED) omits line (1) — no 'Skip SessionMemorySearch' lie", () => {
     const section = buildMemorySection(ctx({ sessionStats: null }));
     expect(section).not.toContain("[Session memories:");
-    expect(section).not.toContain("Skip session_memory_search");
+    expect(section).not.toContain("Skip SessionMemorySearch");
   });
 
   it("true-zero long-memory renders the long-memory empty-state guidance verbatim", () => {
     const section = buildMemorySection(ctx());
     expect(section).toContain(
       "[Long-term memory: empty. Durable cross-session memory has no entries yet. " +
-        "Use long_memory_suggest to propose durable lessons: persona, observed strategies, lessons from failures, observed user preferences. " +
-        "Skip long_memory_search — nothing to find.]",
+        "Use MemorySuggest to propose durable lessons: persona, observed strategies, lessons from failures, observed user preferences. " +
+        "Skip MemorySearch — nothing to find.]",
     );
   });
 
-  it("knowledge === null (fetch FAILED) omits lines (2)+(3) — no 'Skip long_memory_search' lie", () => {
+  it("knowledge === null (fetch FAILED) omits lines (2)+(3) — no 'Skip MemorySearch' lie", () => {
     const section = buildMemorySection(ctx({ knowledge: null }));
     expect(section).not.toContain("[Long-term memory:");
-    expect(section).not.toContain("Skip long_memory_search");
+    expect(section).not.toContain("Skip MemorySearch");
     expect(section).not.toContain("## Active Memory");
     // Session-memory line + routing still render.
     expect(section).toContain("[Session memories:");
@@ -140,7 +140,7 @@ describe("buildMemorySection — fail-state vs empty-state (fail ≠ empty)", ()
     expect(section).toContain("[Session memories: 4 chunk(s) across 2 compact(s).");
     expect(section).toContain("3 outstanding item(s) unresolved.");
     expect(section).toContain("Recent themes: kyber_route_debug, wallet_allowance.");
-    expect(section).toContain('Tool: session_memory_search(semantic_intent="...", k=5).]');
+    expect(section).toContain('Tool: SessionMemorySearch(semantic_intent="...", k=5).]');
   });
 });
 
@@ -170,7 +170,7 @@ describe("buildMemorySection — two knownKinds widths (banner top-5 vs block fu
   it("banner shows entry count + recall tool when long-memory is non-empty", () => {
     const section = buildMemorySection(knowledgeCtx([], [{ kind: "memo", count: 3 }], 17));
     expect(section).toContain("[Long-term memory: 17 entries. Top kinds: memo (3).");
-    expect(section).toContain('Tool: long_memory_search(semantic_intent="...", k=15).]');
+    expect(section).toContain('Tool: MemorySearch(semantic_intent="...", k=15).]');
   });
 });
 
@@ -276,8 +276,8 @@ describe("buildMemorySection — Active Memory block (ported drift-pins)", () =>
 
   it("footer mentions the three read-side tools (search, get, history)", () => {
     const section = buildMemorySection(knowledgeCtx([entry({})], []));
-    expect(section).toContain("long_memory_search");
-    expect(section).toContain("long_memory_get");
-    expect(section).toContain("long_memory_history");
+    expect(section).toContain("MemorySearch");
+    expect(section).toContain("MemoryGet");
+    expect(section).toContain("MemoryHistory");
   });
 });

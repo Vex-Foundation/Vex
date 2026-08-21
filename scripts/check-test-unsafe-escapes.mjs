@@ -11,6 +11,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
+import { DELETED_TEST_ALLOWLIST_PATHS } from "./deleted-test-allowlist.mjs";
+
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 
@@ -41,16 +43,74 @@ function runGit(args) {
   });
 }
 
+/**
+ * Rename sources across the WHOLE diff. A file moved out of src/__tests__
+ * (e.g. a test helper promoted to a production module) appears as a bare D
+ * inside the scoped diff because the pathspec hides the destination; the
+ * unscoped -M pass sees the R entry. Such a D is a move, not a deletion -
+ * the content lives on and is checked at its destination. A D with no
+ * rename destination anywhere still fails below.
+ */
+function renameSourcePaths(base) {
+  const status = runGit(["diff", "--name-status", "-M", "-z", base]);
+  const tokens = status.split("\0").filter(Boolean);
+  const sources = new Set();
+  for (let index = 0; index < tokens.length; ) {
+    const kind = tokens[index];
+    if (!kind) break;
+    if (kind.startsWith("R") || kind.startsWith("C")) {
+      const from = tokens[index + 1];
+      if (from) sources.add(from);
+      index += 3;
+    } else {
+      index += 2;
+    }
+  }
+  return sources;
+}
+
 function changedTestFiles(base) {
+  const renameSources = renameSourcePaths(base);
   const status = runGit(["diff", "--name-status", "-z", base, "--", "src/__tests__"]);
   const tokens = status.split("\0").filter(Boolean);
   const files = [];
-  for (let index = 0; index < tokens.length; index += 2) {
+  const deleted = new Set();
+  // R and C entries carry THREE NUL-separated tokens (kind, from, to) while
+  // every other kind carries two. Advancing by a fixed two desynchronizes the
+  // whole remainder after the first rename, which silently blinds the gate to
+  // every deletion that follows it.
+  for (let index = 0; index < tokens.length; ) {
     const kind = tokens[index];
-    const file = tokens[index + 1];
-    if (!kind || !file) continue;
-    if (kind.startsWith("D")) fail(`test deletion is prohibited in this remediation pass: ${file}`);
+    if (!kind) break;
+    const isRename = kind.startsWith("R") || kind.startsWith("C");
+    const file = isRename ? tokens[index + 2] : tokens[index + 1];
+    index += isRename ? 3 : 2;
+    if (!file) continue;
+    if (kind.startsWith("D")) {
+      if (renameSources.has(file)) continue;
+      // A reviewed deletion: the subject the test exercised was removed by the
+      // same contract change, and the entry says so. Anything else still fails.
+      if (DELETED_TEST_ALLOWLIST_PATHS.has(file)) {
+        deleted.add(file);
+        continue;
+      }
+      fail(
+        `test deletion is prohibited in this remediation pass: ${file}\n` +
+          "  If the SUBJECT was deliberately removed by this change, add a reviewed entry\n" +
+          "  (path + reason + where surviving behavior is covered) to scripts/deleted-test-allowlist.mjs.",
+      );
+    }
     if (/\.(?:test|int\.test)\.[cm]?[jt]sx?$/.test(file)) files.push(file);
+  }
+  // Stale entries fail: an allowlisted deletion that is no longer a deletion is
+  // a row nobody removed when the test came back.
+  const stale = [...DELETED_TEST_ALLOWLIST_PATHS].filter((entry) => !deleted.has(entry));
+  if (stale.length > 0) {
+    fail(
+      "stale reviewed-deletion entries (these files are not deleted against the base):\n" +
+        stale.map((entry) => `  ${entry}`).join("\n") +
+        "\n  Remove them from scripts/deleted-test-allowlist.mjs.",
+    );
   }
   return files;
 }

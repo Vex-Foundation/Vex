@@ -2,7 +2,7 @@
  * Discovery golden harness — measures top-3 retrieval quality on realistic
  * English capability-phrase intents. PR1 baseline (18); PR4 extends to 32.
  *
- * Fixtures stay English-only; discover_tools is evaluated on English
+ * Fixtures stay English-only; ToolSearch is evaluated on English
  * capability phrases.
  */
 

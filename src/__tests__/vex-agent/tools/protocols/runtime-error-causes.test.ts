@@ -26,6 +26,7 @@ vi.mock("@tools/khalani/chains.js", async (importOriginal) => ({
 
 const MANIFEST: ProtocolToolManifest = {
   toolId: "dexscreener.search",
+  publicName: "dexscreener__search",
   namespace: "dexscreener",
   lifecycle: "active",
   description: "search",

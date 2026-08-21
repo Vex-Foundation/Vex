@@ -113,7 +113,7 @@ export function evaluateRuntimeStopConditions(
 
 // ── Business stop detection ──────────────────────────────────────
 //
-// Business stops are now triggered via the `mission_stop` internal tool,
+// Business stops are now triggered via the `MissionStop` internal tool,
 // not by parsing model text. The tool returns an engineSignal that the
 // turn-loop uses to finalize the run. See tools/internal/mission.ts.
 //

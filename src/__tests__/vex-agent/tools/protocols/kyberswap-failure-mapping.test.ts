@@ -1,5 +1,5 @@
 /**
- * `mapKyberFailureToActivityCode` / `deriveKyberRevealFailure` — the two
+ * `mapKyberFailureToActivityCode` / `deriveKyberFallbackSignal` — the two
  * independent classifications of a caught Kyber error consumed by the
  * kyberswap.swap.quote/execute handlers (plan §4.1/§11.2).
  */
@@ -9,9 +9,9 @@ import { VexError, ErrorCodes } from "../../../../errors.js";
 import { mapAggregatorError } from "@tools/kyberswap/aggregator/errors.js";
 import {
   mapKyberFailureToActivityCode,
-  deriveKyberRevealFailure,
+  deriveKyberFallbackSignal,
 } from "@vex-agent/tools/protocols/kyberswap/failure-mapping.js";
-import { isRevealEligibleKyberFailure } from "@vex-agent/tools/registry/uniswap-reveal-eligibility.js";
+import { isVenueFallbackWorthwhile } from "@vex-agent/tools/registry/venue-fallback-eligibility.js";
 
 function statusError(code: string, httpStatus?: number): VexError {
   const err = new VexError(code, "boom");
@@ -27,17 +27,17 @@ function statusError(code: string, httpStatus?: number): VexError {
  */
 describe("a geo-block 403 is a venue-availability failure, never a Kyber body code", () => {
   it("derives venue_unavailable through the real aggregator mapper", () => {
-    const failure = deriveKyberRevealFailure(mapAggregatorError(403, null, "HTTP 403: (html)"), true);
+    const failure = deriveKyberFallbackSignal(mapAggregatorError(403, null, "HTTP 403: (html)"), true);
     expect(failure).toEqual({ kind: "venue_unavailable", reason: "edge_refused" });
     expect(failure?.kind).not.toBe("kyber_code");
   });
 
-  it("is reveal-eligible, so the agent is offered the fallback venue", () => {
-    expect(isRevealEligibleKyberFailure({ kind: "venue_unavailable", reason: "edge_refused" })).toBe(true);
+  it("is fallback-eligible, so the agent is offered the fallback venue", () => {
+    expect(isVenueFallbackWorthwhile({ kind: "venue_unavailable", reason: "edge_refused" })).toBe(true);
   });
 });
 
-describe("deriveVenueUnavailable, through deriveKyberRevealFailure", () => {
+describe("deriveVenueUnavailable, through deriveKyberFallbackSignal", () => {
   it("maps every availability status to its closed reason", () => {
     const table: ReadonlyArray<readonly [number, string]> = [
       [401, "edge_refused"], [403, "edge_refused"], [451, "edge_refused"],
@@ -45,17 +45,17 @@ describe("deriveVenueUnavailable, through deriveKyberRevealFailure", () => {
       [500, "server_error"], [502, "server_error"], [520, "server_error"],
     ];
     for (const [status, reason] of table) {
-      expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_API_ERROR, status), true))
+      expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_API_ERROR, status), true))
         .toEqual({ kind: "venue_unavailable", reason });
     }
   });
 
   it("maps the availability CODES regardless of any httpStatus", () => {
-    expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_TIMEOUT), true))
+    expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_TIMEOUT), true))
       .toEqual({ kind: "venue_unavailable", reason: "timeout" });
-    expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_RATE_LIMITED, 429), true))
+    expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_RATE_LIMITED, 429), true))
       .toEqual({ kind: "venue_unavailable", reason: "rate_limited" });
-    expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_UNREACHABLE), true))
+    expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_UNREACHABLE), true))
       .toEqual({ kind: "venue_unavailable", reason: "unreachable" });
   });
 
@@ -63,7 +63,7 @@ describe("deriveVenueUnavailable, through deriveKyberRevealFailure", () => {
   // availability, and every other unlisted status stays out too.
   it("is a closed set - an unlisted status is not an availability failure", () => {
     for (const status of [400, 402, 409, 418]) {
-      expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_API_ERROR, status), true)).toBeNull();
+      expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_API_ERROR, status), true)).toBeNull();
     }
   });
 
@@ -72,7 +72,7 @@ describe("deriveVenueUnavailable, through deriveKyberRevealFailure", () => {
   it("a semantic Kyber code takes precedence over the status", () => {
     const err = kyberError(ErrorCodes.KYBER_ROUTE_NOT_FOUND, "4008");
     err.httpStatus = 500;
-    expect(deriveKyberRevealFailure(err, true)).toEqual({
+    expect(deriveKyberFallbackSignal(err, true)).toEqual({
       kind: "kyber_code", code: 4008, tokenInputsValidated: true,
     });
   });
@@ -125,15 +125,15 @@ describe("mapKyberFailureToActivityCode", () => {
   });
 });
 
-describe("deriveKyberRevealFailure", () => {
+describe("deriveKyberFallbackSignal", () => {
   it("derives chain_unsupported without needing a raw code", () => {
-    expect(deriveKyberRevealFailure(kyberError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN), false)).toEqual({
+    expect(deriveKyberFallbackSignal(kyberError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN), false)).toEqual({
       kind: "chain_unsupported",
     });
   });
 
   it("derives kyber_code with the RAW numeric code from externalName", () => {
-    expect(deriveKyberRevealFailure(kyberError(ErrorCodes.KYBER_ROUTE_NOT_FOUND, "4008"), false)).toEqual({
+    expect(deriveKyberFallbackSignal(kyberError(ErrorCodes.KYBER_ROUTE_NOT_FOUND, "4008"), false)).toEqual({
       kind: "kyber_code",
       code: 4008,
       tokenInputsValidated: false,
@@ -141,7 +141,7 @@ describe("deriveKyberRevealFailure", () => {
   });
 
   it("threads tokenInputsValidated through unchanged for a 4011", () => {
-    expect(deriveKyberRevealFailure(kyberError(ErrorCodes.KYBER_TOKEN_NOT_FOUND, "4011"), true)).toEqual({
+    expect(deriveKyberFallbackSignal(kyberError(ErrorCodes.KYBER_TOKEN_NOT_FOUND, "4011"), true)).toEqual({
       kind: "kyber_code",
       code: 4011,
       tokenInputsValidated: true,
@@ -154,15 +154,15 @@ describe("deriveKyberRevealFailure", () => {
   // integrity abort and of the response-schema validators, neither of which
   // is evidence about the venue's availability.
   it("returns null for a KYBER_API_ERROR carrying neither a raw code nor a status", () => {
-    expect(deriveKyberRevealFailure(kyberError(ErrorCodes.KYBER_API_ERROR), false)).toBeNull();
+    expect(deriveKyberFallbackSignal(kyberError(ErrorCodes.KYBER_API_ERROR), false)).toBeNull();
   });
 
   it("derives venue_unavailable for a KYBER_API_ERROR that DOES carry an availability status", () => {
-    expect(deriveKyberRevealFailure(statusError(ErrorCodes.KYBER_API_ERROR, 403), false))
+    expect(deriveKyberFallbackSignal(statusError(ErrorCodes.KYBER_API_ERROR, 403), false))
       .toEqual({ kind: "venue_unavailable", reason: "edge_refused" });
   });
 
   it("returns null for a non-VexError throw", () => {
-    expect(deriveKyberRevealFailure(new Error("network down"), false)).toBeNull();
+    expect(deriveKyberFallbackSignal(new Error("network down"), false)).toBeNull();
   });
 });

@@ -54,7 +54,7 @@ export function formatMissionDraftNotReadyNotice(setup: SetupResult): string {
   return [
     "Mission draft is not ready in the database.",
     `DB status: ${setup.status}. Missing fields: ${formatMissingMissionFields(setup.missingFields)}.`,
-    "The model must save the complete draft with mission_draft_update before telling the user they can start the mission.",
+    "The model must save the complete draft with MissionDraftUpdate before telling the user they can start the mission.",
   ].join(" ");
 }
 

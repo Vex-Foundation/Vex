@@ -17,10 +17,11 @@ describe("registry", () => {
   });
 
   it("finds tool by name", () => {
-    const tool = getToolDef("discover_tools");
-    expect(tool).toBeDefined();
-    expect(tool!.name).toBe("discover_tools");
-    expect(tool!.kind).toBe("internal");
+    const tool = getToolDef("ToolSearch");
+    // One structural assertion rather than three dereferences behind `!`: the
+    // whole point is that the lookup RESOLVED, so asserting the shape proves
+    // both the existence and the identity in one place.
+    expect(tool).toMatchObject({ name: "ToolSearch", kind: "internal" });
   });
 
   it("returns undefined for unknown tool", () => {
@@ -40,40 +41,39 @@ describe("registry", () => {
     expect(isInternalTool("fake_tool")).toBe(false);
   });
 
-  it("identifies wallet_send_confirm as mutating", () => {
-    expect(isMutatingTool("wallet_send_confirm")).toBe(true);
+  it("identifies WalletSendConfirm as mutating", () => {
+    expect(isMutatingTool("WalletSendConfirm")).toBe(true);
   });
 
-  it("identifies discover_tools as non-mutating", () => {
-    expect(isMutatingTool("discover_tools")).toBe(false);
+  it("identifies ToolSearch as non-mutating", () => {
+    expect(isMutatingTool("ToolSearch")).toBe(false);
   });
 
-  it("identifies web_research as non-mutating", () => {
-    expect(isMutatingTool("web_research")).toBe(false);
+  it("identifies WebResearch as non-mutating", () => {
+    expect(isMutatingTool("WebResearch")).toBe(false);
   });
 
-  it("identifies twitter_account as non-mutating", () => {
-    expect(isMutatingTool("twitter_account")).toBe(false);
+  it("identifies TwitterAccount as non-mutating", () => {
+    expect(isMutatingTool("TwitterAccount")).toBe(false);
   });
 
   // ── Expected tools present ───────────────────────────────────────
 
   const EXPECTED_TOOLS = [
-    "discover_tools",
-    "execute_tool",
-    "web_research",
-    "twitter_account",
-    "session_memory_search",
-    "session_memory_resolve_item",
-    "long_memory_suggest",
-    "long_memory_search",
-    "long_memory_get",
-    "long_memory_history",
-    "wallet_balances",
-    "wallet_send_prepare",
-    "wallet_send_confirm",
-    "token_find",
-    "mission_draft_update",
+    "ToolSearch",
+      "WebResearch",
+    "TwitterAccount",
+    "SessionMemorySearch",
+    "SessionMemoryResolve",
+    "MemorySuggest",
+    "MemorySearch",
+    "MemoryGet",
+    "MemoryHistory",
+    "WalletBalances",
+    "WalletSendPrepare",
+    "WalletSendConfirm",
+    "TokenFind",
+    "MissionDraftUpdate",
   ];
 
   for (const name of EXPECTED_TOOLS) {
@@ -193,36 +193,35 @@ describe("registry", () => {
     }
   });
 
-  it("discover_tools namespace description is generated from advertised namespaces", () => {
-    const discover = getToolDef("discover_tools");
+  it("ToolSearch namespace description is generated from advertised namespaces", () => {
+    const discover = getToolDef("ToolSearch");
     const namespace = discover?.parameters.properties?.namespace;
     expect(namespace).toBeDefined();
     expect(namespace?.description).toContain("dexscreener");
     expect(namespace?.description).toContain("khalani");
-    // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
-    // C30): the hidden Uniswap fallback is a KNOWN but non-ADVERTISED
-    // namespace — this STATIC discovery schema text must never name it, even
-    // though `uniswap.swap.*` tools still exist and are still reachable via
-    // the session-revealed aliases.
-    expect(namespace?.description).not.toContain("uniswap");
+    // INVERTED by owner decision D4. Uniswap used to be a KNOWN but
+    // non-ADVERTISED namespace that this static text had to omit, because
+    // naming it would have leaked a hidden venue. The venue is no longer
+    // hidden, so omitting it would now hide a namespace the agent may use.
+    expect(namespace?.description).toContain("uniswap");
   });
 
-  it("mutating tools are bridge, bridge_execute_relay, swap_execute, swap_execute_uniswap, wallet_send_confirm", () => {
-    // `swap_execute`/`swap_execute_uniswap` (Stage 8b; Agent Scan plan §11.2
-    // renamed `swap` in place and added the hidden Uniswap pair) and `bridge`
+  it("mutating tools are bridge, BridgeExecuteRelay, SwapExecute, SwapExecuteUniswap, WalletSendConfirm", () => {
+    // `SwapExecute`/`SwapExecuteUniswap` (Stage 8b; Agent Scan plan §11.2
+    // renamed `swap` in place and added the hidden Uniswap pair) and `BridgeExecute`
     // (Stage 8c) are MUTATING action-aliases that dispatch through the
     // dedicated branch (executeProtocolTool owns approval). Phase-2 bridge
-    // factory W5 added the hidden Relay pair — `bridge_execute_relay` is the
-    // mutating half (route-bound reveal; `bridge_quote_relay` is read-only).
+    // factory W5 added the hidden Relay pair — `BridgeExecuteRelay` is the
+    // mutating half (route-bound reveal; `BridgeQuoteRelay` is read-only).
     // Hidden-by-default visibility does not affect this list — `getAllTools()`
     // is unfiltered.
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual([
-      "bridge",
-      "bridge_execute_relay",
-      "swap_execute",
-      "swap_execute_uniswap",
-      "wallet_send_confirm",
+      "BridgeExecute",
+      "BridgeExecuteRelay",
+      "SwapExecute",
+      "SwapExecuteUniswap",
+      "WalletSendConfirm",
     ]);
   });
 
@@ -244,13 +243,13 @@ describe("registry", () => {
         contextUsageBand: "barrier",
       }));
       const names = tools.map(t => t.function.name);
-      // wallet_send_confirm + swap_execute are canonical, universally-visible
+      // WalletSendConfirm + SwapExecute are canonical, universally-visible
       // mutating tools (registry-completeness asserts the mutating list).
-      // swap_execute_uniswap is NOT used here — it is ALSO hidden by the
+      // SwapExecuteUniswap is NOT used here — it is ALSO hidden by the
       // reveal gate independent of pressure band, which would make a false
       // pressure-band assertion.
-      expect(names).not.toContain("wallet_send_confirm");
-      expect(names).not.toContain("swap_execute");
+      expect(names).not.toContain("WalletSendConfirm");
+      expect(names).not.toContain("SwapExecute");
     });
 
     it("at critical band: mutating tools are hidden from the LLM catalog", () => {
@@ -261,11 +260,11 @@ describe("registry", () => {
         contextUsageBand: "critical",
       }));
       const names = tools.map(t => t.function.name);
-      expect(names).not.toContain("wallet_send_confirm");
-      expect(names).not.toContain("swap_execute");
+      expect(names).not.toContain("WalletSendConfirm");
+      expect(names).not.toContain("SwapExecute");
     });
 
-    it("compact_apply is visible whenever a prepared summary is READY — including below barrier", () => {
+    it("CompactApply is visible whenever a prepared summary is READY — including below barrier", () => {
       // The axis is readiness, not pressure. Preparation routinely finishes in
       // the warning band, and that is the cheapest moment to apply it.
       for (const band of ["normal", "warning", "barrier", "critical"] as const) {
@@ -276,11 +275,11 @@ describe("registry", () => {
           contextUsageBand: band,
           hasCompactionSummaryReady: true,
         }));
-        expect(tools.map(t => t.function.name)).toContain("compact_apply");
+        expect(tools.map(t => t.function.name)).toContain("CompactApply");
       }
     });
 
-    it("compact_apply is HIDDEN when nothing is prepared, at every band", () => {
+    it("CompactApply is HIDDEN when nothing is prepared, at every band", () => {
       for (const band of ["normal", "warning", "barrier", "critical"] as const) {
         const tools = getOpenAITools(defaultVisibilityContext({
           permission: "full",
@@ -288,7 +287,7 @@ describe("registry", () => {
           missionRunActive: true,
           contextUsageBand: band,
         }));
-        expect(tools.map(t => t.function.name)).not.toContain("compact_apply");
+        expect(tools.map(t => t.function.name)).not.toContain("CompactApply");
       }
     });
 
@@ -300,7 +299,7 @@ describe("registry", () => {
         contextUsageBand: "barrier",
         preparationBypassesBarrier: true,
       }));
-      expect(tools.map(t => t.function.name)).toContain("wallet_send_confirm");
+      expect(tools.map(t => t.function.name)).toContain("WalletSendConfirm");
     });
 
     it("critical + live preparation: mutating tools are STILL stripped (bypass is barrier-only)", () => {
@@ -313,7 +312,7 @@ describe("registry", () => {
         contextUsageBand: "critical",
         preparationBypassesBarrier: true,
       }));
-      expect(tools.map(t => t.function.name)).not.toContain("wallet_send_confirm");
+      expect(tools.map(t => t.function.name)).not.toContain("WalletSendConfirm");
     });
 
     it("barrier WITHOUT a bypass keeps stripping mutating tools (fail-closed default)", () => {
@@ -323,10 +322,10 @@ describe("registry", () => {
         missionRunActive: true,
         contextUsageBand: "barrier",
       }));
-      expect(tools.map(t => t.function.name)).not.toContain("wallet_send_confirm");
+      expect(tools.map(t => t.function.name)).not.toContain("WalletSendConfirm");
     });
 
-    it("read_only tools (session_memory_search, session_memory_resolve_item) are visible at every band when the session has memory", () => {
+    it("read_only tools (SessionMemorySearch, SessionMemoryResolve) are visible at every band when the session has memory", () => {
       // Isolates the pressure-band axis: these tools also require
       // `hasSessionMemory` (see the gate test below), so this case pins a
       // session that HAS narrative chunks and checks read_only survives bands.
@@ -339,8 +338,8 @@ describe("registry", () => {
           hasSessionMemory: true,
         }));
         const names = tools.map(t => t.function.name);
-        expect(names, `band=${band}`).toContain("session_memory_search");
-        expect(names, `band=${band}`).toContain("session_memory_resolve_item");
+        expect(names, `band=${band}`).toContain("SessionMemorySearch");
+        expect(names, `band=${band}`).toContain("SessionMemoryResolve");
       }
     });
 
@@ -353,22 +352,22 @@ describe("registry", () => {
       };
       const fresh = getOpenAITools(defaultVisibilityContext({ ...base, hasSessionMemory: false }))
         .map(t => t.function.name);
-      expect(fresh).not.toContain("session_memory_search");
-      expect(fresh).not.toContain("session_memory_resolve_item");
+      expect(fresh).not.toContain("SessionMemorySearch");
+      expect(fresh).not.toContain("SessionMemoryResolve");
 
       const withMemory = getOpenAITools(defaultVisibilityContext({ ...base, hasSessionMemory: true }))
         .map(t => t.function.name);
-      expect(withMemory).toContain("session_memory_search");
-      expect(withMemory).toContain("session_memory_resolve_item");
+      expect(withMemory).toContain("SessionMemorySearch");
+      expect(withMemory).toContain("SessionMemoryResolve");
     });
 
-    it("mission_stop is hidden in agent sessions (hiddenInAgent visibility gate)", () => {
+    it("MissionStop is hidden in agent sessions (hiddenInAgent visibility gate)", () => {
       const tools = getOpenAITools(defaultVisibilityContext({
         permission: "restricted",
         sessionKind: "agent",
       }));
       const names = tools.map(t => t.function.name);
-      expect(names).not.toContain("mission_stop");
+      expect(names).not.toContain("MissionStop");
     });
 
     it("mission tools split setup and run surfaces", () => {
@@ -377,27 +376,27 @@ describe("registry", () => {
         sessionKind: "mission",
         missionRunActive: false,
       })).map(t => t.function.name);
-      expect(setupNames).toContain("mission_draft_update");
-      expect(setupNames).not.toContain("mission_stop");
+      expect(setupNames).toContain("MissionDraftUpdate");
+      expect(setupNames).not.toContain("MissionStop");
 
       const runNames = getOpenAITools(defaultVisibilityContext({
         permission: "restricted",
         sessionKind: "mission",
         missionRunActive: true,
       })).map(t => t.function.name);
-      expect(runNames).toContain("mission_stop");
-      expect(runNames).not.toContain("mission_draft_update");
+      expect(runNames).toContain("MissionStop");
+      expect(runNames).not.toContain("MissionDraftUpdate");
     });
 
   });
   describe("mission visibility", () => {
-    it("mission_stop remains visible inside an active mission run", () => {
+    it("MissionStop remains visible inside an active mission run", () => {
       const names = getOpenAITools(defaultVisibilityContext({
         permission: "restricted",
         sessionKind: "mission",
         missionRunActive: true,
       })).map((t) => t.function.name);
-      expect(names).toContain("mission_stop");
+      expect(names).toContain("MissionStop");
     });
   });
 });

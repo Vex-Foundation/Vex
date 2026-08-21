@@ -8,13 +8,13 @@
  * replace (`balancesRepo.replaceBalancesForChain`), so the projection layer,
  * snapshots, and `active_chains` treat them identically to Khalani chains.
  *
- * The RPC + pricing implementation is SHARED with the live `wallet_balances`
+ * The RPC + pricing implementation is SHARED with the live `WalletBalances`
  * read path: `tools/evm-chains/balances.ts` (`readLocalChainBalances`). This
  * module owns the sync-specific parts: the token scan set, the fail-soft
  * policy, and the `proj_balances` row assembly.
  *
  * Token set = the chain's seed set ∪ the wallet's EXPLICIT pins
- * (`tracked_tokens` — written by the `wallet_track_token` tool and the
+ * (`tracked_tokens` — written by the `WalletTrackToken` tool and the
  * swap/bridge auto-pin hooks). This replaced the implicit spot-swap derivation
  * (Robinhood launch): explicit rows cover bridged, transferred, and airdropped
  * tokens that the old derivation could never see.
@@ -125,7 +125,7 @@ export async function syncLocalChainForWallet(
 /**
  * Seed set ∪ explicitly pinned tokens, deduped case-insensitively and
  * checksummed. Malformed pinned addresses are dropped defensively (untrusted
- * DB rows). Exported for the live `wallet_balances` read path, which scans the
+ * DB rows). Exported for the live `WalletBalances` read path, which scans the
  * SAME set.
  */
 export async function buildTokenScanSet(

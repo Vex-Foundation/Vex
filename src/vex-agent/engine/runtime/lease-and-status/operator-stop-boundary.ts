@@ -384,7 +384,7 @@ async function lockActiveRunForSession(
  *   - NEITHER → this transaction has just proven no durable or airborne work
  *     remains, so no request is created at all. That is what makes "Stop on an
  *     idle session leaves nothing behind" true, and therefore what keeps a
- *     later, unrelated `loop_defer` from being refused by a stop nobody
+ *     later, unrelated `LoopDefer` from being refused by a stop nobody
  *     retired.
  *
  * Idempotent. A second press finds the open row and returns it rather than

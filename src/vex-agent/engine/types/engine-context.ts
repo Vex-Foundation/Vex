@@ -103,7 +103,7 @@ export interface EngineContext {
    * non-hydrated/test contexts default to plan-mode OFF.
    *
    * NOTE: the dispatcher's hard execution gate does NOT read `planAccepted`
-   * from here — it does a live per-call repo read, because a `plan_write` can
+   * from here — it does a live per-call repo read, because a `PlanWrite` can
    * invalidate acceptance mid-batch (esp. in agent mode, which does not pause).
    * These fields are the model-facing snapshot only.
    */

@@ -15,14 +15,14 @@ import {
 
 describe("buildIntentPreview", () => {
   it("returns toolName + allow-listed criticalArgs for a wallet transfer call", () => {
-    const preview = buildIntentPreview("wallet_send_prepare", {
+    const preview = buildIntentPreview("WalletSendPrepare", {
       network: "eip155",
       chain: "base",
       to: "0xabcdef1234567890",
       amount: "1.5",
       token: "USDC",
     });
-    expect(preview.toolName).toBe("wallet_send_prepare");
+    expect(preview.toolName).toBe("WalletSendPrepare");
     expect(preview.namespace).toBeUndefined(); // internal tool, no dot
     expect(preview.criticalArgs).toEqual({
       network: "eip155",
@@ -88,7 +88,7 @@ describe("buildIntentPreview", () => {
   });
 
   it("drops keys outside the allowlist (defense-in-depth against leak)", () => {
-    const preview = buildIntentPreview("wallet_send_prepare", {
+    const preview = buildIntentPreview("WalletSendPrepare", {
       to: "0xabc",
       amount: "1.0",
       secretField: "DO-NOT-LEAK",
@@ -113,7 +113,7 @@ describe("buildIntentPreview", () => {
 
   it("truncates strings longer than 200 chars with ellipsis", () => {
     const longTo = "0x" + "a".repeat(300);
-    const preview = buildIntentPreview("wallet_send_prepare", { to: longTo });
+    const preview = buildIntentPreview("WalletSendPrepare", { to: longTo });
     const truncated = preview.criticalArgs.to as string;
     expect(truncated).toHaveLength(201); // 200 + ellipsis
     expect(truncated.endsWith("…")).toBe(true);
@@ -179,7 +179,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
   });
 
   it("omits safety when no extras are passed (non-swap / non-gated path)", () => {
-    const preview = buildIntentPreview("wallet_send_prepare", {
+    const preview = buildIntentPreview("WalletSendPrepare", {
       to: "0xabc",
       amount: "1.0",
     });
@@ -339,7 +339,7 @@ describe("buildIntentPreview — injected discovered-tool name", () => {
     // `<toolId with . → __>` and its arguments ARE the params (no envelope).
     // The approval preview is the human's last look before a fund-moving
     // action, so it must resolve back to the real tool.
-    const preview = buildIntentPreview("kyberswap__swap__execute", {
+    const preview = buildIntentPreview("kyberswap__swap_execute", {
       chain: "base",
       tokenIn: "ETH",
       tokenOut: "USDC",

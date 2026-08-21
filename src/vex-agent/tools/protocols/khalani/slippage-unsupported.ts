@@ -33,7 +33,7 @@ export const KHALANI_SLIPPAGE_UNSUPPORTED_REASON =
  * would otherwise be answered with a type complaint instead of the real reason;
  * and the refusal must never depend on the value being well-formed.
  *
- * `subject` is the agent-facing entry point being called (e.g. `bridge_quote`),
+ * `subject` is the agent-facing entry point being called (e.g. `BridgeQuote`),
  * so the message names the call the agent actually made.
  */
 export async function khalaniSlippageRejection(

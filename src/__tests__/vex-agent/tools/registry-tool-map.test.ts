@@ -20,16 +20,12 @@ import {
 } from "../../../vex-agent/tools/registry.js";
 
 /**
- * Registered but NEVER model-facing, so the Tool Map (a system-prompt section)
- * must not carry them. `execute_tool` is withheld in `registry/visibility.ts`
- * (`MODEL_WITHHELD_TOOL_NAMES`) — its definition and dispatch route survive only
- * for approval resume, which never reads this map.
+ * Every registered tool is model-facing now: the withheld set is EMPTY because
+ * the one name it ever held, `execute_tool`, is no longer registered at all
+ * (`registry/protocol.ts`). Its dispatch route survives for approval resume,
+ * which never reads this map.
  */
-const MODEL_WITHHELD_TOOL_NAMES = ["execute_tool"];
-
-const AGENT_SURFACE_TOOL_NAMES = getAllTools()
-  .map(t => t.name)
-  .filter(name => !MODEL_WITHHELD_TOOL_NAMES.includes(name));
+const AGENT_SURFACE_TOOL_NAMES = getAllTools().map(t => t.name);
 
 const TOOL_MAP_NAMES = TOOL_MAP_CATEGORIES.flatMap(c => c.toolNames);
 
@@ -63,29 +59,28 @@ describe("TOOL_MAP_CATEGORIES integrity", () => {
     // before writes within Wallet, discover before execute within
     // Protocol meta-tools, etc).
     const wallet = TOOL_MAP_CATEGORIES.find(c => c.label === "Wallet transfers");
-    expect(wallet?.toolNames).toEqual(["wallet_send_prepare", "wallet_send_confirm"]);
+    expect(wallet?.toolNames).toEqual(["WalletSendPrepare", "WalletSendConfirm"]);
     // "prepare" before "confirm" is the 2-step transfer contract; if a
     // future refactor sorted alphabetically, "confirm" would come first
     // and lose the workflow signal.
 
-    // `execute_tool` is gone from the map: discovered tools are injected as real
-    // function schemas and the wrapper is withheld from the model surface, so
-    // the category names discovery only.
-    // `describe_tools` follows `discover_tools`: the map's order is the flow's
-    // order — list/search first, fetch the chosen manifests second.
-    const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol discovery");
-    expect(protocolMeta?.toolNames).toEqual(["discover_tools", "describe_tools"]);
+    // `execute_tool` is gone from the map AND from the registry: selected tools
+    // are injected as real function schemas, so there is no execution wrapper
+    // to list. `describe_tools` is gone too — select is a MODE of `ToolSearch`,
+    // not a second entry, so the category holds exactly one name.
+    const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol tool search");
+    expect(protocolMeta?.toolNames).toEqual(["ToolSearch"]);
     expect(TOOL_MAP_NAMES).not.toContain("execute_tool");
   });
 });
 
-describe("plan_write visibility (requiresPlanMode + hiddenInMissionSetup:false)", () => {
-  // Stage 0/3 decision: `plan_write` reuses the existing `requiresPlanMode`
+describe("PlanWrite visibility (requiresPlanMode + hiddenInMissionSetup:false)", () => {
+  // Stage 0/3 decision: `PlanWrite` reuses the existing `requiresPlanMode`
   // gate and flips `hiddenInMissionSetup` to false, so it becomes visible in
   // mission SETUP exactly when plan-mode is on (co-authoring the plan alongside
   // the contract) and stays hidden when plan-mode is off.
   const isVisible = (ctx: ToolVisibilityContext): boolean =>
-    getVisibleToolDefs(ctx).some(t => t.name === "plan_write");
+    getVisibleToolDefs(ctx).some(t => t.name === "PlanWrite");
 
   it("is HIDDEN in mission setup when plan-mode is OFF", () => {
     const ctx = defaultVisibilityContext({
@@ -108,7 +103,7 @@ describe("plan_write visibility (requiresPlanMode + hiddenInMissionSetup:false)"
 
 describe("Research category visibility in MISSION SETUP", () => {
   // The mission-setup prompt points the agent at the Research category
-  // (`web_research`, `twitter_account`) as part of Capability Orientation.
+  // (`WebResearch`, `TwitterAccount`) as part of Capability Orientation.
   // That pointer is only honest if those tools actually project into the
   // mission-setup Tool Map when their env keys are configured. Both tools are
   // env-gated (TAVILY_API_KEY / RETTIWT_API_KEY) and carry no mission/band
@@ -135,8 +130,8 @@ describe("Research category visibility in MISSION SETUP", () => {
       const categories = getVisibleToolsByCategory(ctx);
       const research = categories.find(c => c.label === "Research");
       expect(research, "Research category missing from mission-setup Tool Map").toBeDefined();
-      expect(research?.toolNames).toContain("web_research");
-      expect(research?.toolNames).toContain("twitter_account");
+      expect(research?.toolNames).toContain("WebResearch");
+      expect(research?.toolNames).toContain("TwitterAccount");
     } finally {
       for (const key of ENV_KEYS) {
         if (saved[key] === undefined) delete process.env[key];

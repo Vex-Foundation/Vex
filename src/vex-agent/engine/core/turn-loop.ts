@@ -22,7 +22,7 @@
  *       cutover is a separate, explicitly requested step and never happens
  *       inside the trigger.
  *   (b) the queued APPLY consumed at the iteration boundary — requested by the
- *       `compact_apply` tool, the UI button, or the Full-Autonomous auto-apply.
+ *       `CompactApply` tool, the UI button, or the Full-Autonomous auto-apply.
  *   (c) the critical-band ladder (`critical-compaction.ts`): forced prepared
  *       apply, else the deterministic LLM-free fallback. Invoked proactively at
  *       iteration top, defensively before a `paused_wake` park, and on a
@@ -234,7 +234,7 @@ export async function runTurnLoop(
 
     // THE per-turn compaction-preparation read — exactly one, feeding three
     // consumers that must agree: the pressure banner's copy, the tool
-    // visibility axes (barrier bypass + `compact_apply`), and the byte ceiling
+    // visibility axes (barrier bypass + `CompactApply`), and the byte ceiling
     // below. Fail-closed: an unreadable state resolves to `none`, which denies
     // the bypass and hides the apply tool.
     const preparationState = await resolvePreparationPressureState(

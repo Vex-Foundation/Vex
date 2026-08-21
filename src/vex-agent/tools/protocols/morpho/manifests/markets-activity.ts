@@ -17,6 +17,7 @@ import {
  */
 export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.markets.activity",
+  publicName: "morpho__markets_activity_list",
   namespace: "morpho",
   lifecycle: "active",
   description:

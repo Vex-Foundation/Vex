@@ -87,7 +87,7 @@ export function buildTimeRulesPrompt(): string {
 
 export interface RuntimeClockPromptOptions {
   /**
-   * True exactly when this session can call `loop_defer` — an active mission
+   * True exactly when this session can call `LoopDefer` — an active mission
    * RUN, or a Full-Autonomous agent session (owner decree 2026-08-03). It must
    * stay in LOCKSTEP with `ToolVisibility.requiresAutonomousLoop`: rendering the
    * call forms for a session that cannot call the tool wastes ~60 tokens a turn
@@ -124,7 +124,7 @@ export function buildRuntimeClockPrompt(
       : "Pending wake: none");
     lines.push("");
     lines.push("- You do not observe time while deferred; a wake means the executor resumed you after real time passed.");
-    lines.push("- To wait, call `loop_defer(after_ms=60000, reason=\"...\")` — after_ms is MILLISECONDS, 1000 to 86400000 — or `loop_defer(wake_at=\"2026-01-01T00:00:00Z\", reason=\"...\")` for an exact ISO-8601 UTC time within the next 24 h.");
+    lines.push("- To wait, call `LoopDefer(after_ms=60000, reason=\"...\")` — after_ms is MILLISECONDS, 1000 to 86400000 — or `LoopDefer(wake_at=\"2026-01-01T00:00:00Z\", reason=\"...\")` for an exact ISO-8601 UTC time within the next 24 h.");
     lines.push("- Before using deadline_reached or scheduling another wake, compare live state against this Runtime Clock.");
     if (snapshot.missionDeadline) {
       lines.push("- The mission auto-finalizes when this deadline passes. Any positions still open at that point are reported as unresolved, not closed automatically.");

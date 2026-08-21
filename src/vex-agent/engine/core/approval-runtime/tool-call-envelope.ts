@@ -80,7 +80,7 @@ const envelopeMetadataSchema = z.object({
  * THE STORED `toolId` COMES FROM THE RESOLVED MANIFEST, never from inverting the
  * model-visible name. This module used to invert the name itself, in a private
  * second copy of the mapping; that is unsound under the target public-name
- * grammar, where `kyberswap__swap_quote` inverts to `kyberswap.swap_quote`
+ * grammar, where `kyberswap__swap_quote` inverts to `kyberswap.SwapQuote`
  * rather than the immutable `kyberswap.swap.quote`. The wrong id would then be
  * written into a durable approval row AND hashed into the fingerprint that is
  * supposed to guarantee the human approved this exact contract. Manifest

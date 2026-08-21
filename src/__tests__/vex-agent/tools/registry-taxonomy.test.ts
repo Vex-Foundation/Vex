@@ -11,7 +11,7 @@
  *     7 values — `assertExhaustiveActionKind` would surface a missing branch
  *     at compile time; this test pins both directions.
  *  3. Critical mappings agreed in the puzzle 5/1A Codex review stay stable
- *     (regression guard for "someone reclassified wallet_send_confirm").
+ *     (regression guard for "someone reclassified WalletSendConfirm").
  *
  * The full per-tool mapping is in `src/vex-agent/tools/registry/*.ts`; this
  * test does NOT enumerate every tool because the type system already enforces
@@ -73,42 +73,41 @@ describe("ActionKind — pinned critical classifications", () => {
 
   const CRITICAL_MAPPINGS: ReadonlyArray<readonly [string, ActionKind]> = [
     // Wallet — user signs locally
-    ["wallet_send_confirm", "user_wallet_broadcast"],
-    ["wallet_send_prepare", "approval_prepare"],
-    ["wallet_balances", "read"],
+    ["WalletSendConfirm", "user_wallet_broadcast"],
+    ["WalletSendPrepare", "approval_prepare"],
+    ["WalletBalances", "read"],
 
     // Read-only DB / RPC / external API surfaces
-    ["chain_read", "read"],
-    ["agent_scan", "read"],
-    ["session_memory_search", "read"],
-    ["long_memory_search", "read"],
-    ["long_memory_get", "read"],
+    ["ChainRead", "read"],
+    ["AgentScan", "read"],
+    ["SessionMemorySearch", "read"],
+    ["MemorySearch", "read"],
+    ["MemoryGet", "read"],
 
     // External API calls — read-only per Codex bindings:
     // network egress / privacy is a separate dimension, not `external_post`.
-    ["web_research", "read"],
-    ["twitter_account", "read"],
+    ["WebResearch", "read"],
+    ["TwitterAccount", "read"],
 
     // Local writes — memory suggestions, mission draft, compaction
-    ["long_memory_suggest", "local_write"],
-    ["mission_draft_update", "local_write"],
-    ["session_memory_resolve_item", "local_write"],
-    ["compact_apply", "local_write"],
+    ["MemorySuggest", "local_write"],
+    ["MissionDraftUpdate", "local_write"],
+    ["SessionMemoryResolve", "local_write"],
+    ["CompactApply", "local_write"],
 
-    // mission_stop is a state transition via engineSignal, not deferred work —
+    // MissionStop is a state transition via engineSignal, not deferred work —
     // classify as local_write (Codex Q2 ruling, puzzle 5/1A).
-    ["mission_stop", "local_write"],
+    ["MissionStop", "local_write"],
 
     // Schedule — reserved for delayed / deferred execution (Codex Q2 ruling).
-    ["loop_defer", "schedule"],
+    ["LoopDefer", "schedule"],
 
     // Protocol meta-tools — wrapper is read; protocol target classification
     // is derived dynamically in `executeProtocolTool` (see execute-tool-taxonomy test).
-    ["discover_tools", "read"],
-    ["execute_tool", "read"],
+    ["ToolSearch", "read"],
 
     // Khalani read-only alias
-    ["token_find", "read"],
+    ["TokenFind", "read"],
   ];
 
   it.each(CRITICAL_MAPPINGS)("%s → %s", (toolName, expectedKind) => {

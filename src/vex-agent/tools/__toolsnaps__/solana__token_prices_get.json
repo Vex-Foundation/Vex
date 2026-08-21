@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get real-time USD prices for one or more Solana token mints — pass raw mint addresses via mints, OR symbols/names/mints via queries (resolved automatically, no separate lookup tool needed first). Returns each requested id's price (under prices, or resolved for queries); any mint/query Jupiter could not price is listed in missing instead of being silently dropped. Provide exactly one of: mints, queries.",
+      "name": "solana__token_prices_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "mints": {
+            "description": "Comma-separated mint addresses. Provide this OR queries, not both.",
+            "type": "string"
+          },
+          "queries": {
+            "description": "Comma-separated token symbols, names, or mint addresses to resolve and price (e.g. \"SOL,BONK\"). Provide this OR mints, not both.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.prices"
+  }
+}

@@ -27,6 +27,7 @@ function feeBearingSwapParams(): ProtocolParamDef[] {
 export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "solana.swap.quote",
+    publicName: "solana__swap_quote",
     namespace: "solana",
     lifecycle: "active",
     description: "Preview a Solana token swap via Jupiter's Router before committing funds — price, route, and a full fee/tip/ATA-rent disclosure. Requires a selected Solana wallet (the quote is wallet-scoped — the fee-bearing route depends on the payer). Call this FIRST, then pass the identical params to solana.swap.execute; execute rejects if any economically-relevant param drifts from this quote. Returned inputAmountRaw/outputAmountRaw/otherAmountThreshold are raw atomic units of the resolved input/output token (see the returned token.decimals to convert to a human amount); otherAmountThreshold is the worst-case minimum output the swap enforces on-chain. priceImpactFraction is a decimal FRACTION, not a percent (0.0015 = 0.15%, same convention as kyberswap.swap.quote's priceImpact) and is null when Jupiter reported none — never read a missing impact as zero. routePlan lists the venues the swap actually routes through and each one's share. No execution happens here.",
@@ -39,6 +40,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.swap.execute",
+    publicName: "solana__swap_execute",
     namespace: "solana",
     lifecycle: "active",
     description: "Execute a token swap via Jupiter's Router (/build) — routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana.swap.quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending — it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.",

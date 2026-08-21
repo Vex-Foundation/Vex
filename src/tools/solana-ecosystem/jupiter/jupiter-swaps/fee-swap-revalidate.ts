@@ -40,7 +40,7 @@ export function assertExactInSwapMode(fresh: JupiterSwapBuildResponse): void {
   if (fresh.swapMode !== undefined && fresh.swapMode !== "ExactIn") {
     throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
-      `Jupiter's /build returned swapMode ${fresh.swapMode}, not the ExactIn swap that was quoted. Nothing was signed. Get a fresh solana.swap.quote; do not retry this build.`,
+      `Jupiter's /build returned swapMode ${fresh.swapMode}, not the ExactIn swap that was quoted. Nothing was signed. Get a fresh solana__swap_quote; do not retry this build.`,
     );
   }
 }

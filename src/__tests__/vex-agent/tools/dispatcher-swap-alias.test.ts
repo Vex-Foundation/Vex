@@ -1,9 +1,9 @@
 /**
- * Agent Scan plan v3 §11.2 — `swap_execute` / `swap_execute_uniswap` MUTATING
+ * Agent Scan plan v3 §11.2 — `SwapExecute` / `SwapExecuteUniswap` MUTATING
  * protocol-alias dedicated dispatch path. Rewrite of the retired `swap`
  * buy/sell/side/recipient contract (Stage 8b) against the final unified
  * surface: `{chain, tokenIn, tokenOut, amountIn, slippageBps?}`, KyberSwap-only
- * EVM routing (no silent Uniswap fallback), and the hidden `swap_execute_uniswap`
+ * EVM routing (no silent Uniswap fallback), and the hidden `SwapExecuteUniswap`
  * pair gated on a session-scoped reveal.
  *
  * Two surfaces under test:
@@ -16,20 +16,19 @@
  *         the hidden Uniswap pair for the session — NO silent fallback dispatch;
  *       - legacy `side`/`recipient`/`amount` fields are REJECTED (.strict()),
  *         never silently stripped;
- *       - path-identity: `swap_execute` and execute_tool({toolId:"kyberswap.swap.execute"})
+ *       - path-identity: `SwapExecute` and execute_tool({toolId:"kyberswap.swap.execute"})
  *         reach executeProtocolTool with the SAME toolId + params;
  *       - the alias SKIPS the internal mutating-approval gate (executeProtocolTool
  *         is reached even under restricted+unapproved — approval is owned there);
  *       - mission auto-retry-unsafe stamp fires using the TARGET manifest;
- *       - pressure barrier/critical → mutating deny for `swap_execute`.
+ *       - pressure barrier/critical → mutating deny for `SwapExecute`.
  *
- *  B. HIDDEN `swap_execute_uniswap` — dispatch-side hard reject before an
+ *  B. HIDDEN `SwapExecuteUniswap` — dispatch-side hard reject before an
  *     active reveal (independent of whatever the tool list showed the model),
  *     resolves to `uniswap.swap.execute` once revealed.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearUniswapPairReveal, revealUniswapPair } from "@vex-agent/tools/registry/uniswap-reveal.js";
 
 // ── Part A mocks: boundary mock of executeProtocolTool + manifest lookup ────
 
@@ -87,13 +86,12 @@ afterEach(() => {
   // Reveal state is a module-level session map — clear every sessionId this
   // file touches so tests never leak reveal state into each other.
   for (const sid of ["s1", "s-reveal-1", "s-reveal-2", "s-hidden-1", "s-hidden-2", "s-hidden-3"]) {
-    clearUniswapPairReveal(sid);
   }
 });
 
-describe("swap_execute alias — EVM / Solana routing (KyberSwap-only, no side/buy/sell)", () => {
+describe("SwapExecute alias — EVM / Solana routing (KyberSwap-only, no side/buy/sell)", () => {
   it("EVM (Kyber-covered chain) → kyberswap.swap.execute with unchanged params", async () => {
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c1" }, ctx());
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c1" }, ctx());
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
     expect(req.toolId).toBe("kyberswap.swap.execute");
@@ -108,7 +106,7 @@ describe("swap_execute alias — EVM / Solana routing (KyberSwap-only, no side/b
 
   it("Solana → solana.swap.execute with the SAME keys (W5a)", async () => {
     await dispatchTool(
-      { name: "swap_execute", args: { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5", slippageBps: 50 }, toolCallId: "c2" },
+      { name: "SwapExecute", args: { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5", slippageBps: 50 }, toolCallId: "c2" },
       ctx(),
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
@@ -118,7 +116,7 @@ describe("swap_execute alias — EVM / Solana routing (KyberSwap-only, no side/b
 
   it("unknown chain (neither Kyber nor Uniswap) → clear reject, NO dispatch", async () => {
     const result = await dispatchTool(
-      { name: "swap_execute", args: { chain: "narnia", tokenIn: "A", tokenOut: "B", amountIn: "1" }, toolCallId: "c3" },
+      { name: "SwapExecute", args: { chain: "narnia", tokenIn: "A", tokenOut: "B", amountIn: "1" }, toolCallId: "c3" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -128,31 +126,31 @@ describe("swap_execute alias — EVM / Solana routing (KyberSwap-only, no side/b
 
   it("missing required arg (amountIn) → clear reject, NO dispatch", async () => {
     const result = await dispatchTool(
-      { name: "swap_execute", args: { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR }, toolCallId: "c4" },
+      { name: "SwapExecute", args: { chain: "base", tokenIn: "ETH", tokenOut: USDC_ADDR }, toolCallId: "c4" },
       ctx(),
     );
     expect(result.success).toBe(false);
-    expect(result.output).toMatch(/^swap_execute:/);
+    expect(result.output).toMatch(/^SwapExecute:/);
     expect(result.output).toContain("amountIn");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
-  it("EVM bare symbol token → clear reject, NO dispatch (must use token_find first)", async () => {
+  it("EVM bare symbol token → clear reject, NO dispatch (must use TokenFind first)", async () => {
     const result = await dispatchTool(
-      { name: "swap_execute", args: { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "0.5" }, toolCallId: "c5" },
+      { name: "SwapExecute", args: { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "0.5" }, toolCallId: "c5" },
       ctx(),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("EVM tokens must be a contract address");
-    expect(result.output).toContain("token_find");
+    expect(result.output).toContain("TokenFind");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });
 
-describe("swap_execute alias — legacy fields are REJECTED, never silently stripped (FIX-SPINE C4)", () => {
+describe("SwapExecute alias — legacy fields are REJECTED, never silently stripped (FIX-SPINE C4)", () => {
   it('rejects a legacy "side" field', async () => {
     const result = await dispatchTool(
-      { name: "swap_execute", args: { ...EVM_SWAP_ARGS, side: "sell" }, toolCallId: "c6" },
+      { name: "SwapExecute", args: { ...EVM_SWAP_ARGS, side: "sell" }, toolCallId: "c6" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -162,7 +160,7 @@ describe("swap_execute alias — legacy fields are REJECTED, never silently stri
 
   it('rejects a legacy "recipient" field', async () => {
     const result = await dispatchTool(
-      { name: "swap_execute", args: { ...EVM_SWAP_ARGS, recipient: "0x" + "ab".repeat(20) }, toolCallId: "c7" },
+      { name: "SwapExecute", args: { ...EVM_SWAP_ARGS, recipient: "0x" + "ab".repeat(20) }, toolCallId: "c7" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -173,7 +171,7 @@ describe("swap_execute alias — legacy fields are REJECTED, never silently stri
   it('rejects a legacy "amount" field (renamed to amountIn)', async () => {
     const { amountIn: _drop, ...rest } = EVM_SWAP_ARGS;
     const result = await dispatchTool(
-      { name: "swap_execute", args: { ...rest, amount: "0.5" }, toolCallId: "c8" },
+      { name: "SwapExecute", args: { ...rest, amount: "0.5" }, toolCallId: "c8" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -183,7 +181,7 @@ describe("swap_execute alias — legacy fields are REJECTED, never silently stri
   });
 });
 
-describe("swap_execute alias — a chain id routes exactly like its slug", () => {
+describe("SwapExecute alias — a chain id routes exactly like its slug", () => {
   // CORRECTED (Wave B, card B2). This block used to assert that the bare chain
   // id "4663" was "Kyber-blind" and therefore REJECTED with "KyberSwap does not
   // support chain 4663" plus a burned Uniswap reveal — describing the
@@ -196,7 +194,7 @@ describe("swap_execute alias — a chain id routes exactly like its slug", () =>
   // What the old assertion actually pinned was a resolver defect: only the SLUG
   // reached Kyber's table, so the id spelling fell through to Uniswap's numeric
   // path and the agent was told a venue lacked support it has — spending the
-  // session's one-shot reveal on the spelling of a chain. `token_find` returns
+  // session's one-shot reveal on the spelling of a chain. `TokenFind` returns
   // `chainId` as a NUMBER, so that spelling is the common one.
   //
   // Both forms now resolve through the same registry rows, so the reveal cannot
@@ -208,7 +206,7 @@ describe("swap_execute alias — a chain id routes exactly like its slug", () =>
 
   it('chain "robinhood" (slug) still routes to kyberswap.swap.execute — no reveal', async () => {
     await dispatchTool(
-      { name: "swap_execute", args: { chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 }, toolCallId: "rh1" },
+      { name: "SwapExecute", args: { chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 }, toolCallId: "rh1" },
       ctx({ sessionId: "s-reveal-1" }),
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
@@ -218,7 +216,7 @@ describe("swap_execute alias — a chain id routes exactly like its slug", () =>
 
   it('chain "4663" (chain id) ALSO routes to kyberswap.swap.execute, on the canonical slug', async () => {
     await dispatchTool(
-      { name: "swap_execute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 }, toolCallId: "rh2" },
+      { name: "SwapExecute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 }, toolCallId: "rh2" },
       ctx({ sessionId: "s-reveal-2" }),
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
@@ -229,34 +227,15 @@ describe("swap_execute alias — a chain id routes exactly like its slug", () =>
     expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 });
   });
 
-  it("does NOT burn the session's Uniswap reveal on the chain id spelling", async () => {
-    const sessionId = "s-reveal-2";
-    expect(revealUniswapPair).toBeDefined();
-    await dispatchTool(
-      { name: "swap_execute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh3" },
-      ctx({ sessionId }),
-    );
-
-    // Proven behaviorally, the same way the old test proved the opposite: the
-    // hidden pair is dispatched for the SAME session immediately after and must
-    // be REFUSED, because nothing revealed it.
-    executeProtocolTool.mockClear();
-    const hidden = await dispatchTool(
-      { name: "swap_execute_uniswap", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh4" },
-      ctx({ sessionId }),
-    );
-    expect(hidden.success).toBe(false);
-    expect(executeProtocolTool).not.toHaveBeenCalled();
-  });
 });
 
-describe("swap_execute alias — skips the internal approval gate (executeProtocolTool owns approval)", () => {
+describe("SwapExecute alias — skips the internal approval gate (executeProtocolTool owns approval)", () => {
   it("restricted + unapproved STILL reaches executeProtocolTool (no dispatcher-side pendingApproval short-circuit)", async () => {
     // A regular mutating internal tool would be short-circuited by
     // routeInternalTool's gate with pendingApproval and the handler never
-    // reached. `swap_execute` must NOT do that — it reaches
+    // reached. `SwapExecute` must NOT do that — it reaches
     // executeProtocolTool, which runs the prequote gate THEN the approval gate.
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c9" }, ctx({ sessionPermission: "restricted", approved: false }));
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c9" }, ctx({ sessionPermission: "restricted", approved: false }));
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
   });
 
@@ -268,16 +247,16 @@ describe("swap_execute alias — skips the internal approval gate (executeProtoc
       actionKind: "user_wallet_broadcast",
       prequote: { verdict: "unknown" },
     });
-    const result = await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c10" }, ctx());
+    const result = await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c10" }, ctx());
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "unknown" });
     expect(result.actionKind).toBe("user_wallet_broadcast");
   });
 });
 
-describe("swap_execute alias — path-identity with direct execute_tool", () => {
-  it("`swap_execute` and execute_tool({toolId:'kyberswap.swap.execute'}) reach executeProtocolTool with identical toolId+params", async () => {
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c11a" }, ctx());
+describe("SwapExecute alias — path-identity with direct execute_tool", () => {
+  it("`SwapExecute` and execute_tool({toolId:'kyberswap.swap.execute'}) reach executeProtocolTool with identical toolId+params", async () => {
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c11a" }, ctx());
     const aliasReq = executeProtocolTool.mock.calls[0]?.[0];
 
     executeProtocolTool.mockClear();
@@ -297,7 +276,7 @@ describe("swap_execute alias — path-identity with direct execute_tool", () => 
 
   it("alias passes the SAME execution-context slice as execute_tool", async () => {
     const c = ctx();
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c12a" }, c);
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c12a" }, c);
     const aliasCtx = executeProtocolTool.mock.calls[0]?.[1];
 
     executeProtocolTool.mockClear();
@@ -319,10 +298,10 @@ describe("swap_execute alias — path-identity with direct execute_tool", () => 
   });
 });
 
-describe("swap_execute alias — mission auto-retry-unsafe stamp uses the TARGET manifest", () => {
+describe("SwapExecute alias — mission auto-retry-unsafe stamp uses the TARGET manifest", () => {
   it("stamps the mission run UNSAFE before dispatch (target manifest mutating:true)", async () => {
     getProtocolManifest.mockReturnValue({ mutating: true, actionKind: "user_wallet_broadcast" });
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c13" }, ctx({ missionRunId: "run-1" }));
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c13" }, ctx({ missionRunId: "run-1" }));
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
     // The stamp predicate resolved the TARGET toolId, not the alias name.
     expect(getProtocolManifest).toHaveBeenCalledWith("kyberswap.swap.execute");
@@ -331,7 +310,7 @@ describe("swap_execute alias — mission auto-retry-unsafe stamp uses the TARGET
 
   it("FAIL-CLOSED: a stamp write failure blocks dispatch", async () => {
     markAutoRetryUnsafe.mockRejectedValueOnce(new Error("db down"));
-    const result = await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c14" }, ctx({ missionRunId: "run-1" }));
+    const result = await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c14" }, ctx({ missionRunId: "run-1" }));
     expect(result.success).toBe(false);
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
@@ -342,7 +321,7 @@ describe("swap_execute alias — mission auto-retry-unsafe stamp uses the TARGET
     // alias mutating flag = true), so the stamp still fires; the real route
     // error surfaces as the branch's bounded failure.
     const result = await dispatchTool(
-      { name: "swap_execute", args: { chain: "narnia", tokenIn: "A", tokenOut: "B", amountIn: "1" }, toolCallId: "c15" },
+      { name: "SwapExecute", args: { chain: "narnia", tokenIn: "A", tokenOut: "B", amountIn: "1" }, toolCallId: "c15" },
       ctx({ missionRunId: "run-1" }),
     );
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1"); // stamped conservatively
@@ -352,9 +331,9 @@ describe("swap_execute alias — mission auto-retry-unsafe stamp uses the TARGET
   });
 });
 
-describe("swap_execute alias — pressure-band hard-deny (target = mutating)", () => {
+describe("SwapExecute alias — pressure-band hard-deny (target = mutating)", () => {
   it("barrier → mutating deny, NO dispatch", async () => {
-    const result = await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c16" }, ctx({ contextUsageBand: "barrier" }));
+    const result = await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c16" }, ctx({ contextUsageBand: "barrier" }));
     expect(result.success).toBe(false);
     expect(result.output).toContain("blocked");
     expect(result.output).toContain("barrier");
@@ -363,47 +342,52 @@ describe("swap_execute alias — pressure-band hard-deny (target = mutating)", (
   });
 
   it("critical → mutating deny, NO dispatch", async () => {
-    const result = await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c17" }, ctx({ contextUsageBand: "critical" }));
+    const result = await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c17" }, ctx({ contextUsageBand: "critical" }));
     expect(result.success).toBe(false);
     expect(result.output).toContain("critical");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   it("warning band does NOT deny — dispatch proceeds", async () => {
-    await dispatchTool({ name: "swap_execute", args: EVM_SWAP_ARGS, toolCallId: "c18" }, ctx({ contextUsageBand: "warning" }));
+    await dispatchTool({ name: "SwapExecute", args: EVM_SWAP_ARGS, toolCallId: "c18" }, ctx({ contextUsageBand: "warning" }));
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("swap_execute_uniswap alias — hidden pair, dispatch-side hard reject before reveal", () => {
-  it("rejects when the session has no active reveal, independent of the tool list", async () => {
-    const result = await dispatchTool(
-      { name: "swap_execute_uniswap", args: EVM_SWAP_ARGS, toolCallId: "h1" },
-      ctx({ sessionId: "s-hidden-1" }),
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toMatch(/not available yet for this session/i);
-    expect(executeProtocolTool).not.toHaveBeenCalled();
-  });
-
-  it("routes to uniswap.swap.execute once the session has an active reveal", async () => {
-    const sessionId = "s-hidden-2";
-    revealUniswapPair(sessionId);
+describe("SwapExecuteUniswap alias — always callable (owner decision D4)", () => {
+  // INVERTED, deliberately. This block used to prove the reveal gate: an
+  // unrevealed session was refused at dispatch "independent of whatever the
+  // tool list showed the model". D4 retired that gate — hiding a venue is what
+  // cost the agent its fallback exactly when the primary venue failed, and the
+  // approval gate, not visibility, is what protects the money. So the invariant
+  // to hold now is the opposite one, and it must be proven just as explicitly.
+  it("routes to uniswap.swap.execute for any session", async () => {
     await dispatchTool(
-      { name: "swap_execute_uniswap", args: EVM_SWAP_ARGS, toolCallId: "h2" },
-      ctx({ sessionId }),
+      { name: "SwapExecuteUniswap", args: EVM_SWAP_ARGS, toolCallId: "h2" },
+      ctx({ sessionId: "s-hidden-2" }),
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string }];
     expect(req.toolId).toBe("uniswap.swap.execute");
   });
 
-  it("a reveal in ONE session does not leak into another session (cross-session isolation)", async () => {
-    revealUniswapPair("s-hidden-3");
+  it("routes for a session that never touched KyberSwap — there is nothing to unlock", async () => {
     const result = await dispatchTool(
-      { name: "swap_execute_uniswap", args: EVM_SWAP_ARGS, toolCallId: "h3" },
-      ctx({ sessionId: "some-other-unrevealed-session" }),
+      { name: "SwapExecuteUniswap", args: EVM_SWAP_ARGS, toolCallId: "h3" },
+      ctx({ sessionId: "some-other-session" }),
     );
-    expect(result.success).toBe(false);
-    expect(result.output).toMatch(/not available yet for this session/i);
+    expect(result.output).not.toMatch(/not available yet for this session/i);
+    const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string }];
+    expect(req.toolId).toBe("uniswap.swap.execute");
+  });
+
+  it("still reaches executeProtocolTool, which owns the prequote and approval gates", async () => {
+    // The un-gating removed a VISIBILITY gate, never an authorization one: a
+    // fund-moving venue call is authorized exactly like its primary-venue
+    // sibling, by the gates inside executeProtocolTool.
+    await dispatchTool(
+      { name: "SwapExecuteUniswap", args: EVM_SWAP_ARGS, toolCallId: "h4" },
+      ctx({ sessionId: "s-auth", sessionPermission: "restricted", approved: false }),
+    );
+    expect(executeProtocolTool).toHaveBeenCalledTimes(1);
   });
 });

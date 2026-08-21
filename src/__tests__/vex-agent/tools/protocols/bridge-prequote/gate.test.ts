@@ -12,7 +12,7 @@
  *   - Bridge gate: no bridge quote → block before approval; fresh bridge
  *     prequote → allow; a thrown identity build / DB read → fail-closed block;
  *     gate reads kind='bridge'.
- *   - Identity collision: a recorded bridge_quote then a matching khalani.bridge
+ *   - Identity collision: a recorded BridgeQuote then a matching khalani.bridge
  *     execute → SAME match-hash (allow); a different chain/token/amount/recipient/
  *     tradeType → different hash (block).
  *   - Money/fee binding (8c security fix): refundTo/referrer/referrerFeeBps/filler
@@ -182,7 +182,7 @@ describe("evaluatePrequoteGate — bridge", () => {
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("no_quote");
-      expect(d.message).toMatch(/bridge_quote/i);
+      expect(d.message).toMatch(/BridgeQuote/i);
     }
     expect(mockExistsFail.mock.calls[0]![2]).toBe("bridge");
     expect(mockFindLatest.mock.calls[0]![2]).toBe("bridge");

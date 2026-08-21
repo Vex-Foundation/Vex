@@ -30,6 +30,7 @@ import {
   readStringList,
   type FiltersApplied,
   type NumericParamSpecs,
+  type Read,
 } from "../list-core/index.js";
 
 import {
@@ -56,6 +57,31 @@ export const FEED_SORT_KEYS = [
 ] as const;
 
 export type FeedSortKey = (typeof FEED_SORT_KEYS)[number];
+
+/**
+ * The endpoint selectors, owned here with the rest of the feed vocabulary.
+ *
+ * Batch 2 (owner decision D7) retired `dexscreener.profiles.recent` and
+ * `dexscreener.boosts.top` into their siblings' `feed` param: each pair shared
+ * one row shape, one param set and one pipeline, and differed only in which
+ * provider URL filled the rows. The accepted values live beside the parse so a
+ * refusal names the same set the manifest enum declares.
+ */
+export const PROFILE_FEEDS = ["latest", "recentUpdates"] as const;
+export type ProfileFeed = (typeof PROFILE_FEEDS)[number];
+
+export const BOOST_FEEDS = ["latest", "top"] as const;
+export type BoostFeed = (typeof BOOST_FEEDS)[number];
+
+/** Read the profile tool's endpoint selector, defaulting to `latest`. */
+export function readProfileFeed(params: Record<string, unknown>): Read<ProfileFeed> {
+  return readEnum(params, "feed", PROFILE_FEEDS, "latest");
+}
+
+/** Read the boost tool's endpoint selector, defaulting to `latest`. */
+export function readBoostFeed(params: Record<string, unknown>): Read<BoostFeed> {
+  return readEnum(params, "feed", BOOST_FEEDS, "latest");
+}
 
 export const FEED_SORT_DIRECTIONS = ["desc", "asc"] as const;
 
@@ -193,7 +219,7 @@ export function parseFeedListQuery(
       reason: defaults.eventAgeParam === null
         ? `"${key}" does not apply to this tool — DexScreener's boost feeds carry no timestamp of `
           + "any kind, so nothing here can be filtered or sorted by age. Use "
-          + "dexscreener.profiles.recent for a time-ordered feed."
+          + "dexscreener.profiles with feed: recentUpdates for a time-ordered feed."
         : `"${key}" is not this tool's freshness filter — use "${defaults.eventAgeParam}".`,
     };
   }
@@ -213,7 +239,7 @@ export function parseFeedListQuery(
       reason:
         '"ctoOnly" does not apply to this tool — only the two token-profile feeds carry the cto '
         + "flag. Use dexscreener.communityTakeovers for the takeover feed itself, or "
-        + "dexscreener.profiles / dexscreener.profiles.recent with ctoOnly.",
+        + "dexscreener.profiles (either feed) with ctoOnly.",
     };
   }
   if (ctoOnly.value) filtersApplied.ctoOnly = true;
@@ -225,7 +251,7 @@ export function parseFeedListQuery(
       ok: false,
       reason:
         '"minBoostCountTotal" does not apply to this tool — its rows carry no boost units. Use '
-        + "dexscreener.boosts, dexscreener.boosts.top or dexscreener.attention.",
+        + "dexscreener.boosts (feed: latest or top) or dexscreener.attention.",
     };
   }
   if (minBoostCountTotal.value !== null) {

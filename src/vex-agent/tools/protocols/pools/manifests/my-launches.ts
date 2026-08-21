@@ -9,6 +9,7 @@ import { POOLS_DISCOVER_LIMIT_CAP, POOLS_PLATFORMS } from "@tools/pools-fun/cons
 export const POOLS_MY_LAUNCHES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.my_launches",
+    publicName: "pools__my_launches_list",
     namespace: "pools",
     lifecycle: "active",
     description:

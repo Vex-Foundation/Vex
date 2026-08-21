@@ -7,7 +7,7 @@
  * this module owns them, reading through the shared `db/client` primitives
  * with a narrow projection), the Khalani/Relay clients, SSRF-controlled RPC
  * verification (`./bridge-activity-repair-verification.js`), the
- * idempotent-by-execution-id balance enqueue, and W5's reveal-clear. Every
+ * and the idempotent-by-execution-id balance enqueue. Every
  * lazy import mirrors the Phase-1 `buildProductionRepairDeps` shape so the
  * module load stays IO-free.
  */
@@ -21,7 +21,6 @@ import {
   clearVerificationStall,
   type BridgeChainFamily,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { clearRelayRouteReveal } from "@vex-agent/tools/registry/relay-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 import type { BridgeRepairDeps, BridgeSweepRow } from "./bridge-activity-repair-contracts.js";
@@ -110,7 +109,7 @@ function readOptionalStringArray(value: unknown): readonly string[] | undefined 
  * NOT part of W-SPINE's repo API and MUST NOT be added to it — this module owns
  * them, reading through the shared `db/client` primitives with a narrow
  * projection), the Khalani/Relay clients, SSRF-controlled RPC verification, the
- * idempotent-by-execution-id balance enqueue, and W5's reveal-clear. Every lazy
+ * and the idempotent-by-execution-id balance enqueue. Every lazy
  * import mirrors the Phase-1 `buildProductionRepairDeps` shape so the module load
  * stays IO-free.
  */
@@ -403,7 +402,5 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
         );
       }
     },
-
-    clearRelayReveal: (sessionId, routeKey) => clearRelayRouteReveal(sessionId, routeKey),
   };
 }

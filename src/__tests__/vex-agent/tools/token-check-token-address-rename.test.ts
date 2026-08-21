@@ -1,5 +1,5 @@
 /**
- * `token_check`: `address` → `tokenAddress`, ATOMIC across seven surfaces.
+ * `TokenCheck`: `address` → `tokenAddress`, ATOMIC across seven surfaces.
  *
  * A rename that lands on some surfaces and not others is worse than no rename
  * at all: the model reads one spelling in the alias schema, another in the
@@ -50,8 +50,8 @@ const MANIFEST = required(
   "kyberswap.tokens.check",
 );
 const ALIAS = required(
-  ACTION_ALIAS_TOOLS.find((t) => t.name === "token_check"),
-  "the token_check alias",
+  ACTION_ALIAS_TOOLS.find((t) => t.name === "TokenCheck"),
+  "the TokenCheck alias",
 );
 
 function aliasSchema(): JsonSchema {
@@ -130,8 +130,8 @@ describe("surfaces 4 + 6 — the alias handler and the alias↔protocol parity m
 describe("surface 5 — the Safety Contract prompt", () => {
   it("teaches the call with tokenAddress and no longer with address", () => {
     const prompt = buildSafetyContractPrompt();
-    expect(prompt).toContain('token_check(chain="...", tokenAddress="...")');
-    expect(prompt).not.toContain('token_check(chain="...", address="...")');
+    expect(prompt).toContain('TokenCheck(chain="...", tokenAddress="...")');
+    expect(prompt).not.toContain('TokenCheck(chain="...", address="...")');
   });
 });
 

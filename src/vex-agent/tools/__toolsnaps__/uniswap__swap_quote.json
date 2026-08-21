@@ -1,0 +1,51 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get the best Uniswap route across V2 + V3. Returns the output amount, the route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). Read-only, no execution. Covers the EVM chains with a verified Vex Uniswap deployment; pass token ADDRESSES. Vex charges 25 bps (0.25%) on the input token: the quoted output is for amountIn MINUS that fee (see swapAmountRaw and the vexFee block), while amountIn stays the total debited. The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
+      "name": "uniswap__swap_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount in human-readable units. This is the TOTAL debited: the route is priced for this amount minus Vex's 25 bps fee.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug/alias or id (e.g. robinhood, base, 4663).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It pins the minimum output the resulting swap will enforce, and is the ONLY price protection that trade has. Pass the SAME value to uniswap.swap.execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the router's \"Too little received\" / \"INSUFFICIENT_OUTPUT_AMOUNT\" comes back from the pre-sign gas estimate, so nothing is signed and NO gas is spent, and the activity row records failure code slippage. LESS OFTEN the pool moves after that estimate passes: the router REVERTS once mined, the row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair — and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search — resolve a symbol to its address first.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token CONTRACT ADDRESS or native ETH/native.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "uniswap",
+    "requiresEnv": null,
+    "toolId": "uniswap.swap.quote"
+  }
+}

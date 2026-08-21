@@ -20,12 +20,15 @@ describe("DexScreener agent source policy", () => {
     expect(prompt).toContain("source of truth for amm pairs dexscreener indexes");
     expect(prompt).toContain("not contract-safety evidence");
     expect(prompt).toContain("not that no market exists");
-    expect(prompt).toContain("exact token address + chain -> `dexscreener.tokenpairs`");
-    expect(prompt).toContain("name/symbol -> `dexscreener.search`");
-    expect(prompt).toContain("exact pool address + chain -> `dexscreener.pairs`");
-    expect(prompt).toContain("multiple token addresses on one chain -> `dexscreener.tokens`");
+    // The routing steps name MODEL-VISIBLE publicNames, never dotted toolIds:
+    // the dotted id is the internal/audit identity and the catalog rejects it
+    // as a call, so routing prose using one would teach an uncallable name.
+    expect(prompt).toContain("exact token address + chain -> `dexscreener__token_pairs_list`");
+    expect(prompt).toContain("name/symbol -> `dexscreener__pairs_search`");
+    expect(prompt).toContain("exact pool address + chain -> `dexscreener__pairs_get`");
+    expect(prompt).toContain("multiple token addresses on one chain -> `dexscreener__tokens_get`");
     expect(prompt).toContain("never identify a token from ticker text alone");
-    expect(prompt).toContain("`dexscreener.trending`, then `dexscreener.meta`");
+    expect(prompt).toContain("`dexscreener__narratives_list`, then `dexscreener__narrative_get`");
     expect(prompt).toContain("request a fresh executable quote from the venue");
     expect(prompt).toContain("must never be reused as the execution price");
   });
@@ -53,11 +56,11 @@ describe("DexScreener agent source policy", () => {
 
   it("does not retrieve profiles as token creation or CTO as proof of control", () => {
     const profiles = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles"]);
-    const recent = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles.recent"]);
     const cto = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.communityTakeovers"]);
 
     expect(profiles).toContain("not a token-creation, launch, or newly listed pair feed");
-    expect(recent).toContain("does not show when a token or pair was created");
+    // The merged passage carries the retired recent-feed's honesty too.
+    expect(profiles).toContain("does not show when a token or pair was created");
     expect(cto).toContain("provider classification");
     expect(cto).toContain("not proof that ownership, admin keys, or contract control changed");
     expect(cto).not.toContain("community has reclaimed control");

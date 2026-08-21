@@ -1,0 +1,42 @@
+{
+  "definition": {
+    "function": {
+      "description": "Buy YES or NO shares in a prediction market — opens or adds to a position. Read solana.predict.tradingStatus first to confirm trading is active, and solana.predict.market/.orderbook to check current pricing before sizing amountUsdc. Broadcasts and returns truthful-pending — never confirms in this call; estimatedSizeUsd/estimatedFeeUsd in the output are order-preview ESTIMATES, not executed truth. Use solana.predict.sell to exit before resolution, or solana.predict.claim after the market resolves.",
+      "name": "solana__predict_buy",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountUsdc": {
+            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Market ID (from solana.predict.events/.search).",
+            "type": "string"
+          },
+          "side": {
+            "description": "Side: yes or no.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "side",
+          "amountUsdc"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.buy"
+  }
+}

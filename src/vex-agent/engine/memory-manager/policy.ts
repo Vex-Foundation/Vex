@@ -47,7 +47,7 @@ export const MEMORY_WORKER_POLL_INTERVAL_MS = 5_000;
  * Maintenance cron-tick cadence (genesis §953/§967 ≈ 3h). On each tick the
  * executor enqueues a consolidate job IFF pending candidates exist without an
  * active job — the periodic fallback to the event-driven `enqueueConsolidateJob`
- * from `long_memory_suggest` (S2).
+ * from `MemorySuggest` (S2).
  */
 export const MAINTENANCE_SWEEP_INTERVAL_MS = 3 * 60 * 60_000; // 3h
 

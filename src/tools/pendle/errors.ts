@@ -104,14 +104,14 @@ function classifyBadRequest(body: unknown): VexError {
         "Pendle could not build this trade — the market has likely expired (a matured PT can only be redeemed, not bought/sold)",
         cause,
       ),
-      "For a matured PT use pendle.pt.redeem; otherwise re-check the market with pendle.yields.",
+      "For a matured PT use `pendle__pt_redeem`; otherwise re-check the market with `pendle__markets_discover`.",
     );
   }
   if (message.includes("token") && (message.includes("list") || message.includes("not found"))) {
     return new VexError(
       ErrorCodes.PENDLE_TOKEN_NOT_FOUND,
       withCause("Pendle does not recognize one of the tokens for this route", cause),
-      "Verify the PT / payment-token addresses with pendle.yields, then retry.",
+      "Verify the PT / payment-token addresses with `pendle__markets_discover`, then retry.",
     );
   }
   return new VexError(
@@ -180,7 +180,7 @@ function buildPendleError(status: number, body: unknown): VexError {
     return new VexError(
       ErrorCodes.PENDLE_API_ERROR,
       withCause("Pendle reports a conflicting state (HTTP 409)", cause),
-      "The market or order state moved while this request was in flight. Re-read the market with pendle.yields and build a FRESH quote — do not replay the old one.",
+      "The market or order state moved while this request was in flight. Re-read the market with `pendle__markets_discover` and build a FRESH quote — do not replay the old one.",
     );
   }
   if (status === 422) {

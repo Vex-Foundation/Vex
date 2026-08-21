@@ -88,7 +88,7 @@ function renderAbsent(baseline: MissionBaseline): string {
     "",
     `No start baseline was recorded for this run. Reason: ${phraseAbsentReason(baseline.reasons)}.`,
     "",
-    "Change since start cannot be computed, and you must not invent a start value. Say plainly that the start value is unknown, and measure what you can from `wallet_balances` (live balances now) and `agent_scan view=\"transactions\"` (what actually executed).",
+    "Change since start cannot be computed, and you must not invent a start value. Say plainly that the start value is unknown, and measure what you can from `WalletBalances` (live balances now) and `AgentScan view=\"transactions\"` (what actually executed).",
   ].join("\n");
 }
 
@@ -132,7 +132,7 @@ function renderRecorded(
 
   lines.push("");
   lines.push(
-    "These are the numbers to use. Do not recompute them from the transcript, and do not count a balance that existed before the run as progress. `agent_scan view=\"mission_baseline\"` returns the same figures with more detail. For live per-token balances call `wallet_balances`; for what actually executed call `agent_scan view=\"transactions\"`.",
+    "These are the numbers to use. Do not recompute them from the transcript, and do not count a balance that existed before the run as progress. `AgentScan view=\"mission_baseline\"` returns the same figures with more detail. For live per-token balances call `WalletBalances`; for what actually executed call `AgentScan view=\"transactions\"`.",
   );
   return lines.join("\n");
 }

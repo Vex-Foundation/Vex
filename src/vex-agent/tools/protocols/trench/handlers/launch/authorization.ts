@@ -18,7 +18,7 @@
  *                    the mission provenance that granted the permission.
  *   `session_full`   the user put THIS CHAT SESSION in full permission and asked
  *                    for the launch. The same consent basis every other mutating
- *                    tool executes on in full mode (`swap_execute` precedent) —
+ *                    tool executes on in full mode (`SwapExecute` precedent) —
  *                    attended, no approval card, no mission, so it binds nothing
  *                    but the session's own permission snapshot. Owner decree
  *                    2026-08-02; mission ceilings are mission-scoped and do not

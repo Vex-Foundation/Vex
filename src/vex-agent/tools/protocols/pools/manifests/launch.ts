@@ -11,6 +11,7 @@ import { POOLS_LAUNCH_EXECUTE_PARAMS, POOLS_LAUNCH_FIELD_PARAMS } from "./launch
 export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.launch_preview",
+    publicName: "pools__launch_preview",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -26,6 +27,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pools.launch_request_form",
+    publicName: "pools__launch_request_form",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -38,6 +40,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pools.launch_execute",
+    publicName: "pools__launch_execute",
     namespace: "pools",
     lifecycle: "active",
     description:

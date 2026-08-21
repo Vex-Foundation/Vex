@@ -35,7 +35,7 @@ const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
 const NOTE = "Start figures are frozen from this run's baseline and are never re-measured. Now figures come from the same local balance projections, refreshed by the balance sync, not a live RPC read. Every USD figure is an estimate, and tokens with no USD price are excluded from the totals and counted in unpricedRowCount. This is a portfolio value change, not trade PnL: for what executed, use view=\"transactions\".";
 
-const ABSENT_NOTE = "No start baseline was recorded for this run, so change since start cannot be computed. Do not assume a start value: use view=\"transactions\" for what executed and wallet_balances for live balances.";
+const ABSENT_NOTE = "No start baseline was recorded for this run, so change since start cannot be computed. Do not assume a start value: use view=\"transactions\" for what executed and WalletBalances for live balances.";
 
 const SCOPE_DIVERGENCE_NOTE = "The session's selected wallets differ from the wallets this baseline was recorded for. The figures above use the recorded set so the comparison stays like for like.";
 
@@ -44,7 +44,7 @@ export async function inspectMissionBaseline(
   resolvedAddresses: string[],
 ): Promise<ToolResult> {
   if (missionRunId === null) {
-    return fail("agent_scan view=\"mission_baseline\" is only available during an active mission run. Outside a run use view=\"summary\" for the wallet total and view=\"transactions\" for what executed.");
+    return fail("AgentScan view=\"mission_baseline\" is only available during an active mission run. Outside a run use view=\"summary\" for the wallet total and view=\"transactions\" for what executed.");
   }
 
   const { getRun } = await import("@vex-agent/db/repos/mission-runs.js");

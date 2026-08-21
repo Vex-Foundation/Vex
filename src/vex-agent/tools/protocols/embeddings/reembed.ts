@@ -27,7 +27,7 @@
  * (no thrown infra/config error). Per-tool embed failures are counted in
  * `errors`, not thrown — the caller decides whether to retry.
  *
- * The `discover_tools` cold path NEVER lazy-embeds in user-facing code — if
+ * The `ToolSearch` cold path NEVER lazy-embeds in user-facing code — if
  * `tool_embeddings` is incomplete, dense discovery degrades to
  * `dense_failed: true` and falls back to lexical scoring.
  *

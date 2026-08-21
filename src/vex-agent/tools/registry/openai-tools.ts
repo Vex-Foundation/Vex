@@ -27,7 +27,7 @@ import { buildInjectedProtocolTools } from "./injected-protocol-tools.js";
  *    injected block is not. Keeping the volatile part at the end preserves
  *    the longest possible stable prefix for providers that prefix-cache tool
  *    definitions (Anthropic caches tool defs in the prompt prefix).
- *  - CACHE CHURN IS ACCEPTED, NOT AVOIDED. Every `discover_tools` call that
+ *  - CACHE CHURN IS ACCEPTED, NOT AVOIDED. Every `ToolSearch` call that
  *    returns a new toolId changes the tools array, which invalidates that
  *    prefix cache for the following turn. That is the priced-in cost of
  *    moving `required` into the one channel a provider can enforce; the

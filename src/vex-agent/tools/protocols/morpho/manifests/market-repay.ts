@@ -36,6 +36,7 @@ import {
  */
 export const MORPHO_MARKET_REPAY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.repay",
+  publicName: "morpho__market_repay",
   namespace: "morpho",
   lifecycle: "active",
   description:

@@ -1,5 +1,5 @@
 /**
- * `long_memory_search` embedding + dual-store recall (steps 2–4 of the
+ * `MemorySearch` embedding + dual-store recall (steps 2–4 of the
  * handler, split out in 0R.15, refactor-only). Fail-loud: there is no
  * non-embedded fallback, and both stores are recalled under the SAME
  * provider/dimension filter that wrote them (write/read consistency).
@@ -111,7 +111,7 @@ export async function recallLongMemory(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     memLog.error("search", "failed", { errorKind: "query_failed" });
-    return { ok: false, result: fail(`long_memory_search failed: ${msg}`) };
+    return { ok: false, result: fail(`MemorySearch failed: ${msg}`) };
   }
 
   return { ok: true, knowledgeResults, candidateResults };

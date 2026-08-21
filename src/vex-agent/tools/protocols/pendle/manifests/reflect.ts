@@ -59,6 +59,7 @@ const AMOUNT_PARAM = {
 export const PENDLE_REFLECT_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.pt.rollover",
+    publicName: "pendle__pt_rollover",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -95,6 +96,7 @@ export const PENDLE_REFLECT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.lp.transfer",
+    publicName: "pendle__lp_transfer",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -131,6 +133,7 @@ export const PENDLE_REFLECT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.lp.toPt",
+    publicName: "pendle__lp_to_pt",
     namespace: "pendle",
     lifecycle: "active",
     description:

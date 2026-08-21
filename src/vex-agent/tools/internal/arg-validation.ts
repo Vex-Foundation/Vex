@@ -49,7 +49,7 @@ export interface DropEmptyModelValuesOptions {
    * Keep an explicit `null` instead of treating it as empty.
    *
    * In most contracts `null` is just another way the model says "nothing". In
-   * some it is a distinct INSTRUCTION: `mission_draft_update` uses `null` to
+   * some it is a distinct INSTRUCTION: `MissionDraftUpdate` uses `null` to
    * CLEAR a draft field, so dropping it would turn a clear into a no-op and the
    * agent would be told the field was updated when it still holds the old
    * value. Off by default — a contract that means it opts in.

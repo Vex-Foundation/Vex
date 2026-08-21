@@ -1,14 +1,15 @@
 /**
  * Khalani failure classifier (Phase 2 W1) — the COORDINATOR-FIXED, closed-set
- * decision of which Khalani quote/build failures are reveal-eligible (a fallback
+ * decision of which Khalani quote/build failures are fallback-eligible (a fallback
  * venue such as Relay could serve the route) versus handled inside Khalani.
  *
  * Mirrors the closed-set discipline of
- * `registry/uniswap-reveal-eligibility.ts`: builders have no discretion to widen
+ * `registry/venue-fallback-eligibility.ts`: builders have no discretion to widen
  * or narrow the sets, classification is keyed on EXACT exception `externalName`
- * values, and any unrecognised name fails closed to `deny` (never reveals).
+ * values, and any unrecognised name fails closed to `deny` (never suggests a
+ * fallback venue).
  *
- * Reveal-eligible ("Khalani cannot service this route; a fallback could"):
+ * Fallback-eligible ("Khalani cannot service this route; a fallback could"):
  *   - empty `routes[]` from POST /v1/quotes — the PRIMARY signal. It is NOT an
  *     exception (the quotes endpoint returns zero routes, it does not throw); in
  *     stream mode the decision is made only after a clean NDJSON close (see
@@ -16,7 +17,7 @@
  *   - `CannotFillException`, `NotSupportedChainException`,
  *     `NotSupportedTokenException`, `NotSupportedContractException`,
  *     `NotSupportedAssetReverseContractException`.
- *   - `deposit_mined_revert` (REVISION 1 — reveal-on-execute-revert design) —
+ *   - `deposit_mined_revert` (REVISION 1 — fallback-on-execute-revert design) —
  *     the `bridge_deposit` leg of `khalani.bridge`'s staged broadcast was
  *     signed, broadcast, MINED, and reverted on-chain (`outcome.kind ===
  *     "reverted"`). Produced by the caller ONLY for the `bridge_deposit` leg
@@ -24,8 +25,8 @@
  *     an ERC-20 approve failure, never a route/venue signal. A failed receipt
  *     proves the exact signed deposit tx was included and reverted — distinct
  *     from the `BroadcastException` submit-ambiguity below — but it does NOT
- *     prove Relay would succeed (REVISION 1 R2/R3): the reveal only unlocks
- *     `bridge_quote_relay` (a route-bound, read-only quote probe), never an
+ *     prove Relay would succeed (R2/R3): the classification only makes
+ *     `BridgeQuoteRelay` (a read-only quote probe) worth suggesting, never an
  *     automatic Relay execution.
  *
  * Not eligible (handle inside Khalani / fix the request — a fallback would not
@@ -49,17 +50,18 @@
  *
  * Names present in the live taxonomy but deliberately NOT in either fixed set
  * (`IntentNotFoundException`, `BuildDepositParsingException`) land in `deny` by
- * the closed-set rule: safe (they never reveal), and the caller surfaces them
+ * the closed-set rule: safe (they never suggest a fallback), and the caller
+ * surfaces them
  * as a generic Khalani failure rather than this module inventing a policy the
  * coordinator did not fix.
  *
- * Pure, no IO. It ONLY classifies — it does not decide retries, backoff timing,
- * or reveal bookkeeping. The reveal registry (W5) reads the reveal decision;
+ * Pure, no IO. It ONLY classifies — it does not decide retries or backoff
+ * timing. The fallback messaging (`handlers/fallback.ts`) reads the outcome;
  * the bridge handlers (W3a) read the handling category.
  */
 
 /**
- * Exact reveal triggers (an exception `externalName`, the empty-routes
+ * Exact fallback triggers (an exception `externalName`, the empty-routes
  * signal, or the role-scoped `deposit_mined_revert` mined-revert signal).
  */
 export type KhalaniRevealTrigger =
@@ -71,7 +73,7 @@ export type KhalaniRevealTrigger =
   | "NotSupportedContractException"
   | "NotSupportedAssetReverseContractException";
 
-/** How a not-reveal-eligible failure should be handled inside Khalani. */
+/** How a not-fallback-eligible failure should be handled inside Khalani. */
 export type KhalaniInKhalaniHandling =
   | "requote"
   | "backoff"
@@ -97,7 +99,7 @@ export type KhalaniFailureSignal =
 
 /** The closed-set classification result. */
 export type KhalaniFailureClassification =
-  | { readonly outcome: "reveal_eligible"; readonly trigger: KhalaniRevealTrigger }
+  | { readonly outcome: "fallback_eligible"; readonly trigger: KhalaniRevealTrigger }
   | { readonly outcome: "not_eligible"; readonly handling: KhalaniInKhalaniHandling };
 
 const REVEAL_ELIGIBLE_EXCEPTIONS: ReadonlyMap<string, KhalaniRevealTrigger> = new Map<
@@ -126,15 +128,15 @@ const IN_KHALANI_HANDLING: ReadonlyMap<string, KhalaniInKhalaniHandling> = new M
 ]);
 
 /**
- * Classify a Khalani failure signal into a reveal decision + handling category.
+ * Classify a Khalani failure signal into a fallback decision + handling category.
  * Closed-set: unknown / absent `externalName` → `not_eligible` / `deny`.
  */
 export function classifyKhalaniFailure(signal: KhalaniFailureSignal): KhalaniFailureClassification {
   if (signal.kind === "empty_routes") {
-    return { outcome: "reveal_eligible", trigger: "empty_routes" };
+    return { outcome: "fallback_eligible", trigger: "empty_routes" };
   }
   if (signal.kind === "deposit_mined_revert") {
-    return { outcome: "reveal_eligible", trigger: "deposit_mined_revert" };
+    return { outcome: "fallback_eligible", trigger: "deposit_mined_revert" };
   }
 
   const name = signal.externalName;
@@ -145,7 +147,7 @@ export function classifyKhalaniFailure(signal: KhalaniFailureSignal): KhalaniFai
 
   const trigger = REVEAL_ELIGIBLE_EXCEPTIONS.get(name);
   if (trigger !== undefined) {
-    return { outcome: "reveal_eligible", trigger };
+    return { outcome: "fallback_eligible", trigger };
   }
 
   const handling = IN_KHALANI_HANDLING.get(name);
@@ -153,9 +155,9 @@ export function classifyKhalaniFailure(signal: KhalaniFailureSignal): KhalaniFai
 }
 
 /**
- * Convenience predicate mirroring `isRevealEligibleKyberFailure`. The reveal
- * registry (W5) can consume either the full classification or this boolean.
+ * Convenience predicate mirroring `isVenueFallbackWorthwhile`. Callers can
+ * consume either the full classification or this boolean.
  */
-export function isRevealEligibleKhalaniFailure(signal: KhalaniFailureSignal): boolean {
-  return classifyKhalaniFailure(signal).outcome === "reveal_eligible";
+export function isKhalaniVenueFallbackWorthwhile(signal: KhalaniFailureSignal): boolean {
+  return classifyKhalaniFailure(signal).outcome === "fallback_eligible";
 }

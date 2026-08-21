@@ -24,7 +24,7 @@
  * LP-lifecycle tracking and LP economics (`sync/projectors/lp.ts` and
  * `db/repos/lp-events.ts` deleted): `position-projector.ts`'s `lp` case is now a
  * no-op, so neither add nor remove opens/closes a tracked position or writes
- * LP-economics rows — the agent reads recorded amounts back via `agent_scan`'s
+ * LP-economics rows — the agent reads recorded amounts back via `AgentScan`'s
  * `transactions`/`activity` views instead. Upstream error text NEVER reaches the model.
  */
 

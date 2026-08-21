@@ -1,5 +1,5 @@
 /**
- * The `web_research` parameter boundary: what the agent may ask for, what the
+ * The `WebResearch` parameter boundary: what the agent may ask for, what the
  * defaults are, and what a request means once resolved.
  *
  * TWO CALLERS, ONE CONTRACT. The tool handler builds options from LLM params;

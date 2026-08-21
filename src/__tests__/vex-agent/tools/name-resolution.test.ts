@@ -39,7 +39,7 @@ import { toInjectedToolName } from "@vex-agent/tools/registry/injected-protocol-
 function internalAlias(overrides: Partial<DeprecatedToolAlias> = {}): DeprecatedToolAlias {
   return {
     deprecatedName: "old_fixture_name",
-    canonicalId: "units_convert",
+    canonicalId: "UnitsConvert",
     kind: "internal",
     since: "0.0.0-test",
     removeAfter: "no unresolved approval_queue row and no enabled plan names it",
@@ -60,7 +60,7 @@ describe("resolveToolName, contract", () => {
 
   it("resolves a registered internal alias to its canonical name", () => {
     registerToolNameAliasesForTest([internalAlias()]);
-    expect(resolveToolName("old_fixture_name")).toBe("units_convert");
+    expect(resolveToolName("old_fixture_name")).toBe("UnitsConvert");
   });
 
   it("is idempotent: resolving a resolved name is the identity", () => {
@@ -71,7 +71,7 @@ describe("resolveToolName, contract", () => {
 
   it("removes exactly the fixture entries it added when disposed", () => {
     const dispose = registerToolNameAliasesForTest([internalAlias()]);
-    expect(resolveToolName("old_fixture_name")).toBe("units_convert");
+    expect(resolveToolName("old_fixture_name")).toBe("UnitsConvert");
     dispose();
     expect(resolveToolName("old_fixture_name")).toBe("old_fixture_name");
   });
@@ -80,7 +80,7 @@ describe("resolveToolName, contract", () => {
 describe("resolveDeprecatedProtocolToolId, contract", () => {
   it("returns the toolId the table STATES, never an inversion of the name", () => {
     // The target grammar carries exactly one double underscore, at the
-    // namespace boundary. Inverting it would produce `kyberswap.swap_quote`,
+    // namespace boundary. Inverting it would produce `kyberswap.SwapQuote`,
     // which is not a real toolId.
     registerToolNameAliasesForTest([
       {
@@ -112,8 +112,32 @@ describe("resolveDeprecatedProtocolToolId, contract", () => {
 });
 
 describe("DEPRECATED_TOOL_ALIASES, authored table", () => {
-  it("is empty in Batch 1 (no rename has landed yet)", () => {
-    expect(DEPRECATED_TOOL_ALIASES).toEqual([]);
+  it("holds exactly the 31 core renames plus the 2 ToolSearch merge entries, all kind=internal", () => {
+    // The count is asserted, not the contents: the contents are the map in
+    // `tool-surface-spec/core-naming.md` §3 and are proven entry by entry by
+    // the shadowing, single-hop and charset properties below. A change in this
+    // number is a change to the retired surface and must be deliberate.
+    expect(DEPRECATED_TOOL_ALIASES).toHaveLength(33);
+    for (const alias of DEPRECATED_TOOL_ALIASES) {
+      expect(alias.kind).toBe("internal");
+      // An internal alias resolves to a NAME the dispatcher can route on, so
+      // the target must be a live registered tool - not a dotted toolId.
+      expect(alias.canonicalId).not.toContain(".");
+      expect(getAllTools().map((t) => t.name)).toContain(alias.canonicalId);
+    }
+  });
+
+  it("carries a CHECKABLE removal condition, never a date or a release count", () => {
+    // `removeAfter` states a condition to EVALUATE. An enabled `plan_md`
+    // predating the rename is never rewritten and can re-emit an old spelling
+    // indefinitely, so no alias of either kind has a purely time-based removal.
+    for (const alias of DEPRECATED_TOOL_ALIASES) {
+      expect(alias.removeAfter.length).toBeGreaterThan(0);
+      expect(alias.removeAfter).not.toMatch(/\b20\d{2}-\d{2}\b/);
+      expect(alias.removeAfter).toMatch(/approval_queue/);
+      expect(alias.since.length).toBeGreaterThan(0);
+      expect(alias.reason.length).toBeGreaterThan(0);
+    }
   });
 
   it("never chains: no canonicalId is itself a deprecatedName (single-hop rule)", () => {
@@ -215,10 +239,23 @@ describe("identity-map regression, resolution is a no-op for every live name", (
     expect(aliased).toEqual([]);
   });
 
-  it("leaves the protocol meta-tool names unchanged", () => {
-    for (const name of ["discover_tools", "describe_tools", "execute_tool"]) {
-      expect(resolveToolName(name)).toBe(name);
+  it("resolves BOTH retired discovery names onto the merged tool", () => {
+    // Many-to-one, which the table explicitly permits and which is exactly why
+    // nothing may invert it to ask "what was ToolSearch renamed from".
+    for (const name of ["discover_tools", "describe_tools"]) {
+      expect(resolveToolName(name)).toBe("ToolSearch");
     }
+    // Single hop: the target is canonical, so resolving again is the identity.
+    expect(resolveToolName("ToolSearch")).toBe("ToolSearch");
+  });
+
+  it("leaves `execute_tool` UNCHANGED even though its ToolDef is retired", () => {
+    // It is not a renamed tool. The `{toolId, params}` envelope is still the
+    // STORED form of an approved protocol call and still dispatches under this
+    // exact name (`dispatcher/protocol-route.ts`), so mapping it to anything
+    // would break the cold resume the retirement had to preserve.
+    expect(resolveToolName("execute_tool")).toBe("execute_tool");
+    expect(resolveDeprecatedProtocolToolId("execute_tool")).toBeUndefined();
   });
 });
 

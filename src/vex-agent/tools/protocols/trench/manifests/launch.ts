@@ -48,6 +48,7 @@ const LAUNCH_FIELD_PARAMS = [
 export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.launch_request_form",
+    publicName: "trench__launch_request_form",
     namespace: "trench",
     lifecycle: "active",
     // HONESTY GATE (Fala B, 2026-08-02): park/resume is WIRED — the tool-call id
@@ -84,6 +85,7 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "trench.launch_execute",
+    publicName: "trench__launch_execute",
     namespace: "trench",
     lifecycle: "active",
     description:

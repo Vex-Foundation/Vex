@@ -34,6 +34,7 @@ import { MORPHO_MARKET_FIELD_GROUPS } from "../read-params.js";
  */
 export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
   toolId: "morpho.markets.discover",
+  publicName: "morpho__markets_discover",
   namespace: "morpho",
   lifecycle: "active",
   description:

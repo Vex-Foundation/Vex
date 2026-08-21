@@ -6,11 +6,11 @@ const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 
 function candidate() {
   return {
-    toolName: "wallet_send_confirm",
+    toolName: "WalletSendConfirm",
     args: { walletFamily: "solana", intentId: INTENT_ID },
     expiresAt: EXPIRES_AT,
     approvalPreview: {
-      toolName: "wallet_send_confirm",
+      toolName: "WalletSendConfirm",
       criticalArgs: {
         network: "solana",
         chain: null,
@@ -23,9 +23,9 @@ function candidate() {
 }
 
 describe("prepared-action follow-up registry", () => {
-  it("allows and canonicalizes wallet_send_prepare → wallet_send_confirm", () => {
+  it("allows and canonicalizes WalletSendPrepare → WalletSendConfirm", () => {
     const input = candidate();
-    const result = validatePreparedActionFollowUp("wallet_send_prepare", input);
+    const result = validatePreparedActionFollowUp("WalletSendPrepare", input);
     expect(result).toEqual({
       ok: true,
       followUp: input,
@@ -34,10 +34,10 @@ describe("prepared-action follow-up registry", () => {
 
   it("rejects unknown source→target pairs", () => {
     expect(
-      validatePreparedActionFollowUp("token_find", candidate()),
+      validatePreparedActionFollowUp("TokenFind", candidate()),
     ).toEqual({ ok: false, reason: "unknown_mapping" });
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         toolName: "swap",
       }),
@@ -55,13 +55,13 @@ describe("prepared-action follow-up registry", () => {
 
   it("rejects extra confirm args and spoofed or malformed trusted previews", () => {
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         args: { ...candidate().args, to: "model-supplied" },
       }),
     ).toEqual({ ok: false, reason: "invalid_contract" });
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         approvalPreview: {
           ...candidate().approvalPreview,
@@ -76,7 +76,7 @@ describe("prepared-action follow-up registry", () => {
 
   it("rejects a malformed intentId shape", () => {
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         args: { walletFamily: "solana", intentId: "not-a-uuid" },
       }),
@@ -85,7 +85,7 @@ describe("prepared-action follow-up registry", () => {
 
   it("rejects an unparsable expiry", () => {
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         expiresAt: "not-a-date",
       }),
@@ -94,12 +94,12 @@ describe("prepared-action follow-up registry", () => {
 
   it("rejects an eip155 preview missing a chain and a solana preview carrying one", () => {
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
-        toolName: "wallet_send_confirm",
+      validatePreparedActionFollowUp("WalletSendPrepare", {
+        toolName: "WalletSendConfirm",
         args: { walletFamily: "eip155", intentId: INTENT_ID },
         expiresAt: EXPIRES_AT,
         approvalPreview: {
-          toolName: "wallet_send_confirm",
+          toolName: "WalletSendConfirm",
           criticalArgs: {
             network: "eip155",
             chain: null,
@@ -111,7 +111,7 @@ describe("prepared-action follow-up registry", () => {
       }),
     ).toEqual({ ok: false, reason: "invalid_contract" });
     expect(
-      validatePreparedActionFollowUp("wallet_send_prepare", {
+      validatePreparedActionFollowUp("WalletSendPrepare", {
         ...candidate(),
         approvalPreview: {
           ...candidate().approvalPreview,

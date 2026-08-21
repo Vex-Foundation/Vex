@@ -1,5 +1,5 @@
 /**
- * Wallet send — `wallet_send_confirm`. Gates a prepared intent on
+ * Wallet send — `WalletSendConfirm`. Gates a prepared intent on
  * session-ownership / status / expiry / approval, resolves AND decrypts the
  * session's signing wallet only AFTER the approval gate, asserts it matches
  * the intent's recorded wallet BEFORE consuming, CAS-consumes atomically, and
@@ -23,7 +23,7 @@ import { fail } from "./results.js";
 import { finalizeOutcome } from "./finalize.js";
 import { validateConfirmParams } from "./validation.js";
 
-// ── wallet_send_confirm ─────────────────────────────────────────────────
+// ── WalletSendConfirm ─────────────────────────────────────────────────
 
 export async function handleWalletSendConfirm(
   params: Record<string, unknown>,

@@ -76,7 +76,7 @@ for (const chain of CHAINS) {
 
 /**
  * A chain input written as a plain chain ID (`"8453"`) rather than a slug.
- * `token_find` (khalani.tokens.search) returns `chainId` as a NUMBER, so this
+ * `TokenFind` (`khalani__tokens_search`) returns `chainId` as a NUMBER, so this
  * is the form the agent actually holds after looking a token up — it reaches
  * every chain parameter in the tree. One owner for the form so callers that
  * need to phrase a refusal ("chain id 424242 is not…") do not carry a second

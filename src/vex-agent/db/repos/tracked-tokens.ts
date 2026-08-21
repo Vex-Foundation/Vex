@@ -2,7 +2,7 @@
  * Tracked-tokens repo — explicit token pins for LOCAL (non-Khalani) chains.
  *
  * Feeds the local-chain balance scan set (seed ∪ pins). Writes come from the
- * `wallet_track_token` tool and from the auto-pin hooks in the uniswap swap /
+ * `WalletTrackToken` tool and from the auto-pin hooks in the uniswap swap /
  * relay bridge execute handlers. Addresses are stored as given (checksummed by
  * callers); identity is case-insensitive via the unique LOWER() index.
  */

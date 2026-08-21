@@ -130,7 +130,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: (...args: unknown[]) => confirmActivityEvent(...args),
   failActivityEvent: (...args: unknown[]) => failActivityEvent(...args),
 }));
-vi.mock("@vex-agent/tools/registry/uniswap-reveal.js", () => ({ clearUniswapPairReveal: vi.fn() }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),
   resolveSigningWallet: vi.fn(() => ({ family: "eip155", address: WALLET, privateKey: `0x${"ab".repeat(32)}` })),
@@ -198,7 +197,7 @@ describe("uniswap.swap.execute — adversarial (FIX2-W0)", () => {
     // "Do not retry" AND the self-serve verification path that replaces it.
     expect(result.output).toContain(
       `Do not retry; this attempt is recorded as pending and will resolve automatically. `
-      + `You can verify it now yourself with chain_read (action tx_receipt, chain=4663, txHash=${SIGNED_TX_HASH}).`,
+      + `You can verify it now yourself with ChainRead (action tx_receipt, chain=4663, txHash=${SIGNED_TX_HASH}).`,
     );
   });
 

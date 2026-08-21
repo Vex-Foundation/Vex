@@ -4,7 +4,7 @@
  * "Agent" is the one-shot conversational session kind (post-M12 rename
  * from "chat"). The model may emit tool calls, dispatch transactions
  * subject to session permission, and respond with text. No loop — when
- * a final text reply lands the turn ends. Wake / `loop_defer` are
+ * a final text reply lands the turn ends. Wake / `LoopDefer` are
  * mission-mode only.
  */
 
@@ -126,7 +126,7 @@ export async function processAgentTurn(
   } finally {
     // COMMITTED-WAKE CLEANUP. A foreground Stop is request-local by contract,
     // but the turn it stopped may already have COMMITTED a session-scoped park
-    // (`loop_defer`). Cancelling it here is what makes the foreground Stop mean
+    // (`LoopDefer`). Cancelling it here is what makes the foreground Stop mean
     // "the agent stops", instead of "this response stops and the agent wakes up
     // again in thirty seconds". Best-effort: a failure here must never mask the
     // turn's own outcome, and the durable Stop path remains available.

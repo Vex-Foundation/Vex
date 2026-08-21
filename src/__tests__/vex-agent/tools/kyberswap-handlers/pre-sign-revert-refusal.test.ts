@@ -116,7 +116,6 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
-import { isUniswapPairRevealed, clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
@@ -288,19 +287,18 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
 });
 
 /**
- * Live session on Robinhood Chain (4663), 2026-07-30: `swap_execute` failed
+ * Live session on Robinhood Chain (4663), 2026-07-30: `SwapExecute` failed
  * TWICE at the pre-sign gas estimate with the router revert `"Call failed"`.
  * Nothing was broadcast, the refusal itself told the agent to "try another
- * pair or venue" — and the only other venue stayed locked, because the reveal
+ * pair or venue" — and the agent was never pointed at the other venue, because
  * fired for a MINED revert (gas burned) but not for the strictly safer
  * pre-sign refusal of the same calldata.
  */
 describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks the fallback venue", () => {
-  const FALLBACK_SENTENCE = "Uniswap (swap_quote_uniswap / swap_execute_uniswap) is now available for this session as a fallback venue.";
+  const FALLBACK_SENTENCE = "Uniswap is an alternative venue for this trade: quote it with SwapQuoteUniswap, then execute with SwapExecuteUniswap.";
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearUniswapPairReveal("session-1");
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
     mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
@@ -336,12 +334,11 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
     mockFailActivityEvent.mockResolvedValue({ applied: true, row: {} });
   });
 
-  it("the EXACT live shape — `Call failed`, nothing broadcast — reveals the pair and says so", async () => {
+  it("the EXACT live shape — `Call failed`, nothing broadcast — names Uniswap and says so", async () => {
     mockSignStageBroadcast.mockRejectedValueOnce(revertedWith("Call failed"));
 
     const result = await execute();
 
-    expect(isUniswapPairRevealed("session-1")).toBe(true);
     expect(result.output).toContain(FALLBACK_SENTENCE);
     // The refusal itself is unchanged — the sentence is appended, never a
     // replacement for the evidence and remedy the agent already relied on.
@@ -352,18 +349,17 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
     expect(result.output).toContain("Call failed");
   });
 
-  it("a PRICE-guard refusal does NOT reveal — a fresh quote at a higher tolerance can clear it", async () => {
+  it("a PRICE-guard refusal does NOT name a second venue — a fresh quote at a higher tolerance can clear it", async () => {
     mockSignStageBroadcast.mockRejectedValueOnce(revertedWith(KYBER_SLIPPAGE_REVERT));
 
     const result = await execute({ slippageBps: 50 });
 
-    expect(isUniswapPairRevealed("session-1")).toBe(false);
     expect(result.output).not.toContain(FALLBACK_SENTENCE);
     // ...and the price remedy it does give is untouched.
     expect(result.output).toContain("slippageBps");
   });
 
-  it("an ALLOWANCE-leg refusal does NOT reveal — an approve failing is not venue evidence", async () => {
+  it("an ALLOWANCE-leg refusal does NOT name a second venue — an approve failing is not venue evidence", async () => {
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 217, events: [{ id: 10 }, { id: 11 }] });
     // The FIRST leg (the approve) is the one the chain refuses.
@@ -371,12 +367,11 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
 
     const result = await execute();
 
-    expect(isUniswapPairRevealed("session-1")).toBe(false);
     expect(result.output).not.toContain(FALLBACK_SENTENCE);
     expect(result.output).toMatch(/the allowance step was refused before signing/i);
   });
 
-  it("a leg whose hash was already STAGED never reveals — that is not a pre-sign refusal", async () => {
+  it("a leg whose hash was already STAGED never names a second venue — that is not a pre-sign refusal", async () => {
     mockSignStageBroadcast.mockImplementationOnce(async (_pub, _wallet, _params, hooks) => {
       await hooks.onHashStaged({ txHash: "0xswap", fromAddress: SESSION_EVM.address, nonce: 0 });
       throw revertedWith("Call failed");
@@ -384,16 +379,14 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
 
     const result = await execute();
 
-    expect(isUniswapPairRevealed("session-1")).toBe(false);
     expect(result.output).not.toContain(FALLBACK_SENTENCE);
   });
 
-  it("an error with no decoded revert reason never reveals — an unplaceable failure is not evidence", async () => {
+  it("an error with no decoded revert reason never names a second venue — an unplaceable failure is not evidence", async () => {
     mockSignStageBroadcast.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
 
     const result = await execute();
 
-    expect(isUniswapPairRevealed("session-1")).toBe(false);
     expect(result.output).not.toContain(FALLBACK_SENTENCE);
   });
 });

@@ -1,31 +1,52 @@
 /**
- * Discovered protocol tools → real OpenAI function schemas.
+ * Selected protocol tools → real OpenAI function schemas.
  *
  * Owner decision 2026-08-03 (SPEC §7 Q1, `reports/model-research.md` R1):
- * after `discover_tools` returns a ranked row, that manifest is appended to
+ * after `ToolSearch` returns a ranked or selected row, that manifest is appended to
  * the NEXT request's `tools` array as a genuine function definition, so the
  * provider enforces `required` instead of the model having to re-read a JSON
- * blob from a prior tool result. This is now THE calling path: `execute_tool`
- * is withheld from the model-visible surface (`./visibility.ts`), while its
- * dispatch route stays alive so an already-approved intent still resumes.
+ * blob from a prior tool result. This is now THE calling path: the `execute_tool`
+ * ToolDef is retired (`./protocol.ts`), while its dispatch route stays alive so
+ * an already-approved intent still resumes.
  *
  * NAME MAPPING. OpenAI function names must match `^[a-zA-Z0-9_-]{1,64}$`, so
- * the dotted toolId cannot be sent verbatim. `.` → `__` (double underscore),
- * which is bijective over this catalog: no toolId contains `__` and no dotted
- * segment starts or ends with `_`. Both facts are asserted over the WHOLE
- * catalog by `injected-protocol-tools.test.ts`, which is the guard that keeps
- * a future manifest from breaking the reverse map.
+ * the dotted toolId cannot be sent verbatim. The projected name is the
+ * manifest's authored `publicName` (`protocols/types.ts`), a REVIEWED naming
+ * decision carried in `tool-surface-spec/mappings/*.json` — not a string
+ * transform of the toolId.
+ *
+ * WHY A TABLE AND NOT A TRANSFORM. The old projection mangled `.` → `__`
+ * mechanically, which was invertible only because every dot became a separator.
+ * Under the target grammar there is EXACTLY ONE `__`, at the namespace
+ * boundary, so inversion is lossy: `kyberswap__swap_quote` would invert to
+ * `kyberswap.swap_quote` rather than the immutable `kyberswap.swap.quote`, and
+ * a fund-moving call would resolve onto a different tool or onto none. Both
+ * directions are therefore CATALOG LOOKUPS, built once from the manifests, and
+ * `protocols/public-name-gate.ts` owns the grammar plus the uniqueness that
+ * makes the reverse map a bijection. `injected-protocol-tools.test.ts` asserts
+ * it catalog-wide.
+ *
+ * STALE NAMES FROM BEFORE THE RENAME. No protocol alias entries were added for
+ * the old mechanically-mangled spellings. Owner decision D5 governs: the
+ * product is a production preview, aliases exist to keep in-flight state safe
+ * rather than to guarantee indefinite compatibility, and the owner accepts that
+ * a durable artifact (an old accepted plan, a re-read transcript) may emit a
+ * retired spelling. Such a call is not silently misrouted — it fails the
+ * catalog lookup, and `dispatcher/protocol-route.ts` answers by NAME with a
+ * ToolSearch instruction, which re-teaches the current name. The alias table
+ * (`./name-resolution.ts`) stays wired for the entries that do need it.
  *
  * GATING. Injection is a VISIBILITY decision only. Which manifests may be
  * shown is decided here (lifecycle + `requiresEnv` + advertised namespace +
- * the Uniswap reveal + the pressure barrier); whether a call may RUN is
- * decided, unchanged, by `executeProtocolTool` off the RESOLVED MANIFEST —
- * never off the function name. See `dispatcher/protocol-route.ts`.
+ * the pressure barrier); whether a call may RUN is decided, unchanged, by
+ * `executeProtocolTool` off the RESOLVED MANIFEST — never off the function
+ * name. See `dispatcher/protocol-route.ts`.
  */
 
 import type { OpenAITool } from "../types.js";
 import type { ProtocolToolManifest } from "../protocols/types.js";
 import {
+  PROTOCOL_TOOLS,
   getProtocolManifest,
   isAdvertisedProtocolNamespace,
   isProtocolToolAvailable,
@@ -34,34 +55,55 @@ import { paramsToJsonSchema } from "./khalani.js";
 import { describeParamGroupConstraints } from "../protocols/runtime/params.js";
 import { getDiscoveredToolIds } from "./discovered-tools.js";
 import { resolveDeprecatedProtocolToolId } from "./name-resolution.js";
-import { isUniswapPairRevealed } from "./uniswap-reveal.js";
 import type { ToolVisibilityContext } from "./visibility.js";
 
 /** OpenAI function-name grammar. Exported so the catalog-wide test asserts the real constraint. */
 export const OPENAI_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
-/** The separator dots map to. Chosen because no toolId contains it (asserted catalog-wide). */
+/** The namespace boundary marker. A publicName carries EXACTLY one. */
 const NAME_SEPARATOR = "__";
 
 /**
- * Third mirror of the canonical hidden Uniswap swap toolIds
- * (`protocols/discovery.ts`, `protocols/runtime.ts`). Discovery already hides
- * them from an unrevealed session, but a reveal can EXPIRE after the ids were
- * recorded, so injection re-checks rather than trusting the recorded set.
+ * `publicName` → `toolId`, built once from the catalog.
+ *
+ * Module-level and eager because `PROTOCOL_TOOLS` is itself a module-load
+ * constant and `catalog.ts` already throws at load on a duplicate toolId. A
+ * duplicate publicName cannot be thrown on here without turning a naming
+ * mistake into an app that will not boot, so the gate
+ * (`protocols/public-name-gate.ts`, asserted by the G2 suite) owns that
+ * failure and this map keeps the FIRST claimant deterministically.
  */
-const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
-  "uniswap.swap.quote",
-  "uniswap.swap.execute",
-]);
+const TOOL_ID_BY_PUBLIC_NAME: ReadonlyMap<string, string> = new Map(
+  PROTOCOL_TOOLS.map((manifest) => [manifest.publicName, manifest.toolId] as const),
+);
 
-/** `kyberswap.swap.quote` → `kyberswap__swap__quote`. */
+/**
+ * `kyberswap.swap.quote` → `kyberswap__swap_quote`.
+ *
+ * A catalog lookup, not a transform. Throws on an unregistered toolId: every
+ * caller projects a manifest it already resolved, so an unknown id is a
+ * programming error, and returning the dotted id unchanged would put a name
+ * that cannot be called back into a provider `tools` array.
+ */
 export function toInjectedToolName(toolId: string): string {
-  return toolId.split(".").join(NAME_SEPARATOR);
+  const manifest = getProtocolManifest(toolId);
+  if (!manifest) {
+    throw new Error(`toInjectedToolName: no protocol manifest registered for toolId "${toolId}"`);
+  }
+  return manifest.publicName;
 }
 
-/** `kyberswap__swap__quote` → `kyberswap.swap.quote`. Inverse of {@link toInjectedToolName}. */
-export function fromInjectedToolName(name: string): string {
-  return name.split(NAME_SEPARATOR).join(".");
+/**
+ * `kyberswap__swap_quote` → `kyberswap.swap.quote`, or `undefined` when no live
+ * manifest claims the name.
+ *
+ * Table-driven, and deliberately PARTIAL: under the one-separator grammar an
+ * unknown injected-shaped name has no derivable toolId, and inventing one by
+ * string surgery is exactly the failure this table exists to prevent. Callers
+ * that need something to show a user or a model must handle `undefined`.
+ */
+export function fromInjectedToolName(name: string): string | undefined {
+  return TOOL_ID_BY_PUBLIC_NAME.get(name);
 }
 
 /**
@@ -74,36 +116,37 @@ export function fromInjectedToolName(name: string): string {
  * name-to-manifest resolver, so every consumer reaches the SAME manifest
  * whichever spelling it was handed: the plan-acceptance gate,
  * `dispatchTargetIsMutating`, the approval preview, the approval envelope, and
- * a future ToolSearch `select:` mode.
+ * ToolSearch `select:` mode.
  *
  * A RETIRED name is answered from the alias table, which STATES the immutable
- * dotted toolId. It is never answered by inverting the name. Inversion is
- * correct only for today's mechanical projection, where every dot became a
- * double underscore; under the target grammar (exactly one double underscore,
- * at the namespace boundary) `kyberswap__swap_quote` would invert to
- * `kyberswap.swap_quote` rather than the immutable `kyberswap.swap.quote`, and
- * a fund-moving call would resolve onto a different tool or onto none at all.
- * The alias branch below therefore short-circuits before `fromInjectedToolName`
- * is reached, leaving the inversion to serve only live canonical names under
- * today's grammar.
+ * dotted toolId. It is never answered by inverting the name — inversion is not
+ * defined under the one-separator grammar (see the module doc). The alias
+ * branch is consulted FIRST-AFTER-CANONICAL in effect: `fromInjectedToolName`
+ * only ever returns a LIVE publicName's id, so an alias can never shadow a live
+ * tool (`identity-and-migration.md` section 2).
  */
 export function resolveInjectedProtocolTool(name: string): ProtocolToolManifest | undefined {
   const aliasedToolId = resolveDeprecatedProtocolToolId(name);
   if (aliasedToolId !== undefined) return getProtocolManifest(aliasedToolId);
-  if (!isInjectedToolNameShape(name)) return undefined;
-  return getProtocolManifest(fromInjectedToolName(name));
+  const toolId = fromInjectedToolName(name);
+  if (toolId === undefined) return undefined;
+  return getProtocolManifest(toolId);
 }
 
 /**
- * True for a name in the injected namespace — i.e. one carrying the `__`
- * separator. No internal tool name or protocol alias contains it (asserted in
- * `injected-protocol-tools.test.ts`), so this shape test cleanly separates
- * "the model aimed at a protocol tool" from "unknown internal tool", and lets
- * the dispatcher answer a stale injected name by name instead of with the
- * generic unknown-tool line.
+ * True for a name in the injected NAMESPACE — one that is shaped like a
+ * publicName, whether or not a live tool claims it.
+ *
+ * Deliberately a shape test rather than a catalog hit: its whole job is to
+ * classify a name the catalog does NOT know, so the dispatcher can answer a
+ * stale or misspelled protocol name by name instead of with the generic
+ * unknown-internal-tool line. Under the target grammar the shape is EXACTLY one
+ * double underscore with a non-empty half on each side, which no internal tool
+ * name matches (asserted in `injected-protocol-tools.test.ts`).
  */
 export function isInjectedToolNameShape(name: string): boolean {
-  return name.includes(NAME_SEPARATOR);
+  const halves = name.split(NAME_SEPARATOR);
+  return halves.length === 2 && halves[0]!.length > 0 && halves[1]!.length > 0;
 }
 
 /**
@@ -112,7 +155,6 @@ export function isInjectedToolNameShape(name: string): boolean {
  * byte-identical to today's.
  */
 export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITool[] {
-  const uniswapRevealed = isUniswapPairRevealed(ctx.sessionId);
   const injected: OpenAITool[] = [];
 
   for (const toolId of getDiscoveredToolIds(ctx.sessionId)) {
@@ -120,13 +162,12 @@ export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITo
     if (!manifest) continue;
     if (!isProtocolToolAvailable(manifest)) continue;
     if (!isAdvertisedProtocolNamespace(manifest.namespace)) continue;
-    if (REVEAL_GATED_UNISWAP_TOOL_IDS.has(toolId) && !uniswapRevealed) continue;
     if (!passesPressureBarrier(manifest, ctx)) continue;
 
     injected.push({
       type: "function",
       function: {
-        name: toInjectedToolName(toolId),
+        name: manifest.publicName,
         description: injectedDescription(manifest),
         parameters: paramsToJsonSchema(manifest.params),
       },
@@ -143,7 +184,7 @@ export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITo
  * Schema's ways of saying it (`oneOf`, `anyOf` over required sets) are exactly
  * the constructs provider function-schema validators narrow or reject. The
  * description is the channel every provider carries verbatim — and it is the
- * same sentence `discover_tools` puts on the `constraints` row and the runtime
+ * same sentence `ToolSearch` puts on the `constraints` row and the runtime
  * rejects with, so the model never sees the rule stated two ways.
  *
  * Appended, never substituted: a manifest with no groups keeps a byte-identical
@@ -156,6 +197,12 @@ function injectedDescription(manifest: ProtocolToolManifest): string {
 }
 
 /**
+ * Exported so `ToolSearch` select mode runs the IDENTICAL barrier check this
+ * projection runs. If select recorded a manifest injection would then drop, the
+ * model would be told a tool is callable and find it missing from the very next
+ * tools array — the silent loss the whole displacement-warning machinery exists
+ * to prevent.
+ *
  * Mirror of `visibility.ts`'s `passesPressureSafety` for protocol manifests:
  * at barrier/critical a mutating manifest is dropped from the catalog, unless
  * a live compaction preparation bypasses the barrier (contract C8).
@@ -163,13 +210,13 @@ function injectedDescription(manifest: ProtocolToolManifest): string {
  * Deliberately conservative on preview/dryRun: `executeProtocolTool` treats a
  * preview call as a read and lets it through at barrier, but previewness is a
  * property of the ARGUMENTS, which do not exist at catalog time. Dropping the
- * whole manifest matches what `discover_tools` already tells the model
+ * whole manifest matches what `ToolSearch` already tells the model
  * (`unavailable_at_pressure: true`): the model is steered to the read-only or
  * preview tool in the same namespace, which is injected normally.
  */
-function passesPressureBarrier(
+export function passesPressureBarrier(
   manifest: ProtocolToolManifest,
-  ctx: ToolVisibilityContext,
+  ctx: Pick<ToolVisibilityContext, "contextUsageBand" | "preparationBypassesBarrier">,
 ): boolean {
   if (!manifest.mutating) return true;
   const atBarrier = ctx.contextUsageBand === "barrier" || ctx.contextUsageBand === "critical";

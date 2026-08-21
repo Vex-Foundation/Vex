@@ -87,8 +87,8 @@ export async function executeUniswapSwap(
   if (!slippage.ok) return fail(slippage.reason);
   const slippageBps = slippage.bps;
 
-  // The reveal gate + prequote gate (executeProtocolTool) already block this
-  // tool without a session — sessionId is guaranteed present here.
+  // The prequote gate (executeProtocolTool) already blocks this tool without a
+  // session — sessionId is guaranteed present here.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 

@@ -6,7 +6,7 @@
  * Three independent prompt audits found the same defect class: the tools
  * existed in the catalog, the navigation entries authored rich `facets` and
  * `exampleQueries`, and none of it reached the built prompt — so the model
- * could see `trench.launch_execute` only by guessing to search for it.
+ * could see `trench__launch_execute` only by guessing to search for it.
  *
  * Every assertion here is behaviour a regression would silently remove.
  */
@@ -50,7 +50,7 @@ describe("trench prompt package", () => {
       const trench = prompt.split("### trench ")[1]?.split("\n### ")[0] ?? "";
       expect(trench).toContain("Try: ");
       const tryLine = trench.split("Try: ")[1]?.split("\n")[0] ?? "";
-      for (const query of ['discover_tools(query="preview a token launch cost", namespace="trench")']) {
+      for (const query of ['ToolSearch(query="preview a token launch cost", namespace="trench")']) {
         expect(tryLine).toContain(query);
       }
     });
@@ -66,8 +66,8 @@ describe("trench prompt package", () => {
   it("P2 — teaches that a bonding-curve Trench token trades only on its own ETH curve", () => {
     const prompt = buildProtocolsPrompt();
     const section = prompt.split("## Swap Venue Routing")[1]?.split("\n## ")[0] ?? "";
-    expect(section).toContain("`trench.trade_quote`");
-    expect(section).toContain("`trench.trade_execute`");
+    expect(section).toContain("`trench__trade_quote`");
+    expect(section).toContain("`trench__trade_execute`");
     expect(section).toContain("`kyberswap.*` has no route for a curve token");
     expect(section).toContain("GRADUATES");
   });
@@ -79,10 +79,10 @@ describe("trench prompt package", () => {
       expect(prompt).toContain("## Trench Launch");
       const section = prompt.split("## Trench Launch")[1]?.split("\n## ")[0] ?? "";
       const order = [
-        "`trench.images`",
-        "`trench.launch_preview`",
-        "`trench.launch_request_form`",
-        "`trench.launch_execute`",
+        "`trench__images_list`",
+        "`trench__launch_preview`",
+        "`trench__launch_request_form`",
+        "`trench__launch_execute`",
       ];
       let lastIdx = -1;
       for (const marker of order) {
@@ -124,7 +124,7 @@ describe("trench prompt package", () => {
       expect(section).toContain("FULL-permission chat session");
       expect(section).toContain("execute directly");
       expect(section).toContain("RESTRICTED session it refuses by name");
-      expect(section).toContain("`trench.launch_request_form` instead");
+      expect(section).toContain("`trench__launch_request_form` instead");
       expect(section).toContain("this tool's consent surface");
       expect(section).toContain("MISSION run the authority is the contract's host-authored launch ceilings");
       expect(section).toContain("max launch value and max launch count on the contract card");
@@ -140,10 +140,10 @@ describe("trench prompt package", () => {
     const prompt = buildMissionSetupPrompt(makeContext({ sessionKind: "mission" }));
     expect(prompt).toContain("**launch ceilings**");
     expect(prompt).toContain("HOST-authored");
-    expect(prompt).toContain("`mission_draft_update` cannot write them");
+    expect(prompt).toContain("`MissionDraftUpdate` cannot write them");
     expect(prompt).toContain("contract card before accepting the contract");
     // The image check is a STATE read during setup, not banned market research.
-    expect(prompt).toContain("`trench.images`");
+    expect(prompt).toContain("`trench__images_list`");
     expect(prompt).toContain("state read");
     expect(prompt).toContain("Trench Photos card");
   });
@@ -170,7 +170,7 @@ describe("trench prompt package", () => {
       expect(prompt).toContain("## Token launches");
       expect(prompt).toContain("irreversible and spends real ETH");
       expect(prompt).toContain("max launch value, max launch count");
-      expect(prompt).toContain("`trench.launch_preview`");
+      expect(prompt).toContain("`trench__launch_preview`");
       expect(prompt).toContain("hands the launch DECISION to the user");
       // Honesty gate: a refusal from deferred host wiring is a report-and-move-on,
       // never an improvised alternative route or a retry loop.
@@ -193,7 +193,7 @@ describe("trench prompt package", () => {
     // was gone whenever a namespace was absent from the Map.
     expect(prompt).toContain("Protocol tools are NOT listed there individually");
     expect(prompt).toContain("not evidence its tools do not exist");
-    expect(prompt).toContain('`discover_tools(namespace="x", list=true)`');
+    expect(prompt).toContain('`ToolSearch(namespace="x")` with NO query');
     expect(prompt).toContain("unranked and untruncated");
   });
 
@@ -206,7 +206,7 @@ describe("trench prompt package", () => {
       stale: false,
       robinhoodViaRelay: true,
     });
-    expect(text).toContain("`bridge_quote` then `bridge`");
+    expect(text).toContain("`BridgeQuote` then `BridgeExecute`");
     expect(text).toContain("auto-route to Relay");
     expect(text).not.toContain("in with `relay.*`");
   });
@@ -227,7 +227,7 @@ describe("trench prompt package", () => {
       const section = buildProtocolsPrompt().split("## Fixed Yield (Pendle)")[1]?.split("\n## ")[0] ?? "";
       expect(section).toContain("There is NO plain staking tool in this install");
       expect(section).toContain("`pendle.*`");
-      expect(section).toContain("`solana.lend.*`");
+      expect(section).toContain("`solana__lend_*`");
       expect(section).toContain("never substitute a swap for a yield position");
     });
 
@@ -236,7 +236,7 @@ describe("trench prompt package", () => {
       resetProtocolsPromptCache();
       const section = buildProtocolsPrompt().split("## Fixed Yield (Pendle)")[1]?.split("\n## ")[0] ?? "";
       expect(section).toContain("There is NO plain staking tool in this install");
-      expect(section).not.toContain("`solana.lend.*`");
+      expect(section).not.toContain("`solana__lend_*`");
     });
   });
 });

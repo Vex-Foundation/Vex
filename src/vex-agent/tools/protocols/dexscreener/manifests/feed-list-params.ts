@@ -1,5 +1,5 @@
 /**
- * The shared param vocabulary for the six DexScreener FEED tools.
+ * The shared param vocabulary for the DexScreener FEED tools.
  *
  * Declared once and spread into each manifest, so `chainIds` cannot mean one thing
  * on `profiles` and another on `boosts`, and so the honest sentence each param must
@@ -55,8 +55,8 @@ const FEED_WINDOW_CLAUSE =
   + "window, and an empty result means this window held none, not that none exist.";
 
 /**
- * The same truth at TOOL level, for the `description` of the five fixed-window
- * feeds (`profiles`, `profiles.recent`, `boosts`, `boosts.top`, `ads`).
+ * The same truth at TOOL level, for the `description` of the three fixed-window
+ * feed tools (`profiles`, `boosts`, `ads`) across all five endpoints they read.
  *
  * It lives beside `FEED_WINDOW_CLAUSE` so the window fact still has exactly one
  * owner: a correction cannot land on the params and miss the descriptions, or on
@@ -137,7 +137,7 @@ export const FEED_CHAIN_FILTER_PARAM: ProtocolParamDef = {
 };
 
 /**
- * Freshness on the two PROFILE feeds.
+ * Freshness on the profile tool, over both of its feeds.
  *
  * `updatedAt` is the only field in either feed from which freshness is
  * computable. Provider drift, measured live 2026-08-21: the recent-updates
@@ -156,7 +156,7 @@ export const PROFILE_FRESHNESS_PARAMS: readonly ProtocolParamDef[] = [
       + "reported as eventAgeSeconds on every row. Rows with no updatedAt are excluded and counted "
       + "in droppedByFilter.unknownEventAge — 'we cannot tell when' is a different answer from 'too "
       + "old'. The latest-profiles feed currently sends no updatedAt at all (provider drift, "
-      + "measured 2026-08-21), so this filter there drops every row - use dexscreener.profiles.recent "
+      + "measured 2026-08-21), so this filter there drops every row - read the recentUpdates feed "
       + "for freshness. Every response is edge-cached about 30s, so nothing here is real-time. "
       + "Whole number.",
   },
@@ -211,6 +211,45 @@ export const BOOST_THRESHOLD_PARAM: ProtocolParamDef = {
     + "droppedByFilter; 0 is a genuine no-op. Whole number.",
 };
 
+/**
+ * The feed selectors, added by the Batch 2 merges (owner decision D7).
+ *
+ * `dexscreener.profiles.recent` and `dexscreener.boosts.top` were retired into
+ * their siblings: each pair had one row shape, one param set and one handler
+ * shape, differing only in WHICH provider endpoint filled the rows. That
+ * difference is a value, not a tool, and it stays visible here rather than
+ * being folded away - the two endpoints of each pair genuinely differ in what
+ * they populate, and the enum text is where the model reads that.
+ */
+export const PROFILE_FEED_SELECTOR_PARAM: ProtocolParamDef = {
+  key: "feed",
+  type: "string",
+  enum: ["latest", "recentUpdates"],
+  description:
+    "Which profile endpoint to read (default latest). latest = /token-profiles/latest/v1, the "
+    + "plain newest-profiles window; the provider currently sends NO updatedAt on it (drift "
+    + "measured 2026-08-21), so rows there carry no age and updatedWithinSeconds drops all of "
+    + "them. recentUpdates = /token-profiles/recent-updates/v1, the change feed of projects that "
+    + "just refreshed their description/socials/branding; it still sends updatedAt on 30/30 rows, "
+    + "so it is the one to ask for freshness or a time sort. It is a narrow recency SAMPLE (one "
+    + "live window's oldest row measured about 85 minutes), never a survey of the last N hours, "
+    + "and it is a live but undocumented API surface: if it changes the call fails with the real "
+    + "reason rather than returning an empty success.",
+};
+
+export const BOOST_FEED_SELECTOR_PARAM: ProtocolParamDef = {
+  key: "feed",
+  type: "string",
+  enum: ["latest", "top"],
+  description:
+    "Which boost endpoint to read (default latest). latest = /token-boosts/latest/v1, the most "
+    + "recent boost PURCHASES, carrying both the per-purchase boostCount and the cumulative "
+    + "boostCountTotal. top = /token-boosts/top/v1, the tokens holding the most active boosts, "
+    + "where boostCount is null on every row (the provider omits it) and only boostCountTotal is "
+    + "readable; sortBy defaults to boostCountTotal there instead of relevance. Neither feed "
+    + "carries a timestamp of any kind.",
+};
+
 /** Every feed's shared set, in the order an agent reads it. */
 export const FEED_LIST_PARAMS: readonly ProtocolParamDef[] = [
   ...FEED_WINDOW_PARAMS,
@@ -220,14 +259,16 @@ export const FEED_LIST_PARAMS: readonly ProtocolParamDef[] = [
   EXPLAIN_DROPS_PARAM,
 ];
 
-/** `profiles` and `profiles.recent`. */
+/** `profiles`, over both profile endpoints. */
 export const PROFILE_FEED_PARAMS: readonly ProtocolParamDef[] = [
+  PROFILE_FEED_SELECTOR_PARAM,
   ...FEED_LIST_PARAMS,
   ...PROFILE_FRESHNESS_PARAMS,
 ];
 
-/** `boosts` and `boosts.top`. */
+/** `boosts`, over both boost endpoints. */
 export const BOOST_FEED_PARAMS: readonly ProtocolParamDef[] = [
+  BOOST_FEED_SELECTOR_PARAM,
   ...FEED_LIST_PARAMS,
   BOOST_THRESHOLD_PARAM,
 ];

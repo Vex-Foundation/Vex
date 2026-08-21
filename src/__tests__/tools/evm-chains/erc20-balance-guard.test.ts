@@ -71,7 +71,7 @@ describe("ensureErc20Balance", () => {
     });
     await expect(
       ensureErc20Balance(client(0n), { token: TOKEN, owner: OWNER, required: 1_000n, decimals: 6 }),
-    ).rejects.toThrow("chain_read");
+    ).rejects.toThrow("ChainRead");
     await expect(
       ensureErc20Balance(client(0n), { token: TOKEN, owner: OWNER, required: 1_000n, decimals: 6 }),
     ).rejects.toThrow("erc20_balance");

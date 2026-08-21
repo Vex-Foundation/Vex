@@ -1,5 +1,5 @@
 /**
- * `plan_write` handler — idempotent upsert of the session's action plan.
+ * `PlanWrite` handler — idempotent upsert of the session's action plan.
  *
  * Defense-in-depth: re-checks plan-mode is enabled in the DB (the registry
  * `requiresPlanMode` gate is model-facing only). Length-caps the markdown on
@@ -39,7 +39,7 @@ export async function handlePlanWrite(
   // Defense-in-depth: plan-mode must be enabled for this session.
   const existing = await getActivePlan(context.sessionId);
   if (!existing?.enabled) {
-    return fail("Plan mode is not enabled for this session; plan_write is unavailable.");
+    return fail("Plan mode is not enabled for this session; PlanWrite is unavailable.");
   }
 
   const planMd = capPlanMarkdown(typeof args.plan_md === "string" ? args.plan_md : "");

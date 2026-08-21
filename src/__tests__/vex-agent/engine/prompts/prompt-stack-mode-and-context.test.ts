@@ -117,12 +117,12 @@ describe("prompt-stack — mode & context", () => {
       expect(turnJoined).toContain("Session started: 2026-05-03T08:01:02.000Z (elapsed: 38m 16s)");
       expect(turnJoined).toContain("Mission run started: 2026-05-03T08:10:00.000Z (elapsed: 29m 18s)");
       expect(turnJoined).toContain("Mission deadline: 2026-05-03T14:10:00.000Z (in 5h 30m)");
-      expect(turnJoined).toContain('loop_defer(after_ms=60000, reason="...")');
+      expect(turnJoined).toContain('LoopDefer(after_ms=60000, reason="...")');
       // The volatile clock must never leak into the static prefix.
       expect(stack.staticLayers.join("\n")).not.toContain("# Runtime Clock");
     });
 
-    it("includes loaded content blocks (e.g. long_memory_get injections)", () => {
+    it("includes loaded content blocks (e.g. MemoryGet injections)", () => {
       const joined = joinedStack(makeContext({
         loadedDocuments: new Map([["long_memory:42", "# Strategy\nBuy low sell high"]]),
       }));
@@ -163,9 +163,9 @@ describe("prompt-stack — mode & context", () => {
       }));
       expect(joined).toContain("MISSION RUN");
       expect(joined).toContain("executor");
-      expect(joined).toContain("mission_stop");
+      expect(joined).toContain("MissionStop");
       expect(joined).toContain("user-approved stop condition");
-      expect(joined).toContain("loop_defer");
+      expect(joined).toContain("LoopDefer");
       expect(joined).not.toContain("teacher, collaborator");
       expect(joined).not.toContain("planner");
     });

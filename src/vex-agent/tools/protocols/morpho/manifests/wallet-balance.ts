@@ -7,8 +7,8 @@ import { MORPHO_WALLET_MAX_TOKENS } from "../read-params/wallet.js";
  * `morpho.wallet.balance` - holdings plus the Morpho approval surface.
  *
  * The description leads with the approval half because that is why the tool
- * exists: a plain balance question is already answered by `wallet_balances` and
- * `chain_read`, and routing a user there is cheaper than answering it here.
+ * exists: a plain balance question is already answered by `WalletBalances` and
+ * `ChainRead`, and routing a user there is cheaper than answering it here.
  *
  * The unknown-is-not-zero prose is the load-bearing text. An allowance reported
  * as zero when the read actually failed is the reassuring answer and the wrong
@@ -17,14 +17,15 @@ import { MORPHO_WALLET_MAX_TOKENS } from "../read-params/wallet.js";
  */
 export const MORPHO_WALLET_BALANCE_TOOL: ProtocolToolManifest = {
   toolId: "morpho.wallet.balance",
+  publicName: "morpho__wallet_balance_get",
   namespace: "morpho",
   lifecycle: "active",
   description:
     "Read, directly from the chain, what ONE wallet holds of named token contracts and which Morpho contracts it "
     + "has already approved to move them. Use this before acting on Morpho, or to audit standing spending "
     + "permissions: whether an approval already exists, whether it is unlimited, and whether there is native "
-    + "balance to pay gas. For a plain 'how much do I have' question with no approval angle, wallet_balances and "
-    + "chain_read are cheaper and cover more chains; use morpho.positions.get for what is already inside Morpho. "
+    + "balance to pay gas. For a plain 'how much do I have' question with no approval angle, WalletBalances and "
+    + "ChainRead are cheaper and cover more chains; use morpho.positions.get for what is already inside Morpho. "
     + "THE APPROVAL HALF IS THE REASON THIS TOOL EXISTS. It reports the allowance granted to each of four "
     + "contracts, pinned per chain from Morpho's own address registry and never taken from a parameter: Morpho "
     + "Blue, the core lending protocol; Bundler3, the batch entry point; GeneralAdapter1, the contract that "

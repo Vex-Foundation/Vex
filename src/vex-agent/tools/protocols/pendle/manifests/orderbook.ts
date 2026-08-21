@@ -19,6 +19,7 @@ import {
  */
 export const PENDLE_ORDERBOOK_TOOL: ProtocolToolManifest = {
   toolId: "pendle.orderbook",
+  publicName: "pendle__market_orderbook_get",
   namespace: "pendle",
   lifecycle: "active",
   description:

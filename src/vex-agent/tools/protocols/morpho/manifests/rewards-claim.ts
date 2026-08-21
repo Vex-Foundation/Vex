@@ -18,6 +18,7 @@ import { MORPHO_DRY_RUN_PARAM_DESCRIPTION } from "./vault-execute-shared.js";
  */
 export const MORPHO_REWARDS_CLAIM_TOOL: ProtocolToolManifest = {
   toolId: "morpho.rewards.claim",
+  publicName: "morpho__rewards_claim",
   namespace: "morpho",
   lifecycle: "active",
   description:

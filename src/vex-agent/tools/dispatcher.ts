@@ -40,15 +40,21 @@ export { dispatchTargetIsMutating } from "./dispatcher/mutating-targets.js";
 export { INTERNAL_TOOL_LOADERS } from "./dispatcher/internal-loaders.js";
 
 /**
- * What the model is told when it calls `execute_tool` anyway. Names the real
- * cause and the ONE way forward (rule 04) — the model's next move must be
- * `discover_tools`, whose ranked rows come back as callable functions.
+ * What the model is told when it emits `execute_tool` anyway. Names the real
+ * cause and the ONE way forward (rule 04) — the model's next move is
+ * `ToolSearch`, whose rows come back as callable functions.
+ *
+ * THIS REFUSAL IS LOAD-BEARING, not a leftover of the retired ToolDef. The
+ * envelope's dispatch route is still live for approval resume
+ * (`dispatcher/protocol-route.ts`), so a model-emitted `execute_tool` would
+ * otherwise EXECUTE a protocol tool with model-chosen arguments and no injected
+ * schema to validate them against. Deleting the registration removed the tool
+ * from the catalog; this gate is what keeps the route closed.
  */
 const MODEL_EXECUTE_TOOL_REFUSAL =
   "execute_tool is not callable. Protocol tools are called DIRECTLY by their " +
-  "own name: run discover_tools with a query describing what you need, and " +
-  "every tool it returns is added to your tool list as a real function " +
-  "(dotted id with `.` written as `__`, e.g. `kyberswap__swap__execute`) whose " +
+  "own name: run ToolSearch with a query describing what you need, and " +
+  "every tool it returns is added to your tool list as a real function whose " +
   "arguments ARE its parameters — no toolId, no params wrapper.";
 
 /**
@@ -104,12 +110,13 @@ export async function dispatchTool(
   const call: ToolCallRequest =
     resolvedName === request.name ? request : { ...request, name: resolvedName };
 
-  // `execute_tool` is closed to the MODEL. Discovered manifests are injected as
-  // real functions the model calls by their own name, so the two-level envelope
-  // is now an internal calling convention with exactly one live caller: the
-  // cold approval resume, whose stored call is canonicalized to `execute_tool`
-  // so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
-  // That caller is host-built and never carries `modelOriginated`.
+  // `execute_tool` is closed to the MODEL and no longer registered at all
+  // (`registry/protocol.ts`). Selected manifests are injected as real functions
+  // the model calls by their own name, so the two-level envelope is now an
+  // internal calling convention with exactly one live caller: the cold approval
+  // resume, whose stored call is canonicalized to `execute_tool` so it survives
+  // a process restart (`approval-runtime/tool-call-envelope.ts`). That caller is
+  // host-built and never carries `modelOriginated`.
   //
   // THE PLACEMENT IS THE POINT: this refusal runs BEFORE the plan-acceptance
   // gate below and therefore before `routeToolCall`'s mission auto-retry-unsafe

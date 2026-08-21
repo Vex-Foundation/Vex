@@ -46,7 +46,7 @@ describe("assertExactInSwapMode", () => {
       const e = err as InstanceType<typeof VexError>;
       expect(e.code).toBe(ErrorCodes.SOLANA_SWAP_FAILED);
       expect(e.message).toContain("Nothing was signed");
-      expect(e.message).toContain("solana.swap.quote");
+      expect(e.message).toContain("solana__swap_quote");
     }
   });
 

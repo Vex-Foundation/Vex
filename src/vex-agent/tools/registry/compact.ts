@@ -1,7 +1,7 @@
 /**
  * Compact tools — the agent's surface onto compaction v2.
  *
- * `compact_apply` REPLACED `compact_now`. The difference is not cosmetic and
+ * `CompactApply` REPLACED `compact_now`. The difference is not cosmetic and
  * the shape of the tool follows from it:
  *
  * `compact_now` asked the agent to WRITE the summary, mid-turn, as tool
@@ -29,7 +29,7 @@ import type { ToolDef } from "../types.js";
 
 export const COMPACT_TOOLS: readonly ToolDef[] = [
   {
-    name: "compact_apply",
+    name: "CompactApply",
     kind: "internal",
     mutating: false,
     pressureSafety: "safe_at_barrier",

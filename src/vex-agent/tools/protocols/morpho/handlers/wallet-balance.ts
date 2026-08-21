@@ -6,7 +6,7 @@
  * read. The balance half is the cheap half; the answer this tool exists for is
  * the APPROVAL half, and that is Morpho-specific: the spender set is Morpho
  * Blue, Bundler3, GeneralAdapter1 and Permit2, pinned per chain from Morpho's
- * own registry. `wallet_balances` and `chain_read erc20_balance` remain the right
+ * own registry. `WalletBalances` and `ChainRead erc20_balance` remain the right
  * tools for a plain "how much do I have" question, and the description says so.
  *
  * IT READS ANY ADDRESS. No key is touched, no vault is unlocked, nothing is

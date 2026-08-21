@@ -84,7 +84,17 @@ import logger from "@utils/logger.js";
 
 import { summarizeWalletError } from "../send-types.js";
 
-/** The tool whose durable execution a transfer belongs to. */
+/**
+ * The tool whose durable execution a transfer belongs to.
+ *
+ * DELIBERATELY still the pre-rename spelling. The model-visible tool is now
+ * `WalletSendConfirm`, but this string is written into `agent_activity.tool_id`
+ * and the matching `executions` row, where it is DURABLE and is read back
+ * alongside rows already on disk. Flipping it here would split one product's
+ * history across two spellings with no migration, which is a durable-format
+ * change needing its own decision and a backfill - not a side effect of a
+ * model-visible rename. See `tool-surface-spec/identity-and-migration.md` §4.
+ */
 const TOOL_ID = "wallet_send_confirm";
 const NAMESPACE = "wallet";
 /** `agent_activity.protocol` - a send belongs to no venue. */

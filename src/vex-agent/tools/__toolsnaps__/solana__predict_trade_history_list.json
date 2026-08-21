@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get a wallet's PAST (closed/settled) prediction trade history — buys, sells, claims, realized PnL. Use solana.predict.positions instead for currently OPEN positions. Money *Usd fields (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd, etc.) are exact-decimal USD strings with raw *Micro siblings; transferAmountTokenRaw is a SEPARATE unit family — the transferred token's own native units, never a USD amount — do not convert or compare it against the *Usd fields.",
+      "name": "solana__predict_trade_history_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Filter to a single history event ID.",
+            "type": "number"
+          },
+          "limit": {
+            "description": "Max results, 1-100 (default 20).",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip first N results for pagination.",
+            "type": "number"
+          },
+          "positionPubkey": {
+            "description": "Filter to one position's history.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.history"
+  }
+}

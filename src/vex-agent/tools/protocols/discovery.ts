@@ -21,11 +21,9 @@ import type {
   ProtocolDiscoveryRequest,
   ProtocolDiscoveryResult,
   ProtocolDiscoveryRetrievalMeta,
-  ProtocolManifestResult,
 } from "./types.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "./types.js";
 import type { ScoredManifest } from "./lexical-score.js";
-import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 
 /**
  * Ranked rows returned when the caller names no limit. Owner decree
@@ -58,15 +56,16 @@ export const DEFAULT_DISCOVERY_LIMIT = 5;
 export const MAX_DISCOVERY_LIMIT = 20;
 
 /**
- * Max toolIds one `describe_tools` call may name. Rejected BY NAME above it,
+ * Max public names one `ToolSearch` select may name. Rejected BY NAME above it,
  * never sliced.
  *
  * DERIVED, not chosen. The owner's flow (directive D2, 2026-08-04) is "agent
  * może pobrać pełny namespace protokołu", so the bound must fit the LARGEST
  * advertised namespace — solana, 34 tools. 40 = 34 + a six-tool tail, so a
- * whole-namespace fetch can be mixed with a little earlier work without being
- * refused. `describe-tools.test.ts` derives both facts from `PROTOCOL_TOOLS`,
- * so a future 41-tool namespace fails the suite instead of silently refusing.
+ * whole-namespace select can be mixed with a little earlier work without being
+ * refused. `tool-search-select.test.ts` derives both facts from
+ * `PROTOCOL_TOOLS`, so a future 41-tool namespace fails the suite instead of
+ * silently refusing.
  *
  * A bound is still required, and is a real safety property rather than caution:
  * fetching all 107 advertised manifests in one call costs 461,857 chars (~45% of
@@ -80,34 +79,7 @@ export const MAX_DISCOVERY_LIMIT = 20;
  * response-size policy must be able to move independently. They are equal at 40
  * today.
  */
-export const MAX_DESCRIBE_TOOL_IDS = 40;
-
-/**
- * The dotted-toolId grammar `describe_tools` accepts, applied BEFORE an id is
- * echoed into a rejection message.
- *
- * The count bound bounds the COUNT, not the payload: forty arbitrary strings
- * echoed back would make an unbounded result despite it. 64 is an ECHO bound
- * chosen with headroom over the longest real toolId (30, measured) — it is
- * deliberately NOT "the provider grammar", whose own
- * `^[a-zA-Z0-9_-]{1,64}$` applies to the TRANSFORMED `__` function name rather
- * than to this dotted input. Asserted catalog-wide, so a manifest can never be
- * listable yet unfetchable.
- */
-export const DESCRIBE_TOOL_ID_PATTERN = /^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$/;
-export const DESCRIBE_TOOL_ID_MAX_LENGTH = 64;
-
-/**
- * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
- * 8/C3) — mirrors `runtime.ts`'s `REVEAL_GATED_UNISWAP_TOOL_IDS`. Filtered
- * out of discovery results for a session that has not revealed them, so
- * `discover_tools` never advertises a manifest `executeProtocolTool` would
- * then hard-reject.
- */
-const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
-  "uniswap.swap.quote",
-  "uniswap.swap.execute",
-]);
+export const MAX_SELECT_TOOL_NAMES = 40;
 
 /** The manifest's required param keys, in declaration order. */
 function requiredParamKeys(manifest: ProtocolToolManifest): string[] {
@@ -118,10 +90,11 @@ function requiredParamKeys(manifest: ProtocolToolManifest): string[] {
  * The one place a manifest becomes a model-facing row.
  *
  * Ranked discovery spreads it and appends `score`/`whyMatched`;
- * `describe_tools` returns it verbatim. Owner directive D3: the two paths must
- * be indistinguishable, so there is exactly ONE builder. The last time this
- * projection had two implementations, W7's `exampleParams`/`required`/
- * `constraints` reached the ranked row and list mode was left behind.
+ * every consumer that needs the full manifest shape reads it. Owner directive
+ * D3: the paths must be indistinguishable, so there is exactly ONE builder. The
+ * last time this projection had two implementations, W7's
+ * `exampleParams`/`required`/`constraints` reached the ranked row and the
+ * listing was left behind.
  */
 export function toManifestRow(
   manifest: ProtocolToolManifest,
@@ -130,6 +103,7 @@ export function toManifestRow(
 ): ManifestRow {
   const row: ManifestRow = {
     toolId: manifest.toolId,
+    publicName: manifest.publicName,
     namespace: manifest.namespace,
     description: manifest.description,
     mutating: manifest.mutating,
@@ -174,26 +148,25 @@ function toDiscoveryItem(
 /**
  * Why a manifest may or may not be reached through discovery — the FOUR gates
  * `discoverProtocolCapabilities` applies to its candidates, shared so
- * `describe_tools` cannot become a bypass that hands the model a manifest
+ * select mode cannot become a bypass that hands the model a manifest
  * `executeProtocolTool` would then hard-reject.
  *
  * A discriminated result rather than a boolean, deliberately: a boolean cannot
- * tell `describe_tools` WHY an id failed, so the handler would have to
- * re-derive every gate to write a real-cause rejection — duplicating exactly
- * what this extraction unifies. `missingEnv` carries env var NAMES only; a name
+ * tell select mode WHY a name failed, so the caller would have to re-derive
+ * every gate to write a real-cause rejection — duplicating exactly what this
+ * extraction unifies. `missingEnv` carries env var NAMES only; a name
  * is configuration, a value is a secret (rule 06).
  */
 export type ManifestDiscoverability =
   | { ok: true }
   | {
     ok: false;
-    reason: "not_advertised" | "env_missing" | "reveal_gated" | "inactive";
+    reason: "not_advertised" | "env_missing" | "inactive";
     missingEnv?: string[];
   };
 
 export function evaluateManifestDiscoverability(
   manifest: ProtocolToolManifest,
-  sessionId: string | undefined,
 ): ManifestDiscoverability {
   if (!isAdvertisedProtocolNamespace(manifest.namespace)) {
     return { ok: false, reason: "not_advertised" };
@@ -201,11 +174,6 @@ export function evaluateManifestDiscoverability(
   if (manifest.lifecycle !== "active") return { ok: false, reason: "inactive" };
   if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) {
     return { ok: false, reason: "env_missing", missingEnv: [manifest.requiresEnv] };
-  }
-  // FIX-SPINE round 1, finding 8/C3 — the canonical hidden Uniswap swap
-  // manifests stay hidden until this session revealed them.
-  if (REVEAL_GATED_UNISWAP_TOOL_IDS.has(manifest.toolId) && !isUniswapPairRevealed(sessionId)) {
-    return { ok: false, reason: "reveal_gated" };
   }
   return { ok: true };
 }
@@ -223,6 +191,7 @@ export function isRankedDiscoveryItem(
 function toDiscoveryListItem(manifest: ProtocolToolManifest): ProtocolDiscoveryListItem {
   return {
     toolId: manifest.toolId,
+    publicName: manifest.publicName,
     mutating: manifest.mutating,
     actionKind: manifest.actionKind,
     description: manifest.description,
@@ -253,20 +222,16 @@ function describeEmptyNamespace(namespace: ProtocolNamespace): string {
  */
 /**
  * The pointer that turns a listing into a two-step flow (owner directive D2:
- * "na samej górze każdego listowania"). Built from the FIRST returned toolId so
- * the example is always concretely correct for the namespace just listed,
- * rather than a hard-coded id that may not exist in it.
- *
- * This is the ONE place on the pre-reveal surface that may name the hidden tool:
- * it is a runtime result, not always-visible prose, so it cannot defeat the
- * reveal the way a static description would.
+ * "na samej górze każdego listowania"). Built from the FIRST returned public
+ * name so the example is always concretely correct for the namespace just
+ * listed, rather than a hard-coded name that may not exist in it.
  */
-function buildListNextStep(firstToolId: string): string {
-  return "These rows are names + descriptions only. To get the FULL parameter schema of any of them"
-    + " — and make them immediately callable by name — call describe_tools with their toolIds"
-    + ` (up to ${MAX_DESCRIBE_TOOL_IDS} per call, the whole namespace at once is fine), e.g.`
-    + ` describe_tools(toolIds=["${firstToolId}"]).`
-    + " A fetched tool is callable on your very next step.";
+function buildListNextStep(firstPublicName: string): string {
+  return "These rows are names + one-line summaries only. To get the FULL parameter schema of any"
+    + " of them — and make them callable — select them by name:"
+    + ` ToolSearch(query="select:${firstPublicName}") (up to ${MAX_SELECT_TOOL_NAMES} names per`
+    + " call, comma-separated, the whole namespace at once is fine)."
+    + " A selected tool is callable from your NEXT message, not from this one.";
 }
 
 function buildNamespaceListing(
@@ -274,12 +239,12 @@ function buildNamespaceListing(
   manifests: readonly ProtocolToolManifest[],
 ): ProtocolDiscoveryResult {
   const tools = manifests.map(toDiscoveryListItem);
-  const firstToolId = tools[0]?.toolId;
+  const firstPublicName = tools[0]?.publicName;
   return {
     // FIRST key of the envelope: `JSON.stringify` preserves insertion order and
     // the model reads the string front-to-back. An empty listing gets no
     // pointer — there is nothing to describe.
-    ...(firstToolId === undefined ? {} : { nextStep: buildListNextStep(firstToolId) }),
+    ...(firstPublicName === undefined ? {} : { nextStep: buildListNextStep(firstPublicName) }),
     success: true,
     count: tools.length,
     totalCount: tools.length,
@@ -311,132 +276,65 @@ function resolveRequestedNamespace(
     return buildDiscoveryFailure(`Unknown namespace "${namespace}". ${buildDiscoverNamespaceDescription()}`);
   }
   if (!isAdvertisedProtocolNamespace(namespace)) {
-    return buildDiscoveryFailure(`Namespace "${namespace}" is reserved and not available through discover_tools. ${buildDiscoverNamespaceDescription()}`);
+    return buildDiscoveryFailure(`Namespace "${namespace}" is reserved and not available through ToolSearch. ${buildDiscoverNamespaceDescription()}`);
   }
   return namespace;
-}
-
-/** What `describeProtocolTools` needs from the calling session. */
-export interface ProtocolManifestContext {
-  sessionId?: string;
-  contextUsageBand?: ProtocolDiscoveryRequest["contextUsageBand"];
-  preparationBypassesBarrier?: boolean;
 }
 
 /**
  * The sentence that keeps "nothing is silently dropped" true when the session
  * cap evicts an earlier round.
  *
- * Shared by BOTH recording paths — `describe_tools` and ranked `discover_tools`
- * — because the eviction is a property of the session cap, not of the tool that
+ * Shared by BOTH recording paths — `ToolSearch` query mode and select mode —
+ * because the eviction is a property of the session cap, not of the mode that
  * happened to trigger it. Surfacing it on only one path is what let a tool the
- * model had been told was callable stop being callable with no signal.
+ * model had been told was callable stop being callable with no signal, and one
+ * owner for the sentence is what keeps the two modes word-for-word identical.
  *
  * Returns `null` when nothing was displaced, so a caller can never manufacture
  * a warning for a call that evicted nothing.
+ *
+ * The input is toolIds (that is what the session records); the sentence names
+ * the PUBLIC NAMES, because "no longer callable by name" is a statement about
+ * the name the model would have typed. An id with no live manifest is named
+ * as-is rather than dropped: a warning about a vanished tool must not itself
+ * vanish.
  */
 export function buildDisplacementWarning(displaced: readonly string[]): string | null {
   if (displaced.length === 0) return null;
+  const names = displaced.map((id) => getProtocolManifest(id)?.publicName ?? id);
   return (
-    `${displaced.map((id) => `"${id}"`).join(", ")} ${displaced.length === 1 ? "is" : "are"} `
+    `${names.map((name) => `"${name}"`).join(", ")} ${displaced.length === 1 ? "is" : "are"} `
     + "no longer callable by name — this session keeps the most recent "
-    + `${MAX_DISCOVERED_TOOLS_PER_SESSION} discovered tools. Discover or describe them again if `
+    + `${MAX_DISCOVERED_TOOLS_PER_SESSION} discovered tools. Search for or select them again if `
     + "you still need them."
   );
 }
 
-/** One rejection sentence naming the id and the REAL reason it could not be returned. */
-function describeManifestRejection(
-  toolId: string,
+/**
+ * One rejection sentence naming the tool and the REAL reason it cannot be made
+ * callable.
+ *
+ * Exported because `ToolSearch` select mode is the only caller and it lives in
+ * the dispatcher lane (`dispatcher/tool-search-select.ts`), while the gate it
+ * explains — {@link evaluateManifestDiscoverability} — is owned here. Keeping
+ * the gate and its wording in one module is what stops a rejection reason from
+ * drifting away from the condition that produced it.
+ */
+export function describeManifestRejection(
+  publicName: string,
   outcome: Exclude<ManifestDiscoverability, { ok: true }>,
 ): string {
   switch (outcome.reason) {
     case "env_missing":
       // Env var NAMES only — a name is configuration, a value is a secret.
-      return `"${toolId}" is unavailable right now: set ${outcome.missingEnv?.join(", ")} to enable it.`;
+      return `"${publicName}" is unavailable right now: set ${outcome.missingEnv?.join(", ")} to enable it.`;
     case "not_advertised":
-    case "reveal_gated":
-      return `"${toolId}" is not reachable through discover_tools/describe_tools. `
-        + "Use the swap_quote / bridge_quote shortcuts for that capability instead.";
+      return `"${publicName}" is not reachable through ToolSearch. `
+        + "Use the SwapQuote / BridgeQuote shortcuts for that capability instead.";
     case "inactive":
-      return `"${toolId}" is retired and no longer executable.`;
+      return `"${publicName}" is retired and no longer executable.`;
   }
-}
-
-/**
- * `describe_tools` — the full model-facing manifests of explicitly named
- * toolIds, recorded so they are callable by name on the very next step.
- *
- * Resolution is an EXACT `getProtocolManifest` lookup and never
- * `pinExactToolIdMatch`: that is a retrieval heuristic with a unique-prefix
- * fallback, and on an explicitly supplied identifier it would answer
- * `["solana.lend"]` with `solana.lend.deposit` — silent substitution of a
- * different tool, which the reject-by-name decree forbids.
- *
- * Every id passes the SAME gates ranked discovery applies
- * (`evaluateManifestDiscoverability`), so this can never become a bypass that
- * hands the model a manifest `executeProtocolTool` would then hard-reject.
- *
- * Callers must have validated the id array first (count, grammar, shape) —
- * `internal/describe-tools.ts` owns that boundary.
- */
-export function describeProtocolTools(
-  toolIds: readonly string[],
-  ctx: ProtocolManifestContext,
-): ProtocolManifestResult {
-  const warnings: string[] = [];
-
-  const unique = [...new Set(toolIds)];
-  if (unique.length !== toolIds.length) {
-    const repeated = [...new Set(toolIds.filter((id, i) => toolIds.indexOf(id) !== i))];
-    warnings.push(
-      `Requested ${toolIds.length} toolIds but ${repeated.map((id) => `"${id}"`).join(", ")} `
-      + `${repeated.length === 1 ? "was" : "were"} repeated — each tool is described once.`,
-    );
-  }
-
-  const tools: ManifestRow[] = [];
-  for (const toolId of unique) {
-    const manifest = getProtocolManifest(toolId);
-    if (!manifest) {
-      warnings.push(
-        `"${toolId}" is not a known toolId. Run discover_tools for the namespace and use a `
-        + "toolId exactly as returned.",
-      );
-      continue;
-    }
-    const discoverability = evaluateManifestDiscoverability(manifest, ctx.sessionId);
-    if (!discoverability.ok) {
-      warnings.push(describeManifestRejection(toolId, discoverability));
-      continue;
-    }
-    tools.push(toManifestRow(
-      manifest,
-      ctx.contextUsageBand,
-      ctx.preparationBypassesBarrier === true,
-    ));
-  }
-
-  // Recording is what makes a described tool CALLABLE — owner directive D2's
-  // "pobrac informacje odrazu o tym toolu i go wywołać". Same call, same
-  // machinery as ranked discovery, so the injected schema is byte-identical.
-  const displacement = buildDisplacementWarning(
-    recordDiscoveredTools(ctx.sessionId, tools.map((row) => row.toolId)),
-  );
-  if (displacement !== null) warnings.push(displacement);
-
-  return {
-    // A partial batch is a SUCCESS with named losses; only a call where nothing
-    // resolved is a failure.
-    success: tools.length > 0,
-    count: tools.length,
-    tools,
-    warnings,
-    sessionCapacity: {
-      used: getDiscoveredToolIds(ctx.sessionId).length,
-      max: MAX_DISCOVERED_TOOLS_PER_SESSION,
-    },
-  };
 }
 
 export async function discoverProtocolCapabilities(
@@ -459,15 +357,15 @@ export async function discoverProtocolCapabilities(
   // mutating tools or the agent cannot find them and trigger approval flow.
   const filteredTools = PROTOCOL_TOOLS
     .filter((manifest) => resolvedNamespace ? manifest.namespace === resolvedNamespace : true)
-    // The advertised / lifecycle+env / Uniswap-reveal gates, shared verbatim
-    // with `describe_tools` so neither path can reach a manifest the other
-    // hides. This consumes `.ok` only; the reason is for the id-by-id caller.
-    .filter((manifest) => evaluateManifestDiscoverability(manifest, request.sessionId).ok);
+    // The advertised / lifecycle+env gates, shared verbatim with select mode
+    // so neither path can reach a manifest the other hides.
+    // This consumes `.ok` only; the reason is for the id-by-id caller.
+    .filter((manifest) => evaluateManifestDiscoverability(manifest).ok);
 
   if (request.list === true) {
     if (typeof resolvedNamespace !== "string") {
       return buildDiscoveryFailure(
-        `list mode requires a namespace — listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
+        `A listing requires a namespace — listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
       );
     }
     return buildNamespaceListing(resolvedNamespace, filteredTools);

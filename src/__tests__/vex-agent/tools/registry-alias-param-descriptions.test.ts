@@ -5,7 +5,7 @@
  *
  * Three things this suite pins:
  *
- *  1. CHAIN. `token_find` returns `chainId` as a NUMBER, and the swap/token
+ *  1. CHAIN. `TokenFind` returns `chainId` as a NUMBER, and the swap/token
  *     aliases now accept that form (`internal/chain-param.ts`). The menu still
  *     described only slugs, so the agent had no way to know the id it was
  *     already holding was acceptable.
@@ -69,21 +69,21 @@ function paramOf(toolName: string, key: string): JsonSchemaParam {
 }
 
 const CHAIN_FORMS_SENTENCE =
-  "Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453).";
+  "Accepts a chain slug/alias or the numeric chain id TokenFind returns (e.g. base or 8453).";
 
-describe("chain params — the menu must admit the form token_find hands back", () => {
-  for (const toolName of ["swap_quote", "swap_execute"]) {
+describe("chain params — the menu must admit the form TokenFind hands back", () => {
+  for (const toolName of ["SwapQuote", "SwapExecute"]) {
     it(`${toolName} tells the agent a numeric chain id is accepted`, () => {
       expect(paramOf(toolName, "chain").description).toContain(CHAIN_FORMS_SENTENCE);
     });
   }
 
-  it("token_check tells the agent the same", () => {
-    expect(paramOf("token_check", "chain").description).toContain(CHAIN_FORMS_SENTENCE);
+  it("TokenCheck tells the agent the same", () => {
+    expect(paramOf("TokenCheck", "chain").description).toContain(CHAIN_FORMS_SENTENCE);
   });
 });
 
-const RELAY_BRIDGE_ALIASES = ["bridge_quote_relay", "bridge_execute_relay"] as const;
+const RELAY_BRIDGE_ALIASES = ["BridgeQuoteRelay", "BridgeExecuteRelay"] as const;
 
 describe("Relay bridge slippageBps — what it protects, and the ceiling it is held to", () => {
   for (const toolName of RELAY_BRIDGE_ALIASES) {
@@ -146,7 +146,7 @@ describe("the documented Relay ceiling is the one the code enforces", () => {
 /**
  * Every alias that forwards to protocol tools, with the keys it translates
  * VERBATIM (same name on both lanes). A key the alias renames on the way
- * through — e.g. `swap_quote`'s Solana branch — is deliberately absent: parity
+ * through — e.g. `SwapQuote`'s Solana branch — is deliberately absent: parity
  * is asserted only where the two lanes claim to speak the same vocabulary.
  */
 const ALIAS_PARITY: readonly {
@@ -155,42 +155,42 @@ const ALIAS_PARITY: readonly {
   readonly sharedKeys: readonly string[];
 }[] = [
   {
-    alias: "swap_quote",
+    alias: "SwapQuote",
     toolIds: ["kyberswap.swap.quote"],
     sharedKeys: ["chain", "tokenIn", "tokenOut", "amountIn", "slippageBps"],
   },
   {
-    alias: "swap_execute",
+    alias: "SwapExecute",
     toolIds: ["kyberswap.swap.execute"],
     sharedKeys: ["chain", "tokenIn", "tokenOut", "amountIn", "slippageBps"],
   },
   {
-    alias: "swap_quote_uniswap",
+    alias: "SwapQuoteUniswap",
     toolIds: ["uniswap.swap.quote"],
     sharedKeys: ["chain", "tokenIn", "tokenOut", "amountIn", "slippageBps"],
   },
   {
-    alias: "swap_execute_uniswap",
+    alias: "SwapExecuteUniswap",
     toolIds: ["uniswap.swap.execute"],
     sharedKeys: ["chain", "tokenIn", "tokenOut", "amountIn", "slippageBps"],
   },
   {
-    alias: "bridge",
+    alias: "BridgeExecute",
     toolIds: ["khalani.bridge", "relay.bridge"],
     sharedKeys: ["fromChain", "fromToken", "toChain", "toToken", "amountRaw"],
   },
   {
-    alias: "bridge_quote",
+    alias: "BridgeQuote",
     toolIds: ["khalani.quote.get", "relay.quote.get"],
     sharedKeys: ["fromChain", "fromToken", "toChain", "toToken", "amountRaw"],
   },
   {
-    alias: "bridge_quote_relay",
+    alias: "BridgeQuoteRelay",
     toolIds: ["relay.quote.get"],
     sharedKeys: ["fromChain", "fromToken", "toChain", "toToken", "amountRaw", "slippageBps"],
   },
   {
-    alias: "bridge_execute_relay",
+    alias: "BridgeExecuteRelay",
     toolIds: ["relay.bridge"],
     sharedKeys: ["fromChain", "fromToken", "toChain", "toToken", "amountRaw", "slippageBps"],
   },
@@ -239,15 +239,15 @@ describe("alias ↔ protocol parity — one rename must land on BOTH lanes", () 
 // ── The wallet lane (W5d / W6c) ──────────────────────────────────────
 
 describe("wallet tools speak the same param vocabulary as everything else", () => {
-  it("wallet_send_prepare takes amountIn in HUMAN decimals, and no bare `amount`", () => {
-    const properties = schemaPropertiesOf("wallet_send_prepare");
+  it("WalletSendPrepare takes amountIn in HUMAN decimals, and no bare `amount`", () => {
+    const properties = schemaPropertiesOf("WalletSendPrepare");
     expect(properties.amount).toBeUndefined();
     expect(properties.amountIn?.type).toBe("string");
     expect(properties.amountIn?.description).toContain("HUMAN decimal units");
-    expect(requiredKeysOf("wallet_send_prepare")).toContain("amountIn");
+    expect(requiredKeysOf("WalletSendPrepare")).toContain("amountIn");
   });
 
-  for (const toolName of ["wallet_send_prepare", "wallet_send_confirm"]) {
+  for (const toolName of ["WalletSendPrepare", "WalletSendConfirm"]) {
     it(`${toolName} selects a wallet FAMILY through walletFamily, never \`network\``, () => {
       const properties = schemaPropertiesOf(toolName);
       expect(properties.network).toBeUndefined();
@@ -256,14 +256,14 @@ describe("wallet tools speak the same param vocabulary as everything else", () =
     });
   }
 
-  it("wallet_balances scopes by walletFamily, never `wallet`", () => {
-    const properties = schemaPropertiesOf("wallet_balances");
+  it("WalletBalances scopes by walletFamily, never `wallet`", () => {
+    const properties = schemaPropertiesOf("WalletBalances");
     expect(properties.wallet).toBeUndefined();
     expect(properties.walletFamily?.type).toBe("string");
   });
 
-  it("wallet_balances.chainIds accepts a CSV string OR an array of chains", () => {
-    const branches = paramOf("wallet_balances", "chainIds").anyOf ?? [];
+  it("WalletBalances.chainIds accepts a CSV string OR an array of chains", () => {
+    const branches = paramOf("WalletBalances", "chainIds").anyOf ?? [];
     expect(branches.map((branch) => branch.type)).toEqual(["string", "array"]);
   });
 

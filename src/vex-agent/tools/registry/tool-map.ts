@@ -16,7 +16,7 @@ import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js"
  * map's ORDER carries model-priority intent (e.g. protocol discovery /
  * execution first because everything mutating routes through them; reads
  * before writes within each substrate; runtime safety nets like
- * `compact_apply` next to the substrate they protect). Do NOT alphabetize
+ * `CompactApply` next to the substrate they protect). Do NOT alphabetize
  * within categories — the declaration order is the LLM-facing order.
  */
 export interface ToolMapCategory {
@@ -27,63 +27,65 @@ export interface ToolMapCategory {
 }
 
 export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
-  // Discovery ONLY. A discovered protocol tool is injected as a real function
-  // schema (`registry/injected-protocol-tools.ts`) and called by its own dot
-  // name, so there is no model-facing execution wrapper left to list here;
-  // `execute_tool` is withheld from the model surface (`registry/visibility.ts`)
-  // and its dispatch route survives solely for approval resume.
-  // `describe_tools` is reveal-gated (R5): it appears here only once this
-  // session has produced a successful discover_tools result, which is exactly
-  // when the follow-up fetch becomes meaningful.
-  { label: "Protocol discovery", toolNames: ["discover_tools", "describe_tools"] },
-  { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
-  { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
-  { label: "Token resolution", toolNames: ["token_find"] },
+  // ONE entry, always present. `ToolSearch` carries all three modes (search,
+  // select, namespace listing) and is the only entry point to the protocol
+  // surface, which is why it has no visibility gate: hiding the door is not a
+  // security control, and D2 retired the reveal that used to hide half of it.
+  // A selected protocol tool is injected as a real function schema
+  // (`registry/injected-protocol-tools.ts`) and called by its own name, so
+  // there is no model-facing execution wrapper to list here either — the
+  // `execute_tool` ToolDef is deleted and its dispatch route survives solely
+  // for approval resume.
+  { label: "Protocol tool search", toolNames: ["ToolSearch"] },
+  { label: "Live state reads", toolNames: ["WalletBalances", "ChainRead", "AgentScan"] },
+  { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["WalletTrackToken"] },
+  { label: "Token resolution", toolNames: ["TokenFind"] },
   // Sits with the reads because it is one: exact arithmetic the model must not
   // do in its head (wei/gwei, raw/human, bps, USD).
-  { label: "Unit and fee math (exact, no rounding up)", toolNames: ["units_convert"] },
+  { label: "Unit and fee math (exact, no rounding up)", toolNames: ["UnitsConvert"] },
   {
-    label: "Swap & bridge previews (read-only)",
-    // `bridge_quote_relay` mirrors `swap_quote_uniswap`: a hidden, route-bound
-    // reveal pair (see registry/relay-reveal.ts) that sits right after its
-    // always-visible counterpart once revealed.
+    // VENUE PREFERENCE, stated not enforced (owner decision D4). The venue
+    // tools are always visible; the label is where the model learns which one
+    // to reach for first, because hiding a venue is what used to "enforce" the
+    // preference and that cost the agent its fallback exactly when the primary
+    // venue failed. Approval, not visibility, is what protects the money.
+    label: "Swap & bridge previews (read-only) — KyberSwap is the primary swap route and Khalani the primary bridge route; the venue-named tools are alternatives for when the primary cannot serve the pair or route",
     toolNames: [
-      "swap_quote",
-      "swap_quote_uniswap",
-      "token_check",
-      "bridge_quote",
-      "bridge_quote_relay",
-      "bridge_status",
+      "SwapQuote",
+      "SwapQuoteUniswap",
+      "TokenCheck",
+      "BridgeQuote",
+      "BridgeQuoteRelay",
+      "BridgeStatus",
     ],
   },
   {
-    label: "Swap & bridge execution (on-chain — quote first)",
-    // `bridge_execute_relay` mirrors `swap_execute_uniswap` (hidden reveal pair).
-    toolNames: ["swap_execute", "swap_execute_uniswap", "bridge", "bridge_execute_relay"],
+    label: "Swap & bridge execution (on-chain — quote first, same venue) — SwapExecute and BridgeExecute are the primary routes; execute on the venue you quoted on",
+    toolNames: ["SwapExecute", "SwapExecuteUniswap", "BridgeExecute", "BridgeExecuteRelay"],
   },
-  { label: "Research", toolNames: ["web_research", "twitter_account"] },
+  { label: "Research", toolNames: ["WebResearch", "TwitterAccount"] },
   {
     label: "Session memory — this conversation/mission only",
-    toolNames: ["session_memory_search", "session_memory_resolve_item"],
+    toolNames: ["SessionMemorySearch", "SessionMemoryResolve"],
   },
   {
     label: "Long-term memory recall — durable cross-session lessons (search/get/history)",
-    toolNames: ["long_memory_search", "long_memory_get", "long_memory_history"],
+    toolNames: ["MemorySearch", "MemoryGet", "MemoryHistory"],
   },
   {
     label: "Long-term memory — suggest a durable cross-session lesson (staged, not written)",
-    toolNames: ["long_memory_suggest"],
+    toolNames: ["MemorySuggest"],
   },
-  { label: "Context compaction — applies the prepared summary", toolNames: ["compact_apply"] },
-  { label: "Wallet transfers", toolNames: ["wallet_send_prepare", "wallet_send_confirm"] },
-  { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
-  { label: "Mission run stop", toolNames: ["mission_stop"] },
+  { label: "Context compaction — applies the prepared summary", toolNames: ["CompactApply"] },
+  { label: "Wallet transfers", toolNames: ["WalletSendPrepare", "WalletSendConfirm"] },
+  { label: "Mission setup draft", toolNames: ["MissionDraftUpdate"] },
+  { label: "Mission run stop", toolNames: ["MissionStop"] },
   // NOT mission-only: owner decree 2026-08-03 made waiting available to full
   // agent sessions too (`requiresAutonomousLoop`), so the label names the
   // PATTERN — the same one `engine/prompts/execution-policy.ts` teaches — and
   // no longer implies a mission-run-scheduling niche.
-  { label: "Waiting — park the loop until an event you cannot make happen sooner", toolNames: ["loop_defer"] },
-  { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
+  { label: "Waiting — park the loop until an event you cannot make happen sooner", toolNames: ["LoopDefer"] },
+  { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["PlanWrite"] },
 ];
 
 /**

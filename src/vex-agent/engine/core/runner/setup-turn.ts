@@ -101,11 +101,11 @@ export async function processMissionSetupTurn(
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
-    // Mission setup co-authors the WHAT (mission_draft_update) and, when
-    // plan-mode is on, the HOW (plan_write); the single host Accept step
+    // Mission setup co-authors the WHAT (MissionDraftUpdate) and, when
+    // plan-mode is on, the HOW (PlanWrite); the single host Accept step
     // accepts both. Carry the LIVE plan-mode (= `session_plans.enabled`) so
     // the dispatch-path plan-acceptance gate is active in setup once the agent
-    // writes an unaccepted plan. `mission_draft_update` is safe-listed in
+    // writes an unaccepted plan. `MissionDraftUpdate` is safe-listed in
     // `PLAN_GATE_SAFE_CONTROL`, so the gate never deadlocks contract editing.
     planMode: hydrated.context.planMode ?? false,
   };
@@ -115,7 +115,7 @@ export async function processMissionSetupTurn(
     permission: setupContext.sessionPermission,
     sessionKind: "mission",
     missionRunActive: false, // setup — no run yet
-    // plan_write is visible in setup when plan-mode is on (`requiresPlanMode`;
+    // PlanWrite is visible in setup when plan-mode is on (`requiresPlanMode`;
     // `hiddenInMissionSetup` is now false). Carry the live plan-mode so the
     // seed tool set matches the dispatch-path snapshot above.
     planMode: hydrated.context.planMode ?? false,

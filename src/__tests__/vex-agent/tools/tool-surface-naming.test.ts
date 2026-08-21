@@ -1,18 +1,24 @@
 /**
  * G2(a) - the catalog-wide publicName gate.
  *
- * Validates the naming spec's machine-readable artifacts
- * (`src/vex-agent/tools/tool-surface-spec/mappings/<namespace>.json`) against
- * each other and against the LIVE protocol catalog. `publicName` is not a
- * manifest field yet (Batch 2 adds it), so the artifacts are the only place the
- * model-visible name exists, and this suite is what keeps them true.
+ * Three surfaces, all live since Batch 2 put `publicName` on the manifests:
  *
- * It is a permanent regression gate: a tool added in a later batch with no
- * mapping row fails here by name, pointing at the artifact file to edit.
+ * 1. every SHIPPED `publicName` obeys the grammar and is unique catalog-wide,
+ *    which is precisely the promise `registry/injected-protocol-tools.ts`
+ *    builds its reverse lookup on;
+ * 2. the naming spec's machine-readable artifacts
+ *    (`src/vex-agent/tools/tool-surface-spec/mappings/<namespace>.json`) are
+ *    internally consistent and complete against the live catalog;
+ * 3. the two AGREE, exactly, in both directions.
  *
- * The rules themselves live in `tool-surface-naming/public-name-gate.ts` and
- * are pure, so the failure modes are proven in memory below rather than by
- * mutating a spec artifact (which this builder does not own).
+ * A permanent regression gate: a tool added later with no mapping row fails
+ * here by name pointing at the artifact file to edit, and a manifest renamed
+ * without its artifact row fails as a mismatch naming both spellings.
+ *
+ * The rules themselves live in the production module
+ * `@vex-agent/tools/protocols/public-name-gate.js` - the projection and the
+ * gate share ONE grammar owner - and they are pure, so the failure modes are
+ * proven in memory below rather than by mutating a spec artifact.
  */
 
 import { describe, it, expect } from "vitest";
@@ -29,7 +35,9 @@ import {
   parsePublicNameArtifact,
   type PublicNameArtifact,
   type PublicNameIssue,
-} from "./tool-surface-naming/public-name-gate.js";
+  lintArtifactManifestAgreement,
+  lintManifestPublicNames,
+} from "@vex-agent/tools/protocols/public-name-gate.js";
 
 const MAPPINGS_DIR = "src/vex-agent/tools/tool-surface-spec/mappings";
 
@@ -54,6 +62,10 @@ for (const name of readdirSync(join(process.cwd(), MAPPINGS_DIR)).sort()) {
   parseIssues.push(...parsed.issues);
   if (parsed.artifact) artifacts.push(parsed.artifact);
 }
+
+const manifestPublicNameById = new Map<string, string>(
+  PROTOCOL_TOOLS.map((manifest) => [manifest.toolId, manifest.publicName]),
+);
 
 const liveNamespaceById = new Map<string, string>(
   PROTOCOL_TOOLS.map((manifest) => [manifest.toolId, manifest.namespace]),
@@ -99,10 +111,37 @@ describe("G2 - publicName mapping gate", () => {
     expect(mappedCount).toBe(liveNamespaceById.size);
   });
 
-  it("the mapped surface is the whole 137-tool catalog (drift alarm, not a cap)", () => {
+  // The surface the projection actually reads. An artifact can be perfect and
+  // the shipped catalog still wrong, so the manifests are gated in their own
+  // right rather than by proxy through the artifacts.
+  it("every SHIPPED publicName obeys the grammar and is unique catalog-wide", () => {
+    const issues = lintManifestPublicNames(PROTOCOL_TOOLS);
+    expect(
+      issues,
+      `live manifest publicName violations:\n${formatPublicNameIssues(issues)}`,
+    ).toEqual([]);
+  });
+
+  it("the artifacts and the manifests state the same publicName for every tool", () => {
+    const issues = lintArtifactManifestAgreement(artifacts, manifestPublicNameById);
+    expect(
+      issues,
+      `mapping artifact disagrees with the live manifest:\n${formatPublicNameIssues(issues)}`,
+    ).toEqual([]);
+    // Both directions: completeness above proves every live id is mapped, so a
+    // matching count here proves no artifact row named a tool that is gone.
+    expect(manifestPublicNameById.size).toBe(
+      artifacts.reduce((sum, artifact) => sum + artifact.entries.length, 0),
+    );
+  });
+
+  it("the mapped surface is the whole 134-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
-    expect(PROTOCOL_TOOLS.length).toBe(137);
+    // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
+    // `kyberswap.chains.supported`, `dexscreener.profiles.recent` and
+    // `dexscreener.boosts.top` into their surviving siblings' parameters.
+    expect(PROTOCOL_TOOLS.length).toBe(134);
   });
 });
 
@@ -225,6 +264,44 @@ describe("G2 - publicName gate failure modes", () => {
     });
     expect(parsed.issues).toEqual([]);
     expect(parsed.artifact?.entries).toHaveLength(1);
+  });
+
+  it("names both spellings when an artifact and its manifest disagree", () => {
+    const issues = lintArtifactManifestAgreement(
+      [fixture([{ toolId: "demo.thing.read", publicName: "demo__thing_read" }])],
+      new Map([["demo.thing.read", "demo__thing_fetch"]]),
+    );
+    expect(issues.map((i) => i.rule)).toEqual(["artifact-manifest-mismatch"]);
+    expect(issues[0]?.message).toContain("demo__thing_read");
+    expect(issues[0]?.message).toContain("demo__thing_fetch");
+  });
+
+  it("stays silent on a toolId the live catalog no longer registers (completeness owns that)", () => {
+    const issues = lintArtifactManifestAgreement(
+      [fixture([{ toolId: "demo.ghost", publicName: "demo__ghost_get" }])],
+      new Map(),
+    );
+    expect(issues).toEqual([]);
+  });
+
+  // The property the injected-name reverse map depends on, checked at the
+  // manifest level where the projection actually reads it.
+  it("rejects two manifests claiming the same publicName, naming both owners", () => {
+    const issues = lintManifestPublicNames([
+      { toolId: "demo.thing.read", namespace: "demo", publicName: "demo__thing_read" },
+      { toolId: "demo.thing.write", namespace: "demo", publicName: "demo__thing_read" },
+    ]);
+    expect(issues.map((i) => i.rule)).toEqual(["duplicate-public-name"]);
+    expect(issues[0]?.subject).toBe("demo.thing.write");
+    expect(issues[0]?.message).toContain("demo.thing.read");
+  });
+
+  it("reports a malformed manifest publicName against its own toolId", () => {
+    const issues = lintManifestPublicNames([
+      { toolId: "demo.thing.read", namespace: "demo", publicName: "demo__thing__read" },
+    ]);
+    expect(issues.map((i) => i.rule)).toEqual(["grammar"]);
+    expect(issues[0]?.subject).toBe("demo.thing.read");
   });
 
   it("runs every rule together over a clean fixture", () => {

@@ -1,0 +1,51 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get best swap route across 400+ DEXs — price, route, gas estimate, price impact. Read-only, no execution.",
+      "name": "kyberswap__swap_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount in human-readable units.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug or alias.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Pass the SAME value on kyberswap.swap.execute, or omit it on both — a mismatch blocks the execute (the prequote match requires identical params). Not sent to the quote route; it only pins the tolerance this quote authorizes. It is the ONLY price protection the resulting trade has. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, and the execute returns status \"not_attempted\" with failureCode slippage. LESS OFTEN the pool moves after that estimate passes: the transaction REVERTS, the activity row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair — and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Symbols are not resolved here.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Symbols are not resolved here.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "kyberswap",
+    "requiresEnv": null,
+    "toolId": "kyberswap.swap.quote"
+  }
+}

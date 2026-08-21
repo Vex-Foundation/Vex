@@ -1,7 +1,7 @@
 /**
  * Memory v2 — `memory_candidates` Zod boundary schema (S1b).
  *
- * Validates the agent-facing `long_memory_suggest` payload (wired in S2) and
+ * Validates the agent-facing `MemorySuggest` payload (wired in S2) and
  * defines the immutable-evidence-anchor + provenance shapes the repo persists.
  * This stage DEFINES + TESTS the schema; S2 wires it into the handler.
  *
@@ -100,10 +100,10 @@ export const sourceRefsSchema = z
 
 export type SourceRefs = z.infer<typeof sourceRefsSchema>;
 
-// ── Agent suggest input (validated by long_memory_suggest in S2) ────
+// ── Agent suggest input (validated by MemorySuggest in S2) ────
 
 /**
- * The shape `long_memory_suggest` validates in S2. Defined now so the repo's
+ * The shape `MemorySuggest` validates in S2. Defined now so the repo's
  * `InsertCandidateInput` (types.ts) can reuse the derived sub-types and so the
  * boundary contract is testable in S1b. `.strict()` rejects unknown agent keys.
  *

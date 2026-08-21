@@ -1,0 +1,65 @@
+{
+  "definition": {
+    "function": {
+      "description": "Raw on-chain EVM forensics — transaction receipts (status, gasUsed, logs), ERC-721 mint detection from receipt logs, and a direct ERC-20 balanceOf read (erc20_balance) for one token and one owner. Resolves chains through the khalani registry first and the local EVM registry as fallback, so local-only chains work too (e.g. chain 'robinhood' / '4663'). Read-only. erc20_balance asks the token contract itself, so it is the way to check whether a confirmed buy actually delivered: WalletBalances reports a scan projection, and receipt Transfer logs are written by the token. Native balances are via WalletBalances; token symbol/name via TokenFind.",
+      "name": "ChainRead",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "What to read",
+            "enum": [
+              "tx_receipt",
+              "erc721_mint",
+              "erc20_balance"
+            ],
+            "type": "string"
+          },
+          "address": {
+            "description": "Recipient address — optional mint filter for erc721_mint (only mints to this address are returned)",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). Local-only chains work too: 'robinhood' / '4663'.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Address to read the ERC-20 balance of (erc20_balance). Omit to read your own selected wallet.",
+            "type": "string"
+          },
+          "tokenAddress": {
+            "description": "ERC-20 contract address (REQUIRED for erc20_balance)",
+            "type": "string"
+          },
+          "txHash": {
+            "description": "Transaction hash (for tx_receipt, erc721_mint)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false
+  }
+}

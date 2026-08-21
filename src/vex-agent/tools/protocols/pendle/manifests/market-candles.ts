@@ -13,6 +13,7 @@ import { PENDLE_READ_MAX_SERIES_POINTS } from "../market-read-params.js";
  */
 export const PENDLE_MARKET_CANDLES_TOOL: ProtocolToolManifest = {
   toolId: "pendle.market.candles",
+  publicName: "pendle__market_candles_get",
   namespace: "pendle",
   lifecycle: "active",
   description:

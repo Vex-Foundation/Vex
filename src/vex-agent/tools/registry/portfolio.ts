@@ -13,7 +13,7 @@ import type { ToolDef } from "../types.js";
 
 export const PORTFOLIO_TOOLS: readonly ToolDef[] = [
   {
-    name: "agent_scan", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
+    name: "AgentScan", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
     description: [
       "Read-only view over your own session-wallet history, materialized from DB projections — NOT live RPC. The agent owns this surface; do not query third parties for the same data.",
       "View groups (pick one via `view`; see parameters.view.enum for the full set):",
@@ -25,7 +25,7 @@ export const PORTFOLIO_TOOLS: readonly ToolDef[] = [
       "- `executions`: the global protocol-call audit log (every tool execution, not wallet-scoped).",
       "Filters narrow the rows: `namespace` (protocol), `productType` (spot/perps/prediction/bridge/order/lend), `txHash`, `cursor`, `limit`.",
       "Vex fee: every `transactions` row carries what Vex charged for that action — `vexFeeAmountHuman` + `vexFeeTokenSymbol` (exact, in the input token), `vexFeeAmountRaw` + `vexFeeTokenDecimals` (atomic units), and `usdVexFeeEst` (a nullable USD ESTIMATE). This is the source of truth for \"what did that cost me?\". A row with a fee amount but a null `usdVexFeeEst` WAS charged — no trustworthy USD price existed; a row with no fee figures at all is a failed attempt (never charged) or a non-fee-bearing action.",
-      "Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `wallet_balances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
+      "Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `WalletBalances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
     ].join(" "),
     parameters: { type: "object", properties: {
       view: { type: "string", enum: ["transactions", "activity", "balances", "snapshots", "summary", "executions", "mission_baseline"], description: "What to inspect (see description for group breakdown)" },

@@ -38,7 +38,7 @@ export const knowledgeSourceSchema = z.enum(KNOWLEDGE_SOURCES);
 
 /**
  * Sources eligible for Active Memory hot-context injection. Inferred and
- * hypothesis entries are still recallable via `long_memory_search` but never
+ * hypothesis entries are still recallable via `MemorySearch` but never
  * auto-injected — they require deliberate retrieval by the agent.
  */
 export const HOT_CONTEXT_SOURCES: readonly KnowledgeSource[] = [

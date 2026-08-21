@@ -21,17 +21,17 @@ export type InternalToolResult = ToolResult;
 export interface InternalToolContext {
   /** Session ID — for DB operations */
   sessionId: string;
-  /** Loaded content injected into the system prompt (e.g. long_memory_get → key `long_memory:{id}`). */
+  /** Loaded content injected into the system prompt (e.g. MemoryGet → key `long_memory:{id}`). */
   loadedDocuments: Map<string, string>;
   /**
    * Session permission, hydrated once at engine entry from `sessions.permission`.
-   * Immutable for the call. Approval gates (runtime + wallet_send_confirm)
+   * Immutable for the call. Approval gates (runtime + WalletSendConfirm)
    * branch on this single value.
    */
   sessionPermission: Permission;
   /** Whether this call was pre-approved */
   approved: boolean;
-  /** Active mission run ID — for mission_stop guard */
+  /** Active mission run ID — for MissionStop guard */
   missionRunId: string | null;
   /**
    * Session-scoped plan-mode flag (turn-start snapshot from EngineContext).
@@ -75,7 +75,7 @@ export interface InternalToolContext {
   /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
-   * filter (e.g. `loop_defer` handler rejects non-mission calls even if the
+   * filter (e.g. `LoopDefer` handler rejects non-mission calls even if the
    * model somehow emits the tool name).
    */
   sessionKind: SessionKind;
@@ -174,9 +174,9 @@ export function num(params: Record<string, unknown>, key: string): number | unde
  * Why a `str()`/`num()` read came back empty — absent, or present with the
  * wrong type — phrased for the model.
  *
- * The distinction is the whole point. `chain_read {chain: 8453}` is a NUMBER
+ * The distinction is the whole point. `ChainRead {chain: 8453}` is a NUMBER
  * where the tool wants the string spelling; answering "Missing required:
- * chain" is factually false (`token_find` returns the chain id as a number, so
+ * chain" is factually false (`TokenFind` returns the chain id as a number, so
  * this is the form the agent normally holds) and the only repair it suggests is
  * the one that cannot work. Values are never echoed — only the shape.
  */

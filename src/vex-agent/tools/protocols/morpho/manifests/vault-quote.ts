@@ -16,7 +16,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "../../slippage-p
  *
  * THE DECIMALS SENTENCE IS WRITTEN HERE RATHER THAN IMPORTED. Every other raw
  * amount in the tree ends with `CANONICAL_RAW_AMOUNT_SENTENCE`, which points the
- * agent at `token_find`. That is the wrong source twice over for this tool: the
+ * agent at `TokenFind`. That is the wrong source twice over for this tool: the
  * scale that matters is the VAULT ASSET's, which is read off the vault itself
  * and is not the vault's SHARE scale reported next to it, and the canonical
  * sentence contains an em dash, which the morpho manifest suite bans in this
@@ -24,6 +24,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "../../slippage-p
  */
 export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vault.quote",
+  publicName: "morpho__vault_quote",
   namespace: "morpho",
   lifecycle: "active",
   description:

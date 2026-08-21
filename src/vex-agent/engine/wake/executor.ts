@@ -1,5 +1,5 @@
 /**
- * Wake executor — single-process scheduler that drives `loop_defer` wakes.
+ * Wake executor — single-process scheduler that drives `LoopDefer` wakes.
  *
  * Contract:
  *   - Exactly ONE process runs the executor per deployment. Race safety

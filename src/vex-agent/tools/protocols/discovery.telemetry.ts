@@ -1,5 +1,5 @@
 /**
- * Telemetry for protocol discover_tools.
+ * Telemetry for the ToolSearch meta-tool.
  *
  * Privacy mode (DISCOVERY_QUERY_PRIVACY env var):
  * - "raw" — full query as sent (default; appropriate for dev / local debugging).
@@ -16,7 +16,7 @@
  * ranking-comparison work without dataset bloat.
  *
  * `discoveryRunId` is a per-call uuid that lets later analytics correlate
- * a discover_tools event with a downstream execute_tool call (when the LLM
+ * a ToolSearch event with a downstream protocol call (when the LLM
  * acts on the shortlist).
  */
 
@@ -25,7 +25,7 @@ import logger from "@utils/logger.js";
 import type {
   ProtocolDiscoveryRequest,
   ProtocolDiscoveryResult,
-  ProtocolManifestResult,
+  ToolSearchSelectResult,
 } from "./types.js";
 
 const MATCHED_TOOL_IDS_LIMIT = 5;
@@ -108,33 +108,36 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
   logger.info("tools.discover.completed", fields);
 }
 
-export interface DescribeTelemetryInput {
+export interface SelectTelemetryInput {
   requestedCount: number;
-  result: ProtocolManifestResult;
+  result: ToolSearchSelectResult;
   payloadChars: number;
   sourceSurface?: string;
   sourceSession?: string;
 }
 
 /**
- * `describe_tools` completion event — METADATA ONLY.
+ * `ToolSearch` select-mode completion event — METADATA ONLY.
  *
- * Counts, the top id and the payload SIZE, never a manifest body: the whole
- * point of the tool is that the payload is large, so logging it would be the
- * one place this feature could quietly become a retention problem (rule 07).
- * `payloadChars` is what makes the recurring-cost regression measurable without
- * storing the content it measures.
+ * Counts and the payload SIZE, never a row body: rule 07. `payloadChars` is
+ * what makes the recurring-cost regression measurable without storing the
+ * content it measures, and it is the number that proves the merge's central
+ * claim — select used to answer with full manifests, and this event is where a
+ * regression back to that would show up first.
+ *
+ * `rejectedCount` is derived from the ROWS, not from `warnings`: a warning can
+ * also be a displacement notice, and conflating the two would make a session
+ * that merely filled its working set look like a session full of bad names.
  */
-export function logDescribeTelemetry({
+export function logSelectTelemetry({
   requestedCount, result, payloadChars, sourceSurface, sourceSession,
-}: DescribeTelemetryInput): void {
-  logger.info("tools.describe.completed", {
+}: SelectTelemetryInput): void {
+  logger.info("tools.select.completed", {
     sourceSurface: sourceSurface ?? "vex_agent",
     sourceSession,
     requestedCount,
     resolvedCount: result.count,
-    rejectedCount: result.warnings.length,
-    topToolId: result.tools[0]?.toolId,
+    rejectedCount: result.tools.filter((row) => row.status === "rejected").length,
     sessionCapacityUsed: result.sessionCapacity.used,
     sessionCapacityMax: result.sessionCapacity.max,
     payloadChars,

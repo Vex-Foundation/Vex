@@ -16,6 +16,7 @@ import { PENDLE_MARKET_READ_DISCOVERY } from "../../embeddings/pendle/market-rea
  */
 export const PENDLE_MARKET_GET_TOOL: ProtocolToolManifest = {
   toolId: "pendle.market.get",
+  publicName: "pendle__market_get",
   namespace: "pendle",
   lifecycle: "active",
   description:

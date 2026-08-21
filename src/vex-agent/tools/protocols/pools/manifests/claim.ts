@@ -13,6 +13,7 @@ import { POOLS_CLAIM_DISCOVERY } from "../../embeddings/pools/claim.js";
 export const POOLS_CLAIM_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.claim_fees",
+    publicName: "pools__fees_claim",
     namespace: "pools",
     lifecycle: "active",
     description:

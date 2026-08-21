@@ -44,7 +44,7 @@ export interface DeployedCapital {
 
 /**
  * Shared bounds for {@link DeployedCapital}, reused by the patch parser, the
- * mapper, the contract hash and the `mission_draft_update` tool schema so all
+ * mapper, the contract hash and the `MissionDraftUpdate` tool schema so all
  * four accept exactly the same values. `AMOUNT_RAW_MAX_CHARS` and
  * `DECIMALS_MAX` match the host's existing `maxLaunchValueRaw` bounds.
  */

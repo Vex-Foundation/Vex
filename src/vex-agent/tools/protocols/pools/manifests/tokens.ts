@@ -9,6 +9,7 @@ import { POOLS_TOKENS_PARAMS, POOLS_UNSUPPORTED_PARAMS } from "./tokens-params.j
 export const POOLS_TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.tokens",
+    publicName: "pools__tokens_discover",
     namespace: "pools",
     lifecycle: "active",
     description:

@@ -1,0 +1,68 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read-only view over your own session-wallet history, materialized from DB projections — NOT live RPC. The agent owns this surface; do not query third parties for the same data. View groups (pick one via `view`; see parameters.view.enum for the full set): - `transactions` (PRIMARY view — start here): one chronological feed of your recorded swaps/bridges/orders — pending, confirmed, AND failed — each with amounts (symbols, not raw units), status, chain, and tx hash for an explorer lookup. Filter by `productType` (spot/perps/prediction/bridge/order/lend), keyset-paginate with `cursor` (pass the prior response's `nextCursor` until `hasMore` is false), or pass `txHash` to look up one transaction. Use this for \"what happened recently\" / \"did my last swap land\" / \"find this txHash\". - `activity`: trade/bridge/LP-adjacent flow log (broader, lower-detail than `transactions`). - `balances`, `snapshots`: current aggregate USD balance and point-in-time snapshots over time (snapshot deltas, not trade PnL). - `summary`: balances-only portfolio overview (total USD, open position count, latest snapshot). No realized/unrealized PnL — compute that yourself from `transactions`' recorded amounts if you need it. - `mission_baseline` (mission runs only): what the mission wallets were worth when this run started, what they are worth now, the change between them, and the mission's declared deployed capital. Frozen start, same projection source for both sides, USD figures are estimates. Use it instead of recomputing from the transcript. - `executions`: the global protocol-call audit log (every tool execution, not wallet-scoped). Filters narrow the rows: `namespace` (protocol), `productType` (spot/perps/prediction/bridge/order/lend), `txHash`, `cursor`, `limit`. Vex fee: every `transactions` row carries what Vex charged for that action — `vexFeeAmountHuman` + `vexFeeTokenSymbol` (exact, in the input token), `vexFeeAmountRaw` + `vexFeeTokenDecimals` (atomic units), and `usdVexFeeEst` (a nullable USD ESTIMATE). This is the source of truth for \"what did that cost me?\". A row with a fee amount but a null `usdVexFeeEst` WAS charged — no trustworthy USD price existed; a row with no fee figures at all is a failed attempt (never charged) or a non-fee-bearing action. Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `WalletBalances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
+      "name": "AgentScan",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Opaque pagination cursor (transactions) — pass the prior response's nextCursor to fetch the next page",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max rows (default 20)",
+            "type": "number"
+          },
+          "namespace": {
+            "description": "Protocol filter (e.g. kyberswap, khalani)",
+            "type": "string"
+          },
+          "productType": {
+            "description": "Product filter (e.g. spot, perps, prediction, bridge, order, lend)",
+            "type": "string"
+          },
+          "txHash": {
+            "description": "Transaction hash anchor (transactions) — return rows matching this txHash",
+            "type": "string"
+          },
+          "view": {
+            "description": "What to inspect (see description for group breakdown)",
+            "enum": [
+              "transactions",
+              "activity",
+              "balances",
+              "snapshots",
+              "summary",
+              "executions",
+              "mission_baseline"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false
+  }
+}

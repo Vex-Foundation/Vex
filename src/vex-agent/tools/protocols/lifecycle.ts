@@ -4,9 +4,9 @@
  * Each protocol namespace registered in `catalog.ts:NAMESPACE_MODULES` carries
  * one of three lifecycle states. The lifecycle is enforced at three boundaries:
  *
- *   1. **discover_tools** — only `active` namespaces appear in the
+ *   1. **ToolSearch** — only `active` namespaces appear in the
  *      LLM-facing catalog.
- *   2. **execute_tool** — only `active` namespaces are executable by
+ *   2. **execution** — only `active` namespaces are executable by
  *      default. `deprecated_hidden` namespaces refuse with a clear
  *      message; the user can opt-in via `VEX_ALLOW_DEPRECATED_PROTOCOLS=1`
  *      for migration-period workflows. `reserved` namespaces never execute.
@@ -51,7 +51,7 @@ export function isDeprecatedNamespace(ns: ProtocolNamespace): boolean {
 }
 
 /**
- * True iff `execute_tool` may run a tool in this namespace.
+ * True iff a protocol call may run a tool in this namespace.
  *
  * - `active` → always executable.
  * - `deprecated_hidden` → executable only when `VEX_ALLOW_DEPRECATED_PROTOCOLS=1`.

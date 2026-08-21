@@ -28,7 +28,7 @@
  *     underscore) and one in the TARGET grammar (exactly one double underscore,
  *     at the namespace boundary). The target-grammar fixture is the one that
  *     catches a resolver which recovers a toolId by INVERTING the name:
- *     `kyberswap__swap_quote` inverts to `kyberswap.swap_quote`, which is not
+ *     `kyberswap__swap_getquote` inverts to `kyberswap.swap_getquote`, not
  *     the immutable `kyberswap.swap.quote`.
  *
  * The catalog is stubbed (same shape as `dispatcher-injected-protocol.test.ts`)
@@ -109,27 +109,34 @@ const SESSION = "alias-equivalence-session";
 // A READ target and a MUTATING target, each with a retired spelling that exists
 // only for this suite.
 const READ_TOOL_ID = "dexscreener.search";
-const READ_CANONICAL = "dexscreener__search";
+const READ_CANONICAL = "dexscreener__pairs_search";
 const READ_DEPRECATED = "legacy_fixture_search";
 
-const MUTATING_TOOL_ID = "khalani.test.mutate";
-const MUTATING_CANONICAL = "khalani__test__mutate";
+// A REAL (toolId, publicName) pair, not a synthetic one: the name-to-id reverse
+// map is built once from the LIVE catalog, so a made-up publicName can never
+// resolve and the catalog-selection, envelope and preview assertions below
+// would all pass vacuously. `morpho.rewards.claim` is chosen because it is
+// mutating (the gates branch on exactly that) yet carries NO prequote-registry
+// entry, so dispatching it in this suite exercises the alias path rather than a
+// bridge/swap prequote gate that has nothing to do with name resolution.
+const MUTATING_TOOL_ID = "morpho.rewards.claim";
+const MUTATING_CANONICAL = "morpho__rewards_claim";
 const MUTATING_DEPRECATED = "legacy_fixture_mutate";
 
 // An INTERNAL tool (not a protocol manifest) whose registry `pressureSafety` is
 // `mutating`. The pressure gate reads the registry, not the catalog, so the
 // pressure case needs a real registered name.
-const PRESSURE_CANONICAL = "swap_execute";
+const PRESSURE_CANONICAL = "SwapExecute";
 const PRESSURE_DEPRECATED = "legacy_fixture_swap_execute";
 
 // TARGET-GRAMMAR fixture: exactly one double underscore, at the namespace
-// boundary. Inverting this name yields `kyberswap.swap_quote`, which is NOT the
+// boundary. Inverting this name yields `kyberswap.SwapQuote`, which is NOT the
 // immutable toolId, so any resolver that recovers the id by string inversion
 // fails here and only here.
 const GRAMMAR_TOOL_ID = "kyberswap.swap.quote";
-const GRAMMAR_DEPRECATED = "kyberswap__swap_quote";
+const GRAMMAR_DEPRECATED = "kyberswap__swap_getquote";
 /** What a mechanical inverse mapping would wrongly produce. */
-const GRAMMAR_WRONG_INVERSION = "kyberswap.swap_quote";
+const GRAMMAR_WRONG_INVERSION = "kyberswap.swap_getquote";
 
 const FIXTURE_ALIASES: readonly DeprecatedToolAlias[] = [
   {
@@ -169,6 +176,7 @@ const FIXTURE_ALIASES: readonly DeprecatedToolAlias[] = [
 function grammarManifest(): ProtocolToolManifest {
   return {
     toolId: GRAMMAR_TOOL_ID,
+    publicName: "kyberswap__swap_quote",
     namespace: "kyberswap",
     lifecycle: "active",
     description: "fixture target-grammar tool",
@@ -182,6 +190,7 @@ function grammarManifest(): ProtocolToolManifest {
 function readManifest(): ProtocolToolManifest {
   return {
     toolId: READ_TOOL_ID,
+    publicName: "dexscreener__pairs_search",
     namespace: "dexscreener",
     lifecycle: "active",
     description: "fixture read tool",
@@ -195,7 +204,8 @@ function readManifest(): ProtocolToolManifest {
 function mutatingManifest(): ProtocolToolManifest {
   return {
     toolId: MUTATING_TOOL_ID,
-    namespace: "khalani",
+    publicName: "morpho__rewards_claim",
+    namespace: "morpho",
     lifecycle: "active",
     description: "fixture mutating tool",
     mutating: true,
@@ -434,7 +444,7 @@ describe("alias equivalence: approval enqueue envelope and fingerprint", () => {
 
     // THE REGRESSION. `kyberswap__swap_quote` carries exactly one double
     // underscore, so a mechanical inverse mapping would write
-    // `kyberswap.swap_quote` into a DURABLE approval row and hash it into the
+    // `kyberswap.SwapQuote` into a DURABLE approval row and hash it into the
     // fingerprint that is supposed to prove the human approved this contract.
     expect(stored).toMatchObject({
       command: "execute_tool",
@@ -559,7 +569,7 @@ describe("alias equivalence: cold approval resume", () => {
     );
 
     expect(viaCanonical.success).toBe(false);
-    expect(viaCanonical.output).toContain("not among the protocol tools discovered");
+    expect(viaCanonical.output).toContain("not among the protocol tools this session has made callable");
     expect(viaAlias.success).toBe(viaCanonical.success);
 
     // The two refusals are NOT byte-identical, and deliberately so: each names
@@ -569,8 +579,10 @@ describe("alias equivalence: cold approval resume", () => {
     expect(viaCanonical.output).toContain(`Unknown tool: ${MUTATING_CANONICAL}`);
 
     // What must be IDENTICAL is the remedy: both point at the canonical
-    // identity, because `discover_tools` for a retired spelling cannot succeed.
-    const hint = `Call discover_tools for "${MUTATING_TOOL_ID}"`;
+    // CALLABLE name, because selecting a retired spelling cannot succeed — and
+    // the dotted toolId is not something the model can call either, so the hint
+    // names neither the alias nor the id.
+    const hint = `Call ToolSearch(query="select:${MUTATING_CANONICAL}")`;
     expect(viaAlias.output).toContain(hint);
     expect(viaCanonical.output).toContain(hint);
   });

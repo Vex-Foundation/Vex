@@ -1,7 +1,7 @@
 /**
- * Memory v2 — `long_memory_search` Zod boundary schema (S3).
+ * Memory v2 — `MemorySearch` Zod boundary schema (S3).
  *
- * Validates the agent-facing `long_memory_search` payload. The tool HIDES its
+ * Validates the agent-facing `MemorySearch` payload. The tool HIDES its
  * strategy (vector + dual-trace + rerank), so the agent input is deliberately
  * small: a semantic `query`, an optional result count `k`, an optional exact
  * `kind` filter, the response shape, and the dual-trace / graph-expansion

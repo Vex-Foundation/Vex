@@ -34,22 +34,12 @@
     {
       "toolId": "dexscreener.profiles",
       "publicName": "dexscreener__profiles_list",
-      "rationale": "Verb added; latest token profile metadata within the provider's feed window."
-    },
-    {
-      "toolId": "dexscreener.profiles.recent",
-      "publicName": "dexscreener__profiles_recent_list",
-      "rationale": "Verb added, resource qualifier kept in toolId order so the two profile feeds sort adjacently. Kept 1:1 rather than merged with profiles_list, per the batch rule; the consolidation proposal is recorded in the doc."
+      "rationale": "Verb added; token profile metadata within the provider's feed window. Batch 2 (owner decision D7) retired `dexscreener.profiles.recent` into this tool's `feed` param (latest | recentUpdates); its row is gone from this artifact and no alias replaces the retired name (D5)."
     },
     {
       "toolId": "dexscreener.boosts",
       "publicName": "dexscreener__boosts_list",
-      "rationale": "Verb added; the latest-purchases boost feed."
-    },
-    {
-      "toolId": "dexscreener.boosts.top",
-      "publicName": "dexscreener__boosts_top_list",
-      "rationale": "Verb added, qualifier kept in toolId order. Mapped 1:1 rather than merged with boosts_list even though the two share BOOST_FEED_PARAMS; the merge is a Batch 2 decision and is recorded as a proposal in the doc."
+      "rationale": "Verb added; the paid-boost feeds. Batch 2 (owner decision D7) retired `dexscreener.boosts.top` into this tool's `feed` param (latest | top); its row is gone from this artifact and no alias replaces the retired name (D5)."
     },
     {
       "toolId": "dexscreener.communityTakeovers",

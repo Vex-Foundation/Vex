@@ -1,5 +1,5 @@
 /**
- * long_memory_get handler (S3) — direct fetch of a long-term memory entry by id.
+ * MemoryGet handler (S3) — direct fetch of a long-term memory entry by id.
  *
  * Explicit fetch ⇒ returns the entry. Concise by default (metadata + lineage
  * only); pass response_format='detailed' to also inline the full metadata bag.
@@ -29,7 +29,7 @@ export async function handleLongMemoryGet(
 ): Promise<ToolResult> {
   const id = num(params, "id");
   if (id === undefined) {
-    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from long_memory_search)"));
+    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from MemorySearch)"));
   }
 
   const responseFormat: ResponseFormat =
@@ -38,7 +38,7 @@ export async function handleLongMemoryGet(
   const entry = await knowledgeRepo.getById(id);
   if (!entry) {
     return fail(
-      `long-term memory entry ${id} not found. Re-run long_memory_search to find the current version.`,
+      `long-term memory entry ${id} not found. Re-run MemorySearch to find the current version.`,
     );
   }
 
@@ -46,11 +46,11 @@ export async function handleLongMemoryGet(
   if (entry.status !== "active") {
     if (entry.supersededBy !== null) {
       return fail(
-        `long-term memory entry ${id} is ${entry.status} — it was replaced. The current version is entry ${entry.supersededBy}; fetch that with long_memory_get instead.`,
+        `long-term memory entry ${id} is ${entry.status} — it was replaced. The current version is entry ${entry.supersededBy}; fetch that with MemoryGet instead.`,
       );
     }
     return fail(
-      `long-term memory entry ${id} is ${entry.status} and no longer current. Re-run long_memory_search for the active lesson on this topic.`,
+      `long-term memory entry ${id} is ${entry.status} and no longer current. Re-run MemorySearch for the active lesson on this topic.`,
     );
   }
 

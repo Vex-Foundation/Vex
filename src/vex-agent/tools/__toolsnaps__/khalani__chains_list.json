@@ -1,0 +1,29 @@
+{
+  "definition": {
+    "function": {
+      "description": "List all Khalani-supported chains with metadata (live registry, EVM + Solana).",
+      "name": "khalani__chains_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh": {
+            "description": "Force refresh chain cache.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.chains.list"
+  }
+}

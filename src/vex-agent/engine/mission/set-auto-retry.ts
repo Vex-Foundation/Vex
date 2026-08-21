@@ -11,7 +11,7 @@
  * `permission === "full"`), so anything else is refused server-side.
  * The identity → authorization → state decision and the write run
  * inside ONE row-locked transaction so they're atomic and serialize
- * against the model `mission_draft_update` constraints merge
+ * against the model `MissionDraftUpdate` constraints merge
  * (engine/mission/setup.ts) — neither writer can lose the flag.
  *
  * NEVER starts a run.

@@ -31,7 +31,7 @@ export async function handleTwitterAccount(
 ): Promise<ToolResult> {
   if (RETIRED_RESPONSE_FORMAT_PARAM in params) {
     return fail(
-      "twitter_account: `response_format` was retired — there is one response shape now "
+      "TwitterAccount: `response_format` was retired — there is one response shape now "
       + "(the concise projection), and it never truncates post text. The verbatim client payload "
       + "measured 1.6-1.9x the tool-output cap on an ordinary 20-row search. Remove the parameter.",
     );
@@ -40,7 +40,7 @@ export async function handleTwitterAccount(
   const parsed = TwitterAccountParamsSchema.safeParse(params);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(`twitter_account: ${formatZodIssueForModel(issue, params)}`);
+    return fail(`TwitterAccount: ${formatZodIssueForModel(issue, params)}`);
   }
 
   try {
@@ -57,7 +57,7 @@ export async function handleTwitterAccount(
     // Vex-owned code and is then discarded. The vocabulary — including the
     // auth/rate-limit distinction the agent acts on — lives in
     // `@tools/twitter-account/failure.ts`.
-    return fail(`twitter_account: ${twitterFailureMessage(classifyTwitterFailure(error))}`);
+    return fail(`TwitterAccount: ${twitterFailureMessage(classifyTwitterFailure(error))}`);
   }
 }
 

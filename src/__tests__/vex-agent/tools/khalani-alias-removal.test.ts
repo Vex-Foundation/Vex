@@ -4,9 +4,9 @@
  * `khalani_chains_list`, `khalani_tokens_top` and `khalani_tokens_balances`
  * were tool-on-tool shortcuts: each one cost schema tokens in EVERY request
  * while no observed live session called it. Removed 2026-07-30 (owner
- * decision). `token_find` was deliberately KEPT — it is the address+decimals
+ * decision). `TokenFind` was deliberately KEPT — it is the address+decimals
  * resolution that precedes every swap and bridge, and the safety doctrine,
- * the swap chain-param docs, and `chain_read`'s description all name it.
+ * the swap chain-param docs, and `ChainRead`'s description all name it.
  *
  * The removal narrowed the FLAT tool surface only. Nothing was taken away from
  * the agent: all three protocol tools are unchanged and still reachable through
@@ -52,10 +52,10 @@ describe("removed Khalani aliases are gone from every agent-facing surface", () 
     expect(buildToolModelPrompt()).not.toContain(alias);
   });
 
-  it("keeps token_find — the load-bearing one — fully wired", () => {
-    expect(KHALANI_INTERNAL_TO_PROTOCOL.token_find).toBe("khalani.tokens.search");
-    expect(getToolDef("token_find")).toBeDefined();
-    expect(buildToolModelPrompt()).toContain("token_find");
+  it("keeps TokenFind — the load-bearing one — fully wired", () => {
+    expect(KHALANI_INTERNAL_TO_PROTOCOL.TokenFind).toBe("khalani.tokens.search");
+    expect(getToolDef("TokenFind")).toBeDefined();
+    expect(buildToolModelPrompt()).toContain("TokenFind");
   });
 });
 

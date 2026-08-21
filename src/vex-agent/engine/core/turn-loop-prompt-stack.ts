@@ -88,7 +88,7 @@ export async function buildTurnPromptStack(args: {
   /**
    * Compaction-preparation snapshot for this turn, resolved ONCE by the loop
    * (fail-closed to `{kind:"none"}` on an unreadable state). Drives the banner
-   * copy, the barrier bypass and `compact_apply`'s visibility from one value.
+   * copy, the barrier bypass and `CompactApply`'s visibility from one value.
    * Defaults to `none` so non-loop callers keep today's behaviour exactly.
    */
   readonly preparationState?: PreparationPressureState;

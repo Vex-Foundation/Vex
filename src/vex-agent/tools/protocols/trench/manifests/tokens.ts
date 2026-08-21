@@ -10,6 +10,7 @@ import { TRENCH_TOKENS_PARAMS } from "./tokens-params.js";
 export const TRENCH_TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.tokens",
+    publicName: "trench__tokens_discover",
     namespace: "trench",
     lifecycle: "active",
     description:

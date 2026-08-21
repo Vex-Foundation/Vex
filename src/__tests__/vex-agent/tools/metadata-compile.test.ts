@@ -38,6 +38,7 @@ const MOCK_NAV: ProtocolNamespaceNavigation = {
 function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolToolManifest {
   return {
     toolId: "dexscreener.tokens.get",
+    publicName: "dexscreener__tokens_get",
     namespace: "dexscreener",
     lifecycle: "active",
     description: "Get token pair analytics.",

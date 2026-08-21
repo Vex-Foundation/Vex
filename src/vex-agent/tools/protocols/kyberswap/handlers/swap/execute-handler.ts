@@ -33,7 +33,7 @@ import { kyberFailureMessage } from "./error-output.js";
 import { runStagedSwapBroadcast } from "./execute-broadcast.js";
 import { prepareSwapExecution } from "./execute-plan.js";
 import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./safety-disclosure.js";
-import { revealOnEligibleFailure } from "./reveal-messaging.js";
+import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
 
@@ -75,8 +75,8 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
     requireFeature(slug, "aggregator");
     chainId = slugToChainId(slug);
   } catch (err) {
-    const revealSuffix = revealOnEligibleFailure(err, sessionId, false);
-    return fail(`${toolId} failed: ${kyberFailureMessage(toolId, err)}.${revealSuffix}`);
+    const fallbackNote = venueFallbackNoteOnFailure(err, sessionId, false);
+    return fail(`${toolId} failed: ${kyberFailureMessage(toolId, err)}.${fallbackNote}`);
   }
 
   let tokenIn: ResolvedKyberTokenMetadata;

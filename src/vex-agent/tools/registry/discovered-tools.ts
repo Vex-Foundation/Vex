@@ -25,9 +25,9 @@
  *
  * THE INVARIANT (owner clarification 2026-08-03): a single discovery or
  * describe round is NEVER partially evicted. The agent sizes its own working
- * set through `discover_tools`'s `limit` (default `DEFAULT_DISCOVERY_LIMIT` = 5,
- * max `MAX_DISCOVERY_LIMIT` = 20) and through `describe_tools`'s id array (max
- * `MAX_DESCRIBE_TOOL_IDS`), so this cap must be ≥ BOTH maxima; a smaller cap
+ * set through `ToolSearch`'s `limit` (default `DEFAULT_DISCOVERY_LIMIT` = 5,
+ * max `MAX_DISCOVERY_LIMIT` = 20) and through its select list (max
+ * `MAX_SELECT_TOOL_NAMES`), so this cap must be ≥ BOTH maxima; a smaller cap
  * would drop rows the model was shown in the very same result.
  * `injected-protocol-tools.test.ts` asserts the invariant against both
  * constants directly, so raising either ceiling without raising this cap fails
@@ -43,7 +43,7 @@
  * Upper bound evidence (`reports/model-research.md` §4.1): tool-selection
  * accuracy degrades past 30–50 available tools (Anthropic). A full 40-tool
  * injected set puts 53 tools in front of the model (measured: 18 visible today
- * + `describe_tools` + 34), slightly ABOVE that band. Accepted, and stated to
+ * + its select list + 34), slightly ABOVE that band. Accepted, and stated to
  * the owner rather than buried: it is reached only when the agent explicitly
  * asks for a whole namespace, and the alternative is telling it it has 34 tools
  * while giving it 24. Do not raise either bound further without a tool-call
@@ -58,7 +58,7 @@ const MAX_TRACKED_SESSIONS = 10_000;
 const discoveredBySession = new Map<string, string[]>();
 
 /**
- * Record toolIds a `discover_tools` or `describe_tools` call just returned for
+ * Record toolIds a `ToolSearch` or its select list call just returned for
  * this session. Only RANKED discovery rows should be recorded from discovery —
  * list-mode rows carry no param schema, so injecting them would show the model
  * a tool with no parameters (see `protocols/discovery.ts`'s
@@ -67,7 +67,7 @@ const discoveredBySession = new Map<string, string[]>();
  * RETURNS the toolIds this insertion DISPLACED from earlier rounds, oldest
  * first — empty when nothing was evicted. Eviction used to be silent, which
  * meant a tool the model had been told was callable simply stopped being
- * callable with no signal; `describe_tools` names them back to the agent
+ * callable with no signal; its select list names them back to the agent
  * (owner decree: nothing is ever silently dropped).
  */
 export function recordDiscoveredTools(

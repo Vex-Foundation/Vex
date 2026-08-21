@@ -53,8 +53,8 @@ export async function ensureErc20Balance(
     throw new VexError(
       ErrorCodes.INSUFFICIENT_BALANCE,
       `Insufficient balance for token ${request.token}${displayName}: you hold none of this token on this chain, and ${requested} was requested. `
-      + "If you believe a recent buy delivered it, verify on-chain with chain_read (action erc20_balance) before retrying.",
-      "Verify the on-chain balance with chain_read (action erc20_balance) instead of retrying the same amount.",
+      + "If you believe a recent buy delivered it, verify on-chain with `ChainRead` (action erc20_balance) before retrying.",
+      "Verify the on-chain balance with `ChainRead` (action erc20_balance) instead of retrying the same amount.",
     );
   }
 

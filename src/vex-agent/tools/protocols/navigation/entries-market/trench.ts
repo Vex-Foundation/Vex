@@ -12,9 +12,9 @@ export const TRENCH_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use `kyberswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` for broader pair research. A graduated Trench token trades in a WETH-paired DEX pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. `virtuals` is a different launchpad (VIRTUAL-paired agent tokens) — Trench tokens never appear there.",
   exampleQueries: [
-    'discover_tools(query="buy a trench bonding curve token with ETH", namespace="trench")',
-    'discover_tools(query="new token launches on trench", namespace="trench")',
-    'discover_tools(query="preview a token launch cost", namespace="trench")',
+    'ToolSearch(query="buy a trench bonding curve token with ETH", namespace="trench")',
+    'ToolSearch(query="new token launches on trench", namespace="trench")',
+    'ToolSearch(query="preview a token launch cost", namespace="trench")',
   ],
   aliases: ["trench", "trench express", "trench launchpad", "trench token launches", "trench curve trading", "buy trench token"],
   discoveryHints: [

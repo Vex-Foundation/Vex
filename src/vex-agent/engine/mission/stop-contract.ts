@@ -2,7 +2,7 @@
  * Mission stop contract — canonical policy for model-driven mission stops.
  *
  * The mission draft stores user-facing stop conditions as strings, but the
- * runtime `mission_stop` tool uses canonical reasons. This module is the
+ * runtime `MissionStop` tool uses canonical reasons. This module is the
  * shared boundary that maps accepted draft terms to canonical reasons and
  * prevents the agent from inventing new stop conditions during execution.
  */

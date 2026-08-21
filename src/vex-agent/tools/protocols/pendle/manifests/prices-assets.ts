@@ -19,6 +19,7 @@ import {
  */
 export const PENDLE_PRICES_ASSETS_TOOL: ProtocolToolManifest = {
   toolId: "pendle.prices.assets",
+  publicName: "pendle__asset_prices_get",
   namespace: "pendle",
   lifecycle: "active",
   description:

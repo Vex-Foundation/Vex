@@ -1,0 +1,53 @@
+{
+  "definition": {
+    "function": {
+      "description": "Value EVERY Pendle position the session wallet holds on every Pendle chain — principal tokens (PT), yield tokens (YT), LP, standardised yield (SY) and cross-chain PT legs. Each leg reports one `state`: earning, matured_redeemable, matured_removable or expired_worthless. Balances travel as raw base units WITH their decimals and an exact human amount; USD values are exact decimal strings labelled with how they were derived. A matured PT is valued at its face/accounting value, never underlying spot. Includes accrued unclaimed interest and rewards per leg, the staked-vs-wallet LP split, and per-chain data age with a staleness warning — Pendle's dashboard can lag by weeks. Read-only.",
+      "name": "pendle__positions_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "description": "Comma-separated chains to scope to, or 'all'. Each entry is a chain slug/alias or a numeric chain id. Omit for every chain the dashboard returns.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Comma-separated leg field groups to keep: identity, balance, value, expiry, accrued — or 'all' (default).",
+            "type": "string"
+          },
+          "includeAccrued": {
+            "description": "Include accrued unclaimed interest and rewards per leg (default true). Pendle caches these up to 24h.",
+            "type": "boolean"
+          },
+          "kinds": {
+            "description": "Comma-separated position kinds to keep: pt, yt, lp, sy. Omit for all four. Cross-chain PT legs are always reported separately.",
+            "type": "string"
+          },
+          "minValueUsd": {
+            "description": "Server-side minimum USD value per position; smaller ones are not returned at all. Use it to drop dust. Default: unfiltered.",
+            "type": "number"
+          },
+          "redeemableOnly": {
+            "description": "Only legs in state matured_redeemable — the matured PTs ready to redeem (default false).",
+            "type": "boolean"
+          },
+          "sort": {
+            "description": "'value' (default), 'expiry' or 'chain'. Anything else is rejected by name.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.position.value"
+  }
+}

@@ -25,8 +25,11 @@ function paramKeys(toolId: string): string[] {
 describe("dexscreener manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 14 tools total", () => {
-    expect(DEXSCREENER_TOOLS).toHaveLength(14);
+  // 14 before the Batch 2 near-duplicate merges (owner decision D7) retired
+  // `dexscreener.profiles.recent` and `dexscreener.boosts.top` into their
+  // siblings' `feed` param.
+  it("has 12 tools total", () => {
+    expect(DEXSCREENER_TOOLS).toHaveLength(12);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -35,11 +38,9 @@ describe("dexscreener manifest", () => {
     "dexscreener.pairs",
     "dexscreener.tokens",
     "dexscreener.tokenPairs",
-    // Trending / attention / narratives (8)
+    // Trending / attention / narratives (6)
     "dexscreener.profiles",
-    "dexscreener.profiles.recent",
     "dexscreener.boosts",
-    "dexscreener.boosts.top",
     "dexscreener.communityTakeovers",
     "dexscreener.attention",
     "dexscreener.trending",
@@ -50,7 +51,7 @@ describe("dexscreener manifest", () => {
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(14);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(12);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -217,12 +218,6 @@ describe("dexscreener manifest", () => {
     expect(required).toHaveLength(0);
   });
 
-  it("dexscreener.boosts.top has no required params", () => {
-    const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts.top")!;
-    const required = tool.params.filter(p => p.required);
-    expect(required).toHaveLength(0);
-  });
-
   it("dexscreener.communityTakeovers has no required params", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.communityTakeovers")!;
     const required = tool.params.filter(p => p.required);
@@ -237,12 +232,6 @@ describe("dexscreener manifest", () => {
 
   it("dexscreener.trending (narratives) has no required params", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.trending")!;
-    const required = tool.params.filter(p => p.required);
-    expect(required).toHaveLength(0);
-  });
-
-  it("dexscreener.profiles.recent has no required params", () => {
-    const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.profiles.recent")!;
     const required = tool.params.filter(p => p.required);
     expect(required).toHaveLength(0);
   });
@@ -318,20 +307,19 @@ describe("dexscreener manifest", () => {
 
   it("trend embeddings capture boosted, profile, community takeover, attention, and narrative intent", () => {
     const profiles = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.profiles")!;
-    const profilesRecent = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.profiles.recent")!;
     const boosts = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts")!;
-    const topBoosts = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.boosts.top")!;
     const communityTakeovers = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.communityTakeovers")!;
     const attention = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.attention")!;
     const trending = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.trending")!;
     const meta = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.meta")!;
-    expect(profiles.discovery?.embeddingText).toContain("latest token PROFILE METADATA");
+    expect(profiles.discovery?.embeddingText).toContain("token PROFILE METADATA");
     expect(profiles.discovery?.embeddingText?.toLowerCase()).toContain("not a token-creation");
-    expect(profilesRecent.discovery?.embeddingText?.toLowerCase()).toContain("recently updated");
-    expect(boosts.discovery?.embeddingText).toContain("latest tokens that received paid boosts");
+    // The retired `profiles.recent` / `boosts.top` intents are carried by the
+    // surviving passages, which is what keeps the merge findable.
+    expect(profiles.discovery?.embeddingText?.toLowerCase()).toContain("recently updated");
+    expect(boosts.discovery?.embeddingText).toContain("paid boosts");
     expect(boosts.discovery?.embeddingText?.toLowerCase()).toContain("promoted");
-    expect(topBoosts.discovery?.embeddingText).toContain("most active boosts");
-    expect(topBoosts.discovery?.embeddingText?.toLowerCase()).toContain("ranked by total boost amount");
+    expect(boosts.discovery?.embeddingText).toContain("most active boosts");
     expect(communityTakeovers.discovery?.embeddingText).toContain("community takeover");
     expect(communityTakeovers.discovery?.embeddingText).toContain("CTO");
     // Synthetic attention merge (renamed from the old synthetic "trending").
@@ -375,9 +363,7 @@ describe("dexscreener manifest", () => {
     ["dexscreener.tokenPairs", "at most 30 pools per token"],
     ["dexscreener.pairs", "returns only the pool(s) you name"],
     ["dexscreener.profiles", "feed window of at most 30 rows per call"],
-    ["dexscreener.profiles.recent", "feed window of at most 30 rows per call"],
     ["dexscreener.boosts", "feed window of at most 30 rows per call"],
-    ["dexscreener.boosts.top", "feed window of at most 30 rows per call"],
     ["dexscreener.ads", "feed window of at most 30 rows per call"],
     ["dexscreener.communityTakeovers", "observed ≤30 rows"],
     ["dexscreener.trending", "whose size the provider chooses"],
@@ -493,17 +479,17 @@ describe("dexscreener manifest", () => {
     expect(passageOf("dexscreener.search")).not.toContain("sorted by liquidity");
   });
 
-  it("both profile passages refuse to masquerade as fresh-token discovery", () => {
-    for (const toolId of ["dexscreener.profiles", "dexscreener.profiles.recent"]) {
-      const passage = passageOf(toolId);
-      expect(passage.toLowerCase(), `${toolId} passage`).not.toContain("find new tokens");
-      expect(passage.toLowerCase(), `${toolId} passage`).toMatch(/metadata|profile/);
-    }
+  it("the profile passage refuses to masquerade as fresh-token discovery", () => {
+    const passage = passageOf("dexscreener.profiles");
+    expect(passage.toLowerCase()).not.toContain("find new tokens");
+    expect(passage.toLowerCase()).toMatch(/metadata|profile/);
   });
 
-  it("profiles.recent passage keeps its change-feed meaning", () => {
-    const passage = passageOf("dexscreener.profiles.recent");
-    expect(passage).toContain("updatedAt");
+  // The change-feed meaning survived the merge inside the one passage, so the
+  // recentUpdates intent still retrieves.
+  it("the profile passage keeps the change-feed meaning of the retired recent feed", () => {
+    const passage = passageOf("dexscreener.profiles");
+    expect(passage.toLowerCase()).toContain("recently-updated");
     expect(passage.toLowerCase()).toContain("community-takeover");
   });
 });

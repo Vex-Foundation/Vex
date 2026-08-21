@@ -65,7 +65,7 @@ interface SessionRow {
 /**
  * Known values for `sessions.mode`. `"agent"` is a one-shot conversational
  * session (post-M12 rename from "chat"). `"mission"` is goal-driven and
- * runs in a loop with agent-self-scheduled wake via `loop_defer`. Immutable
+ * runs in a loop with agent-self-scheduled wake via `LoopDefer`. Immutable
  * after session creation.
  */
 export type SessionMode = "agent" | "mission";

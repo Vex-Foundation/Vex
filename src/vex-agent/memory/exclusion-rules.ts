@@ -4,7 +4,7 @@
  * Purpose: prevent the chunker LLM from encoding values that mutate at every
  * tool call into long-term embedded memory. Wallet balances, current prices,
  * gas, pending intent IDs, and other "now"-state belong in tool calls
- * (`wallet_balances`, quote tools) and structured DB tables
+ * (`WalletBalances`, quote tools) and structured DB tables
  * (`proj_*`, `mission_runs`, `approval_queue`) — chunks that snapshot them
  * become stale within minutes and crowd out durable signal at recall time.
  *

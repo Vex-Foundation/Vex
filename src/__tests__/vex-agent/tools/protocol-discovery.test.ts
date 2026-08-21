@@ -3,7 +3,7 @@ import { discoverProtocolCapabilities } from "../../../vex-agent/tools/protocols
 import {
   PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
 } from "../../../vex-agent/tools/protocols/catalog.js";
-import { toModelDiscoveryResult } from "../../../vex-agent/tools/dispatcher/protocol-route.js";
+import { toModelDiscoveryResult } from "../../../vex-agent/tools/dispatcher/tool-search.js";
 import type { ProtocolDiscoveryResult } from "../../../vex-agent/tools/protocols/types.js";
 
 describe("protocol discovery", () => {
@@ -70,25 +70,28 @@ describe("protocol discovery", () => {
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 
-  // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
-  // C30): the hidden Uniswap fallback must not be discoverable pre-reveal —
-  // NOT just hidden from the LLM tool list, but genuinely unreachable through
-  // the discover_tools/execute_tool meta-tool path (the sanctioned path is the
-  // `swap_quote_uniswap`/`swap_execute_uniswap` internal aliases, which check
-  // the session reveal state themselves and never go through this namespace
-  // resolution). `uniswap` stays a KNOWN namespace (isKnownProtocolNamespace)
-  // but is not ADVERTISED — same "reserved" contract as an unregistered one,
-  // proven with its own message rather than reusing the unknown-namespace test.
-  it("rejects namespace='uniswap' as reserved — the hidden pair is not directly discoverable", async () => {
+  // Owner decision D4 (`tool-surface-spec/owner-decisions.md`) RETIRED the
+  // hidden-pair design that Agent Scan plan v3 §11.2 introduced: the Uniswap
+  // venue tools are always-visible alternatives now, reachable through the
+  // ordinary ToolSearch path rather than only through the
+  // `swap_quote_uniswap`/`swap_execute_uniswap` internal aliases. The reveal
+  // state no longer exists as a discovery input, so what is pinned here is the
+  // inverse of what this pair used to pin: the namespace resolves, and its
+  // tools rank for a generic swap query.
+  it("resolves namespace='uniswap' and returns its tools — no reveal required (D4)", async () => {
     const result = await discoverProtocolCapabilities({ namespace: "uniswap" });
-    expect(result.success).toBe(false);
-    expect(result.count).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/reserved/i);
+    expect(result.success).toBe(true);
+    expect(result.count).toBeGreaterThan(0);
+    expect(result.tools.every((t) => t.toolId.startsWith("uniswap."))).toBe(true);
   });
 
-  it("never surfaces a uniswap.* toolId via a generic query, at any limit", async () => {
+  it("surfaces the uniswap venue tools under their publicName for a generic swap query", async () => {
     const result = await discoverProtocolCapabilities({ query: "swap", limit: 200 });
-    expect(result.tools.some((t) => t.toolId.startsWith("uniswap."))).toBe(false);
+    const uniswap = result.tools.filter((t) => t.toolId.startsWith("uniswap."));
+    expect(uniswap.length).toBeGreaterThan(0);
+    // The row carries the CALLABLE name, which the model can no longer derive
+    // from the dotted id.
+    expect(uniswap.map((t) => t.publicName)).toContain("uniswap__swap_quote");
   });
 
   it("returns kyberswap tools when filtering by kyberswap namespace", async () => {
@@ -105,7 +108,7 @@ describe("protocol discovery", () => {
   // lives at execute time (`runtime.ts`: mutating + !approved + !full
   // loopMode → pendingApproval). Hiding mutating tools at discovery
   // prevented agents from finding them, so the filter was removed.
-  // Mutating tools now appear in discover_tools with the `mutating`
+  // Mutating tools now appear in ToolSearch results with the `mutating`
   // flag visible per item.
 
   it("surfaces mutating tools by default — includes khalani.bridge", async () => {
@@ -336,6 +339,7 @@ describe("toModelDiscoveryResult — embedding-field split", () => {
       tools: [
         {
           toolId: "khalani.bridge",
+          publicName: "khalani__bridge_execute",
           namespace: "khalani",
           description: "bridge tokens",
           mutating: true,

@@ -23,7 +23,7 @@
  *    instead, and say which status blocked it.
  *
  * Identity → authorization → state → write all run inside ONE row-locked
- * transaction, serializing against the model's `mission_draft_update` merge
+ * transaction, serializing against the model's `MissionDraftUpdate` merge
  * (`setup.ts`) so neither writer can lose the other's keys.
  *
  * NEVER starts a run.

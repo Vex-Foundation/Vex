@@ -4,6 +4,7 @@ import { SOLANA_CORE_DISCOVERY } from "../../embeddings/solana-jupiter/core.js";
 export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "solana.prices",
+    publicName: "solana__token_prices_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get real-time USD prices for one or more Solana token mints — pass raw mint addresses via mints, OR symbols/names/mints via queries (resolved automatically, no separate lookup tool needed first). Returns each requested id's price (under prices, or resolved for queries); any mint/query Jupiter could not price is listed in missing instead of being silently dropped.",
@@ -22,6 +23,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.tokens.search",
+    publicName: "solana__tokens_search",
     namespace: "solana",
     lifecycle: "active",
     description: "Search for or look up one or more SPECIFIC Solana tokens you can already name — by symbol, name, or mint address (up to 100 comma-separated mints for a batch lookup) — for identity, price, market cap, liquidity, holder count, and safety-audit flags. Use solana.tokens.trending instead when you don't have a name yet and want to discover new, popular, or top-moving tokens.",
@@ -40,6 +42,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.tokens.trending",
+    publicName: "solana__tokens_discover",
     namespace: "solana",
     lifecycle: "active",
     description: "Discover Solana tokens without already knowing a name — freshly launched/new (recent), trending, top-traded, top-organic, verified, tokenized stocks, or liquid staking. THE fastest fresh-token surface on Solana: category=recent measured live (2026-08-17) at 30 rows spanning ages 10-175 SECONDS since mint, every row carrying createdAt as proof of age — where DexScreener's feeds reached ~16 minutes at best. createdAt is provider-optional, so treat a null as unknown age, never as fresh. The response is an accounted window: returned/totalMatched/hasMore plus tokens (a bare recent call measured 27,970 B against the 16,384 B tool-output cap, so limit is applied Vex-side and never silently). Richer signal (organic score, verification, holder data, audit flags) than generic feeds. Use solana.tokens.search instead once you already have a specific symbol, name, or mint to look up.",

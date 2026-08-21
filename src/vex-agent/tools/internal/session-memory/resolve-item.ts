@@ -1,5 +1,5 @@
 /**
- * `session_memory_resolve_item` tool handler — closes a single outstanding
+ * `SessionMemoryResolve` tool handler — closes a single outstanding
  * item on a session memory chunk. Updates the JSONB element + re-renders
  * `body_md` + re-embeds via the same local EmbeddingGemma service.
  *
@@ -44,7 +44,7 @@ export async function handleSessionMemoryResolveItem(
   if (!parsed.success) {
     return {
       success: false,
-      output: `session_memory_resolve_item: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
+      output: `SessionMemoryResolve: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
     };
   }
   const { memory_id, outstanding_item_id, resolution_note } = parsed.data;
@@ -84,7 +84,7 @@ export async function handleSessionMemoryResolveItem(
   if (!result.ok) {
     return {
       success: false,
-      output: `session_memory_resolve_item: ${result.reason}`,
+      output: `SessionMemoryResolve: ${result.reason}`,
     };
   }
 

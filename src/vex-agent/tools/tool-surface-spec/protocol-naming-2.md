@@ -206,6 +206,16 @@ benefit: the confusable pair disappears and `slug` is always present.
 Alternative rejected: deleting `kyberswap.chains.supported` outright, because
 `state` is the only signal that a registry chain is currently degraded.
 
+`EXECUTED 2026-08-21 (Batch 2, owner decision D7).` `kyberswap.chains.supported`
+is RETIRED; its row is gone from `mappings/kyberswap.json` and no alias replaces
+the retired name (D5). `kyberswap.chains` now takes `liveStatus` (default
+false). Rows stay the REGISTRY's, so C23's join direction is preserved - a
+provider chain we do not execute can still never be re-advertised - and each row
+carries `state` plus `stateReason`, which names why a state is null: not
+requested, not carried by the live list, or the sanitized Common Service
+failure. A Common Service outage therefore costs the state field, never the
+call, and `slug` is present on every path.
+
 ### 6.2 `pools.token` vs `pools.tokens` (found while reading, not in the plan)
 
 One character apart, and the more dangerous pair of the two: `pools.tokens` is
@@ -244,6 +254,23 @@ a null LP time, so the two tools genuinely disagree on a small set of rows and
 the merge must not silently change `status=graduated` semantics). Stop
 condition: if that guard change is judged a behavior change to
 `status=graduated`, keep both tools and merge nothing.
+
+`STOP CONDITION HIT 2026-08-21 (Batch 2). BOTH TOOLS KEPT, NOTHING MERGED.`
+The disagreement is real and is already pinned by a test.
+`handlers.ts:44-51`: `matchesStatus` answers `graduated` with
+`status === "AVAILABLE"` alone, while `isGraduation` also requires
+`lpCreatedAt !== null`. `virtuals-handlers.test.ts:345-360` asserts that the
+graduations feed DROPS an AVAILABLE row with a null LP time (the fixture calls
+it the "drifted row"), and `:132-153` asserts that `status: "graduated"` keeps
+every AVAILABLE row. So moving the guard into the `graduated` filter would
+remove rows that `status=graduated` returns today, and NOT moving it would add
+rows the graduations feed drops today - either direction changes observable
+behavior for the same rows, which is exactly what the recorded stop condition
+forbids. The guard is also load-bearing beyond the row count: the anti-sniper
+window is computed from `lpCreatedAt` (`anti-sniper.ts:22,61-80`), so a
+graduation row without one cannot answer the question the feed exists for.
+Reopening this needs a product decision about what `status=graduated` means,
+not a refactor.
 
 ### 6.4 dexscreener pattern note (S2 owns the files)
 

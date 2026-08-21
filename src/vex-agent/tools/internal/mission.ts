@@ -1,7 +1,7 @@
 /**
- * Mission internal tool handlers — mission draft updates and mission_stop.
+ * Mission internal tool handlers — mission draft updates and MissionStop.
  *
- * mission_stop is the only model-driven way to stop a mission.
+ * MissionStop is the only model-driven way to stop a mission.
  * Returns an engineSignal that the turn-loop uses to finalize the run.
  * Replaces text-parsed [STOP: reason] markers.
  */
@@ -66,10 +66,10 @@ export async function handleMissionDraftUpdate(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   if (context.sessionKind !== "mission" || context.missionRunId !== null) {
-    return fail("mission_draft_update is only valid during mission setup or edit");
+    return fail("MissionDraftUpdate is only valid during mission setup or edit");
   }
   if (!context.missionId) {
-    return fail("mission_draft_update requires an existing mission draft");
+    return fail("MissionDraftUpdate requires an existing mission draft");
   }
 
   // response_format is a tool-only param read off RAW params — MissionDraftUpdateArgs
@@ -88,7 +88,7 @@ export async function handleMissionDraftUpdate(
   const parsed = MissionDraftUpdateArgs.safeParse(normalizedPatch);
   if (!parsed.success) {
     return fail(
-      `mission_draft_update: ${formatZodIssueForModel(parsed.error.issues[0], patchParams)}`,
+      `MissionDraftUpdate: ${formatZodIssueForModel(parsed.error.issues[0], patchParams)}`,
     );
   }
 
@@ -139,9 +139,9 @@ export async function handleMissionStop(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  // Guard: mission_stop only valid during an active mission run
+  // Guard: MissionStop only valid during an active mission run
   if (!context.missionRunId) {
-    return fail("mission_stop is only valid during an active mission run");
+    return fail("MissionStop is only valid during an active mission run");
   }
 
   const reason = str(params, "reason");
@@ -156,17 +156,17 @@ export async function handleMissionStop(
 
   if (reason !== "goal_reached" && reason !== "emergency_stop") {
     if (!context.missionId) {
-      return fail("mission_stop requires an active mission contract");
+      return fail("MissionStop requires an active mission contract");
     }
 
     const mission = await missionsRepo.getMission(context.missionId);
     if (!mission) {
-      return fail(`mission_stop could not load mission contract ${context.missionId}`);
+      return fail(`MissionStop could not load mission contract ${context.missionId}`);
     }
 
     const authorization = authorizeMissionStopReason(mission, reason as BusinessStopReason);
     if (!authorization.allowed) {
-      return fail(`mission_stop rejected: ${authorization.message ?? "reason is not allowed by the mission contract"}`);
+      return fail(`MissionStop rejected: ${authorization.message ?? "reason is not allowed by the mission contract"}`);
     }
   }
 

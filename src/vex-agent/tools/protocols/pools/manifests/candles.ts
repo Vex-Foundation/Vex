@@ -13,6 +13,7 @@ import {
 export const POOLS_CANDLES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.candles",
+    publicName: "pools__token_candles_list",
     namespace: "pools",
     lifecycle: "active",
     description:

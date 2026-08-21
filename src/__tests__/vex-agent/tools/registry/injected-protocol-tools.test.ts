@@ -1,12 +1,16 @@
 /**
- * Injected discovered protocol tools — name mapping, schema projection, and
+ * Injected discovered protocol tools — name projection, schema projection, and
  * the visibility gates (owner decision 2026-08-03, SPEC §7 Q1 / R1).
  *
  * The load-bearing property is BIJECTIVITY over the WHOLE catalog: a name the
  * provider accepts must map back to exactly one manifest, or a tool call could
- * be routed to the wrong tool. Every assertion below iterates `PROTOCOL_TOOLS`
- * rather than a sample, so a future manifest with a `__` or an empty dotted
- * segment fails here instead of in production.
+ * be routed to the wrong tool. Since Batch 2 the projection is a TABLE over the
+ * manifests' authored `publicName` rather than a reversible string transform,
+ * so bijectivity is a property of the CATALOG, not of a mangling rule — every
+ * assertion below iterates `PROTOCOL_TOOLS` rather than a sample, so a future
+ * manifest that duplicates a name or breaks the grammar fails here instead of
+ * in production. The grammar itself is owned by
+ * `protocols/public-name-gate.ts` and proven by the tool-surface-naming suite.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -25,7 +29,7 @@ import {
   toInjectedToolName,
 } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import {
-  MAX_DESCRIBE_TOOL_IDS,
+  MAX_SELECT_TOOL_NAMES,
   MAX_DISCOVERY_LIMIT,
 } from "@vex-agent/tools/protocols/discovery.js";
 import {
@@ -47,34 +51,62 @@ beforeEach(() => clearDiscoveredTools(SESSION));
 afterEach(() => clearDiscoveredTools(SESSION));
 
 describe("injected tool names — bijective over the whole catalog", () => {
-  it("every toolId maps to a legal OpenAI function name", () => {
+  it("projects the manifest's own publicName, never a transform of the toolId", () => {
+    for (const manifest of PROTOCOL_TOOLS) {
+      expect(toInjectedToolName(manifest.toolId)).toBe(manifest.publicName);
+    }
+  });
+
+  it("every projected name is a legal OpenAI function name", () => {
     for (const manifest of PROTOCOL_TOOLS) {
       const name = toInjectedToolName(manifest.toolId);
       expect(
         OPENAI_TOOL_NAME_PATTERN.test(name),
         `${manifest.toolId} → ${name} is not a legal OpenAI function name`,
       ).toBe(true);
+      expect(name.length, `${name} is longer than 64 chars`).toBeLessThanOrEqual(64);
     }
   });
 
-  it("every mapped name round-trips back to its toolId", () => {
+  it("every projected name round-trips back to its toolId", () => {
     for (const manifest of PROTOCOL_TOOLS) {
-      expect(fromInjectedToolName(toInjectedToolName(manifest.toolId))).toBe(manifest.toolId);
+      expect(fromInjectedToolName(manifest.publicName)).toBe(manifest.toolId);
     }
   });
 
-  it("the mapping is injective — no two toolIds collide on one name", () => {
+  it("the projection is injective — no two toolIds collide on one name", () => {
     const names = PROTOCOL_TOOLS.map((m) => toInjectedToolName(m.toolId));
     expect(new Set(names).size).toBe(PROTOCOL_TOOLS.length);
   });
 
-  it("no toolId contains the separator or an empty dotted segment (what would break the reverse map)", () => {
+  it("every publicName carries EXACTLY ONE separator, at the namespace boundary", () => {
+    // The grammar the shape test and the reverse lookup both assume. A second
+    // `__` would make `isInjectedToolNameShape` reject a live tool's own name.
+    for (const manifest of PROTOCOL_TOOLS) {
+      const halves = manifest.publicName.split("__");
+      expect(halves.length, `${manifest.publicName} has ${halves.length - 1} separators`).toBe(2);
+      expect(halves[0]).toBe(manifest.namespace);
+      expect(isInjectedToolNameShape(manifest.publicName)).toBe(true);
+    }
+  });
+
+  it("refuses to project an unregistered toolId instead of inventing a name", () => {
+    // Returning the dotted id unchanged would put an uncallable name into a
+    // provider `tools` array; a stale id is a programming error, not a fallback.
+    expect(() => toInjectedToolName("ghost.tool.gone")).toThrow(/ghost\.tool\.gone/);
+  });
+
+  it("does not invert an unknown injected-shaped name into a fabricated toolId", () => {
+    // The exact defect the table exists to prevent: the old inversion turned
+    // `kyberswap__swap_quote` into `kyberswap.swap_quote`, a tool that is not
+    // in the catalog, and a fund-moving call could have followed it.
+    expect(fromInjectedToolName("kyberswap__ghost_quote")).toBeUndefined();
+    expect(fromInjectedToolName("kyberswap__swap__quote")).toBeUndefined();
+  });
+
+  it("no toolId contains the separator (a dotted id must never be mistaken for a callable name)", () => {
     for (const manifest of PROTOCOL_TOOLS) {
       expect(manifest.toolId.includes("__"), `${manifest.toolId} contains "__"`).toBe(false);
-      for (const segment of manifest.toolId.split(".")) {
-        expect(segment.length, `${manifest.toolId} has an empty segment`).toBeGreaterThan(0);
-        expect(segment.startsWith("_") || segment.endsWith("_")).toBe(false);
-      }
     }
   });
 
@@ -90,6 +122,11 @@ describe("injected tool names — bijective over the whole catalog", () => {
     expect(resolveInjectedProtocolTool(toInjectedToolName(first.toolId))?.toolId).toBe(first.toolId);
     expect(resolveInjectedProtocolTool("execute_tool")).toBeUndefined();
     expect(resolveInjectedProtocolTool("nope__not__a__tool")).toBeUndefined();
+    // A stale mechanically-mangled spelling from before the rename resolves to
+    // NOTHING rather than to a neighbouring tool (owner decision D5: no alias
+    // was minted; the dispatcher answers it by name and re-discovery teaches
+    // the current spelling).
+    expect(resolveInjectedProtocolTool("kyberswap__swap__quote")).toBeUndefined();
   });
 });
 
@@ -168,22 +205,22 @@ describe("injected schemas", () => {
   });
 });
 
-describe("execute_tool retirement (owner decision 2026-08-03, staged)", () => {
-  it("is absent from the model-visible tool list and Tool Map, while discover_tools stays", () => {
+describe("execute_tool retirement (owner decision 2026-08-03, completed by the ToolSearch merge)", () => {
+  it("is absent from the registry, the tool list and the Tool Map, while ToolSearch is present", () => {
+    // The ToolDef is DELETED, not merely withheld: there is no registered tool
+    // for a catalog filter to hide any more.
+    expect(TOOLS.some((t) => t.name === "execute_tool")).toBe(false);
+
     const names = getOpenAITools(ctx()).map((t) => t.function.name);
     expect(names).not.toContain("execute_tool");
-    expect(names).toContain("discover_tools");
+    expect(names).toContain("ToolSearch");
+    // The retired discovery spellings are not re-registered under any lane.
+    expect(names).not.toContain("discover_tools");
+    expect(names).not.toContain("describe_tools");
 
     const mapped = getVisibleToolsByCategory(ctx()).flatMap((c) => c.toolNames);
     expect(mapped).not.toContain("execute_tool");
-    expect(mapped).toContain("discover_tools");
-  });
-
-  it("stays REGISTERED — the dispatch route must survive for approval resume", () => {
-    // An approved intent is re-dispatched by its STORED tool name
-    // (`approval-runtime/post-tx/dispatch-approved.ts`). Deleting the
-    // definition would strand every already-approved `execute_tool` call.
-    expect(TOOLS.some((t) => t.name === "execute_tool")).toBe(true);
+    expect(mapped).toContain("ToolSearch");
   });
 });
 
@@ -204,9 +241,15 @@ describe("injection gates", () => {
     }
   });
 
-  it("never injects the reveal-gated Uniswap pair for an unrevealed session", () => {
+  it("injects the Uniswap venue pair with no reveal at all (owner decision D4)", () => {
+    // The reveal gate is retired: the venue tools are ordinary always-visible
+    // alternatives now. Preference lives in the Tool Map doctrine, not in
+    // whether the tool exists.
     recordDiscoveredTools(SESSION, ["uniswap.swap.quote", "uniswap.swap.execute"]);
-    expect(buildInjectedProtocolTools(ctx())).toEqual([]);
+    expect(buildInjectedProtocolTools(ctx()).map((t) => t.function.name)).toEqual([
+      "uniswap__swap_quote",
+      "uniswap__swap_execute",
+    ]);
   });
 
   it("drops mutating manifests at the pressure barrier, and restores them under the C8 bypass", () => {
@@ -234,12 +277,12 @@ describe("session-scoped discovered set", () => {
   });
 
   it("INVARIANT: a full discovery round at the maximum allowed limit is never partially evicted", () => {
-    // The agent sizes its own working set (`discover_tools` limit, max
-    // MAX_DISCOVERY_LIMIT; `describe_tools` id array, max
-    // MAX_DESCRIBE_TOOL_IDS). Every row of ONE such round must survive, or the
-    // model loses tools it was shown in that very result.
+    // The agent sizes its own working set (`ToolSearch` query limit, max
+    // MAX_DISCOVERY_LIMIT; its select list, max MAX_SELECT_TOOL_NAMES). Every
+    // row of ONE such round must survive, or the model loses tools it was shown
+    // in that very result.
     expect(MAX_DISCOVERED_TOOLS_PER_SESSION).toBeGreaterThanOrEqual(MAX_DISCOVERY_LIMIT);
-    expect(MAX_DISCOVERED_TOOLS_PER_SESSION).toBeGreaterThanOrEqual(MAX_DESCRIBE_TOOL_IDS);
+    expect(MAX_DISCOVERED_TOOLS_PER_SESSION).toBeGreaterThanOrEqual(MAX_SELECT_TOOL_NAMES);
 
     const previousRound = ids(MAX_DISCOVERED_TOOLS_PER_SESSION);
     recordDiscoveredTools(SESSION, previousRound);

@@ -1,18 +1,17 @@
 // ── Routing ──────────────────────────────────────────────────────
 //
-// Route-selection logic: protocol meta-tools (`discover_tools` /
-// `execute_tool`), the dedicated mutating protocol-alias path, role
-// enforcement, and the internal-tool lazy-loader dispatch. The
-// auto-retry-unsafe stamp fires here BEFORE any route dispatch.
+// Route-selection logic: the `ToolSearch` meta-tool, the internal
+// `execute_tool` envelope (approval resume only), the injected protocol-tool
+// lane, the dedicated mutating protocol-alias path, and the internal-tool
+// lazy-loader dispatch. The auto-retry-unsafe stamp fires here BEFORE any route
+// dispatch.
+//
+// What `ToolSearch` DOES lives in `./tool-search.ts`; this module states only
+// that the call routes there.
 
 import type { ToolCallRequest, ToolResult } from "../types.js";
 import type { InternalToolContext } from "../internal/types.js";
-import type {
-  ProtocolDiscoveryResult,
-  ProtocolDiscoveryModelResult,
-} from "../protocols/types.js";
 import { isInternalTool, isMutatingTool } from "../registry.js";
-import { discoverProtocolCapabilities } from "../protocols/runtime.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
 import { resolveExecuteToolParams } from "../protocols/runtime/flat-args.js";
 import {
@@ -21,44 +20,19 @@ import {
   isMutatingProtocolAlias,
   type ResolvedAliasTarget,
 } from "../mutating-aliases.js";
-import { revealUniswapPair } from "../registry/uniswap-reveal.js";
-import { revealDescribeTools } from "../registry/describe-tools-reveal.js";
 import {
   MAX_DISCOVERED_TOOLS_PER_SESSION,
   getDiscoveredToolIds,
-  recordDiscoveredTools,
 } from "../registry/discovered-tools.js";
 import {
-  fromInjectedToolName,
   isInjectedToolNameShape,
   resolveInjectedProtocolTool,
 } from "../registry/injected-protocol-tools.js";
-import { buildDisplacementWarning, isRankedDiscoveryItem } from "../protocols/discovery.js";
 import type { ProtocolExecutionContext } from "../protocols/types.js";
-import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
-import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
-import { parseDiscoverToolsArgs } from "./discover-tools-args.js";
+import { handleToolSearch } from "./tool-search.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
-
-/**
- * Project a discovery result into its model-facing shape: strip the
- * telemetry-only `embeddingModel`/`embeddingDim` from the `retrieval` block.
- * The input `result` is NOT mutated — telemetry/logging downstream still reads
- * the full meta (`discovery.telemetry.ts` logs both embedding fields).
- */
-export function toModelDiscoveryResult(
-  result: ProtocolDiscoveryResult,
-): ProtocolDiscoveryModelResult {
-  if (!result.retrieval) {
-    // Preserve the original (absent) retrieval key rather than forcing it on.
-    const { retrieval: _retrieval, ...rest } = result;
-    return rest;
-  }
-  const { embeddingModel: _model, embeddingDim: _dim, ...modelRetrieval } = result.retrieval;
-  return { ...result, retrieval: modelRetrieval };
-}
 
 /**
  * The `ProtocolExecutionContext` every protocol lane passes to
@@ -109,71 +83,19 @@ export async function routeToolCall(
     await markAutoRetryUnsafe(context.missionRunId);
   }
 
-  // Protocol meta-tools
-  if (call.name === "discover_tools") {
-    // Wrong-typed arguments are answered by name, never dropped in silence —
-    // see `./discover-tools-args.ts`.
-    const validated = parseDiscoverToolsArgs(call.args);
-    if (!validated.ok) {
-      return { success: false, output: validated.message };
-    }
-    const discoveryRequest = {
-      query: validated.args.query,
-      namespace: validated.args.namespace,
-      limit: validated.args.limit,
-      list: validated.args.list,
-      contextUsageBand: context.contextUsageBand,
-      // C8 mirror: the advisory flag must agree with the gate that will
-      // actually run. `=== true` keeps every context without the field on
-      // today's tagging.
-      preparationBypassesBarrier: context.preparationBypassesBarrier === true,
-      // FIX-SPINE round 1, finding 8/C3 — lets discovery hide the canonical
-      // hidden Uniswap swap manifests for a session that has not revealed them.
-      sessionId: context.sessionId,
-    };
-    const result = await discoverProtocolCapabilities(discoveryRequest);
-    // Telemetry reads the FULL result (incl. embeddingModel/embeddingDim).
-    logDiscoveryTelemetry({
-      request: discoveryRequest, result, discoveryRunId: newDiscoveryRunId(),
-      sourceSurface: context.sourceSurface, sourceSession: context.sourceSession,
-    });
-    // The model only sees the trimmed copy — retrieval mechanics stripped.
-    const modelResult = toModelDiscoveryResult(result);
-    // Owner decision 2026-08-03 (SPEC §7 Q1): remember what this session
-    // discovered so the NEXT request carries those manifests as real function
-    // schemas. RANKED rows only — a list-mode row has no param schema, so
-    // injecting it would advertise a tool with no parameters.
-    const displaced = recordDiscoveredTools(
-      context.sessionId,
-      result.tools.filter(isRankedDiscoveryItem).map((tool) => tool.toolId),
-    );
-    // Recording into a full session set evicts earlier rounds. That eviction
-    // used to be silent HERE while `describe_tools` named it, so the same cap
-    // took a capability away with no signal depending only on which tool the
-    // agent had used. Same sentence, one owner. A new array, because
-    // `toModelDiscoveryResult` shares `warnings` with the telemetry result.
-    const displacementWarning = buildDisplacementWarning(displaced);
-    if (displacementWarning !== null) {
-      modelResult.warnings = [...modelResult.warnings, displacementWarning];
-    }
-    // R5 — unlock the hidden `describe_tools` menu tool for this session. Fired
-    // on ANY successful non-empty discovery, list OR ranked (owner directive
-    // D1): gating it to list mode alone would block plan-recall and
-    // post-compaction schema recovery. A failed or empty result reveals nothing
-    // — there is nothing to describe. Core discovery must not own menu state,
-    // so the reveal is made here, beside the existing session recording.
-    if (result.success && result.count > 0) {
-      revealDescribeTools(context.sessionId);
-    }
-    return {
-      success: modelResult.success,
-      // Compact, NOT pretty-printed: indentation was 15-25% of this payload and
-      // the model reads JSON structure, not whitespace.
-      output: JSON.stringify(modelResult),
-      data: toResultData(modelResult),
-    };
+  // The merged protocol meta-tool. Always visible, no gate: it is the only
+  // entry point to the protocol surface (owner decision D2).
+  if (call.name === "ToolSearch") {
+    return handleToolSearch(call.args, context);
   }
 
+  // INTERNAL ENVELOPE, NOT A REGISTERED TOOL. `execute_tool` has no `ToolDef`
+  // any more (`registry/protocol.ts`); the `{toolId, params}` shape survives as
+  // the stored form of an approved protocol call
+  // (`engine/core/approval-runtime/tool-call-envelope.ts`), and this route is
+  // what makes a COLD RESUME in a later process still run. `dispatchTool`
+  // refuses the name outright when `modelOriginated` is set, so nothing the
+  // model emits can reach here.
   if (call.name === "execute_tool") {
     const toolId = typeof call.args.toolId === "string" ? call.args.toolId : "";
 
@@ -208,7 +130,7 @@ export async function routeToolCall(
   //
   // LANE ADMISSION IS BY RESOLVED MANIFEST FIRST, name shape second. A RETIRED
   // model-visible name is not guaranteed to carry `__`: today's flat protocol
-  // aliases (`swap_quote`, `bridge`) are exactly that shape, so a rename that
+  // aliases (`SwapQuote`, `BridgeExecute`) are exactly that shape, so a rename that
   // retires one onto a manifest publicName produces a retired name with no
   // separator at all. Admitting on the shape alone would answer such a call
   // with the generic unknown-tool line even though the alias table resolves it.
@@ -229,13 +151,21 @@ export async function routeToolCall(
           // The model is answered by the name IT wrote, so it can match the
           // refusal to its own call. The discovery hint, however, names the
           // CANONICAL toolId whenever the name resolved to a manifest: telling
-          // a model to `discover_tools` for a spelling the catalog has retired
-          // is advice that cannot succeed. Falls back to the inverse mapping
-          // for an unresolvable `__` name, which is today's behaviour.
-          `Unknown tool: ${call.name}. It is not among the protocol tools discovered in this `
-          + `session (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
-          + `Call discover_tools for "${manifest?.toolId ?? fromInjectedToolName(call.name)}" to get it back as a `
-          + `named tool, then call it again.`,
+          // a model to search for a spelling the catalog has retired
+          // is advice that cannot succeed. When the name resolves to NOTHING —
+          // a stale mechanically-mangled spelling from before the publicName
+          // rename, a typo, a hallucination — there IS no live name to select:
+          // under the one-separator grammar the old inversion would fabricate
+          // one (`kyberswap__swap_quote` → `kyberswap.swap_quote`, a tool that
+          // does not exist). The model is pointed at a SEARCH by the spelling it
+          // used instead. Owner decision D5 governs: no alias was minted for
+          // the retired mechanical spellings, and this by-name answer plus
+          // re-selection IS the migration path.
+          `Unknown tool: ${call.name}. It is not among the protocol tools this session has made `
+          + `callable (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
+          + (manifest
+            ? `Call ToolSearch(query="select:${manifest.publicName}") to get it back, then call it again.`
+            : `Call ToolSearch with a query describing what you need, then call the name it returns.`),
       };
     }
     return executeProtocolTool(
@@ -244,7 +174,7 @@ export async function routeToolCall(
     );
   }
 
-  // Mutating protocol-alias branch (Stage 8b — e.g. `swap_execute`). DEDICATED path:
+  // Mutating protocol-alias branch (Stage 8b — e.g. `SwapExecute`). DEDICATED path:
   // resolve the TARGET protocol toolId + translated params via the router, then
   // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
   // `routeInternalTool`'s internal mutating-approval gate so approval is owned
@@ -261,14 +191,11 @@ export async function routeToolCall(
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     let target: ResolvedAliasTarget;
     try {
-      // A router may be async (`bridge` awaits the live Khalani chain registry
+      // A router may be async (`BridgeExecute` awaits the live Khalani chain registry
       // to pick its venue); awaiting a sync router's plain return is a no-op.
       target = await router(call.args, context.sessionId);
     } catch (err) {
       if (err instanceof MutatingAliasRouteError) {
-        // Agent Scan plan §11.2: the ONE reveal case a router can determine
-        // synchronously, pre-call (chain has no KyberSwap support at all).
-        if (err.revealEligible) revealUniswapPair(context.sessionId);
         return { success: false, output: err.message };
       }
       throw err; // unexpected — let dispatchTool's catch produce a failed result

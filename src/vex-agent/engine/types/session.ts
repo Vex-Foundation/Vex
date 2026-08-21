@@ -11,7 +11,7 @@
  *
  * `"agent"` is a one-shot conversational session (may use tools, may execute
  * tx subject to `Permission`). `"mission"` is a goal-driven session that
- * runs in a loop (agent self-schedules wake via `loop_defer`).
+ * runs in a loop (agent self-schedules wake via `LoopDefer`).
  *
  * The session-level `mode` column on `sessions` is the source of truth;
  * this type is propagated through `EngineContext`, `InternalToolContext`,

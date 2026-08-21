@@ -1,7 +1,7 @@
 /**
  * W0 target contract — implementation lands in W-SPINE.
  *
- * The Kyber-failure reveal-eligible set is COORDINATOR-FIXED (plan §11.2,
+ * The Kyber-failure fallback-eligible set is COORDINATOR-FIXED (plan §11.2,
  * Blocker B — builders have no discretion to widen or narrow it):
  *
  *   ELIGIBLE:     local chain-not-Kyber-supported (registry gate, pre-call);
@@ -35,42 +35,42 @@
  *
  * Module path is illustrative — see the disclaimer in
  * agent-activity-cas.test.ts. W-SPINE has landed
- * `tools/registry/uniswap-reveal-eligibility.ts` (see the import path below —
+ * `tools/registry/venue-fallback-eligibility.ts` (see the import path below —
  * renamed from the illustrative `tools/protocols/uniswap/reveal-eligibility.ts`
  * to keep it out of W2b's owned `protocols/uniswap/**` tree), so this suite is
  * now ACTIVE (`describe.skip` removed).
  */
 import { describe, it, expect } from "vitest";
-import type { KyberVenueUnavailableReason } from "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js";
+import type { KyberVenueUnavailableReason } from "../../../vex-agent/tools/registry/venue-fallback-eligibility.js";
 
 describe("Kyber-failure reveal eligibility (target contract)", () => {
   it("local chain-not-Kyber-supported is eligible", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
-    expect(isRevealEligibleKyberFailure({ kind: "chain_unsupported" })).toBe(true);
+    expect(isVenueFallbackWorthwhile({ kind: "chain_unsupported" })).toBe(true);
   });
 
   it("codes 4008 and 4010 (route not found) are eligible", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
-    expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4008 })).toBe(true);
-    expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4010 })).toBe(true);
+    expect(isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4008 })).toBe(true);
+    expect(isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4010 })).toBe(true);
   });
 
   it("code 4011 is eligible ONLY after token inputs passed address/native validation", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
     expect(
-      isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4011, tokenInputsValidated: true }),
+      isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4011, tokenInputsValidated: true }),
     ).toBe(true);
     expect(
-      isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4011, tokenInputsValidated: false }),
+      isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4011, tokenInputsValidated: false }),
     ).toBe(false);
     expect(
-      isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4011 }),
+      isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4011 }),
     ).toBe(false); // omitted defaults to "not yet validated" — fail closed
   });
 
@@ -80,54 +80,54 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
   // amount can clear it - a second venue is the only remedy Vex has.
   describe("a venue-availability failure unlocks the fallback venue", () => {
     it("every closed availability reason is eligible", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
       for (const reason of ["edge_refused", "endpoint_missing", "rate_limited", "server_error", "timeout", "unreachable"] as const) {
-        expect(isRevealEligibleKyberFailure({ kind: "venue_unavailable", reason })).toBe(true);
+        expect(isVenueFallbackWorthwhile({ kind: "venue_unavailable", reason })).toBe(true);
       }
     });
 
     it("an off-union reason is NOT eligible (closed set, not a deny-list)", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
       // The single cast simulates a reason arriving through an untyped
       // boundary, which is the only way an off-union value can reach here.
       const offUnionReason = "probably_fine" as KyberVenueUnavailableReason;
-      expect(isRevealEligibleKyberFailure({ kind: "venue_unavailable", reason: offUnionReason })).toBe(false);
+      expect(isVenueFallbackWorthwhile({ kind: "venue_unavailable", reason: offUnionReason })).toBe(false);
     });
   });
 
   it("a MINED on-chain revert of the swap leg is eligible", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
-    expect(isRevealEligibleKyberFailure({ kind: "swap_mined_revert" })).toBe(true);
+    expect(isVenueFallbackWorthwhile({ kind: "swap_mined_revert" })).toBe(true);
   });
 
   it("4221 is NEVER eligible, even though it is numerically adjacent to the route-not-found family", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
-    expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4221 })).toBe(false);
+    expect(isVenueFallbackWorthwhile({ kind: "kyber_code", code: 4221 })).toBe(false);
   });
 
   it("4001, 4002, 4005, 4007, 4009 are NEVER eligible", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
     for (const code of [4001, 4002, 4005, 4007, 4009]) {
-      expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code })).toBe(false);
+      expect(isVenueFallbackWorthwhile({ kind: "kyber_code", code })).toBe(false);
     }
   });
 
   it("typed numeric comparison: a string '4008' does NOT satisfy the eligible branch", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
     expect(
-      isRevealEligibleKyberFailure({
+      isVenueFallbackWorthwhile({
         kind: "kyber_code",
         // @ts-expect-error — deliberately the wrong type for this guard test:
         // a numeric-looking string must not slip past a loose equality check.
@@ -137,10 +137,10 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
   });
 
   it("an unrecognized numeric code is NOT eligible by default (closed set, not a deny-list)", async () => {
-    const { isRevealEligibleKyberFailure } = await import(
-      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    const { isVenueFallbackWorthwhile } = await import(
+      "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
     );
-    expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code: 9999 })).toBe(false);
+    expect(isVenueFallbackWorthwhile({ kind: "kyber_code", code: 9999 })).toBe(false);
   });
 
   // Added 2026-07-25. A live 4663 swap was refused by the pre-sign calldata
@@ -149,14 +149,14 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
   // venue that could serve the trade stayed locked.
   describe("a pre-sign build refusal unlocks the fallback venue", () => {
     it("`unsafe_build` is eligible", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
-      expect(isRevealEligibleKyberFailure({ kind: "unsafe_build" })).toBe(true);
+      expect(isVenueFallbackWorthwhile({ kind: "unsafe_build" })).toBe(true);
     });
 
     it("KYBER_UNSAFE_BUILD, thrown locally with no provider code, derives the eligible signal", async () => {
-      const { deriveKyberRevealFailure } = await import(
+      const { deriveKyberFallbackSignal } = await import(
         "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
       );
       const { VexError, ErrorCodes } = await import("../../../errors.js");
@@ -168,7 +168,7 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
         "Nothing was signed. Re-quote; do not retry this build.",
       );
       expect(err.externalName).toBeUndefined();
-      expect(deriveKyberRevealFailure(err, true)).toEqual({ kind: "unsafe_build" });
+      expect(deriveKyberFallbackSignal(err, true)).toEqual({ kind: "unsafe_build" });
     });
 
     it("still files as route_not_found — the reveal changes the venue, not the activity code", async () => {
@@ -185,12 +185,12 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
     // clear, so it keeps its own "get a fresh quote" remedy rather than
     // unlocking a second venue.
     it("KYBER_PRICE_FLOOR_VIOLATED does NOT unlock the fallback", async () => {
-      const { deriveKyberRevealFailure } = await import(
+      const { deriveKyberFallbackSignal } = await import(
         "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
       );
       const { VexError, ErrorCodes } = await import("../../../errors.js");
       expect(
-        deriveKyberRevealFailure(new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, "x"), true),
+        deriveKyberFallbackSignal(new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, "x"), true),
       ).toBeNull();
     });
   });
@@ -202,37 +202,37 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
   // evidence of nothing having been spent) would have unlocked it.
   describe("a pre-sign gas-estimate revert of the swap leg unlocks the fallback venue", () => {
     it("`pre_sign_revert` is eligible for the codes a fresh quote cannot clear", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
       for (const failureCode of ["simulation_reverted", "route_not_found", "insufficient_liquidity"] as const) {
-        expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode })).toBe(true);
+        expect(isVenueFallbackWorthwhile({ kind: "pre_sign_revert", failureCode })).toBe(true);
       }
     });
 
     it("a PRICE / WALLET / STALENESS condition a fresh quote can clear is NOT eligible", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
       for (const failureCode of ["slippage", "allowance_or_balance", "deadline_expired"] as const) {
-        expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode })).toBe(false);
+        expect(isVenueFallbackWorthwhile({ kind: "pre_sign_revert", failureCode })).toBe(false);
       }
     });
 
     it("an unlisted failure code is NOT eligible by default (closed set, not a deny-list)", async () => {
-      const { isRevealEligibleKyberFailure } = await import(
-        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      const { isVenueFallbackWorthwhile } = await import(
+        "../../../vex-agent/tools/registry/venue-fallback-eligibility.js"
       );
-      expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode: "broadcast_error" })).toBe(false);
-      expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode: "chain_unsupported" })).toBe(false);
+      expect(isVenueFallbackWorthwhile({ kind: "pre_sign_revert", failureCode: "broadcast_error" })).toBe(false);
+      expect(isVenueFallbackWorthwhile({ kind: "pre_sign_revert", failureCode: "chain_unsupported" })).toBe(false);
     });
 
     it("the signal is constructed ONLY for the swap leg with nothing broadcast", async () => {
-      const { deriveKyberPreSignRevertRevealFailure } = await import(
+      const { deriveKyberPreSignRevertFallbackSignal } = await import(
         "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
       );
       expect(
-        deriveKyberPreSignRevertRevealFailure({
+        deriveKyberPreSignRevertFallbackSignal({
           eventRole: "swap", legBroadcastAttempted: false, failureCode: "simulation_reverted",
         }),
       ).toEqual({ kind: "pre_sign_revert", failureCode: "simulation_reverted" });
@@ -241,7 +241,7 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
       // venue evidence — the same R1 rule the mined-revert path already obeys.
       for (const eventRole of ["allowance", "allowance_reset"] as const) {
         expect(
-          deriveKyberPreSignRevertRevealFailure({
+          deriveKyberPreSignRevertFallbackSignal({
             eventRole, legBroadcastAttempted: false, failureCode: "simulation_reverted",
           }),
         ).toBeNull();
@@ -249,7 +249,7 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
 
       // Bytes already went to the wire: this is no longer a pre-sign refusal.
       expect(
-        deriveKyberPreSignRevertRevealFailure({
+        deriveKyberPreSignRevertFallbackSignal({
           eventRole: "swap", legBroadcastAttempted: true, failureCode: "simulation_reverted",
         }),
       ).toBeNull();

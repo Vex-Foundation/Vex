@@ -31,7 +31,7 @@
  *   - `swap/execute-handler.ts`   — `uniswap.swap.execute` orchestration
  *   - `swap/execute-plan.ts`      — the events plan + per-role calldata
  *   - `swap/execute-broadcast.ts` — one staged sign→persist→send→confirm stage
- *   - `swap/finalize-confirmed.ts`— reveal clear, auto-pin, settlement decode
+ *   - `swap/finalize-confirmed.ts`— auto-pin, settlement decode
  *   - `swap/execute-failure.ts`   — post-intent failure wording + writes
  *   - `swap/activity-recording.ts`— the hashless/never-signed `agent_activity` writes
  *   - `swap/route-quote.ts`, `swap/quote-safety.ts`, `swap/slippage.ts`,

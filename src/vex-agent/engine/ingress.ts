@@ -3,7 +3,7 @@
  * message arrives for a session.
  *
  * Responsibilities:
- *   1. Cancel any pending `loop_defer` wake for the session (user preempt).
+ *   1. Cancel any pending `LoopDefer` wake for the session (user preempt).
  *   2. Re-check mission run / session state.
  *   3. Route the message to the right runtime:
  *        - `paused_wake` mission run → flip to `running` + save user msg +

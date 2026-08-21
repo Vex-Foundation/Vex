@@ -1,0 +1,55 @@
+{
+  "definition": {
+    "function": {
+      "description": "Search for or look up one or more SPECIFIC Solana tokens you can already name — by symbol, name, or mint address (up to 100 comma-separated mints for a batch lookup) — for identity, price, market cap, liquidity, holder count, and safety-audit flags. Use solana.tokens.trending instead when you don't have a name yet and want to discover new, popular, or top-moving tokens.",
+      "name": "solana__tokens_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "minLiquidity": {
+            "description": "Only include tokens with liquidity (USD) >= this value. Rejected if negative.",
+            "type": "number"
+          },
+          "minOrganicScore": {
+            "description": "Only include tokens with organicScore >= this value (0-100). Rejected if out of range.",
+            "type": "number"
+          },
+          "query": {
+            "description": "Token name, symbol, or mint address. Accepts a comma-separated list of mint addresses (up to 100) for batch lookup.",
+            "type": "string"
+          },
+          "statsInterval": {
+            "description": "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: 1h).",
+            "enum": [
+              "5m",
+              "1h",
+              "6h",
+              "24h",
+              "all"
+            ],
+            "type": "string"
+          },
+          "verifiedOnly": {
+            "description": "Only include Jupiter-verified tokens.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.tokens.search"
+  }
+}

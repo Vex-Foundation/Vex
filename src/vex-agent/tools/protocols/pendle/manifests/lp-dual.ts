@@ -55,6 +55,7 @@ const DRY_RUN_PARAM = {
 export const PENDLE_LP_DUAL_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.lp.removeDual",
+    publicName: "pendle__lp_remove_dual",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -86,6 +87,7 @@ export const PENDLE_LP_DUAL_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.lp.addKeepYt",
+    publicName: "pendle__lp_add_keep_yt",
     namespace: "pendle",
     lifecycle: "active",
     description:

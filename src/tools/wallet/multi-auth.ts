@@ -97,7 +97,7 @@ export type WalletResolution =
  */
 /**
  * Validate + return the inventory entry for a family under a resolution policy,
- * WITHOUT decrypting any key. Address-only callers (wallet_balances, send prepare,
+ * WITHOUT decrypting any key. Address-only callers (`WalletBalances`, send prepare,
  * balance display) use this; signing callers add `loadWalletFromEntry`.
  *   - default → primary entry.
  *   - session → selected entry, validated by id AND address snapshot. Missing

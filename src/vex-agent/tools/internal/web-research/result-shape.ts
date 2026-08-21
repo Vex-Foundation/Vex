@@ -1,5 +1,5 @@
 /**
- * What `web_research` hands the model.
+ * What `WebResearch` hands the model.
  *
  * ONE FLAT `results[]`. The old shape billed every scraped URL twice: once as a
  * search row with its snippet and again as a `fetchedPages` entry with the

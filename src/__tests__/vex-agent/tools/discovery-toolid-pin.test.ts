@@ -36,6 +36,37 @@ describe("pinExactToolIdMatch", () => {
     expect(pinned[0]!.whyMatched).toEqual(["toolId"]);
   });
 
+  it("pins an exact publicName to rank 0 with whyMatched: publicName", () => {
+    // The model only ever SEES `publicName` - it is the only name reaching a
+    // provider `tools` array - so this is the identity the schema's "an exact
+    // tool name you have already seen is returned first" promise is actually
+    // about. Matching `toolId` alone made that promise false for every name the
+    // model could have seen.
+    const scored = scoredOf("dexscreener.trending", "dexscreener.search");
+    const pinned = pinExactToolIdMatch("dexscreener__pairs_search", candidates, scored);
+    expect(pinned[0]?.manifest.toolId).toBe("dexscreener.search");
+    expect(pinned[0]?.whyMatched).toEqual(["publicName"]);
+  });
+
+  it("pins every catalog publicName to its own manifest", () => {
+    // The promise is fleet-wide or it is not a promise. A tool whose publicName
+    // failed to pin would silently fall back to dense similarity over prose.
+    const misses = PROTOCOL_TOOLS.filter((tool) => {
+      const pinned = pinExactToolIdMatch(tool.publicName, candidates, []);
+      return pinned[0]?.manifest.toolId !== tool.toolId;
+    }).map((tool) => tool.publicName);
+    expect(misses).toEqual([]);
+  });
+
+  it("reports publicName evidence honestly rather than a fixed toolId literal", () => {
+    const byToolId = pinExactToolIdMatch("khalani.bridge", candidates, []);
+    const byPublicName = pinExactToolIdMatch("khalani__bridge_execute", candidates, []);
+    expect(byToolId[0]?.manifest.toolId).toBe("khalani.bridge");
+    expect(byToolId[0]?.whyMatched).toEqual(["toolId"]);
+    expect(byPublicName[0]?.manifest.toolId).toBe("khalani.bridge");
+    expect(byPublicName[0]?.whyMatched).toEqual(["publicName"]);
+  });
+
   it("is case-insensitive and whitespace-trimmed", () => {
     const pinned = pinExactToolIdMatch("  DexScreener.Search  ", candidates, scoredOf("dexscreener.trending"));
     expect(pinned[0]!.manifest.toolId).toBe("dexscreener.search");
@@ -65,6 +96,34 @@ describe("pinExactToolIdMatch", () => {
     const scored = scoredOf("dexscreener.trending", "dexscreener.search");
     const pinned = pinExactToolIdMatch("dexscreener.", candidates, scored);
     expect(pinned.map((e) => e.manifest.toolId)).toEqual(["dexscreener.trending", "dexscreener.search"]);
+  });
+
+  it("does not pin a prefix that is ambiguous ACROSS the two identities", () => {
+    // Adding publicName matching must not widen what counts as unambiguous:
+    // `kyberswap__swap_` prefixes both the quote and the execute publicName, so
+    // it names nothing and ranking is left exactly as retrieval produced it.
+    const matches = PROTOCOL_TOOLS.filter(
+      (m) => m.toolId.toLowerCase().startsWith("kyberswap__swap_")
+        || m.publicName.toLowerCase().startsWith("kyberswap__swap_"),
+    );
+    expect(matches.length, "fixture drift: prefix no longer ambiguous").toBeGreaterThan(1);
+
+    const scored = scoredOf("dexscreener.trending", "dexscreener.search");
+    expect(pinExactToolIdMatch("kyberswap__swap_", candidates, scored)).toEqual(scored);
+  });
+
+  it("resolves a prefix hitting ONE tool's toolId and its own publicName as one candidate", () => {
+    // The two identities of the SAME manifest must not count as two matches, or
+    // every tool would become self-ambiguous. `khalani` prefixes many tools, so
+    // use a namespace with exactly one: `relay.bridge` / `relay__bridge_execute`
+    // both start with `relay.b` / `relay__b` respectively - pick the shared
+    // stem `relay` only if it is unique, else assert the dedupe directly.
+    const relay = PROTOCOL_TOOLS.filter((m) => m.namespace === "relay");
+    expect(relay.length).toBeGreaterThan(0);
+    for (const tool of relay) {
+      const pinned = pinExactToolIdMatch(tool.publicName, candidates, []);
+      expect(pinned[0]?.manifest.toolId).toBe(tool.toolId);
+    }
   });
 
   it("does not treat an intent phrase as a toolId", () => {

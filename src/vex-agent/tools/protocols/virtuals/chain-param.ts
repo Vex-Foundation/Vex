@@ -16,7 +16,7 @@
  * from it (one entry per member) rather than hand-listed twice.
  *
  * Numeric chain ids are accepted because CANONICAL_CHAIN_SENTENCE promises them
- * on every chain-valued param and `token_find` hands the agent numbers. Solana
+ * on every chain-valued param and `TokenFind` hands the agent numbers. Solana
  * has no EVM chain id, so it is reachable by slug only — which is true of every
  * Solana lane in the tree.
  */

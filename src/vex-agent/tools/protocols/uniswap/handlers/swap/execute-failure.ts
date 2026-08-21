@@ -34,7 +34,7 @@ export function ambiguousBroadcastResult(input: {
     // second half gives the agent a READ it can perform itself instead
     // of waiting on the sweep — the alternative to waiting must never
     // be a re-broadcast.
-    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
+    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
     data: { _executionId: input.executionId, txHash: input.txHash, status: "pending" },
   };
 }

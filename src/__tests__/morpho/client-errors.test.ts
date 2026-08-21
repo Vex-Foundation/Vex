@@ -262,7 +262,7 @@ describe("getMarket not-found classification", () => {
     // The agent-readable half: what is wrong, and what to do about it.
     expect(vexErr.message).toContain("no market with that id on that chain");
     expect(vexErr.hint).toContain("chain-scoped");
-    expect(vexErr.hint).toContain("morpho.markets.discover");
+    expect(vexErr.hint).toContain("morpho__markets_discover");
     // The exact wording the bug produced must NOT come back.
     expect(vexErr.message).not.toMatch(/rejected the GraphQL query/);
   });

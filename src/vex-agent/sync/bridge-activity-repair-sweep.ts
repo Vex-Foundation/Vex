@@ -12,7 +12,6 @@
  */
 
 import type { BridgeChainFamily } from "@vex-agent/db/repos/agent-activity.js";
-import { clearRelayRouteReveal } from "@vex-agent/tools/registry/relay-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 import {
@@ -246,17 +245,12 @@ async function recoverMissingOrderIds(deps: BridgeRepairDeps, counters: MutableS
  * C3 recovery path (Blocker 11): idempotently enqueue the balance-refresh job for
  * confirmed logical bridge rows whose execution still has none — closing the
  * confirmed-but-unenqueued crash window between the confirm CAS and the enqueue.
- * It ALSO clears any stranded relay reveal for those rows (the confirm path might
- * have crashed after the CAS but before/at the reveal-clear). The list query
- * returns ONLY rows still needing it (bounded fair queue, no age cutoff), so this
- * self-limits; the enqueue is idempotent regardless.
+ * The list query returns ONLY rows still needing it (bounded fair queue, no age
+ * cutoff), so this self-limits; the enqueue is idempotent regardless.
  */
 async function reconcileBalanceEnqueues(deps: BridgeRepairDeps, counters: MutableSweepCounters): Promise<void> {
   const rows = await deps.listConfirmedNeedingBalanceRefresh(BRIDGE_SWEEP_BATCH_LIMIT);
   for (const row of rows) {
-    if (row.protocol === "relay" && row.sessionId && row.normalizedRoute) {
-      deps.clearRelayReveal(row.sessionId, row.normalizedRoute);
-    }
     try {
       await deps.enqueueBalanceRefresh({ namespace: row.protocol, executionId: row.executionId });
       counters.balanceReconciled++;

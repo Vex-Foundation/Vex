@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get bid/ask order-book depth for a prediction market — YES/NO price levels and sizes, beyond the top-of-book price solana.predict.market already returns. Depth is uncapped upstream and can be large for liquid markets. Fails with a clear error (never a silent empty book) when Jupiter's own upstream order-book data is temporarily unavailable.",
+      "name": "solana__predict_orderbook_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "marketId": {
+            "description": "Market ID.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.orderbook"
+  }
+}

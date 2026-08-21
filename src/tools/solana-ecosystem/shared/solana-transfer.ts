@@ -36,7 +36,7 @@ export async function sendSol(params: SendSolParams): Promise<TransferResult> {
     throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Insufficient SOL balance: have ${lamportsToSol(BigInt(balance))} SOL, need ${lamportsToSol(params.lamports)} SOL`,
-      "Check the wallet's SOL balance (agent_scan portfolio view / wallet balances tool) and fund the fee payer before retrying.",
+      "Check the wallet's SOL balance (`AgentScan` portfolio view / `WalletBalances`) and fund the fee payer before retrying.",
     );
   }
 
@@ -90,7 +90,7 @@ export async function sendSplToken(params: SendSplTokenParams): Promise<Transfer
     throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `You don't hold token ${params.mint}`,
-      "Check the wallet's SPL token balances (agent_scan portfolio view / wallet balances tool) before retrying.",
+      "Check the wallet's SPL token balances (`AgentScan` portfolio view / `WalletBalances`) before retrying.",
     );
   }
 
@@ -98,7 +98,7 @@ export async function sendSplToken(params: SendSplTokenParams): Promise<Transfer
     throw new VexError(
       ErrorCodes.SOLANA_INSUFFICIENT_BALANCE,
       `Insufficient token balance for mint ${params.mint}`,
-      "Check the wallet's SPL token balances (agent_scan portfolio view / wallet balances tool) before retrying.",
+      "Check the wallet's SPL token balances (`AgentScan` portfolio view / `WalletBalances`) before retrying.",
     );
   }
 

@@ -84,9 +84,9 @@ afterEach(() => vi.clearAllMocks());
 
 describe("dispatchTargetIsMutating", () => {
   it("internal mutating tool → true; read-only → false", () => {
-    expect(dispatchTargetIsMutating(call("wallet_send_confirm"))).toBe(true);
-    expect(dispatchTargetIsMutating(call("wallet_balances"))).toBe(false);
-    expect(dispatchTargetIsMutating(call("agent_scan"))).toBe(false);
+    expect(dispatchTargetIsMutating(call("WalletSendConfirm"))).toBe(true);
+    expect(dispatchTargetIsMutating(call("WalletBalances"))).toBe(false);
+    expect(dispatchTargetIsMutating(call("AgentScan"))).toBe(false);
     // The execute_tool WRAPPER itself is mutating:false — never stamp on the name.
     expect(dispatchTargetIsMutating(call("execute_tool"))).toBe(false);
   });
@@ -114,19 +114,19 @@ describe("dispatchTargetIsMutating", () => {
 
 describe("stamp on dispatch", () => {
   it("stamps before a mutating tool runs (mission run present)", async () => {
-    await dispatchTool(call("wallet_send_confirm", { intentId: "i1" }), ctx("run-1"));
+    await dispatchTool(call("WalletSendConfirm", { intentId: "i1" }), ctx("run-1"));
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
     expect(handleWalletSendConfirm).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT stamp a read-only tool", async () => {
-    await dispatchTool(call("wallet_balances"), ctx("run-1"));
+    await dispatchTool(call("WalletBalances"), ctx("run-1"));
     expect(markAutoRetryUnsafe).not.toHaveBeenCalled();
     expect(handleWalletBalances).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT stamp when there is no mission run (missionRunId null)", async () => {
-    await dispatchTool(call("wallet_send_confirm", { intentId: "i1" }), ctx(null));
+    await dispatchTool(call("WalletSendConfirm", { intentId: "i1" }), ctx(null));
     expect(markAutoRetryUnsafe).not.toHaveBeenCalled();
     expect(handleWalletSendConfirm).toHaveBeenCalledTimes(1);
   });
@@ -134,7 +134,7 @@ describe("stamp on dispatch", () => {
   it("FAIL-CLOSED: a stamp write failure prevents the mutating handler from running", async () => {
     markAutoRetryUnsafe.mockRejectedValueOnce(new Error("db down"));
     const result = await dispatchTool(
-      call("wallet_send_confirm", { intentId: "i1" }),
+      call("WalletSendConfirm", { intentId: "i1" }),
       ctx("run-1"),
     );
     expect(result.success).toBe(false);

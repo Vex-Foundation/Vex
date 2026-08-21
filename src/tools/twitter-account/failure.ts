@@ -1,5 +1,5 @@
 /**
- * What a `twitter_account` request failure IS — the whole agent-facing vocabulary.
+ * What a `TwitterAccount` request failure IS — the whole agent-facing vocabulary.
  *
  * The rule is the web lane's rule (`web-research/provider-error.ts`), applied to
  * the second tool that had the same hole: provider error text is untrusted

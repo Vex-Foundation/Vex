@@ -4,6 +4,7 @@ import { SOLANA_PREDICT_DISCOVERY } from "../../embeddings/solana-jupiter/predic
 export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "solana.predict.events",
+    publicName: "solana__predict_events_discover",
     namespace: "solana",
     lifecycle: "active",
     description: "List/browse prediction market events across categories (crypto, sports, politics, culture, economics, tech), with filtering, sorting, and pagination. Use solana.predict.search instead for a keyword lookup, or solana.predict.event for one already-known event by ID. Money field volumeUsd is an exact-decimal USD string with a raw volumeUsdMicro sibling.",
@@ -27,6 +28,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.search",
+    publicName: "solana__predict_events_search",
     namespace: "solana",
     lifecycle: "active",
     description: "Search prediction events by keyword across all categories and providers — use this to find a SPECIFIC event/topic by name (e.g. \"bitcoin\", \"election\") instead of browsing via solana.predict.events. Once you have a marketId/eventId from the results, use solana.predict.market or solana.predict.event for full detail.",
@@ -44,6 +46,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.market",
+    publicName: "solana__predict_market_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get full details for ONE known prediction market by ID — YES/NO buy/sell prices, volume, status, payout. Use solana.predict.events/.search first to find a marketId, or solana.predict.orderbook for order-book depth beyond the top-of-book prices returned here. Price fields (buyYesPriceUsd, buyNoPriceUsd, sellYesPriceUsd, sellNoPriceUsd) are exact-decimal USD strings with raw *Micro siblings; volumeUsd is a whole-dollar exact string.",
@@ -58,6 +61,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.positions",
+    publicName: "solana__predict_positions_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a wallet's currently OPEN prediction positions — exposure, unrealized PnL, and claimability, one row per YES/NO side held. Use solana.predict.history instead for PAST (closed/settled) trades. Money fields (sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd, payoutUsd) are exact-decimal USD strings with raw *Micro siblings; prefer contractsMicro/contractsDecimal over the legacy contracts field for exact accounting.",
@@ -77,6 +81,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.history",
+    publicName: "solana__predict_trade_history_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a wallet's PAST (closed/settled) prediction trade history — buys, sells, claims, realized PnL. Use solana.predict.positions instead for currently OPEN positions. Money *Usd fields (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd, etc.) are exact-decimal USD strings with raw *Micro siblings; transferAmountTokenRaw is a SEPARATE unit family — the transferred token's own native units, never a USD amount — do not convert or compare it against the *Usd fields.",
@@ -95,6 +100,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.buy",
+    publicName: "solana__predict_buy",
     namespace: "solana",
     lifecycle: "active",
     description: "Buy YES or NO shares in a prediction market — opens or adds to a position. Read solana.predict.tradingStatus first to confirm trading is active, and solana.predict.market/.orderbook to check current pricing before sizing amountUsdc. Broadcasts and returns truthful-pending — never confirms in this call; estimatedSizeUsd/estimatedFeeUsd in the output are order-preview ESTIMATES, not executed truth. Use solana.predict.sell to exit before resolution, or solana.predict.claim after the market resolves.",
@@ -111,6 +117,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.sell",
+    publicName: "solana__predict_sell",
     namespace: "solana",
     lifecycle: "active",
     description: "Sell (close) an OPEN prediction position before the market resolves, for whatever it's currently worth. Use solana.predict.claim instead once the market has RESOLVED and this position is a winner — claim settles at the resolved price; a sell takes whatever the book offers and Vex applies the provider's own default tolerance — size the position accordingly. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
@@ -125,6 +132,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.claim",
+    publicName: "solana__predict_claim",
     namespace: "solana",
     lifecycle: "active",
     description: "Claim winnings from a RESOLVED (settled) prediction position — the market has an outcome and this position won. Use solana.predict.sell instead to exit an OPEN position before resolution. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
@@ -139,6 +147,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.closeAll",
+    publicName: "solana__predict_close_all",
     namespace: "solana",
     lifecycle: "active",
     description: "Close every open prediction position for the wallet in one call — each position gets its own independent sell-or-claim (whichever applies) and its own broadcast result; a failure on one position never blocks or rolls back the others. Zero open positions is reported as an explicit success with zero rows, never an error. Every result is truthful-pending — this never confirms any position in this call. Use solana.predict.sell/.claim instead to close just ONE position.",
@@ -153,6 +162,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.event",
+    publicName: "solana__predict_event_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get ONE known prediction event by ID — pass includeMarkets to also fetch its nested markets (each with its own marketId for solana.predict.market). Use solana.predict.events to browse/list events, or solana.predict.search to find an event by keyword.",
@@ -168,6 +178,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.position",
+    publicName: "solana__predict_position_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get ONE prediction position's full detail by pubkey — open or resolved, contracts, payout, claimability. Use solana.predict.positions to list all of a wallet's open positions and find a pubkey.",
@@ -183,6 +194,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   // ── Pre-trade visibility & order tools (W1-D) ───────────────────
   {
     toolId: "solana.predict.orderbook",
+    publicName: "solana__predict_orderbook_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get bid/ask order-book depth for a prediction market — YES/NO price levels and sizes, beyond the top-of-book price solana.predict.market already returns. Depth is uncapped upstream and can be large for liquid markets. Fails with a clear error (never a silent empty book) when Jupiter's own upstream order-book data is temporarily unavailable.",
@@ -197,6 +209,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.tradingStatus",
+    publicName: "solana__predict_trading_status_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Check whether Jupiter Prediction Markets trading is currently active — call before placing an order.",
@@ -209,6 +222,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.orders",
+    publicName: "solana__predict_orders_list",
     namespace: "solana",
     lifecycle: "active",
     description: "List a wallet's prediction orders (buy/sell order lifecycle — pending/filled/failed, distinct from settled positions). No server-side status or market filter exists upstream — results are the owner's orders within the requested page, unfiltered beyond that. Use solana.predict.order or solana.predict.orderStatus for a single order by pubkey.",
@@ -225,6 +239,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.order",
+    publicName: "solana__predict_order_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a single prediction order by pubkey (from solana.predict.orders). Errors once the order account closes post-fill — use solana.predict.orderStatus instead for a lookup that survives closure.",
@@ -239,6 +254,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.orderStatus",
+    publicName: "solana__predict_order_status_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a prediction order's durable status and fill-event history (from solana.predict.orders) — survives order-account closure, unlike solana.predict.order.",
@@ -253,6 +269,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.trades",
+    publicName: "solana__predict_trades_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Browse the global Jupiter Prediction trade feed (all traders, all markets) — no owner/market scope upstream. Vex applies the requested limit/offset window client-side. Money fields (amountUsd, priceUsd) are exact-decimal USD strings with raw *Micro siblings.",
@@ -269,6 +286,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   // ── Discovery & social tools (W1-F) ─────────────────────────────
   {
     toolId: "solana.predict.profile",
+    publicName: "solana__predict_profile_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a trader's aggregate lifetime Jupiter Prediction stats — realized PnL, total volume, win/loss counts. Session-scoped: a walletAddress other than the session's selected wallet is REJECTED, so use solana.predict.leaderboards to compare other traders. Use solana.predict.pnlHistory instead for a PnL time series, or solana.predict.leaderboards to compare against other traders. Money fields (realizedPnlUsd, totalVolumeUsd, totalPositionsValueUsd) are exact-decimal USD strings with raw *Micro siblings.",
@@ -283,6 +301,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.pnlHistory",
+    publicName: "solana__predict_pnl_history_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get a wallet's realized-PnL TIME SERIES on Jupiter Prediction over an interval — use solana.predict.profile instead for a single lifetime snapshot rather than a series. realizedPnlUsd per data point is an exact-decimal USD string with a raw realizedPnlUsdMicro sibling. NOTE: as of 2026-07-24 the provider's pnl-history route is documented but returns 404 upstream for every wallet (a provider-side outage, not removal) — prefer solana.predict.profile until it is restored upstream.",
@@ -299,6 +318,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.leaderboards",
+    publicName: "solana__predict_leaderboard_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get ranked Jupiter Prediction traders by period and metric (PnL, volume, or win rate) — use solana.predict.profile instead for one trader's own stats rather than a ranked comparison. realizedPnlUsd/totalVolumeUsd fields are exact-decimal USD strings with raw *Micro siblings. Note: each row's winRatePct is unit-unconfirmed (no fixture/doc has confirmed its scale) — treat it as an unverified figure, not a settled percent.",
@@ -315,6 +335,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.vaultInfo",
+    publicName: "solana__predict_vault_get",
     namespace: "solana",
     lifecycle: "active",
     description: "Get the Jupiter Prediction protocol vault's on-chain public key and balance — protocol-level infrastructure state, not a personal wallet or position lookup. Takes no parameters.",
@@ -327,6 +348,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.suggestedEvents",
+    publicName: "solana__predict_suggested_events_list",
     namespace: "solana",
     lifecycle: "active",
     description: "Get personalized Jupiter Prediction event recommendations for ANY wallet address (not only your own). Use solana.predict.events/.search instead for an unpersonalized browse/keyword lookup.",
