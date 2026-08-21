@@ -42,21 +42,17 @@ beforeEach(() => {
 });
 
 describe("SessionWelcomeHero", () => {
-  it("renders the vx mark pair: white for chronos, brand color revealed only under the celeris theme attribute", () => {
+  it("renders the vx mark inline on currentColor ink - no theme-swapped image pair", () => {
+    // Owner QA round 3: the celeris welcome mark is BLACK, not brand blue.
+    // One inline SVG on `text-ink-primary` gives white over the chronos night
+    // photo and near-black on celeris from the same element - no img assets,
+    // no theme attribute variants, no JS theme read.
     const { container } = render(<SessionWelcomeHero />);
-    const marks = Array.from(container.querySelectorAll("img"));
-    expect(marks.map((img) => img.getAttribute("src"))).toEqual([
-      "/brand/vex-mark-white.svg",
-      "/brand/vex-mark-color.svg",
-    ]);
-    // Theme selection is pure CSS on the html attribute — the white mark
-    // hides under celeris, the color mark shows only there. No JS theme read.
-    expect(marks[0]?.className).toContain("[[data-vex-theme=celeris]_&]:hidden");
-    expect(marks[1]?.className).toContain("hidden");
-    expect(marks[1]?.className).toContain("[[data-vex-theme=celeris]_&]:block");
-    for (const mark of marks) {
-      expect(mark.getAttribute("aria-hidden")).toBe("true");
-    }
+    expect(container.querySelector("img")).toBeNull();
+    const markBox = container.querySelector('span[aria-hidden="true"]');
+    expect(markBox).not.toBeNull();
+    expect(markBox?.className).toContain("text-ink-primary");
+    expect(markBox?.querySelector("svg path")).not.toBeNull();
   });
 
   it("speaks the date in the micro-label eyebrow and keeps the honest preview disclosure as its tooltip", () => {
