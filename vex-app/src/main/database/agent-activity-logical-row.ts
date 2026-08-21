@@ -21,5 +21,6 @@ export const AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE = `aa.event_role IN (
           'yield_pt', 'yield_yt', 'yield_py',
           'yield_lp', 'yield_sy', 'yield_claim',
           'token_launch',
-          'pools_claim'
+          'pools_claim',
+          'wallet_transfer'
         )`;

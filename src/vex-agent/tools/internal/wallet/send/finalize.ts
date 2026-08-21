@@ -24,9 +24,18 @@ import { fail, failWith } from "./results.js";
  * `txHash` / `chain` / `status` are always present (both the EVM and Solana
  * executors emit them post-normalisation). `blockNumber` is EVM-specific and
  * `explorerUrl` is Solana-specific — included only when the executor supplied
- * a value of the right type. Everything else the executors carry (signature,
- * in/out token + amount, walletAddress) is deliberately dropped here; it stays
- * intact under `data._tradeCapture` for the sync/activity pipeline.
+ * a value of the right type. Everything else the executors carry
+ * (`_executionId`, `_explorerRefs`) is deliberately dropped from the
+ * model-visible `output` and stays under `data`.
+ *
+ * The durable record of a transfer is its own `agent_activity` row (migration
+ * 084), written by `send/activity-writer.ts` BEFORE the transaction is signed.
+ * It is NOT derived from anything in this projection. The `_tradeCapture` blob
+ * these executors used to emit claimed to feed "the sync/activity pipeline";
+ * that pipeline (`protocols/runtime/capture.ts`) never runs on the internal tool
+ * route, so nothing consumed it but `deriveExplorerRefs`. It was removed in 084
+ * and the explorer link now travels on the explicit `_explorerRefs` channel the
+ * failure arms below already use.
  */
 interface WalletSendOutput {
   readonly txHash: string;
@@ -66,8 +75,9 @@ function formatWalletSendOutput(
 /**
  * Metadata-only `data` payload attaching a coherent explorer ref for a
  * broadcast-but-failed transfer. `chain` is the SAME identity the confirmed
- * path's `_tradeCapture.chain` carries, so `deriveExplorerRefs` resolves both
- * paths identically. Model-invisible — it rides under `data`, never `output`.
+ * path's own `_explorerRefs` entry carries, so `deriveExplorerRefs` resolves
+ * both paths identically. Model-invisible - it rides under `data`, never
+ * `output`.
  */
 function explorerRefsData(
   chain: string,
@@ -199,9 +209,9 @@ async function finalizeConfirmed(
   }
 
   // Curate the operator-facing output: project to {txHash, chain, status,
-  // blockNumber?, explorerUrl?} instead of dumping the full capture (which
-  // would leak signature / token amounts / walletAddress into the transcript).
-  // `data` keeps the full payload — `_tradeCapture` stays intact for sync.
+  // blockNumber?, explorerUrl?} instead of dumping the executor's whole payload
+  // into the transcript. `data` keeps the rest - `_executionId` and
+  // `_explorerRefs`, both model-invisible.
   return {
     success: true,
     output: JSON.stringify(formatWalletSendOutput(outcome.txHash, outcome.data), null, 2),

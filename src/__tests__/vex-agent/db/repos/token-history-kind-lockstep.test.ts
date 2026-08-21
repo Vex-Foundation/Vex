@@ -78,6 +78,20 @@ const KIND_ADMISSION: Readonly<Record<string, string | null>> = {
    * feed, which is where a user looks for it.
    */
   claim: null,
+  /**
+   * `transfer` (migration 084) is NOT carried by the token history today,
+   * recorded here rather than fixed - the same wrap/claim precedent.
+   *
+   * A send genuinely touches one token, so it has a real claim to a place in
+   * that token's history. But this view's row predicate admits by kind and its
+   * `product_type` CASE has no arm for one, and what a one-legged outflow with
+   * no counterparty renders as in a per-token ledger (a sale? a balance
+   * adjustment? neither) is a product decision, not a mechanical addition.
+   * Guessing it would put a fabricated trade side on a user's token page. Left
+   * as a declared gap: the transfer IS visible in the Agent Scan feed and in the
+   * transactions feed, which is where a user looks for it.
+   */
+  transfer: null,
 };
 
 /** The row-inclusion predicate of the agent_activity half. */

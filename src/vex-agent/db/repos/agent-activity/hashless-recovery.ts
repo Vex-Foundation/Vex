@@ -155,6 +155,18 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // and it aborts before broadcasting. A launch can never be double-created by
   // this interaction.
   "token_launch",
+  // Migration 084 (agent wallet send). Signed LOCALLY through the wallet send
+  // executors' staged writer (`internal/wallet/send/activity-writer.ts`), on
+  // either chain family, and no wallet-side sweep owns a hashless row: the EVM
+  // repair sweep's candidate query requires `submit_attempted_at IS NOT NULL`,
+  // which only `markActivityBroadcast` sets.
+  //
+  // Safe for the same reason `token_launch` is, plus one specific to this lane:
+  // the transfer writer stages the hash BEFORE it submits the signed bytes, so
+  // `tx_hash IS NULL` on a transfer row is proof that nothing was ever sent to
+  // the network. A crash between intent creation and staging is reaped here
+  // instead of pinning the session's money state open forever.
+  "wallet_transfer",
 ];
 
 /**
