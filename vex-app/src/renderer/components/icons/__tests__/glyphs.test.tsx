@@ -26,7 +26,10 @@ describe("icon glyphs", () => {
     // retired; a drop below this floor means a call site lost its glyph.
     // Floor 81 -> 78 (R2-A, 2026-08-21): the starter-pill glyphs IconFlame,
     // IconPercent and IconRocket retired with their last consumer.
-    expect(entries.length).toBeGreaterThanOrEqual(78);
+    // 78 -> 77 (2026-08-21): the stroke-drawn IconPanelRightOpen/Close pair
+    // merged into one mirrored filled-outline IconPanelRight, so both rail
+    // toggles speak the same drawing language.
+    expect(entries.length).toBeGreaterThanOrEqual(77);
   });
 
   it.each(entries.map(([name]) => name))("%s renders per contract", (name) => {
