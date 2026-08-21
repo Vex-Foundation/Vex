@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced automatically when the conversation was compacted. Per-session only — does NOT reach earlier sessions. For durable cross-session lessons use `long_memory_search`. Use when you forgot what you tried earlier in this mission, want to avoid repeating a failed approach, or need to check past tool outcomes that no longer fit in the live transcript. Write SEMANTIC INTENT in English, not keywords (translate the user's intent first — embedding retrieval is significantly stronger on English). ✓ \"previous attempts to debug Kyber quote timeout and what we learned\" ✗ \"kyber\" ✓ \"wallet balance checks earlier in the mission and their outcomes\" ✗ \"balance\" Returns top-K chunks above the similarity threshold.",
+      "name": "session_memory_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "k": {
+            "description": "Max chunks to return (default 5, hard max 5).",
+            "type": "number"
+          },
+          "query": {
+            "description": "Semantic intent phrase in English (NOT keywords; translate the user's intent first). Write the way you would ask another expert who knows the mission.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {
+        "requiresSessionMemory": true
+      },
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

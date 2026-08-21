@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Create a token on Trench Express (Robinhood Chain 4663) FOR REAL — signs and broadcasts the on-chain create with the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's creation fee (read on-chain at signing time) and, if you set a prebuy, buys that much of the new token on its curve in the same transaction. Vex also charges 25 bps of that whole ETH amount (creation fee + prebuy) as a SEPARATE transfer that runs only after the launch confirms — price a launch with trench.launch_preview, which shows it and the fee-inclusive total. An image is REQUIRED and must already be in the locker. It runs ONLY under explicit authority, and which one depends on where you are: in a FULL-permission chat session the user's permission is the authority and this executes directly; in a RESTRICTED session it refuses BY NAME and you must call trench.launch_request_form instead — that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the contract's HOST-authored launch ceilings (max launch value, max launch count), which you cannot write, and while a contract carries none this tool REFUSES BY NAME — report that refusal and tell the user to set them on the contract card rather than launching some other way.",
+      "name": "trench__launch_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "Optional token description (max 512 chars).",
+            "type": "string"
+          },
+          "imageId": {
+            "description": "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench.images). A token's image is written on-chain at creation and can never be added later, so a launch without one is refused.",
+            "type": "string"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Optional 0-4 social links, each an https URL (comma-separated or array)."
+          },
+          "name": {
+            "description": "Token name (1-18 chars) — the chain reverts a longer one.",
+            "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional amount of ETH to spend buying the new token on its own curve in the SAME transaction, as a plain decimal (for example \"0.0003\"). Omit or \"0\" for no prebuy.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Token symbol/ticker (1-16 chars).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol",
+          "imageId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "trench",
+    "requiresEnv": null,
+    "toolId": "trench.launch_execute"
+  }
+}

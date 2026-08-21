@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a discovered protocol tool. Example: {\"toolId\":\"dexscreener.search\",\"params\":{\"query\":\"VEX\",\"chainIds\":\"base\"}} Contract: - `toolId` must come from `discover_tools` (same session). Long-memory recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover. - `params` must match the tool's manifest schema — types, required fields, and value formats as returned by discover (build the call from the `params` schema). - Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes. A preview / dryRun variant is a READ: it needs no approval and is safe for iterative planning. Everything mutating needs approval — there is no approval-free mutation. - On error, diagnose and adapt — do not retry the same call in a tight loop. Present the error and next step to the user or the mission loop.",
+      "name": "execute_tool",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "params": {
+            "description": "Parameters matching the tool's manifest (fields, types). Build the call from the `params` schema returned by discover_tools.",
+            "type": "object"
+          },
+          "toolId": {
+            "description": "Protocol tool ID from discover_tools (e.g. 'dexscreener.trending', 'kyberswap.swap.execute'). Must come from a discover_tools result in this session — never from memory, examples, or guesswork.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolId",
+          "params"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": false
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": true,
+    "withheldFromModelSurface": true
+  }
+}

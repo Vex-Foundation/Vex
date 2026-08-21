@@ -1,0 +1,75 @@
+{
+  "definition": {
+    "function": {
+      "description": "Preview a cross-chain bridge via Relay WITHOUT executing — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route, or the Khalani deposit transaction reverting on-chain for this exact route (or for a Robinhood-Chain route, always available). Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports). Call this BEFORE bridge_execute_relay: a fresh matching quote on Relay is what unlocks execution.",
+      "name": "bridge_quote_relay",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "type": "string"
+          },
+          "fromChain": {
+            "description": "Source chain ID or alias.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address, or native ETH/native.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient override (defaults to your dest-chain wallet).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points for the destination-side fill (1 bps = 0.01%). Higher tolerance widens the worst-case received amount on the destination chain. When a bridge quote fails or fills keep expiring, re-quote with a higher value rather than retrying the same one. Vex caps it at 1000 (10%) and rejects anything above rather than clamping.",
+            "type": "number"
+          },
+          "toChain": {
+            "description": "Destination chain ID or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address, or native ETH/native.",
+            "type": "string"
+          },
+          "tradeType": {
+            "description": "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": true,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

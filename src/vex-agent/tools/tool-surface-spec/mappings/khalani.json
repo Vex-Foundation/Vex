@@ -1,0 +1,50 @@
+{
+  "namespace": "khalani",
+  "entries": [
+    {
+      "toolId": "khalani.chains.list",
+      "publicName": "khalani__chains_list",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "khalani.tokens.top",
+      "publicName": "khalani__tokens_top_list",
+      "rationale": "Verb normalization: `top` is a qualifier, not a verb, so the canonical listing verb moves last and the resource group prefix `tokens_` is preserved. Ranking is kept in the name because the tool returns the provider's top-token ranking, not an arbitrary page of tokens."
+    },
+    {
+      "toolId": "khalani.tokens.search",
+      "publicName": "khalani__tokens_search",
+      "rationale": "mechanical; `search` is already the canonical free-text verb and this tool takes a free-text `query`."
+    },
+    {
+      "toolId": "khalani.tokens.autocomplete",
+      "publicName": "khalani__tokens_autocomplete",
+      "rationale": "Kept as a non-canonical verb on purpose. It is semantic keyword completion over a `keyword` param ('100 usdc on ethereum'), a different operation from `khalani.tokens.search`; folding it to `search` would collide with khalani__tokens_search and erase a real capability. Proposed as an approved extension verb, see protocol-naming-2.md."
+    },
+    {
+      "toolId": "khalani.tokens.balances",
+      "publicName": "khalani__token_balances_get",
+      "rationale": "Resource renamed from the `tokens.` group to `token_balances`: the tool reads one wallet's balances, not the token catalogue. `get` rather than `list` because it is a per-wallet read with no pagination contract."
+    },
+    {
+      "toolId": "khalani.quote.get",
+      "publicName": "khalani__bridge_quote_get",
+      "rationale": "Semantic rename. The bare `quote` resource never said what is being quoted; this is exclusively a cross-chain bridge quote and it pairs with khalani__bridge_execute. Matches relay__bridge_quote_get so the two bridge venues read identically."
+    },
+    {
+      "toolId": "khalani.orders.list",
+      "publicName": "khalani__orders_list",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "khalani.orders.get",
+      "publicName": "khalani__order_get",
+      "rationale": "Singular resource for detail-by-id, plural for the listing. The singular/plural rule is the catalog-wide signal that separates a by-id read from a bounded listing (see the pools.token vs pools.tokens near-typo pair)."
+    },
+    {
+      "toolId": "khalani.bridge",
+      "publicName": "khalani__bridge_execute",
+      "rationale": "Adds the missing verb to a fund-moving tool. `khalani.bridge` broadcasts an origin-chain deposit (actionKind user_wallet_broadcast, manifest.ts:186-187) but its name reads like a resource; `_execute` matches kyberswap__swap_execute and relay__bridge_execute so every broadcasting tool in the catalog ends in a mutation verb."
+    }
+  ]
+}

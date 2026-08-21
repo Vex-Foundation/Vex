@@ -1,0 +1,13 @@
+{
+  "definition": null,
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": false,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "uniswap",
+    "requiresEnv": null,
+    "toolId": "uniswap.swap.execute"
+  }
+}

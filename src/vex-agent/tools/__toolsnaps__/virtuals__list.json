@@ -1,0 +1,79 @@
+{
+  "definition": {
+    "function": {
+      "description": "List Virtuals Protocol agent tokens on ONE chain (base, solana, robinhood, or ethereum). Concise rows: name, symbol, status (UNDERGRAD bonding-curve vs graduated AVAILABLE, with a warning flag on UNDERGRAD), token/preToken/LP addresses, holderCount, top10HolderPercentage, mcapInVirtual (denominated in the VIRTUAL token, NOT USD), volume24h, priceChangePercent24h, isVerified (anti-impersonation badge only), the anti-sniper buy-tax window, ageDays, and verified socials. Filter status client-side (undergrad|graduated|all) and order with sortBy: mcap, volume, newest, or recentGraduation (sort is accepted as an alias). WINDOWED: a chain holds tens of thousands of agents, so this reads a BOUNDED slice — up to 5 pages of pageSize rows from page — and every reply carries a windowNote naming the exact slice searched. An empty result is a statement about that window, never about the chain. Because status is filtered after the fetch, a status the sort buries needs the matching sort or a later page: UNDERGRAD agents have low market caps and do not appear near the top of an mcap sort — use sortBy: newest. Every unrecognised value (status, sortBy, limit, page, pageSize) is REJECTED by name rather than clamped. Read-only. Provide at most one of: sortBy, sort.",
+      "name": "virtuals__list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `token_find` returns (e.g. `base` or `8453`).",
+            "enum": [
+              "base",
+              "solana",
+              "robinhood",
+              "ethereum"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max agents to return after filtering (default 20, max 100). Paging stops once this many rows match. Out of range is rejected, not clamped.",
+            "type": "number"
+          },
+          "page": {
+            "description": "1-based FIRST provider page of the window (default 1). The reply's windowNote names the next page to continue from.",
+            "type": "number"
+          },
+          "pageSize": {
+            "description": "Rows fetched per provider page (default 100, max 200 — the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
+            "type": "number"
+          },
+          "sort": {
+            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both — a silently dropped spelling is indistinguishable from one that was honoured.",
+            "enum": [
+              "mcap",
+              "volume",
+              "newest",
+              "recentGraduation"
+            ],
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status — sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
+            "enum": [
+              "mcap",
+              "volume",
+              "newest",
+              "recentGraduation"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "description": "Client-side status filter applied to the fetched window: undergrad (bonding curve), graduated (AVAILABLE), or all (default). An unrecognised value is rejected, not ignored.",
+            "enum": [
+              "undergrad",
+              "graduated",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.list"
+  }
+}

@@ -20,6 +20,7 @@
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
 import { getActionKind } from "./registry.js";
+import { resolveToolName } from "./registry/name-resolution.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
@@ -75,10 +76,33 @@ function withActionKindFallback(result: ToolResult, toolName: string): ToolResul
  * Never throws — errors are caught and returned as failed results.
  */
 export async function dispatchTool(
-  call: ToolCallRequest,
+  request: ToolCallRequest,
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const startTime = Date.now();
+
+  // ── Deprecation-alias resolution, BEFORE every gate ──
+  // A retired INTERNAL tool name is mapped to its canonical name here so the
+  // `execute_tool` refusal, the pressure band, the plan-acceptance gate, the
+  // mutating/auto-retry classification, routing and the `actionKind` fallback
+  // all see ONE name, the identity, and can never disagree about which tool
+  // this call is. This is also what makes a COLD APPROVAL RESUME safe across a
+  // rename: `dispatch-approved.ts` re-enters here with the name stored in
+  // `approval_queue.tool_call`, which may predate the rename.
+  //
+  // A retired PROTOCOL name is deliberately NOT rewritten here. Its identity is
+  // the immutable dotted toolId, not a name, and it is resolved to its manifest
+  // by the shared catalog resolver that every gate below already consults
+  // (`registry/injected-protocol-tools.ts`). See `registry/name-resolution.ts`
+  // for why the two identity spaces have separate lookups.
+  //
+  // The request object is passed through UNCHANGED when nothing resolves, so
+  // under the Batch 1 empty table this line is byte-for-byte inert. Resolution
+  // is single-hop and idempotent, so the boundaries downstream that resolve
+  // again are consistent with this one.
+  const resolvedName = resolveToolName(request.name);
+  const call: ToolCallRequest =
+    resolvedName === request.name ? request : { ...request, name: resolvedName };
 
   // `execute_tool` is closed to the MODEL. Discovered manifests are injected as
   // real functions the model calls by their own name, so the two-level envelope

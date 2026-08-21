@@ -1,0 +1,67 @@
+{
+  "definition": {
+    "function": {
+      "description": "Semantic recall over LONG-TERM, cross-session memory — durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out. Hides its retrieval strategy: it blends promoted long-term entries (source:'long_memory') with FRESH un-consolidated signals from this and recent sessions (source:'memory_candidate', notConsolidated:true). A confirmed long-term lesson always outranks a fresh candidate at equal relevance; a much stronger fresh match can still surface. Treat notConsolidated results as soft hints, never as established fact. Write SEMANTIC INTENT in English, not keywords (embedding retrieval is significantly stronger on English; translate the user's intent first). ✓ 'user trading risk preferences and position sizing rules' ✗ 'risk'. Returns only active, non-expired memory. response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use long_memory_get on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
+      "name": "long_memory_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "expand_graph": {
+            "description": "Knowledge-graph expansion (default true): 1-hop graph neighbors of the top direct hits fill the REMAINING inline slots, marked via_graph(entity) and always scored below the direct result they came from. Set false to disable.",
+            "type": "boolean"
+          },
+          "include_candidates": {
+            "description": "Include fresh un-consolidated dual-trace signals (default true). Set false to see only promoted long-term entries.",
+            "type": "boolean"
+          },
+          "k": {
+            "description": "Max results to consider (default 8, hard max 15). The response is still capped to the inline limit.",
+            "type": "number"
+          },
+          "kind": {
+            "description": "Optional exact kind filter (free-form snake_case, e.g. trade_lesson, risk_rule, user_preference, protocol_fact). Omit to search across all kinds.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Semantic intent in English (translate the user's intent first). Write the way you'd ask an expert who shares your memory; 1-512 chars.",
+            "type": "string"
+          },
+          "response_format": {
+            "description": "concise (default) → id/title/scores; detailed → adds summary, content, tags, maturity, source tier, evidence.",
+            "enum": [
+              "concise",
+              "detailed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

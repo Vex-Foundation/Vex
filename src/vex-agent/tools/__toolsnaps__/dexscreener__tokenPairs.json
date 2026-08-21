@@ -1,0 +1,217 @@
+{
+  "definition": {
+    "function": {
+      "description": "List and shortlist the DexScreener-indexed pools for ONE exact token on a chain, sorted by USD liquidity within the provider window. This is research, not an executable routing or price decision: obtain a fresh quote from the actual venue before trading. Returns concise pair rows including pairAddress, requestedTokenSide, and requestedTokenPriceUsd. Raw priceUsd always prices the pair's base token; requestedTokenPriceUsd is normalized for the requested token whether it appears on the base or quote side. The envelope reports a cross-pool sanity check computed over the FULL provider window: requestedTokenPriceUsdMedianAcrossPools (the requested token's median price), pricePoolOutliers, and per-row priceSanity (ok | outlier_vs_pool_median | unknown; unknown means the price could not be proven, never that it is wrong). Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time. Use dexscreener.pairs for a known pool's research metrics. Returns 15 sorted rows by default and exposes the rest through hasMore and offset. The provider selects at most 30 pools per token, in unspecified order — an observed cap, not a documented one - high-pool-count tokens come back truncated with no way to widen. Vex then sorts that bounded window (by USD liquidity by default) and applies every filter and window; no server-side filter, sort, limit or pagination exists.",
+      "name": "dexscreener__tokenPairs",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The chain this pool/token lives on, as a DexScreener chain slug (e.g. ethereum, base, solana, bsc, arbitrum, robinhood). Chain slug/alias, or the numeric chain id `token_find` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "dexIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated venue slugs to keep, matched case-insensitively. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. Applied by Vex to the at most 30 rows DexScreener returned — it cannot reach rows outside that window. 52 distinct values observed and 4 of them are raw contract addresses for unnamed venues, so an unrecognised value is not necessarily a mistake."
+          },
+          "excludeDexIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated venue slugs to drop, matched case-insensitively. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. Applied by Vex to the at most 30 rows DexScreener returned — it cannot reach rows outside that window."
+          },
+          "explainDrops": {
+            "description": "Also emit droppedRows[]: at most 10 rejected rows, each carrying the FIRST filter that rejected it, that row's own value, and the threshold you passed — which answers 'missed by 0.1 or by 100x?' in the same call. droppedByFilter stays the full census; this is a sample, and droppedRowsTruncated states whether more were dropped than shown. providerRowIndex is the row's 0-based position in THIS response before filtering. It is deterministic inside this answer and NOT stable across calls, since DexScreener re-chooses its window every time. rowId carries the row's own identifier — a pool address, a listed-asset address, or a narrative slug — and that is the value worth keeping. Off by default, and it costs nothing when off.",
+            "type": "boolean"
+          },
+          "fields": {
+            "description": "Comma-separated extra output fields, ADDED to the default lean row (identity is never projected away). Use 'full' for every field — that is also how to discover the names, since a misspelled one is rejected with the complete accepted list. Opt-in covers the market-cap and FDV figures, the reserve amounts on each side of the pool, every individual m5/h1/h6/h24 window, the info/social flags, the DexScreener link, and the issuer-authored display names — which are the single most expensive field in this API (one live pool's name is 34,090 characters).",
+            "type": "string"
+          },
+          "includeAllWindows": {
+            "description": "Emit all four windows of volume, txns, price change, buy/sell ratio and turnover on every row instead of just the selected one (adds roughly 250 B per row).",
+            "type": "boolean"
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated pool-variant tags to keep, matched case-insensitively because the provider emits both V2 and v2. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. Observed: v1 v2 v3 v4 V0.5 CLMM CPMM DLMM DYN DYN2 tri wp. Undocumented set; it may grow."
+          },
+          "limit": {
+            "description": "Max rows to return (1-200). Core tools apply an agent-safe default stated in their tool description and echo it in filtersApplied.limit; use offset to read the rest of the same at-most-30-row provider window. 0 is rejected because it cannot mean both 'none' and 'all'.",
+            "type": "number"
+          },
+          "maxBuySellRatio": {
+            "description": "Keep rows whose buys / sells in the selected `window` is at or below this. Read it back as buySellRatio<Window>.",
+            "type": "number"
+          },
+          "maxFdvUsd": {
+            "description": "Keep rows whose fdvUsd is at or below this.",
+            "type": "number"
+          },
+          "maxLiquidityUsd": {
+            "description": "Keep rows whose liquidityUsd is at or below this.",
+            "type": "number"
+          },
+          "maxMarketCapUsd": {
+            "description": "Keep rows whose marketCapUsd is at or below this.",
+            "type": "number"
+          },
+          "maxPairAgeSeconds": {
+            "description": "Keep pools whose pairAgeSeconds is at or below this, computed from pairCreatedAt against asOfMs. pairCreatedAt is absent on about 9% of rows and those rows are EXCLUDED and counted in droppedByFilter.unknownAge. How fresh a pool you can reach at all depends on the entry point: arriving via dexscreener.profiles.recent, a 5-minute-old pool has been observed (4 samples - a proven floor, not a typical value) - and the window's HORIZON is just as bounded: one live 30-row window's oldest reachable row measured about 85 minutes, so a feed sweep is a sample of a narrow live window, never a survey of 'the last N hours' - whereas dexscreener.search returns established pools by its own relevance and will not surface them. DexScreener publishes no new-pair stream and every response is edge-cached about 30s, so nothing here is real-time. And there is no category field anywhere in this API: pair age, turnover, venue and whether socials exist are the only proxies available, and none of them means 'memecoin'.",
+            "type": "number"
+          },
+          "maxPriceChangePct": {
+            "description": "Keep rows whose priceChangePctSelected is at or below this, already in percent. May be negative.",
+            "type": "number"
+          },
+          "maxTurnoverRatio": {
+            "description": "Keep rows whose turnoverRatioH24 is at or below this.",
+            "type": "number"
+          },
+          "maxVolumeUsd": {
+            "description": "Keep rows whose volumeUsdSelected is at or below this.",
+            "type": "number"
+          },
+          "minBuySellRatio": {
+            "description": "Keep rows whose buys / sells in the selected `window` is at least this — emitted only per window, as buySellRatio<Window> (e.g. buySellRatioH24), never as a *Selected field. Rows with zero sells have no ratio and are dropped rather than treated as infinite. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minFdvUsd": {
+            "description": "Keep rows whose fdvUsd is at least this. Fake when the pool's price is fake. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minLiquidityUsd": {
+            "description": "Keep rows whose liquidityUsd is at least this. WARNING: USD liquidity is derived from a price the pool itself sets and can be fabricated — measured on one live search, 13 of 30 rows reported over $1M while holding fewer than 1,000 quote tokens, the worst $1.63B against 59.72. Pair this with minTurnoverRatio or minQuoteDepthTokens. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minMarketCapUsd": {
+            "description": "Keep rows whose marketCapUsd is at least this. Measured, market cap equals FDV on 58% of rows, which means circulating supply is UNKNOWN rather than fully circulating — request the marketCapEqualsFdv field to see which rows those are. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minPairAgeSeconds": {
+            "description": "Keep pools whose pairAgeSeconds is at least this. Rows with no pairCreatedAt are excluded and counted in droppedByFilter.unknownAge. Whole number.",
+            "type": "number"
+          },
+          "minPriceChangePct": {
+            "description": "Keep rows whose priceChangePctSelected is at least this, ALREADY IN PERCENT (1.08 = +1.08%). May be negative. Unlike the USD floors, 0 is a real threshold here ('flat or up'), not a no-op.",
+            "type": "number"
+          },
+          "minQuoteDepthTokens": {
+            "description": "Keep rows whose liquidityQuoteTokens is at least this — QUOTE TOKENS, not USD. Request liquidityQuoteTokens in `fields` and the number itself comes back. The pool's real exit liquidity, in the quote asset's own units (quoteSymbol names it). Priced at the quote token's independent value, this is the one depth number a pool cannot inflate by mispricing itself. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minTurnoverRatio": {
+            "description": "Keep rows whose turnoverRatioH24 (24h volume divided by USD liquidity) is at least this. The cheapest real defence against fabricated depth: a genuine Ethereum WETH/USDC pool measured about 0.22, an impostor reporting $1.63B measured 0.00013. INVERSION ON DEEP POOLS: the canonical $20M PEPE/WETH pool measured 0.018 - deep blue-chip pools legitimately sit far below thresholds that catch impostors, so this filter can delete exactly the genuine token. Pair it with explainDrops and read droppedByFilter before concluding anything from an empty result. Rows where either input is missing are dropped and counted in droppedByFilter. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minTxnCount": {
+            "description": "Keep rows with at least this many buys + sells in the selected `window`. Vex computes the sum and does NOT emit it as one field — request txnBuyCount<Window> and txnSellCount<Window> (e.g. txnBuyCountH24) in `fields`, which carry the two parts. Whole number. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minVolumeUsd": {
+            "description": "Keep rows whose volumeUsdSelected is at least this — USD traded in the selected `window`. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip this many rows of the SAME provider window (default 0). It cannot reach rows beyond DexScreener's 30 — there is no pagination.",
+            "type": "number"
+          },
+          "onlyBoosted": {
+            "description": "Keep only rows with an active paid boost. Nearly useless over pair rows — measured on 1 of 489 — use dexscreener.boosts or dexscreener.ads for paid-visibility feeds.",
+            "type": "boolean"
+          },
+          "quoteSymbols": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated quote-asset symbols to keep (e.g. USDC,USDT,WETH,SOL), matched case-insensitively. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent."
+          },
+          "requireLiquidityUsd": {
+            "description": "Keep only rows that carry a USD liquidity figure. Pre-graduation bonding-curve pools (measured: every pumpfun row in a live 20-row batch, 9 of 20) legitimately report liquidityUsd: null - null means UNKNOWN reserves, not zero - and turnoverRatioH24 is null with it, so liquidity-based sorting and the turnover defence are unavailable on exactly those rows. Dropped rows are counted in droppedByFilter.requireLiquidityUsd.",
+            "type": "boolean"
+          },
+          "requirePriceUsd": {
+            "description": "Keep only rows that carry a USD price.",
+            "type": "boolean"
+          },
+          "requireSocials": {
+            "description": "Keep only rows with at least one social link. The provider's info block is present on only 67% of rows, so a row with no info block is UNKNOWN rather than social-less — it is dropped, because the flag asks us to prove presence.",
+            "type": "boolean"
+          },
+          "requireWebsite": {
+            "description": "Keep only rows with at least one website. Same unknown-is-dropped rule as requireSocials.",
+            "type": "boolean"
+          },
+          "sortBy": {
+            "description": "relevance | liquidityUsd | volumeUsd | turnoverRatio | marketCapUsd | fdvUsd | pairAgeSeconds | priceChangePct | txnCount | buySellRatio. 'relevance' means 'as DexScreener returned' — its order is neither a ranking nor stable. Sorting cannot recover a pool outside the 30-row window.",
+            "type": "string"
+          },
+          "sortDir": {
+            "description": "desc (default) or asc. Rows whose sort metric is unknown always sort last.",
+            "type": "string"
+          },
+          "tokenAddress": {
+            "description": "Token contract address.",
+            "type": "string"
+          },
+          "window": {
+            "description": "m5 | h1 | h6 | h24 (default h24). Selects the window behind volumeUsdSelected, priceChangePctSelected and the volume/txn/price-change filters. Measured coverage: volume and txns carry all four windows on 100% of rows, but priceChange carries m5 on only 31% of rows, h1 61%, h6 74%, h24 87% — a price-change filter has nothing to compare on the rest, and drops them.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.tokenPairs"
+  }
+}

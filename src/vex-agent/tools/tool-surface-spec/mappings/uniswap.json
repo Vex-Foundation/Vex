@@ -1,0 +1,15 @@
+{
+  "namespace": "uniswap",
+  "entries": [
+    {
+      "toolId": "uniswap.swap.quote",
+      "publicName": "uniswap__swap_quote",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "uniswap.swap.execute",
+      "publicName": "uniswap__swap_execute",
+      "rationale": "mechanical"
+    }
+  ]
+}

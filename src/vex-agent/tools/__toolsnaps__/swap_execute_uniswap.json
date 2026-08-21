@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a REAL on-chain token swap on Uniswap (spends funds, broadcasts a signed transaction) — the KyberSwap fallback venue. Only usable after a KyberSwap failure revealed it for this session. REQUIRES a fresh matching swap_quote_uniswap FIRST on the SAME venue. EVM ONLY. `amountIn` is the HUMAN decimal of tokenIn. Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+      "name": "swap_execute_uniswap",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount of tokenIn to swap, in HUMAN decimal units (e.g. \"1.5\"). Not wei.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "EVM chain to swap on (ethereum, base, arbitrum, robinhood, …) — Uniswap ONLY, no venue routing. Solana is NOT supported by this tool.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token — the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token — the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {
+        "requiresUniswapReveal": true
+      },
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": true,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

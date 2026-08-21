@@ -1,0 +1,150 @@
+{
+  "namespace": "pendle",
+  "entries": [
+    {
+      "toolId": "pendle.yields",
+      "publicName": "pendle__markets_discover",
+      "rationale": "Semantic rename to the catalog-wide screening name. The tool screens Pendle MARKETS by chain, liquidity, implied APY, expiry window, maturity, underlying, category and flags, sorts and pages them; `yields` names one of its returned columns rather than the thing it returns. morpho.markets.discover is the same operation on the other lending protocol and the two now match, which is what makes cross-protocol routing readable to the model."
+    },
+    {
+      "toolId": "pendle.position.value",
+      "publicName": "pendle__positions_get",
+      "rationale": "Plural and verb corrected. The tool values EVERY Pendle leg the session wallet holds on every chain, so the singular `position` was wrong, and `value` is what it returns rather than an action on a resource. Aligns with morpho__positions_get."
+    },
+    {
+      "toolId": "pendle.market.get",
+      "publicName": "pendle__market_get",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "pendle.market.history",
+      "publicName": "pendle__market_history_get",
+      "rationale": "Verb added; one market's bounded time series, addressed by chain plus market address."
+    },
+    {
+      "toolId": "pendle.market.candles",
+      "publicName": "pendle__market_candles_get",
+      "rationale": "Verb added; OHLCV for ONE asset over a bounded window."
+    },
+    {
+      "toolId": "pendle.orderbook",
+      "publicName": "pendle__market_orderbook_get",
+      "rationale": "Resource group made explicit. The toolId is flat but the tool is chain+market scoped exactly like the other three market reads, and grouping it under `market_` puts the four together in a sorted namespace listing."
+    },
+    {
+      "toolId": "pendle.rewards.merkle",
+      "publicName": "pendle__merkle_rewards_list",
+      "rationale": "Resource/verb order fixed and the qualifier moved onto the noun. `merkle` is the kind of reward, not an action on rewards. `list` because the read enumerates every accrued reward token for the session wallet. Deliberately NOT named `rewards_get`, so it never reads as the counterpart of a claim: the description states Vex can never claim these (no merkle proof is published)."
+    },
+    {
+      "toolId": "pendle.prices.assets",
+      "publicName": "pendle__asset_prices_get",
+      "rationale": "Segment order inverted so the noun phrase reads correctly (asset prices, not prices-of-kind-assets) and a verb added. `get` fits both call shapes: named ids, or a paged sweep of one chain."
+    },
+    {
+      "toolId": "pendle.pt.quote",
+      "publicName": "pendle__pt_quote",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "pendle.pt.buy",
+      "publicName": "pendle__pt_buy",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.pt.sell",
+      "publicName": "pendle__pt_sell",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.pt.redeem",
+      "publicName": "pendle__pt_redeem",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.pt.rollover",
+      "publicName": "pendle__pt_rollover",
+      "rationale": "mechanical snake_case conversion; the PT-to-PT term-mobility move stays its own name because it is one transaction with one approval, not a sell plus a buy"
+    },
+    {
+      "toolId": "pendle.yt.quote",
+      "publicName": "pendle__yt_quote",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "pendle.yt.buy",
+      "publicName": "pendle__yt_buy",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.yt.sell",
+      "publicName": "pendle__yt_sell",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.py.quote",
+      "publicName": "pendle__py_quote",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "pendle.py.mint",
+      "publicName": "pendle__py_mint",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.py.redeem",
+      "publicName": "pendle__py_redeem",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.lp.quote",
+      "publicName": "pendle__lp_quote",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "pendle.lp.add",
+      "publicName": "pendle__lp_add",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.lp.remove",
+      "publicName": "pendle__lp_remove",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.lp.removeDual",
+      "publicName": "pendle__lp_remove_dual",
+      "rationale": "mechanical snake_case conversion of the camelCase segment; kept separate from lp_remove because it delivers two legs under two independent minimums"
+    },
+    {
+      "toolId": "pendle.lp.addKeepYt",
+      "publicName": "pendle__lp_add_keep_yt",
+      "rationale": "mechanical snake_case conversion of the camelCase segment; kept separate from lp_add because the YT disposition differs and the approval binds two output legs"
+    },
+    {
+      "toolId": "pendle.lp.transfer",
+      "publicName": "pendle__lp_transfer",
+      "rationale": "mechanical snake_case conversion. Name flagged in the doc: `transfer` reads as a wallet-to-wallet send, which this is not, but a rename is a description-wave decision and is recorded as a proposal rather than executed here."
+    },
+    {
+      "toolId": "pendle.lp.toPt",
+      "publicName": "pendle__lp_to_pt",
+      "rationale": "mechanical snake_case conversion of the camelCase segment"
+    },
+    {
+      "toolId": "pendle.sy.mint",
+      "publicName": "pendle__sy_mint",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.sy.redeem",
+      "publicName": "pendle__sy_redeem",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "pendle.claim",
+      "publicName": "pendle__rewards_claim",
+      "rationale": "Resource added to a flat toolId. The bare `claim` does not say what is claimed, and the namespace holds a second, non-claimable reward surface (pendle.rewards.merkle). Naming this one `rewards_claim` pairs it with `merkle_rewards_list` and matches morpho__rewards_claim."
+    }
+  ]
+}

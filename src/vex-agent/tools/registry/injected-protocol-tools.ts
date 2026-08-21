@@ -33,6 +33,7 @@ import {
 import { paramsToJsonSchema } from "./khalani.js";
 import { describeParamGroupConstraints } from "../protocols/runtime/params.js";
 import { getDiscoveredToolIds } from "./discovered-tools.js";
+import { resolveDeprecatedProtocolToolId } from "./name-resolution.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
 import type { ToolVisibilityContext } from "./visibility.js";
 
@@ -68,8 +69,27 @@ export function fromInjectedToolName(name: string): string {
  * the name is not an injected protocol tool (an internal tool, a typo, or a
  * hallucinated id). Callers MUST use the returned manifest — not the name —
  * for every gating decision.
+ *
+ * CATALOG-SELECTION BOUNDARY (approved plan section 5.5). This is the ONE
+ * name-to-manifest resolver, so every consumer reaches the SAME manifest
+ * whichever spelling it was handed: the plan-acceptance gate,
+ * `dispatchTargetIsMutating`, the approval preview, the approval envelope, and
+ * a future ToolSearch `select:` mode.
+ *
+ * A RETIRED name is answered from the alias table, which STATES the immutable
+ * dotted toolId. It is never answered by inverting the name. Inversion is
+ * correct only for today's mechanical projection, where every dot became a
+ * double underscore; under the target grammar (exactly one double underscore,
+ * at the namespace boundary) `kyberswap__swap_quote` would invert to
+ * `kyberswap.swap_quote` rather than the immutable `kyberswap.swap.quote`, and
+ * a fund-moving call would resolve onto a different tool or onto none at all.
+ * The alias branch below therefore short-circuits before `fromInjectedToolName`
+ * is reached, leaving the inversion to serve only live canonical names under
+ * today's grammar.
  */
 export function resolveInjectedProtocolTool(name: string): ProtocolToolManifest | undefined {
+  const aliasedToolId = resolveDeprecatedProtocolToolId(name);
+  if (aliasedToolId !== undefined) return getProtocolManifest(aliasedToolId);
   if (!isInjectedToolNameShape(name)) return undefined;
   return getProtocolManifest(fromInjectedToolName(name));
 }

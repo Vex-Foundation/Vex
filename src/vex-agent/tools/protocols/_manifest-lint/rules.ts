@@ -18,6 +18,10 @@ export type ManifestLintRule =
   | "amount-bps-shape"
   | "param-description"
   | "tool-description"
+  // Internal `ToolDef` descriptions, classified by ActionKind rather than by
+  // the loose `mutating` boolean. Own rules module + own allowlist:
+  // `_manifest-lint/internal-description-rules.ts`.
+  | "internal-tool-description"
   | "example-params-required"
   | "generic-error-literal"
   | "slippage-default-home"

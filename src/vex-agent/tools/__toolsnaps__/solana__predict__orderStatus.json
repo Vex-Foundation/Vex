@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get a prediction order's durable status and fill-event history (from solana.predict.orders) — survives order-account closure, unlike solana.predict.order.",
+      "name": "solana__predict__orderStatus",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderPubkey": {
+            "description": "Order public key (from solana.predict.orders).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderPubkey"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.orderStatus"
+  }
+}

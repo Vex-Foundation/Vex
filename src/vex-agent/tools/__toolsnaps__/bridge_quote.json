@@ -1,0 +1,79 @@
+{
+  "definition": {
+    "function": {
+      "description": "Preview a cross-chain bridge WITHOUT executing — routes, pricing, fees, and ETA. Auto-routes by chain: Khalani between its supported chains; Relay to/from Robinhood Chain (which Khalani doesn't cover). Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports), matching the underlying bridge quote. Read-only.",
+      "name": "bridge_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "type": "string"
+          },
+          "filler": {
+            "description": "Restrict quotes to a specific filler.",
+            "type": "string"
+          },
+          "fromAddress": {
+            "description": "Source wallet address override.",
+            "type": "string"
+          },
+          "fromChain": {
+            "description": "Source chain ID or alias.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient override.",
+            "type": "string"
+          },
+          "toChain": {
+            "description": "Destination chain ID or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address.",
+            "type": "string"
+          },
+          "tradeType": {
+            "description": "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

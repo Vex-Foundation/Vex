@@ -1,0 +1,50 @@
+{
+  "namespace": "pools",
+  "entries": [
+    {
+      "toolId": "pools.tokens",
+      "publicName": "pools__tokens_discover",
+      "rationale": "Adds the canonical screening verb. The tool filters and ranks launchpad tokens and echoes the filters it applied (manifests/tokens.ts, tokens-params.ts), which is `discover`. It also breaks the pools.token / pools.tokens near-typo pair, see protocol-naming-2.md."
+    },
+    {
+      "toolId": "pools.token",
+      "publicName": "pools__token_get",
+      "rationale": "Near-typo resolution and canonical by-id verb. `pools.token` and `pools.tokens` differ by one character while doing entirely different things; the singular resource plus `get` now states the by-address detail read (api group joined with on-chain state at a pinned block, manifests/token.ts:11-16)."
+    },
+    {
+      "toolId": "pools.search",
+      "publicName": "pools__tokens_search",
+      "rationale": "Regrouped under the resource it searches, symmetric with trench__tokens_search. Free-text name or symbol lookup over the same token rows pools__tokens_discover returns (manifests/search.ts:11-16), with a cursor continuation."
+    },
+    {
+      "toolId": "pools.candles",
+      "publicName": "pools__token_candles_list",
+      "rationale": "Names the scope. Candles are always read for ONE token (manifests/candles.ts:15), so the singular scoping resource is part of the name; `list` is the canonical verb for the bounded, ordered series."
+    },
+    {
+      "toolId": "pools.my_launches",
+      "publicName": "pools__my_launches_list",
+      "rationale": "Existing snake words preserved, canonical verb appended; symmetric with trench__my_launches_list."
+    },
+    {
+      "toolId": "pools.claim_fees",
+      "publicName": "pools__fees_claim",
+      "rationale": "Words preserved, order normalized to resource-then-verb so the fund-moving verb lands last like every other mutation in the catalog (launch_execute, trade_execute, bridge_execute). Resource is the creator fee stream a pools.fun token has earned; actionKind user_wallet_broadcast (manifests/claim.ts:31-32)."
+    },
+    {
+      "toolId": "pools.launch_preview",
+      "publicName": "pools__launch_preview",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "pools.launch_request_form",
+      "publicName": "pools__launch_request_form",
+      "rationale": "mechanical; three-word action preserved for the same reason as trench__launch_request_form, the form is the approval."
+    },
+    {
+      "toolId": "pools.launch_execute",
+      "publicName": "pools__launch_execute",
+      "rationale": "mechanical"
+    }
+  ]
+}

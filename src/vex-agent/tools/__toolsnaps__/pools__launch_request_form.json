@@ -1,0 +1,53 @@
+{
+  "definition": {
+    "function": {
+      "description": "Ask the user to confirm a pools.fun token launch in the app's launch form, on Robinhood Chain (4663). Use this when a launch should happen but the agent may not authorize spending by itself: it opens the two-stage form pre-filled with the proposed name, symbol, pair and prebuy, and parks the turn until the user submits or cancels. The user can edit every field, pick the image, and choose where the creator fee stream goes before anything is signed. Returns the identifier of the parked launch request and when it expires. THE FORM ITSELF IS THE APPROVAL: submitting it is what authorizes the launch, so this tool creates a request and never a transaction. It spends nothing on its own.",
+      "name": "pools__launch_request_form",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "imageId": {
+            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools.launch_execute REQUIRES it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The token's full display name, 1 to 64 characters, exactly as it should appear on the launchpad and in the pinned metadata.",
+            "type": "string"
+          },
+          "pairedAsset": {
+            "description": "Which asset the new pool trades against: weth (default) or usdg. These are the only two the factory allows today - tokenised stocks exist in the provider's vocabulary but the on-chain allowlist refuses them, so asking for one would deploy nothing.",
+            "enum": [
+              "weth",
+              "usdg"
+            ],
+            "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "The ticker, 1 to 16 characters. Symbols are NOT unique on pools.fun and copycats are routinely live, so this is a label rather than an identity.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.launch_request_form"
+  }
+}

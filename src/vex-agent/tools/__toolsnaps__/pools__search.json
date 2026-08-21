@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Find a pools.fun token on Robinhood Chain (4663) by name or symbol. Use this when the user names a token and you need its contract address before pulling candles, deep detail, or a trading quote. Returns the same rows as pools.tokens: address, name, symbol, pool address, paired asset, display-grade price and market cap, volumes, price changes, launch time, deployer and fee recipient, and links. NAMES AND SYMBOLS ARE NOT UNIQUE on this launchpad - three live tokens shared the symbol SUSHICAT when this was measured - so always confirm which one the user meant by its ADDRESS, and say so when several match. Searches both launchers by default, and returns a nextCursor when more matches exist - pass it back as cursor to page through them. Read-only.",
+      "name": "pools__search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Opaque pagination token: pass back the nextCursor from a previous reply to fetch the following page. Keep the other arguments identical between pages, or the cursor walks a different result set.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum matches returned, 1-100. Defaults to 10, which is enough to expose copycat symbols sharing the name.",
+            "type": "number"
+          },
+          "platform": {
+            "description": "Which launcher to search: all (default here, so a name lookup cannot miss the other launcher), poolsfun, or sushi. Narrow it only when the user has already said which launcher they mean.",
+            "enum": [
+              "poolsfun",
+              "sushi",
+              "all"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "The name or symbol fragment to look for, 1 to 64 characters. Matching is done by the launchpad across both token names and symbols.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.search"
+  }
+}

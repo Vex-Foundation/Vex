@@ -1,0 +1,54 @@
+{
+  "definition": {
+    "function": {
+      "description": "Launch a token on pools.fun (Robinhood Chain 4663) FOR REAL - signs and broadcasts the on-chain launch with the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's CURRENT deployment fee (read on-chain at signing time, and it moves - it changed fourfold inside one day) and, if you set a prebuy, buys that much of the new token in the same transaction at the exact simulated fill. The token opens immediately into a real SushiSwap V3 pool against ETH or USDG - there is no bonding curve and no graduation. Vex also charges 25 bps of the ETH the launch sends (deployment fee + any ETH prebuy) as a SEPARATE transfer that runs only after the launch confirms; price a launch with pools.launch_preview first, which shows every leg. Before signing, Vex DECODES the launchpad's transaction and proves 13 things about it against the chain - the gateway's identity and version, its live fee and bounds, the pair's on-chain allowlist, the opening tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the imageId of a picture the user staged in the image locker (list them with trench.images, which reads the locker both launchpads share), because a token launched without one renders blank on pools.fun forever and that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a FULL-permission chat session the user's permission is the authority and this executes directly; in a RESTRICTED session it refuses BY NAME and you must call pools.launch_request_form instead - that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the contract's HOST-authored launch ceilings, which you cannot write, and while a contract carries none this tool REFUSES BY NAME. Returns the new token address, its pool address, the transaction hash, the paired asset and its address, the resolved creator-fee recipient, the pinned metadata link, the ETH sent with its deployment-fee and prebuy legs as raw amounts with their decimals, the tokens the prebuy actually bought, the Vex fee's own outcome, and a status of confirmed, reverted or pending. A launch that confirmed but whose token could not be PROVEN from the receipt says so and stays pending - it never guesses an address, and you must not launch again.",
+      "name": "pools__launch_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "imageId": {
+            "description": "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The token's full display name, 1 to 64 characters, exactly as it should appear on the launchpad and in the pinned metadata.",
+            "type": "string"
+          },
+          "pairedAsset": {
+            "description": "Which asset the new pool trades against: weth (default) or usdg. These are the only two the factory allows today - tokenised stocks exist in the provider's vocabulary but the on-chain allowlist refuses them, so asking for one would deploy nothing.",
+            "enum": [
+              "weth",
+              "usdg"
+            ],
+            "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "The ticker, 1 to 16 characters. Symbols are NOT unique on pools.fun and copycats are routinely live, so this is a label rather than an identity.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol",
+          "imageId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.launch_execute"
+  }
+}

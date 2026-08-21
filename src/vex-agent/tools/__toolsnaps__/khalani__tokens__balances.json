@@ -1,0 +1,47 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `walletAddress` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `wallet_balances` tool.",
+      "name": "khalani__tokens__balances",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated chain IDs or aliases. Omit to scan all chains in the family. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+          },
+          "wallet": {
+            "description": "Wallet family: eip155 or solana (default: eip155).",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.tokens.balances"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "USD price marks for Pendle assets on ONE chain — principal tokens (PT), yield tokens (YT), LP tokens and standardised-yield (SY) tokens — including assets the wallet does not hold. Name specific assets with `ids`, or omit them to page through the chain's assets. Prices come back as exact decimal strings and are Pendle's own snapshot, refreshed roughly every 15-60 seconds: they are display and portfolio figures, NOT executable quotes and not a pre-trade rate — use pendle.market.get for a market's tradable rate and implied APY. A requested id Pendle does not price is reported in missingIds rather than dropped, so an unpriced asset never reads as a worthless one. Read-only.",
+      "name": "pendle__prices__assets",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Chain slug or numeric id (e.g. 'ethereum', 'arbitrum', 42161). One call reads ONE chain; an unsupported chain is rejected by name.",
+            "type": "string"
+          },
+          "ids": {
+            "description": "Comma-separated asset ids to price — bare 0x addresses or 'chainId-0xaddress' composites, at most 50 per call. An id belonging to a different chain than `chain` is rejected by name. Omit to page through the chain's assets instead.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Rows per page when no ids are given: whole number 1-100 (default 50). The response reports total, hasMore and nextOffset.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Row offset for paging, whole number ≥ 0 (default 0). Pair it with the returned nextOffset.",
+            "type": "number"
+          },
+          "type": {
+            "description": "Optional asset-class filter: PENDLE_LP, SY, PT, YT (comma-separated for several). Anything else is rejected by name. Most useful when paging without `ids`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.prices.assets"
+  }
+}
