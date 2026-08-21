@@ -18,10 +18,11 @@
  * 16 384 chars per segment; nothing is trimmed again for display.
  */
 
-import { useState, type JSX } from "react";
+import { useId, useRef, useState, type JSX } from "react";
 import { IconChevronRight } from "../../../components/icons/index.js";
 import { MarkdownContent } from "../../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../../lib/utils.js";
+import { ExpandRegion } from "../../../components/ui/expand-region.js";
 
 function SettledThought({
   text,
@@ -31,11 +32,15 @@ function SettledThought({
   readonly label: string;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
     <div data-vex-reasoning-segment="">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
+        aria-controls={bodyId}
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
@@ -44,11 +49,14 @@ function SettledThought({
           className={cn("shrink-0 transition-transform", open && "rotate-90")} />
         {label}
       </button>
-      {open ? (
-        <div className="vex-reasoning-prose vex-entry-settle mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]">
-          <MarkdownContent text={text} />
-        </div>
-      ) : null}
+      <ExpandRegion
+        id={bodyId}
+        open={open}
+        triggerRef={triggerRef}
+        className="vex-reasoning-prose mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
+      >
+        <MarkdownContent text={text} />
+      </ExpandRegion>
     </div>
   );
 }

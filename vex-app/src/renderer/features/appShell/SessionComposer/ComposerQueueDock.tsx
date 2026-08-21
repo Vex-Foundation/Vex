@@ -19,7 +19,7 @@
  * this - the store still owns order, content and drain.
  */
 
-import { useEffect, useId, useState, type JSX } from "react";
+import { useEffect, useId, useRef, useState, type JSX } from "react";
 import {
   IconCheck,
   IconChevronDown,
@@ -38,6 +38,7 @@ import {
   type QueuedComposerMessage,
 } from "../../../lib/composer-queue.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
+import { ExpandRegion } from "../../../components/ui/expand-region.js";
 
 /** Preview cap: 2 rendered lines (1 head + 1 tail) before the fold marker. */
 const PREVIEW_MAX_LINES = 2;
@@ -76,6 +77,7 @@ export function ComposerQueueDock({
   );
   const [collapsed, setCollapsed] = useState(true);
   const listId = useId();
+  const headerRef = useRef<HTMLButtonElement>(null);
 
   // An edit whose row was drained or removed underneath it must not keep the
   // dock in interaction state; an emptied queue restores the collapsed
@@ -110,6 +112,7 @@ export function ComposerQueueDock({
     >
       {queue.length > 1 ? (
         <button
+          ref={headerRef}
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
@@ -131,112 +134,117 @@ export function ComposerQueueDock({
           </span>
         </button>
       ) : null}
-      <ul id={listId} hidden={!listVisible} className="flex max-h-[180px] flex-col overflow-y-auto">
-        {queue.map((row) => (
-          <li
-            key={row.id}
-            className="flex items-start gap-2 border-b border-line-1 px-3 py-2 text-[13px] leading-5 last:border-b-0"
-          >
-            <span
-              aria-hidden
-              className="mt-0.5 shrink-0 text-ink-tertiary"
+      {/* `hidden` retired for the shared expand primitive: the list keeps the
+          same aria-controls target and the same closed-to-AT semantics
+          (aria-hidden + inert), and now animates instead of blinking. */}
+      <ExpandRegion id={listId} open={listVisible} triggerRef={headerRef}>
+        <ul className="flex max-h-[180px] flex-col overflow-y-auto">
+          {queue.map((row) => (
+            <li
+              key={row.id}
+              className="flex items-start gap-2 border-b border-line-1 px-3 py-2 text-[13px] leading-5 last:border-b-0"
             >
-              <IconQueue size={14} />
-            </span>
-            {editing?.id === row.id ? (
-              <input
-                autoFocus
-                aria-label="Edit queued message"
-                className="min-w-0 flex-1 bg-transparent text-ink-primary caret-accent-primary outline-none"
-                value={editing.text}
-                onChange={(event) =>
-                  setEditing({ id: row.id, text: event.currentTarget.value })
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setEditing(null);
-                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    saveEdit();
-                  }
-                }}
-              />
-            ) : (
-              <span className="min-w-0 flex-1 whitespace-pre-line text-ink-secondary">
-                {queuedMessagePreview(row.text)}
+              <span
+                aria-hidden
+                className="mt-0.5 shrink-0 text-ink-tertiary"
+              >
+                <IconQueue size={14} />
               </span>
-            )}
-            <div className="flex shrink-0 items-center gap-1">
               {editing?.id === row.id ? (
-                <>
-                  <Tooltip label="Save" side="top" delayMs={300}>
-                    <button
-                      type="button"
-                      aria-label="Save queued message"
-                      className={ACTION_KEY}
-                      disabled={editing.text.trim().length === 0}
-                      onClick={saveEdit}
-                    >
-                      <IconCheck size={14} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Cancel" side="top" delayMs={300}>
-                    <button
-                      type="button"
-                      aria-label="Cancel edit"
-                      className={ACTION_KEY}
-                      onClick={() => setEditing(null)}
-                    >
-                      <IconClose size={14} />
-                    </button>
-                  </Tooltip>
-                </>
-              ) : (
-                <>
-                  <Tooltip label="Edit" side="top" delayMs={300}>
-                    <button
-                      type="button"
-                      aria-label="Edit queued message"
-                      className={ACTION_KEY}
-                      onClick={() => setEditing({ id: row.id, text: row.text })}
-                    >
-                      <IconEdit size={14} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Remove" side="top" delayMs={300}>
-                    <button
-                      type="button"
-                      aria-label="Remove queued message"
-                      className={ACTION_KEY}
-                      onClick={() => removeQueuedMessage(sessionId, row.id)}
-                    >
-                      <IconTrash size={14} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip
-                    label={
-                      sendNowAvailable
-                        ? "Send now"
-                        : "A turn is still running - it stays queued"
+                <input
+                  autoFocus
+                  aria-label="Edit queued message"
+                  className="min-w-0 flex-1 bg-transparent text-ink-primary caret-accent-primary outline-none"
+                  value={editing.text}
+                  onChange={(event) =>
+                    setEditing({ id: row.id, text: event.currentTarget.value })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setEditing(null);
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      saveEdit();
                     }
-                    side="top"
-                    delayMs={300}
-                  >
-                    <button
-                      type="button"
-                      aria-label="Send queued message now"
-                      className={ACTION_KEY}
-                      disabled={!sendNowAvailable}
-                      onClick={() => onSendNow(row)}
-                    >
-                      <IconSend size={14} />
-                    </button>
-                  </Tooltip>
-                </>
+                  }}
+                />
+              ) : (
+                <span className="min-w-0 flex-1 whitespace-pre-line text-ink-secondary">
+                  {queuedMessagePreview(row.text)}
+                </span>
               )}
-            </div>
-          </li>
-        ))}
-      </ul>
+              <div className="flex shrink-0 items-center gap-1">
+                {editing?.id === row.id ? (
+                  <>
+                    <Tooltip label="Save" side="top" delayMs={300}>
+                      <button
+                        type="button"
+                        aria-label="Save queued message"
+                        className={ACTION_KEY}
+                        disabled={editing.text.trim().length === 0}
+                        onClick={saveEdit}
+                      >
+                        <IconCheck size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Cancel" side="top" delayMs={300}>
+                      <button
+                        type="button"
+                        aria-label="Cancel edit"
+                        className={ACTION_KEY}
+                        onClick={() => setEditing(null)}
+                      >
+                        <IconClose size={14} />
+                      </button>
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <Tooltip label="Edit" side="top" delayMs={300}>
+                      <button
+                        type="button"
+                        aria-label="Edit queued message"
+                        className={ACTION_KEY}
+                        onClick={() => setEditing({ id: row.id, text: row.text })}
+                      >
+                        <IconEdit size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Remove" side="top" delayMs={300}>
+                      <button
+                        type="button"
+                        aria-label="Remove queued message"
+                        className={ACTION_KEY}
+                        onClick={() => removeQueuedMessage(sessionId, row.id)}
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      label={
+                        sendNowAvailable
+                          ? "Send now"
+                          : "A turn is still running - it stays queued"
+                      }
+                      side="top"
+                      delayMs={300}
+                    >
+                      <button
+                        type="button"
+                        aria-label="Send queued message now"
+                        className={ACTION_KEY}
+                        disabled={!sendNowAvailable}
+                        onClick={() => onSendNow(row)}
+                      >
+                        <IconSend size={14} />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </ExpandRegion>
     </div>
   );
 }

@@ -40,6 +40,7 @@ import { useEffect, useId, useRef, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { IconChevronRight } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
+import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 
@@ -80,6 +81,7 @@ export function ReasonedBlock({
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const summaryRef = useRef<HTMLSpanElement>(null);
   const text = reasoning ?? "";
   const summary = running ? latestLine(text) : firstLine(text);
@@ -115,6 +117,7 @@ export function ReasonedBlock({
         data-vex-sweep={running ? "running" : undefined}
       >
         <button
+          ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
@@ -151,14 +154,17 @@ export function ReasonedBlock({
           </>
         ) : null}
       </div>
-      {open ? (
-        <div
-          id={bodyId}
-          className="vex-reasoning-prose vex-entry-settle mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
-        >
-          <MarkdownContent text={text} />
-        </div>
-      ) : null}
+      {/* The trace rides the shared expand primitive: it stays mounted once
+          opened so closing animates, and carries no entrance keyframe - an
+          expanding reveal must not also play a mount animation. */}
+      <ExpandRegion
+        id={bodyId}
+        open={open}
+        triggerRef={triggerRef}
+        className="vex-reasoning-prose mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
+      >
+        <MarkdownContent text={text} />
+      </ExpandRegion>
     </div>
   );
 }
