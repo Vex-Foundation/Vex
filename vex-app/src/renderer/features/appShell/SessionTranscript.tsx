@@ -12,10 +12,19 @@
  * the scrollport, because it is the only box that can also hold the sticky
  * composer seat. Mounted alone (unit tests) this component's own element
  * scrolls instead. `scrollportOf` in the scroll model resolves which, and the
- * nested-mode geometry lives in `chat-transcript.css`. Both floating surfaces
- * - the centred working scene and the jump pill - are ZERO-HEIGHT STICKY
- * SLOTS outside the row column's gap, so neither extends `scrollHeight` nor
- * disturbs the column rhythm in either mode.
+ * nested-mode geometry lives in `chat-transcript.css`. The one floating
+ * surface left - the jump pill - is a ZERO-HEIGHT STICKY SLOT outside the row
+ * column's gap, so it neither extends `scrollHeight` nor disturbs the column
+ * rhythm in either mode.
+ *
+ * THE PENDING TURN IS IN FLOW. A turn with nothing to show yet renders as
+ * `TurnIsland`'s `vexing…` pill at the tail of the observed message column
+ * (through `StreamingBubble`), exactly like any other row. The retired centred
+ * scene was a zero-height sticky slot with a VIEWPORT-TALL child: a zero-height
+ * box adds no normal-flow height, but a positively overflowing child still
+ * enlarges scrollable overflow, so the bottom-follow write pushed the sticky
+ * composer seat up and Chromium's clamp dropped it back when the scene
+ * unmounted (owner repro, round-3 QA item 7).
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
@@ -48,10 +57,6 @@ import {
   type SettledIdsTracker,
 } from "./SessionTranscript/settledIds.js";
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
-import {
-  VexingOverlay,
-  isCentredSceneUp,
-} from "./SessionTranscript/VexingOverlay.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
 import {
   OlderPageErrorStrip,
@@ -144,22 +149,11 @@ export function SessionTranscript({
   // the scroll-jump reports were the round-scoped value leaking into
   // turn-scoped decisions (the island's mount, the anchor run-out).
   //
-  // It is called HERE, after the row bookkeeping, because its centred-scene
-  // latch reads the very rows the scroll model keys on — passed in rather
-  // than re-queried, so there is no second source of truth.
-  const { preview, centredSceneEligible } = useTurnPreview({
+  const { preview } = useTurnPreview({
     sessionId,
     preview: streamPreview,
     submitting: chatSubmitting,
-    newestId,
-    newestVariant,
-    newestIsLiveAppend,
   });
-  const centredSceneUp = isCentredSceneUp(
-    preview,
-    centredSceneEligible,
-    hasPendingApproval,
-  );
 
   // Preview signature — every VISIBLE preview change, so the pill measurement
   // sees the bubble grow no matter WHICH part of it is growing: streamed text,
@@ -189,8 +183,14 @@ export function SessionTranscript({
     return null;
   }, [rows]);
 
-  const { scrollRef, scrollNodeRef, columnRef, showLatest, jumpToLatest } =
-    useTranscriptScroll({
+  const {
+    scrollRef,
+    scrollNodeRef,
+    scrollNodeEpoch,
+    columnRef,
+    showLatest,
+    jumpToLatest,
+  } = useTranscriptScroll({
       sessionId,
       query,
       itemCount: items.length,
@@ -202,8 +202,9 @@ export function SessionTranscript({
       steeringSig,
     });
 
-  // macOS-style overlay bar: visible while scrolling, gone ~1s after.
-  useScrollbarVisibility(scrollNodeRef);
+  // macOS-style overlay bar: visible while scrolling, gone ~1s after. The
+  // epoch is what binds it when the scroller attaches AFTER the loading branch.
+  useScrollbarVisibility(scrollNodeRef, scrollNodeEpoch);
 
   if (query.isLoading) {
     return <TranscriptLoadingState />;
@@ -252,15 +253,6 @@ export function SessionTranscript({
           (the shared width rule). The 16px column gap is the ONE vertical
           rhythm - no per-element margins. */}
       <div className="mx-auto w-full max-w-[780px] px-4">
-      {/* THE CENTRED SCENE - a zero-height sticky slot, first in the block so
-          its sticky range spans the whole transcript. It contributes nothing
-          to `scrollHeight` (see `VexingOverlay.tsx`), and it sits OUTSIDE the
-          row column so it takes none of the column's 16px gap. */}
-      <VexingOverlay
-        preview={preview}
-        centredSceneEligible={centredSceneEligible}
-        awaitingApproval={hasPendingApproval}
-      />
       <div ref={columnRef} className="relative flex flex-col gap-4">
         {/* The gutter hosts the live working mark (StreamingBubble, left-0) —
             an indicator, not a wall. */}
@@ -284,7 +276,6 @@ export function SessionTranscript({
           <StreamingBubble
             preview={preview}
             awaitingApproval={hasPendingApproval}
-            centredSceneUp={centredSceneUp}
           />
         ) : null}
         </div>

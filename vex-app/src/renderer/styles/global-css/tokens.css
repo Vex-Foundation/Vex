@@ -89,9 +89,10 @@
   /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (rebrand
    * 2026-08-20):
    *   --font-sans / --font-display = Inter Tight (variable 400-700 + italic):
-   *     UI chrome, reading copy, and display statements.
-   *   --font-doto  = Doto (variable 400-900): dot-matrix micro-labels,
-   *     eyebrows, and numeric statistics ONLY — the brand's dot signature.
+   *     UI chrome, reading copy, display statements, AND the small-caps
+   *     micro-label register (`.vex-micro-label`). Doto - the former
+   *     dot-matrix micro-label face - retired app-wide on 2026-08-21 and
+   *     left the bundle with its token and its @font-face.
    *   --font-mono  = technical artifacts ONLY: code blocks, raw JSON
    *     args/output, addresses, tx hashes. No new mono uppercase labels.
    *   --font-serif = Instrument Serif, the GATE voice only. Static 400 +
@@ -104,7 +105,6 @@
   --font-display:
     "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-doto: "Doto", "Inter Tight", monospace;
   /* Falls back to the platform serifs so a font-load miss still reads as a
    * serif. */
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
@@ -152,6 +152,23 @@
    * only the main action (send/CTA). */
   --vex-alias-button-primary-fill: #f3f4f7;
   --vex-alias-button-primary-hover: var(--color-gray-100);
+
+  /* ACCENT CTA (owner decision 3, ratified 2026-08-21). The one accent-filled
+   * key in the app - NEW SESSION, and the composer's send/stop key - is its
+   * OWN pair, deliberately not `accent-primary` + `ink-on-accent`. Those two
+   * are calibrated for accent AS TEXT and AS A STROKE, where chronos needs the
+   * LIGHT blue-400 to read on ink; a light-blue plate with ink on it is not
+   * the CTA the owner asked for ("chronos bialy / celeris czarny").
+   *
+   * CHRONOS: fill deepens to the brand blue-500 #2b3eff with WHITE ink -
+   * 6.5:1, and it still reads as a lit key on the near-black rail, which the
+   * deeper #0000c0 does not. CELERIS: a light blue-200 #d4dcff plate with the
+   * near-black label ink - 14.7:1, and quiet enough that it does not shout on
+   * a white room. Hover moves ONE step along the same ramp in each theme, so
+   * the ink never has to change on hover. */
+  --vex-alias-button-accent-fill: var(--color-blue-500);
+  --vex-alias-button-accent-hover: var(--color-blue-400);
+  --vex-alias-button-accent-ink: #ffffff;
 
   /* Accent family. */
   --vex-alias-accent-primary: var(--color-blue-400);
@@ -276,6 +293,11 @@
   --vex-alias-button-primary-fill: #12141c;
   --vex-alias-button-primary-hover: var(--color-gray-700);
 
+  /* CTA inverts: a LIGHT accent plate carrying near-black ink (14.7:1). */
+  --vex-alias-button-accent-fill: var(--color-blue-200);
+  --vex-alias-button-accent-hover: var(--color-blue-300);
+  --vex-alias-button-accent-ink: #12141c;
+
   --vex-alias-accent-primary: var(--color-blue-700);
   --vex-alias-accent-hover: var(--color-blue-900);
   --vex-alias-accent-brand: var(--color-blue-500);
@@ -358,6 +380,10 @@
 
   --color-button-primary: var(--vex-alias-button-primary-fill);
   --color-button-primary-hover: var(--vex-alias-button-primary-hover);
+
+  --color-button-accent: var(--vex-alias-button-accent-fill);
+  --color-button-accent-hover: var(--vex-alias-button-accent-hover);
+  --color-ink-on-button-accent: var(--vex-alias-button-accent-ink);
 
   --color-interactive-hover: var(--vex-alias-interactive-hover);
   --color-interactive-active: var(--vex-alias-interactive-active);

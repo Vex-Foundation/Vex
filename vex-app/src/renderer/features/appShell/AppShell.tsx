@@ -24,6 +24,7 @@ import {
   BOOK_COLLAPSED,
   computeShellColumns,
   SIDEBAR_AUTO_COLLAPSE,
+  WELCOME_PORTFOLIO_WIDTH,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { BookPanel } from "./BookPanel.js";
@@ -160,8 +161,9 @@ function ShellFrame({
     sidebarOpen,
   ]);
 
-  // WELCOME stage: the right edge is the floating Portfolio tab, which sizes
-  // itself — the BOOK track goes `auto` and the solver runs sidebar-only.
+  // WELCOME stage: the right edge is the floating Portfolio tab rather than the
+  // BOOK rail, so the solver runs sidebar-only and the third track carries the
+  // tab's own reservation instead of a solved BOOK width.
   const welcomeStage = activeSessionId === null;
   const cols: ShellColumns = computeShellColumns(
     viewport,
@@ -199,14 +201,24 @@ function ShellFrame({
 
   const networkOnline = useNetworkOnline();
 
+  // THE THIRD TRACK IS ALWAYS A LENGTH (see `WELCOME_PORTFOLIO_WIDTH`): the
+  // welcome tab's own reservation while it is open, exactly 0 while it is
+  // collapsed, and the solved BOOK width (including its numeric collapsed
+  // spine) in session. The 300ms track transition then only ever interpolates
+  // length-to-length, so crossing welcome<->session cannot sweep the rail
+  // through the centre column.
+  const rightTrack = welcomeStage
+    ? bookOpen
+      ? WELCOME_PORTFOLIO_WIDTH
+      : 0
+    : cols.book;
+
   return (
     <div
       ref={frameRef}
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={{
-        gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${
-          welcomeStage ? "auto" : `${cols.book}px`
-        }`,
+        gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${rightTrack}px`,
       }}
       data-vex-area="shell-frame"
       data-dragging={dragging || undefined}

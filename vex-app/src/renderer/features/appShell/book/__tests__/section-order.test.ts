@@ -37,9 +37,18 @@ describe("resolveBookSectionOrder", () => {
       "trench",
       "wallets",
       "activity",
-      "runtime",
       "session",
     ]);
+  });
+
+  it("drops the retired `runtime` id from a stored order", () => {
+    // "Runtime & Cost" retired in round 3; a persisted order minted before
+    // that still lists it and must degrade to the remaining rail, never to a
+    // blank section.
+    const resolved = resolveBookSectionOrder(["runtime", "wallets"]);
+    expect(resolved).not.toContain("runtime");
+    expect(resolved[0]).toBe("wallets");
+    expect([...resolved].sort()).toEqual([...DEFAULT_BOOK_SECTIONS].sort());
   });
 
   it("drops unknown / retired ids instead of rendering them", () => {

@@ -265,7 +265,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
                 estimated={bridgeEstimated}
               />
               {bridgeEstimated ? (
-                <span className="shrink-0 vex-doto-label uppercase text-ink-secondary">
+                <span className="shrink-0 vex-micro-label uppercase text-ink-secondary">
                   est.
                 </span>
               ) : null}

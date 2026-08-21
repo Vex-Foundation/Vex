@@ -11,7 +11,8 @@
  * Covered: the `system` default with no payload, the OS resolve in both
  * directions, an explicit preference overriding the OS, closed-union
  * coercion of a tampered payload, an unparseable payload, and the
- * matchMedia-unavailable safe-fail that mirrors `systemPrefersDark()`.
+ * matchMedia-unavailable safe-fail that mirrors `systemPrefersDark()`, and the
+ * v13 migration the script mirrors from `stores/uiStore/persistence.ts`.
  */
 
 import { readFileSync } from "node:fs";
@@ -54,8 +55,8 @@ function runBoot(
 }
 
 /** The persisted shape the script reads. */
-const stored = (themePreference: string): string =>
-  JSON.stringify({ state: { themePreference }, version: 13 });
+const stored = (themePreference: string, version = 13): string =>
+  JSON.stringify({ state: { themePreference }, version });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -90,6 +91,22 @@ describe("theme-boot pre-paint stamp", () => {
   it("coerces a tampered preference to the default instead of stamping it", () => {
     expect(runBoot(stored("neon-hack"), false)).toBe("celeris");
     expect(runBoot(stored("robinhood"), true)).toBe("chronos");
+  });
+
+  it("mirrors the v13 migration: a pre-v13 'chronos' boots as 'system'", () => {
+    // On a v12 payload `chronos` was the old DEFAULT, not a choice, and
+    // rehydration rewrites it to `system`. Without this mirror an upgrading
+    // install painted chronos and then flipped to celeris on a light OS the
+    // moment the bundle hydrated (round-3 codex 4.4).
+    expect(runBoot(stored("chronos", 12), false)).toBe("celeris");
+    expect(document.documentElement.style.colorScheme).toBe("light");
+    expect(runBoot(stored("chronos", 12), true)).toBe("chronos");
+  });
+
+  it("leaves a v13 'chronos' and any explicit 'celeris' alone", () => {
+    // The migration is one-time and re-picking chronos in Settings must stick.
+    expect(runBoot(stored("chronos", 13), false)).toBe("chronos");
+    expect(runBoot(stored("celeris", 12), true)).toBe("celeris");
   });
 
   it("survives an unparseable payload", () => {

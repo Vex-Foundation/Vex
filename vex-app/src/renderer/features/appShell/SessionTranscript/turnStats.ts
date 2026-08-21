@@ -1,5 +1,5 @@
 /**
- * Pure presentation of one turn's usage row as the Doto stats-line groups:
+ * Pure presentation of one turn's usage row as the micro-label stats groups:
  * tokens (in/out compact), cache-hit percent, and cost. Display-only — this
  * never touches content going to the model. Wall time is deliberately absent:
  * the usage DTO carries no duration (named gap, board 2026-08-20).

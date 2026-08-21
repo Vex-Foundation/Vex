@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import { useRef, type JSX } from "react";
+import { useCallback, useRef, useState, type JSX } from "react";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 
 afterEach(() => {
@@ -28,6 +28,33 @@ function scroller(): HTMLElement {
   const el = document.querySelector("[data-testid='scroller']");
   if (el === null) throw new Error("scroller not found");
   return el as HTMLElement;
+}
+
+/**
+ * A consumer whose scroll node attaches AFTER the first commit - the shape
+ * `SessionTranscript` has, because it renders a node-less loading branch first.
+ */
+function LateHarness(): JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [epoch, setEpoch] = useState(0);
+  const [attached, setAttached] = useState(false);
+  // Stable callback ref, exactly like `useTranscriptScroll`'s: an inline one
+  // detaches and reattaches on every render.
+  const setNode = useCallback((node: HTMLDivElement | null): void => {
+    ref.current = node;
+    setEpoch((n) => n + 1);
+  }, []);
+  useScrollbarVisibility(ref, epoch);
+  return (
+    <>
+      <button type="button" onClick={() => setAttached(true)}>
+        attach
+      </button>
+      {attached ? (
+        <div ref={setNode} data-testid="scroller" />
+      ) : null}
+    </>
+  );
 }
 
 describe("useScrollbarVisibility", () => {
@@ -105,6 +132,24 @@ describe("useScrollbarVisibility", () => {
         options.passive === true,
     );
     expect(passiveScroll.length).toBeGreaterThan(0);
+  });
+
+  it("binds a LATE-ATTACHING node through the attachment epoch", () => {
+    // The transcript renders its loading branch first, so `ref.current` is null
+    // when the effect would otherwise run its only pass. Keyed on the ref
+    // alone, the real scroller never got a listener at all (codex 4.5).
+    vi.useFakeTimers();
+    render(<LateHarness />);
+    act(() => {
+      document.querySelector("button")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    const el = scroller();
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(el.getAttribute("data-vex-scrolling")).toBe("");
   });
 
   it("cleans up its listener and its mark on unmount", () => {

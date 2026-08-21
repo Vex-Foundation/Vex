@@ -67,7 +67,7 @@ export function DecisionsSection(): JSX.Element {
             type="button"
             onClick={() => setDecisionType(f.value)}
             data-active={decisionType === f.value}
-            className={`rounded-[3px] px-2 py-1 vex-doto-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
+            className={`rounded-[3px] px-2 py-1 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
               decisionType === f.value
                 ? "bg-accent-wash text-accent-primary"
                 : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

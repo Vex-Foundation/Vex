@@ -8,8 +8,14 @@ import type { ButtonHTMLAttributes, JSX, ReactNode } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils.js";
 
+// `min-w-0 max-w-full`: a pill seated in a flex row must be able to concede
+// width instead of painting outside it. It stays `whitespace-nowrap`; the
+// ellipsis is owned by the call site's label span (`min-w-0 truncate`), which
+// is the only element that knows which text is expendable. Deliberately NO
+// `overflow-hidden` here - the interactive variant must keep its focus ring
+// paintable.
 const pillVariants = cva(
-  "inline-flex items-center gap-1 whitespace-nowrap rounded-capsule border-0",
+  "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-capsule border-0",
   {
     variants: {
       variant: {

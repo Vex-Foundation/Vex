@@ -29,13 +29,10 @@ import { TurnIsland } from "./TurnIsland/index.js";
 export function StreamingBubble({
   preview,
   awaitingApproval = false,
-  centredSceneUp = false,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session — freezes the island (S5). */
   readonly awaitingApproval?: boolean;
-  /** The centred "vexing…" scene owns the column — the island stands down. */
-  readonly centredSceneUp?: boolean;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
@@ -68,11 +65,7 @@ export function StreamingBubble({
       aria-busy={streaming}
       className="relative flex flex-col gap-2 pl-9"
     >
-      <TurnIsland
-        preview={preview}
-        awaitingApproval={awaitingApproval}
-        centredSceneUp={centredSceneUp}
-      />
+      <TurnIsland preview={preview} awaitingApproval={awaitingApproval} />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
     </div>

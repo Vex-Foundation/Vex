@@ -25,17 +25,22 @@
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
- * REGISTER (owner decree 2026-07-30, "inna czcionka"): `.vex-reasoning-prose`
- * — Instrument Serif ITALIC, muted. Thinking aloud is not speaking, so it is
- * not set in the speaking face. The live island stream and the settled
- * in-turn stamps wear the identical class, so one trace looks the same
- * streaming, folded, and reopened a week later.
+ * REGISTER (owner 6/6a, ratified 2026-08-21 - the serif leaves shell chrome).
+ * The STAMP is deepseek's Think-row voice: the app sans at 13px/500 on the
+ * label-secondary tier beside the existing chevron. The word stays "Reasoned";
+ * only the face changed. The BODY is `.vex-reasoning-prose` (Inter Tight 14px,
+ * muted) - thinking aloud is still not speaking, but the distance is carried
+ * by tone and size rather than by a serif italic that cost legibility at
+ * paragraph length. The live island stream and the settled in-turn stamps wear
+ * the identical class, so one trace looks the same streaming, folded, and
+ * reopened a week later.
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { IconChevronRight } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
+import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 
@@ -76,6 +81,7 @@ export function ReasonedBlock({
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const summaryRef = useRef<HTMLSpanElement>(null);
   const text = reasoning ?? "";
   const summary = running ? latestLine(text) : firstLine(text);
@@ -111,11 +117,12 @@ export function ReasonedBlock({
         data-vex-sweep={running ? "running" : undefined}
       >
         <button
+          ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex flex-none items-center gap-1 rounded-[4px] text-left font-serif text-[12px] italic text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex flex-none items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           <IconChevronRight
             size={11}
@@ -147,14 +154,17 @@ export function ReasonedBlock({
           </>
         ) : null}
       </div>
-      {open ? (
-        <div
-          id={bodyId}
-          className="vex-reasoning-prose vex-entry-settle mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
-        >
-          <MarkdownContent text={text} />
-        </div>
-      ) : null}
+      {/* The trace rides the shared expand primitive: it stays mounted once
+          opened so closing animates, and carries no entrance keyframe - an
+          expanding reveal must not also play a mount animation. */}
+      <ExpandRegion
+        id={bodyId}
+        open={open}
+        triggerRef={triggerRef}
+        className="vex-reasoning-prose mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
+      >
+        <MarkdownContent text={text} />
+      </ExpandRegion>
     </div>
   );
 }

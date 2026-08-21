@@ -144,7 +144,7 @@ describe("[data-vex-gate] scope", () => {
     ]) {
       expect(gateScopeBlock).toContain(projection);
     }
-    // The type scale and the Doto voice are theme-invariant and stay; no
+    // The type scale and the micro-label weight are theme-invariant and stay; no
     // COLOUR declaration in the scope may be a literal.
     const colourLiterals = gateScopeBlock
       .split("\n")

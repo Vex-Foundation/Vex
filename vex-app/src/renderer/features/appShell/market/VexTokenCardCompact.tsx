@@ -59,7 +59,7 @@ export function VexTokenCardCompact(): JSX.Element {
         <div className="flex items-center gap-2">
           <VexMark />
           <div className="flex min-w-0 flex-col">
-            <span className="vex-doto-label vex-doto-chip self-start uppercase text-ink-secondary">
+            <span className="vex-micro-label self-start uppercase text-ink-secondary">
               $VEX
             </span>
             <span className="text-[11px] text-warning-label">
@@ -83,7 +83,7 @@ export function VexTokenCardCompact(): JSX.Element {
         <div className="flex items-center gap-2">
           <VexMark />
           <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="vex-doto-label vex-doto-chip self-start uppercase text-ink-secondary">
+            <span className="vex-micro-label self-start uppercase text-ink-secondary">
               $VEX
             </span>
             <span
@@ -135,7 +135,7 @@ function CompactBody({
           <div className="flex min-w-0 items-center gap-2">
             <VexMark />
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="vex-doto-label vex-doto-chip self-start gap-1.5 uppercase text-ink-secondary">
+              <span className="vex-micro-label inline-flex items-center self-start gap-1.5 uppercase text-ink-secondary">
                 $VEX
                 {snapshot.stale ? <StaleMarker /> : null}
               </span>

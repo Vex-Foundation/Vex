@@ -19,13 +19,14 @@
  * no allowlist and must not grow one. A `null` url renders as plain text.
  */
 
-import { useState, type JSX } from "react";
+import { useId, useRef, useState, type JSX } from "react";
 import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 import { ActivityBadge, ActivityChip } from "../../ActivityBadge.js";
+import { ExpandRegion } from "../../../../components/ui/expand-region.js";
 import {
   chainRouteText,
   entryClockText,
@@ -67,7 +68,7 @@ function DetailLine({
 }): JSX.Element {
   return (
     <div className="flex gap-2">
-      <span className="w-[92px] shrink-0 vex-doto-label uppercase text-ink-secondary">
+      <span className="w-[92px] shrink-0 vex-micro-label uppercase text-ink-secondary">
         {label}
       </span>
       <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-secondary">
@@ -79,6 +80,8 @@ function DetailLine({
 
 export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const detailId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const protocolMark = resolveProtocolMark(entry.protocol);
   const estimated = isEstimatedBasis(entry);
@@ -206,7 +209,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             estimated={estimated}
           />
           {estimated ? (
-            <span className="shrink-0 vex-doto-label uppercase text-ink-secondary">
+            <span className="shrink-0 vex-micro-label uppercase text-ink-secondary">
               est.
             </span>
           ) : null}
@@ -236,9 +239,11 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
         ) : null}
         {hasDetail ? (
           <button
+            ref={triggerRef}
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
+            aria-controls={detailId}
             aria-label={`${open ? "Hide" : "Show"} details for this activity`}
             className="ml-auto shrink-0 uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
@@ -247,8 +252,12 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
         ) : null}
       </div>
 
-      {open ? (
-        <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-line-1 bg-surface-1 px-3 py-2.5">
+      <ExpandRegion
+        id={detailId}
+        open={open}
+        triggerRef={triggerRef}
+        className="mt-2 flex flex-col gap-1.5 rounded-xl border border-line-1 bg-surface-1 px-3 py-2.5"
+      >
           {entry.failureCode !== null || entry.failureReason !== null ? (
             <DetailLine label="Failure">
               <span className="text-warning-label">
@@ -347,8 +356,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
               </ul>
             </DetailLine>
           ) : null}
-        </div>
-      ) : null}
+      </ExpandRegion>
     </div>
   );
 }

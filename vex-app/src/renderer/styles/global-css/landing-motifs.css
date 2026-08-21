@@ -5,13 +5,13 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * THE TYPOGRAPHY REGISTER (tokens v2, 2026-08 rebrand)
  *
- * The app-wide voice is Inter Tight (--font-sans: UI + reading), Doto
- * (--font-doto: display micro-labels, stats - applied per scope, e.g. the
- * [data-vex-gate] pre-shell re-pins `.vex-micro`), and JetBrains Mono for
- * strictly technical artifacts only - code blocks, raw JSON args/output,
- * addresses, tx hashes. Instrument Serif survives ONLY as the gate voice
- * (pre-shell surfaces). The two classes below flip family at the CLASS
- * level so their ~40 call sites change register in one edit.
+ * The app-wide voice is Inter Tight (--font-sans: UI + reading, INCLUDING
+ * every micro-label and stat) and JetBrains Mono for strictly technical
+ * artifacts only - code blocks, raw JSON args/output, addresses, tx hashes.
+ * Instrument Serif survives ONLY as the gate voice (pre-shell display
+ * headings). Doto retired app-wide (owner decree, ratified 2026-08-21). The
+ * classes below own family and scale at the CLASS level so their ~40 call
+ * sites change register in one edit.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* Eyebrow — the section/group label. Formerly carried a leading ::before rule
@@ -57,28 +57,27 @@
   text-transform: uppercase;
 }
 
-/* Doto micro-label - THE app-wide Doto register (R2-C, 2026-08-21).
+/* Micro-LABEL - THE app-wide small-caps stamp register (R3-F3, 2026-08-21).
  *
- * THE FLOOR AND WHY. Doto is a dot-matrix face: at a given size and weight it
- * lays down roughly half the ink a solid face does, so the tiers calibrated
- * for Inter Tight OVERSTATE its perceived contrast. Nominal WCAG ratios agree
- * with a solid glyph, not with a grid of dots. The pre-shell measured this
- * first and pinned 12px/600 (`chronos-gate.css:140-146`, "Doto's dot glyphs
- * thin out below it at 12px"); the shell never adopted it and drifted to ~70
- * ad-hoc call sites at 8-11px weight 400 on `text-ink-tertiary`, which the
- * owner's QA read as invisible in both themes. This class is the single owner
- * of that floor:
+ * Succeeds `.vex-doto-label`. Doto was a dot-matrix face: at a given size and
+ * weight it laid down roughly half the ink a solid face does, so the tiers
+ * calibrated for Inter Tight OVERSTATED its perceived contrast and the owner's
+ * QA read the whole register as invisible in both themes. The ratified fix
+ * (2026-08-21) is not a bigger dot grid - it is a solid face. The register is
+ * Inter Tight small-caps; Doto leaves the bundle entirely.
  *
- *   font-size   >= 12px   (FLOOR - never lower it; a spot that cannot afford
- *                          12px must stop being Doto and take the Inter Tight
- *                          micro register `.vex-micro` instead)
- *   font-weight >= 600    (FLOOR - the pre-shell's measured threshold)
- *   tracking    <= 0.16em (CAP - letter-spacing is NOT a legibility tool. It
- *                          isolates already-sparse dot glyphs and makes them
- *                          WORSE; the fix for thin micro-text is up a size
- *                          tier and up a weight, never wider tracking. The
- *                          0.32em welcome date line came down to the default.)
- *   tabular-nums          (every Doto label carries figures: versions, counts,
+ * THE LADDER AND WHY (deepseek's discipline, `design-platform.css` label tiers
+ * + `ModelsSection.module.css` field-label tier): must-read small text goes UP
+ * A TIER and UP A WEIGHT, and takes LESS air, not more. A solid proportional
+ * face at weight 600 needs nothing like the optical separation sparse dot
+ * glyphs demanded, so the old 0.14/0.16em tracking comes down hard:
+ *
+ *   font-size   11px      (the label tier; the register's own step, distinct
+ *                          from the 10px `.vex-micro` caption above)
+ *   font-weight 600       (the "up a weight" half of the ladder - this is what
+ *                          buys legibility at 11px, never wider tracking)
+ *   tracking    <= 0.08em (CAP. 0.06em base, 0.08em for the one `--wide` step)
+ *   tabular-nums          (every micro label carries figures: versions, counts,
  *                          dates, amounts - they must not jitter column width)
  *
  * COLOR IS A CALL-SITE DECISION, deliberately - same law as `.vex-micro`
@@ -87,43 +86,28 @@
  * call site and the genuine tone deviations (warning / success / accent /
  * active-state ink) could not be expressed. The contract instead is: the
  * FLOOR TIER is `text-ink-secondary`; `text-ink-tertiary` and `text-ink-caption`
- * are below the readable threshold for this face and are a red build
+ * are below the readable threshold at this size and are a red build
  * (`shell-design-guard.test.ts`). Uppercase is also a call-site decision - a
  * value ("V0.2.6", "88.1K IN") is not an eyebrow.
  *
+ * NO BACKING CHIP. The retired `.vex-doto-chip` gave the three rail-glass
+ * labels (welcome date line, $VEX card, BOOK version stamp) an opaque plate
+ * because no fixed ink could carry a dot grid over an arbitrary photo
+ * backdrop. A solid 600-weight face stands on its own, and the owner read the
+ * plates as chrome (decision 2, ratified 2026-08-21). Do not re-add a
+ * background here.
+ *
  * `--wide` is the ONE sanctioned tracking step, for short all-caps eyebrows
  * that want more optical separation. It stops at the cap. */
-.vex-doto-label {
-  font-family: var(--font-doto);
-  font-size: 0.75rem;
+.vex-micro-label {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
-.vex-doto-label--wide {
-  letter-spacing: 0.16em;
-}
-
-/* Rail-glass backing chip (owner decision 5, ratified 2026-08-21).
- *
- * Three Doto labels sit on the translucent rails (`--vex-rail`) over the
- * user's chosen photo backdrop: the $VEX card label + meta, the BOOK version
- * stamp, and the welcome date line. No fixed ink can guarantee contrast
- * there, because the effective background is an ARBITRARY IMAGE. The label
- * therefore gets an opaque backing that re-establishes a known surface under
- * it, and both the chip and its ink resolve from the ACTIVE THEME's tokens,
- * never a fixed color.
- *
- * Quiet by construction: a backing, not a badge. Layer-1 surface + the l1
- * hairline + the 4px radius of the small-chip family; no shadow, no fill
- * tint. Call sites still set their own ink tier on top. */
-.vex-doto-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 4px;
-  padding: 1px 5px;
-  background: var(--vex-surface-1, var(--color-surface-1));
-  border: 1px solid var(--vex-line, var(--color-line-1));
+.vex-micro-label--wide {
+  letter-spacing: 0.08em;
 }
 
 /* Chat prose — the READING register for message bodies.
@@ -140,8 +124,8 @@
  * The register (tokens v2, 2026-08-20):
  *   BODY      -> Inter Tight 15.5px/1.65 (reading scale).
  *   HEADINGS  -> Inter Tight 600/700, set per-node in `MarkdownContent`.
- *   REASONING -> Inter Tight ITALIC (`.vex-reasoning-prose` below) - a
- *                different voice for a different kind of speech; the serif
+ *   REASONING -> Inter Tight 14px muted (`.vex-reasoning-prose` below) - a
+ *                quieter voice for a different kind of speech; the serif
  *                is confined to the gate.
  *   TECHNICAL -> mono (code, raw JSON, addresses, tx hashes) / sans+tabular
  *                (numeric columns). Unchanged. */
@@ -173,18 +157,21 @@
   font-synthesis-weight: none;
 }
 
-/* Reasoning prose — the SECOND voice (owner decree 2026-07-30: "inna
- * czcionka"). Vex thinking aloud is not Vex speaking, so the aside stays
- * ITALIC and muted — but in Inter Tight (tokens v2: the serif voice is
- * confined to the gate). Worn by all three reasoning surfaces so they read
- * as one object — the live segment streaming in the island, the settled
- * segment stamps, and the persisted `ReasonedBlock`.
+/* Reasoning prose — the SECOND voice. Vex thinking aloud is not Vex speaking,
+ * so the aside stays MUTED and one step below the reading scale. What it no
+ * longer does is lean: the italic went with the serif in the shell-chrome
+ * sweep (owner 6/6a, ratified 2026-08-21). Deepseek's `ReasoningRow` sets the
+ * same aside in the plain UI face at a muted tier and it reads as an aside on
+ * tone and size alone; a slanted paragraph at 14px only costs legibility.
+ * Worn by all three reasoning surfaces so they read as one object — the live
+ * segment streaming in the island, the settled segment stamps, and the
+ * persisted `ReasonedBlock`.
  *
- * The same technical opt-outs apply: a tool name, a JSON fragment or an
- * address quoted inside a trace must not be italicised into illegibility. */
+ * The technical opt-out stays: a tool name, a JSON fragment or an address
+ * quoted inside a trace keeps the mono face. */
 .vex-reasoning-prose {
   font-family: var(--font-sans);
-  font-style: italic;
+  font-size: 14px;
   color: var(--vex-text-2);
 }
 .vex-reasoning-prose strong,
@@ -193,7 +180,6 @@
 }
 .vex-reasoning-prose :is(code, pre) {
   font-family: var(--font-mono);
-  font-style: normal;
 }
 
 /* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:

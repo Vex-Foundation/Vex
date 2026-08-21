@@ -253,9 +253,12 @@ export function SidebarProfile({
               </span>
             )}
             {runtime.live ? (
-              // The hallmark earns the serif voice ONLY while the runtime is
-              // verifiably healthy; any other state speaks plain telemetry.
-              <span className="truncate font-serif text-[12px] italic leading-tight text-ink-secondary">
+              // The hallmark shows ONLY while the runtime is verifiably
+              // healthy; any other state speaks plain telemetry. It used to
+              // earn a serif italic for the distinction - the serif left shell
+              // chrome (owner 6a, ratified 2026-08-21), so the line is now
+              // marked by its TIER against the tertiary telemetry beside it.
+              <span className="truncate text-[12px] leading-tight text-ink-secondary">
                 {NIGHT_SHIFT_MESSAGE}
               </span>
             ) : (

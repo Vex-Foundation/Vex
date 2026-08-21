@@ -31,10 +31,14 @@ let submitPending = false;
 
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
-    isPending: submitPending,
     mutateAsync: vi.fn(),
     stop: mockStopTurn,
   }),
+  // The composer reads the SESSION-FILTERED answer, never the hook-wide
+  // `isPending`: a resident composer would otherwise inherit the pending
+  // state of a session the user merely switched away from.
+  useIsChatSubmitting: (sessionId: string | null) =>
+    submitPending && sessionId === SESSION,
 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { ReasoningEffort } from "@shared/schemas/reasoning.js";
-import { useSubmitChat } from "../../lib/api/chat.js";
+import { useIsChatSubmitting, useSubmitChat } from "../../lib/api/chat.js";
 import { useRequestStop, useRuntimeState } from "../../lib/api/runtime.js";
 import {
   draftKeyFor,
@@ -142,11 +142,15 @@ export function useComposerSubmit(
   // (observer-bound + useCallback), so the hand-off effect below depends on
   // `submitTurn` instead of the per-render `useSubmitChat()` object — which
   // otherwise re-ran the effect every render.
-  const {
-    isPending: submitPending,
-    mutateAsync: submitTurn,
-    stop: stopTurn,
-  } = useSubmitChat();
+  //
+  // `isPending` is DELIBERATELY NOT read here. This composer is RESIDENT: one
+  // hook instance serves every session, and the observer's boolean is
+  // hook-wide. Reading it made a session the user merely switched TO look
+  // pending - which routed its next send into steer/queue instead of a fresh
+  // send, and pointed its Stop key at the other session's turn. Every pending
+  // decision below reads the session-filtered mutation-cache answer instead.
+  const { mutateAsync: submitTurn, stop: stopTurn } = useSubmitChat();
+  const submitPending = useIsChatSubmitting(sessionId);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const createSessionInitialTurn = useUiStore((s) => s.createSessionInitialTurn);
   const clearCreateSessionInitialTurn = useUiStore(
@@ -179,17 +183,21 @@ export function useComposerSubmit(
   // key to a disabled "Stopping" state so the user sees the request landed.
   // stopTurn stays idempotent — this state is purely the acknowledgment.
   const [stopRequested, setStopRequested] = useState<boolean>(false);
-  // Synchronous in-flight mutex (render `submitPending` lags a tick) + a mirror
-  // of the latest active session so a submit that settles after a session
-  // switch is dropped instead of painting a notice on the wrong session.
-  const inFlightRef = useRef(false);
+  // Synchronous in-flight mutex (render `submitPending` lags a tick), KEYED BY
+  // SESSION because this hook instance is resident across session switches: a
+  // hook-wide boolean made session B inherit A's mutex and take the steer/queue
+  // branch on its first send. Entries are added and removed by the submit that
+  // owns them, so the set only ever holds sessions with a live foreground turn.
+  const inFlightRef = useRef<Set<string>>(new Set());
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
 
-  // Clear the composer notice when the active session changes so a stale
-  // error / Retry from one session never renders on (or resends into) another.
+  // Clear the composer notice AND the stop acknowledgment when the active
+  // session changes, so neither a stale error / Retry nor a "Stopping…" badge
+  // from one session ever renders on (or acts in) another.
   useEffect(() => {
     setNotice(null);
+    setStopRequested(false);
   }, [sessionId]);
 
   // Reset the stop acknowledgment when the work settles so the next turn
@@ -234,8 +242,10 @@ export function useComposerSubmit(
       reasoningOverride?: ReasoningEffort | null,
     ): Promise<void> => {
       const targetSessionId = sessionId;
-      if (targetSessionId === null || inFlightRef.current) return;
-      inFlightRef.current = true;
+      if (targetSessionId === null || inFlightRef.current.has(targetSessionId)) {
+        return;
+      }
+      inFlightRef.current.add(targetSessionId);
       setNotice(null);
       // D5 submit contract: a non-null capability in an agent-stage session
       // ALWAYS carries the effective selection (untouched → the computed
@@ -308,7 +318,7 @@ export function useComposerSubmit(
         const successText = submitSuccessText(outcome.data);
         if (successText !== null) setNotice({ tone: "info", text: successText });
       } finally {
-        inFlightRef.current = false;
+        inFlightRef.current.delete(targetSessionId);
       }
     },
     [
@@ -391,7 +401,7 @@ export function useComposerSubmit(
       // reads at its next tool-step boundary, and the transcript shows the
       // steered row. When steering is refused (turn just ended, parked run)
       // the message QUEUES instead (A27) - never dropped, never doubled.
-      if (submitPending || inFlightRef.current) {
+      if (submitPending || inFlightRef.current.has(sessionId)) {
         setDraft("");
         const steerOutcome = await trySteerLiveTurn(sessionId, message);
         if (steerOutcome === "steered") {
@@ -434,7 +444,7 @@ export function useComposerSubmit(
   // (`takeQueuedMessage` re-reads the live store).
   useEffect(() => {
     if (sessionId === null || !sendNowAvailable || queue.length === 0) return;
-    if (inFlightRef.current) return;
+    if (inFlightRef.current.has(sessionId)) return;
     const row = takeQueuedMessage(sessionId);
     if (row !== null) void runChatSubmit(row.text);
   }, [sessionId, sendNowAvailable, queue, runChatSubmit]);
@@ -473,28 +483,41 @@ export function useComposerSubmit(
    * listens to, and neither leaves a row behind for work that is not running.
    */
   const onStop = useCallback((): void => {
+    // The session this press belongs to, captured BEFORE anything async. A
+    // Stop must only ever cancel the session it was pressed in, and its late
+    // outcome must only ever publish into that session.
+    const targetSessionId = sessionId;
     setStopRequested(true);
     if (submitPending) {
-      stopTurn();
+      // `submitPending` is session-filtered, so a non-null target is implied;
+      // the check is the compiler's, not a new policy.
+      if (targetSessionId !== null) stopTurn(targetSessionId);
       return;
     }
-    if (sessionId === null || sessionId.length === 0) return;
+    if (targetSessionId === null || targetSessionId.length === 0) return;
     void (async () => {
+      const publishFailure = (): void => {
+        // Generation fence, same rule as the chat-completion path above: the
+        // composer may already be showing another session by now, and a
+        // failure from THIS one must not put a "Stop failed" notice or a
+        // "Stopping…" badge on it.
+        if (sessionIdRef.current !== targetSessionId) return;
+        setStopRequested(false);
+        setNotice({ tone: "error", text: STOP_FAILED_NOTICE });
+      };
       try {
-        const result = await requestStop.mutateAsync({ sessionId });
+        const result = await requestStop.mutateAsync({
+          sessionId: targetSessionId,
+        });
         // The mutation RESOLVES on an application-level failure — the Result
         // envelope carries it. Ignoring `ok:false` left the key disabled on
         // "Stopping…" while the agent kept running, which reads as a
         // successful stop and is the worst possible lie on this control.
-        if (!result.ok) {
-          setStopRequested(false);
-          setNotice({ tone: "error", text: STOP_FAILED_NOTICE });
-        }
+        if (!result.ok) publishFailure();
       } catch {
         // Transport-level failure — same recovery: give the user a Stop key
         // that works again rather than a dead one.
-        setStopRequested(false);
-        setNotice({ tone: "error", text: STOP_FAILED_NOTICE });
+        publishFailure();
       }
     })();
   }, [stopTurn, requestStop, sessionId, submitPending]);

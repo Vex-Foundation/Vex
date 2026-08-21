@@ -209,7 +209,7 @@ export function AgentScanScreen({
             >
               {row.kind === "day" ? (
                 <div className="flex items-center gap-3 pb-1.5 pt-4">
-                  <span className="shrink-0 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
+                  <span className="shrink-0 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
                     {row.label}
                   </span>
                   <span aria-hidden className="h-px flex-1 bg-line-2" />
@@ -254,7 +254,7 @@ export function AgentScanScreen({
               type="button"
               onClick={() => void fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="mt-3 w-full rounded-xl border border-line-2 py-1.5 vex-doto-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
+              className="mt-3 w-full rounded-xl border border-line-2 py-1.5 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
             >
               {isFetchingNextPage ? "Loading…" : "Load more"}
             </button>

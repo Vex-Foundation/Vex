@@ -9,10 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { StreamPreview } from "../../../stores/streamStore.js";
-import {
-  resolveTurnIslandView,
-  showsCentredScene,
-} from "../TurnIsland/islandTurnState.js";
+import { resolveTurnIslandView } from "../TurnIsland/islandTurnState.js";
 
 function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   return {
@@ -38,16 +35,10 @@ describe("resolveTurnIslandView - the four working states", () => {
       state: "working",
       size: "pill",
       label: "vexing\u2026",
-    });
-  });
-
-  it("working with the CENTRED scene up → the pill stands down entirely", () => {
-    const view = resolveTurnIslandView(preview({ status: "working" }), false, true);
-    expect(view).toMatchObject({
-      state: "working",
-      size: "hidden",
-      label: "",
-      showElapsed: false,
+      // IN FLOW, unconditionally. The centred viewport scene this pill used
+      // to stand down for is retired, so there is no suppression argument
+      // left that could hide the only pending surface (round-3 QA item 7).
+      showElapsed: true,
     });
   });
 
@@ -174,34 +165,5 @@ describe("resolveTurnIslandView - precedence", () => {
     expect(
       resolveTurnIslandView(preview({ phase: "error" }), false).showElapsed,
     ).toBe(false);
-  });
-});
-
-describe("showsCentredScene", () => {
-  const blankFirstMoment = preview({ status: "working" });
-
-  it("opens only when the latch says the viewport is safe", () => {
-    expect(showsCentredScene(blankFirstMoment, true, false)).toBe(true);
-    expect(showsCentredScene(blankFirstMoment, false, false)).toBe(false);
-  });
-
-  it("a pending signature suppresses it - trust is stillness", () => {
-    // The freeze wins over every eligible input: a looping scene while we wait
-    // for the user's pen reads as progress that is not happening.
-    expect(showsCentredScene(blankFirstMoment, true, true)).toBe(false);
-  });
-
-  it("anything already on screen for this turn closes it", () => {
-    expect(showsCentredScene(preview({ text: "a" }), true, false)).toBe(false);
-    expect(showsCentredScene(preview({ reasoningText: "a" }), true, false)).toBe(false);
-    expect(
-      showsCentredScene(
-        preview({ reasoningSegments: ["a thought"] }),
-        true,
-        false,
-      ),
-    ).toBe(false);
-    expect(showsCentredScene(preview({ status: "thinking" }), true, false)).toBe(false);
-    expect(showsCentredScene(preview({ phase: "done" }), true, false)).toBe(false);
   });
 });

@@ -54,7 +54,7 @@ export function ComposerMissionStrip({
       data-status={missionStatus}
       className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-interactive-hover px-3 py-1 text-[12px] leading-[18px] text-ink-secondary"
     >
-      <span className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
+      <span className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
         Mission · {STATUS_WORD[missionStatus]}
       </span>
       {plan !== null && plan.enabled ? (

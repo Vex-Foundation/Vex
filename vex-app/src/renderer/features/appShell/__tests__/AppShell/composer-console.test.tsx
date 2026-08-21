@@ -48,6 +48,10 @@ const mockSubmitChat = {
 };
 vi.mock("../../../../lib/api/chat.js", () => ({
   useSubmitChat: () => mockSubmitChat,
+  // Session-filtered pending: the resident composer reads this, not the
+  // hook-wide `isPending`. The fixture drives one session, so the two
+  // answers coincide here.
+  useIsChatSubmitting: () => mockSubmitChat.isPending,
 }));
 vi.mock("../../../../lib/api/messages.js", () => ({
   useTranscriptInfinite: () => ({ data: undefined, isSuccess: false }),
@@ -231,7 +235,7 @@ describe("composer capsule - send key", () => {
     expect(send.className).toContain("h-[34px]");
     expect(send.className).toContain("w-[34px]");
     expect(send.className).toContain("rounded-full");
-    expect(send.className).toContain("bg-accent-primary");
+    expect(send.className).toContain("bg-button-accent");
     expect(send.disabled).toBe(true);
     typeDraft("buy the dip");
     expect(send.disabled).toBe(false);

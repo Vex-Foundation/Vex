@@ -208,7 +208,8 @@ describe("ReorderableSection - keyboard path", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     expect(handle("balances").getAttribute("aria-label")).toMatch(/balances/i);
     fireEvent.keyDown(handle("balances"), { key: "ArrowDown" });
-    expect(screen.getByText(/moved to position 4 of 7/i)).not.toBeNull();
+    // 6 sections since "Runtime & Cost" retired in round 3.
+    expect(screen.getByText(/moved to position 4 of 6/i)).not.toBeNull();
   });
 });
 

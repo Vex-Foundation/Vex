@@ -123,7 +123,7 @@ function PreviewBody({
 
   if (state === "loading") {
     return (
-      <p className="vex-doto-label uppercase text-ink-secondary">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Pricing…
       </p>
     );
@@ -162,7 +162,7 @@ function RetryButton({ onRetry }: { readonly onRetry: () => void }): JSX.Element
     <button
       type="button"
       onClick={onRetry}
-      className="rounded-full border border-line-2 px-3 py-1 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+      className="rounded-full border border-line-2 px-3 py-1 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
     >
       Try again
     </button>

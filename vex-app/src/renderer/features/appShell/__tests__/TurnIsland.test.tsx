@@ -79,7 +79,7 @@ describe("TurnIsland reasoning segments", () => {
     // No window, no clipping, no independent scroll box — a thought is read
     // whole or it is not read.
     expect(body?.className).not.toMatch(/max-h-|overflow-y-auto/);
-    // The reasoning register: serif italic, muted (`.vex-reasoning-prose`).
+    // The reasoning register: sans, muted (`.vex-reasoning-prose`).
     expect(body?.className).toContain("vex-reasoning-prose");
   });
 

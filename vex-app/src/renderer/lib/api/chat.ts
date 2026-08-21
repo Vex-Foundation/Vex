@@ -14,11 +14,17 @@ import { approvalsKeys, isUsageQueryForSession } from "./queryKeys.js";
 import { sessionKeys } from "./sessions.js";
 
 /**
- * Chat submit mutation + a stable `stop()` that cancels the in-flight turn
- * (9-5b). The active invocation's `cancel` is captured per-call and cleared
- * only when THAT same invocation settles, so a newer submit started before
- * the first resolves keeps its own handle (same ownership rule as the
- * stream-preview captured-streamId guard).
+ * Chat submit mutation + a stable `stop(sessionId)` that cancels the in-flight
+ * turn OF THAT SESSION (9-5b). The active invocation's `cancel` is captured
+ * per-call under its session id and cleared only when THAT same invocation
+ * settles, so a newer submit started before the first resolves keeps its own
+ * handle (same ownership rule as the stream-preview captured-streamId guard).
+ *
+ * WHY THE HANDLE IS SESSION-KEYED. The composer is RESIDENT: one hook instance
+ * serves every session the user switches between. A single handle meant that
+ * pressing Stop in session B cancelled whatever turn session A had left in
+ * flight - a cancellation aimed at the wrong conversation. The caller must name
+ * the session it is stopping, and an unknown session cancels nothing.
  *
  * `mutate`/`mutateAsync` are wrapped to call `mutation.reset()` once the turn
  * settles. TanStack Query v5's `MutationObserver.onUnsubscribe()` detaches the
@@ -36,7 +42,7 @@ export type UseSubmitChatResult = UseMutationResult<
   Result<ChatSubmitResult>,
   Error,
   ChatSubmitInput
-> & { readonly stop: () => void };
+> & { readonly stop: (sessionId: string) => void };
 
 export const CHAT_SUBMIT_MUTATION_KEY = ["chat", "submit"] as const;
 
@@ -60,16 +66,22 @@ export function useIsChatSubmitting(sessionId: string | null): boolean {
 
 export function useSubmitChat(): UseSubmitChatResult {
   const queryClient = useQueryClient();
-  const cancelRef = useRef<(() => void) | null>(null);
+  // One cancel handle PER SESSION (see the header). Bounded by the number of
+  // sessions with a turn actually in flight, and every entry is deleted by the
+  // invocation that owns it when it settles.
+  const cancelsRef = useRef<Map<string, () => void>>(new Map());
   const activeSubmitRef = useRef<symbol | null>(null);
 
   const mutation = useMutation({
     mutationKey: CHAT_SUBMIT_MUTATION_KEY,
     mutationFn: (input: ChatSubmitInput) => {
       const invocation = window.vex.chat.submit(input);
-      cancelRef.current = invocation.cancel;
+      const cancels = cancelsRef.current;
+      cancels.set(input.sessionId, invocation.cancel);
       return invocation.promise.finally(() => {
-        if (cancelRef.current === invocation.cancel) cancelRef.current = null;
+        if (cancels.get(input.sessionId) === invocation.cancel) {
+          cancels.delete(input.sessionId);
+        }
       });
     },
     onSuccess: (result, variables) => {
@@ -133,8 +145,8 @@ export function useSubmitChat(): UseSubmitChatResult {
     [submitTurn],
   );
 
-  const stop = useCallback(() => {
-    cancelRef.current?.();
+  const stop = useCallback((sessionId: string) => {
+    cancelsRef.current.get(sessionId)?.();
   }, []);
 
   return { ...mutation, mutate, mutateAsync: submitTurn, stop };

@@ -202,7 +202,7 @@ function DefaultHoldings({
         </p>
       )}
       {remainder > 0 ? (
-        <p className="vex-doto-label text-ink-secondary">
+        <p className="vex-micro-label text-ink-secondary">
           +{remainder} more
         </p>
       ) : null}
@@ -267,7 +267,7 @@ function WalletScopedHoldings({
 
   if (query.isLoading) {
     return (
-      <p className="vex-doto-label uppercase text-ink-secondary">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
@@ -290,7 +290,7 @@ function WalletScopedHoldings({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="vex-doto-label uppercase text-ink-secondary">
+        <span className="vex-micro-label uppercase text-ink-secondary">
           Wallet total
         </span>
         <span className="text-[13px] font-semibold tabular-nums text-ink-primary">

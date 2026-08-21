@@ -16,9 +16,9 @@
  *
  * IN-FLOW like a sidebar (owner correction, 2026-07-20 screenshot review —
  * the earlier absolute overlay ran the cards OVER the hero/composer): the
- * root is an `<aside>` flex sibling in the shell row that RESERVES its
- * width while open (`w-[380px]` = 24px gutter + 340px stack + 16px
- * breathing) and gives it all back when collapsed (`w-0`), animated with
+ * root is an `<aside>` grid child in the shell row that RESERVES its
+ * width while open (`WELCOME_PORTFOLIO_WIDTH` = 24px gutter + 340px stack +
+ * 16px breathing) and gives it all back when collapsed (0), animated with
  * the SessionsList width-only transition idiom, so the centered welcome
  * canvas reflows and re-centers instead of being covered. The aside is the
  * row's LAST child — its right edge stays pinned to the window — so the
@@ -43,7 +43,7 @@ import {
   IconChevronDown,
   IconWallet,
 } from "../../../../components/icons/index.js";
-import { cn } from "../../../../lib/utils.js";
+import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
 import { GLOBAL_PORTFOLIO_SCOPE } from "./portfolio-scope.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
@@ -67,13 +67,13 @@ export function WelcomePortfolioPanel({
       data-vex-area="welcome-portfolio"
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Portfolio"
-      className={cn(
-        // Sidebar-like width reservation (owner correction): the aside holds
-        // its space open so the cards can never cover the center column;
-        // width-only transition = the SessionsList collapse idiom.
-        "relative z-20 h-full shrink-0 transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        bookOpen ? "w-[380px]" : "w-0",
-      )}
+      // Sidebar-like width reservation (owner correction): the aside holds its
+      // space open so the cards can never cover the center column; width-only
+      // transition = the SessionsList collapse idiom. The width comes from the
+      // SHARED constant the shell's third grid track is reserved from, so the
+      // child and its reservation cannot drift apart.
+      className="relative z-20 h-full shrink-0 transition-[width] duration-300 ease-[var(--vex-ease-out)]"
+      style={{ width: bookOpen ? WELCOME_PORTFOLIO_WIDTH : 0 }}
     >
       {/* Anchor column: the full height budget between the top inset and the
         * handle zone (top-6 → bottom-[88px]). The stack is flex-constrained

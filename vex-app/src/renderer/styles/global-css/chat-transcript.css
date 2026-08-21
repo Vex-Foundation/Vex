@@ -1,6 +1,6 @@
 /* Chat transcript chrome: the RESIDENT SHELL geometry, the turn-status
  * shimmer, the running-row sweep, hover-revealed timestamps, day separators
- * and the Doto turn-stats line.
+ * and the micro-label turn-stats line.
  * All ambient loops still under prefers-reduced-motion. */
 
 /* ============================================================ *
@@ -85,28 +85,27 @@
   visibility: hidden;
 }
 
-/* ── Zero-height sticky slots ─────────────────────────────────────────────
- * Both floating conversation surfaces are `height: 0` sticky boxes whose
- * child overflows. A zero-height box adds no scroll range, so neither surface
- * can move the floor the follow model measures itself against. */
+/* FOLLOW OWNERSHIP IS THE SCROLL MODEL'S, NOT THE BROWSER'S. Chromium's scroll
+ * anchoring silently adjusts `scrollTop` when content above the reader
+ * resizes; `useTranscriptScroll` classifies any deviation from its own ledger
+ * as READER INPUT, so an anchoring adjustment would read as the reader taking
+ * ownership (or giving it back). Turning it off on the two boxes this model
+ * can own leaves exactly one writer of the conversation's scroll position. */
+[data-vex-conversation-scroll],
+[data-vex-area="chat-transcript"] {
+  overflow-anchor: none;
+}
 
-/* The centred working scene, centred in the VIEWPORT - not in the transcript's
- * own box, which is the whole conversation once the shell owns the scrollport.
- * `--vex-conversation-viewport` is republished by the scroll model's
- * ResizeObserver; the `100vh` fallback covers the first paint before it
- * fires. */
-[data-vex-viewport-slot] {
-  position: sticky;
-  top: 0;
-  z-index: 9;
-  height: 0;
-  pointer-events: none;
-}
-[data-vex-viewport-scene] {
-  display: grid;
-  place-items: center;
-  height: var(--vex-conversation-viewport, 100vh);
-}
+/* ── Zero-height sticky slot ──────────────────────────────────────────────
+ * The one floating conversation surface left is a `height: 0` sticky box whose
+ * child overflows. A zero-height box adds no scroll range, so it cannot move
+ * the floor the follow model measures itself against.
+ *
+ * The centred "vexing…" scene that used to share this idiom is RETIRED (round
+ * 3, owner QA item 7): its child was one VIEWPORT tall, and a positively
+ * overflowing child DOES enlarge scrollable overflow even from a zero-height
+ * parent - which lifted the sticky composer seat on every send and dropped it
+ * back on unmount. The pending turn is now `TurnIsland`'s in-flow pill. */
 
 /* The jump-to-latest pill. Under the resident shell it clears the sticky seat
  * by the seat's LIVE height, so a growing draft or an opening queue dock
@@ -233,10 +232,10 @@
   }
 }
 
-/* The Doto micro-stat register lives in landing-motifs.css as
- * `.vex-doto-label` since R2-C (12px/600 floor); the old `.vex-stat-doto`
- * block (11px/500 tertiary, below the floor on all three counts) retired
- * here once its last call site migrated. */
+/* The micro-stat register lives in landing-motifs.css as `.vex-micro-label`
+ * (Inter Tight small-caps, 11px/600; formerly `.vex-doto-label` before Doto
+ * retired on 2026-08-21). The old `.vex-stat-doto` block retired here once
+ * its last call site migrated. */
 
 /* Code token classes (lib/markdown/highlight.ts). Restrained palette:
  * keywords carry the accent, strings the success tone, comments recede;

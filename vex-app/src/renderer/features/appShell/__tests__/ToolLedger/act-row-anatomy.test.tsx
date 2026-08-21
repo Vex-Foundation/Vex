@@ -180,8 +180,16 @@ describe("ExplorerRefLinks", () => {
     );
     expect(new Set(labels).size).toBe(7);
 
+    // Collapsing no longer UNMOUNTS the overflow chips: they ride the shared
+    // expand primitive, which needs them mounted to animate closed. They leave
+    // the accessibility tree and the tab order instead (aria-hidden + inert).
     fireEvent.click(screen.getByRole("button", { name: "less" }));
-    expect(container.querySelectorAll("a")).toHaveLength(3);
+    const overflow = container.querySelector(".vex-expand");
+    expect(overflow).not.toBeNull();
+    expect(overflow?.getAttribute("data-open")).toBe("false");
+    expect(overflow?.getAttribute("aria-hidden")).toBe("true");
+    expect(overflow?.hasAttribute("inert")).toBe(true);
+    expect(overflow?.querySelectorAll("a")).toHaveLength(4);
   });
 
   it("shows no toggle at or below the cap", () => {

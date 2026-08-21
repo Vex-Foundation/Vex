@@ -19,7 +19,7 @@
  *     scope (scrollbars, `--vex-onboarding-accent`) alive.
  *   - `data-vex-gate="true"` applies the pre-shell token re-projection
  *     from `global-css/chronos-gate.css`: theme-aware hairlines,
- *     accent-as-text tokens, the Doto micro-label voice, AND the
+ *     accent-as-text tokens, the pre-shell micro-label weight, AND the
  *     pre-shell type scale. The frame ALSO stamps it on documentElement for
  *     its own lifetime so body-portaled surfaces keep the projection
  *     (`useGateDocumentScope` below).
@@ -49,7 +49,7 @@ let mountedFrames = 0;
  * to `document.body`, which sits OUTSIDE the frame, so a portaled surface
  * opened from a pre-shell screen silently reverted to shell values - wrong
  * hairline strength, wrong `--vex-accent-text`, the shell type scale, no
- * Doto voice. Stamping the root is the smallest seam that reaches every
+ * micro-label weight. Stamping the root is the smallest seam that reaches every
  * portal target without editing ~30 dual-hosted call sites. The six wizard
  * steps that ALSO render inside Settings are unaffected: there they render
  * without SetupFrame, so the scope is never stamped.

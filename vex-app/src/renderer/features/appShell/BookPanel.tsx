@@ -10,7 +10,7 @@
  *  - SESSION stage: the rail below, now carrying the SAME `PortfolioCard`
  *    stack rather than the retired hairline/mono-ledger `BookBlock` grammar
  *    (owner decree: one card system app-wide). Card order — Position,
- *    Wallets, Balances, Activity, Runtime & Cost, Session. An ADDITIVE
+ *    Wallets, Balances, Activity, Session. An ADDITIVE
  *    inspect mode (A32/E13, `book/inspect/`) overlays a tool-call view while
  *    the inspect store holds a payload; the stack hides via CSS, never
  *    unmounts.
@@ -48,12 +48,10 @@ import {
   IconPanelRightOpen,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
-import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { ImageLockerCard } from "./book/ImageLockerCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
-import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
 import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
 import { BalancesCard } from "./book/portfolio/BalancesCard.js";
 import {
@@ -74,14 +72,9 @@ import { BookInspectPanel } from "./book/inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "./book/inspect/inspect-store.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import type { SessionPermission } from "@shared/schemas/sessions.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */
-function renderBookSection(
-  id: BookSectionId,
-  sessionId: string,
-  permission: SessionPermission | null,
-): ReactNode {
+function renderBookSection(id: BookSectionId, sessionId: string): ReactNode {
   switch (id) {
     case "position":
       return <PositionBlock activeSessionId={sessionId} />;
@@ -91,8 +84,6 @@ function renderBookSection(
       return <BalancesCard scope={{ kind: "session", sessionId }} />;
     case "activity":
       return <SessionActivityCard sessionId={sessionId} />;
-    case "runtime":
-      return <SessionRuntimeCard sessionId={sessionId} permission={permission} />;
     case "session":
       return <SessionBlock sessionId={sessionId} />;
     case "trench":
@@ -134,15 +125,6 @@ export function BookPanel({
   // Same macOS overlay bar as the transcript — one shared utility, one hook.
   const stackRef = useRef<HTMLUListElement>(null);
   useScrollbarVisibility(stackRef);
-
-  // The rail owns the session read that the Runtime & Cost card's apply
-  // control needs: permission is a session-STATIC axis, so a prop cannot go
-  // stale, and the query is already cached by the mission rail under the same
-  // key. Called before the welcome-stage early return so hook order is stable.
-  const sessionQuery = useSession(activeSessionId);
-  const permission = sessionQuery.data?.ok
-    ? (sessionQuery.data.data?.permission ?? null)
-    : null;
 
   // INSPECT mode (A32/E13) — an ADDITIVE view: while a tool-call payload for
   // THIS session is open, the inspect panel shows and the card stack hides
@@ -189,7 +171,7 @@ export function BookPanel({
         )}
       >
         {bookOpen ? (
-          <span className="vex-doto-label vex-doto-chip uppercase text-ink-secondary">
+          <span className="vex-micro-label uppercase text-ink-secondary">
             v{__VEX_APP_VERSION__}
           </span>
         ) : null}
@@ -224,7 +206,7 @@ export function BookPanel({
               count={order.length}
               reorder={reorder}
             >
-              {renderBookSection(id, activeSessionId, permission)}
+              {renderBookSection(id, activeSessionId)}
             </ReorderableSection>
           ))}
           {/* The keyboard path's spoken confirmation — the same visually-hidden

@@ -16,7 +16,7 @@
  *   unlock-typed         armed CTA inverted after the first keystroke
  *   unlock-error         the failed-unlock rail + the restyled
  *                        "Open logs folder" link (settles the owner's
- *                        "red Doto underline" report)
+ *                        "red micro-label underline" report)
  *   welcome-shell        hero + composer + rail + starter pills
  *   settings-appearance  the theme picker itself
  *

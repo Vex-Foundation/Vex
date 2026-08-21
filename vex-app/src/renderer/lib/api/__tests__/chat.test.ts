@@ -178,7 +178,7 @@ describe("useSubmitChat stop / cancel ownership (9-5b)", () => {
     void result.current.mutate({ sessionId: SESSION, message: "hi" });
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
 
-    result.current.stop();
+    result.current.stop(SESSION);
     expect(cancel).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -222,12 +222,47 @@ describe("useSubmitChat stop / cancel ownership (9-5b)", () => {
       await Promise.resolve();
     });
 
-    result.current.stop();
+    result.current.stop(SESSION);
     expect(cancel2).toHaveBeenCalledTimes(1);
     expect(cancel1).not.toHaveBeenCalled();
 
     await act(async () => {
       settle2({ ok: true, data: { text: null } });
+      await Promise.resolve();
+    });
+  });
+
+  it("stop(sessionId) never cancels ANOTHER session's in-flight turn", async () => {
+    // The composer is resident: one hook instance serves every session. A
+    // single hook-wide handle meant pressing Stop in session B cancelled the
+    // turn session A had left running - a cancellation aimed at the wrong
+    // conversation, and the reason the handle is keyed by session.
+    const cancelA = vi.fn();
+    let settleA!: (r: { ok: true; data: { text: null } }) => void;
+    submitMock.mockReturnValue({
+      promise: new Promise<{ ok: true; data: { text: null } }>((res) => {
+        settleA = res;
+      }),
+      cancel: cancelA,
+    });
+    const client = new QueryClient();
+    const { result } = renderHook(() => useSubmitChat(), {
+      wrapper: makeWrapper(client),
+    });
+
+    void result.current.mutate({ sessionId: SESSION, message: "hi" });
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+
+    // Stop pressed in a session with nothing in flight cancels NOTHING, rather
+    // than reaching for whatever handle happens to be live.
+    result.current.stop(OTHER_SESSION);
+    expect(cancelA).not.toHaveBeenCalled();
+
+    result.current.stop(SESSION);
+    expect(cancelA).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settleA({ ok: true, data: { text: null } });
       await Promise.resolve();
     });
   });

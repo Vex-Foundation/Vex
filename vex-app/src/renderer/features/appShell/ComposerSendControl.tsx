@@ -70,7 +70,7 @@ export function ComposerSendControl({
         aria-label="Stop generating"
         className={cn(
           SEND_KEY_BASE,
-          "bg-accent-primary text-ink-on-accent hover:bg-accent-hover",
+          "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover",
         )}
       >
         <IconStopFill size={16} />
@@ -85,7 +85,7 @@ export function ComposerSendControl({
       aria-label="Send message"
       className={cn(
         SEND_KEY_BASE,
-        "bg-accent-primary text-ink-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-primary",
+        "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-button-accent",
       )}
     >
       <IconSend size={16} />
