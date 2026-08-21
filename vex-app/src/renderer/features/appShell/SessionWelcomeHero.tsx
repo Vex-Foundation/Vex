@@ -10,6 +10,7 @@
 
 import { useState, type JSX } from "react";
 import { IconLock } from "../../components/icons/index.js";
+import { VexMark } from "../../components/common/VexMark.js";
 import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { cn } from "../../lib/utils.js";
@@ -53,21 +54,13 @@ export function SessionWelcomeHero(): JSX.Element {
   return (
     <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
       <div className="vex-rise flex flex-col items-center justify-center gap-3">
-        {/* vx script mark - white over the chronos night photo, brand blue on
-          * the celeris day scene (arbitrary parent variant on the theme
-          * attribute; no JS theme read). */}
-        <img
-          src="/brand/vex-mark-white.svg"
-          alt=""
-          aria-hidden
-          className="h-16 w-auto [[data-vex-theme=celeris]_&]:hidden"
-        />
-        <img
-          src="/brand/vex-mark-color.svg"
-          alt=""
-          aria-hidden
-          className="hidden h-16 w-auto [[data-vex-theme=celeris]_&]:block"
-        />
+        {/* vx script mark on currentColor ink (owner QA round 3: BLACK on the
+          * celeris day scene, not brand blue) - ink-primary is white over the
+          * chronos night photo and near-black on celeris, so one inline mark
+          * replaces the two-asset theme swap. */}
+        <span aria-hidden className="text-ink-primary">
+          <VexMark size={64} />
+        </span>
         <span
           className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary"
           title={PREVIEW_TITLE}
