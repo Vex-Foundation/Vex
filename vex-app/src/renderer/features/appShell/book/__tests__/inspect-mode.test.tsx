@@ -23,9 +23,6 @@ vi.mock("../portfolio/BalancesCard.js", () => ({
 vi.mock("../SessionActivityCard.js", () => ({
   SessionActivityCard: () => <div data-testid="card-activity" />,
 }));
-vi.mock("../SessionRuntimeCard.js", () => ({
-  SessionRuntimeCard: () => <div data-testid="card-runtime" />,
-}));
 vi.mock("../SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="card-session" />,
 }));
@@ -85,8 +82,7 @@ describe("BOOK inspect mode", () => {
       "card-wallets",
       "card-balances",
       "card-activity",
-      "card-runtime",
-      "card-session",
+          "card-session",
       "card-images",
     ]) {
       expect(screen.getByTestId(card)).toBeTruthy();

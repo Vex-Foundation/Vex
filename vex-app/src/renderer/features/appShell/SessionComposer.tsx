@@ -14,10 +14,6 @@ import type { DragEvent, JSX, MouseEvent as ReactMouseEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
-  flattenTranscriptPages,
-  useTranscriptInfinite,
-} from "../../lib/api/messages.js";
-import {
   useExportSessionMarkdown,
   useSessionPlan,
 } from "../../lib/api/sessions.js";
@@ -54,10 +50,10 @@ import type { ComposerCommandContext } from "./commands/directory.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import {
   ComposerModelChip,
-  ComposerPermissionChip,
   ComposerPlanChip,
 } from "./SessionComposer/ComposerSeats.js";
 import { ComposerContextRing } from "./SessionComposer/ComposerContextRing.js";
+import { ComposerPermissionSeat } from "./SessionComposer/ComposerPermissionSeat.js";
 import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
@@ -197,22 +193,17 @@ export function SessionComposer({
     if (justStopped) setRedirectHintDismissed(false);
   }, [justStopped]);
 
-  // Starter chips: welcome + a freshly created, still-empty agent session.
-  const transcriptQuery = useTranscriptInfinite(sessionId ?? "");
-  const transcriptPages = transcriptQuery.data?.pages;
-  const transcriptEmpty = useMemo(
-    () =>
-      transcriptPages === undefined
-        ? true
-        : flattenTranscriptPages(transcriptPages).length === 0,
-    [transcriptPages],
-  );
-  const showQuickActions =
-    sessionId === null ||
-    (activeSession !== null &&
-      activeSession.mode !== "mission" &&
-      transcriptQuery.isSuccess &&
-      transcriptEmpty);
+  // STARTER CHIPS: a pure function of the STAGE (codex Bug 1, secondary
+  // repro). This used to re-derive "is the transcript empty?" from its own
+  // `useTranscriptInfinite` read, which resolved on a different beat from
+  // SessionPanel's phase solver. On a fresh first send the panel had already
+  // docked the capsule while this query still reported empty, so the 60px slot
+  // lingered under the docked card and then vanished - a second composer shift
+  // on top of the scrollport one. SessionPanel already owns the emptiness
+  // question (`isIdleSession` -> `phase`) and hands the answer down as
+  // `variant`; the composer now consumes that single source instead of keeping
+  // a second one.
+  const showQuickActions = stage === "hero";
 
   const applyQuickAction = useCallback(
     (prompt: string): void => {
@@ -378,13 +369,24 @@ export function SessionComposer({
             activeDescendant={activeDescendant}
           />
 
-          {/* Toolbar row (catalog: space-between, gap 12, pad 2 8 6). */}
-          <div className="flex items-center justify-between gap-3 px-2 pb-1.5 pt-0.5">
-            <div className="flex min-w-0 items-center gap-1">
+          {/* Toolbar row (catalog: space-between, gap 12, pad 2 8 6).
+           *
+           * `@container` (container-type: inline-size) makes THIS row the
+           * query container for the permission seat's label collapse, so the
+           * seat answers to the composer's own width rather than the viewport
+           * - the composer is capped at 780px inside a rail-driven grid, and a
+           * viewport media query would fire at the wrong moment.
+           *
+           * SHRINK CHAIN (codex Bug 3, cross-check §2). Leading cluster:
+           * `min-w-0` and shrinkable, its chips' labels truncate first.
+           * Trailing cluster: `flex-none` - the permission seat, the context
+           * meter and the send/stop key are the row's protected seats, and
+           * their glyphs never shrink. The permission LABEL collapses second,
+           * at the 460px container threshold. Nothing is blanket-clipped:
+           * every focusable control stays visible and focus-ringed. */}
+          <div className="@container flex items-center justify-between gap-3 px-2 pb-1.5 pt-0.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
               <ComposerModelChip modelId={globalModelId} />
-              <ComposerPermissionChip
-                permission={activeSession?.permission ?? null}
-              />
               <ComposerPlanChip
                 sessionId={sessionId}
                 missionStatus={runStatus}
@@ -403,20 +405,29 @@ export function SessionComposer({
                 <ReasoningEffortPlaceholder />
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            {/* Trailing cluster order: pending dot, access mode, context
+             * meter, send/stop key (owner: "ustawiony mode obok licznika
+             * contextu"). */}
+            <div className="flex flex-none items-center gap-2">
               {/* Pending dot beside the key - Stop occupies the key slot
                * while a turn runs, so the in-flight signal sits next to it. */}
               {submitPending ? (
                 <span
                   aria-hidden
                   data-vex-composer-pending
-                  className="inline-flex h-7 w-4 items-center justify-center text-accent-primary"
+                  className="inline-flex h-7 w-4 shrink-0 items-center justify-center text-accent-primary"
                 >
                   <span className="vex-composer-pending-dot" />
                 </span>
               ) : null}
+              <ComposerPermissionSeat
+                permission={activeSession?.permission ?? null}
+              />
               {sessionId !== null ? (
-                <ComposerContextRing sessionId={sessionId} />
+                <ComposerContextRing
+                  sessionId={sessionId}
+                  permission={activeSession?.permission ?? null}
+                />
               ) : null}
               <ComposerSendControl
                 stopAvailable={stopAvailable}

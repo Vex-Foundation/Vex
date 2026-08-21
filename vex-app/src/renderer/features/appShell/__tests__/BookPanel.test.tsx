@@ -46,9 +46,6 @@ vi.mock("../book/portfolio/BalancesCard.js", () => ({
 vi.mock("../book/SessionActivityCard.js", () => ({
   SessionActivityCard: () => <div data-testid="card-activity" />,
 }));
-vi.mock("../book/SessionRuntimeCard.js", () => ({
-  SessionRuntimeCard: () => <div data-testid="card-runtime" />,
-}));
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="card-session" />,
 }));
@@ -90,7 +87,6 @@ const CARD_ORDER = [
   "card-wallets",
   "card-balances",
   "card-activity",
-  "card-runtime",
   "card-session",
   "card-images",
 ] as const;
@@ -216,8 +212,7 @@ describe("BookPanel session card stack", () => {
       "card-wallets",
       "card-balances",
       "card-activity",
-      "card-runtime",
-    ]);
+        ]);
   });
 
   it("keeps the SESSION rail on session stage - the welcome tab never mounts there", () => {
