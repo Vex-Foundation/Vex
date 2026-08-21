@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get a wallet's open Jupiter Lend Borrow positions — collateral supplied, debt owed, and residual dust debt (raw atomic units), per position. These amounts carry no decimals of their own: cross-reference solana.lend.borrowVaults by vaultId for each leg's symbol, decimals, and risk thresholds before interpreting or acting on them. Use a position's id as solana.lend.borrowOperate's positionId to adjust or close it. Covers collateralized Borrow, not solana.lend.positions' simple Earn positions.",
+      "name": "solana__lend__borrowPositions",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "market": {
+            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). An unrecognized value is rejected.",
+            "type": "string"
+          },
+          "vaultIds": {
+            "description": "Comma-separated vault-id allow-list to filter positions to. Omit for all positions.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet account to read, as a Solana address. Defaults to the session's selected Solana wallet.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.lend.borrowPositions"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "namespace": "morpho",
+  "entries": [
+    {
+      "toolId": "morpho.markets.discover",
+      "publicName": "morpho__markets_discover",
+      "rationale": "mechanical snake_case conversion; already the catalog's canonical screening shape and the exemplar the plan cites"
+    },
+    {
+      "toolId": "morpho.markets.activity",
+      "publicName": "morpho__markets_activity_list",
+      "rationale": "Verb added. `list` and not `discover`: the tool reads a bounded transaction record for markets or an address, so it enumerates history rather than screening candidates, and its own description says it is history and not a recommendation signal."
+    },
+    {
+      "toolId": "morpho.market.get",
+      "publicName": "morpho__market_get",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "morpho.market.quote",
+      "publicName": "morpho__market_quote",
+      "rationale": "mechanical snake_case conversion; the direction stays a parameter, which is correct here because the quote is mandatory per direction and its direction is what authorizes the matching execute"
+    },
+    {
+      "toolId": "morpho.market.supply",
+      "publicName": "morpho__market_supply",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.market.withdraw",
+      "publicName": "morpho__market_withdraw",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.market.supplyCollateral",
+      "publicName": "morpho__market_supply_collateral",
+      "rationale": "mechanical snake_case conversion of the camelCase segment; kept distinct from market_supply because the two move different tokens and only one creates liquidation exposure"
+    },
+    {
+      "toolId": "morpho.market.withdrawCollateral",
+      "publicName": "morpho__market_withdraw_collateral",
+      "rationale": "mechanical snake_case conversion of the camelCase segment; kept distinct from market_withdraw for the same lender-versus-borrower reason"
+    },
+    {
+      "toolId": "morpho.market.borrow",
+      "publicName": "morpho__market_borrow",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.market.repay",
+      "publicName": "morpho__market_repay",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.vaults.discover",
+      "publicName": "morpho__vaults_discover",
+      "rationale": "mechanical snake_case conversion; plural resource is correct, the call screens many vaults"
+    },
+    {
+      "toolId": "morpho.vault.get",
+      "publicName": "morpho__vault_get",
+      "rationale": "mechanical snake_case conversion; singular resource is correct, one vaultAddress plus chain"
+    },
+    {
+      "toolId": "morpho.vault.quote",
+      "publicName": "morpho__vault_quote",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "morpho.vault.deposit",
+      "publicName": "morpho__vault_deposit",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.vault.withdraw",
+      "publicName": "morpho__vault_withdraw",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "morpho.positions.get",
+      "publicName": "morpho__positions_get",
+      "rationale": "mechanical snake_case conversion. Plural resource with `get` is deliberate: one call reads ONE wallet's whole Morpho footprint and a second address is rejected by name, so the plurality is in the rows, not in the addressable subject."
+    },
+    {
+      "toolId": "morpho.rewards.get",
+      "publicName": "morpho__rewards_get",
+      "rationale": "mechanical snake_case conversion; one wallet per call by design"
+    },
+    {
+      "toolId": "morpho.rewards.claim",
+      "publicName": "morpho__rewards_claim",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic, and the read/claim pair now shares one resource word with pendle__rewards_claim"
+    },
+    {
+      "toolId": "morpho.wallet.balance",
+      "publicName": "morpho__wallet_balance_get",
+      "rationale": "Verb added, singular kept to match the toolId. Flagged in the doc: the description states the ALLOWANCE half is the reason the tool exists, so `wallet_balance` under-describes it, and a rename to a name carrying allowances is recorded as a Batch 2 proposal rather than taken here."
+    }
+  ]
+}

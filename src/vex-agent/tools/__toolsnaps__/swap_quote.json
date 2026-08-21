@@ -1,0 +1,62 @@
+{
+  "definition": {
+    "function": {
+      "description": "Preview a token swap WITHOUT executing — best route, expected output, price impact, and token-safety signals. EVM chains route to KyberSwap ONLY; chain \"solana\" → Jupiter. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled here to avoid wrong-contract matches; Solana accepts a symbol or mint. `amountIn` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Call this BEFORE swap_execute: a fresh matching quote (same venue) is what unlocks execution. If KyberSwap cannot route this chain/token, the failure message offers a backup automatically when one is available — just follow what it says.",
+      "name": "swap_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount of tokenIn to swap, in HUMAN decimal units (e.g. \"1.5\"). Not wei/lamports.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain to swap on. EVM slugs/aliases route to KyberSwap (ethereum, base, arbitrum, robinhood, …); the literal \"solana\" routes to Jupiter. Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token. EVM: the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Solana: symbol or mint.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token. EVM: the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Solana: symbol or mint.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "namespace": "dexscreener",
+  "entries": [
+    {
+      "toolId": "dexscreener.search",
+      "publicName": "dexscreener__pairs_search",
+      "rationale": "Resource added to a flat toolId. The tool searches DEX PAIRS by name, symbol, address or venue and returns pair rows; `search` alone did not say what is searched, in a namespace where four different resources are searchable."
+    },
+    {
+      "toolId": "dexscreener.pairs",
+      "publicName": "dexscreener__pairs_get",
+      "rationale": "Verb added. `get` and not `list`: the caller names up to 60 pair addresses and Vex reconciles every one of them, so this is a batch lookup by id, not an enumeration."
+    },
+    {
+      "toolId": "dexscreener.tokens",
+      "publicName": "dexscreener__tokens_get",
+      "rationale": "Verb added; same batch-lookup-by-address shape as pairs_get, on the token side."
+    },
+    {
+      "toolId": "dexscreener.tokenPairs",
+      "publicName": "dexscreener__token_pairs_list",
+      "rationale": "camelCase split plus `list`. This one really is an enumeration: ONE token address in, the provider's bounded set of pools for it out, sorted and windowed Vex-side. The verb is what now separates it from pairs_get and tokens_get, which the three near-identical toolIds did not."
+    },
+    {
+      "toolId": "dexscreener.orders",
+      "publicName": "dexscreener__token_orders_list",
+      "rationale": "Resource scoped. The tool answers a question about ONE named token's paid promotional orders, not about orders in general, and the `token_` prefix keeps it from reading as a trading-order surface, which this namespace has none of."
+    },
+    {
+      "toolId": "dexscreener.ads",
+      "publicName": "dexscreener__ads_list",
+      "rationale": "Verb added; a windowed feed of paid ad placements."
+    },
+    {
+      "toolId": "dexscreener.profiles",
+      "publicName": "dexscreener__profiles_list",
+      "rationale": "Verb added; latest token profile metadata within the provider's feed window."
+    },
+    {
+      "toolId": "dexscreener.profiles.recent",
+      "publicName": "dexscreener__profiles_recent_list",
+      "rationale": "Verb added, resource qualifier kept in toolId order so the two profile feeds sort adjacently. Kept 1:1 rather than merged with profiles_list, per the batch rule; the consolidation proposal is recorded in the doc."
+    },
+    {
+      "toolId": "dexscreener.boosts",
+      "publicName": "dexscreener__boosts_list",
+      "rationale": "Verb added; the latest-purchases boost feed."
+    },
+    {
+      "toolId": "dexscreener.boosts.top",
+      "publicName": "dexscreener__boosts_top_list",
+      "rationale": "Verb added, qualifier kept in toolId order. Mapped 1:1 rather than merged with boosts_list even though the two share BOOST_FEED_PARAMS; the merge is a Batch 2 decision and is recorded as a proposal in the doc."
+    },
+    {
+      "toolId": "dexscreener.communityTakeovers",
+      "publicName": "dexscreener__community_takeovers_list",
+      "rationale": "camelCase split plus `list`; plural is correct, the tool returns the recency window of CTO-labelled rows."
+    },
+    {
+      "toolId": "dexscreener.attention",
+      "publicName": "dexscreener__attention_list",
+      "rationale": "Verb added. The word `attention` is kept despite the description calling it a synthetic merge and not a genuine attention signal, because renaming it is a description-wave decision; the doc records the concern."
+    },
+    {
+      "toolId": "dexscreener.trending",
+      "publicName": "dexscreener__narratives_list",
+      "rationale": "Semantic rename. The tool returns NARRATIVES/metas with aggregate stats, and its own description says so in capitals ('Returns NARRATIVES, not individual tokens'). `trending` invited the model to reach for it when it wanted trending tokens, which lives in solana__tokens_discover and the boost feeds instead. Renaming the resource to what it returns removes that trap and pairs it with the drill-down below."
+    },
+    {
+      "toolId": "dexscreener.meta",
+      "publicName": "dexscreener__narrative_get",
+      "rationale": "Semantic rename. `meta` is opaque and, worse, collides with the ordinary meaning of tool metadata; the tool drills into ONE narrative by slug. Singular resource plus `get` makes the pair narratives_list -> narrative_get self-describing, and the slug's provenance obvious."
+    }
+  ]
+}

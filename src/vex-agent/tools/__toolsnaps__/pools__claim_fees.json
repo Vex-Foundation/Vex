@@ -1,0 +1,36 @@
+{
+  "definition": {
+    "function": {
+      "description": "Claim the creator fees a pools.fun token has earned, on Robinhood Chain (4663). Every pools.fun pool charges 1 percent on each trade and the launcher's share accrues in the PartyLocker until it is claimed; this collects and pays it out in ONE transaction. Use dryRun: true first - it SIMULATES the claim from your own wallet and reports exactly what it would pay, which is the only honest way to ask: the locker's claimable mappings show fees ALREADY collected and not yet paid out, and they read zero while real fees are still waiting in the pool. Without dryRun it SIGNS AND SPENDS GAS behind the normal approval gate. A claim pays TWO assets - the launched token and the pool's paired asset (WETH or USDG) - so both legs are reported separately with their raw amounts, their decimals and their asset addresses; never add them together. Returns the token, the pool, the wallet, both claimable legs, the fees already collected under their own label, a gas bound, and after a real claim the transaction hash with both amounts the receipt PROVED. A pool with nothing to pay says so and signs nothing, and a claim that pays zero is a real answer rather than a failure. Only the wallet the fee stream points at can claim it.",
+      "name": "pools__claim_fees",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "true simulates the claim and reports what it would pay without signing anything. Omit it to actually claim, which spends gas and is irreversible.",
+            "type": "boolean"
+          },
+          "token": {
+            "description": "The pools.fun token's contract ADDRESS. Symbols are not unique on this launchpad and copycats are routinely live, so the address is the only identity that means one token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.claim_fees"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "definition": null,
+  "metadata": {
+    "actionKind": "read",
+    "advertised": false,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "uniswap",
+    "requiresEnv": null,
+    "toolId": "uniswap.swap.quote"
+  }
+}

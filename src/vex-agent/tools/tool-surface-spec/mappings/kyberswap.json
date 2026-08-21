@@ -1,0 +1,30 @@
+{
+  "namespace": "kyberswap",
+  "entries": [
+    {
+      "toolId": "kyberswap.swap.quote",
+      "publicName": "kyberswap__swap_quote",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "kyberswap.swap.execute",
+      "publicName": "kyberswap__swap_execute",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "kyberswap.tokens.check",
+      "publicName": "kyberswap__token_safety_check",
+      "rationale": "Names the subject and the question. `tokens.check` says neither what is checked nor what a pass means; this tool inspects ONE token for honeypot and fee-on-transfer behavior (manifests/tokens.ts:9). Singular `token` marks the by-address read; `safety` is the discriminator the model needs when scanning the namespace."
+    },
+    {
+      "toolId": "kyberswap.chains",
+      "publicName": "kyberswap__chains_list",
+      "rationale": "Adds the missing canonical verb to a verbless toolId. This is the static local chain registry read (slug, chainId, name, aggregator; handlers/swap/chain-token-handlers.ts:15)."
+    },
+    {
+      "toolId": "kyberswap.chains.supported",
+      "publicName": "kyberswap__chains_status_list",
+      "rationale": "Near-typo resolution. `kyberswap.chains` and `kyberswap.chains.supported` differ by one suffix and read as the same operation; `status` names the only real difference, the live active/inactive/new state from the Common Service intersected with the local registry (chain-token-handlers.ts:20-25). 1:1 now; a merge proposal is recorded in protocol-naming-2.md for Batch 2+."
+    }
+  ]
+}

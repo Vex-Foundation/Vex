@@ -1,0 +1,65 @@
+{
+  "definition": {
+    "function": {
+      "description": "List Trench Express launchpad tokens on Robinhood Chain (4663). COVERAGE: this is the launchpad's own registry - ONLY tokens launched on Trench Express appear here, never other Robinhood pools (research those with dexscreener once indexed). Server cache is about 2s, so this is the fastest fresh-launch surface on the chain. Each row carries token address, name, symbol, creator, curve-vs-graduated status, launchedAtMs (registry creation time, ms epoch - compute age against your clock), display-grade price and supply, 0-4 social links, an image URL, and the launchpad rug-flag (measured null on 12 of 12 live rows: the default-on excludeRuggedFlagged filter cannot fire on a null flag, so a returned row is NEVER a safety pass). A row also carries isOwnLaunch when it can be determined: true means YOUR OWN wallet created that token (it is your launch, not a market opportunity), false means a different, known creator; the field is ABSENT when the launchpad reported no creator or your wallet could not be resolved, which means undetermined and never not-yours. A graduated row also carries its graduation DEX pool id and pool currencies (WETH-paired) — the token has left the bonding curve for that pool. Filter by curve stage, creator, and rug flag; the time sort orders by launchedAtMs newest first, price and bump order by price or activity. Opt-in curve-progress filters (minCurveProgressPct/maxCurveProgressPct/includeCurveProgress) find tokens by how close they are to graduating — computed by Vex from on-chain curve reserves via one Multicall3 batch over the page (graduated rows are 100). Prices are display-grade (no USD quote) and ETH curve only. Read-only.",
+      "name": "trench__tokens",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "creator": {
+            "description": "Client-side filter: keep only tokens created by this wallet address (exact, case-insensitive).",
+            "type": "string"
+          },
+          "excludeRuggedFlagged": {
+            "description": "Client-side filter: drop tokens the launchpad flagged as a likely rug. Defaults to true; set false to include flagged tokens. The response echoes how many were filtered.",
+            "type": "boolean"
+          },
+          "explainDrops": {
+            "description": "When true, include a per-filter census of how many tokens each client-side filter removed. Default false.",
+            "type": "boolean"
+          },
+          "includeCurveProgress": {
+            "description": "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only — a token can graduate between this read and any trade.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max deduped tokens to return, 1-200 (no default — omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
+            "type": "number"
+          },
+          "maxCurveProgressPct": {
+            "description": "Client-side: keep only tokens no further than this toward graduating, 0-100 (pair with minCurveProgressPct for a band; min must not exceed max). Same pinned-block on-chain curve read as minCurveProgressPct, in Multicall3 batches of at most 30 rows. Graduated tokens count as 100 and are excluded by any max below 100. Rows whose on-chain read fails are DROPPED and counted.",
+            "type": "number"
+          },
+          "minCurveProgressPct": {
+            "description": "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold — never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
+            "type": "number"
+          },
+          "page": {
+            "description": "1-based single-page index for browsing (min 1). When set, returns just that one provider page (≤30 rows) instead of page-walking.",
+            "type": "number"
+          },
+          "sort": {
+            "description": "Sort order (server-side): time (orders by launchedAtMs, newest first, default), price, or bump (recent activity). Unknown values are rejected.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Curve stage filter (server-side): curve (still on the bonding curve), launched (graduated into a pool), or all (default, no filter).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "trench",
+    "requiresEnv": null,
+    "toolId": "trench.tokens"
+  }
+}

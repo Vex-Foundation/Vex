@@ -1,0 +1,29 @@
+{
+  "definition": {
+    "function": {
+      "description": "List the tokens the user has launched on Trench Express (Robinhood Chain 4663) through Vex: token address, name, symbol, the creation transaction hash, when it launched, and the initial buy made in the same transaction (with its own decimals). Read from Vex's durable local launch index, not the launchpad API — a token created outside this app has no entry. The wallet is the session's selected wallet and cannot be overridden. Read-only.",
+      "name": "trench__my_launches",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Max launches returned, 1-100 (default 25), most recent first.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "trench",
+    "requiresEnv": null,
+    "toolId": "trench.my_launches"
+  }
+}

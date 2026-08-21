@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get Jupiter Lend Borrow vault configs — max LTV and liquidation threshold as exact percent strings (with raw provider-scale siblings), available liquidity to borrow/withdraw, minimum borrow size, and BOTH legs' token identity (address, symbol, decimals, provider price) per vault. Every *Raw amount here, and all six solana.lend.borrowOperate amount params, are raw atomic units: use supplyTokenDecimals for the collateral leg and borrowTokenDecimals for the debt leg to read or build them (e.g. a raw \"1047061\" at 6 decimals is 1.047061, at 9 decimals it is 0.001047061). minimumBorrowingRaw is documented in that same debt-token scale, but live vaults with different debt-token decimals disagree by orders of magnitude under that reading — treat it as an unverified provider figure, never as a USD amount. The *PriceUsd fields are Jupiter's own point-in-time quotes, not Vex valuations — treat them as estimates. Read this BEFORE solana.lend.borrowOperate to find a vaultId, its decimals, and its risk thresholds. Covers collateralized Borrow, not solana.lend.rates' simple Earn yields.",
+      "name": "solana__lend__borrowVaults",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "market": {
+            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market — the same vaultId in a different market is a different vault. An unrecognized value is rejected.",
+            "type": "string"
+          },
+          "vaultIds": {
+            "description": "Comma-separated vault-id allow-list (matches the provider's own numeric vault id). Omit for all vaults.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.lend.borrowVaults"
+  }
+}

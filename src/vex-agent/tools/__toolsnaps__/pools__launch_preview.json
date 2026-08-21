@@ -1,0 +1,53 @@
+{
+  "definition": {
+    "function": {
+      "description": "Price a pools.fun token launch on Robinhood Chain (4663) before committing to it, and record the preview. Use this when the user is considering a launch and wants to know what it costs: it reads the gateway's CURRENT deployment fee, prices an optional ETH prebuy, and returns the whole cost breakdown as raw amounts with their decimals, plus Vex's 25 bps fee on the native launch value. ADVISORY, and it says so: the final token ADDRESS cannot be known here, because the image determines the metadata link, which determines the salt, which determines the address - the address is settled only when the launch is actually prepared. This writes a local preview record so the run can be reviewed later; it spends nothing, signs nothing, takes no image lock, and can never turn into a launch by itself. Read the numbers as an estimate of a launch, not as a launch that is about to happen.",
+      "name": "pools__launch_preview",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "imageId": {
+            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools.launch_execute REQUIRES it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The token's full display name, 1 to 64 characters, exactly as it should appear on the launchpad and in the pinned metadata.",
+            "type": "string"
+          },
+          "pairedAsset": {
+            "description": "Which asset the new pool trades against: weth (default) or usdg. These are the only two the factory allows today - tokenised stocks exist in the provider's vocabulary but the on-chain allowlist refuses them, so asking for one would deploy nothing.",
+            "enum": [
+              "weth",
+              "usdg"
+            ],
+            "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "The ticker, 1 to 16 characters. Symbols are NOT unique on pools.fun and copycats are routinely live, so this is a label rather than an identity.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.launch_preview"
+  }
+}

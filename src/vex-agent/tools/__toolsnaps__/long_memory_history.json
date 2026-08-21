@@ -1,0 +1,51 @@
+{
+  "definition": {
+    "function": {
+      "description": "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version). Use this when you have a historical id (e.g. from long_memory_get's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use long_memory_get for that). Read-only. Does not require the embeddings service.",
+      "name": "long_memory_history",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Any long-term memory entry id in the chain (root, middle, or head).",
+            "type": "number"
+          },
+          "response_format": {
+            "description": "Reserved — the chain + reinforcement timeline are returned the same way for both.",
+            "enum": [
+              "concise",
+              "detailed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

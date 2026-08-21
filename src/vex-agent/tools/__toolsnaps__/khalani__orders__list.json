@@ -1,0 +1,67 @@
+{
+  "definition": {
+    "function": {
+      "description": "List Khalani bridge orders for an address with pagination and filters.",
+      "name": "khalani__orders__list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pagination cursor for next page.",
+            "type": "number"
+          },
+          "fromChain": {
+            "description": "Source chain filter (ID or alias).",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max results. Range 1-20 (provider maximum, default 10); anything else is rejected before the call.",
+            "type": "number"
+          },
+          "orderIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated order IDs to filter. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+          },
+          "toChain": {
+            "description": "Destination chain filter (ID or alias).",
+            "type": "string"
+          },
+          "txHashSearch": {
+            "description": "Search by transaction hash. At most 66 characters (0x + 64 hex, the provider maximum); a longer value is rejected before the call.",
+            "type": "string"
+          },
+          "wallet": {
+            "description": "Wallet family: eip155 or solana.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional. The ACCOUNT address whose orders to list; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.orders.list"
+  }
+}

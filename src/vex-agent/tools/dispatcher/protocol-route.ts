@@ -205,8 +205,20 @@ export async function routeToolCall(
   // The function's arguments ARE the params: unlike `execute_tool` there is no
   // `{toolId, params}` envelope to resolve, because the injected schema IS the
   // manifest's param schema.
-  if (isInjectedToolNameShape(call.name)) {
-    const manifest = resolveInjectedProtocolTool(call.name);
+  //
+  // LANE ADMISSION IS BY RESOLVED MANIFEST FIRST, name shape second. A RETIRED
+  // model-visible name is not guaranteed to carry `__`: today's flat protocol
+  // aliases (`swap_quote`, `bridge`) are exactly that shape, so a rename that
+  // retires one onto a manifest publicName produces a retired name with no
+  // separator at all. Admitting on the shape alone would answer such a call
+  // with the generic unknown-tool line even though the alias table resolves it.
+  // The shape test is KEPT as the second condition so an unresolvable `__` name
+  // still gets the by-name discovery answer below. Under the Batch 1
+  // identity-only table the resolver returns undefined for every non-`__` name,
+  // so admission here is unchanged.
+  const injectedManifest = resolveInjectedProtocolTool(call.name);
+  if (injectedManifest || isInjectedToolNameShape(call.name)) {
+    const manifest = injectedManifest;
     // Fail closed on a name this session was never offered: an evicted,
     // stale-from-another-session, or hallucinated dotted id. The message names
     // the real cause and both ways forward (rule 04, 2026-08-02).
@@ -214,9 +226,15 @@ export async function routeToolCall(
       return {
         success: false,
         output:
+          // The model is answered by the name IT wrote, so it can match the
+          // refusal to its own call. The discovery hint, however, names the
+          // CANONICAL toolId whenever the name resolved to a manifest: telling
+          // a model to `discover_tools` for a spelling the catalog has retired
+          // is advice that cannot succeed. Falls back to the inverse mapping
+          // for an unresolvable `__` name, which is today's behaviour.
           `Unknown tool: ${call.name}. It is not among the protocol tools discovered in this `
           + `session (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
-          + `Call discover_tools for "${fromInjectedToolName(call.name)}" to get it back as a `
+          + `Call discover_tools for "${manifest?.toolId ?? fromInjectedToolName(call.name)}" to get it back as a `
           + `named tool, then call it again.`,
       };
     }

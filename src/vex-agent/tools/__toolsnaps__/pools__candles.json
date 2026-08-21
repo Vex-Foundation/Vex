@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the price history of ONE pools.fun token on Robinhood Chain (4663) as OHLCV candles. Use this after resolving a token to analyse how it has traded: pick the candle span with timeframe and aggregate (minute with aggregate 15 gives quarter-hour candles, hour with aggregate 4 gives four-hour candles) and how many candles with limit. Returns the token and its pool, the trading pair with the quote asset named, the candle span, a count, the order the candles are in, and the candles themselves as objects with time, open, high, low, close and volumeUsd. Prices are quoted in the pool's quote asset - WETH, USDG or a tokenised stock, named in the reply - and are display-grade; volume is in US dollars. The candle order is reported from the data rather than assumed, so read the order field instead of guessing which end is newest. An address the launchpad has no pool for is reported as a named not-found, not an empty chart. For liquidity or fully-diluted-value cross-checks use dexscreener. Read-only.",
+      "name": "pools__candles",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregate": {
+            "description": "How many timeframe units make one candle, 1-24 (default 1). Combine with timeframe: minute plus 15 is a quarter-hour candle, hour plus 4 is a four-hour candle.",
+            "type": "number"
+          },
+          "limit": {
+            "description": "How many candles to return, 1-1000 (default 30). Ask for the window the analysis needs rather than the maximum.",
+            "type": "number"
+          },
+          "timeframe": {
+            "description": "Base unit of one candle: minute, hour (default) or day. The real candle span is this multiplied by aggregate.",
+            "enum": [
+              "minute",
+              "hour",
+              "day"
+            ],
+            "type": "string"
+          },
+          "tokenAddress": {
+            "description": "Contract address of the pools.fun token whose price history to read. Resolve it with pools.search first - a symbol is not an identity on this launchpad.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.candles"
+  }
+}

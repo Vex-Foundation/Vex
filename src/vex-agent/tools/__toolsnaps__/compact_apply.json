@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "Apply the compaction the runtime has already prepared in the background for this conversation. This tool only appears when a prepared summary is READY, so calling it is always valid when you can see it. It takes no arguments: the summary was written by a background branch from a frozen copy of the conversation, and it has already been validated. Effect: the conversation prefix is archived, the rolling summary is replaced by the prepared one, and the checkpoint generation advances. Messages after the preparation's watermark are carried over verbatim, so nothing you have done since it was prepared is lost. Timing: this QUEUES the cutover; the runtime performs it at the next safe boundary, which may be immediately after this turn. It is deliberately not instantaneous — the runtime will not rewrite the transcript while a payment, approval or on-chain action is unresolved. You do not have to call this. The runtime applies a ready compaction on its own when context pressure becomes critical, and Full-Autonomous sessions apply it automatically. Calling it is how you relieve pressure EARLY, at a moment you choose — ideally after finishing a subtask rather than in the middle of one.",
+      "name": "compact_apply",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "gates": {
+      "declaredVisibility": {
+        "requiresSummaryReady": true
+      },
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "safe_at_barrier",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

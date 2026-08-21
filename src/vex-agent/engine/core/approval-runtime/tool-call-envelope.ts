@@ -44,10 +44,8 @@ import { createHash } from "node:crypto";
 
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
-import {
-  fromInjectedToolName,
-  isInjectedToolNameShape,
-} from "@vex-agent/tools/registry/injected-protocol-tools.js";
+import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
+import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
 
 /**
  * Current envelope-metadata version.
@@ -71,13 +69,36 @@ const envelopeMetadataSchema = z.object({
  * An injected direct call becomes the `execute_tool` envelope plus the identity
  * metadata; every other call keeps today's `{command, args}` shape byte for
  * byte, so the internal, alias and legacy lanes are unchanged.
+ *
+ * ALIAS RESOLUTION HAPPENS HERE, not only at dispatch (approved plan section
+ * 5.5). The turn loop passes the ORIGINAL model tool call to the enqueue path,
+ * and `command` is DURABLE: a retired spelling written into
+ * `approval_queue.tool_call` would be replayed verbatim by a cold resume in a
+ * later process, after the deprecation window has closed. What is stored, and
+ * what the fingerprint binds to, is therefore the CANONICAL identity.
+ *
+ * THE STORED `toolId` COMES FROM THE RESOLVED MANIFEST, never from inverting the
+ * model-visible name. This module used to invert the name itself, in a private
+ * second copy of the mapping; that is unsound under the target public-name
+ * grammar, where `kyberswap__swap_quote` inverts to `kyberswap.swap_quote`
+ * rather than the immutable `kyberswap.swap.quote`. The wrong id would then be
+ * written into a durable approval row AND hashed into the fingerprint that is
+ * supposed to guarantee the human approved this exact contract. Manifest
+ * resolution is consequently delegated to the ONE shared catalog resolver
+ * (`registry/injected-protocol-tools.ts`), and the id is read off the manifest
+ * it returns.
+ *
+ * `originalToolName` deliberately keeps the RAW name the model emitted: it is
+ * audit-only and never dispatched, and recording the spelling the model
+ * actually used is the point of the field.
  */
 export function buildApprovalToolCall(
   toolName: string,
   toolArgs: Record<string, unknown>,
 ): Record<string, unknown> {
-  const manifest = resolveInjectedManifest(toolName);
-  if (!manifest) return { command: toolName, args: toolArgs };
+  const canonicalName = resolveToolName(toolName);
+  const manifest = resolveInjectedProtocolTool(canonicalName);
+  if (!manifest) return { command: canonicalName, args: toolArgs };
 
   return {
     command: "execute_tool",
@@ -231,11 +252,6 @@ function isSupersededEnvelopeVersion(vex: unknown): boolean {
   if (typeof vex !== "object" || vex === null) return false;
   const version = (vex as { v?: unknown }).v;
   return typeof version === "number" && version < ENVELOPE_VERSION;
-}
-
-function resolveInjectedManifest(toolName: string): ProtocolToolManifest | undefined {
-  if (!isInjectedToolNameShape(toolName)) return undefined;
-  return getProtocolManifest(fromInjectedToolName(toolName));
 }
 
 /**

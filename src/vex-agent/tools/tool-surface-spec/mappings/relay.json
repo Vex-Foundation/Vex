@@ -1,0 +1,15 @@
+{
+  "namespace": "relay",
+  "entries": [
+    {
+      "toolId": "relay.quote.get",
+      "publicName": "relay__bridge_quote_get",
+      "rationale": "Semantic rename, symmetric with khalani__bridge_quote_get. The bare `quote` resource does not say what is quoted; this is exclusively a bridge preview (manifests/bridge.ts:39) and it must read as the partner of relay__bridge_execute, because the execute REQUIRES a fresh matching quote."
+    },
+    {
+      "toolId": "relay.bridge",
+      "publicName": "relay__bridge_execute",
+      "rationale": "Adds the missing verb to a fund-moving tool (actionKind user_wallet_broadcast, manifests/bridge.ts:64). A bare `relay.bridge` reads like a resource while it signs and broadcasts."
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "definition": {
+    "function": {
+      "description": "Check cross-chain bridge order status via Khalani. Pass `orderId` to fetch one order's full lifecycle; omit it to list your recent bridge orders (with optional filters/pagination). Read-only.",
+      "name": "bridge_status",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "List mode: wallet address (optional — uses your configured wallet).",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "List mode: pagination cursor for the next page.",
+            "type": "number"
+          },
+          "fromChain": {
+            "description": "List mode: source chain filter (ID or alias).",
+            "type": "string"
+          },
+          "limit": {
+            "description": "List mode: max results.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "Khalani order ID. Provide to fetch a single order; omit to list your orders.",
+            "type": "string"
+          },
+          "orderIds": {
+            "description": "List mode: comma-separated order IDs to filter.",
+            "type": "string"
+          },
+          "toChain": {
+            "description": "List mode: destination chain filter (ID or alias).",
+            "type": "string"
+          },
+          "txHashSearch": {
+            "description": "List mode: search by transaction hash.",
+            "type": "string"
+          },
+          "wallet": {
+            "description": "List mode: wallet family — eip155 or solana.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutDescribeToolsReveal": false,
+        "hiddenWithoutEnvGates": false,
+        "hiddenWithoutRelayRouteReveal": false,
+        "hiddenWithoutUniswapReveal": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false,
+    "withheldFromModelSurface": false
+  }
+}

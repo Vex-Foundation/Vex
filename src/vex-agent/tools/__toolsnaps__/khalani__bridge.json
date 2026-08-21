@@ -1,0 +1,80 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access. Resolve fromToken/toToken addresses via khalani.tokens.search first. This BROADCASTS the origin-chain deposit and returns while the destination fill is still IN PROGRESS — a returned bridge is NOT yet confirmed. Vex tracks it and finalizes the record when the fill is verified; do not resubmit or call this again for the same transfer. Check progress with bridge_status (or khalani.orders.get) using the returned order id.",
+      "name": "khalani__bridge",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `token_find` first.",
+            "type": "string"
+          },
+          "depositMethod": {
+            "description": "CONTRACT_CALL, PERMIT2, or TRANSFER.",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "If true, build deposit plan without executing.",
+            "type": "boolean"
+          },
+          "filler": {
+            "description": "Restrict quotes to a specific filler.",
+            "type": "string"
+          },
+          "fromAddress": {
+            "description": "Source wallet address override.",
+            "type": "string"
+          },
+          "fromChain": {
+            "description": "Source chain ID or alias.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient override.",
+            "type": "string"
+          },
+          "routeId": {
+            "description": "Specific route ID (default: best route).",
+            "type": "string"
+          },
+          "toChain": {
+            "description": "Destination chain ID or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address.",
+            "type": "string"
+          },
+          "tradeType": {
+            "description": "EXACT_INPUT or EXACT_OUTPUT.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.bridge"
+  }
+}

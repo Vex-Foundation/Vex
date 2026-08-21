@@ -1,0 +1,24 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get the Jupiter Prediction protocol vault's on-chain public key and balance — protocol-level infrastructure state, not a personal wallet or position lookup. Takes no parameters.",
+      "name": "solana__predict__vaultInfo",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.vaultInfo"
+  }
+}
