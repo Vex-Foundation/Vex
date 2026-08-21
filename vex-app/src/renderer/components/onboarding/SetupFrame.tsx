@@ -18,14 +18,58 @@
  *   - `data-vex-onboarding="true"` keeps the shared onboarding accent
  *     scope (scrollbars, `--vex-onboarding-accent`) alive.
  *   - `data-vex-gate="true"` applies the pre-shell token re-projection
- *     from `global-css/chronos-gate.css`: visible white-alpha hairlines,
+ *     from `global-css/chronos-gate.css`: theme-aware hairlines,
  *     accent-as-text tokens, the Doto micro-label voice, AND the
- *     pre-shell type scale.
+ *     pre-shell type scale. The frame ALSO stamps it on documentElement for
+ *     its own lifetime so body-portaled surfaces keep the projection
+ *     (`useGateDocumentScope` below).
+ *
+ * The plate follows the theme since round 2 (ratified 2026-08-21): celeris
+ * gets a light setup stack, chronos keeps the ink room. Only the Chronos
+ * Gate itself stays theme-invariant.
  */
 
-import { type JSX, type ReactNode } from "react";
+import { useEffect, type JSX, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils.js";
+
+/**
+ * Live SetupFrame count. The pre-shell stage crossfades screens through
+ * `AnimatePresence`, so two frames are mounted at once mid-transition;
+ * without a count the outgoing frame's cleanup would retract the scope
+ * while the incoming one still needs it.
+ */
+let mountedFrames = 0;
+
+/**
+ * Carry the `[data-vex-gate]` token scope on documentElement for as long as
+ * ANY pre-shell screen is mounted.
+ *
+ * Why the root and not only the frame: toasts, hover cards and menus portal
+ * to `document.body`, which sits OUTSIDE the frame, so a portaled surface
+ * opened from a pre-shell screen silently reverted to shell values - wrong
+ * hairline strength, wrong `--vex-accent-text`, the shell type scale, no
+ * Doto voice. Stamping the root is the smallest seam that reaches every
+ * portal target without editing ~30 dual-hosted call sites. The six wizard
+ * steps that ALSO render inside Settings are unaffected: there they render
+ * without SetupFrame, so the scope is never stamped.
+ *
+ * Cleanup is idempotent and count-guarded; the attribute is removed only
+ * once the last frame unmounts.
+ */
+function useGateDocumentScope(): void {
+  useEffect(() => {
+    mountedFrames += 1;
+    document.documentElement.dataset["vexGate"] = "true";
+    return () => {
+      mountedFrames -= 1;
+      if (mountedFrames <= 0) {
+        mountedFrames = 0;
+        delete document.documentElement.dataset["vexGate"];
+      }
+    };
+  }, []);
+}
 
 interface SetupFrameProps {
   /** Value for data-vex-screen (stable e2e/test selector). */
@@ -45,6 +89,7 @@ export function SetupFrame({
   subline,
   children,
 }: SetupFrameProps): JSX.Element {
+  useGateDocumentScope();
   return (
     <main
       data-vex-onboarding="true"
@@ -61,12 +106,22 @@ export function SetupFrame({
       {/* Corner chrome — the mark alone top-left (owner decree 2026-07-22:
        * no "VEX" wordmark text beside it), version bottom-right. */}
       <div className="pointer-events-none absolute left-6 top-6 z-10">
+        {/* Theme-swapped pair (same idiom as SessionWelcomeHero): white on
+         * the chronos ink plate, brand blue on the celeris light plate. An
+         * arbitrary parent variant on the theme attribute - no JS read. */}
         <img
           src="/brand/vex-mark-white.svg"
           alt=""
           aria-hidden
           draggable={false}
-          className="h-6 w-auto select-none"
+          className="h-6 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
+        />
+        <img
+          src="/brand/vex-mark-color.svg"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="hidden h-6 w-auto select-none [[data-vex-theme=celeris]_&]:block"
         />
       </div>
       <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">

@@ -85,12 +85,18 @@
 /* ============================================================ *
  *  The pre-shell continuum plate                                *
  * ============================================================ */
-/* Theme-invariant literal (rule 08): the plate is painted by curtain
- * layers whose roots sit OUTSIDE any token scope, and it must equal the
- * main-window `backgroundColor` (#0a0d18, main/main-window.ts) so the
- * first paint and the plate are one surface — no boot flash. */
+/* THEME-AWARE since round 2 (ratified 2026-08-21): every screen after the
+ * Chronos Gate follows celeris/chronos, so the plate reads a per-theme
+ * alias instead of the old `#0a0d18` literal. The alias lives on
+ * documentElement (tokens.css), which is where `data-vex-theme` is stamped,
+ * so it resolves for curtain layers whose roots sit outside any component
+ * scope. Chronos keeps #0a0d18 = the main-window `backgroundColor`
+ * (main/main-window.ts) so first paint and the plate are one surface;
+ * celeris is free to be the light base because the theme-invariant gate
+ * covers first paint. Re-hardcoding a literal here re-breaks the light
+ * setup stack - `theme-matrix.test.ts` guards it. */
 .vex-gate-plate {
-  background: #0a0d18;
+  background: var(--vex-alias-gate-plate);
 }
 
 /* Vignette — a whisper of deep accent bloom toward the edges; the centre
@@ -106,26 +112,33 @@
 /* ============================================================ *
  *  [data-vex-gate="true"] — pre-shell token scope (tokens v2)   *
  * ============================================================ */
-/* Every boot screen carries this attribute. Colour tiers now come from
- * tokens v2 directly (chronos aliases are already the readable set on the
- * ink plate); the scope keeps only what the pre-shell genuinely re-pins:
- * hairline strength, accent-as-text, the type scale, and the Doto
- * micro-label voice. Re-projection (not call-site edits) because six
- * wizard steps are ALSO rendered by the app shell's Settings screen. */
+/* Every boot screen carries this attribute, and `SetupFrame` also stamps it
+ * on documentElement for its own lifetime so body-portaled surfaces
+ * (toasts, hover cards, menus) opened from the pre-shell keep the same
+ * projection. Colour tiers come from tokens v2; the scope keeps only what
+ * the pre-shell genuinely re-pins: hairline strength, accent-as-text, the
+ * type scale, and the Doto micro-label voice. Re-projection (not call-site
+ * edits) because six wizard steps are ALSO rendered by the app shell's
+ * Settings screen.
+ *
+ * Every value below is theme-aware: the strengths come from the
+ * `--vex-alias-gate-*` group in tokens.css, which has a chronos and a
+ * celeris definition. */
 [data-vex-gate="true"] {
-  /* Hairlines on the dark plate need a stronger step than the global
-   * line ramp (line-2 at 12% white is visually absent behind glass);
-   * input wells get one more step so a field reads as a field. */
-  --color-border: rgba(255, 255, 255, 0.22);
-  --color-input: rgba(255, 255, 255, 0.28);
-  /* Accent AS TEXT or thin stroke: the chronos interactive accent
-   * (blue-400) is the readable choice on ink; same token names the shell
-   * scope uses so dual-hosted primitives resolve in both worlds. */
+  /* Hairlines on the plate need a stronger step than the global line ramp
+   * (l2 is visually absent behind the vignette + grain); input wells get
+   * one more step so a field reads as a field. */
+  --color-border: var(--vex-alias-gate-border);
+  --color-input: var(--vex-alias-gate-input);
+  /* Accent AS TEXT or thin stroke: the theme's interactive accent
+   * (chronos blue-400 on ink, celeris blue-700 on white) is the readable
+   * choice on either plate; same token names the shell scope uses so
+   * dual-hosted primitives resolve in both worlds. */
   --vex-onboarding-accent: var(--color-accent-primary);
   --vex-accent-text: var(--color-accent-primary);
-  /* Raised plate for popovers/menus over the dark continuum. */
+  /* Raised plate for popovers/menus over the continuum. */
   --color-popover: var(--color-surface-1);
-  --color-muted: rgba(255, 255, 255, 0.08);
+  --color-muted: var(--vex-alias-gate-muted);
 
   /* Pre-shell type scale: rem-based and one step up from the shell's
    * chrome scale. Tailwind v4 compiles text-* to var(--text-*), so
@@ -147,21 +160,27 @@
 
 /* --- The pre-shell action pill --------------------------------- */
 /* Button's type scale is a literal inside its CVA base (shared with the
- * app shell), so the pre-shell resizes the pill here, keyed on the two
- * base utilities every Button emits. COUPLING: if button.tsx's base ever
- * drops `rounded-full` or `font-mono`, this rule silently stops
- * matching. Unlayered author CSS beats `@layer utilities`. */
-[data-vex-gate="true"] button.rounded-full.font-mono {
+ * app shell), so the pre-shell resizes the pill here.
+ *
+ * INVARIANT (components/ui/button.tsx <-> this file): Button emits
+ * `data-vex-button` (the variant) and `data-vex-button-size` (the size) as
+ * the STABLE styling hook for cross-file rules. This selector used to key on
+ * `button.rounded-full.font-mono`; the rebrand renamed the radius utility to
+ * `rounded-capsule` and dropped `font-mono`, and the rule silently stopped
+ * matching - every pre-shell CTA rendered at shell size. Class coupling is
+ * why. Do not re-key this on utility classes, and do not remove the data
+ * attributes from Button without updating this block.
+ * Unlayered author CSS beats `@layer utilities`. */
+[data-vex-gate="true"] button[data-vex-button] {
   font-size: 0.875rem;
   letter-spacing: 0.12em;
 }
 
 /* The two ACTION sizes grow to a single h-12: `default` (wizard step
- * footers) and `lg` (SetupFrame primary CTAs). `sm` stays quiet — it
- * marks small inline actions inside wallet/model rows, not page CTAs.
- * COUPLING: the size utilities are exactly what button.tsx's CVA emits. */
-[data-vex-gate="true"] button.rounded-full.font-mono.h-9,
-[data-vex-gate="true"] button.rounded-full.font-mono.h-11 {
+ * footers) and `lg` (SetupFrame primary CTAs). `sm` and `icon` stay quiet —
+ * they mark small inline actions inside wallet/model rows, not page CTAs. */
+[data-vex-gate="true"] button[data-vex-button-size="default"],
+[data-vex-gate="true"] button[data-vex-button-size="lg"] {
   height: 3rem;
   padding-inline: 2rem;
 }

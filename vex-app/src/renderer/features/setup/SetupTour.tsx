@@ -48,7 +48,7 @@ export function SetupTour(): JSX.Element | null {
   return (
     <div
       data-vex-setup-tour
-      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[rgba(8,11,24,0.85)] p-2 vex-micro text-ink-secondary"
+      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-surface-2 p-2 vex-micro text-ink-secondary"
     >
       <span className="px-1 text-[9px] text-ink-tertiary">
         Setup tour
@@ -65,8 +65,8 @@ export function SetupTour(): JSX.Element | null {
           }}
           className={
             view === currentView
-              ? "rounded bg-white/[0.14] px-2 py-1 text-left text-ink-primary"
-              : "rounded px-2 py-1 text-left hover:bg-white/[0.08]"
+              ? "rounded bg-interactive-active px-2 py-1 text-left text-ink-primary"
+              : "rounded px-2 py-1 text-left hover:bg-interactive-hover"
           }
         >
           {view}
@@ -79,14 +79,14 @@ export function SetupTour(): JSX.Element | null {
         type="button"
         data-vex-tour-prologue
         onClick={replayPrologue}
-        className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
+        className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-interactive-hover"
       >
         Replay gate
       </button>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
+        className="rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-interactive-hover"
       >
         Reload boot
       </button>

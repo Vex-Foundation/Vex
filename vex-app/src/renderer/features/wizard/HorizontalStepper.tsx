@@ -59,7 +59,7 @@ function resolveStatus(
  * accent for text and thin strokes. `--vex-accent-text` is defined by both the gate and shell scopes,
  * with a fallback for anything that defines neither. */
 const DOT_CHROME: Record<StepDotStatus, string> = {
-  pending: "bg-white/[0.28]",
+  pending: "bg-gate-input",
   active: "bg-accent-primary",
   completed: "bg-ink-primary",
 };

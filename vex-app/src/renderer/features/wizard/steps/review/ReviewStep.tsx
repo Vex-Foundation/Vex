@@ -155,7 +155,7 @@ export function ReviewStep({
             onClick={() => setEditingStep(null)}
             className={cn(
               "inline-flex items-center gap-1 rounded-full",
-              "border border-[var(--color-border)] bg-white/[0.08] px-2 py-1",
+              "border border-[var(--color-border)] bg-gate-rail px-2 py-1",
               "vex-micro",
               "text-ink-secondary",
               "hover:border-ink-tertiary hover:text-ink-primary",

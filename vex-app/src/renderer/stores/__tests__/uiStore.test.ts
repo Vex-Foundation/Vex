@@ -86,11 +86,15 @@ describe("uiStore", () => {
     expect(parsed.state.reviewModal).toBeUndefined();
   });
 
-  it("theme defaults to 'chronos'; the persisted slot is themePreference", () => {
+  it("theme preference defaults to 'system'; the persisted slot is themePreference", () => {
+    // Ratified 2026-08-21: no explicit choice = follow the OS. jsdom has no
+    // matchMedia, so systemPrefersDark() takes its safe-fail DARK branch and
+    // `system` RESOLVES to chronos - the persisted PREFERENCE is what
+    // changed, not the resolved theme here.
     expect(useUiStore.getState().theme).toBe("chronos");
     useUiStore.getState().setSidebarOpen(false);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
-    expect(parsed.state.themePreference).toBe("chronos");
+    expect(parsed.state.themePreference).toBe("system");
     expect("theme" in parsed.state).toBe(false);
   });
 
@@ -271,7 +275,7 @@ describe("uiStore", () => {
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed.state).toEqual({
-      themePreference: "chronos",
+      themePreference: "system",
       sidebarOpen: true,
       sidebarWidth: 280,
       bookWidth: 360,
@@ -546,7 +550,7 @@ describe("uiStore", () => {
     const parsed = JSON.parse(raw!);
 
     expect(parsed.state).toEqual({
-      themePreference: "chronos",
+      themePreference: "system",
       sidebarOpen: false,
       sidebarWidth: 280,
       bookWidth: 360,
