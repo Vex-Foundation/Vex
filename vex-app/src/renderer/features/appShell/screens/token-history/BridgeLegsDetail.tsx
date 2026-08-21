@@ -12,10 +12,11 @@
  * or on an uncurated chain, renders non-interactive rather than guessing.
  */
 
-import { useState, type JSX } from "react";
+import { useId, useRef, useState, type JSX } from "react";
 import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
+import { ExpandRegion } from "../../../../components/ui/expand-region.js";
 
 /** Short leg-role label for the expandable per-leg audit list. */
 export function legRoleLabel(role: BridgeLegRole): string {
@@ -58,18 +59,22 @@ export function BridgeLegs({
   readonly legs: readonly BridgeLeg[];
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   if (legs.length === 0) return null;
   return (
     <div className="mt-1 pl-[22px]">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-controls={bodyId}
         className="vex-micro-label uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
         {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
       </button>
-      {open ? (
+      <ExpandRegion id={bodyId} open={open} triggerRef={triggerRef}>
         <ul className="mt-1 flex flex-col gap-1">
           {legs.map((leg, index) => {
             const url = bridgeLegUrl(leg);
@@ -100,7 +105,7 @@ export function BridgeLegs({
             );
           })}
         </ul>
-      ) : null}
+      </ExpandRegion>
     </div>
   );
 }

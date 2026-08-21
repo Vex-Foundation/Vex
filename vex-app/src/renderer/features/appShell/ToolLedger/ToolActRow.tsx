@@ -26,18 +26,19 @@
  * Collapsed by default (today's disclosure contract). The expanded body is a
  * recessed well; args/output are sanitized strings rendered as INERT TEXT
  * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
- * ability to read them. CSP-safe: the one-shot reveal uses the stylesheet
- * `.vex-entry-settle` keyframes (180ms, collapsed to its final frame under
- * prefers-reduced-motion by the global rule).
+ * ability to read them. The reveal is the shared `ExpandRegion` primitive:
+ * build-time CSS height interpolation, collapsed to a hard cut under
+ * prefers-reduced-motion.
  */
 
-import { useId, useMemo, useState, type JSX } from "react";
+import { useId, useMemo, useRef, useState, type JSX } from "react";
 import {
   IconChevronRight,
   IconCircleCheck,
 } from "../../../components/icons/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
 import { cn } from "../../../lib/utils.js";
+import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
@@ -229,6 +230,7 @@ export function ToolActRow({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const confirmed = isConfirmedWalletTransfer(act);
   const identity = useMemo(
     () => resolveToolIdentity(act.toolName, act.toolArgs),
@@ -314,6 +316,7 @@ export function ToolActRow({
     >
       <div className="flex min-h-6 items-center gap-2">
         <button
+          ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
@@ -379,29 +382,32 @@ export function ToolActRow({
           chips with no owner" in the QA screenshot. Inert when nothing
           resolves. */}
       <ExplorerRefLinks refs={act.explorerRefs} />
-      {open ? (
-        // ioCard: l1 hairline, r12, the recessed code surface; each section
-        // caps and scrolls alone so a long input never buries a short output.
-        <div
-          id={bodyId}
-          className="vex-entry-settle ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-[var(--vex-surface-down)]"
-        >
-          <div className="max-h-[150px] overflow-y-auto px-4 py-3">
-            <SectionHeading>Args</SectionHeading>
-            <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
-          </div>
-          {/* Output renders ONLY when a result actually merged (null = none). */}
-          {act.output !== null ? (
-            <>
-              <div aria-hidden className="h-px flex-none bg-line-2" />
-              <div className="max-h-[150px] overflow-y-auto px-4 py-3">
-                <SectionHeading>Output</SectionHeading>
-                <SectionBody text={act.output} emptyHint="(no output)" />
-              </div>
-            </>
-          ) : null}
+      {/* ioCard: l1 hairline, r12, the recessed code surface; each section
+          caps and scrolls alone so a long input never buries a short output.
+          It rides the shared expand primitive - the card is the INNER box, so
+          the animated outer box carries none of its margin or border, and the
+          entrance keyframe is gone (an expand is not also a mount). */}
+      <ExpandRegion
+        id={bodyId}
+        open={open}
+        triggerRef={triggerRef}
+        className="ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-[var(--vex-surface-down)]"
+      >
+        <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+          <SectionHeading>Args</SectionHeading>
+          <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
         </div>
-      ) : null}
+        {/* Output renders ONLY when a result actually merged (null = none). */}
+        {act.output !== null ? (
+          <>
+            <div aria-hidden className="h-px flex-none bg-line-2" />
+            <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+              <SectionHeading>Output</SectionHeading>
+              <SectionBody text={act.output} emptyHint="(no output)" />
+            </div>
+          </>
+        ) : null}
+      </ExpandRegion>
     </div>
   );
 }
