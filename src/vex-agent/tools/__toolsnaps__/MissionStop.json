@@ -1,0 +1,58 @@
+{
+  "definition": {
+    "function": {
+      "description": "Stop the current mission run. Only valid during active mission execution. goal_reached is success; other non-emergency reasons must match the user-approved mission stopConditions.",
+      "name": "MissionStop",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "description": "Optional structured evidence / metrics",
+            "type": "object"
+          },
+          "reason": {
+            "description": "Stop reason",
+            "enum": [
+              "goal_reached",
+              "deadline_reached",
+              "capital_depleted",
+              "max_loss_hit",
+              "no_viable_opportunity",
+              "emergency_stop"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "description": "Concise explanation of why the mission should stop",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "summary"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "gates": {
+      "declaredVisibility": {
+        "requiresMissionRun": true
+      },
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": false
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "safe_at_barrier",
+    "withheld": false
+  }
+}

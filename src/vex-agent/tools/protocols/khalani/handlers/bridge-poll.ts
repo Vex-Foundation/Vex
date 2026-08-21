@@ -73,7 +73,7 @@ export async function interpretPoll(input: InterpretPollInput): Promise<ToolResu
   // the provider's word, which this handler has no path to verify.
   await noteHandlerPendingReason(TOOL_ID, input.logicalRowId, "provider_fill_unverified");
 
-  // R1 Step 3a: persist what the provider actually said, so `agent_scan` carries
+  // R1 Step 3a: persist what the provider actually said, so `AgentScan` carries
   // it at return instead of waiting for the fast lane's next sweep. An
   // `unavailable` window read NOTHING, and an abort before the first read has
   // nothing to record either — inventing a status for those would be the exact

@@ -210,7 +210,7 @@ const entries: [string, MutationContract][] = [
   // the full staged lifecycle, so `capture: "none"` here — the legacy
   // `proj_activity` projection pipeline must NEVER also run for them (exactly the
   // Phase-1 kyberswap/uniswap flip). The Relay hidden-pair aliases
-  // (bridge_quote_relay / bridge_execute_relay) resolve to `relay.bridge`, so
+  // (BridgeQuoteRelay / BridgeExecuteRelay) resolve to `relay.bridge`, so
   // flipping it covers them too. Entries stay listed so the classification is
   // explicit (every mutating tool classified exactly once).
   ["khalani.bridge",           { kind: "audit", capture: "none", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],

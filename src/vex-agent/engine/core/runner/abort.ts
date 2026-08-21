@@ -1,8 +1,8 @@
 /**
  * Operator-driven mission abort.
  *
- * Host-only API — NOT exposed to the model. Lives outside `mission_stop`
- * tool surface (`tools/internal/mission.ts:22`) on purpose: `mission_stop`
+ * Host-only API — NOT exposed to the model. Lives outside `MissionStop`
+ * tool surface (`tools/internal/mission.ts:22`) on purpose: `MissionStop`
  * with `reason="user_stopped"` is rejected by design (`mission.test.ts:78`)
  * because that reason is reserved for the operator path. This module is the
  * operator path.

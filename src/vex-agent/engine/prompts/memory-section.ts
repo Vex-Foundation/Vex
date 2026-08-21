@@ -15,7 +15,7 @@
  * counts. Omission semantics per MemoryTurnContext branch:
  * `sessionStats === null` (fetch FAILED) omits (1); `knowledge === null`
  * omits (2) + (3). Fail ≠ empty — a DB hiccup must never tell the model
- * "Skip long_memory_search — nothing to find."
+ * "Skip MemorySearch — nothing to find."
  */
 
 import type { MemoryTurnContext } from "@vex-agent/memory/turn-context.js";
@@ -65,7 +65,7 @@ function buildMemoryStateBanner(stats: SessionMemoryStats): string {
   if (stats.activeCount === 0) {
     return [
       `[Session memories: 0 chunks, ${stats.compactCount} compact(s) done.`,
-      `Skip session_memory_search — nothing to find.`,
+      `Skip SessionMemorySearch — nothing to find.`,
       `Chunks become available after the first compact at ~88% context, produced asynchronously by the archive chunking worker.]`,
     ].join(" ");
   }
@@ -79,7 +79,7 @@ function buildMemoryStateBanner(stats: SessionMemoryStats): string {
       : "";
   return [
     `[Session memories: ${stats.activeCount} chunk(s) across ${stats.compactCount} compact(s).${outstandingLine}${themesLine}`,
-    `Tool: session_memory_search(semantic_intent="...", k=5).]`,
+    `Tool: SessionMemorySearch(semantic_intent="...", k=5).]`,
   ].join(" ");
 }
 
@@ -94,8 +94,8 @@ function buildKnowledgeStateBanner(input: KnowledgeStateInput): string {
   if (input.activeCount === 0) {
     return [
       `[Long-term memory: empty.`,
-      `Durable cross-session memory has no entries yet. Use long_memory_suggest to propose durable lessons: persona, observed strategies, lessons from failures, observed user preferences.`,
-      `Skip long_memory_search — nothing to find.]`,
+      `Durable cross-session memory has no entries yet. Use MemorySuggest to propose durable lessons: persona, observed strategies, lessons from failures, observed user preferences.`,
+      `Skip MemorySearch — nothing to find.]`,
     ].join(" ");
   }
   const kindsLine =
@@ -104,7 +104,7 @@ function buildKnowledgeStateBanner(input: KnowledgeStateInput): string {
       : ` Top kinds: ${input.topKinds.map((k) => `${k.kind} (${k.count})`).join(", ")}.`;
   return [
     `[Long-term memory: ${input.activeCount} entries.${kindsLine}`,
-    `Tool: long_memory_search(semantic_intent="...", k=15).]`,
+    `Tool: MemorySearch(semantic_intent="...", k=15).]`,
   ].join(" ");
 }
 
@@ -177,8 +177,8 @@ function formatActiveKnowledgeBlock(
   }
 
   lines.push(
-    "Use `long_memory_search(semantic_intent=\"...\")` for active semantic recall, `long_memory_get(id=\"...\")` for full text of one entry, " +
-      "`long_memory_history(id=\"...\")` to trace the version chain (root → head, with headId/headStatus).",
+    "Use `MemorySearch(semantic_intent=\"...\")` for active semantic recall, `MemoryGet(id=\"...\")` for full text of one entry, " +
+      "`MemoryHistory(id=\"...\")` to trace the version chain (root → head, with headId/headStatus).",
   );
 
   return lines.join("\n");

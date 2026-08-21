@@ -197,7 +197,7 @@ function serialize(value: unknown): unknown {
 /**
  * DENYLIST redaction — it removes the three secret shapes it knows about and
  * passes every other provider word through. That is why it is NO LONGER on the
- * agent-facing path: `twitter_account` now answers with a bounded code from
+ * agent-facing path: `TwitterAccount` now answers with a bounded code from
  * `failure.ts`, which is an allowlist and cannot be outflanked by prose nobody
  * anticipated.
  *
@@ -264,5 +264,5 @@ function getStringField(value: unknown, key: string): string | undefined {
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unsupported twitter_account action: ${JSON.stringify(value)}`);
+  throw new Error(`Unsupported TwitterAccount action: ${JSON.stringify(value)}`);
 }

@@ -1,0 +1,83 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read DEX Screener token PROFILE METADATA - icons, descriptions, social links, and the community-takeover flag (emitted as communityTakeover) - from either profile endpoint. Use feed: latest (default) for the plain newest-profiles window, or feed: recentUpdates for the change feed of projects that just refreshed their branding, which is the one carrying updatedAt and therefore the one to use when the question is about freshness or a time order. A profile update is metadata, NOT token creation: neither feed says when a token or pair was created, and young pools surface here through marketing activity rather than a launch record. The latest feed currently sends no updatedAt at all (drift measured 2026-08-21), so updatedWithinSeconds there drops every row into droppedByFilter.unknownEventAge; recentUpdates still sends it on 30/30 rows and is a narrow recency SAMPLE (oldest row about 85 minutes in one live window), never a survey of the last N hours. Keep one or more chains with chainIds. RETURNS one row per profile: chainId, tokenAddress, description, communityTakeover, eventAgeSeconds where the feed carries a time, plus the provenance envelope (filtersApplied, droppedByFilter, hasMore) and the endpoint each row came from. recentUpdates is a live but undocumented API surface - if it changes the call fails with the real reason (rate limit, transport, or unreadable payload), it does not return an empty success. Every filter, sort and window is applied by Vex to the provider's own feed window of at most 30 rows per call. DexScreener offers no server-side filter, sort, limit or pagination, and there is no way to widen the window. Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time.",
+      "name": "dexscreener__profiles_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated chain slugs to keep (e.g. base,solana,robinhood), matched case-insensitively. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. Applied by Vex to the at most 30 rows DexScreener returned — it cannot reach rows outside that window, and an empty result means this window held none, not that none exist. Every feed mixes chains — one live window held base, solana, bsc, pulsechain, ethereum, arbitrum, robinhood and berachain at once — so this is the filter that makes a per-chain hunt possible at all. Read droppedByFilter.chainIds to see how much of the window it removed."
+          },
+          "ctoOnly": {
+            "description": "Keep only profiles flagged as a community takeover (the provider's cto field, emitted as communityTakeover). Present on 30/30 rows of both profile feeds — 2 of 30 were true on one live window, 0 of 30 on the other, so expect this to empty the result often. A row where the feed sent no flag is UNKNOWN and is dropped, because the filter asks us to prove the takeover. Rejected on any tool whose feed does not carry the flag.",
+            "type": "boolean"
+          },
+          "explainDrops": {
+            "description": "Also emit droppedRows[]: at most 10 rejected rows, each carrying the FIRST filter that rejected it, that row's own value, and the threshold you passed — which answers 'missed by 0.1 or by 100x?' in the same call. droppedByFilter stays the full census; this is a sample, and droppedRowsTruncated states whether more were dropped than shown. providerRowIndex is the row's 0-based position in THIS response before filtering. It is deterministic inside this answer and NOT stable across calls, since DexScreener re-chooses its window every time. rowId carries the row's own identifier — a pool address, a listed-asset address, or a narrative slug — and that is the value worth keeping. Off by default, and it costs nothing when off.",
+            "type": "boolean"
+          },
+          "feed": {
+            "description": "Which profile endpoint to read (default latest). latest = /token-profiles/latest/v1, the plain newest-profiles window; the provider currently sends NO updatedAt on it (drift measured 2026-08-21), so rows there carry no age and updatedWithinSeconds drops all of them. recentUpdates = /token-profiles/recent-updates/v1, the change feed of projects that just refreshed their description/socials/branding; it still sends updatedAt on 30/30 rows, so it is the one to ask for freshness or a time sort. It is a narrow recency SAMPLE (one live window's oldest row measured about 85 minutes), never a survey of the last N hours, and it is a live but undocumented API surface: if it changes the call fails with the real reason rather than returning an empty success.",
+            "enum": [
+              "latest",
+              "recentUpdates"
+            ],
+            "type": "string"
+          },
+          "fields": {
+            "description": "Comma-separated extra output fields, ADDED to the default row (chainId and tokenAddress are never projected away, and each feed's own signal fields are always emitted). Use 'full' for every field — that is also how to discover the names, since a misspelled one is rejected with the complete accepted list. Opt-in covers dexScreenerUrl, the issuer's link list, and two CDN image URLs which are excluded by default because a model cannot see an image and they were 5-7 KB of every call.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max rows to return (1-200). Profile feeds default to 20 to bound issuer-authored text; other feeds return their provider window unless set. Any applied value is echoed in filtersApplied.limit and hasMore tells whether this provider window has additional rows. Use offset to read them. 0 is rejected because it cannot mean both 'none' and 'all'.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip this many rows of the SAME provider window (default 0). It cannot reach rows beyond DexScreener's 30 — there is no pagination on any feed.",
+            "type": "number"
+          },
+          "omitFields": {
+            "description": "Comma-separated output fields to REMOVE from every row. Accepts one name: description — the issuer-authored text that dominates these payloads (30 descriptions measured at 18,473 characters on the recent-profiles feed) and carries the whole untrusted surface. Use it when you want the chainId/tokenAddress identities and the feed's signal, and will resolve details with dexscreener.tokenPairs. Identity and signal fields are never omittable; everything else is already opt-in via \"fields\", so there is nothing there to subtract. Echoed back as fieldsOmitted, and externalContentFields reflects what actually remains.",
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "relevance | eventAgeSeconds | boostCount | boostCountTotal | adImpressionCount, restricted per feed to the keys its rows actually carry — a key this feed cannot order by is rejected naming the ones it can. 'relevance' means 'as DexScreener returned': its feed order is undisclosed, is not a ranking and is not stable. eventAgeSeconds is seconds since the event THIS feed reports (profile update, takeover claim, ad placement).",
+            "type": "string"
+          },
+          "sortDir": {
+            "description": "desc (default) or asc. Rows whose sort metric is unknown always sort last, in BOTH directions — an unknown value is unranked, not smallest.",
+            "type": "string"
+          },
+          "updatedWithinSeconds": {
+            "description": "Keep profiles updated within this many seconds, computed from updatedAt against asOfMs and reported as eventAgeSeconds on every row. Rows with no updatedAt are excluded and counted in droppedByFilter.unknownEventAge — 'we cannot tell when' is a different answer from 'too old'. The latest-profiles feed currently sends no updatedAt at all (provider drift, measured 2026-08-21), so this filter there drops every row - read the recentUpdates feed for freshness. Every response is edge-cached about 30s, so nothing here is real-time. Whole number.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.profiles"
+  }
+}

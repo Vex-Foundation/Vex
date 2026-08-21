@@ -223,7 +223,6 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     appendRefundEvidence: vi.fn().mockResolvedValue(observed),
     attachOrderId: vi.fn().mockResolvedValue({ outcome: "attached" as AttachProviderOrderIdOutcome, row: null } as AttachProviderOrderIdResult),
     enqueueBalanceRefresh: vi.fn().mockResolvedValue(undefined),
-    clearRelayReveal: vi.fn(),
     ...overrides,
   };
 }

@@ -114,9 +114,9 @@ describe("pendingResult — provider signals", () => {
     expect(String(out.message)).toContain("FAILED");
   });
 
-  it("names loop_defer as the waiting pattern instead of inviting a re-poll loop", () => {
+  it("names LoopDefer as the waiting pattern instead of inviting a re-poll loop", () => {
     const out = body(poll({ status: "submitted" }));
-    expect(String(out.message)).toContain("loop_defer");
+    expect(String(out.message)).toContain("LoopDefer");
     expect(String(out.message)).toMatch(/do not poll|Do NOT poll/i);
   });
 
@@ -127,7 +127,7 @@ describe("pendingResult — provider signals", () => {
   });
 });
 
-describe("pendingResult — O-8, whether the provider status actually reached agent_scan", () => {
+describe("pendingResult — O-8, whether the provider status actually reached AgentScan", () => {
   it("reports a recorded write", () => {
     const out = body(poll({ status: "success" }), {
       providerStatusRecorded: true, providerStatusRecordedReason: null,

@@ -29,7 +29,7 @@
  * An unusable condition is REJECTED BY NAME and the defer still parks on its
  * timer (see `watch-registry.ts` for why a rejected watch must never fail the
  * defer). A condition that is ALREADY TRUE is different: sleeping on it would be
- * a straight loss, so it throws `WakeWatchSatisfiedError` and `loop_defer`
+ * a straight loss, so it throws `WakeWatchSatisfiedError` and `LoopDefer`
  * declines to park at all.
  */
 
@@ -330,7 +330,7 @@ export function createTokenPriceEvaluator(
       if (selected === null) {
         throw new Error(
           `no priced pool for ${tokenAddress} on ${chainSlug} that we would act on, so there is no `
-          + "price to watch. Check the address and chain with token_find, or watch a token that "
+          + "price to watch. Check the address and chain with TokenFind, or watch a token that "
           + "trades on a DEX this price source indexes.",
         );
       }

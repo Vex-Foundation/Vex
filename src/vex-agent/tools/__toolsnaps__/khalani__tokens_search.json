@@ -1,0 +1,46 @@
+{
+  "definition": {
+    "function": {
+      "description": "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds).",
+      "name": "khalani__tokens_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+          },
+          "query": {
+            "description": "Search phrase or token address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.tokens.search"
+  }
+}

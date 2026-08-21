@@ -1,15 +1,15 @@
 /**
  * The launch's TRACKING step — making the freshly created token visible to
- * `wallet_balances` and the portfolio.
+ * `WalletBalances` and the portfolio.
  *
  * One reason to change: how a confirmed launch enters the local-chain balance
  * scan set. Robinhood (4663) is a LOCAL chain, so its scan set is the chain's
  * seed tokens ∪ the pins in `tracked_tokens` (migration 036). A token that was
  * just created is in neither, so before this hook existed the user could not see
- * what they had just paid for until the agent called `wallet_track_token` by
+ * what they had just paid for until the agent called `WalletTrackToken` by
  * hand.
  *
- * The mechanism is the SAME one `wallet_track_token` and the swap/bridge
+ * The mechanism is the SAME one `WalletTrackToken` and the swap/bridge
  * auto-pins use — `tracked-tokens.pinTrackedToken`, whose `ON CONFLICT DO
  * NOTHING` makes a repeat pin a no-op. Launch, then a manual pin, then a repair
  * pass therefore produce one row and no error, in any order.

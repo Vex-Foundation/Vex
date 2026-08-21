@@ -82,7 +82,7 @@ export function assertMarketDeclaresAnOracle(
     + "NO ORACLE at all, so there is no price feed to vouch for and nothing that could say what its collateral is "
     + "worth. Morpho Blue is permissionless and a market may be created this way; Vex does not enter one, because "
     + "the oracle is what decides when the collateral is seized.",
-    "Nothing was read further, signed or sent. Use a market that names an oracle - `morpho.markets.discover` lists "
+    "Nothing was read further, signed or sent. Use a market that names an oracle - `morpho__markets_discover` lists "
     + "the curated ones per chain.",
   );
 }

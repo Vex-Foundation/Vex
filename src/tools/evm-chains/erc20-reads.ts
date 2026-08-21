@@ -2,7 +2,7 @@
  * The single-token ERC-20 read primitives shared by every EVM path that needs
  * to ask ONE contract a direct question: the router debit guard
  * (`erc20-balance-guard.ts`), post-buy delivery verification
- * (`post-buy-delivery.ts`), and the agent-facing `chain_read erc20_balance`
+ * (`post-buy-delivery.ts`), and the agent-facing `ChainRead` erc20_balance
  * action.
  *
  * This module OWNS the ERC-20 read ABI. It used to live in `balances.ts`, whose

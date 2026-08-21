@@ -1,0 +1,59 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get concise stats for one specific DEX pool by chain + pair address — identity, base price, selected-window price change/volume, liquidity and pair age. FDV, market cap, reserves and per-window transaction counts are opt-in through fields. Use when you already have a pool address (e.g. from dexscreener.tokenPairs) and want its numbers. Raw priceUsd always prices the pair's base token. Direct lookup returns only the pool(s) you name (a comma-separated address list is fetched in one call). Vex applies no filtering here; DexScreener offers no server-side filter or sort. Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time.",
+      "name": "dexscreener__pairs_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The chain this pool/token lives on, as a DexScreener chain slug (e.g. ethereum, base, solana, bsc, arbitrum, robinhood). Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Comma-separated extra output fields, ADDED to the default lean row (identity is never projected away). Use 'full' for every field — that is also how to discover the names, since a misspelled one is rejected with the complete accepted list. Opt-in covers the market-cap and FDV figures, the reserve amounts on each side of the pool, every individual m5/h1/h6/h24 window, the info/social flags, the DexScreener link, and the issuer-authored display names — which are the single most expensive field in this API (one live pool's name is 34,090 characters).",
+            "type": "string"
+          },
+          "includeAllWindows": {
+            "description": "Emit all four windows of volume, txns, price change, buy/sell ratio and turnover on every row instead of just the selected one (adds roughly 250 B per row).",
+            "type": "boolean"
+          },
+          "pairAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Up to 60 DEX pool/pair contract addresses. Vex deduplicates them, splits them into provider-safe calls of at most 30, and merges all responses — cheaper than one call each. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. The reply reconciles every address: requestedPairAddresses, resolvedPairAddresses, unresolvedPairAddresses (asked, not returned), unreachedPairAddresses (their batch failed - retry those), batchRequestCount, failedBatchCount, and `found`."
+          },
+          "window": {
+            "description": "m5 | h1 | h6 | h24 (default h24). Selects the window behind volumeUsdSelected, priceChangePctSelected and the volume/txn/price-change filters. Measured coverage: volume and txns carry all four windows on 100% of rows, but priceChange carries m5 on only 31% of rows, h1 61%, h6 74%, h24 87% — a price-change filter has nothing to compare on the rest, and drops them.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "pairAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.pairs"
+  }
+}

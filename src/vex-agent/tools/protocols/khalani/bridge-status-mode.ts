@@ -1,5 +1,5 @@
 /**
- * `bridge_status` mode selection — the by-name rejection of a contradictory call.
+ * `BridgeStatus` mode selection — the by-name rejection of a contradictory call.
  *
  * The alias has TWO modes and one parameter bag: `orderId` fetches one order,
  * everything else filters a list. Supplying both is a contradiction, and the
@@ -13,7 +13,7 @@
  * parameters belong to which mode is a fact about the Khalani order API.
  */
 
-/** Every `bridge_status` parameter that only has meaning in LIST mode. */
+/** Every `BridgeStatus` parameter that only has meaning in LIST mode. */
 export const BRIDGE_STATUS_LIST_ONLY_PARAMS: readonly string[] = [
   "address",
   "walletAddress",
@@ -39,7 +39,7 @@ export function rejectBridgeStatusModeConflict(
   );
   if (supplied.length === 0) return null;
   return (
-    "bridge_status takes EITHER orderId (one order) OR the list filters, never both — "
+    "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both — "
     + `${supplied.join(", ")} ${supplied.length === 1 ? "was" : "were"} supplied alongside orderId `
     + "and would have been silently discarded. Drop orderId to filter a list, or drop "
     + `${supplied.join(", ")} to read that one order.`

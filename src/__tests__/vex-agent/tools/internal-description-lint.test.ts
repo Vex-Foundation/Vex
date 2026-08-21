@@ -10,8 +10,8 @@
  *       `ToolDef`s, the 14 included.
  *
  * The ActionKind lane deliberately overlaps the older rule. The tools with the
- * strongest obligations - `bridge`, `swap_execute`, `wallet_send_prepare`,
- * `wallet_send_confirm` - are inside those 14, and the older rule cannot
+ * strongest obligations - `BridgeExecute`, `SwapExecute`, `WalletSendPrepare`,
+ * `WalletSendConfirm` - are inside those 14, and the older rule cannot
  * demand an approval statement from them because it reads `mutating`, not the
  * action taxonomy. Two rule ids means a tool linted by both reports and
  * allowlists each finding separately, with no double-report ambiguity.
@@ -58,16 +58,18 @@ function format(list: readonly ManifestLintIssue[]): string {
 
 describe("G2 - internal tool description lint", () => {
   it("lints every registered internal tool, including the 14 the basic rule sees", () => {
-    expect(SUBJECTS).toHaveLength(34);
+    // 34 → 32: the ToolSearch merge deleted the `describe_tools` and
+    // `execute_tool` ToolDefs (`registry/protocol.ts`).
+    expect(SUBJECTS).toHaveLength(32);
     expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(14);
 
-    // The 20 the basic rule never saw, and the 14 it sees without an
+    // The 18 the basic rule never saw, and the 14 it sees without an
     // ActionKind, are ALL in this lane.
     const linted = new Set(SUBJECTS.map((tool) => tool.name));
     for (const name of BASIC_LANE) {
       expect(linted.has(name), `${name} is outside the ActionKind lane`).toBe(true);
     }
-    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(20);
+    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(18);
   });
 
   // The blast radius of the split: without the overlap, no committed rule can
@@ -78,22 +80,22 @@ describe("G2 - internal tool description lint", () => {
     ).map((tool) => tool.name);
 
     expect(moneyPath).toEqual(expect.arrayContaining([
-      "bridge", "swap_execute", "swap_execute_uniswap", "bridge_execute_relay",
-      "wallet_send_prepare", "wallet_send_confirm",
+      "BridgeExecute", "SwapExecute", "SwapExecuteUniswap", "BridgeExecuteRelay",
+      "WalletSendPrepare", "WalletSendConfirm",
     ]));
     // Every one of them sits in the basic lane too, which is exactly why the
     // ActionKind lane may not exclude that lane.
     expect(moneyPath.filter((name) => !BASIC_LANE.has(name))).toEqual([]);
   });
 
-  // A recorded, deletable fact rather than a rewrite: `bridge` broadcasts from
+  // A recorded, deletable fact rather than a rewrite: `BridgeExecute` broadcasts from
   // the user wallet and its description never names the approval that gates
   // it. The entry is what makes the gap visible to the rewrite wave.
   it("records bridge's missing approval statement as measured debt", () => {
-    const bridge = SUBJECTS.find((tool) => tool.name === "bridge");
+    const bridge = SUBJECTS.find((tool) => tool.name === "BridgeExecute");
     expect(bridge?.actionKind).toBe("user_wallet_broadcast");
 
-    const found = issues.filter((i) => i.subject === "bridge" && i.detail === "approval");
+    const found = issues.filter((i) => i.subject === "BridgeExecute" && i.detail === "approval");
     expect(found, "bridge's approval gap is no longer detected").toHaveLength(1);
     expect(withoutInternalAllowlisted(found), "the gap must be allowlisted, not unreported").toEqual([]);
   });
@@ -181,7 +183,7 @@ describe("G2 - internal description rules by ActionKind", () => {
   // The deliberate cases named in the plan: a non-read actionKind with
   // `mutating: false`. Classifying by the boolean would have demanded a SPENDS
   // sentence from a tool that moves no funds.
-  it.each(["wallet_track_token", "long_memory_suggest", "mission_draft_update"])(
+  it.each(["WalletTrackToken", "MemorySuggest", "MissionDraftUpdate"])(
     "does not demand a spends statement from %s",
     (name) => {
       const tool = getAllTools().find((t) => t.name === name);

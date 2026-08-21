@@ -246,10 +246,15 @@ describe("morpho.vaults.discover route routing pointers", () => {
         expect(params[expected.key]).toEqual(expect.any(String));
         expect(params["chain"]).toBe(option["chain"]);
         expect(pointer["stillNeeded"]).toContain("depositAmountRaw");
-        // A toolId is never printed as callable unless the catalog has it. The
-        // direct execute tool is landing in a concurrent change, so the
-        // assertion is gated on real catalog membership rather than hardcoded.
-        expect(pointer["available"]).toBe(getProtocolManifest(String(pointer["toolId"])) !== undefined);
+        // The pointer carries TWO identities and they must agree with the
+        // catalog: `toolId` is the durable identity, `publicName` is what the
+        // model actually calls. A pointer that says it is available while
+        // carrying no callable name would send the model at a name the
+        // catalog rejects, which is the exact defect this pair guards.
+        const manifest = getProtocolManifest(String(pointer["toolId"]));
+        expect(pointer["publicName"]).toBe(manifest?.publicName ?? null);
+        expect(pointer["available"]).toBe(pointer["publicName"] !== null);
+        expect(pointer["available"]).toBe(manifest !== undefined);
       }
     }
   });

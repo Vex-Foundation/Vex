@@ -12,7 +12,7 @@
  * Called by the Pendle handlers after a confirmed acquisition. FAIL-SOFT by
  * construction: a pin failure must never fail (or unwind) a settled on-chain
  * action — the worst case is a token missing from the next balance scan, which
- * the user can still pin by hand via `wallet_track_token`.
+ * the user can still pin by hand via `WalletTrackToken`.
  *
  * `source: "swap"` is deliberate: the `tracked_tokens.source` CHECK constraint
  * (migration 036) allows only `agent | swap | bridge`, and a Pendle acquisition

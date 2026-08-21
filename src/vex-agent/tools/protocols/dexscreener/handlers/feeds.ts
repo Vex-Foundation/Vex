@@ -1,21 +1,23 @@
 /**
  * The promotional / profile FEED handlers.
  *
- * `profiles`, `profiles.recent`, `boosts`, `boosts.top`, `communityTakeovers`,
- * `ads` and the synthetic `attention` merge. These are the HUNTING surface: the
- * six provider feeds are the only endpoints in this API that surface tokens the
- * agent has not already named, so they are what turns "confirm this token" into
- * "find me a token".
+ * `profiles`, `boosts`, `communityTakeovers`, `ads` and the synthetic
+ * `attention` merge - five tools over six provider feeds, since the Batch 2
+ * merges (owner decision D7) retired `profiles.recent` and `boosts.top` into
+ * their siblings' `feed` param. These are the HUNTING surface: the six provider
+ * feeds are the only endpoints in this API that surface tokens the agent has
+ * not already named, so they are what turns "confirm this token" into "find me
+ * a token".
  *
- * Before this card all seven declared ZERO parameters between them (one, `limit`,
+ * Before this card all of them declared ZERO parameters between them (one, `limit`,
  * on `attention`, with a silent default of 20). The consequence was a loop: no
  * params → the agent compensates with call volume → every call returns everything
  * → everything blobs → the agent spends more calls reading blobs back. The owner's
  * worked example was not slow but IMPOSSIBLE: "fresh memecoins on the robinhood
- * chain" could not be expressed, because `profiles.recent` had no chain filter and
+ * chain" could not be expressed, because the recent-updates feed had no chain filter and
  * returned 30 rows across all chains at 40,089 B — 2.45x the 16 KiB cap.
  *
- * All seven now share ONE vocabulary through `../feed-list/`: `limit` (no
+ * They now share ONE vocabulary through `../feed-list/`: `limit` (no
  * default), `offset`, `fields`, `chainIds`, `sortBy`, `sortDir`, plus the per-feed
  * extras the provider can actually honour. Every output carries the provenance
  * envelope, including `droppedByFilter`, so a filtered-to-empty feed is
@@ -38,6 +40,8 @@ import {
   buildFeedList,
   mergeAttentionRows,
   parseFeedListQuery,
+  readBoostFeed,
+  readProfileFeed,
   toAdFeedRow,
   toAttentionFeedRow,
   toBoostFeedRow,
@@ -108,17 +112,29 @@ const ATTENTION_FEED: FeedListQueryDefaults = {
 };
 
 export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
+  // Both profile endpoints, selected by `feed` (the Batch 2 merge that retired
+  // `dexscreener.profiles.recent`). Same row shape, same params, same
+  // projection: only the URL and what it populates differ. The reply names
+  // WHICH it read through the envelope's `providerWindow.endpoint` - the echo
+  // the provenance envelope already owns, rather than a second copy of the same
+  // fact costing bytes against the 16 KiB output cap this feed sits closest to.
   "dexscreener.profiles": async (p) => {
+    const feedChoice = readProfileFeed(p);
+    if (!feedChoice.ok) return fail(`dexscreener.profiles: ${feedChoice.reason}`);
     const parsed = parseFeedListQuery(p, PROFILE_FEED);
     if (!parsed.ok) return fail(`dexscreener.profiles: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
-    const profiles = await client.getProfiles();
+    const profiles = feedChoice.value === "latest"
+      ? await client.getProfiles()
+      : await client.getProfilesRecentUpdates();
     const asOfMs = Date.now();
     return ok({
       sourceObservation: sourceObservation(client, profiles, asOfMs),
       ...buildFeedList({
-        endpoint: "/token-profiles/latest/v1",
+        endpoint: feedChoice.value === "latest"
+          ? "/token-profiles/latest/v1"
+          : "/token-profiles/recent-updates/v1",
         providerRows: profiles.map(toProfileFeedRow),
         query: parsed.query,
         asOfMs,
@@ -126,58 +142,33 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
     });
   },
 
-  "dexscreener.profiles.recent": async (p) => {
-    const parsed = parseFeedListQuery(p, PROFILE_FEED);
-    if (!parsed.ok) return fail(`dexscreener.profiles.recent: ${parsed.reason}`);
-
-    const client = getDexScreenerClient();
-    const profiles = await client.getProfilesRecentUpdates();
-    const asOfMs = Date.now();
-    return ok({
-      sourceObservation: sourceObservation(client, profiles, asOfMs),
-      ...buildFeedList({
-        endpoint: "/token-profiles/recent-updates/v1",
-        providerRows: profiles.map(toProfileFeedRow),
-        query: parsed.query,
-        asOfMs,
-      }),
-    });
-  },
-
-  // `boostCount` is null on every row of the `top` feed and populated on `latest`;
-  // `skippedRows` reports rows the parser could not read, so a thinned feed is
-  // visible rather than silent.
+  // Both boost endpoints, selected by `feed` (the merge that retired
+  // `dexscreener.boosts.top`). `boostCount` is null on every row of the `top`
+  // feed and populated on `latest`, and `top` defaults the sort to
+  // boostCountTotal - the only two differences, both preserved through the
+  // per-feed defaults. `skippedRows` reports rows the parser could not read, so
+  // a thinned feed is visible rather than silent.
   "dexscreener.boosts": async (p) => {
-    const parsed = parseFeedListQuery(p, BOOST_FEED);
+    const feedChoice = readBoostFeed(p);
+    if (!feedChoice.ok) return fail(`dexscreener.boosts: ${feedChoice.reason}`);
+    const parsed = parseFeedListQuery(
+      p,
+      feedChoice.value === "latest" ? BOOST_FEED : TOP_BOOST_FEED,
+    );
     if (!parsed.ok) return fail(`dexscreener.boosts: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
-    const feed = await client.getBoosts();
+    const feed = feedChoice.value === "latest"
+      ? await client.getBoosts()
+      : await client.getTopBoosts();
     const asOfMs = Date.now();
     return ok({
       skippedRows: feed.skipped,
       sourceObservation: sourceObservation(client, feed, asOfMs),
       ...buildFeedList({
-        endpoint: "/token-boosts/latest/v1",
-        providerRows: feed.boosts.map(toBoostFeedRow),
-        query: parsed.query,
-        asOfMs,
-      }),
-    });
-  },
-
-  "dexscreener.boosts.top": async (p) => {
-    const parsed = parseFeedListQuery(p, TOP_BOOST_FEED);
-    if (!parsed.ok) return fail(`dexscreener.boosts.top: ${parsed.reason}`);
-
-    const client = getDexScreenerClient();
-    const feed = await client.getTopBoosts();
-    const asOfMs = Date.now();
-    return ok({
-      skippedRows: feed.skipped,
-      sourceObservation: sourceObservation(client, feed, asOfMs),
-      ...buildFeedList({
-        endpoint: "/token-boosts/top/v1",
+        endpoint: feedChoice.value === "latest"
+          ? "/token-boosts/latest/v1"
+          : "/token-boosts/top/v1",
         providerRows: feed.boosts.map(toBoostFeedRow),
         query: parsed.query,
         asOfMs,

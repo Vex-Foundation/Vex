@@ -19,6 +19,7 @@ const PT_PARAM = {
 export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.py.quote",
+    publicName: "pendle__py_quote",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -39,6 +40,7 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.py.mint",
+    publicName: "pendle__py_mint",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -58,6 +60,7 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.py.redeem",
+    publicName: "pendle__py_redeem",
     namespace: "pendle",
     lifecycle: "active",
     description:

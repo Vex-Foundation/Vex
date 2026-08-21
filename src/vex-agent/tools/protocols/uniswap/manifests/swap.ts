@@ -19,9 +19,10 @@ const SWAP_EXECUTION_PARAMS = [
 export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "uniswap.swap.quote",
+    publicName: "uniswap__swap_quote",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Get the best Uniswap route across V2 + V3 — output amount, route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). A HIDDEN fallback for KyberSwap, available after an eligible KyberSwap swap failure reveals it for this session (a route or token KyberSwap cannot price, an unsafe or pre-sign-refused build, the Kyber swap transaction reverting on-chain, or KyberSwap being unavailable to us at all). Read-only, no execution. Vex charges 25 bps (0.25%) on the input token: the quoted output is for amountIn MINUS that fee (see swapAmountRaw and the vexFee block), while amountIn stays the total debited. The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name.",
+    description: "Get the best Uniswap route across V2 + V3. Returns the output amount, the route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). Read-only, no execution. Covers the EVM chains with a verified Vex Uniswap deployment; pass token ADDRESSES. Vex charges 25 bps (0.25%) on the input token: the quoted output is for amountIn MINUS that fee (see swapAmountRaw and the vexFee block), while amountIn stays the total debited. The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -36,9 +37,10 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "uniswap.swap.execute",
+    publicName: "uniswap__swap_execute",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Execute a Uniswap swap (best V2/V3 route, exact-input). A HIDDEN fallback for KyberSwap, available after an eligible KyberSwap swap failure reveals it for this session (a route or token KyberSwap cannot price, an unsafe or pre-sign-refused build, the Kyber swap transaction reverting on-chain, or KyberSwap being unavailable to us at all). Pass token ADDRESSES (no symbol search). REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router, with a reset-to-zero first for tokens that require it; native input needs none) — there is NO separate approve tool and none is needed. Vex charges 25 bps (0.25%) on the input token as a SEPARATE transfer signed only AFTER the swap confirms, so a swap that fails is never charged: the router swaps amountIn MINUS the fee and the wallet is debited amountIn in total (the vexFee block in the result reports what was collected). The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name.",
+    description: "Execute a Uniswap swap (best V2/V3 route, exact-input). SPENDS FUNDS: it signs and broadcasts from your wallet and requires approval before it runs. Returns the transaction hash and the executed amounts. Pass token ADDRESSES (no symbol search). REQUIRES a fresh matching uniswap.swap.quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router, with a reset-to-zero first for tokens that require it; native input needs none) — there is NO separate approve tool and none is needed. Vex charges 25 bps (0.25%) on the input token as a SEPARATE transfer signed only AFTER the swap confirms, so a swap that fails is never charged: the router swaps amountIn MINUS the fee and the wallet is debited amountIn in total (the vexFee block in the result reports what was collected). The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: SWAP_EXECUTION_PARAMS,

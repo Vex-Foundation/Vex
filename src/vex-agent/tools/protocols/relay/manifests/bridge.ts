@@ -4,7 +4,7 @@ import { CANONICAL_RAW_AMOUNT_SENTENCE, CANONICAL_SLIPPAGE_PARAGRAPH } from "../
 
 /**
  * The ONE raw-amount description both Relay bridge tools declare (W5b). It ends
- * with the shared convention sentence, which names `token_find` as the decimals
+ * with the shared convention sentence, which names `TokenFind` as the decimals
  * source — rule 90: a raw amount that travels without the decimals needed to
  * read it is a thousandfold error waiting to happen.
  */
@@ -30,13 +30,14 @@ const BRIDGE_PARAMS = [
 export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "relay.quote.get",
+    publicName: "relay__bridge_quote_get",
     namespace: "relay",
     lifecycle: "active",
-    // Wording anchored on the Robinhood/local route (the always-allowed path) —
-    // the general-purpose non-local fallback is reveal-gated (W5) and surfaces
-    // only after an eligible Khalani no-route failure, never from this static
-    // manifest (no static leakage of the hidden pair).
-    description: "Preview a Relay bridge to/from Robinhood Chain (4663) — routes, fees, ETA, USD estimates. Relay is the direct bridge for Robinhood Chain (Khalani does not cover it). Resolve token addresses first. `amountRaw` is in smallest units (wei). Read-only.",
+    // Wording used to be anchored on the Robinhood/local route because the
+    // general-purpose path was reveal-gated and could not be described without
+    // leaking the hidden pair. Owner decision D4 retired that gate, so the
+    // description now states the real capability and the venue preference.
+    description: "Preview a Relay cross-chain bridge. Returns the route, the expected destination amount, fees, ETA, and USD estimates. Read-only. Resolve token addresses first; `amountRaw` is in smallest units (wei). Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other route Khalani is Vex's primary bridge. Use this when Khalani does not cover the route, or when its quote failed for a routing reason.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -54,12 +55,13 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "relay.bridge",
+    publicName: "relay__bridge_execute",
     namespace: "relay",
     lifecycle: "active",
-    // Robinhood/local-anchored wording (see relay.quote.get). Also states the
-    // truthful async contract: the call returns while the destination fill is
-    // still in progress — a returned bridge is NOT yet confirmed.
-    description: "Execute a REAL Relay bridge to/from Robinhood Chain (4663) — signs + broadcasts the origin-chain deposit; the solver fills on the destination. Relay is the direct bridge for Robinhood Chain (Khalani does not cover it). REQUIRES a fresh matching relay.quote.get first. `amountRaw` is in smallest units (wei). The call returns while the destination fill is still IN PROGRESS — Vex tracks it automatically and finalizes the record when the fill is verified; a returned bridge is NOT yet confirmed.",
+    // States the truthful async contract: the call returns while the
+    // destination fill is still in progress — a returned bridge is NOT yet
+    // confirmed. Venue preference mirrors relay.quote.get.
+    description: "Execute a REAL Relay cross-chain bridge. SPENDS FUNDS: it signs and broadcasts the origin-chain deposit and requires approval before it runs; the solver then fills on the destination. REQUIRES a fresh matching relay.quote.get first. `amountRaw` is in smallest units (wei). Returns the origin transaction hash and the order id to follow. The call returns while the destination fill is still IN PROGRESS — Vex tracks it automatically and finalizes the record when the fill is verified; a returned bridge is NOT yet confirmed. Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other route Khalani is Vex's primary bridge. Use this when Khalani does not cover the route, or when its quote failed for a routing reason.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

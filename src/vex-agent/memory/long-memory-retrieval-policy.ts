@@ -33,7 +33,7 @@ import {
 
 // ── Constants (§4) ───────────────────────────────────────────────
 
-/** Default `k` for `long_memory_search` when the caller omits it. */
+/** Default `k` for `MemorySearch` when the caller omits it. */
 export const LONG_MEMORY_DEFAULT_K = 8;
 
 /** Hard upper bound on `k` — reuses the long-memory recall ceiling (one source of truth). */

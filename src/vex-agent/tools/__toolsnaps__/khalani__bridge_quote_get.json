@@ -1,0 +1,68 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get cross-chain bridge quote with routes, pricing, ETA, and each route's DEADLINE (expiresAtUnixSeconds plus expiresInSeconds remaining). khalani.bridge hard-fails with deadline_expired past that deadline, so check the remaining window before acting and re-quote if it has run out. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
+      "name": "khalani__bridge_quote_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "type": "string"
+          },
+          "filler": {
+            "description": "Restrict quotes to a specific filler.",
+            "type": "string"
+          },
+          "fromAddress": {
+            "description": "Source wallet address override.",
+            "type": "string"
+          },
+          "fromChain": {
+            "description": "Source chain ID or alias.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient override.",
+            "type": "string"
+          },
+          "toChain": {
+            "description": "Destination chain ID or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address.",
+            "type": "string"
+          },
+          "tradeType": {
+            "description": "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.quote.get"
+  }
+}

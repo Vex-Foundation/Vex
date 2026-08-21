@@ -2,7 +2,7 @@
  * Long-term memory tools (memory v2) — the agent-facing write-door into
  * cross-session candidate memory.
  *
- * `long_memory_suggest` is the ONLY agent-facing write tool in the v2 memory
+ * `MemorySuggest` is the ONLY agent-facing write tool in the v2 memory
  * system (S2). It STAGES a candidate — it does NOT write memory directly — and
  * an async manager (S4) reviews, dedupes, and decides promotion. Namespaced
  * `long_memory_*` to stay distinct from per-session `memory_*` and the legacy
@@ -18,11 +18,11 @@
  * - `actionKind: "local_write"` — a Vex-local DB write (candidate staging).
  * - `visibility: {}` — always visible in every session context.
  *
- * The three READ tools (S3) — `long_memory_search` / `long_memory_get` /
- * `long_memory_history` — are the cross-session RECALL door. All are
+ * The three READ tools (S3) — `MemorySearch` / `MemoryGet` /
+ * `MemoryHistory` — are the cross-session RECALL door. All are
  * `mutating:false`, `pressureSafety:"read_only"`, `actionKind:"read"`,
  * `visibility:{}` (always visible — unlike session memory's
- * `requiresSessionMemory` gate). `long_memory_search` hides its strategy
+ * `requiresSessionMemory` gate). `MemorySearch` hides its strategy
  * (vector + dual-trace + rerank); fresh un-consolidated candidates surface as
  * de-weighted soft signals (`notConsolidated:true`), never as fact.
  */
@@ -32,7 +32,7 @@ import { formatKindExamples } from "@vex-agent/memory/kind-catalog.js";
 
 export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
   {
-    name: "long_memory_suggest",
+    name: "MemorySuggest",
     kind: "internal",
     mutating: false,
     pressureSafety: "mutating",
@@ -128,7 +128,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "long_memory_search",
+    name: "MemorySearch",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
@@ -142,7 +142,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
       // QUERY GUIDANCE
       "Write SEMANTIC INTENT in English, not keywords (embedding retrieval is significantly stronger on English; translate the user's intent first). ✓ 'user trading risk preferences and position sizing rules' ✗ 'risk'. Returns only active, non-expired memory.",
       // RESPONSE
-      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use long_memory_get on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
+      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use MemoryGet on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -181,21 +181,21 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "long_memory_get",
+    name: "MemoryGet",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     visibility: {},
     description: [
-      "Fetch a single long-term memory entry by id (the numeric id returned by long_memory_search results with source:'long_memory'). Loads its full content into context.",
-      "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use long_memory_search to find a current id, long_memory_history to trace the version chain.",
+      "Fetch a single long-term memory entry by id (the numeric id returned by MemorySearch results with source:'long_memory'). Loads its full content into context.",
+      "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use MemorySearch to find a current id, MemoryHistory to trace the version chain.",
       "response_format: 'concise' (default) returns id/kind/title/summary/status + lineage links (the full body is still loaded into context); 'detailed' additionally inlines content_md, tags, source refs, confidence, and lifecycle metadata. Does not require the embeddings service.",
     ].join(" "),
     parameters: {
       type: "object",
       properties: {
-        id: { type: "number", description: "Long-term memory entry id (from a long_memory_search 'long_memory' result)." },
+        id: { type: "number", description: "Long-term memory entry id (from a MemorySearch 'long_memory' result)." },
         response_format: {
           type: "string",
           enum: ["concise", "detailed"],
@@ -207,7 +207,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "long_memory_history",
+    name: "MemoryHistory",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
@@ -215,7 +215,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version).",
-      "Use this when you have a historical id (e.g. from long_memory_get's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use long_memory_get for that).",
+      "Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use MemoryGet for that).",
       "Read-only. Does not require the embeddings service.",
     ].join(" "),
     parameters: {

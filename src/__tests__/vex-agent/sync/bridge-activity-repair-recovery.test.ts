@@ -71,7 +71,6 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     appendRefundEvidence: vi.fn().mockResolvedValue(observed),
     attachOrderId: vi.fn().mockResolvedValue(attach("attached")),
     enqueueBalanceRefresh: vi.fn().mockResolvedValue(undefined),
-    clearRelayReveal: vi.fn(),
     ...overrides,
   };
 }
@@ -244,7 +243,7 @@ describe("repairPendingBridges — orchestration", () => {
 
   // ── C3 confirm+enqueue recovery path (CHOICE = explicit recovery, not one tx) ─
 
-  it("reconciles confirmed-but-unenqueued rows by idempotently enqueuing the balance job, re-clearing a relay reveal (C3 recovery)", async () => {
+  it("reconciles confirmed-but-unenqueued rows by idempotently enqueuing the balance job (C3 recovery)", async () => {
     const deps = makeDeps({
       listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([
         { executionId: 300, protocol: "relay", sessionId: "sess-r", normalizedRoute: "route-r" },
@@ -254,9 +253,6 @@ describe("repairPendingBridges — orchestration", () => {
     const result = await repairPendingBridges(deps);
     expect(deps.enqueueBalanceRefresh).toHaveBeenCalledWith({ namespace: "relay", executionId: 300 });
     expect(deps.enqueueBalanceRefresh).toHaveBeenCalledWith({ namespace: "khalani", executionId: 301 });
-    // Recovery re-clears the stranded relay reveal (Blocker 11) — khalani never does.
-    expect(deps.clearRelayReveal).toHaveBeenCalledWith("sess-r", "route-r");
-    expect(deps.clearRelayReveal).not.toHaveBeenCalledWith("sess-k", "route-k");
     expect(result.balanceReconciled).toBe(2);
   });
 

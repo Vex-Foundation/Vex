@@ -30,7 +30,7 @@ export function buildMissionRunPrompt(
   lines.push(`- Mission run active: ${engineContext.missionRunId ?? "yes"}`);
   lines.push("- The operator has already accepted the mission draft and started the run from the host UI (the Start or Continue control); the run is active");
   lines.push("- Treat earlier setup messages asking the operator to start the mission as historical context only");
-  lines.push("- Do not ask the operator to start or continue the mission again, and do not call `loop_defer` because you are waiting for mission activation");
+  lines.push("- Do not ask the operator to start or continue the mission again, and do not call `LoopDefer` because you are waiting for mission activation");
   lines.push("");
 
   lines.push("## Critical Rules");
@@ -41,19 +41,19 @@ export function buildMissionRunPrompt(
   lines.push("  - Success criteria are verified as met");
   lines.push("  - A user-approved stop condition from the Mission Contract is verified as met");
   lines.push("  - Continuing would be unsafe or invalid because of a system/integrity failure");
-  lines.push("- When you believe a stop condition is met, call the `mission_stop` tool:");
-  lines.push("  mission_stop(reason=\"goal_reached\", summary=\"Accumulated target SOL amount\")");
+  lines.push("- When you believe a stop condition is met, call the `MissionStop` tool:");
+  lines.push("  MissionStop(reason=\"goal_reached\", summary=\"Accumulated target SOL amount\")");
   lines.push("  Valid reasons: goal_reached, deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity, emergency_stop");
   lines.push("- goal_reached is the only successful terminal reason. Use it only after verifying the success criteria with live state");
   lines.push("- For any non-success reason, the reason must match an accepted stop condition in the Mission Contract. Example: no_viable_opportunity is allowed only if the contract explicitly includes no_viable_opportunity or equivalent wording");
-  // `loop_defer` is the WAITING PRIMITIVE (`# Execution Policy`'s waiting
+  // `LoopDefer` is the WAITING PRIMITIVE (`# Execution Policy`'s waiting
   // pattern), not a fallback for a bad situation. Framing it as the thing you
   // reach for when nothing else fits taught the model to treat waiting as
   // failure — and to poll instead, which is what the waiting pattern exists to
   // stop. Same wording direction as `execution-policy.ts`'s WAITING_PATTERN.
-  lines.push("- Waiting is a normal mission step, not a failure: when the next useful step depends on an on-chain or time-based event you cannot make happen sooner, call `loop_defer` with a wait sized to that event rather than polling it. See `# Execution Policy`");
-  lines.push("- If the current situation is unclear or unprofitable but no accepted stop condition matches it, keep working safely or wait with `loop_defer` — never stop");
-  lines.push("- Never use mission_stop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
+  lines.push("- Waiting is a normal mission step, not a failure: when the next useful step depends on an on-chain or time-based event you cannot make happen sooner, call `LoopDefer` with a wait sized to that event rather than polling it. See `# Execution Policy`");
+  lines.push("- If the current situation is unclear or unprofitable but no accepted stop condition matches it, keep working safely or wait with `LoopDefer` — never stop");
+  lines.push("- Never use MissionStop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
   lines.push("- emergency_stop is only for safety/integrity failures: unverifiable wallet state, materially conflicting tool outputs, unavailable required infrastructure, or an action that would violate allowed wallets/chains/protocols");
   lines.push("- A slice is one bounded stretch of work between engine yields, and its limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
@@ -68,14 +68,14 @@ export function buildMissionRunPrompt(
   // Recommending it in an install without the key sends the model at a tool the
   // dispatcher will refuse — same availability predicate the registry uses.
   if (isProtocolNamespaceAvailable("solana")) {
-    lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
+    lines.push("- For fresh/newly-launched Solana tokens, prefer solana__tokens_discover with category=recent (or solana__tokens_search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   }
   lines.push("- Log significant decisions with rationale for audit trail");
   lines.push("");
 
   lines.push("## Token launches");
   lines.push("- Launching a token is irreversible and spends real ETH: only a mission whose contract authorizes launching, and whose host-authored launch ceilings (max launch value, max launch count) are set, may launch one.");
-  lines.push("- The path is `trench.images` (an image the user pre-staged — you can never supply one), then `trench.launch_preview`, then `trench.launch_execute`; `trench.launch_request_form` hands the launch DECISION to the user instead of spending.");
+  lines.push("- The path is `trench__images_list` (an image the user pre-staged — you can never supply one), then `trench__launch_preview`, then `trench__launch_execute`; `trench__launch_request_form` hands the launch DECISION to the user instead of spending.");
   // Honesty gate (Codex round 2): a launch tool may refuse today because the
   // host surface (form wiring, contract-card ceilings) is not in place. The
   // refusal is safe; the dangerous response is improvising around it.

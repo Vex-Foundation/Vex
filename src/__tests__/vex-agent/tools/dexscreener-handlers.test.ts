@@ -34,8 +34,11 @@ describe("dexscreener handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (14)", () => {
-    expect(Object.keys(DEXSCREENER_HANDLERS)).toHaveLength(14);
+  // 14 before the Batch 2 merges (owner decision D7) retired
+  // `dexscreener.profiles.recent` and `dexscreener.boosts.top` into their
+  // siblings' `feed` param.
+  it("handler count matches manifest count (12)", () => {
+    expect(Object.keys(DEXSCREENER_HANDLERS)).toHaveLength(12);
   });
 
   it("every handler is a function", () => {
@@ -184,8 +187,8 @@ describe("dexscreener handlers", () => {
 
   // Live regression guard: this tool threw on 100% of calls because the shared
   // boost schema required `amount`, which `/token-boosts/top/v1` never sends.
-  it("dexscreener.boosts.top returns rows against the LIVE top feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]({}, READ_CTX);
+  it("dexscreener.boosts feed:top returns rows against the LIVE top feed", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]({ feed: "top" }, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBeGreaterThan(0);
@@ -737,7 +740,7 @@ describe("dexscreener metas + recent handlers", () => {
     expect(result.output).not.toContain("undocumented");
   });
 
-  it("dexscreener.profiles.recent returns profiles and propagates failures", async () => {
+  it("dexscreener.profiles feed:recentUpdates returns profiles and propagates failures", async () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "getProfilesRecentUpdates").mockResolvedValue([
       {
@@ -747,8 +750,11 @@ describe("dexscreener metas + recent handlers", () => {
       },
     ]);
     const okResult = JSON.parse(
-      (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).output,
+      (await DEXSCREENER_HANDLERS["dexscreener.profiles"]({ feed: "recentUpdates" }, READ_CTX)).output,
     );
+    // The reply names WHICH feed it read, so it cannot be mistaken for the
+    // other one.
+    expect(okResult.providerWindow.endpoint).toBe("/token-profiles/recent-updates/v1");
     expect(okResult.returned).toBe(1);
     expect(okResult.rows[0].updatedAt).toBe("2026-07-04T00:00:00.000Z");
     expect(okResult.rows[0].communityTakeover).toBe(false);
@@ -756,6 +762,8 @@ describe("dexscreener metas + recent handlers", () => {
 
     const boom = new Error("boom");
     vi.spyOn(client, "getProfilesRecentUpdates").mockRejectedValue(boom);
-    await expect(DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).rejects.toBe(boom);
+    await expect(
+      DEXSCREENER_HANDLERS["dexscreener.profiles"]({ feed: "recentUpdates" }, READ_CTX),
+    ).rejects.toBe(boom);
   });
 });

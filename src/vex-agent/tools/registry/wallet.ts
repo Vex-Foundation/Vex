@@ -1,7 +1,7 @@
 /**
  * Wallet tools — read state and prepare/confirm transfers.
  *
- * `wallet_send_prepare` returns an intent ID; `wallet_send_confirm` broadcasts.
+ * `WalletSendPrepare` returns an intent ID; `WalletSendConfirm` broadcasts.
  * Confirm is the only mutating tool here.
  */
 
@@ -17,7 +17,7 @@ const WALLET_FAMILY_DESCRIPTION =
 
 export const WALLET_TOOLS: readonly ToolDef[] = [
   {
-    name: "wallet_balances", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
+    name: "WalletBalances", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
     description: "Read your token balances on every chain Vex can reach: Khalani-covered chains via Khalani, plus local chains like Robinhood Chain (4663) read directly from RPC. Defaults to your personal wallets — both EVM (`eip155`) and Solana — aggregated in one call. Pass `walletFamily` or `chainIds` only when you want to narrow the scan.",
     parameters: { type: "object", properties: {
       walletFamily: { type: "string", enum: ["eip155", "solana", "all"], description: "Which wallet FAMILY to read — 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`." },
@@ -34,8 +34,8 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
     } },
   },
   {
-    name: "wallet_track_token", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "local_write",
-    description: "Pin an ERC-20 token on a LOCAL chain (e.g. Robinhood 4663) so `wallet_balances` and the portfolio track it. Local chains scan a fixed set (seed tokens + pins); pin any token received by transfer or airdrop — swap and bridge executes auto-pin theirs. DB-only bookmark: no on-chain transaction. Khalani-covered chains do not need pinning.",
+    name: "WalletTrackToken", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "local_write",
+    description: "Pin an ERC-20 token on a LOCAL chain (e.g. Robinhood 4663) so `WalletBalances` and the portfolio track it. Local chains scan a fixed set (seed tokens + pins); pin any token received by transfer or airdrop — swap and bridge executes auto-pin theirs. DB-only bookmark: no on-chain transaction. Khalani-covered chains do not need pinning.",
     parameters: { type: "object", properties: {
       action: { type: "string", enum: ["pin", "unpin", "list"], description: "pin adds a token to tracking, unpin removes it, list shows the chain's seed + pinned set." },
       chain: { type: "string", description: "Local chain alias or id (e.g. 'robinhood', '4663')." },
@@ -43,7 +43,7 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
     }, required: ["action", "chain"] },
   },
   {
-    name: "wallet_send_prepare", kind: "internal", mutating: false, pressureSafety: "mutating", actionKind: "approval_prepare",
+    name: "WalletSendPrepare", kind: "internal", mutating: false, pressureSafety: "mutating", actionKind: "approval_prepare",
     description: "Prepare a transfer intent (no broadcast). Returns intent ID for confirmation. Supports native tokens, ERC-20, and ERC-721 on any EVM chain. Solana: SOL + SPL tokens only (no pNFT/cNFT).",
     parameters: { type: "object", properties: {
       walletFamily: { type: "string", enum: ["eip155", "solana"], description: WALLET_FAMILY_DESCRIPTION },
@@ -54,7 +54,7 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
     }, required: ["walletFamily", "to", "amountIn"] },
   },
   {
-    name: "wallet_send_confirm", kind: "internal", mutating: true, pressureSafety: "mutating", actionKind: "user_wallet_broadcast",
+    name: "WalletSendConfirm", kind: "internal", mutating: true, pressureSafety: "mutating", actionKind: "user_wallet_broadcast",
     description: "Confirm and broadcast a prepared transfer. Requires approval in restricted/off mode.",
     parameters: { type: "object", properties: {
       walletFamily: { type: "string", enum: ["eip155", "solana"], description: WALLET_FAMILY_DESCRIPTION },

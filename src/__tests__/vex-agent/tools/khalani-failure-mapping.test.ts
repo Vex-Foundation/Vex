@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyKhalaniFailure,
-  isRevealEligibleKhalaniFailure,
+  isKhalaniVenueFallbackWorthwhile,
   type KhalaniFailureSignal,
   type KhalaniFailureClassification,
 } from "@vex-agent/tools/protocols/khalani/failure-mapping.js";
@@ -29,33 +29,33 @@ const REVEAL_ELIGIBLE_ROWS: readonly Row[] = [
   {
     label: "empty routes[] (primary no-route signal)",
     signal: { kind: "empty_routes" },
-    expected: { outcome: "reveal_eligible", trigger: "empty_routes" },
+    expected: { outcome: "fallback_eligible", trigger: "empty_routes" },
   },
   {
     label: "CannotFillException",
     signal: exc("CannotFillException"),
-    expected: { outcome: "reveal_eligible", trigger: "CannotFillException" },
+    expected: { outcome: "fallback_eligible", trigger: "CannotFillException" },
   },
   {
     label: "NotSupportedChainException",
     signal: exc("NotSupportedChainException"),
-    expected: { outcome: "reveal_eligible", trigger: "NotSupportedChainException" },
+    expected: { outcome: "fallback_eligible", trigger: "NotSupportedChainException" },
   },
   {
     label: "NotSupportedTokenException",
     signal: exc("NotSupportedTokenException"),
-    expected: { outcome: "reveal_eligible", trigger: "NotSupportedTokenException" },
+    expected: { outcome: "fallback_eligible", trigger: "NotSupportedTokenException" },
   },
   {
     label: "NotSupportedContractException",
     signal: exc("NotSupportedContractException"),
-    expected: { outcome: "reveal_eligible", trigger: "NotSupportedContractException" },
+    expected: { outcome: "fallback_eligible", trigger: "NotSupportedContractException" },
   },
   {
     label: "NotSupportedAssetReverseContractException",
     signal: exc("NotSupportedAssetReverseContractException"),
     expected: {
-      outcome: "reveal_eligible",
+      outcome: "fallback_eligible",
       trigger: "NotSupportedAssetReverseContractException",
     },
   },
@@ -147,12 +147,12 @@ describe("classifyKhalaniFailure — closed-set classification", () => {
     });
   }
 
-  it("every reveal-eligible row is reveal_eligible (and only those)", () => {
+  it("every fallback-eligible row is fallback_eligible (and only those)", () => {
     for (const row of REVEAL_ELIGIBLE_ROWS) {
-      expect(isRevealEligibleKhalaniFailure(row.signal)).toBe(true);
+      expect(isKhalaniVenueFallbackWorthwhile(row.signal)).toBe(true);
     }
     for (const row of [...NOT_ELIGIBLE_ROWS, ...DENY_ROWS]) {
-      expect(isRevealEligibleKhalaniFailure(row.signal)).toBe(false);
+      expect(isKhalaniVenueFallbackWorthwhile(row.signal)).toBe(false);
     }
   });
 
@@ -189,9 +189,9 @@ describe("classifyKhalaniFailure — closed-set classification", () => {
     ];
     for (const name of taxonomy) {
       const result = classifyKhalaniFailure(exc(name));
-      // Each is either reveal_eligible with a trigger, or not_eligible with a
+      // Each is either fallback_eligible with a trigger, or not_eligible with a
       // handling — never an unhandled/undefined shape.
-      if (result.outcome === "reveal_eligible") {
+      if (result.outcome === "fallback_eligible") {
         expect(result.trigger).toBeTruthy();
       } else {
         expect(result.handling).toBeTruthy();

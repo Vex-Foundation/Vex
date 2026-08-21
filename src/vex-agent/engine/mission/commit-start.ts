@@ -93,7 +93,7 @@ export type CommitMissionStartOutcome =
   | {
     /**
      * Plan-mode is on for this mission session but the action plan is not
-     * accepted (a `plan_write` / `setEnabled` re-armed acceptance between the
+     * accepted (a `PlanWrite` / `setEnabled` re-armed acceptance between the
      * unified Accept step and Start). Fail closed — starting would
      * immediately pause on the runtime plan-acceptance gate.
      */
@@ -213,7 +213,7 @@ export async function commitMissionStart(
     }
 
     // 3b. plan-acceptance start-gate (MANDATORY). The unified accept step
-    //     guarantees plan acceptance at accept-time, but a `plan_write` /
+    //     guarantees plan acceptance at accept-time, but a `PlanWrite` /
     //     `setEnabled` between Accept and Start re-arms the gate. Fail closed
     //     here so the run never starts and immediately pauses on the runtime
     //     plan-acceptance gate. Same `enabled && !accepted` condition as that

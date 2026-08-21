@@ -33,7 +33,7 @@ import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans, failRefusedLeg } from "./activity-recording.js";
 import { kyberFailureMessage } from "./error-output.js";
 import type { SwapEventPlan } from "./execute-plan.js";
-import { revealOnPreSignRevert } from "./reveal-messaging.js";
+import { venueFallbackNoteOnPreSignRevert } from "./fallback-messaging.js";
 
 export interface PostIntentFailureInput {
   readonly err: unknown;
@@ -129,7 +129,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
     // when it knows of no better move — so the venue has to actually be
     // reachable. Appended, never substituted: the chain's reason and the
     // remedy remain the primary content of the message.
-    const revealSuffix = revealOnPreSignRevert({
+    const fallbackNote = venueFallbackNoteOnPreSignRevert({
       eventRole: refusedRole,
       legBroadcastAttempted,
       failureCode: preSignRevert.failureCode,
@@ -141,7 +141,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
         revertReason: safeRevertReason,
         failureCode: preSignRevert.failureCode,
         slippage: slippageBounds,
-      })} Recorded as execution ${executionId}.${revealSuffix}`,
+      })} Recorded as execution ${executionId}.${fallbackNote}`,
       data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: preSignRevert.failureCode },
     };
   }

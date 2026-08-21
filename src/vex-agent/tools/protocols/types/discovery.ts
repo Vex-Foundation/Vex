@@ -1,12 +1,11 @@
 /**
- * Protocol discovery contracts — the request, the two row shapes, the retrieval
- * metadata, and the two result envelopes (`discover_tools` and
- * `describe_tools`).
+ * Protocol discovery contracts - the request, the row shapes (full internal and
+ * slim model-facing), the retrieval metadata, and the result envelopes the
+ * three `ToolSearch` modes return.
  *
  * Split out of `../types.ts` when it crossed the 550-line hard limit
- * (rules/04, owner decree 2026-07-28). MOVE-ONLY: every declaration below is
- * byte-identical to its previous form, and `../types.ts` re-exports all of them,
- * so no caller's import changed.
+ * (rules/04, owner decree 2026-07-28); `../types.ts` re-exports all of them, so
+ * no caller's import path depends on the split.
  */
 
 import type { ActionKind } from "../../taxonomy.js";
@@ -22,16 +21,17 @@ export interface ProtocolDiscoveryRequest {
    * Context-pressure band at dispatch time (threaded by the dispatcher).
    * When `barrier` or `critical`, the assembly flags `mutating` tools with
    * `unavailable_at_pressure: true` so the LLM sees the advisory before
-   * even attempting `execute_tool` — soft companion to dispatcher hard-deny
+   * even attempting the call - soft companion to dispatcher hard-deny
    * + Tool Map omission already in force at the same bands.
    */
   contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
   /**
-   * Session id at dispatch time (FIX-SPINE round 1, finding 8/C3) — lets
-   * `discoverProtocolCapabilities` filter the canonical hidden Uniswap swap
-   * manifests out of the result set for a session that has not revealed
-   * them, so discovery never advertises a tool `executeProtocolTool` would
-   * then hard-reject. Omitted/undefined fails closed (hidden).
+   * Session id at dispatch time. Discovery RECORDS what it returned against it
+   * (`registry/discovered-tools.ts`), which is what later admits those
+   * manifests to the injected `tools` array and what `sessionCapacity`
+   * reports. It no longer filters anything: the Uniswap reveal gate it was
+   * introduced for is retired by owner decision D4. Omitted/undefined means the
+   * rows are returned but nothing is recorded for a session.
    */
   sessionId?: string;
   /**
@@ -43,7 +43,7 @@ export interface ProtocolDiscoveryRequest {
    */
   preparationBypassesBarrier?: boolean;
   /**
-   * Namespace list mode. When true, `namespace` is REQUIRED and the response is
+   * Namespace listing mode. When true, `namespace` is REQUIRED and the response is
    * the COMPLETE set of that protocol's advertised, available tools as lean
    * rows ({@link ProtocolDiscoveryListItem} — no param schemas, no scores) with
    * no ranking and no `limit` truncation. Without a namespace the request fails:
@@ -57,13 +57,11 @@ export interface ProtocolDiscoveryRequest {
  * its ranking-only evidence.
  *
  * One builder produces it for both consumers (`toManifestRow` in
- * `./discovery.ts`): ranked discovery spreads it and adds `score`/`whyMatched`,
- * and `describe_tools` returns it verbatim. That single origin is the property
- * owner directive D3 turns on — a tool reached by `list → describe_tools` must
- * be INDISTINGUISHABLE from the same tool reached by ranked discovery, because
- * since full-manifest injection the live agent has produced zero
- * invalid-parameter calls and a second, lighter row builder would silently
- * degrade it.
+ * `./discovery.ts`): ranked discovery spreads it and adds `score`/`whyMatched`.
+ * It is INTERNAL as of the ToolSearch merge - telemetry, session recording and
+ * the injected-schema projection read it, and the model never does. The
+ * model-facing rows are {@link ToolSearchQueryRow} and
+ * {@link ToolSearchNamespaceRow}.
  *
  * It is a PROJECTION, not a verbatim {@link ProtocolToolManifest}: `lifecycle`,
  * `requiresEnv` and the discovery metadata are internal and never returned.
@@ -72,6 +70,21 @@ export type ManifestRow = Omit<ProtocolDiscoveryItem, "score" | "whyMatched">;
 
 export interface ProtocolDiscoveryItem {
   toolId: string;
+  /**
+   * The CALLABLE name — what the model puts in a tool call once this row has
+   * been described and injected (`registry/injected-protocol-tools.ts`).
+   *
+   * Not decoration and not derivable: the publicName grammar carries exactly
+   * one `__`, at the namespace boundary, so the callable name can no longer be
+   * reconstructed from `toolId` by string surgery the way the old mechanical
+   * projection allowed. A row omitting it would leave the model guessing the
+   * one string the call depends on.
+   *
+   * `toolId` stays alongside it on the INTERNAL row because it is the durable
+   * identity session recording keys on and the audit trail records. It is
+   * projected away before the row reaches the model.
+   */
+  publicName: string;
   namespace: ProtocolNamespace;
   description: string;
   mutating: boolean;
@@ -115,7 +128,7 @@ export interface ProtocolDiscoveryItem {
    * Only present and `true` when the current context-usage band is `barrier`
    * or `critical` AND this tool is `mutating: true` AND no live compaction
    * preparation is suppressing the barrier. Tells the LLM the dispatcher will
-   * hard-deny `execute_tool` for this row right now — stick to read-only /
+   * hard-deny this row right now - stick to read-only /
    * preview variants in the same namespace while the runtime compacts. Omitted
    * on read-only tools, at normal/warning bands, and while the barrier is
    * bypassed, to keep payloads minimal.
@@ -126,7 +139,7 @@ export interface ProtocolDiscoveryItem {
 }
 
 /**
- * Lean row emitted by namespace list mode (`list: true` + `namespace`). It
+ * Lean row emitted by namespace listing mode (`namespace` with no `query`). It
  * deliberately carries NO `params`, `score`, or `whyMatched`: the point of a
  * list is a complete, cheap index of what a protocol can do. The model follows
  * up with a query or the exact toolId to get the param schema it builds the
@@ -134,6 +147,13 @@ export interface ProtocolDiscoveryItem {
  */
 export interface ProtocolDiscoveryListItem {
   toolId: string;
+  /**
+   * The CALLABLE name, same contract as {@link ProtocolDiscoveryItem.publicName}.
+   * A listing carries it for the same reason it carries `requiredParams`: the
+   * cheap index still has to be actionable, and the callable name is not
+   * derivable from the id.
+   */
+  publicName: string;
   mutating: boolean;
   /** Same reason as the ranked row: `mutating` alone over-reads as "spends". */
   actionKind: ActionKind;
@@ -189,37 +209,13 @@ export interface ProtocolDiscoveryRetrievalMeta {
  * Model-facing projection of {@link ProtocolDiscoveryRetrievalMeta}: the same
  * shape minus the telemetry-only `embeddingModel`/`embeddingDim` mechanics.
  * Built by the dispatcher's `toModelDiscoveryResult` for serialization into the
- * `discover_tools` output string; the full meta stays on the result object for
+ * `ToolSearch` output string; the full meta stays on the result object for
  * telemetry/logging.
  */
 export type ProtocolDiscoveryModelRetrievalMeta = Omit<
   ProtocolDiscoveryRetrievalMeta,
   "embeddingModel" | "embeddingDim"
 >;
-
-/**
- * `describe_tools` result. Deliberately NOT the discovery union: nothing was
- * retrieved or ranked, so `score`/`whyMatched`/`retrieval` would be meaningless,
- * and there is no superset and no pagination, so `count` is the whole truth.
- */
-export interface ProtocolManifestResult {
-  /** False ONLY when nothing resolved — a partial batch is a success with named losses. */
-  success: boolean;
-  count: number;
-  tools: ManifestRow[];
-  /**
-   * One sentence per rejected toolId, naming the REAL cause (env var NAMES
-   * only), plus one naming every id this call displaced from an earlier round.
-   * Empty when everything resolved and nothing was evicted.
-   */
-  warnings: string[];
-  /**
-   * Injection capacity, surfaced rather than discovered by a tool going missing
-   * (owner directive D1). `used` counts this session's recorded toolIds AFTER
-   * this call; `max` is `MAX_DISCOVERED_TOOLS_PER_SESSION`.
-   */
-  sessionCapacity: { used: number; max: number };
-}
 
 export interface ProtocolDiscoveryResult {
   /**
@@ -252,14 +248,107 @@ export interface ProtocolDiscoveryResult {
 }
 
 /**
- * Model-facing projection of {@link ProtocolDiscoveryResult}: identical except
- * the `retrieval` block carries only the model-relevant fields (no
- * `embeddingModel`/`embeddingDim`). The dispatcher serializes THIS shape into
- * the `discover_tools` tool-output string while keeping the full result for
- * telemetry. See `toModelDiscoveryResult` in `dispatcher/protocol-route.ts`.
+ * SLIM ranked row - what `ToolSearch` query mode actually shows the model.
+ *
+ * `params`, `required`, `constraints` and `exampleParams` are deliberately
+ * ABSENT (`tool-surface-spec/toolsearch-design.md` §3.1). They travel in the
+ * injected function schema instead, which is the channel a provider can
+ * enforce; stating the schema in a search hit as well made the same sentence
+ * reach the model twice and was the bulk of a ~4 KB tool description.
+ *
+ * `toolId` is absent for a different reason: the dotted id is the durable
+ * INTERNAL identity, and the model has no legitimate use for it once
+ * `publicName` is what it calls. Carrying it is the third naming lane the
+ * program exists to remove.
+ */
+export interface ToolSearchQueryRow {
+  /** The callable name. The one string the follow-up call depends on. */
+  publicName: string;
+  /** One line - the first sentence of the manifest description. */
+  summary: string;
+  /** Field tags that contributed to the score, e.g. ["description", "params"]. */
+  whyMatched: string[];
+  mutating: boolean;
+  actionKind: ActionKind;
+  /** Present only when true - same contract as {@link ProtocolDiscoveryItem}. */
+  unavailable_at_pressure?: boolean;
+}
+
+/**
+ * SLIM listing row - what `ToolSearch` namespace mode shows.
+ *
+ * `requiredParams` is retained from the old list rows and is what makes a
+ * listing DECIDABLE: the model can tell a `chain` + `address` read from a
+ * `chain` + `tokenIn` + `tokenOut` + `amountIn` swap without selecting either.
+ * It is a key list, not a schema, so it does not reintroduce the duplication
+ * the slim rows exist to remove.
+ */
+export interface ToolSearchNamespaceRow {
+  publicName: string;
+  summary: string;
+  mutating: boolean;
+  actionKind: ActionKind;
+  requiredParams: string[];
+}
+
+/**
+ * Model-facing projection of {@link ProtocolDiscoveryResult}.
+ *
+ * Two projections in one step: the `retrieval` block drops the telemetry-only
+ * `embeddingModel`/`embeddingDim`, and every row is slimmed to
+ * {@link ToolSearchQueryRow} / {@link ToolSearchNamespaceRow}. The dispatcher
+ * serializes THIS shape into the `ToolSearch` tool-output string while keeping
+ * the full result for telemetry and for session recording, which still needs
+ * the `toolId` the model no longer sees. See `dispatcher/tool-search.ts`.
  */
 export interface ProtocolDiscoveryModelResult
-  extends Omit<ProtocolDiscoveryResult, "retrieval"> {
+  extends Omit<ProtocolDiscoveryResult, "retrieval" | "tools"> {
+  tools: (ToolSearchQueryRow | ToolSearchNamespaceRow)[];
   retrieval?: ProtocolDiscoveryModelRetrievalMeta;
+}
+
+/**
+ * One acknowledgement row from `ToolSearch` select mode.
+ *
+ * It is an ACKNOWLEDGEMENT, never a manifest dump: the full schema arrives
+ * exclusively through injection on the next provider request. A rejected row
+ * names the real cause, with the ONE deliberate exception recorded in
+ * `dispatcher/tool-search-select.ts` - a name the session may not see is
+ * answered as unknown, because a separate "denied" signal would leak the
+ * existence of a gated tool.
+ */
+export interface ToolSearchSelectRow {
+  publicName: string;
+  status: "callable_next_request" | "rejected";
+  /** Present only when `status` is `"rejected"`. */
+  reason?: string;
+}
+
+/**
+ * `ToolSearch` select-mode result. Deliberately NOT the discovery union:
+ * nothing was retrieved or ranked, so `score`/`whyMatched`/`retrieval` would be
+ * meaningless, and there is no superset and no pagination, so `count` is the
+ * whole truth.
+ */
+export interface ToolSearchSelectResult {
+  /**
+   * Serialized as the FIRST key of the envelope: the next-request injection
+   * fact is a mechanical property of the serving path, not something the model
+   * can infer, so it is stated rather than assumed.
+   */
+  nextStep: string;
+  /** False ONLY when nothing resolved - a partial batch is a success with named losses. */
+  success: boolean;
+  /** How many names became callable. */
+  count: number;
+  tools: ToolSearchSelectRow[];
+  /** One sentence naming every tool this call displaced from an earlier round. */
+  warnings: string[];
+  /**
+   * Injection capacity, surfaced rather than discovered by a tool going missing
+   * (owner directive D1). `used` counts this session's recorded toolIds AFTER
+   * this call; `max` is `MAX_DISCOVERED_TOOLS_PER_SESSION`.
+   */
+  sessionCapacity: { used: number; max: number };
 }
 

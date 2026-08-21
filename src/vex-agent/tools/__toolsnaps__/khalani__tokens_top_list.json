@@ -1,0 +1,39 @@
+{
+  "definition": {
+    "function": {
+      "description": "List top Khalani tokens, optionally filtered by chain IDs.",
+      "name": "khalani__tokens_top_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated chain IDs or aliases (e.g. '1,solana'). Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.tokens.top"
+  }
+}

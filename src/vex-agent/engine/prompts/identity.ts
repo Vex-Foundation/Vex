@@ -86,7 +86,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // static-prefix text keeps `# Execution Policy` as its second H1.
   lines.push("## Chain awareness");
   lines.push("");
-  lines.push("Robinhood Chain (4663): Arbitrum Orbit L2 settling to Ethereum, ETH gas, Blockscout explorer. Young chain (live 2026-07). Soft confirmation is sub-second; treat funds as settled after L1 posting (minutes; hard finality ~13 min). Not covered by Khalani — read live balances there with `wallet_balances` (it scans Robinhood direct-RPC; `khalani.tokens.balances` cannot). Balance scans there cover a pinned token set: your swaps and bridges pin their tokens automatically, but a token received by transfer or airdrop must be pinned with `wallet_track_token` before balances and portfolio can see it.");
+  lines.push("Robinhood Chain (4663): Arbitrum Orbit L2 settling to Ethereum, ETH gas, Blockscout explorer. Young chain (live 2026-07). Soft confirmation is sub-second; treat funds as settled after L1 posting (minutes; hard finality ~13 min). Not covered by Khalani — read live balances there with `WalletBalances` (it scans Robinhood direct-RPC; `khalani__token_balances_get` cannot). Balance scans there cover a pinned token set: your swaps and bridges pin their tokens automatically, but a token received by transfer or airdrop must be pinned with `WalletTrackToken` before balances and portfolio can see it.");
   lines.push("");
 
   lines.push("## Your current aspect");
@@ -155,19 +155,17 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // and it must be deterministic text so the cache prefix stays stable. Before
   // this, the fee was explained NOWHERE in the prompt except one clause in the
   // Trench launch bullet — asked "what did that swap cost me?", the agent had no
-  // basis to answer even though `agent_scan` returns every field it needs.
+  // basis to answer even though `AgentScan` returns every field it needs.
   lines.push("## Vex Fee");
   lines.push("");
   lines.push("Vex charges a 25 bps fee (0.25%) on the operations it executes for the user:");
   lines.push("");
-  // VENUE BRANDS ARE DELIBERATELY ABSENT from this list. The fee applies to
-  // every swap venue including the HIDDEN Uniswap fallback pair, and naming
-  // that pair in a static layer would reveal it to every session pre-reveal —
-  // the C42 no-silent-whitelist guard
-  // (`prompt-stack-protocol-doctrine-and-reveal-safety.test.ts`) fails the build
-  // on exactly that. "the venue Vex routed through" is both true for every
-  // venue and reveal-safe, and the agent needs no brand name to answer what an
-  // action cost: the recorded row carries the venue.
+  // VENUE BRANDS ARE DELIBERATELY ABSENT from this list. The original reason
+  // (naming the Uniswap pair here would have leaked a hidden venue) is gone
+  // with the reveal, but the wording is KEPT on its own merit: the fee applies
+  // to every swap venue, so enumerating brands would be a list that goes stale
+  // the moment a venue is added, and the agent needs no brand name to answer
+  // what an action cost — the recorded row carries the venue.
   lines.push("- token swaps on EVM chains and on Solana, whichever venue Vex routed through;");
   lines.push("- cross-chain bridges;");
   lines.push("- Trench token launches.");
@@ -180,7 +178,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   lines.push("");
   lines.push("Read-only actions cost nothing: quotes, previews, balance reads, research, and every discovery call are free.");
   lines.push("");
-  lines.push("You can answer \"what did that cost?\" from the record, and you should. `agent_scan(view=\"transactions\")` returns, on every row: `vexFeeAmountHuman` and `vexFeeTokenSymbol` (the exact fee and the token it was taken in), `vexFeeAmountRaw` with `vexFeeTokenDecimals` (the same figure in atomic units), and `usdVexFeeEst` (an ESTIMATE in USD — label it as one). Read them carefully: a row where `vexFeeAmountHuman` is set but `usdVexFeeEst` is null means the fee WAS charged and no trustworthy USD price existed, not that it was free. A row with no fee figures at all is either a failed attempt (never charged) or a non-fee-bearing action. The fee is already contained in the recorded input amount for in-transaction venues, so never add it on top when reporting what the user spent.");
+  lines.push("You can answer \"what did that cost?\" from the record, and you should. `AgentScan(view=\"transactions\")` returns, on every row: `vexFeeAmountHuman` and `vexFeeTokenSymbol` (the exact fee and the token it was taken in), `vexFeeAmountRaw` with `vexFeeTokenDecimals` (the same figure in atomic units), and `usdVexFeeEst` (an ESTIMATE in USD — label it as one). Read them carefully: a row where `vexFeeAmountHuman` is set but `usdVexFeeEst` is null means the fee WAS charged and no trustworthy USD price existed, not that it was free. A row with no fee figures at all is either a failed attempt (never charged) or a non-fee-bearing action. The fee is already contained in the recorded input amount for in-transaction venues, so never add it on top when reporting what the user spent.");
   lines.push("");
   lines.push("Be straightforward about it. If the user asks whether Vex takes a cut, say yes, say 25 bps, say on what and when. Do not volunteer a fee breakdown on every action, and never present the fee as optional, negotiable, or waivable.");
   lines.push("");
@@ -226,10 +224,10 @@ function resolveAspect(ctx: EngineContext): string {
       `You are in MISSION RUN — ${name} as executor. Pursue the frozen mission goal`,
       "autonomously. Iterate through tools and reflections until success, a",
       "user-approved stop condition from the mission contract, or a strict",
-      "emergency integrity failure occurs. Call `mission_stop` with the correct",
+      "emergency integrity failure occurs. Call `MissionStop` with the correct",
       "reason only when that contract allows it — writing about stopping is not",
       "stopping. If conditions are temporarily bad and stopping is not allowed,",
-      "use `loop_defer` instead of abandoning the mission. Research is allowed",
+      "use `LoopDefer` instead of abandoning the mission. Research is allowed",
       "only when it directly advances the frozen mission contract.",
     ].join("\n");
   }

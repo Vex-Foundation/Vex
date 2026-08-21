@@ -29,76 +29,61 @@ import { NARRATIVE_LIST_PARAMS } from "./narrative-list-params.js";
 export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "dexscreener.profiles",
+    publicName: "dexscreener__profiles_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get the latest token PROFILE METADATA on DEX Screener - icons, descriptions, social links, "
-      + "and the community-takeover flag. A profile update is NOT token creation: this is "
-      + "not a new-token or new-listing feed. The provider currently sends no updatedAt on THIS "
-      + "feed (drift measured 2026-08-21), so updatedWithinSeconds here drops every row - for "
-      + "timestamps and freshness use dexscreener.profiles.recent. Keep one or more chains with "
-      + "chainIds. "
+      "Read DEX Screener token PROFILE METADATA - icons, descriptions, social links, and the "
+      + "community-takeover flag (emitted as communityTakeover) - from either profile endpoint. "
+      + "Use feed: latest (default) for the plain newest-profiles window, or feed: recentUpdates "
+      + "for the change feed of projects that just refreshed their branding, which is the one "
+      + "carrying updatedAt and therefore the one to use when the question is about freshness or "
+      + "a time order. A profile update is metadata, NOT token creation: neither feed says when a "
+      + "token or pair was created, and young pools surface here through marketing activity "
+      + "rather than a launch record. The latest feed currently sends no updatedAt at all (drift "
+      + "measured 2026-08-21), so updatedWithinSeconds there drops every row into "
+      + "droppedByFilter.unknownEventAge; recentUpdates still sends it on 30/30 rows and is a "
+      + "narrow recency SAMPLE (oldest row about 85 minutes in one live window), never a survey "
+      + "of the last N hours. Keep one or more chains with chainIds. RETURNS one row per profile: "
+      + "chainId, tokenAddress, description, communityTakeover, eventAgeSeconds where the feed "
+      + "carries a time, plus the provenance envelope (filtersApplied, droppedByFilter, hasMore) "
+      + "and the endpoint each row came from. recentUpdates is a live but undocumented API "
+      + "surface - if it changes the call fails with the real reason (rate limit, transport, or "
+      + "unreadable payload), it does not return an empty success. "
       + FEED_DESCRIPTION_WINDOW_CLAUSE + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [...PROFILE_FEED_PARAMS],
-    exampleParams: { chainIds: "solana", updatedWithinSeconds: 3600, limit: 15 },
+    exampleParams: { feed: "recentUpdates", chainIds: "solana", updatedWithinSeconds: 3600, limit: 15 },
     discovery: DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles"],
   },
   {
-    toolId: "dexscreener.profiles.recent",
-    namespace: "dexscreener",
-    lifecycle: "active",
-    description:
-      "Get RECENTLY UPDATED token profiles — projects that just refreshed their "
-      + "description/socials/branding, each with an updatedAt timestamp and a community-takeover "
-      + "flag (emitted as communityTakeover). A change feed vs the plain latest-profiles list. "
-      + "A profile refresh is NOT token creation and does not say when a token or pair was "
-      + "created - young pools do surface here, but through marketing activity, not a launch "
-      + "record. A recency SAMPLE with a narrow horizon (one live window's oldest row measured "
-      + "about 85 minutes), never a survey of the last N hours. "
-      + FEED_DESCRIPTION_WINDOW_CLAUSE
-      + " Live but undocumented API surface — may change; if it does the call fails with the real "
-      + "reason (rate limit, transport, or unreadable payload), it does not return an empty success." + " " + SOURCE_OBSERVATION_CLAUSE,
-    mutating: false,
-    actionKind: "read",
-    params: [...PROFILE_FEED_PARAMS],
-    exampleParams: { chainIds: "base", limit: 15 },
-    discovery: DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles.recent"],
-  },
-  {
     toolId: "dexscreener.boosts",
+    publicName: "dexscreener__boosts_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get latest boosted/promoted tokens with boost amounts. Paid visibility signal - shows "
-      + "where promotion is being BOUGHT. Boost amounts are provider promotion units (12-24h "
-      + "packs), never a currency figure, and paid promotion is never demand, legitimacy, or "
-      + "safety. "
+      "Read DEX Screener's paid-boost feeds - where promotion is being BOUGHT - from either boost "
+      + "endpoint. Use feed: latest (default) for the most recent boost PURCHASES, which carry "
+      + "both the per-purchase boostCount and the cumulative boostCountTotal, or feed: top for "
+      + "the tokens holding the most active boosts, where boostCount is null on every row (the "
+      + "provider omits it), only boostCountTotal is readable, and sortBy defaults to "
+      + "boostCountTotal. Boost figures are provider promotion units (12-24h packs), never a "
+      + "currency amount, and paid promotion is never demand, legitimacy, or safety. Neither feed "
+      + "carries a timestamp of any kind, so nothing here can be filtered or sorted by age. "
+      + "RETURNS one row per boosted token: chainId, tokenAddress, boostCount, boostCountTotal, "
+      + "description, plus the provenance envelope (filtersApplied, droppedByFilter, skippedRows, "
+      + "hasMore) and the endpoint the rows came from. "
       + FEED_DESCRIPTION_WINDOW_CLAUSE + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [...BOOST_FEED_PARAMS],
-    exampleParams: { chainIds: "solana", minBoostCountTotal: 50, sortBy: "boostCountTotal" },
+    exampleParams: { feed: "top", chainIds: "solana", minBoostCountTotal: 50, limit: 10 },
     discovery: DEXSCREENER_TRENDING_DISCOVERY["dexscreener.boosts"],
   },
   {
-    toolId: "dexscreener.boosts.top",
-    namespace: "dexscreener",
-    lifecycle: "active",
-    description:
-      "Get tokens with most active boosts (top promoted), ranked by totalAmount (cumulative active "
-      + "boost units). This feed reports no per-purchase amount — that field is null here; use "
-      + "dexscreener.boosts for latest-purchase amounts. "
-      + FEED_DESCRIPTION_WINDOW_CLAUSE + " " + SOURCE_OBSERVATION_CLAUSE,
-    mutating: false,
-    actionKind: "read",
-    params: [...BOOST_FEED_PARAMS],
-    exampleParams: { sortBy: "boostCountTotal", limit: 10 },
-    discovery: DEXSCREENER_TRENDING_DISCOVERY["dexscreener.boosts.top"],
-  },
-  {
     toolId: "dexscreener.communityTakeovers",
+    publicName: "dexscreener__community_takeovers_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -109,7 +94,7 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
       + "takeover history: it reports the takeovers this feed is carrying right now, so 'has token X "
       + "ever had a CTO' and 'list this token's past takeovers' are NOT answerable here or anywhere "
       + "in this API — a token absent from the window has not been shown to lack a takeover. For a "
-      + "per-token flag use dexscreener.profiles / dexscreener.profiles.recent, whose rows carry "
+      + "per-token flag use dexscreener.profiles (either feed), whose rows carry "
       + "communityTakeover. Nothing in this namespace establishes contract safety - use a "
       + "dedicated chain safety tool for contract risk. Every filter, sort and window is "
       + "applied by Vex to the provider's returned feed window (observed ≤30 rows). DexScreener "
@@ -123,6 +108,7 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.attention",
+    publicName: "dexscreener__attention_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -136,8 +122,8 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
       + "cannot be widened. ROWS CARRY NO TIMESTAMP and none can be added: the boost feed publishes "
       + "no time of any kind, and the merge keeps boost units rather than the profile half's "
       + "updatedAt — so nothing here can be filtered or sorted by age, and a row being present says "
-      + "nothing about when it appeared. Use dexscreener.profiles.recent when you need a "
-      + "time-ordered feed." + " " + SOURCE_OBSERVATION_CLAUSE,
+      + "nothing about when it appeared. Use dexscreener.profiles with feed: recentUpdates when "
+      + "you need a time-ordered feed." + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [...ATTENTION_FEED_PARAMS],
@@ -146,6 +132,7 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.trending",
+    publicName: "dexscreener__narratives_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -166,6 +153,7 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.meta",
+    publicName: "dexscreener__narrative_get",
     namespace: "dexscreener",
     lifecycle: "active",
     description:

@@ -209,13 +209,13 @@ describe("turn — Active Memory drift guard (façade + memory-section seam)", (
     expect(memSection).toMatch(/English-by-contract|ENGLISH-ONLY|English-only/);
   });
 
-  it("reuse-existing-kinds rule survived the cutover (decision #7 — on long_memory_suggest's kind param)", async () => {
+  it("reuse-existing-kinds rule survived the cutover (decision #7 — on MemorySuggest's kind param)", async () => {
     const provider = makeProvider();
     await runTurnAndGetTurnState(provider);
     const { getToolDef } = await import(
       "../../../../vex-agent/tools/registry.js"
     );
-    const suggestDef = getToolDef("long_memory_suggest");
+    const suggestDef = getToolDef("MemorySuggest");
     const kindDescription = suggestDef?.parameters.properties?.kind?.description ?? "";
     expect(kindDescription.toLowerCase()).toContain("reuse an existing kind");
   });
@@ -239,7 +239,7 @@ describe("turn — Active Memory drift guard (façade + memory-section seam)", (
     // empty-state guidance), routing remains.
     expect(provider.chatCompletion).toHaveBeenCalled();
     expect(turnState).not.toContain("[Long-term memory:");
-    expect(turnState).not.toContain("Skip long_memory_search");
+    expect(turnState).not.toContain("Skip MemorySearch");
     expect(turnState).not.toContain("## Memory Routing");
   });
 });

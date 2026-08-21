@@ -2,7 +2,7 @@
  * Direct-RPC balance reads for LOCAL (non-Khalani) EVM chains — the single
  * live-read implementation shared by the background sync
  * (`vex-agent/sync/local-chain-balance-sync.ts`) and the agent-facing
- * `wallet_balances` tool (`vex-agent/tools/internal/wallet/read.ts`).
+ * `WalletBalances` tool (`vex-agent/tools/internal/wallet/read.ts`).
  *
  * Reads batch through the canonical Multicall3; USD prices come from
  * DexScreener (the same throttled client the market tools use). A wanted token

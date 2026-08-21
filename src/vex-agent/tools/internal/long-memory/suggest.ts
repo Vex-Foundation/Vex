@@ -1,5 +1,5 @@
 /**
- * long_memory_suggest handler — the agent's ONLY write-door into long-term
+ * MemorySuggest handler — the agent's ONLY write-door into long-term
  * memory (memory-system/s2-plan.md §2). It STAGES a candidate + enqueues a
  * consolidate job; it never writes long-term memory directly. The async manager
  * (S4) reviews, dedupes, and decides promotion.
@@ -191,7 +191,7 @@ export async function handleLongMemorySuggest(
 
   const mapResult = mapAndValidate(params);
   if (!mapResult.ok) {
-    return fail(`long_memory_suggest rejected the input — ${firstIssueMessage(mapResult.error)}`);
+    return fail(`MemorySuggest rejected the input — ${firstIssueMessage(mapResult.error)}`);
   }
   const input = mapResult.input;
 
@@ -267,7 +267,7 @@ export async function handleLongMemorySuggest(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return fail(`long_memory_suggest failed: ${msg}`);
+    return fail(`MemorySuggest failed: ${msg}`);
   }
 
   const latestCandidate = await findLatestCandidateByContentHash(contentHash);
@@ -362,7 +362,7 @@ export async function handleLongMemorySuggest(
     inserted = result.inserted;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return fail(`long_memory_suggest failed: ${msg}`);
+    return fail(`MemorySuggest failed: ${msg}`);
   }
 
   // memLog accepted — ONLY allowlisted keys (NOT `sensitivity`; the logger has

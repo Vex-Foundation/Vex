@@ -206,7 +206,7 @@ export async function processTurnToolBatch(args: {
       toolContext,
     );
 
-    // Trusted prepare→execute handoff (wallet_send_prepare → confirm ONLY,
+    // Trusted prepare→execute handoff (WalletSendPrepare → confirm ONLY,
     // see the registry allow-list): validates the handler-authored contract
     // and fails closed (never dispatches) on any unknown mapping or
     // malformed shape. `resultForTranscript` is what actually gets
@@ -382,7 +382,7 @@ export async function processTurnToolBatch(args: {
         break;
       }
       if (sig.type === "plan_pause") {
-        // `plan_write` in an active mission run created/changed an unaccepted
+        // `PlanWrite` in an active mission run created/changed an unaccepted
         // plan. Park the run in `paused_plan_acceptance`; once accepted it
         // resumes via `plan.accept` or any control resume path (not a user chat
         // message — see RUNTIME_PAUSES vs RESUMABLE_STOPS). Pause IMMEDIATELY
@@ -394,7 +394,7 @@ export async function processTurnToolBatch(args: {
         break;
       }
       if (sig.type === "defer_until") {
-        // `loop_defer` handler already persisted the pending wake row.
+        // `LoopDefer` handler already persisted the pending wake row.
         // Turn-loop parks the mission run in `paused_wake` and exits.
         // Evidence carries dueAt + reason so PR-7 executor / PR-10 ingress
         // have the hints they need without re-reading the wake row.

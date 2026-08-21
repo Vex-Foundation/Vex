@@ -65,6 +65,7 @@ const { TOOL_ABORTED_BY_USER_STOP_OUTPUT } = await import(
 function probeManifest(mutating: boolean): ProtocolToolManifest {
   return {
     toolId: TEST_TOOL_ID,
+    publicName: "dexscreener__abort_probe",
     namespace: "dexscreener",
     lifecycle: "active",
     description: "Abort-propagation probe.",

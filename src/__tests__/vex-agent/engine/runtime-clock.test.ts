@@ -92,11 +92,11 @@ describe("runtime-clock", () => {
 
     expect(agentPrompt).toContain("Current time UTC:");
     expect(agentPrompt).not.toContain("Pending wake");
-    expect(agentPrompt).not.toContain("loop_defer");
+    expect(agentPrompt).not.toContain("LoopDefer");
 
     const runPrompt = buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: true });
     expect(runPrompt).toContain("Pending wake: none");
-    expect(runPrompt).toContain("loop_defer(after_ms=");
+    expect(runPrompt).toContain("LoopDefer(after_ms=");
   });
 
   it("defaults to the no-mission-run posture when no options are passed", () => {

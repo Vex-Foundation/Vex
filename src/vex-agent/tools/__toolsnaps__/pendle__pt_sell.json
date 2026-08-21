@@ -1,0 +1,55 @@
+{
+  "definition": {
+    "function": {
+      "description": "Sell a Pendle principal token (PT) back to a payment token before expiry — an early exit priced at the current market (can be below the locked rate). Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.pt.quote first.",
+      "name": "pendle__pt_sell",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount of tokenIn in human-readable units.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Preview without executing.",
+            "type": "boolean"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (default 100 = 1%).",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the PT address.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token CONTRACT ADDRESS. Buy: the PT address. Sell: the payment token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.pt.sell"
+  }
+}

@@ -1,5 +1,5 @@
 /**
- * Protocol runtime — discover_tools + execute_tool handlers.
+ * Protocol runtime — the ToolSearch discovery entry point + the protocol execute handler.
  *
  * These are the two internal tools that the LLM uses to interact
  * with protocol capabilities. Discovery returns metadata.
@@ -40,23 +40,8 @@ import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/ga
 import { captureExecution } from "./runtime/capture.js";
 import { isAbortError } from "@utils/cancellation.js";
 import logger from "@utils/logger.js";
-import { isUniswapPairRevealed, UNISWAP_REVEAL_TRIGGER_SUMMARY } from "../registry/uniswap-reveal.js";
-import { REVEAL_GATED_RELAY_TOOL_IDS, evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
-
-/**
- * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
- * 8/C3). Alias-level reveal checks (`swap_quote_uniswap`/
- * `swap_execute_uniswap`'s handlers) are necessary but NOT sufficient — a
- * caller can reach these SAME manifests directly via `execute_tool`, which
- * has no alias to gate it. `executeProtocolTool` is the one chokepoint every
- * path funnels through, so the hard reveal gate lives HERE too.
- */
-const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
-  "uniswap.swap.quote",
-  "uniswap.swap.execute",
-]);
 
 // ── Action taxonomy stamp (puzzle 5 phase 1B) ───────────────────
 //
@@ -99,7 +84,7 @@ export async function executeProtocolTool(
     // conservative "unknown action" signal.
     return {
       success: false,
-      output: `Unknown protocol tool: ${request.toolId}. Use discover_tools to find available tools.`,
+      output: `Unknown protocol tool: ${request.toolId}. Use ToolSearch to find available tools.`,
     };
   }
 
@@ -137,42 +122,6 @@ export async function executeProtocolTool(
   const effectiveActionKind: ActionKind = isPreviewExecution(request.toolId, params)
     ? "read"
     : manifest.actionKind;
-
-  // All-path reveal gate (FIX-SPINE round 1, finding 8/C3) — BEFORE any other
-  // processing. Rejects unless this session's hidden-pair reveal is active,
-  // regardless of how the call reached executeProtocolTool (alias, direct
-  // execute_tool, or anything future). Alias-level checks stay as an
-  // additional, earlier-failing layer — this is the one that cannot be
-  // bypassed.
-  if (REVEAL_GATED_UNISWAP_TOOL_IDS.has(request.toolId) && !isUniswapPairRevealed(context.sessionId)) {
-    logger.info("protocol.execute.uniswap_reveal_denied", { toolId: request.toolId });
-    return withActionKind({
-      success: false,
-      output: `${request.toolId} is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`,
-    }, effectiveActionKind);
-  }
-
-  // All-path ROUTE-BOUND reveal gate for the hidden Relay bridge pair (bridge
-  // factory W5; plan R7/R8/R9). Same chokepoint rationale as Uniswap above:
-  // `execute_tool` can forward `relay.quote.get` / `relay.bridge` straight here,
-  // bypassing the alias-level checks. Local-chain (Robinhood) routes are the
-  // static Relay path and ALWAYS pass; every other route needs an active reveal
-  // for that EXACT normalized route in this session. `evaluateRelayRevealGate`
-  // runs its OWN strict param parse (R8) and fail-closes on an unresolvable or
-  // incomplete route — the raw params never decide the gate un-parsed.
-  if (REVEAL_GATED_RELAY_TOOL_IDS.has(request.toolId)) {
-    const relayGate = evaluateRelayRevealGate(params, context.sessionId);
-    if (relayGate.decision === "deny") {
-      logger.info("protocol.execute.relay_reveal_denied", { toolId: request.toolId, reason: relayGate.reason });
-      return withActionKind({
-        success: false,
-        output: `${request.toolId} is not available for this route yet — general-purpose Relay bridging `
-          + `unlocks only after an eligible Khalani no-route failure for this exact route, or the Khalani `
-          + `deposit transaction reverting on-chain for this exact route (bridges to/from Robinhood Chain `
-          + `are always available). Try bridge_quote first.`,
-      }, effectiveActionKind);
-    }
-  }
 
   // Normalize the wallet scope so the deny-guard + migrated handlers never see
   // undefined. Both fields are REQUIRED on the type (production is fail-closed

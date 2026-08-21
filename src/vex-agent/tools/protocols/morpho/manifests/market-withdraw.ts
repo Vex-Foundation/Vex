@@ -33,6 +33,7 @@ import {
  */
 export const MORPHO_MARKET_WITHDRAW_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.withdraw",
+  publicName: "morpho__market_withdraw",
   namespace: "morpho",
   lifecycle: "active",
   description:

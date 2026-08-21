@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get a wallet's realized-PnL TIME SERIES on Jupiter Prediction over an interval — use solana.predict.profile instead for a single lifetime snapshot rather than a series. realizedPnlUsd per data point is an exact-decimal USD string with a raw realizedPnlUsdMicro sibling. NOTE: as of 2026-07-24 the provider's pnl-history route is documented but returns 404 upstream for every wallet (a provider-side outage, not removal) — prefer solana.predict.profile until it is restored upstream.",
+      "name": "solana__predict_pnl_history_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Number of data points to return, 1-100 (Vex owner-wide cap; provider default 10 when omitted).",
+            "type": "number"
+          },
+          "interval": {
+            "description": "Interval: 24h, 1w, or 1m.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interval"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.pnlHistory"
+  }
+}

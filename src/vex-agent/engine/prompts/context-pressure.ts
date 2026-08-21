@@ -23,7 +23,7 @@
  *      says "mutations are blocked" would make the agent stop doing work it is
  *      still permitted — and fully capable — of doing.
  *
- * `compact_apply` is named ONLY when a validated summary is ready, because that
+ * `CompactApply` is named ONLY when a validated summary is ready, because that
  * is exactly when the tool is in the catalog. Naming it earlier would advertise
  * something the model cannot see.
  *
@@ -48,8 +48,19 @@ export function buildContextPressureBanner(
   // unheaded bracketed line floating between two headed layers.
   const heading = "# Context Pressure\n\n";
   const ready = hasCompactionSummaryReady(preparationState);
+  // Relocated from the retired discovery tool's own description in
+  // `tools/registry/protocol.ts` (`tool-surface-spec/toolsearch-design.md` §6):
+  // what the `unavailable_at_pressure` flag MEANS, and what to do about it,
+  // belongs with the band that produces it rather than inside a search tool's
+  // description. Rendered ONLY at the bands where the dispatcher actually
+  // denies - never at `warning`, and never on the bypass branch below, because
+  // there the mutating surface is intact and this advice would be false.
+  const pressureAdvisory =
+    " Discovery rows for mutating tools are tagged `unavailable_at_pressure: true` at this band,"
+    + " and the dispatcher hard-denies a direct call to one - stay on read-only and preview/dryRun"
+    + " variants in the same namespace. An absent flag means available at this band.";
   const applyLine = ready
-    ? " A prepared compaction is READY — you may call compact_apply to take it now, at a moment you choose."
+    ? " A prepared compaction is READY — you may call CompactApply to take it now, at a moment you choose."
     : "";
 
   switch (band) {
@@ -87,7 +98,9 @@ export function buildContextPressureBanner(
         heading +
         `[Context at ${pct}%. Mutating tools are unavailable at this pressure. The runtime is retrying the ` +
         `background compaction and will fall back to a deterministic one if that fails — no tool call is ` +
-        `required from you. Continue with read-only work; the full tool set returns once the compaction lands.]`
+        `required from you. Continue with read-only work; the full tool set returns once the compaction lands.` +
+        pressureAdvisory +
+        `]`
       );
 
     case "critical":
@@ -95,7 +108,9 @@ export function buildContextPressureBanner(
         heading +
         `[Context at ${pct}%. The runtime is compacting this conversation now — applying the prepared ` +
         `summary if one is ready, otherwise a deterministic fallback. No tool call is required from you. ` +
-        `Wrap up the current thought; the next turn will have room again.]`
+        `Wrap up the current thought; the next turn will have room again.` +
+        pressureAdvisory +
+        `]`
       );
   }
 }

@@ -1,7 +1,7 @@
 /**
  * Vex's OWN view of a Khalani order, merged onto the provider's (W9b).
  *
- * WHY THIS EXISTS. `bridge_status` / `khalani.orders.get` was a pure provider
+ * WHY THIS EXISTS. `BridgeStatus` / `khalani.orders.get` was a pure provider
  * pass-through: it returned Khalani's order object and nothing else — no
  * `_executionId`, no Vex leg list, no fee-collection outcome, no note that the
  * logical row is still awaiting Vex's own on-chain verification. Meanwhile the

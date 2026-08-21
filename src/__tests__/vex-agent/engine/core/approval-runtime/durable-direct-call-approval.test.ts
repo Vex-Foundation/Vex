@@ -8,7 +8,7 @@
  * discovered set. Storing that function name in `approval_queue.tool_call` made
  * the approval only as durable as the process: after a restart the set is
  * empty, and the human's click on Approve failed a money-path action that had
- * already passed every gate — "not among the protocol tools discovered in this
+ * already passed every gate — "not among the protocol tools this session has made callable" in this
  * session".
  *
  * THE FIX. At enqueue the call is canonicalized into the internal
@@ -60,6 +60,7 @@ vi.mock("@vex-agent/db/params.js", () => ({ sanitizeJsonbValue: (v: unknown) => 
 
 const { dispatchTool } = await import("@vex-agent/tools/dispatcher.js");
 const catalog = await import("@vex-agent/tools/protocols/catalog.js");
+const { getToolDef } = await import("@vex-agent/tools/registry/lookup.js");
 const { clearDiscoveredTools, recordDiscoveredTools } = await import(
   "@vex-agent/tools/registry/discovered-tools.js"
 );
@@ -71,8 +72,14 @@ const {
 const { makeTestContext } = await import("../../../tools/_test-context.js");
 
 const SESSION = "durable-approval-session";
-const TOOL_ID = "khalani.test.mutate";
-const INJECTED_NAME = "khalani__test__mutate";
+// A REAL (toolId, publicName) pair. The injected-name to toolId map is built
+// once from the LIVE catalog, so a synthetic publicName resolves to nothing and
+// the canonicalization under test would never run. `morpho.rewards.claim` is
+// mutating (which is what the envelope branches on) and carries no
+// prequote-registry entry, so the cold-resume dispatch below exercises the
+// envelope rather than an unrelated quote gate.
+const TOOL_ID = "morpho.rewards.claim";
+const INJECTED_NAME = "morpho__rewards_claim";
 const SWAP_PARAMS = {
   chain: "base",
   tokenIn: "0xaaa",
@@ -84,7 +91,8 @@ const SWAP_PARAMS = {
 function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolToolManifest {
   return {
     toolId: TOOL_ID,
-    namespace: "khalani",
+    publicName: INJECTED_NAME,
+    namespace: "morpho",
     lifecycle: "active",
     description: "swap execute",
     mutating: true,
@@ -135,10 +143,10 @@ describe("approval enqueue — direct-call canonicalization", () => {
   it("leaves every other lane's stored shape byte-identical", () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(undefined);
 
-    expect(buildApprovalToolCall("wallet_send_confirm", { id: "x" }))
-      .toEqual({ command: "wallet_send_confirm", args: { id: "x" } });
-    expect(buildApprovalToolCall("swap_execute", { chain: "base" }))
-      .toEqual({ command: "swap_execute", args: { chain: "base" } });
+    expect(buildApprovalToolCall("WalletSendConfirm", { id: "x" }))
+      .toEqual({ command: "WalletSendConfirm", args: { id: "x" } });
+    expect(buildApprovalToolCall("SwapExecute", { chain: "base" }))
+      .toEqual({ command: "SwapExecute", args: { chain: "base" } });
   });
 });
 
@@ -158,6 +166,15 @@ describe("cold resume after a process restart", () => {
 
     // ── the process restarts: nothing was discovered in the new one ──
     clearDiscoveredTools(SESSION);
+
+    // THE RETIREMENT AND THIS RESUME ARE ONE CONTRACT, so they are asserted
+    // together. `execute_tool` has no `ToolDef` any more (the ToolSearch merge
+    // deleted it, `registry/protocol.ts`), and the stored envelope must STILL
+    // dispatch: it is a stored-call SHAPE, not a registered tool. If a future
+    // change ever routes dispatch through the registry, this line is what turns
+    // "an approved, human-authorized, fund-moving call silently stops resuming"
+    // into a test failure.
+    expect(getToolDef("execute_tool")).toBeUndefined();
 
     const result = await dispatchTool(
       {
@@ -187,7 +204,7 @@ describe("cold resume after a process restart", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("not among the protocol tools discovered");
+    expect(result.output).toContain("not among the protocol tools this session has made callable");
     expect(handler).not.toHaveBeenCalled();
   });
 });
@@ -373,10 +390,18 @@ describe("manifest identity at resume", () => {
   it("replays HISTORICAL rows unchanged — no metadata block, no identity check", () => {
     expect(checkApprovalManifestIdentity({ command: "execute_tool", args: { toolId: TOOL_ID } }))
       .toEqual({ ok: true });
-    expect(checkApprovalManifestIdentity({ command: "wallet_send_confirm", args: {} }))
+    expect(checkApprovalManifestIdentity({ command: "WalletSendConfirm", args: {} }))
       .toEqual({ ok: true });
     // Legacy `{name, arguments}` spelling — also untouched.
-    expect(checkApprovalManifestIdentity({ name: "wallet_send_confirm", arguments: {} }))
+    expect(checkApprovalManifestIdentity({ name: "WalletSendConfirm", arguments: {} }))
+      .toEqual({ ok: true });
+    // And the PRE-RENAME spelling, which is what a row written before the
+    // Batch 2 core rename literally holds on disk. `approval_queue.tool_call`
+    // is durable and is never rewritten, so this is not a hypothetical: it is
+    // the row a cold resume in a later process actually reads back.
+    expect(checkApprovalManifestIdentity({ command: "WalletSendConfirm", args: {} }))
+      .toEqual({ ok: true });
+    expect(checkApprovalManifestIdentity({ name: "WalletSendConfirm", arguments: {} }))
       .toEqual({ ok: true });
   });
 

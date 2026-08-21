@@ -8,7 +8,7 @@
  *
  * Does not return content_md, embedding, or content_hash — payload is
  * deliberately compact so chains stay cheap. Callers that need the full
- * body fall back to `getById` (which is what `long_memory_get` exposes).
+ * body fall back to `getById` (which is what `MemoryGet` exposes).
  */
 
 import { query } from "../../client.js";

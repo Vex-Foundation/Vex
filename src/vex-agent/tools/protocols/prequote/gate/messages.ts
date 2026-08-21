@@ -34,15 +34,15 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Bridge blocked: could not verify a fresh bridge quote. Re-run bridge_quote and retry.",
+    "Bridge blocked: could not verify a fresh bridge quote. Re-run BridgeQuote and retry.",
   no_session:
-    "Bridge blocked: could not verify a fresh bridge quote (no session). Re-run bridge_quote and retry.",
+    "Bridge blocked: could not verify a fresh bridge quote (no session). Re-run BridgeQuote and retry.",
   // A bridge execute has no bare-symbol leg (addresses are passed through), so
   // this reason is unreachable on the bridge path; keep a coherent message.
   unresolved_token:
     "Bridge blocked: unresolved bridge token — pass the exact token addresses the quote returned, then retry.",
   no_quote:
-    "Bridge blocked: no fresh bridge quote for these exact params. Call bridge_quote first, then retry.",
+    "Bridge blocked: no fresh bridge quote for these exact params. Call BridgeQuote first, then retry.",
   safety_fail:
     "Bridge blocked: the quoted route was flagged unsafe. Aborting.",
   wallet_setup:

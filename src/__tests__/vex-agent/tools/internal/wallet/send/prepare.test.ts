@@ -190,14 +190,14 @@ describe("handleWalletSendPrepare", () => {
       },
     });
     expect(result.preparedActionFollowUp).toEqual({
-      toolName: "wallet_send_confirm",
+      toolName: "WalletSendConfirm",
       args: {
         walletFamily: "eip155",
         intentId: createArgs.intentId,
       },
       expiresAt: createArgs.expiresAt,
       approvalPreview: {
-        toolName: "wallet_send_confirm",
+        toolName: "WalletSendConfirm",
         criticalArgs: createArgs.previewJson.criticalArgs,
       },
     });

@@ -14,6 +14,7 @@ const YT_SWAP_PARAMS = [
 export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.yt.quote",
+    publicName: "pendle__yt_quote",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -32,6 +33,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.yt.buy",
+    publicName: "pendle__yt_buy",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -44,6 +46,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.yt.sell",
+    publicName: "pendle__yt_sell",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -56,6 +59,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.claim",
+    publicName: "pendle__rewards_claim",
     namespace: "pendle",
     lifecycle: "active",
     description:

@@ -20,7 +20,7 @@ import type {
 /**
  * Hot-context filter: only `observed` + `user_confirmed` entries are eligible
  * for Active Memory auto-injection. `inferred` + `hypothesis` remain
- * recallable via `long_memory_search` but never enter the always-on prompt.
+ * recallable via `MemorySearch` but never enter the always-on prompt.
  * See migration 018 for the partial index supporting this filter.
  *
  * Maturity gate (S4/§949 + S6a/§11.6): a freshly-promoted lesson starts

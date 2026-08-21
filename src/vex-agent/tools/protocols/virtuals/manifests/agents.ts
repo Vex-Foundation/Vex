@@ -31,6 +31,7 @@ const VIRTUALS_CHAIN_PARAM: ProtocolParamDef = {
 export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "virtuals.list",
+    publicName: "virtuals__agents_discover",
     namespace: "virtuals",
     lifecycle: "active",
     description:
@@ -56,6 +57,7 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "virtuals.get",
+    publicName: "virtuals__agent_get",
     namespace: "virtuals",
     lifecycle: "active",
     description:
@@ -70,6 +72,7 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "virtuals.graduations",
+    publicName: "virtuals__graduations_list",
     namespace: "virtuals",
     lifecycle: "active",
     description:
@@ -87,6 +90,7 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "virtuals.geneses",
+    publicName: "virtuals__genesis_launches_list",
     namespace: "virtuals",
     lifecycle: "active",
     description:

@@ -57,6 +57,7 @@ const ENABLED_PARAM: ProtocolParamDef = {
 
 const MANIFEST: ProtocolToolManifest = {
   toolId: "test.numeric_string",
+  publicName: "test__numeric_string",
   namespace: "dexscreener",
   lifecycle: "active",
   description: "Fixture manifest for the numeric-string boundary.",

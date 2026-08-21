@@ -85,7 +85,7 @@ interface TokenReadError {
 }
 
 /**
- * A projected token row as `wallet_balances` emits it. `priceUnavailable` is
+ * A projected token row as `WalletBalances` emits it. `priceUnavailable` is
  * added only by the concise trim, on a held token with no price feed, so the
  * agent can tell "no USD price" from "not held".
  */
@@ -177,7 +177,7 @@ type LocalChainSnapshot =
 
 /**
  * Matches `DEFAULT_BALANCE_SCAN_CONCURRENCY` in the Khalani scan: the two sides
- * of one `wallet_balances` answer must not race each other into a provider's
+ * of one `WalletBalances` answer must not race each other into a provider's
  * rate limit.
  */
 const LOCAL_CHAIN_SCAN_CONCURRENCY = 4;
@@ -264,7 +264,7 @@ async function readLocalChainSnapshot(
   }
 }
 
-// ── wallet_balances ─────────────────────────────────────────────
+// ── WalletBalances ─────────────────────────────────────────────
 
 export async function handleWalletBalances(
   params: Record<string, unknown>,
@@ -272,14 +272,14 @@ export async function handleWalletBalances(
 ): Promise<ToolResult> {
   const parsed = WalletReadArgs.safeParse(params);
   if (!parsed.success) {
-    return fail(`wallet_balances: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
+    return fail(`WalletBalances: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
 
   let scope: BalanceChainScope;
   try {
     scope = await partitionBalanceChainScope(parsed.data.chainIds);
   } catch (err) {
-    return fail(`wallet_balances: ${err instanceof Error ? err.message : String(err)}`);
+    return fail(`WalletBalances: ${err instanceof Error ? err.message : String(err)}`);
   }
   const walletFamilies = requestedWalletFamilies(parsed.data.walletFamily);
   const snapshots: WalletSnapshot[] = [];
@@ -295,7 +295,7 @@ export async function handleWalletBalances(
       !scope.rawProvided || (scope.selection.rawProvided && (khalaniChainIds?.length ?? 0) > 0);
     if (!khalaniRequested && localChainIds.length === 0) {
       if (parsed.data.walletFamily === family) {
-        return fail(`wallet_balances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
+        return fail(`WalletBalances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
       }
       continue;
     }
@@ -337,7 +337,7 @@ export async function handleWalletBalances(
       //
       // Bounded-concurrency, not serial: each chain costs a scan-set build, an
       // RPC read and a DexScreener price batch, and running N of them one after
-      // another is the `wallet_balances` latency complaint. The bound matches
+      // another is the `WalletBalances` latency complaint. The bound matches
       // the Khalani scan's own (4) so the provider rate limits are not the new
       // failure mode, and results are written into slots keyed by index so the
       // output order stays chain order rather than completion order.
@@ -393,7 +393,7 @@ export async function handleWalletBalances(
   }
 
   if (snapshots.length === 0) {
-    return fail(`wallet_balances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
+    return fail(`WalletBalances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
   }
 
   return ok({

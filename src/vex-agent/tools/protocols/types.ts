@@ -6,8 +6,8 @@
  * 2. Handlers — async functions that call TS clients directly
  *
  * The LLM interacts via two meta-tools:
- * - discover_tools → search manifests by query/namespace
- * - execute_tool → call handler by toolId with params
+ * - ToolSearch → search / select / list manifests by query or namespace
+ * - executeProtocolTool → call handler by toolId with params
  */
 
 import type { ToolResult } from "../types.js";
@@ -136,8 +136,38 @@ export interface ProtocolParamDef {
 }
 
 export interface ProtocolToolManifest {
-  /** Canonical tool ID, e.g. "khalani.bridge" */
+  /**
+   * Canonical tool ID, e.g. "khalani.bridge".
+   *
+   * The IMMUTABLE internal and audit identity. `protocol_executions`,
+   * `tool_embeddings`, `MUTATION_MATRIX`, `protocol_sync_jobs.read_tool_id`, the
+   * failure classifiers, and every stored approval envelope key on it. It is
+   * NEVER renamed and NEVER derived from {@link ProtocolToolManifest.publicName}.
+   */
   toolId: string;
+  /**
+   * The MODEL-VISIBLE callable name, e.g. `khalani__bridge_execute`.
+   *
+   * The second of the two identities (`tool-surface-spec/identity-and-migration.md`
+   * section 1). `toolId` is durable and internal; `publicName` is what the model
+   * reads in discovery and emits in a tool call, and it is the only name that
+   * reaches a provider `tools` array (`registry/injected-protocol-tools.ts`).
+   *
+   * Grammar `<namespace>__<resource_action>`, enforced in production by
+   * `./public-name-gate.ts`: lowercase `[a-z0-9_]`, at most 64 characters,
+   * EXACTLY ONE double underscore, marking the namespace boundary. The
+   * projection is therefore a TABLE, not a string transform — the old
+   * dot-to-double-underscore mangling is not invertible under this grammar
+   * (`kyberswap__swap_quote` would invert to `kyberswap.SwapQuote`, not to the
+   * real `kyberswap.swap.quote`), so no code may derive either identity from the
+   * other by string surgery.
+   *
+   * The authored value comes from the naming spec's mapping artifacts
+   * (`tool-surface-spec/mappings/<namespace>.json`); the gate asserts manifest
+   * and artifact agree exactly, in both directions, over the whole catalog.
+   * Renaming one means editing both in the same change.
+   */
+  publicName: string;
   /** Protocol namespace */
   namespace: ProtocolNamespace;
   /** Lifecycle state — see {@link ToolLifecycle}. */
@@ -370,5 +400,8 @@ export type {
   ProtocolDiscoveryRequest,
   ProtocolDiscoveryResult,
   ProtocolDiscoveryRetrievalMeta,
-  ProtocolManifestResult,
+  ToolSearchNamespaceRow,
+  ToolSearchQueryRow,
+  ToolSearchSelectResult,
+  ToolSearchSelectRow,
 } from "./types/discovery.js";

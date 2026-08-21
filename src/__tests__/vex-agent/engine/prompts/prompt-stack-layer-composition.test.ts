@@ -49,8 +49,8 @@ describe("prompt-stack — layer composition", () => {
           expect(joined).toContain("never enumerate or tabulate them to the user");
 
           // Tool usage markers
-          expect(joined).toContain("discover_tools");
-          expect(joined).toContain("discover_tools");
+          expect(joined).toContain("ToolSearch");
+          expect(joined).toContain("ToolSearch");
           expect(joined).toContain("2-step transfer rule");
 
           // Protocols marker

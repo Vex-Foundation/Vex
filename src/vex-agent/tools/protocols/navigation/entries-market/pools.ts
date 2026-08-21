@@ -22,9 +22,9 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use `kyberswap` to QUOTE AND TRADE these tokens - they trade in ordinary SushiSwap V3 pools on Robinhood Chain that KyberSwap routes, so this namespace deliberately has no swap tool. Use `dexscreener` for pair-level liquidity research (these pools are indexed there as dexId sushiswap, label v3, chain robinhood). `trench` is a DIFFERENT launchpad on the same chain: it has a bonding curve and a graduation step, while pools.fun has neither, so their tokens never overlap.",
   exampleQueries: [
-    'discover_tools(query="new pools fun launches", namespace="pools")',
-    'discover_tools(query="pools fun token price history", namespace="pools")',
-    'discover_tools(query="who earns fees on this pools fun token", namespace="pools")',
+    'ToolSearch(query="new pools fun launches", namespace="pools")',
+    'ToolSearch(query="pools fun token price history", namespace="pools")',
+    'ToolSearch(query="who earns fees on this pools fun token", namespace="pools")',
   ],
   aliases: ["pools", "pools.fun", "pools fun", "bankr", "robinhood launchpad", "sushi launchpad"],
   discoveryHints: [

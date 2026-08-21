@@ -42,6 +42,7 @@ const captureValidator = await import("@vex-agent/tools/protocols/capture-valida
 function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolToolManifest {
   return {
     toolId: "test.fake",
+    publicName: "test__fake",
     namespace: "khalani",
     lifecycle: "active",
     description: "fake",

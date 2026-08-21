@@ -38,6 +38,7 @@ import {
  */
 export const MORPHO_MARKET_SUPPLY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.supply",
+  publicName: "morpho__market_supply",
   namespace: "morpho",
   lifecycle: "active",
   description:

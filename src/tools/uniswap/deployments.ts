@@ -1,10 +1,12 @@
 /**
  * Uniswap V2 + V3 per-chain deployment registry (keyless quoting + execution).
  *
- * Uniswap is a HIDDEN fallback pair (`swap_quote_uniswap`/`swap_execute_uniswap`,
- * plan §11.2) — reachable only after an eligible KyberSwap route-not-found
- * failure reveals it for the session (`tools/registry/uniswap-reveal.ts`), on
- * every chain listed below, Robinhood Chain (4663) included. There is no
+ * Uniswap is an ALWAYS-VISIBLE alternate venue pair (`SwapQuoteUniswap` /
+ * `SwapExecuteUniswap`) on every chain listed below, Robinhood Chain (4663)
+ * included. It was a hidden pair, revealed only by an eligible KyberSwap
+ * route-not-found failure, until owner decision D4 un-gated it; the reveal
+ * module is deleted and KyberSwap is now simply the PREFERRED route rather than
+ * the only reachable one. There is no
  * runtime Kyber→Uniswap fallback INSIDE the quote path anymore (the old
  * silent retry was removed — see `venue-router.ts`'s header). Every address
  * below was RE-VERIFIED on-chain before it landed here — a wrong router/

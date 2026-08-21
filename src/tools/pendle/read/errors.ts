@@ -99,7 +99,7 @@ function buildReadError(status: number, endpoint: string, cause: string): VexErr
     return new VexError(
       ErrorCodes.PENDLE_API_ERROR,
       withCause(`Pendle reports a conflicting ${endpoint} state (HTTP 409)`, cause),
-      "The market or order state moved while this request was in flight. Re-read it with pendle.yields rather than replaying this call.",
+      "The market or order state moved while this request was in flight. Re-read it with `pendle__markets_discover` rather than replaying this call.",
     );
   }
   if (status === 422) {

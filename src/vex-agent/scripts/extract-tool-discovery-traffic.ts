@@ -3,7 +3,7 @@
  * extract-tool-discovery-traffic — provenance step for the retrieval gold set.
  *
  * Reads the local agent DB (SELECT only) and emits every historic
- * `discover_tools` call together with the `execute_tool` calls the session went
+ * `ToolSearch` call together with the protocol calls the session went
  * on to make, as a labelling worksheet. This is the RAW MATERIAL behind
  * `measure-tool-retrieval-baseline-dataset/production-gold-set.json`; the gold
  * set itself is hand-labelled, never generated from this output.
@@ -13,7 +13,7 @@
  * repo's own traffic —
  *
  *   1. **Parallel discover batches.** One assistant message frequently carries
- *      several `discover_tools` calls. Every following execute then appears to
+ *      several discovery calls. Every following execute then appears to
  *      belong to the LAST query in the batch. `siblingsInMessage > 1` marks
  *      these; their follow-up window belongs to the batch as a whole.
  *   2. **Mission-length windows.** A window can span 30+ executes covering a
@@ -53,12 +53,30 @@ interface DiscoveryCandidate {
   readonly query: string | null;
   readonly namespace: string | null;
   readonly limit: number | null;
-  /** How many `discover_tools` calls shared this assistant message. */
+  /** How many discovery calls shared this assistant message. */
   readonly siblingsInMessage: number;
-  /** Distinct tool ids executed before the next `discover_tools` call. */
+  /** Distinct tool ids executed before the next discovery call. */
   readonly followedByToolIds: readonly string[];
   /** Subset of the above that no longer exists in the catalog. */
   readonly unknownToolIds: readonly string[];
+}
+
+/**
+ * The command spellings a DISCOVERY call can carry in `messages.tool_calls`.
+ *
+ * `messages` is durable history: a row written before the ToolSearch merge holds
+ * the retired spelling forever and is never rewritten, so a worksheet that read
+ * only the live name would silently report zero traffic for every session that
+ * predates the rename. The retired names are read-only history here, not a
+ * live surface - nothing in this script emits them.
+ */
+const DISCOVERY_COMMANDS: readonly string[] = ["ToolSearch", "discover_tools"];
+
+/** Same reasoning: the approval envelope's command, stable across the merge. */
+const EXECUTE_COMMAND = "execute_tool";
+
+function isDiscoveryCommand(command: string): boolean {
+  return DISCOVERY_COMMANDS.includes(command);
 }
 
 const SELECT_TOOL_CALLS = `
@@ -74,12 +92,14 @@ const SELECT_TOOL_CALLS = `
        LATERAL jsonb_array_elements(m.tool_calls) c
   WHERE m.role = 'assistant'
     AND m.tool_calls IS NOT NULL
-    AND c->>'command' IN ('discover_tools', 'execute_tool')
+    AND c->>'command' = ANY($1)
   ORDER BY m.session_id, m.created_at, m.id
 `;
 
 export async function extractDiscoveryCandidates(): Promise<DiscoveryCandidate[]> {
-  const rows = await query<ToolCallRow>(SELECT_TOOL_CALLS, []);
+  const rows = await query<ToolCallRow>(SELECT_TOOL_CALLS, [
+    [...DISCOVERY_COMMANDS, EXECUTE_COMMAND],
+  ]);
 
   const bySession = new Map<string, ToolCallRow[]>();
   for (const row of rows) {
@@ -92,16 +112,16 @@ export async function extractDiscoveryCandidates(): Promise<DiscoveryCandidate[]
   for (const [sessionId, events] of bySession) {
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
-      if (event === undefined || event.command !== "discover_tools") continue;
+      if (event === undefined || !isDiscoveryCommand(event.command)) continue;
 
       const siblingsInMessage = events.filter(
-        (other) => other.command === "discover_tools" && other.message_id === event.message_id,
+        (other) => isDiscoveryCommand(other.command) && other.message_id === event.message_id,
       ).length;
 
       const followed = new Set<string>();
       for (let j = i + 1; j < events.length; j++) {
         const next = events[j];
-        if (next === undefined || next.command === "discover_tools") break;
+        if (next === undefined || isDiscoveryCommand(next.command)) break;
         if (next.tool_id !== null) followed.add(next.tool_id);
       }
       const followedByToolIds = [...followed];
@@ -124,7 +144,7 @@ function renderWorksheet(candidates: readonly DiscoveryCandidate[]): string {
   const lines: string[] = [];
   const sessions = new Set(candidates.map((c) => c.sessionPrefix));
   lines.push(
-    `# discover_tools traffic worksheet — ${candidates.length} calls across ${sessions.size} sessions`,
+    `# ToolSearch traffic worksheet — ${candidates.length} calls across ${sessions.size} sessions`,
     "",
     "Columns: index | siblings-in-message | namespace | limit | query => distinct follow-up executes (! = tool no longer in catalog)",
     "",

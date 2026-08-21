@@ -56,6 +56,7 @@ const catalog = await import("@vex-agent/tools/protocols/catalog.js");
 function readManifest(): ProtocolToolManifest {
   return {
     toolId: "test.redact.read",
+    publicName: "test__redact_read",
     namespace: "khalani",
     lifecycle: "active",
     description: "throwing read tool",

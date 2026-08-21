@@ -43,7 +43,7 @@ export interface ToolVisibility {
    * an active mission run, OR an agent session with `permission: "full"`.
    *
    * Owner decree 2026-08-03, from the live "unlimited thoughts" incident. The
-   * only tool wearing this gate is `loop_defer`, and the incident was exactly
+   * only tool wearing this gate is `LoopDefer`, and the incident was exactly
    * its absence: a Full-Autonomous agent session waiting for a bridge to fill
    * had no way to sleep, so it burned iterations re-reading state that could
    * not have changed yet. The substrate always supported the shape — the wake
@@ -65,7 +65,7 @@ export interface ToolVisibility {
   /**
    * True → hide unless the session has active narrative memory chunks
    * (`ToolVisibilityContext.hasSessionMemory === true`). Used by
-   * `session_memory_search` / `session_memory_resolve_item` so they never appear in a
+   * `SessionMemorySearch` / `SessionMemoryResolve` so they never appear in a
    * fresh session with nothing to recall (chunks are produced by Track-2
    * compaction). The handler still short-circuits as defense-in-depth — this
    * gate only controls what the LLM sees, not what it can be made to attempt.
@@ -73,7 +73,7 @@ export interface ToolVisibility {
   requiresSessionMemory?: boolean;
   /**
    * True → show only when session-scoped plan-mode is enabled
-   * (`ToolVisibilityContext.planMode === true`). Used by `plan_write` so the
+   * (`ToolVisibilityContext.planMode === true`). Used by `PlanWrite` so the
    * plan-authoring tool appears only when the user opted into plan-mode.
    * Combined with `hiddenInMissionSetup` it yields: visible in agent sessions
    * and active mission runs (plan-mode on), hidden during mission setup and
@@ -82,34 +82,9 @@ export interface ToolVisibility {
    */
   requiresPlanMode?: boolean;
   /**
-   * True → hide unless the session has an active Uniswap fallback reveal
-   * (`ToolVisibilityContext.sessionId` checked against
-   * `registry/uniswap-reveal.js`'s `isUniswapPairRevealed`). Used by the
-   * hidden `swap_quote_uniswap` / `swap_execute_uniswap` pair (plan §11.2):
-   * absent from the default tool list until an eligible KyberSwap
-   * route-not-found failure reveals it for that session. The dispatcher
-   * ALSO hard-rejects a direct dispatch attempt independent of this gate —
-   * this flag only controls what the LLM sees.
-   */
-  requiresUniswapReveal?: boolean;
-  /**
-   * True → hide unless this session has already produced a successful,
-   * non-empty `discover_tools` result (`ToolVisibilityContext.sessionId` checked
-   * against `registry/describe-tools-reveal.js`). Used by `describe_tools`: it
-   * is the follow-up half of the listing flow, so a fresh session that has
-   * never listed anything has nothing to describe and should not pay for its
-   * schema on every request.
-   *
-   * Unlike the Uniswap reveal there is NO TTL — a menu reveal has no freshness
-   * to outlive. The handler ALSO re-checks the reveal as defence in depth, so
-   * this gate only controls what the LLM sees, not what it can be made to
-   * attempt.
-   */
-  requiresDescribeToolsReveal?: boolean;
-  /**
    * True → show only when the session has a VALIDATED prepared compaction
    * summary (`ToolVisibilityContext.hasCompactionSummaryReady === true`).
-   * Used by `compact_apply`, whose whole precondition is readiness rather
+   * Used by `CompactApply`, whose whole precondition is readiness rather
    * than a pressure band: preparation routinely completes while the session
    * is still in the warning band, and hiding the tool until barrier would
    * withhold the cheapest moment to take it.
@@ -287,7 +262,7 @@ export interface ToolResult {
    *  - `dispatchTool` as a fallback from `getActionKind(toolName)` for internal
    *    tools when the handler did not set it,
    *  - `executeProtocolTool` from the TARGET protocol manifest (NOT from the
-   *    `execute_tool` wrapper's own classification), on every known-manifest
+   *    `execute_tool` envelope's own classification), on every known-manifest
    *    return path (approval-pending, pressure-denied, param-invalid, success,
    *    handler-thrown failure). Unknown protocol tool returns omit the field.
    *
@@ -388,14 +363,14 @@ export interface PreparedActionFollowUp {
  * Structured signal from an internal tool to the engine runtime.
  *
  * - stop_mission: parent mission stop (business stop reason)
- * - defer_until: the agent wants to sleep until a wake time (loop_defer)
+ * - defer_until: the agent wants to sleep until a wake time (LoopDefer)
  * - compact_committed: a compaction archived the conversation prefix, updated
  *   the rolling summary, and enqueued a Track 2 chunking job (PR2). Turn-loop
  *   drains remaining tool calls in the batch with `batch_aborted_by_compact`,
  *   reloads live messages, merges operator interrupts, updates
  *   `mission_runs.last_checkpoint_at`, and injects a deterministic resume
  *   packet for `POST_COMPACT_BRIDGE_CYCLES` subsequent turns.
- * - plan_pause: a `plan_write` in an ACTIVE mission run created/changed a plan
+ * - plan_pause: a `PlanWrite` in an ACTIVE mission run created/changed a plan
  *   that is not user-accepted. Turn-loop maps it to a `plan_acceptance_pause`
  *   tool-batch outcome → flips the run to `paused_plan_acceptance` (stop reason
  *   `plan_acceptance_required`); once accepted the run resumes via `plan.accept`

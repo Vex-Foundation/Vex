@@ -326,6 +326,21 @@ DexScreener has none. These are paid promotional orders for one named token
 Every tool below is mapped 1:1 in the artifacts. These are recommendations for
 the batch that owns merges.
 
+`EXECUTED 2026-08-21 (Batch 2, owner decision D7):` proposals 1 and 2 shipped.
+`dexscreener.boosts.top` and `dexscreener.profiles.recent` are RETIRED; their
+rows are gone from `mappings/dexscreener.json` and no alias replaces the
+retired names (D5). Both provider endpoints survive behind a `feed` param on
+the surviving tool - `dexscreener.boosts` takes `latest | top`,
+`dexscreener.profiles` takes `latest | recentUpdates` - and the enum text
+carries the two measured differences the merge had to preserve: the top boost
+feed omits the per-purchase `boostCount` on every row and defaults the sort to
+`boostCountTotal`, and the latest profile feed sends no `updatedAt` (drift
+measured 2026-08-21) while `recentUpdates` still does. The reply names which
+endpoint it read through `providerWindow.endpoint`, which the provenance
+envelope already carried; a second top-level echo was measured at 10 bytes over
+the 16 KiB output cap on the recent-updates window and was dropped rather than
+paid for. Proposals 3 and 4 are untouched.
+
 1. **`dexscreener.boosts` + `dexscreener.boosts.top`.** Same namespace, same
    parameter set (`BOOST_FEED_PARAMS`, `manifests/trending.ts:69-99`), same row
    shape. The only stated difference is which provider endpoint fills them and

@@ -1,5 +1,5 @@
 /**
- * `loop_defer` handler — writes a pending wake row and emits the
+ * `LoopDefer` handler — writes a pending wake row and emits the
  * `defer_until` engine signal. Turn-loop consumes the signal to tear down
  * the current batch and flip the mission run (or full-autonomous session)
  * to `paused_wake`; the wake executor then resumes at `due_at`.
@@ -131,7 +131,7 @@ export async function handleLoopDefer(
   // Layer 1 — Zod argument shape.
   const parsed = LoopDeferArgs.safeParse(params);
   if (!parsed.success) {
-    return fail(`loop_defer: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
+    return fail(`LoopDefer: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
   const { after_ms, wake_at, reason, watch } = parsed.data;
 
@@ -139,7 +139,7 @@ export async function handleLoopDefer(
   const shape = resolveDeferShape(context);
   if (shape === null) {
     return fail(
-      "loop_defer is only available inside an active mission run or a Full-Autonomous "
+      "LoopDefer is only available inside an active mission run or a Full-Autonomous "
       + "agent session. A restricted agent session waits for the user instead — end your "
       + "turn with a normal reply.",
     );
@@ -147,7 +147,7 @@ export async function handleLoopDefer(
 
   if (MISSION_ACTIVATION_WAIT_PATTERN.test(reason)) {
     return fail(
-      "loop_defer: this mission run is already active. Do not wait for the operator to start or continue the mission; execute the frozen Mission Contract now.",
+      "LoopDefer: this mission run is already active. Do not wait for the operator to start or continue the mission; execute the frozen Mission Contract now.",
     );
   }
 
@@ -160,13 +160,13 @@ export async function handleLoopDefer(
   const waitMs = dueAtMs - now;
   if (waitMs < LOOP_DEFER_MIN_WAIT_MS) {
     return fail(
-      `loop_defer: wake time must be at least ${LOOP_DEFER_MIN_WAIT_MS} ms (1s) in the future. `
+      `LoopDefer: wake time must be at least ${LOOP_DEFER_MIN_WAIT_MS} ms (1s) in the future. `
       + `Current time is ${new Date(now).toISOString()}.`,
     );
   }
   if (waitMs > LOOP_DEFER_MAX_WAIT_MS) {
     return fail(
-      `loop_defer: wake time must be at most ${LOOP_DEFER_MAX_WAIT_MS} ms (24h) from now. `
+      `LoopDefer: wake time must be at most ${LOOP_DEFER_MAX_WAIT_MS} ms (24h) from now. `
       + `Current time is ${new Date(now).toISOString()}.`,
     );
   }
@@ -185,7 +185,7 @@ export async function handleLoopDefer(
         + (payload === null
           ? ""
           : " Your other watch conditions were NOT armed either, because nothing was scheduled;"
-            + " re-send them with a fresh loop_defer if you still want them.")
+            + " re-send them with a fresh LoopDefer if you still want them.")
         + (rejectedWatch.length === 0
           ? ""
           : ` A separate condition was also unusable (${rejectedWatch.join(" | ")}).`),
@@ -209,7 +209,7 @@ export async function handleLoopDefer(
 
   if (row === "stopped") {
     return fail(
-      "loop_defer: this session has been stopped by the operator, so no wake was scheduled.",
+      "LoopDefer: this session has been stopped by the operator, so no wake was scheduled.",
     );
   }
 
@@ -218,7 +218,7 @@ export async function handleLoopDefer(
     // session already exists. Surface loudly so the model doesn't think
     // its new request "took" while the old one still runs.
     return fail(
-      "loop_defer: a pending wake already exists for this session. Only one pending wake per session is allowed — wait for it to fire or rely on user preemption.",
+      "LoopDefer: a pending wake already exists for this session. Only one pending wake per session is allowed — wait for it to fire or rely on user preemption.",
     );
   }
 

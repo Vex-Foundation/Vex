@@ -19,6 +19,7 @@ const MARKET_PARAM = {
 export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.lp.quote",
+    publicName: "pendle__lp_quote",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -39,6 +40,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.lp.add",
+    publicName: "pendle__lp_add",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -58,6 +60,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.lp.remove",
+    publicName: "pendle__lp_remove",
     namespace: "pendle",
     lifecycle: "active",
     description:

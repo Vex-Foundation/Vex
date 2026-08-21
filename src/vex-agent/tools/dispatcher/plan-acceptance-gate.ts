@@ -16,32 +16,32 @@ import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools
 
 /**
  * Tools always allowed while a plan is pending acceptance — the safe-control
- * set: author/refine the plan (`plan_write`), stop the mission (`mission_stop`),
- * relieve context pressure (`compact_apply`), and edit the mission draft during
- * setup (`mission_draft_update`). These are `local_write` but must NOT be
- * trapped behind the gate (mission_stop is the escape hatch; `compact_apply` is
+ * set: author/refine the plan (`PlanWrite`), stop the mission (`MissionStop`),
+ * relieve context pressure (`CompactApply`), and edit the mission draft during
+ * setup (`MissionDraftUpdate`). These are `local_write` but must NOT be
+ * trapped behind the gate (MissionStop is the escape hatch; `CompactApply` is
  * the agent's only pressure relief at barrier/critical — the rationale transfers
- * verbatim from the tool it replaced; `mission_draft_update` is a local
+ * verbatim from the tool it replaced; `MissionDraftUpdate` is a local
  * DB write with no fund-moving side effect — safe-listing it lets setup
  * co-author the contract and plan together without deadlocking once an
- * unaccepted plan exists, mirroring why `plan_write` is here).
+ * unaccepted plan exists, mirroring why `PlanWrite` is here).
  */
 const PLAN_GATE_SAFE_CONTROL: ReadonlySet<string> = new Set([
-  "plan_write",
-  "mission_stop",
-  "compact_apply",
-  "mission_draft_update",
+  "PlanWrite",
+  "MissionStop",
+  "CompactApply",
+  "MissionDraftUpdate",
 ]);
 
 /**
  * Plan-mode acceptance gate (code-level defense-in-depth). When session-scoped
  * plan-mode is ON and the active plan is NOT user-accepted, block side-effecting
  * tools until the user accepts the plan. Reads LIVE plan state per call so a
- * `plan_write` that invalidates acceptance mid-batch is reflected immediately
+ * `PlanWrite` that invalidates acceptance mid-batch is reflected immediately
  * (agent mode does not pause). Returns a synthetic error when blocked; null when
  * the gate is inactive or the call is allowed.
  *
- * Allow while pending: `read`-kind tools (incl. `discover_tools` and read-only
+ * Allow while pending: `read`-kind tools (incl. `ToolSearch` and read-only
  * protocol quotes/previews) + the safe-control allowlist. Block everything else
  * — execution, wallet broadcasts, posts, scheduling, and sensitive local writes
  * like `polymarket_setup`. For `execute_tool` / mutating aliases the EFFECTIVE
@@ -81,7 +81,7 @@ export async function checkPlanAcceptanceDeny(
     success: false,
     output:
       `Plan mode is on and your action plan is not yet accepted, so "${call.name}" is blocked. ` +
-      `Research, discovery, read-only quotes, and plan edits (plan_write) are allowed. ` +
+      `Research, discovery, read-only quotes, and plan edits (PlanWrite) are allowed. ` +
       `Finish the plan and ask the user to review and accept it — execution unlocks on acceptance.`,
   };
 }

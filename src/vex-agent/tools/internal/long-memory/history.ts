@@ -1,5 +1,5 @@
 /**
- * long_memory_history handler (S3) — the supersession/lineage chain for a
+ * MemoryHistory handler (S3) — the supersession/lineage chain for a
  * long-term memory entry COMBINED with its reinforcement timeline.
  *
  * R1-#7: the lineage repo (`getLineageChain`) returns compact lineage only, so
@@ -23,13 +23,13 @@ export async function handleLongMemoryHistory(
 ): Promise<ToolResult> {
   const id = num(params, "id");
   if (id === undefined) {
-    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from long_memory_search)"));
+    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from MemorySearch)"));
   }
 
   const lineage = await knowledgeRepo.getLineageChain(id);
   if (!lineage) {
     return fail(
-      `long-term memory entry ${id} not found. Re-run long_memory_search to find a valid id.`,
+      `long-term memory entry ${id} not found. Re-run MemorySearch to find a valid id.`,
     );
   }
 

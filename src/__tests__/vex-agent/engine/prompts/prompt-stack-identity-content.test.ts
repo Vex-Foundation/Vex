@@ -97,9 +97,9 @@ describe("prompt-stack — identity content", () => {
       expect(joined).toContain("Robinhood Chain (4663): Arbitrum Orbit L2");
       expect(joined).toContain("Not covered by Khalani");
       // Robinhood-launch fix: the awareness line routes balance reads to
-      // `wallet_balances`; the old "added to portfolio tracking automatically"
+      // `WalletBalances`; the old "added to portfolio tracking automatically"
       // promise was false (only spot swaps ever auto-tracked) and is gone.
-      expect(joined).toContain("read live balances there with `wallet_balances`");
+      expect(joined).toContain("read live balances there with `WalletBalances`");
       expect(joined).not.toContain("added to portfolio tracking automatically");
     });
 
@@ -112,7 +112,10 @@ describe("prompt-stack — identity content", () => {
       const prompt = buildProtocolsPrompt();
       const dexSection = prompt.split("### dexscreener")[1]?.split("##")[0] ?? "";
       expect(dexSection).toContain("market-research backbone");
-      expect(dexSection).toContain("Research flow: discover → resolve the address with `token_find` → verify liquidity → quote on a venue.");
+      // NOTE: still the pre-rename spelling because its SOURCE is
+      // `tools/protocols/navigation/entries-market/dexscreener.ts`, a cross-reference
+      // owned by the protocol-naming workstream and not renamed in this change.
+      expect(dexSection).toContain("Research flow: discover → resolve the address with `TokenFind` → verify liquidity → quote on a venue.");
       expect(dexSection).toContain("robinhood");
     });
   });

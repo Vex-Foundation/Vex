@@ -1,0 +1,50 @@
+{
+  "definition": {
+    "function": {
+      "description": "WITHDRAW assets previously SUPPLIED to one Morpho Blue market back into the wallet, ending or reducing the lender position. This SPENDS gas and moves real funds: it signs and broadcasts an on-chain transaction from the user's wallet and cannot be undone. THIS IS THE LENDER'S SIDE: it withdraws the LOAN asset that was lent to earn interest, NOT the collateral backing a loan, which is `morpho.market.withdrawCollateral` on a different token. It is also not `morpho.vault.withdraw`, which redeems from a curated vault. THIS DOES NOT MOVE THE HEALTH FACTOR. Supplying and withdrawing the loan asset is the LENDER'S side of the market: it takes on no debt and posts no collateral, so it has no liquidation risk of its own and it changes nothing about any borrow position the same wallet may hold on the same market. TWO INDEPENDENT LIMITS, each REFUSED BY NAME rather than silently clamped. First, YOUR OWN SUPPLIED POSITION: you cannot withdraw more than you have supplied plus the interest it accrued. Second, THE MARKET'S AVAILABLE LIQUIDITY: supplied assets that borrowers have already drawn are not there to withdraw, so a market that is fully utilised can refuse a withdrawal you are otherwise entitled to. That second limit is the real cost of lending directly, and it is not a failure of Vex: wait for a repayment or withdraw the part that is free. The amount withdrawable is the supplied principal PLUS the interest accrued into the share price, so it is normally larger than what was supplied; read it from `morpho.positions.get` rather than from memory of the deposit. QUOTE FIRST: REFUSED without a fresh `morpho.market.quote` of THIS direction for exactly these params. A quote of any other direction does not authorize it. WHAT GETS SIGNED: exactly ONE direct call on Morpho Blue. This operation only RECEIVES, so there is no approval, no bundle and NO STANDING ALLOWANCE at any point. The proceeds land in the signing wallet by construction. REFUSED on any market whose oracle and IRM Vex cannot vouch for, by name, before anything is built. The gate is strict: only 9 of 100 Base markets sampled passed it. DIRECT VERSUS CURATED, measured on Base: every curated USDC vault earns the SAME gross 4.13% because they allocate into the same markets, and only the curator's fee separates them (Gauntlet 0% leaves 4.13% net, Steakhouse Prime 5% leaves 3.92%, Spark 10% leaves 3.71%, Steakhouse USDC 25% leaves 3.08%). Supplying cbBTC/USDC DIRECTLY earns the full 4.13% with NO fee, and what you give up for it is diversification and management: the position is concentrated in ONE market's collateral, oracle and LLTV, and NOBODY REALLOCATES IT FOR YOU when that market degrades. Say both halves before recommending either. NOT ATOMIC with any other operation: Vex grants no standing authorization, so a supply-then-borrow is two separately quoted and separately consented OPERATIONS, and either can fail with the other landed. What makes the in-between state safe is ORDERING - collateral in before debt out, debt down before collateral out - so a second leg that never lands leaves the position safer than it started. ONE LEG: the result carries one of `tokenIn` (wallet sends) or `tokenOut` (wallet receives), never both. The market's two tokens rarely share a decimal scale, so never compare a collateral raw amount with a loan one. RECORDED before anything is signed, and the amount reported back is PROVEN from the receipt rather than copied from the quote. Four endings: confirmed, refused (nothing signed, no gas), reverted (gas spent, position untouched), and unproven - on unproven DO NOT RETRY, the funds may already have moved. RETURNS on success the transaction hash and the withdrawn amount PROVEN from the receipt's own event, at the loan token's own decimals. On any non-success it returns the REAL cause and what to do about it, never a generic error.",
+      "name": "morpho__market_withdraw",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The chain the market lives on. Required: a market id is chain-scoped. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Set true to get the FULL preview and sign nothing: the vouching verdict, the health factor before and after, the free liquidity, the allowance plan, the decoded transaction, the gas bound and the simulation verdict.",
+            "type": "boolean"
+          },
+          "marketId": {
+            "description": "The market's 0x-prefixed 64-hex id, from `morpho.markets.discover` or `morpho.positions.get`. A 40-hex value is a CONTRACT ADDRESS and is rejected by name. Chain-scoped.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Price protection in basis points (1 bps = 0.01%). Default 100, capped at 1000, and a higher value is REJECTED rather than clamped. It bounds a full-debt repayment's per-share price of the TWO operations that move shares: a market supply and a repayment. On each, Vex derives a `maxSharePrice` ceiling from it that the CHAIN enforces, so a worse price cannot mine; on a full-debt (shares-mode) repayment it also caps the approval. The other four - supply_collateral, withdraw, withdraw_collateral and borrow - are direct calls naming their own exact token amount, carry NO on-chain price guard, and are unaffected by this value.",
+            "type": "number"
+          },
+          "withdrawAmountRaw": {
+            "description": "How much of the LOAN asset to withdraw, in the LOAN token's RAW base units as a whole-number string. THE SCALE IS THE LOAN TOKEN'S OWN: read `loanAsset.decimals` from `morpho.market.get`. A human decimal amount is refused, not rounded. `withdrawCollateralAmountRaw` is a DIFFERENT operation on a DIFFERENT token and is refused by name. An amount above the supplied position, or above the market's free liquidity, is refused by name rather than reduced to what would fit.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "chain",
+          "withdrawAmountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "morpho",
+    "requiresEnv": null,
+    "toolId": "morpho.market.withdraw"
+  }
+}

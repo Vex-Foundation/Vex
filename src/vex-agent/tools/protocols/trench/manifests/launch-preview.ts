@@ -16,6 +16,7 @@ import { TRENCH_LAUNCH_PREVIEW_DISCOVERY } from "../../embeddings/trench/launch-
 export const TRENCH_LAUNCH_PREVIEW_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.launch_preview",
+    publicName: "trench__launch_preview",
     namespace: "trench",
     lifecycle: "active",
     description:

@@ -112,7 +112,7 @@ export function verifyRouterAddress(actual: Address, expected: Address): void {
 
 /**
  * Send a pre-built KyberSwap transaction and return both hash and receipt —
- * the receipt-truth primitive generic `chain_read`-style consumers use to
+ * the receipt-truth primitive generic `ChainRead`-style consumers use to
  * extract logs (originally built for zap.in's NFT position extraction; kept
  * as a general reusable primitive after the Agent Scan teardown — see
  * `evm/receipt-logs.ts`'s `extractMintedNftId`, its remaining consumer).

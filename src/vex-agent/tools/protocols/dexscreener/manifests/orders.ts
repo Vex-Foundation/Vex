@@ -21,6 +21,7 @@ import { DEXSCREENER_CHAIN_PARAM } from "../chain-param.js";
 export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "dexscreener.orders",
+    publicName: "dexscreener__token_orders_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:
@@ -40,6 +41,7 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "dexscreener.ads",
+    publicName: "dexscreener__ads_list",
     namespace: "dexscreener",
     lifecycle: "active",
     description:

@@ -33,5 +33,5 @@ export interface KhalaniBridgePendingBase {
 export type FailPreSign = (
   failureCode: AgentActivityFailureCode,
   reason: string,
-  revealSignal?: KhalaniFailureSignal,
+  fallbackSignal?: KhalaniFailureSignal,
 ) => Promise<ToolResult>;

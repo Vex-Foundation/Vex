@@ -3,7 +3,7 @@
  *
  * Before this module, the only draft→ready transition was the model-patch
  * path (`applyMissionPatch` in `./setup.ts`), which fires only when the
- * model sends a `mission_draft_update` patch. A renewed clone or an
+ * model sends a `MissionDraftUpdate` patch. A renewed clone or an
  * edited-and-resaved mission that is ALREADY complete produces no patch,
  * so it never promotes — the badge shows "Preparing" forever (issue #41).
  * This is the reconciliation call every draft-producing write site makes

@@ -12,7 +12,7 @@ import { CANONICAL_RAW_AMOUNT_SENTENCE } from "../conventions.js";
 
 /**
  * The ONE raw-amount description both Khalani bridge tools declare (W5b). It
- * ends with the shared convention sentence, which names `token_find` as the
+ * ends with the shared convention sentence, which names `TokenFind` as the
  * decimals source — rule 90: a raw amount that travels without the decimals
  * needed to read it is a thousandfold error waiting to happen.
  */
@@ -41,6 +41,7 @@ const LIMIT_1_TO_20_CLAUSE = "Range 1-20 (provider maximum, default 10); anythin
 export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "khalani.chains.list",
+    publicName: "khalani__chains_list",
     namespace: "khalani",
     lifecycle: "active",
     description: "List all Khalani-supported chains with metadata (live registry, EVM + Solana).",
@@ -54,6 +55,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.tokens.top",
+    publicName: "khalani__tokens_top_list",
     namespace: "khalani",
     lifecycle: "active",
     description: "List top Khalani tokens, optionally filtered by chain IDs.",
@@ -67,9 +69,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.tokens.search",
+    publicName: "khalani__tokens_search",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `token_find`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `token_find` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani.chains.list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener.search` (symbol to address lookup on the chain slug), `wallet_track_token` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `wallet_balances` (the tokens the wallet actually holds).",
+    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds).",
     mutating: false,
     actionKind: "read",
     params: [
@@ -81,6 +84,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.tokens.autocomplete",
+    publicName: "khalani__tokens_autocomplete",
     namespace: "khalani",
     lifecycle: "active",
     description: "Semantic token autocomplete — understands '100 usdc on ethereum'.",
@@ -96,9 +100,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.tokens.balances",
+    publicName: "khalani__token_balances_get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `walletAddress` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `wallet_balances` tool.",
+    description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `walletAddress` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `WalletBalances` tool.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -111,6 +116,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.quote.get",
+    publicName: "khalani__bridge_quote_get",
     namespace: "khalani",
     lifecycle: "active",
     description: "Get cross-chain bridge quote with routes, pricing, ETA, and each route's DEADLINE (expiresAtUnixSeconds plus expiresInSeconds remaining). khalani.bridge hard-fails with deadline_expired past that deadline, so check the remaining window before acting and re-quote if it has run out. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
@@ -147,6 +153,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.orders.list",
+    publicName: "khalani__orders_list",
     namespace: "khalani",
     lifecycle: "active",
     description: "List Khalani bridge orders for an address with pagination and filters.",
@@ -167,6 +174,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.orders.get",
+    publicName: "khalani__order_get",
     namespace: "khalani",
     lifecycle: "active",
     description: "Get a single Khalani bridge order by ID with full lifecycle details, MERGED with Vex's own record of it: `order` is the provider's view, `vex` carries the execution id, Vex's logical status, every Vex leg (deposit, fee, expected fill) and the Vex fee collection outcome, and `vexNote` says why there is no Vex record when there is none. The two views can legitimately disagree — Khalani may report a fill before Vex has verified it on-chain — so read `vex.note` before concluding anything about the funds.",
@@ -180,9 +188,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "khalani.bridge",
+    publicName: "khalani__bridge_execute",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access. Resolve fromToken/toToken addresses via khalani.tokens.search first. This BROADCASTS the origin-chain deposit and returns while the destination fill is still IN PROGRESS — a returned bridge is NOT yet confirmed. Vex tracks it and finalizes the record when the fill is verified; do not resubmit or call this again for the same transfer. Check progress with bridge_status (or khalani.orders.get) using the returned order id.",
+    description: "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access. Resolve fromToken/toToken addresses via khalani.tokens.search first. This BROADCASTS the origin-chain deposit and returns while the destination fill is still IN PROGRESS — a returned bridge is NOT yet confirmed. Vex tracks it and finalizes the record when the fill is verified; do not resubmit or call this again for the same transfer. Check progress with BridgeStatus (or khalani.orders.get) using the returned order id.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

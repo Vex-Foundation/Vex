@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "Deposit tokens into a Jupiter Lend EARN vault to start earning yield — simple lending, not collateral for borrowing (for that, use solana.lend.borrowOperate's depositAmountRaw instead). Broadcasts and returns truthful-pending: confirmation is tracked automatically, do not resubmit. Read solana.lend.rates first for the vault's assetDecimals to convert a human amount into amountRaw's raw atomic units.",
+      "name": "solana__lend_earn_deposit",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to deposit, in RAW atomic units of the asset as an integer string, never human decimals (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\") — read the asset's decimals from solana.lend.rates' assetDecimals, or from TokenFind, before building it.",
+            "type": "string"
+          },
+          "asset": {
+            "description": "Token address to deposit.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.lend.deposit"
+  }
+}

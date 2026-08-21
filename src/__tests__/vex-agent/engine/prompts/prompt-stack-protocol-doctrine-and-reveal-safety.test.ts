@@ -37,7 +37,7 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       expect(prompt).toContain("`tradingRoute` hint");
       // NEVER buy while the anti-sniper window is active.
       expect(prompt).toContain("NEVER buy while `windowActive` is true");
-      expect(prompt).toContain("virtuals.get");
+      expect(prompt).toContain("virtuals__agent_get");
       // UNDERGRAD = bonding-curve pre-graduation, extreme caution.
       expect(prompt).toContain("UNDERGRAD means bonding-curve pre-graduation");
       expect(prompt).toContain("extreme caution");
@@ -64,12 +64,12 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       expect(prompt).toContain("TERM COMMITMENT");
       // Early exit is market-priced and can lose.
       expect(prompt).toContain("market-priced");
-      // Matured PT redeems ~1:1 via pendle.pt.redeem; value at face.
-      expect(prompt).toContain("pendle.pt.redeem");
+      // Matured PT redeems ~1:1 via pendle__pt_redeem; value at face.
+      expect(prompt).toContain("pendle__pt_redeem");
       // Never present points as yield.
       expect(prompt).toContain("NEVER present points as yield");
       // Preview + gate before trading.
-      expect(prompt).toContain("pendle.pt.quote");
+      expect(prompt).toContain("pendle__pt_quote");
     });
 
     it("Pendle doctrine renders in the STATIC prefix in every mode", () => {
@@ -99,7 +99,7 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
         ownTokenBanner: "# $VEX (own token)\n\n- Price: $1",
         contextPressureBanner: "[Context pressure: elevated — 72% used]",
         memorySection: "# Memory\n\n## Memory Routing\n\n- line",
-        toolCatalogPrompt: "# Available Tool Map\n\n- wallet_balances",
+        toolCatalogPrompt: "# Available Tool Map\n\n- WalletBalances",
       });
       const turnJoined = stack.turnLayers.join("\n");
       const order = [
@@ -136,81 +136,44 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
   // as the engine assembles it) must carry zero pre-reveal mentions of the
   // hidden pair. Nothing is whitelisted except the ONE already-logged,
   // owner-deferred exception below — every other hit is a finding to fix.
-  describe("complete-surface pre-reveal check (C42 — no silent whitelist)", () => {
-    const HIDDEN_PAIR_NEEDLES = ["uniswap", "swap_quote_uniswap", "swap_execute_uniswap"];
+  describe("complete-surface venue check (C42, INVERTED by owner decision D4)", () => {
+    const VENUE_NEEDLES = ["SwapQuoteUniswap", "SwapExecuteUniswap"];
 
-    // Owner-deferred, NOT resolved by this test (see the FIX3-W7 build-log
-    // delta in agents_dm/agent-scan-factory.md): Virtuals agent tokens —
-    // including $VEX itself, which the identity layer states was "launched
-    // via Virtuals Protocol" — genuinely trade via Uniswap V2 on Robinhood
-    // Chain (own-token-banner.test.ts pins the "Uniswap V2 vs VIRTUAL" banner
-    // text as a real product fact), which sits in tension with the
-    // unconditional reveal-gate — a product/architecture question flagged
-    // for the coordinator, not a mechanical prompt-wording bug. These are the
-    // exact, currently-verified fragments carrying that content — a narrow,
-    // logged skip, not a general whitelist. If any of them ever changes, the
-    // `.split(...).join("")` below simply stops matching, so the (changed)
-    // uniswap mention re-surfaces as a fresh failure requiring conscious
-    // re-evaluation rather than silently continuing to exclude evolving
-    // text. (`own-token-banner.ts`'s OWN "Uniswap V2 vs VIRTUAL" line is NOT
-    // listed here — it only renders via the `ownTokenBanner` PromptStackOptions
-    // pass-through, which this test's `buildPromptStack(makeContext())` call
-    // never supplies, so it structurally never reaches the built text below.)
-    // 2026-07-28 (prompt-unambiguity W1/A1): three of the four fragments were
-    // REMOVED rather than deferred — the `## Virtuals Agent Tokens` doctrine and
-    // the `virtuals` navigation entry now use the reveal-compatible
-    // `swap_quote`/`swap_execute` wording instead of naming the hidden venue.
-    // Only $VEX's own listing fact remains deferred (it is a product fact about
-    // the agent's own token, not routing doctrine).
-    const OWNER_DEFERRED_VIRTUALS_FRAGMENTS = [
-      // engine/prompts/identity.ts — $VEX's own listing venue.
-      "Your own token $VEX is live on Robinhood Chain, launched via Virtuals Protocol, trading on Uniswap V2 against VIRTUAL. Its unverified badge on Virtuals is normal anti-impersonation mechanics, not a warning.",
-    ];
-
-    function stripOwnerDeferredVirtualsContent(text: string): string {
-      let out = text;
-      for (const fragment of OWNER_DEFERRED_VIRTUALS_FRAGMENTS) {
-        out = out.split(fragment).join("");
-      }
-      return out;
-    }
-
-    it("the COMPLETE built prompt (every static + turn layer, joined) never mentions the hidden pair pre-reveal", () => {
+    // WHAT THIS BLOCK USED TO ASSERT, and why the opposite is now correct.
+    // The Uniswap pair was a HIDDEN, session-revealed fallback, so C42 proved
+    // "no silent whitelist": neither the built prompt nor any serialized tool
+    // description could mention it before a reveal, because a mention WAS the
+    // leak. Owner decision D4 retired the reveal — hiding a venue is what cost
+    // the agent its fallback exactly when the primary venue failed, and the
+    // approval gate, not visibility, is what protects the money.
+    //
+    // A retired invariant must not be quietly deleted, or nothing would notice
+    // the venue silently disappearing again. So the block is INVERTED: the pair
+    // must be PRESENT and callable, and the preference (KyberSwap primary) must
+    // be stated in prose rather than enforced by hiding.
+    it("the COMPLETE built prompt states the venue preference in prose", () => {
       resetProtocolsPromptCache();
       const stack = buildPromptStack(makeContext());
-      const full = stripOwnerDeferredVirtualsContent(
-        [...stack.staticLayers, ...stack.turnLayers].join("\n"),
-      );
-      const lower = full.toLowerCase();
-      for (const needle of HIDDEN_PAIR_NEEDLES) {
-        expect(
-          lower.includes(needle.toLowerCase()),
-          `found "${needle}" in the complete built prompt (outside the logged owner-deferred Virtuals fragments)`,
-        ).toBe(false);
-      }
+      const full = [...stack.staticLayers, ...stack.turnLayers].join("\n");
+
+      expect(full).toContain("KyberSwap is the PRIMARY swap route");
+      // The preference is guidance, never a gate: the prompt must not claim the
+      // alternative is locked, unavailable, or has to be unlocked by a failure.
+      expect(full).not.toMatch(/unlocks? it|now available for this session|backup venue is now available/i);
     });
 
-    it("EVERY serialized OpenAI tool description (unrevealed posture) never mentions the hidden pair", () => {
-      // Default context: no sessionId override => isUniswapPairRevealed(undefined)
-      // fails closed to hidden — this IS the unrevealed posture, not a stand-in.
+    it("EVERY venue tool is present in the serialized OpenAI tool surface", () => {
+      // Default context: no sessionId. Under the old reveal this was the
+      // "unrevealed posture" and the pair was absent; there is no such posture
+      // any more, and a session that never touched KyberSwap must still be able
+      // to reach Uniswap.
       const tools = getOpenAITools(defaultVisibilityContext());
-      const offenders: string[] = [];
-      for (const tool of tools) {
-        // Serializes the WHOLE tool (name + description + full parameters
-        // schema, incl. every property's own description) — not just the
-        // top-level description string, so a leak buried in a param
-        // description would also be caught. Also structurally proves the
-        // hidden tools themselves are absent: if `swap_quote_uniswap` were
-        // in this list, its own `function.name` would trip the
-        // "swap_quote_uniswap" needle on its own entry.
-        const serialized = JSON.stringify(tool).toLowerCase();
-        for (const needle of HIDDEN_PAIR_NEEDLES) {
-          if (serialized.includes(needle.toLowerCase())) {
-            offenders.push(`${tool.function.name}: contains "${needle}"`);
-          }
-        }
+      const names = tools.map((t) => t.function.name);
+      for (const needle of VENUE_NEEDLES) {
+        expect(names, `${needle} is missing from the default tool surface`).toContain(needle);
       }
-      expect(offenders).toEqual([]);
+      expect(names).toContain("BridgeQuoteRelay");
+      expect(names).toContain("BridgeExecuteRelay");
     });
   });
 });

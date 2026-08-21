@@ -1,5 +1,5 @@
 /**
- * `bridge_status` rejects a contradictory call BY NAME (SPEC §2.4 item 22).
+ * `BridgeStatus` rejects a contradictory call BY NAME (SPEC §2.4 item 22).
  *
  * The alias forwarded `orderId` and silently dropped every list filter supplied
  * with it, so the agent got one order back and no way to learn its
@@ -12,7 +12,7 @@ import {
   rejectBridgeStatusModeConflict,
 } from "@vex-agent/tools/protocols/khalani/bridge-status-mode.js";
 
-describe("bridge_status mode conflict", () => {
+describe("BridgeStatus mode conflict", () => {
   it("allows a pure by-id call", () => {
     expect(rejectBridgeStatusModeConflict({ orderId: "order_abc123" })).toBeNull();
   });
@@ -28,7 +28,7 @@ describe("bridge_status mode conflict", () => {
   it("names the discarded parameter when one is combined with orderId", () => {
     const reason = rejectBridgeStatusModeConflict({ orderId: "order_abc123", limit: 5 });
     expect(reason).toBe(
-      "bridge_status takes EITHER orderId (one order) OR the list filters, never both — "
+      "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both — "
       + "limit was supplied alongside orderId and would have been silently discarded. "
       + "Drop orderId to filter a list, or drop limit to read that one order.",
     );

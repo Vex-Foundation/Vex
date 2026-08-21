@@ -153,7 +153,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   failActivityEvent: (...a: unknown[]) => failActivityEvent(...a),
   abortPlannedEvents: (...a: unknown[]) => abortPlannedEvents(...a),
 }));
-vi.mock("@vex-agent/tools/registry/uniswap-reveal.js", () => ({ clearUniswapPairReveal: vi.fn() }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),
   resolveSigningWallet: vi.fn(() => ({ family: "eip155", address: WALLET, privateKey: `0x${"ab".repeat(32)}` })),

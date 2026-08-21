@@ -1,5 +1,5 @@
 /**
- * `agent_activity` reads that exist for the `loop_defer` WATCH surface.
+ * `agent_activity` reads that exist for the `LoopDefer` WATCH surface.
  *
  * Own module, not another function on `swap-lifecycle/reads.ts`: this file
  * changes when a wake-watch condition needs to resolve a model-supplied
@@ -17,7 +17,7 @@ import { mapRow } from "./mappers.js";
 import type { AgentActivityEvent } from "./types.js";
 
 /**
- * Resolve the provider order id the model holds (it is what `bridge_status`
+ * Resolve the provider order id the model holds (it is what `BridgeStatus`
  * takes and what the bridge execute tools return) to its `agent_activity` row.
  *
  * Deliberately NOT filtered to `status = 'pending'`: a caller that must

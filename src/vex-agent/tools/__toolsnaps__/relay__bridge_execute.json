@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a REAL Relay cross-chain bridge. SPENDS FUNDS: it signs and broadcasts the origin-chain deposit and requires approval before it runs; the solver then fills on the destination. REQUIRES a fresh matching relay.quote.get first. `amountRaw` is in smallest units (wei). Returns the origin transaction hash and the order id to follow. The call returns while the destination fill is still IN PROGRESS — Vex tracks it automatically and finalizes the record when the fill is verified; a returned bridge is NOT yet confirmed. Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other route Khalani is Vex's primary bridge. Use this when Khalani does not cover the route, or when its quote failed for a routing reason.",
+      "name": "relay__bridge_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "If true, fetch the route without signing.",
+            "type": "boolean"
+          },
+          "fromChain": {
+            "description": "Source chain id or alias (e.g. base, 8453, robinhood, 4663).",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address, or native ETH/native.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient (default: your wallet).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Basis points (1 bps = 0.01%). Default 100 = 1%. Vex caps this at 1000 (10%) and REJECTS a higher value rather than clamping it.",
+            "type": "number"
+          },
+          "toChain": {
+            "description": "Destination chain id or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address, or native ETH/native.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "relay",
+    "requiresEnv": null,
+    "toolId": "relay.bridge"
+  }
+}

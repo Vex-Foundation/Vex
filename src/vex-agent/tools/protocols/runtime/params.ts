@@ -1,5 +1,5 @@
 /**
- * Strict param-boundary validation (B-002) for protocol `execute_tool`.
+ * Strict param-boundary validation (B-002) for protocol tool execution.
  *
  * Extracted verbatim from `../runtime.ts` as part of a façade-preserving
  * structural split. The runtime owns `executeProtocolTool`; this module owns
@@ -14,7 +14,7 @@ import { checkBpsParam } from "./bps-param.js";
 
 // ── Strict param-boundary validation (B-002) ─────────────────────
 //
-// The protocol param surface is an UNTRUSTED boundary: `execute_tool` params
+// The protocol param surface is an UNTRUSTED boundary: protocol call params
 // come straight from the LLM. Pre-B-002 the runtime only checked declared
 // params for `required` presence + `typeof`; it let UNKNOWN/extra keys flow
 // into handlers untouched and never rejected nested shape drift. This closes
@@ -148,7 +148,7 @@ function describeMissingRequired(
 
 /**
  * The one sentence a mutually exclusive param group is stated in — authored
- * HERE so the rule the model reads in `discover_tools` (`constraints`) and the
+ * HERE so the rule the model reads on the injected tool schema and the
  * rule it is rejected by are word-for-word the same rule.
  */
 export function describeExclusiveParamGroup(group: readonly string[]): string {
@@ -296,7 +296,7 @@ function checkAtLeastOneOfGroups(
  *
  * The ONLY normalization this gate performs, and deliberately the narrowest one
  * that closes a real failure: every chain-valued param advertises
- * "slug or the numeric chain id `token_find` returns" (see
+ * "slug or the numeric chain id `TokenFind` returns" (see
  * `conventions.ts::CANONICAL_CHAIN_SENTENCE`), so a model that read the
  * description and sent `{chain: 8453}` wrote a legal value in the wrong JSON
  * type and was rejected for it.

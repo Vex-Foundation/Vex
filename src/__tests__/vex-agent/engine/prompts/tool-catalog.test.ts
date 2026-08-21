@@ -38,28 +38,28 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("# Available Tool Map");
 
       // Reads / orientation visible
-      // `execute_tool` is withheld from the model-facing surface (staged retirement,
+      // The `execute_tool` ToolDef is retired outright (the merge completed the
       // `registry/visibility.ts`) — discovered tools are injected as real functions —
       // and the category no longer advertises an execution wrapper at all.
-      expect(out).toContain("**Protocol discovery:** discover_tools");
+      expect(out).toContain("**Protocol tool search:** ToolSearch");
       expect(out).not.toContain("execute_tool");
-      expect(out).toContain("**Live state reads:** wallet_balances, chain_read, agent_scan");
+      expect(out).toContain("**Live state reads:** WalletBalances, ChainRead, AgentScan");
 
       // Memory visible (read tools at normal band)
-      expect(out).toContain("**Session memory — this conversation/mission only:** session_memory_search, session_memory_resolve_item");
-      expect(out).toContain("**Long-term memory recall — durable cross-session lessons (search/get/history):** long_memory_search, long_memory_get, long_memory_history");
+      expect(out).toContain("**Session memory — this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve");
+      expect(out).toContain("**Long-term memory recall — durable cross-session lessons (search/get/history):** MemorySearch, MemoryGet, MemoryHistory");
 
       // Wallet transfers visible at normal band
-      expect(out).toContain("**Wallet transfers:** wallet_send_prepare, wallet_send_confirm");
+      expect(out).toContain("**Wallet transfers:** WalletSendPrepare, WalletSendConfirm");
 
       // Mission-only / setup-only categories are HIDDEN in agent chat
       expect(out).not.toContain("Mission setup draft");
       expect(out).not.toContain("Mission run stop");
-      // `loop_defer` IS present here: makeCtx is a FULL-permission agent session,
+      // `LoopDefer` IS present here: makeCtx is a FULL-permission agent session,
       // and owner decree 2026-08-03 gave those sessions the ability to wait
       // (`requiresAutonomousLoop`). Its absence was the "unlimited thoughts"
       // incident — an agent waiting on a bridge with no way to sleep.
-      expect(out).toContain("loop_defer");
+      expect(out).toContain("LoopDefer");
 
       // The compaction category is absent while nothing is prepared
       expect(out).not.toContain("Context compaction");
@@ -71,7 +71,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
   });
 
   describe("agent chat, barrier band", () => {
-    it("drops mutating tools; compact_apply appears only once a summary is ready", () => {
+    it("drops mutating tools; CompactApply appears only once a summary is ready", () => {
       const out = buildToolCatalogPrompt(makeCtx({ contextUsageBand: "barrier" }));
 
       // Readiness, not pressure, is what surfaces the tool.
@@ -80,10 +80,10 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
         makeCtx({ contextUsageBand: "barrier", hasCompactionSummaryReady: true }),
       );
       expect(ready).toContain(
-        "**Context compaction — applies the prepared summary:** compact_apply",
+        "**Context compaction — applies the prepared summary:** CompactApply",
       );
 
-      // Mutating categories disappear (long_memory_suggest is pressureSafety
+      // Mutating categories disappear (MemorySuggest is pressureSafety
       // "mutating", so its category drops at barrier too)
       expect(out).not.toContain("Wallet transfers");
       expect(out).not.toContain("suggest a durable cross-session lesson");
@@ -97,48 +97,48 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
   });
 
   describe("mission setup, normal band", () => {
-    it("includes mission_draft_update, excludes mission_stop and loop_defer", () => {
+    it("includes MissionDraftUpdate, excludes MissionStop and LoopDefer", () => {
       const out = buildToolCatalogPrompt(makeCtx({
         sessionKind: "mission",
         missionRunActive: false,
       }));
 
-      expect(out).toContain("**Mission setup draft:** mission_draft_update");
+      expect(out).toContain("**Mission setup draft:** MissionDraftUpdate");
       expect(out).not.toContain("Mission run stop");
-      expect(out).not.toContain("loop_defer");
+      expect(out).not.toContain("LoopDefer");
     });
   });
 
   describe("mission active run, normal band", () => {
-    it("includes mission_stop + loop_defer, excludes mission_draft_update", () => {
+    it("includes MissionStop + LoopDefer, excludes MissionDraftUpdate", () => {
       const out = buildToolCatalogPrompt(makeCtx({
         sessionKind: "mission",
         missionRunActive: true,
       }));
 
-      expect(out).toContain("**Mission run stop:** mission_stop");
+      expect(out).toContain("**Mission run stop:** MissionStop");
       // Labelled as the WAITING pattern, not a mission-run scheduling niche —
       // full agent sessions get the same tool.
-      expect(out).toContain("**Waiting — park the loop until an event you cannot make happen sooner:** loop_defer");
+      expect(out).toContain("**Waiting — park the loop until an event you cannot make happen sooner:** LoopDefer");
       expect(out).not.toContain("Mission setup draft");
     });
   });
 
   describe("mission active run, critical band", () => {
-    it("loop_defer SURVIVES at critical alongside mission_stop (both safe_at_barrier)", () => {
+    it("LoopDefer SURVIVES at critical alongside MissionStop (both safe_at_barrier)", () => {
       const out = buildToolCatalogPrompt(makeCtx({
         sessionKind: "mission",
         missionRunActive: true,
         contextUsageBand: "critical",
       }));
 
-      // mission_stop is safe_at_barrier — survives at critical
-      expect(out).toContain("**Mission run stop:** mission_stop");
-      // loop_defer is safe_at_barrier too (owner decree 2026-08-03): stripping the
+      // MissionStop is safe_at_barrier — survives at critical
+      expect(out).toContain("**Mission run stop:** MissionStop");
+      // LoopDefer is safe_at_barrier too (owner decree 2026-08-03): stripping the
       // one tool that STOPS the loop at ≥88% context, while telling the model to
       // "continue with read-only work", was the incident. Deferring writes one row
       // and ends the slice — the cheapest possible context action.
-      expect(out).toContain("loop_defer");
+      expect(out).toContain("LoopDefer");
       // Nothing prepared ⇒ no compaction category, even at critical.
       expect(out).not.toContain("Context compaction");
     });
@@ -146,25 +146,25 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
 
   it("a RESTRICTED agent session still has no way to defer (human in the loop)", () => {
     const out = buildToolCatalogPrompt(makeCtx({ permission: "restricted" }));
-    expect(out).not.toContain("loop_defer");
+    expect(out).not.toContain("LoopDefer");
   });
 
   describe("ordering preservation", () => {
     it("renders categories in TOOL_MAP_CATEGORIES declared order", () => {
       const out = buildToolCatalogPrompt(makeCtx());
       const lines = out.split("\n").filter(l => l.startsWith("**"));
-      // First content line MUST be Protocol discovery per declared order —
+      // First content line MUST be Protocol tool search per declared order —
       // this catches an accidental alphabetical sort (which would put
       // "Khalani" or another K-label earlier).
-      expect(lines[0]).toMatch(/^\*\*Protocol discovery:/);
+      expect(lines[0]).toMatch(/^\*\*Protocol tool search:/);
     });
 
     it("preserves tool order within Wallet transfers (prepare before confirm)", () => {
       const out = buildToolCatalogPrompt(makeCtx());
-      expect(out).toContain("**Wallet transfers:** wallet_send_prepare, wallet_send_confirm");
+      expect(out).toContain("**Wallet transfers:** WalletSendPrepare, WalletSendConfirm");
       // NOT alphabetical (confirm < prepare) — that would break the
       // 2-step transfer workflow signal codex flagged.
-      expect(out).not.toContain("wallet_send_confirm, wallet_send_prepare");
+      expect(out).not.toContain("WalletSendConfirm, WalletSendPrepare");
     });
   });
 
@@ -190,7 +190,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
     it("shows the Session memory category once the session has narrative chunks", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: true }));
       expect(out).toContain(
-        "**Session memory — this conversation/mission only:** session_memory_search, session_memory_resolve_item",
+        "**Session memory — this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve",
       );
     });
 

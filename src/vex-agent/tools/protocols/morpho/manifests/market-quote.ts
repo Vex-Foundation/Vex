@@ -28,6 +28,7 @@ import {
  */
 export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.quote",
+  publicName: "morpho__market_quote",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -112,7 +113,7 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         "Used when `direction` is `repay` and the repayment is PARTIAL. RAW base units of the LOAN token, at that "
-        + "token's own decimals: read `loanAsset.decimals` from `morpho.market.get`, not from token_find, because the "
+        + "token's own decimals: read `loanAsset.decimals` from `morpho.market.get`, not from TokenFind, because the "
         + "market names its own loan asset. Omit it and send `repayFullDebt: true` to price closing the debt "
         + "completely; sending both is refused.",
     },

@@ -258,6 +258,26 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["liquidatorAddress", "address of the party that PERFORMED a liquidation; the counterpart of `walletAddress`"],
   ["minBadDebtAssetsRaw", "floor on bad debt left by a liquidation, in RAW base units of the LOAN asset"],
   ["minSeizedAssetsRaw", "floor on collateral taken by a liquidation, in RAW base units of the COLLATERAL asset"],
+
+  // -- The two merge keys (Batch 2, owner decision D7) --------------
+  //
+  // Both exist because a near-duplicate tool was retired into a parameter, and
+  // both are deliberately GENERIC: a provider that publishes the same rows over
+  // several endpoints, or a registry that can be enriched by a live status
+  // read, is a shape this catalog already has more than one of.
+  //
+  // `feed` selects WHICH provider endpoint fills the same row shape. It is not
+  // `sort` (that orders rows we already have) and not `route` (that compares
+  // structurally different products): the rows come from different URLs whose
+  // freshness, ordering and populated fields differ, and the description says
+  // which. The accepted set is ALWAYS declared as an `enum`.
+  //
+  // `liveStatus` opts a local-registry read into a live provider status join.
+  // Off by default because it turns a read that cannot fail into one that can;
+  // and when it does fail the registry rows still return, with the state field
+  // null and a stated reason, never a failed call.
+  ["feed", "which provider FEED fills a shared row shape; the accepted set is declared as an `enum`"],
+  ["liveStatus", "join a live provider status onto a local registry read; degrades to a null state with a stated reason"],
 ]);
 
 /**
@@ -290,11 +310,11 @@ export const CHAIN_VALUE_PARAM_KEYS: readonly string[] = ["chain", "fromChain", 
 
 /**
  * The one sentence every chain-valued param ends with. Both spellings are real:
- * `token_find` hands the agent a NUMERIC chain id, and every resolver in the
+ * `TokenFind` hands the agent a NUMERIC chain id, and every resolver in the
  * tree accepts it alongside the slug.
  */
 export const CANONICAL_CHAIN_SENTENCE =
-  "Chain slug/alias, or the numeric chain id `token_find` returns (e.g. `base` or `8453`).";
+  "Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).";
 
 /**
  * The one sentence a RAW-amount param ends with. Rule 90: a raw amount must
@@ -302,7 +322,7 @@ export const CANONICAL_CHAIN_SENTENCE =
  * to get them rather than guessing 18.
  */
 export const CANONICAL_RAW_AMOUNT_SENTENCE =
-  "Raw base units as an integer string (not human decimals) — read the token's decimals from `token_find` first.";
+  "Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.";
 
 /** The one sentence a HUMAN-amount param ends with. */
 export const CANONICAL_HUMAN_AMOUNT_SENTENCE =

@@ -5,7 +5,7 @@
  * chunking (NOT a session episode — episode extraction was removed when
  * PR2 cut over to the per-session memory layer).
  *
- * The placeholder mentions `session_memory_search` as the recovery path because
+ * The placeholder mentions `SessionMemorySearch` as the recovery path because
  * The archive chunking worker will emit a narrative chunk that summarises the
  * archived tool output; the agent can fetch it semantically once that lands.
  */
@@ -17,6 +17,6 @@ export function buildGiantToolPlaceholder(
   return (
     `[oversized tool output — full payload archived at message_id=${bloatedMessageId}, ` +
     `compact_job_id=${compactJobId}. The narrative chunk for this material is ` +
-    `produced asynchronously by the archive chunking worker; query via session_memory_search once it lands.]`
+    `produced asynchronously by the archive chunking worker; query via SessionMemorySearch once it lands.]`
   );
 }

@@ -8,6 +8,7 @@ import { TRENCH_TRADES_DISCOVERY } from "../../embeddings/trench/trades.js";
 export const TRENCH_TRADES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.trades",
+    publicName: "trench__token_trades_list",
     namespace: "trench",
     lifecycle: "active",
     description:

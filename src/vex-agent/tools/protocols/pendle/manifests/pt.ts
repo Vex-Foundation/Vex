@@ -17,6 +17,7 @@ const SWAP_PARAMS = [
 export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.pt.quote",
+    publicName: "pendle__pt_quote",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -35,6 +36,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.pt.buy",
+    publicName: "pendle__pt_buy",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -47,6 +49,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.pt.sell",
+    publicName: "pendle__pt_sell",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -59,6 +62,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.pt.redeem",
+    publicName: "pendle__pt_redeem",
     namespace: "pendle",
     lifecycle: "active",
     description:

@@ -123,7 +123,7 @@ const webSearchPayloadSchema = z
  * The classifier's OWN web request — never the tool's agent-facing defaults.
  *
  * 10 rows with no page reads is the evidence set this worker has always used;
- * `web_research` now defaults to 6 rows + 3 page reads for the agent. Spelling
+ * `WebResearch` now defaults to 6 rows + 3 page reads for the agent. Spelling
  * every field out here means a change to that default cannot silently shrink a
  * regime snapshot's evidence (the failure that left every snapshot Tavily-only
  * for a month went unnoticed for exactly this class of reason).

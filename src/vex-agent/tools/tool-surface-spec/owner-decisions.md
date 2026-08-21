@@ -81,3 +81,25 @@ real transfer to 0xebbD6B3746d7e40DD6291566821f3a8159773836 from the local
 funded wallet (vault credentials in agents-colab/agents_dm/.env), executed
 through the normal approval flow after the fix lands, on the cheapest funded
 chain.
+
+## D8. Protocol description template: positive-only by default
+
+Recorded 2026-08-21, binding for the description rewrite wave (Batch 3).
+
+Crypto protocol tools are not GitHub tools: most have no overlapping sibling
+to be confused with. The default protocol description is POSITIVE-ONLY:
+
+- what the tool offers;
+- when to use it;
+- what it returns;
+- SPENDS + approval + preconditions on mutations (unchanged, rule 90).
+
+A "use X instead" routing sentence is permitted ONLY where a real overlap
+exists and the model demonstrably picks wrong without it, and it names the
+alternative concretely. The known overlap pairs: swap KyberSwap vs Uniswap,
+bridge Khalani vs Relay, yield Morpho (variable) vs Pendle (fixed), the
+search families. Nothing else carries a when-NOT clause; boilerplate
+negative guidance on non-overlapping tools is a defect, not diligence. This
+matches the reference's own rule (a second sentence exists only to resolve
+a decision the model would otherwise get wrong) rather than copying its
+surface form.

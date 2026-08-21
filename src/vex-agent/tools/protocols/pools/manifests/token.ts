@@ -9,6 +9,7 @@ import { POOLS_TOKEN_DISCOVERY } from "../../embeddings/pools/token.js";
 export const POOLS_TOKEN_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.token",
+    publicName: "pools__token_get",
     namespace: "pools",
     lifecycle: "active",
     description:

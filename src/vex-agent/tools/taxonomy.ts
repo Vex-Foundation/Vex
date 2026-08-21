@@ -19,14 +19,14 @@
  *  - `local_write`              — mutates Vex-local DB / file / memory state
  *                                 (memory suggestions, mission draft, compact).
  *  - `schedule`                 — defers / wakes engine execution
- *                                 (loop_defer); separate from local_write
+ *                                 (LoopDefer); separate from local_write
  *                                 because policy gates may treat scheduling
  *                                 differently from data writes.
  *  - `approval_prepare`         — produces a prepared intent that needs a
  *                                 follow-up confirm step (wallet send prepare).
  *                                 Phase 4 will back this with DB-backed intents.
  *  - `user_wallet_broadcast`    — broadcasts a transaction signed by the
- *                                 USER's local wallet (wallet_send_confirm +
+ *                                 USER's local wallet (WalletSendConfirm +
  *                                 future protocol mutations that bind user
  *                                 wallet keys).
  *  - `external_post`            — mutates external system state via an API

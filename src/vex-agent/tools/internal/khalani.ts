@@ -24,4 +24,4 @@ function makeKhalaniAliasHandler(name: KhalaniInternalToolName): InternalHandler
   );
 }
 
-export const handleTokenFind = makeKhalaniAliasHandler("token_find");
+export const handleTokenFind = makeKhalaniAliasHandler("TokenFind");

@@ -10,11 +10,11 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
   whenToUse:
     "Use to discover or vet a Virtuals agent token before trading it: list/screen agents on a chain, get one agent's full detail, watch the 'what just graduated' feed, or browse the genesis launch calendar. The trading rules live in the Virtuals Agent Tokens doctrine below.",
   preferInstead:
-    "Use `dexscreener` for general multi-chain pair/liquidity research, and `swap_quote`/`swap_execute` (or `solana.*` on Solana) to execute the trade — Virtuals never executes.",
+    "Use `dexscreener` for general multi-chain pair/liquidity research, and `SwapQuote`/`SwapExecute` (or `solana.*` on Solana) to execute the trade — Virtuals never executes.",
   exampleQueries: [
-    'discover_tools(query="list agent tokens on robinhood", namespace="virtuals")',
-    'discover_tools(query="virtuals agent detail anti-sniper", namespace="virtuals")',
-    'discover_tools(query="what just graduated", namespace="virtuals")',
+    'ToolSearch(query="list agent tokens on robinhood", namespace="virtuals")',
+    'ToolSearch(query="virtuals agent detail anti-sniper", namespace="virtuals")',
+    'ToolSearch(query="what just graduated", namespace="virtuals")',
   ],
   aliases: ["virtuals", "agent tokens", "virtuals protocol", "anti-sniper window", "agent token graduations"],
   discoveryHints: [

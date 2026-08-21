@@ -49,6 +49,7 @@ const DRY_RUN_PARAM = {
 export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.sy.mint",
+    publicName: "pendle__sy_mint",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -80,6 +81,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.sy.redeem",
+    publicName: "pendle__sy_redeem",
     namespace: "pendle",
     lifecycle: "active",
     description:

@@ -227,10 +227,10 @@ describe("relay.bridge — a refused native charge is reported honestly", () => 
     expect(message).toMatch(/NOT a network, provider or transport failure/i);
     expect(message).toMatch(/re-sending the SAME quote will be refused again/i);
     // Whether a fresh quote can succeed — the actionable path, stated as one.
-    expect(message).toMatch(/Get a fresh relay\.quote\.get for this route and retry/i);
+    expect(message).toMatch(/Get a fresh relay__bridge_quote_get for this route and retry/i);
     expect(message).toMatch(/solver routing changes between quotes/i);
     // And the fallback when it does not.
-    expect(message).toMatch(/bridge this route with khalani\.bridge instead/i);
+    expect(message).toMatch(/bridge this route with khalani__bridge_execute instead/i);
   });
 
   it("marks the SAME quote as not retryable — a re-send is refused deterministically", async () => {

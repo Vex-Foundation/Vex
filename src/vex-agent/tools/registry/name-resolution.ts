@@ -64,13 +64,15 @@
  * - An alias can never shadow a live tool: a `deprecatedName` colliding with a
  *   live internal name or a live manifest id is a test failure.
  *
- * BATCH 1 IS IDENTITY-ONLY. No rename has happened yet, so no retired name
- * exists and {@link DEPRECATED_TOOL_ALIASES} is empty: every live name resolves
- * to itself by pass-through, and every integration above is a provable no-op.
- * Enumerating self-referential entries for every live tool would add a second,
- * drifting copy of the catalog without changing a single result; the regression
- * test instead iterates the REAL registry and protocol catalog and asserts the
- * identity property against them.
+ * WHAT THE TABLE HOLDS TODAY. Batch 2 renamed the 31 core internal tools to
+ * PascalCase and merged the two discovery tools into `ToolSearch`, so
+ * {@link DEPRECATED_TOOL_ALIASES} carries 33 `kind: "internal"` entries and
+ * nothing else. Only RETIRED names are
+ * enumerated: a live name resolves to itself by pass-through, and listing
+ * self-referential entries for every live tool would add a second, drifting copy
+ * of the catalog without changing a single result. The regression test instead
+ * iterates the REAL registry and protocol catalog and asserts the identity
+ * property against them.
  */
 
 /**
@@ -127,6 +129,95 @@ export interface DeprecatedToolAlias {
   readonly reason: string;
 }
 
+/** The release the Batch 2 core rename and discovery merge landed in. */
+const CORE_RENAME_SINCE = "1.0.0 (tool-surface Batch 2, core PascalCase rename + ToolSearch merge)";
+
+/**
+ * The removal condition every Batch 2 core-rename alias carries.
+ *
+ * Owner decision D5 (`tools/tool-surface-spec/owner-decisions.md`) selects the
+ * OWNER-ACCEPTANCE branch of section 3.3's governing rule rather than the
+ * quiescence branch: the product is a production preview, aliases exist to keep
+ * IN-FLIGHT state safe (a stored approval, the rename transition itself), not to
+ * promise indefinite compatibility, and the owner accepts that a durable
+ * artifact - an old enabled `session_plans.plan_md`, a memory entry, a re-read
+ * transcript - may outlive the alias and receive the unknown-tool answer with
+ * the discovery hint.
+ *
+ * The `kind: "internal"` half of the condition is still a live CHECK, not a
+ * date: an internal call is stored as `{command, args}` with the NAME as its
+ * identity, so an unresolved `approval_queue` row can still name the old tool
+ * and a cold resume would replay it.
+ */
+const CORE_RENAME_REMOVE_AFTER =
+  "No unresolved approval_queue row references the deprecated name and the approval "
+  + "expiry window has elapsed. Residual plan / memory / transcript re-emission is "
+  + "accepted by the owner (D5) rather than waited out.";
+
+/**
+ * Old core name to new core name, in `tool-surface-spec/core-naming.md` order,
+ * with the per-entry `reason` the generated deprecation docs row prints.
+ */
+const CORE_RENAMES: readonly (readonly [string, string, string])[] = [
+  // 3.2 swap and bridge action aliases
+  ["swap_quote", "SwapQuote", "PascalCase Resource+Verb grammar"],
+  ["swap_execute", "SwapExecute", "PascalCase Resource+Verb grammar"],
+  ["swap_quote_uniswap", "SwapQuoteUniswap", "PascalCase venue-suffixed grammar"],
+  ["swap_execute_uniswap", "SwapExecuteUniswap", "PascalCase venue-suffixed grammar"],
+  // The one rename that fixes a MEANING defect, not only a spelling: the bare
+  // `bridge` was the mutating fund-moving router while its read-only sibling
+  // carried the explicit `_quote` suffix, so the SHORTER name was the DANGEROUS
+  // one. `BridgeExecute` puts it in the same grammar as `SwapExecute`.
+  ["bridge", "BridgeExecute", "bare `bridge` was the mutating router; the verb is now explicit"],
+  ["bridge_quote", "BridgeQuote", "PascalCase Resource+Verb grammar"],
+  ["bridge_status", "BridgeStatus", "PascalCase Resource+Verb grammar"],
+  ["bridge_quote_relay", "BridgeQuoteRelay", "PascalCase venue-suffixed grammar"],
+  ["bridge_execute_relay", "BridgeExecuteRelay", "PascalCase venue-suffixed grammar"],
+  ["token_check", "TokenCheck", "PascalCase Resource+Verb grammar"],
+  // 3.3 token resolution
+  ["token_find", "TokenFind", "PascalCase Resource+Verb grammar"],
+  // 3.4 reads, research, and wallet
+  ["web_research", "WebResearch", "PascalCase Resource+Verb grammar"],
+  ["twitter_account", "TwitterAccount", "PascalCase Resource+Verb grammar"],
+  ["agent_scan", "AgentScan", "PascalCase; preserves the AgentScan product term"],
+  ["chain_read", "ChainRead", "PascalCase Resource+Verb grammar"],
+  ["wallet_balances", "WalletBalances", "PascalCase Resource+Verb grammar"],
+  ["wallet_track_token", "WalletTrackToken", "PascalCase Resource+Verb grammar"],
+  ["wallet_send_prepare", "WalletSendPrepare", "PascalCase Resource+Verb grammar"],
+  ["wallet_send_confirm", "WalletSendConfirm", "PascalCase Resource+Verb grammar"],
+  ["units_convert", "UnitsConvert", "PascalCase Resource+Verb grammar"],
+  // 3.5 session and durable memory. The `long_` qualifier is DROPPED and
+  // `session_` KEPT, deliberately: the durable store is always visible, so the
+  // unmarked name belongs to it and the qualified name to the narrower one.
+  ["session_memory_search", "SessionMemorySearch", "PascalCase Resource+Verb grammar"],
+  ["session_memory_resolve_item", "SessionMemoryResolve", "PascalCase; drops the redundant `_item`"],
+  ["long_memory_search", "MemorySearch", "durable memory takes the unqualified name"],
+  ["long_memory_get", "MemoryGet", "durable memory takes the unqualified name"],
+  ["long_memory_history", "MemoryHistory", "durable memory takes the unqualified name"],
+  ["long_memory_suggest", "MemorySuggest", "durable memory takes the unqualified name"],
+  // 3.6 session control
+  ["compact_apply", "CompactApply", "PascalCase Resource+Verb grammar"],
+  ["loop_defer", "LoopDefer", "PascalCase; keeps the prompt stack's park-the-loop word order"],
+  ["mission_draft_update", "MissionDraftUpdate", "PascalCase; the write verb is load-bearing"],
+  ["mission_stop", "MissionStop", "PascalCase Resource+Verb grammar"],
+  ["plan_write", "PlanWrite", "PascalCase Resource+Verb grammar"],
+  // 3.1 the discovery MERGE. Both retired names resolve to the same live tool,
+  // which is the many-to-one case the table explicitly permits and the reason
+  // nothing may invert it.
+  //
+  // THE ARGUMENT SHAPES DIFFER, AND THAT IS HANDLED, NOT IGNORED. An alias maps
+  // a NAME; it cannot map arguments. A stale call carrying the old `toolIds` or
+  // `list` argument therefore ROUTES to `ToolSearch` and is then
+  // answered by name — `dispatcher/tool-search-args.ts` rejects `toolIds` and
+  // `list` explicitly, naming the mode that replaced each. The alternative,
+  // leaving the names unmapped, would answer the same call with the generic
+  // unknown-tool line and teach the model nothing. A silent misparse is not
+  // reachable: the new schema declares `additionalProperties: false` and the
+  // parser reads no key it does not know.
+  ["discover_tools", "ToolSearch", "merged into ToolSearch: search is now one mode of one tool"],
+  ["describe_tools", "ToolSearch", "merged into ToolSearch select mode; the `toolIds` argument is retired for `select:`"],
+];
+
 /**
  * The authored alias table.
  *
@@ -138,9 +229,30 @@ export interface DeprecatedToolAlias {
  * own `removeAfter` condition is met, as a reviewed change: the table shrinks by
  * deliberate edit, never by cleanup sweep.
  *
- * Empty in Batch 1: the rename waves land in Batch 2.
+ * Batch 2 populates it with the 31 core renames of
+ * `tools/tool-surface-spec/core-naming.md` section 3, plus the two entries the
+ * `ToolSearch` merge adds for the retired discovery tools.
+ *
+ * `execute_tool` is deliberately ABSENT even though its `ToolDef` is retired.
+ * It is not a renamed tool: the `{toolId, params}` envelope is still the STORED
+ * form of an approved protocol call and still dispatches under that exact name
+ * (`dispatcher/protocol-route.ts`), so mapping it to anything would break the
+ * cold resume the retirement was required to preserve. A MODEL that emits it is
+ * answered by `dispatchTool`'s refusal, which is a different mechanism with a
+ * different message.
  */
-export const DEPRECATED_TOOL_ALIASES: readonly DeprecatedToolAlias[] = Object.freeze([]);
+export const DEPRECATED_TOOL_ALIASES: readonly DeprecatedToolAlias[] = Object.freeze(
+  CORE_RENAMES.map(([deprecatedName, canonicalId, reason]) =>
+    Object.freeze({
+      deprecatedName,
+      canonicalId,
+      kind: "internal" as const,
+      since: CORE_RENAME_SINCE,
+      removeAfter: CORE_RENAME_REMOVE_AFTER,
+      reason,
+    }),
+  ),
+);
 
 /**
  * Hot-path lookups, derived from the authored table.

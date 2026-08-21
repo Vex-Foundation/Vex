@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "Confirm and broadcast a prepared transfer. Requires approval in restricted/off mode.",
+      "name": "WalletSendConfirm",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Prepared intent ID",
+            "type": "string"
+          },
+          "walletFamily": {
+            "description": "Which wallet FAMILY to act on — 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
+            "enum": [
+              "eip155",
+              "solana"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "walletFamily",
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

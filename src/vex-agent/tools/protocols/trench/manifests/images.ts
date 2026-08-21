@@ -14,6 +14,7 @@ import { TRENCH_IMAGES_DISCOVERY } from "../../embeddings/trench/images.js";
 export const TRENCH_IMAGES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.images",
+    publicName: "trench__images_list",
     namespace: "trench",
     lifecycle: "active",
     description:

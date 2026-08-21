@@ -1,7 +1,7 @@
 /**
- * Stage 8c — `bridge` MUTATING protocol-alias dedicated dispatch path.
+ * Stage 8c — `BridgeExecute` MUTATING protocol-alias dedicated dispatch path.
  *
- * Proves the EXISTING 8b dedicated dispatcher branch picks up the new `bridge`
+ * Proves the EXISTING 8b dedicated dispatcher branch picks up the new `BridgeExecute`
  * alias with NO dispatcher change: the branch routes ANY MUTATING_PROTOCOL_ALIAS_
  * ROUTERS key through `executeProtocolTool` (which solely owns the prequote gate
  * → approval gate → capture ordering).
@@ -81,7 +81,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe("bridge alias — routing + translation", () => {
   it("routes to khalani.bridge with the bridge params passed through verbatim", async () => {
-    await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b1" }, ctx());
+    await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b1" }, ctx());
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
     expect(req.toolId).toBe("khalani.bridge");
@@ -99,7 +99,7 @@ describe("bridge alias — routing + translation", () => {
     // source wallet and rejected by name (see the test below).
     await dispatchTool(
       {
-        name: "bridge",
+        name: "BridgeExecute",
         args: {
           ...BRIDGE_ARGS,
           tradeType: "EXACT_OUTPUT",
@@ -124,7 +124,7 @@ describe("bridge alias — routing + translation", () => {
     // vector below, and prequote binding does not help: an attacker setting the
     // same address on the quote AND the execute collides the hashes.
     const result = await dispatchTool(
-      { name: "bridge", args: { ...BRIDGE_ARGS, refundTo: "0x" + "cd".repeat(20) }, toolCallId: "b2r" },
+      { name: "BridgeExecute", args: { ...BRIDGE_ARGS, refundTo: "0x" + "cd".repeat(20) }, toolCallId: "b2r" },
       ctx(),
     );
 
@@ -146,11 +146,11 @@ describe("bridge alias — routing + translation", () => {
     ]) {
       executeProtocolTool.mockClear();
       const result = await dispatchTool(
-        { name: "bridge", args: { ...BRIDGE_ARGS, ...bad }, toolCallId: "bfee" },
+        { name: "BridgeExecute", args: { ...BRIDGE_ARGS, ...bad }, toolCallId: "bfee" },
         ctx(),
       );
       expect(result.success).toBe(false);
-      expect(result.output).toMatch(/^bridge:/);
+      expect(result.output).toMatch(/^BridgeExecute:/);
       expect(result.output).toMatch(/referrer/);
       expect(result.output).toContain("not an accepted parameter");
       expect(executeProtocolTool).not.toHaveBeenCalled();
@@ -164,22 +164,22 @@ describe("bridge alias — routing + translation", () => {
     for (const bad of [{ routeId: "r1" }, { depositMethod: "PERMIT2" }]) {
       executeProtocolTool.mockClear();
       const result = await dispatchTool(
-        { name: "bridge", args: { ...BRIDGE_ARGS, ...bad }, toolCallId: "b2x" },
+        { name: "BridgeExecute", args: { ...BRIDGE_ARGS, ...bad }, toolCallId: "b2x" },
         ctx(),
       );
       expect(result.success).toBe(false);
-      expect(result.output).toMatch(/^bridge:/);
+      expect(result.output).toMatch(/^BridgeExecute:/);
       expect(executeProtocolTool).not.toHaveBeenCalled();
     }
   });
 
   it("missing required arg (amountRaw) → clear reject, NO dispatch", async () => {
     const result = await dispatchTool(
-      { name: "bridge", args: { fromChain: "ethereum", fromToken: EVM_TOKEN, toChain: "base", toToken: "0x" }, toolCallId: "b3" },
+      { name: "BridgeExecute", args: { fromChain: "ethereum", fromToken: EVM_TOKEN, toChain: "base", toToken: "0x" }, toolCallId: "b3" },
       ctx(),
     );
     expect(result.success).toBe(false);
-    expect(result.output).toMatch(/^bridge:/);
+    expect(result.output).toMatch(/^BridgeExecute:/);
     expect(result.output).toContain("amountRaw");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
@@ -192,7 +192,7 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
   it("toChain 'robinhood' → relay.bridge (NOT khalani), Khalani-only fields dropped", async () => {
     await dispatchTool(
       {
-        name: "bridge",
+        name: "BridgeExecute",
         args: {
           fromChain: "base",
           fromToken: BASE_USDC,
@@ -229,7 +229,7 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
   it("fromChain '4663' → relay.bridge (either side local routes to Relay)", async () => {
     await dispatchTool(
       {
-        name: "bridge",
+        name: "BridgeExecute",
         args: { fromChain: "4663", fromToken: VIRTUAL, toChain: "base", toToken: BASE_USDC, amountRaw: "1000000" },
         toolCallId: "rhb2",
       },
@@ -242,7 +242,7 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
 
 describe("bridge alias — skips the internal approval gate (executeProtocolTool owns approval)", () => {
   it("restricted + unapproved STILL reaches executeProtocolTool (no dispatcher-side short-circuit)", async () => {
-    await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b4" }, ctx({ sessionPermission: "restricted", approved: false }));
+    await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b4" }, ctx({ sessionPermission: "restricted", approved: false }));
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
   });
 
@@ -254,7 +254,7 @@ describe("bridge alias — skips the internal approval gate (executeProtocolTool
       actionKind: "user_wallet_broadcast",
       prequote: { verdict: "unknown" },
     });
-    const result = await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b5" }, ctx());
+    const result = await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b5" }, ctx());
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "unknown" });
     expect(result.actionKind).toBe("user_wallet_broadcast");
@@ -262,8 +262,8 @@ describe("bridge alias — skips the internal approval gate (executeProtocolTool
 });
 
 describe("bridge alias — path-identity with direct execute_tool", () => {
-  it("`bridge` and execute_tool({toolId:'khalani.bridge'}) reach executeProtocolTool with identical toolId+params", async () => {
-    await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b6a" }, ctx());
+  it("`BridgeExecute` and execute_tool({toolId:'khalani.bridge'}) reach executeProtocolTool with identical toolId+params", async () => {
+    await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b6a" }, ctx());
     const aliasReq = executeProtocolTool.mock.calls[0]?.[0];
 
     executeProtocolTool.mockClear();
@@ -281,10 +281,10 @@ describe("bridge alias — path-identity with direct execute_tool", () => {
 describe("bridge alias - mission auto-retry-unsafe stamp is conservative", () => {
   it("stamps the mission run UNSAFE before dispatch", async () => {
     getProtocolManifest.mockReturnValue({ mutating: true, actionKind: "user_wallet_broadcast" });
-    await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b7" }, ctx({ missionRunId: "run-1" }));
+    await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b7" }, ctx({ missionRunId: "run-1" }));
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
     // The stamp no longer resolves the TARGET manifest for THIS alias: since
-    // the venue depends on the live Khalani chain registry, `bridge` is the one
+    // the venue depends on the live Khalani chain registry, `BridgeExecute` is the one
     // ASYNC router, and the classification site is synchronous. It falls back
     // to the alias's own registry `mutating` flag, exactly as an un-routable
     // call does. The stamped VALUE is unchanged - both bridge targets are
@@ -294,7 +294,7 @@ describe("bridge alias - mission auto-retry-unsafe stamp is conservative", () =>
 
   it("FAIL-CLOSED: a stamp write failure blocks dispatch", async () => {
     markAutoRetryUnsafe.mockRejectedValueOnce(new Error("db down"));
-    const result = await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b8" }, ctx({ missionRunId: "run-1" }));
+    const result = await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b8" }, ctx({ missionRunId: "run-1" }));
     expect(result.success).toBe(false);
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
@@ -302,7 +302,7 @@ describe("bridge alias - mission auto-retry-unsafe stamp is conservative", () =>
 
 describe("bridge alias — pressure-band hard-deny (target = mutating)", () => {
   it("barrier → mutating deny, NO dispatch", async () => {
-    const result = await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b9" }, ctx({ contextUsageBand: "barrier" }));
+    const result = await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b9" }, ctx({ contextUsageBand: "barrier" }));
     expect(result.success).toBe(false);
     expect(result.output).toContain("blocked");
     expect(result.output).toContain("barrier");
@@ -310,7 +310,7 @@ describe("bridge alias — pressure-band hard-deny (target = mutating)", () => {
   });
 
   it("critical → mutating deny, NO dispatch", async () => {
-    const result = await dispatchTool({ name: "bridge", args: BRIDGE_ARGS, toolCallId: "b10" }, ctx({ contextUsageBand: "critical" }));
+    const result = await dispatchTool({ name: "BridgeExecute", args: BRIDGE_ARGS, toolCallId: "b10" }, ctx({ contextUsageBand: "critical" }));
     expect(result.success).toBe(false);
     expect(result.output).toContain("critical");
     expect(executeProtocolTool).not.toHaveBeenCalled();

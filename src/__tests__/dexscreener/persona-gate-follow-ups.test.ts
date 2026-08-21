@@ -142,7 +142,9 @@ describe("attention discloses its missing timestamps, and why", () => {
   });
 
   it("points at the feed that IS time-ordered instead of inventing one here", () => {
-    expect(toolById("dexscreener.attention").description).toContain("dexscreener.profiles.recent");
+    expect(toolById("dexscreener.attention").description).toContain(
+      "dexscreener.profiles with feed: recentUpdates",
+    );
   });
 
   it("declares no freshness param it could not honour", () => {

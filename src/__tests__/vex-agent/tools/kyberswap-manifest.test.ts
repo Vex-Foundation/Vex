@@ -9,14 +9,15 @@ describe("kyberswap manifest", () => {
   // Agent Scan plan §4.2 deleted limit-order (10) + zap (4) tooling and
   // collapsed swap.sell/swap.buy into ONE unified swap.execute.
 
-  it("has 5 tools total", () => {
-    expect(KYBERSWAP_TOOLS).toHaveLength(5);
+  // 5 before the Batch 2 near-duplicate merge (owner decision D7) retired
+  // `kyberswap.chains.supported` into `kyberswap.chains`'s `liveStatus` param.
+  it("has 4 tools total", () => {
+    expect(KYBERSWAP_TOOLS).toHaveLength(4);
   });
 
   const EXPECTED_TOOL_IDS = [
-    // Chains (2)
+    // Chains (1)
     "kyberswap.chains",
-    "kyberswap.chains.supported",
     // Tokens (1)
     "kyberswap.tokens.check",
     // Swap (2)
@@ -25,7 +26,7 @@ describe("kyberswap manifest", () => {
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(5);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(4);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {

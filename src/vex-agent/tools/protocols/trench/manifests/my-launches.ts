@@ -9,6 +9,7 @@ import { TRENCH_MY_LAUNCHES_DISCOVERY } from "../../embeddings/trench/my-launche
 export const TRENCH_MY_LAUNCHES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.my_launches",
+    publicName: "trench__my_launches_list",
     namespace: "trench",
     lifecycle: "active",
     description:

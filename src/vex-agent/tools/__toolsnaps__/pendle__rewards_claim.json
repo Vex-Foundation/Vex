@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Claim accrued interest and rewards from your Pendle positions on one chain in a single sweep — collects yield earned by held YTs and rewards from liquidity positions, sent to your wallet. Moves ONLY accrued income, never principal (converting interest may grant the Router an exact allowance on the market's own SY). Approval-gated; pins the canonical Pendle Router. An unscoped claim sweeps up to 10 held markets per transaction (a gas bound) and ALWAYS reports eligibleMarkets plus the exact skippedMarkets it left out; selection order is stable, so repeating the call reaches the same markets again — claim a skipped one by passing its address as market, which is not capped.",
+      "name": "pendle__rewards_claim",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Preview the positions that would be claimed — including eligibleMarkets and skippedMarkets — without executing.",
+            "type": "boolean"
+          },
+          "market": {
+            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market — the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.claim"
+  }
+}

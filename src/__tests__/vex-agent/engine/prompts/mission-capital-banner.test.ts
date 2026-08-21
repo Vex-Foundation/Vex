@@ -77,7 +77,7 @@ describe("renderMissionCapitalBanner", () => {
       "- VEX held at start: 6802.264854 (raw 6802264854000000000000 at 18 decimals).",
     );
     expect(banner).toContain("Do not recompute them from the transcript");
-    expect(banner).toContain('`agent_scan view="mission_baseline"`');
+    expect(banner).toContain('`AgentScan view="mission_baseline"`');
     // No caveat lines when there is nothing to caveat.
     expect(banner).not.toContain("no USD price");
     expect(banner).not.toContain("Freshness caveat");

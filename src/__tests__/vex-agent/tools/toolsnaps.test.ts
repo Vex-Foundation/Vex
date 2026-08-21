@@ -96,11 +96,19 @@ function kindOf(payload: JsonValue): string | undefined {
 describe("tool contract snapshots", () => {
   it("projects the expected catalog size", () => {
     const internal = contracts.filter((c) => kindOf(c.payload) === "internal");
-    // 34 internal ToolDefs + 137 protocol manifests, counted from the live
-    // registry and manifest catalogs. A deliberate catalog change updates this
-    // expectation in the same commit.
-    expect(internal).toHaveLength(34);
-    expect(contracts).toHaveLength(171);
+    // The INTERNAL count is pinned literally, because the internal registry is
+    // small, hand-authored, and a change to it is always a reviewed contract
+    // change. 34 -> 32: the ToolSearch merge deleted the `describe_tools` and
+    // `execute_tool` ToolDefs (`registry/protocol.ts`).
+    expect(internal).toHaveLength(32);
+
+    // The TOTAL is asserted STRUCTURALLY - every registered tool and every
+    // manifest gets exactly one contract, and nothing else does. A literal was
+    // the wrong instrument here: it duplicated the protocol-catalog size, which
+    // the manifest lane already pins in its own suites, so a legitimate
+    // protocol merge failed this assertion in an unrelated lane and taught
+    // whoever hit it to edit a number rather than review a catalog change.
+    expect(contracts).toHaveLength(getAllTools().length + PROTOCOL_TOOLS.length);
   });
 
   /**
@@ -111,8 +119,14 @@ describe("tool contract snapshots", () => {
    * stale number in a document.
    */
   it("pins the maximum simultaneous model-visible tool count", () => {
-    expect(internalVisibleOrder).toHaveLength(32);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(72);
+    // 32 -> 31, and the worst case 72 -> 71. The ToolSearch merge deleted two
+    // registered ToolDefs (`describe_tools` merged into a MODE, `execute_tool`
+    // retired) while `execute_tool` had already been withheld from the visible
+    // surface, so the visible count drops by exactly one: the merged
+    // `describe_tools`. 32 registered, minus `MissionDraftUpdate`, which the
+    // baseline's ACTIVE RUN cannot hold at the same time as mission setup.
+    expect(internalVisibleOrder).toHaveLength(31);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(71);
   });
 
   it("derives its env gates from the live catalogs", () => {

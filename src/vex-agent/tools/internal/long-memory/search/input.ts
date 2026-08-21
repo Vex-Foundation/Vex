@@ -1,5 +1,5 @@
 /**
- * `long_memory_search` input contract (step 1 of the handler, split out in
+ * `MemorySearch` input contract (step 1 of the handler, split out in
  * 0R.15, refactor-only): the accepted param set, the snake_case → camelCase
  * mapping onto the Zod schema, and the readable steering message for a
  * rejected input. An unknown key is REJECTED, never silently dropped.

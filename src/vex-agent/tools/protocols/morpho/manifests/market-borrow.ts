@@ -35,6 +35,7 @@ import {
  */
 export const MORPHO_MARKET_BORROW_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.borrow",
+  publicName: "morpho__market_borrow",
   namespace: "morpho",
   lifecycle: "active",
   description:

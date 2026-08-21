@@ -29,8 +29,8 @@ const { handleChainRead } = await import("@vex-agent/tools/internal/chain-read.j
 const { parseWebResearchRequest } = await import(
   "@vex-agent/tools/internal/web-research/search-options.js"
 );
-const { parseDiscoverToolsArgs } = await import(
-  "@vex-agent/tools/dispatcher/discover-tools-args.js"
+const { parseToolSearchArgs } = await import(
+  "@vex-agent/tools/dispatcher/tool-search-args.js"
 );
 const { validatePrepareParams, validateConfirmParams } = await import(
   "@vex-agent/tools/internal/wallet/send/validation.js"
@@ -183,22 +183,28 @@ describe("a wrong TYPE is never reported as MISSING", () => {
   });
 });
 
-describe("discover_tools — a supplied param is never silently discarded", () => {
+describe("ToolSearch — a supplied param is never silently discarded", () => {
   it("coerces the lossless string spelling of limit", () => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "10" });
-    expect(parsed).toEqual({ ok: true, args: { query: "swap", limit: 10, list: false } });
+    const parsed = parseToolSearchArgs({ query: "swap", limit: "10" });
+    expect(parsed).toEqual({ ok: true, args: { mode: "query", query: "swap", limit: 10 } });
   });
 
-  it("coerces the string spelling of list", () => {
-    const parsed = parseDiscoverToolsArgs({ namespace: "khalani", list: "true" });
-    expect(parsed.ok && parsed.args.list).toBe(true);
+  it("REJECTS the retired `list` argument by name rather than coercing it", () => {
+    // `list: true` is how the retired discovery tool asked for a namespace
+    // listing. A bare `namespace` IS the listing now, so the old spelling is
+    // answered by name with the mode that replaced it rather than silently
+    // honoured — a stale call must learn the new grammar, not work by accident.
+    const parsed = parseToolSearchArgs({ namespace: "khalani", list: "true" });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`list` is retired");
   });
 
   it("REJECTS an over-max limit BY NAME rather than silently clamping it", () => {
     // Owner clarification 2026-08-03: the agent sizes its own working set, but
     // the ceiling is real (it bounds the injected function-schema set). A
     // silent clamp would hand back fewer tools than asked for, with no signal.
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: 50 });
+    const parsed = parseToolSearchArgs({ query: "swap", limit: 50 });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.message).toContain("limit 50");
@@ -207,8 +213,11 @@ describe("discover_tools — a supplied param is never silently discarded", () =
   });
 
   it("accepts the maximum limit itself (the boundary is not off by one)", () => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: 20 });
-    expect(parsed.ok && parsed.args.limit).toBe(20);
+    const parsed = parseToolSearchArgs({ query: "swap", limit: 20 });
+    // Narrow through the mode discriminator rather than reaching for `limit`
+    // on the union: `limit` is a QUERY-mode field, and the union is what makes
+    // "a select carrying a limit" unrepresentable in the first place.
+    expect(parsed.ok && parsed.args.mode === "query" && parsed.args.limit).toBe(20);
   });
 
   // The parser used to accept every one of these and let discovery floor,
@@ -221,7 +230,7 @@ describe("discover_tools — a supplied param is never silently discarded", () =
     ["NaN", Number.NaN],
     ["negative infinity", Number.NEGATIVE_INFINITY],
   ])("REJECTS %s limit BY NAME with the legal range", (_label, limit) => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit });
+    const parsed = parseToolSearchArgs({ query: "swap", limit });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.message).toContain("limit must be a whole number between 1 and 20");
@@ -230,43 +239,109 @@ describe("discover_tools — a supplied param is never silently discarded", () =
   });
 
   it("REJECTS the string spelling of an out-of-range limit the same way", () => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "0" });
+    const parsed = parseToolSearchArgs({ query: "swap", limit: "0" });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.message).toContain("between 1 and 20");
   });
 
   it("accepts the minimum limit itself (the lower boundary is not off by one)", () => {
-    expect(parseDiscoverToolsArgs({ query: "swap", limit: 1 }).ok).toBe(true);
+    expect(parseToolSearchArgs({ query: "swap", limit: 1 }).ok).toBe(true);
   });
 
   it("REJECTS positive infinity through the over-max lane, still by name", () => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: Number.POSITIVE_INFINITY });
+    const parsed = parseToolSearchArgs({ query: "swap", limit: Number.POSITIVE_INFINITY });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.message).toContain("maximum of 20");
   });
 
   it("REJECTS a wrong-typed limit by name instead of dropping it", () => {
-    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "ten" });
+    const parsed = parseToolSearchArgs({ query: "swap", limit: "ten" });
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.message).toContain("limit");
-    expect(parsed.message).toContain("NOT applied");
+    expect(parsed.message).toContain("NOT run");
   });
 
   it("REJECTS a wrong-typed query by name", () => {
-    const parsed = parseDiscoverToolsArgs({ query: 42 });
+    const parsed = parseToolSearchArgs({ query: 42 });
     expect(parsed.ok).toBe(false);
   });
 
   it("treats an empty value as absent rather than rejecting it", () => {
-    expect(parseDiscoverToolsArgs({ query: "swap", namespace: "" }))
-      .toEqual({ ok: true, args: { query: "swap", list: false } });
+    expect(parseToolSearchArgs({ query: "swap", namespace: "" }))
+      .toEqual({ ok: true, args: { mode: "query", query: "swap" } });
   });
 
-  it("keeps list:false — a boolean false is a value, not a blank", () => {
-    expect(parseDiscoverToolsArgs({ query: "swap", list: false }).ok).toBe(true);
+  it("names `list: false` too — a boolean false is a value, not a blank", () => {
+    // `dropEmptyModelValues` keeps `false`, so the retired key is still SEEN
+    // and still answered. Silently ignoring it would be the discard this
+    // module exists to prevent, even when the value is the harmless one.
+    const parsed = parseToolSearchArgs({ query: "swap", list: false });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`list` is retired");
+  });
+
+  it("REJECTS an undeclared argument by name instead of discarding it", () => {
+    // `additionalProperties: false` on the schema is the PROVIDER's check, and
+    // provider paths exist that dispatch an arbitrary JSON root verbatim. This
+    // parser is the enforcement, so an undeclared key must be named rather than
+    // dropped into a result that looks like it honoured the whole call.
+    const parsed = parseToolSearchArgs({ query: "swap on base", bogus: true });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("unknown argument");
+    expect(parsed.message).toContain("`bogus`");
+    expect(parsed.message).toContain("NOT run");
+  });
+
+  it("names an undeclared argument sent ALONGSIDE valid ones, and runs neither", () => {
+    // The valid keys must not buy the call a pass: a partially-honoured search
+    // is the silent discard wearing a success envelope.
+    const parsed = parseToolSearchArgs({
+      query: "bridge to base",
+      namespace: "khalani",
+      limit: 5,
+      sortBy: "relevance",
+    });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`sortBy`");
+  });
+
+  it("names EVERY undeclared argument at once, not just the first", () => {
+    const parsed = parseToolSearchArgs({ query: "swap", bogus: true, alsoBogus: 1 });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`bogus`");
+    expect(parsed.message).toContain("`alsoBogus`");
+  });
+
+  it("names an undeclared `false` too — the retired-key rule, applied generally", () => {
+    const parsed = parseToolSearchArgs({ query: "swap", verbose: false });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`verbose`");
+  });
+
+  it("still treats an EMPTY undeclared value as absent, per this boundary's policy", () => {
+    // "An empty value is absent" is the stated rule for every key here, and an
+    // unknown key carrying nothing communicated no intent there was to discard.
+    // Pinned so the sweep above cannot drift into rejecting blanks.
+    expect(parseToolSearchArgs({ query: "swap", bogus: "" }))
+      .toEqual({ ok: true, args: { mode: "query", query: "swap" } });
+  });
+
+  it("answers a RETIRED key with its migration message, not the generic sweep", () => {
+    // Ordering matters: the retired shapes teach the new spelling. Collapsing
+    // them into "unknown argument" would lose the migration.
+    const parsed = parseToolSearchArgs({ namespace: "khalani", list: true });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("`list` is retired");
+    expect(parsed.message).not.toContain("unknown argument");
   });
 });
 

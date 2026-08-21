@@ -117,7 +117,7 @@ export type SessionScopedWakeOutcome =
  *
  * This is the transactional core shared by the two things that can park a
  * Full-Autonomous AGENT session: the automatic slice-exhaustion continuation
- * below, and an explicit `loop_defer` from the model. Both need the identical
+ * below, and an explicit `LoopDefer` from the model. Both need the identical
  * guarantee and neither may re-derive it: sampling the stop and then inserting
  * leaves a LIVE wake on a session the operator stopped, because the
  * compensating cancel races the very thing it compensates for. The long-form
@@ -167,7 +167,7 @@ export async function enqueueSessionScopedWake(
  * The foreground Stop is deliberately request-local (`stopTurn()` aborts the
  * IPC request and writes nothing durable — see `composer-submit.ts`). That is
  * correct for a turn that is merely generating text. It was NOT correct once
- * the model could park the session: `loop_defer` commits a pending wake row
+ * the model could park the session: `LoopDefer` commits a pending wake row
  * DURING the turn, the batch tears down, the turn returns, and the operator's
  * Stop had cancelled a request while leaving a live continuation behind. The
  * executor then started a fresh autonomous slice moments later — the user

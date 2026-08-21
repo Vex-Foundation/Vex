@@ -10,7 +10,7 @@
  * A DB-backed protocol read tool is established practice — the KyberSwap and
  * Relay execute handlers already call `tracked-tokens.ts` the same way. It lives
  * in the `trench` namespace rather than as an internal tool so a model exploring
- * "what can I do on Trench" through `discover_tools` finds it beside the other
+ * "what can I do on Trench" through `ToolSearch` finds it beside the other
  * launchpad capabilities.
  *
  * The wallet is SERVER-RESOLVED from the session's selection, never taken from

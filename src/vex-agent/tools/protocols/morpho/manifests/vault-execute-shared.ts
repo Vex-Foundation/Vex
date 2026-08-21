@@ -14,7 +14,7 @@
  * The DECIMALS sentences are deliberately NOT here and not imported from
  * `conventions.ts`: each amount param names the vault asset as its own source in
  * its own words, for the two reasons `vault-quote.ts` records - the canonical
- * sentence points at `token_find`, which is the wrong source for a vault asset
+ * sentence points at `TokenFind`, which is the wrong source for a vault asset
  * read off the vault itself, and it contains an em dash, which this namespace
  * bans.
  */

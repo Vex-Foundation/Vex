@@ -60,7 +60,7 @@ const RAW_AMOUNT_SUFFIX = /Raw$/;
 const AMOUNT_UNIT_ANCHOR = /human|raw|base unit|atomic|decimal/i;
 const BPS_UNIT_ANCHOR = /basis point|1 bps = 0\.01%/i;
 const CHAIN_UNIT_ANCHOR = /slug|chain id|chainid/i;
-const DECIMALS_SOURCE_ANCHOR = /token_find|decimals/i;
+const DECIMALS_SOURCE_ANCHOR = /TokenFind|decimals/i;
 
 const WHEN_TO_USE_ANCHOR = /Use (this )?when|Call this|before|after/i;
 const RETURNS_ANCHOR = /returns|answers with/i;
@@ -166,7 +166,7 @@ export function lintParamDescription(subject: string, param: LintParam): Manifes
   if (RAW_AMOUNT_SUFFIX.test(param.key) && AMOUNT_KEY.test(param.key) && !DECIMALS_SOURCE_ANCHOR.test(text)) {
     issues.push({
       subject, rule: "param-description", detail: param.key,
-      message: `raw amount \`${param.key}\` must name where the decimals come from (token_find).`,
+      message: `raw amount \`${param.key}\` must name where the decimals come from (TokenFind).`,
     });
   }
   if (BPS_KEY.test(param.key) && !BPS_UNIT_ANCHOR.test(text)) {

@@ -17,7 +17,7 @@ const { handleTwitterAccount } = await import(
 
 const baseContext = makeTestContext();
 
-describe("twitter_account", () => {
+describe("TwitterAccount", () => {
   const originalApiKey = process.env.RETTIWT_API_KEY;
 
   beforeEach(() => {
@@ -30,7 +30,7 @@ describe("twitter_account", () => {
     const result = await handleTwitterAccount({}, baseContext);
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("twitter_account:");
+    expect(result.output).toContain("TwitterAccount:");
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
@@ -198,7 +198,7 @@ describe("twitter_account", () => {
     const result = await handleTwitterAccount({ action: "account_status" }, baseContext);
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("twitter_account:");
+    expect(result.output).toContain("TwitterAccount:");
     expect(result.output).toContain("provider_rejected");
     expect(result.output).not.toContain("secret-do-not-leak");
     expect(result.output).not.toContain("auth_token");

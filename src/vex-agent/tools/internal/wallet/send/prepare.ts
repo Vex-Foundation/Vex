@@ -1,11 +1,12 @@
 /**
- * Wallet send — `wallet_send_prepare`. Creates a DB-backed `wallet_intents`
+ * Wallet send — `WalletSendPrepare`. Creates a DB-backed `wallet_intents`
  * row only; no key decrypt and no broadcast. The selected wallet ADDRESS is
  * resolved address-only (puzzle 5 phase 5B) and recorded on the intent so the
  * confirm path can assert signer-match before consuming.
  */
 
 import { randomUUID } from "node:crypto";
+import { PREPARED_ACTION_FOLLOW_UP_TOOL } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 
 import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
@@ -21,7 +22,7 @@ import {
 import { ok } from "./results.js";
 import { validatePrepareParams } from "./validation.js";
 
-// ── wallet_send_prepare ─────────────────────────────────────────────────
+// ── WalletSendPrepare ─────────────────────────────────────────────────
 
 export async function handleWalletSendPrepare(
   params: Record<string, unknown>,
@@ -89,13 +90,13 @@ export async function handleWalletSendPrepare(
   return {
     ...result,
     preparedActionFollowUp: {
-      toolName: "wallet_send_confirm",
+      toolName: PREPARED_ACTION_FOLLOW_UP_TOOL,
       // The confirm TOOL's param key is `walletFamily` (SPEC §1.1); `network`
       // is only the internal/stored spelling of the same value.
       args: { walletFamily: network, intentId },
       expiresAt,
       approvalPreview: {
-        toolName: "wallet_send_confirm",
+        toolName: PREPARED_ACTION_FOLLOW_UP_TOOL,
         criticalArgs: { ...previewJson.criticalArgs },
       },
     },

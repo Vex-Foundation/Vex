@@ -15,18 +15,15 @@ import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
-import { isUniswapPairRevealed } from "./uniswap-reveal.js";
-import { isDescribeToolsRevealed } from "./describe-tools-reveal.js";
-import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-reveal.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
  * before every provider call so `getOpenAITools` can gate session-scoped
- * tools (loop_defer, compact_apply).
+ * tools (LoopDefer, CompactApply).
  *
  * `permission` and `sessionKind` are immutable per session; the former
  * controls approval bypass on mutating tools, the latter controls
- * mode-only visibility (e.g. `loop_defer` is mission-only).
+ * mode-only visibility (e.g. `LoopDefer` is mission-only).
  *
  * `contextUsageBand` is derived from `sessions.token_count` via
  * `computeBand()` — it lags by one turn (previous prompt size) and callers
@@ -34,9 +31,12 @@ import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-
  */
 export interface ToolVisibilityContext {
   /**
-   * Active session identity for session-scoped reveal gates (the hidden
-   * Uniswap fallback pair, the hidden Relay bridge pair). Omitted contexts
-   * fail closed to the normal tool menu.
+   * Active session identity for session-scoped gates. NO GATE READS IT TODAY:
+   * owner decision D4 retired the Uniswap and Relay reveals, and D2 retired the
+   * describe-tools reveal along with the tool it hid. It stays on the context
+   * because the injected-protocol projection keys the session working set on it
+   * (`buildInjectedProtocolTools`), and because a future session-scoped gate
+   * would otherwise have to re-thread it through every caller.
    */
   sessionId?: string;
   permission: Permission;
@@ -46,7 +46,7 @@ export interface ToolVisibilityContext {
   /**
    * True iff session-scoped plan-mode is enabled (turn-start snapshot from
    * `EngineContext.planMode`). A STATIC axis (part of `ToolVisibilityBase`) —
-   * gates `plan_write` via `ToolVisibility.requiresPlanMode`. The dispatcher's
+   * gates `PlanWrite` via `ToolVisibility.requiresPlanMode`. The dispatcher's
    * hard execution gate uses a live DB read instead (acceptance can change
    * mid-batch); this flag only controls what the LLM sees.
    */
@@ -54,8 +54,8 @@ export interface ToolVisibilityContext {
   contextUsageBand: ContextUsageBand;
   /**
    * True iff the session has at least one active narrative memory chunk
-   * (Track-2 compaction output). Gates `session_memory_search` /
-   * `session_memory_resolve_item` via `ToolVisibility.requiresSessionMemory` so a
+   * (Track-2 compaction output). Gates `SessionMemorySearch` /
+   * `SessionMemoryResolve` via `ToolVisibility.requiresSessionMemory` so a
    * fresh session is never shown no-op memory tools. Recomputed per turn —
    * chunks first appear after a compact, possibly mid-session.
    */
@@ -78,7 +78,7 @@ export interface ToolVisibilityContext {
   preparationBypassesBarrier: boolean;
   /**
    * True iff a VALIDATED prepared summary exists for this session. Gates
-   * `compact_apply` via `ToolVisibility.requiresSummaryReady`.
+   * `CompactApply` via `ToolVisibility.requiresSummaryReady`.
    *
    * Comes from the SAME per-turn preparation read as
    * `preparationBypassesBarrier` (`hasCompactionSummaryReady` on the resolved
@@ -142,36 +142,19 @@ export function defaultVisibilityContext(
  *      (drops `mutating` at barrier+, unless a live preparation bypasses it).
  */
 /**
- * Tool names withheld from the MODEL-FACING surface while their replacement
- * is proven (owner decision 2026-08-03, staged retirement).
- *
- * `execute_tool` — discovered protocol tools are now injected as real function
- * schemas (`./injected-protocol-tools.ts`), so the `{toolId, params}` envelope
- * is no longer the path the model should take: it is the shape that produced
- * the live missing-required-param loops, because the wrapper's schema can only
- * say "an object called params exists".
- *
- * WITHHELD, NOT DELETED. The `execute_tool` DISPATCH ROUTE stays fully
- * functional this round: an approved intent is re-dispatched by its STORED
- * tool name (`approval-runtime/post-tx/dispatch-approved.ts`), so every
- * approval queued as `execute_tool` — real, human-approved, fund-moving work —
- * must still run. Physical deletion of the definition happens after the
- * prompt sweep, in a later change.
+ * NO WITHHELD-NAME FILTER. `execute_tool` used to be filtered out here while its
+ * `ToolDef` still existed; the ToolDef is now DELETED
+ * (`./protocol.ts`), so there is nothing to withhold and a filter over an empty
+ * set would be a gate with no subject. The envelope's dispatch route survives
+ * for approval resume, and `dispatchTool` refuses the name outright when the
+ * call is `modelOriginated` — that refusal, not a catalog filter, is what keeps
+ * it closed to the model.
  */
-const MODEL_WITHHELD_TOOL_NAMES: ReadonlySet<string> = new Set(["execute_tool"]);
-
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
   return TOOLS
-    .filter(t => !MODEL_WITHHELD_TOOL_NAMES.has(t.name))
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
-    // Hidden Relay bridge pair (bridge factory W5) — the route-bound reveal has
-    // no route context here, so visibility is the session-level predicate
-    // (`hasAnyRelayRouteReveal`); the exact-route enforcement lives at dispatch
-    // (`evaluateRelayRevealGate`). Gated by name rather than a `ToolVisibility`
-    // flag so the reveal subsystem owns its own surface list end-to-end.
-    .filter(t => !RELAY_REVEAL_GATED_ALIAS_NAMES.has(t.name) || hasAnyRelayRouteReveal(ctx.sessionId))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand, ctx.preparationBypassesBarrier));
 }
@@ -234,7 +217,7 @@ function passesVisibility(
   if (v.band === "critical" && ctx.contextUsageBand !== "critical") return false;
 
   // Mission active run gate — only mission sessions with an active run
-  // see autonomy primitives like `loop_defer`. Agent mode never loops.
+  // see autonomy primitives like `LoopDefer`. Agent mode never loops.
   if (v.requiresMissionActiveRun && !ctx.missionRunActive) {
     return false;
   }
@@ -268,23 +251,13 @@ function passesVisibility(
   // session (a fresh session has nothing to recall). Recomputed per turn.
   if (v.requiresSessionMemory && !ctx.hasSessionMemory) return false;
 
-  // Plan-mode gate — hide `plan_write` unless the user enabled plan-mode for
+  // Plan-mode gate — hide `PlanWrite` unless the user enabled plan-mode for
   // this session. Combined with `hiddenInMissionSetup` on the tool def this
   // yields: visible in agent + active mission runs (plan-mode on), hidden in
   // mission setup and whenever plan-mode is off.
   if (v.requiresPlanMode && !ctx.planMode) return false;
 
-  // Uniswap fallback reveal gate (plan §11.2) — the hidden swap_quote_uniswap /
-  // swap_execute_uniswap pair joins the catalog only for a session with an
-  // active, fresh reveal. Absent sessionId fails closed to hidden.
-  if (v.requiresUniswapReveal && !isUniswapPairRevealed(ctx.sessionId)) return false;
-
-  // describe_tools reveal gate (R5) — the manifest-fetch tool joins the catalog
-  // only after this session produced a successful, non-empty discover_tools
-  // result. Absent sessionId fails closed to hidden.
-  if (v.requiresDescribeToolsReveal && !isDescribeToolsRevealed(ctx.sessionId)) return false;
-
-  // Prepared-compaction readiness gate — `compact_apply` exists only while
+  // Prepared-compaction readiness gate — `CompactApply` exists only while
   // there is something prepared to apply. Fails closed: an unreadable
   // preparation state resolves to "not ready" upstream, so the tool simply is
   // not offered rather than being offered and then refusing.

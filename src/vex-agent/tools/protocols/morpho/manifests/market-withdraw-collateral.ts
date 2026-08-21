@@ -31,6 +31,7 @@ import {
  */
 export const MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.withdrawCollateral",
+  publicName: "morpho__market_withdraw_collateral",
   namespace: "morpho",
   lifecycle: "active",
   description:

@@ -19,12 +19,7 @@
     {
       "toolId": "kyberswap.chains",
       "publicName": "kyberswap__chains_list",
-      "rationale": "Adds the missing canonical verb to a verbless toolId. This is the static local chain registry read (slug, chainId, name, aggregator; handlers/swap/chain-token-handlers.ts:15)."
-    },
-    {
-      "toolId": "kyberswap.chains.supported",
-      "publicName": "kyberswap__chains_status_list",
-      "rationale": "Near-typo resolution. `kyberswap.chains` and `kyberswap.chains.supported` differ by one suffix and read as the same operation; `status` names the only real difference, the live active/inactive/new state from the Common Service intersected with the local registry (chain-token-handlers.ts:20-25). 1:1 now; a merge proposal is recorded in protocol-naming-2.md for Batch 2+."
+      "rationale": "Adds the missing canonical verb to a verbless toolId. The local chain registry read (slug, chainId, name, aggregator), now with the live Common Service state joined on by chainId behind `liveStatus` (handlers/swap/chain-token-handlers.ts). Batch 2 (owner decision D7) retired `kyberswap.chains.supported` into this tool; its row is gone from this artifact and no alias replaces the retired name (D5)."
     }
   ]
 }

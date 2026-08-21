@@ -135,8 +135,8 @@ export function resolveChainId(input: string, chains?: KhalaniChain[]): number {
   throw new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
     `Unsupported chain: ${input}`,
-    "Call token_find or wallet_balances without a chain filter to see the chains Khalani "
-    + "currently covers, or pass the numeric chain id token_find returned."
+    "Call `TokenFind` or `WalletBalances` without a chain filter to see the chains Khalani "
+    + "currently covers, or pass the numeric chain id `TokenFind` returned."
   );
 }
 
@@ -169,7 +169,7 @@ export function getChain(chainId: number, chains: KhalaniChain[]): KhalaniChain 
       ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
       `Chain ${chainId} is not in the current Khalani registry.`,
       `Khalani does not serve ${name}; Relay may - the bridge router picks the venue `
-      + "automatically, so bridge with `bridge_quote` / `bridge` rather than calling a "
+      + "automatically, so bridge with `BridgeQuote` / `BridgeExecute` rather than calling a "
       + "`khalani.*` tool directly. Retrying this call will not change the answer."
     );
   }

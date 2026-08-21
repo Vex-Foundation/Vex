@@ -17,7 +17,7 @@
  * degraded lexical tool retrieval enough to push `khalani.tokens.search` out of
  * the golden top-3.
  *
- * WHY A NUMERIC CHAIN ID IS ACCEPTED. `token_find` hands the agent a NUMERIC
+ * WHY A NUMERIC CHAIN ID IS ACCEPTED. `TokenFind` hands the agent a NUMERIC
  * chain id, so the convention (`conventions.ts` → CANONICAL_CHAIN_SENTENCE)
  * promises every chain-valued param takes either spelling. DexScreener's URL
  * path needs the slug, so the translation happens HERE, in the adapter seam —
@@ -65,7 +65,7 @@ export function resolveDexScreenerChain(raw: string): DexScreenerChainRead {
       reason:
         `"chain" was the numeric chain id ${trimmed}, which is not in the chain registry. `
         + "Send a DexScreener chain slug instead (e.g. ethereum, base, solana), or check the id "
-        + "with token_find.",
+        + "with TokenFind.",
     };
   }
   return { ok: true, slug };

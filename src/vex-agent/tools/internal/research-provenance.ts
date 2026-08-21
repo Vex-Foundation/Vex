@@ -1,6 +1,6 @@
 /**
  * Provenance labelling for the two research tools that put third-party prose
- * into model context: `web_research` (web pages) and `twitter_account` (posts).
+ * into model context: `WebResearch` (web pages) and `TwitterAccount` (posts).
  *
  * WHY THE WARNING LEADS THE PAYLOAD (owner directive, 2026-07-27)
  *

@@ -188,7 +188,7 @@ export type AcceptContractOutcome =
     /**
      * Plan-mode is on but the session has an enabled plan with empty body —
      * nothing was authored, so there is nothing to accept. The host must
-     * author a plan (via `plan_write`) before accepting.
+     * author a plan (via `PlanWrite`) before accepting.
      */
     readonly outcome: "plan_missing";
   }
@@ -299,7 +299,7 @@ export async function acceptContract(
         throw new PlanStaleError();
       }
       // Accept the locked row's OWN `planMd` (engine-derived, never
-      // renderer-supplied). A concurrent content-changing `plan_write`
+      // renderer-supplied). A concurrent content-changing `PlanWrite`
       // makes `setAccepted` miss its WHERE → null → stale → rollback.
       const acceptedPlan = await sessionPlansRepo.setAccepted(
         input.sessionId,

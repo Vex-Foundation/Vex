@@ -368,11 +368,11 @@ export async function findActiveByContentHash(
 // ── Graph-expansion batch read (S8) ──────────────────────────────
 
 /**
- * The recall-DTO shape `long_memory_search` needs to build a graph-expansion
+ * The recall-DTO shape `MemorySearch` needs to build a graph-expansion
  * result: identity + display text + the NEIGHBOR-side scoring inputs
  * (`source` tier, `activationStrength`) + `validUntil` for the response field.
  * NO embedding, NO contentMd — expansion results are bounded pointers; the
- * agent fetches full content via `long_memory_get`.
+ * agent fetches full content via `MemoryGet`.
  */
 export interface GraphNeighborEntry {
   id: number;

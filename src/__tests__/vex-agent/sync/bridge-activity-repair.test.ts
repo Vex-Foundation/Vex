@@ -6,7 +6,6 @@
  * (R5), the B4 verification gate, multi-fill append (Blocker 9), the
  * verify-then-write-then-terminalize refund path (Blocker 8), the C3
  * confirm+enqueue side-effect ordering + recovery (Blocker 11), and the B5
- * reveal-clear (relay-only, verified-only).
  *
  * Pure helpers (status mapping, correlation, SSRF matrix, fairness comparator)
  * are pinned separately in `bridge-activity-repair-verification.test.ts`; the
@@ -91,7 +90,6 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     appendRefundEvidence: vi.fn().mockResolvedValue(observed),
     attachOrderId: vi.fn().mockResolvedValue(attach("attached")),
     enqueueBalanceRefresh: vi.fn().mockResolvedValue(undefined),
-    clearRelayReveal: vi.fn(),
     ...overrides,
   };
 }
@@ -208,7 +206,7 @@ describe("repairPendingBridges — orchestration", () => {
 
   // ── B4 verification gate ─────────────────────────────────────────────────────
 
-  it("confirms only AFTER independent verification passes; enqueues balance + no reveal-clear (khalani)", async () => {
+  it("confirms only AFTER independent verification passes and enqueues the balance job (khalani)", async () => {
     const deps = makeDeps({
       listSweepCandidates: vi.fn().mockResolvedValue([row()]),
       fetchKhalaniOrder: vi.fn().mockResolvedValue(khalaniFilled()),
@@ -222,7 +220,6 @@ describe("repairPendingBridges — orchestration", () => {
       expect.objectContaining({ executionId: 100, txHash: "0xfill", evidenceSource: "khalani_order_status", providerStatus: "filled" }),
     );
     expect(deps.enqueueBalanceRefresh).toHaveBeenCalledWith({ namespace: "khalani", executionId: 100 });
-    expect(deps.clearRelayReveal).not.toHaveBeenCalled(); // khalani never clears a relay reveal
     expect(result.confirmed).toBe(1);
   });
 
@@ -328,13 +325,12 @@ describe("repairPendingBridges — orchestration", () => {
 
   // ── Reveal clear (B5): relay + verified confirm ONLY, cleared BEFORE enqueue ──
 
-  it("clears the relay route reveal on a VERIFIED relay confirm, BEFORE the balance enqueue (B5 + C3 ordering)", async () => {
+  it("enqueues the balance job on a VERIFIED relay confirm", async () => {
     const callOrder: string[] = [];
     const deps = makeDeps({
       listSweepCandidates: vi.fn().mockResolvedValue([row({ protocol: "relay", providerOrderId: "req-1" })]),
       fetchRelayStatus: vi.fn().mockResolvedValue(relayStatus("success", { txHashes: ["0xdest"] })),
       verifyFill: vi.fn().mockResolvedValue({ verified: true }),
-      clearRelayReveal: vi.fn().mockImplementation(() => callOrder.push("reveal")),
       enqueueBalanceRefresh: vi.fn().mockImplementation(async () => {
         callOrder.push("enqueue");
       }),
@@ -343,31 +339,21 @@ describe("repairPendingBridges — orchestration", () => {
     expect(deps.confirmExpectedFill).toHaveBeenCalledWith(
       expect.objectContaining({ evidenceSource: "relay_intent_status", txHash: "0xdest" }),
     );
-    expect(deps.clearRelayReveal).toHaveBeenCalledWith("sess-1", "eip155:8453:0xa->eip155:42161:0xb");
-    expect(callOrder).toEqual(["reveal", "enqueue"]); // reveal cleared before enqueue (Blocker 11)
+    expect(callOrder).toEqual(["enqueue"]);
     expect(result.confirmed).toBe(1);
   });
 
-  it("does NOT clear the reveal when the relay confirm CAS did not apply (already confirmed elsewhere)", async () => {
+  it("does NOT enqueue when the relay confirm CAS did not apply (already confirmed elsewhere)", async () => {
     const deps = makeDeps({
       listSweepCandidates: vi.fn().mockResolvedValue([row({ protocol: "relay", providerOrderId: "req-1" })]),
       fetchRelayStatus: vi.fn().mockResolvedValue(relayStatus("success", { txHashes: ["0xdest"] })),
       confirmExpectedFill: vi.fn().mockResolvedValue(cas(false, "confirmed")),
     });
     const result = await repairPendingBridges(deps);
-    expect(deps.clearRelayReveal).not.toHaveBeenCalled();
     expect(deps.enqueueBalanceRefresh).not.toHaveBeenCalled(); // no double enqueue on a duplicate CAS
     expect(result.confirmed).toBe(0);
   });
 
-  it("does NOT clear the reveal on a relay non-terminal / refund / failure", async () => {
-    const deps = makeDeps({
-      listSweepCandidates: vi.fn().mockResolvedValue([row({ protocol: "relay", providerOrderId: "req-1" })]),
-      fetchRelayStatus: vi.fn().mockResolvedValue(relayStatus("refund")),
-    });
-    await repairPendingBridges(deps);
-    expect(deps.clearRelayReveal).not.toHaveBeenCalled();
-  });
 
   // ── Refund evidence: verify → write → terminalize (Blocker 8) ─────────────────
 

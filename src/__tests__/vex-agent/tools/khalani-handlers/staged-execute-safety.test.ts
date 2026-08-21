@@ -8,8 +8,8 @@
  *     abort excludes the expected-fill index) so W4's null-order-id recovery can
  *     reconcile it; it carries the hash and does NOT submit (blocker 1);
  *   - a reverted deposit fails the leg + aborts, no submit;
- *   - a pre-sign no-route records ONE hashless failed row + reveals Relay;
- *   - a prequote no-route reveals Relay + records NOTHING (absent chain);
+ *   - a pre-sign no-route records ONE hashless failed row + names Relay;
+ *   - a prequote no-route names Relay + records NOTHING (absent chain);
  *   - attach outcomes: attached; conflict_different_id polls the PERSISTED id and
  *     NEVER the conflicting one (m4); not_pending polls the persisted id;
  *   - the in-flight guard rejection surfaces a clear output;
@@ -167,16 +167,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   noteSettlementDeclined: (...a: unknown[]) => mockNoteSettlementDeclined(...a),
   notePendingReason: (...a: unknown[]) => mockNotePendingReason(...a),
   noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
-}));
-
-const mockRevealRelayRoute = vi.fn();
-const mockResolveRelayRevealRoute = vi.fn(() => ({
-  fromChainId: 8453, fromChainFamily: "eip155", fromToken: "0xaaa",
-  toChainId: 42161, toChainFamily: "eip155", toToken: "0xbbb",
-}));
-vi.mock("@vex-agent/tools/registry/relay-reveal.js", () => ({
-  revealRelayRoute: (...a: unknown[]) => mockRevealRelayRoute(...a),
-  resolveRelayRevealRoute: (...a: unknown[]) => mockResolveRelayRevealRoute(...(a as [])),
 }));
 
 /**
@@ -364,32 +354,30 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     expect(legs.find((l) => l.role === "bridge_deposit")?.status).toBe("confirmed");
   });
 
-  it("no-route (empty routes) → ONE hashless failed row + Relay reveal, no signing", async () => {
+  it("no-route (empty routes) → ONE hashless failed row + names Relay, no signing", async () => {
     mockGetQuotes.mockResolvedValueOnce({ quoteId: "q1", routes: [] });
     const result = await execute();
     expect(result.success).toBe(false);
     expect(mockCreateBridgePreBroadcastFailure).toHaveBeenCalledTimes(1);
-    expect(mockRevealRelayRoute).toHaveBeenCalledTimes(1);
-    expect(result.output).toContain("bridge_quote_relay");
+    expect(result.output).toContain("BridgeQuoteRelay");
     expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
     expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
   });
 
-  it("prequote no-route (absent chain) → reveal, records NOTHING", async () => {
+  it("prequote no-route (absent chain) → names Relay, records NOTHING", async () => {
     mockResolveKhalaniPrequoteRoute.mockResolvedValueOnce({ outcome: "no_route", missing: ["to"] });
     const result = await execute();
     expect(result.success).toBe(false);
-    expect(mockRevealRelayRoute).toHaveBeenCalledTimes(1);
+    expect(result.output).toContain("BridgeQuoteRelay");
     expect(mockCreateBridgePreBroadcastFailure).not.toHaveBeenCalled();
     expect(mockGetQuotes).not.toHaveBeenCalled();
   });
 
-  it("static_relay (local chain) → clear redirect, no record, no reveal", async () => {
+  it("static_relay (local chain) → clear redirect, no record", async () => {
     mockResolveKhalaniPrequoteRoute.mockResolvedValueOnce({ outcome: "static_relay", localChainId: 4663, localSide: "to" });
     const result = await execute();
     expect(result.success).toBe(false);
     expect(result.output).toContain("Relay");
-    expect(mockRevealRelayRoute).not.toHaveBeenCalled();
     expect(mockCreateBridgePreBroadcastFailure).not.toHaveBeenCalled();
   });
 

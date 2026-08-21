@@ -1,8 +1,8 @@
 /**
  * Canonical kind examples — the ONE catalog of example `kind` values shown
  * to the agent (D-KINDS). v1 consumers: EXACTLY the two tool descriptions in
- * `tools/registry/long-memory.ts` (`long_memory_suggest.kind` and
- * `long_memory_search.kind`). Deliberately NOT injected into the memory
+ * `tools/registry/long-memory.ts` (`MemorySuggest.kind` and
+ * `MemorySearch.kind`). Deliberately NOT injected into the memory
  * section's empty-state texts — those stay verbatim until S9.
  *
  * `kind` itself remains free-form snake_case; these are examples that anchor

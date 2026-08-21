@@ -23,6 +23,7 @@ import { PENDLE_MARKET_READ_DISCOVERY } from "../../embeddings/pendle/market-rea
  */
 export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
   toolId: "pendle.rewards.merkle",
+  publicName: "pendle__merkle_rewards_list",
   namespace: "pendle",
   lifecycle: "active",
   description:

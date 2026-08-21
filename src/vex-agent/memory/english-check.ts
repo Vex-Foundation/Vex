@@ -1,5 +1,5 @@
 /**
- * English-by-contract boundary check for `long_memory_suggest` persisted text
+ * English-by-contract boundary check for `MemorySuggest` persisted text
  * (memory-system-v2 §10.4). EmbeddingGemma retrieval is significantly stronger
  * on English, so every text that is persisted AND embedded must be English; a
  * non-English candidate is rejected with steering guidance to rewrite it.
@@ -171,7 +171,7 @@ export interface LongMemorySuggestEnglishInput {
 }
 
 /**
- * Check the persisted/embedded text of one `long_memory_suggest` call against
+ * Check the persisted/embedded text of one `MemorySuggest` call against
  * the English-by-contract rule (§10.4). Runs on the REDACTED values. The first
  * failing surface wins; a passing input yields `{ rejected: false }` with null
  * reason/field.

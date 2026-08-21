@@ -12,6 +12,7 @@ import { MORPHO_REWARDS_MAX_CHAINS } from "../read-params/rewards.js";
  */
 export const MORPHO_REWARDS_GET_TOOL: ProtocolToolManifest = {
   toolId: "morpho.rewards.get",
+  publicName: "morpho__rewards_get",
   namespace: "morpho",
   lifecycle: "active",
   description:

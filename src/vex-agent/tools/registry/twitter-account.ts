@@ -1,5 +1,5 @@
 /**
- * `twitter_account` manifest — the description surface the model reads.
+ * `TwitterAccount` manifest — the description surface the model reads.
  *
  * Every claim below was verified live (`agents_dm/agentscan-phase4/recon-live-twitter-sdk.md`)
  * against the restored rettiwt-api 7.1.2. Two claims the old manifest made were
@@ -49,7 +49,7 @@ function renderActionTable(): string {
 
 export const TWITTER_ACCOUNT_TOOLS: readonly ToolDef[] = [
   {
-    name: "twitter_account",
+    name: "TwitterAccount",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",

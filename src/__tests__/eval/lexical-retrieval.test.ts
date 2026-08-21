@@ -39,19 +39,37 @@ describe("lexical eval candidate set", () => {
   });
 
   /**
-   * Uniswap coverage, pinned as the contract that actually holds: `uniswap` is
-   * not an advertised namespace, so discovery can never return its manifests.
-   * A retrieval expectation for them would be unreachable by construction — if
-   * that ever changes, this test fails and the supplemental dataset should gain
-   * real Uniswap queries.
+   * Uniswap coverage, pinned as the contract that actually holds.
+   *
+   * This assertion was INVERTED in Batch 2. It previously pinned the opposite
+   * invariant - `uniswap` unadvertised, its manifests unreachable by
+   * construction - which owner decision D4 made false: the Uniswap and Relay
+   * venue pairs lost their reveal gating and became always-visible internal
+   * tools alongside the Khalani/KyberSwap routers.
+   *
+   * The case is KEPT rather than deleted because its job survives the
+   * inversion. It is the tripwire that notices the namespace silently
+   * disappearing from the candidate set again: a reveal gate reintroduced by
+   * accident, or an allowlist edit that drops `uniswap`, reddens here instead
+   * of quietly making every Uniswap retrieval expectation unreachable.
    */
-  it("excludes Uniswap because its namespace is not advertised", () => {
+  it("includes Uniswap because its namespace is advertised (D4)", () => {
     const uniswapTools = PROTOCOL_TOOLS.filter((manifest) => manifest.namespace === "uniswap");
     expect(uniswapTools.length).toBeGreaterThan(0);
-    expect(isAdvertisedProtocolNamespace("uniswap")).toBe(false);
-    expect(candidates.filter((manifest) => manifest.namespace === "uniswap")).toEqual([]);
+    expect(isAdvertisedProtocolNamespace("uniswap")).toBe(true);
+
+    // EVERY Uniswap manifest reaches the candidate set, not merely some: a gate
+    // that hid half the pair would still be a silent regression.
+    const uniswapCandidateIds = candidates
+      .filter((manifest) => manifest.namespace === "uniswap")
+      .map((manifest) => manifest.toolId)
+      .sort();
+    expect(uniswapCandidateIds).toEqual(uniswapTools.map((manifest) => manifest.toolId).sort());
+
+    // Reachability is the point of advertising it: the venue's own name must
+    // retrieve the venue's own tools.
     expect(lexicalTopIds("Swap tokens on Uniswap", 5, candidates)
-      .filter((toolId) => toolId.startsWith("uniswap."))).toEqual([]);
+      .filter((toolId) => toolId.startsWith("uniswap."))).not.toEqual([]);
   });
 });
 

@@ -1,15 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
-// Only `kyberswap.chains.supported` (C23) needs a mock — it calls the live
-// Common Service client. Every other case here either fails on
-// required-param validation (before any network/chain call) or reads the
-// REAL static chain registry (kyberswap.chains) — no external dependency to
-// stub.
+// Only `kyberswap.chains` with `liveStatus: true` needs a mock — that is the
+// one path calling the live Common Service client. Every other case here
+// either fails on required-param validation (before any network/chain call) or
+// reads the REAL static chain registry — no external dependency to stub.
 const mockGetSupportedChains = vi.fn();
 vi.mock("@tools/kyberswap/common/client.js", () => ({
   getKyberCommonClient: () => ({ getSupportedChains: () => mockGetSupportedChains() }),
 }));
+
+/** Named lookup, so a missing handler fails as itself rather than as a crash. */
+function handlerFor(toolId: string): ProtocolHandler {
+  const handler = KYBERSWAP_HANDLERS[toolId];
+  if (handler === undefined) throw new Error(`no handler for ${toolId}`);
+  return handler;
+}
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -22,14 +28,16 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
 }
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
+import type { ProtocolHandler } from "@vex-agent/tools/protocols/types.js";
 import { KYBERSWAP_TOOLS } from "../../../../vex-agent/tools/protocols/kyberswap/manifest.js";
 
 describe("kyberswap handlers", () => {
   // ── Handler coverage ─────────────────────────────────────────────
   //
   // Agent Scan plan §4.2 deleted limit-order (10) + zap (4) tooling and
-  // collapsed swap.sell/swap.buy into ONE unified swap.execute — 5 tools/
-  // handlers remain: chains, chains.supported, tokens.check, swap.quote,
+  // collapsed swap.sell/swap.buy into ONE unified swap.execute. Batch 2 (owner
+  // decision D7) then retired `chains.supported` into `chains`'s `liveStatus`
+  // param — 4 tools/handlers remain: chains, tokens.check, swap.quote,
   // swap.execute.
 
   it("has a handler for every manifest toolId", () => {
@@ -46,8 +54,8 @@ describe("kyberswap handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (5)", () => {
-    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(5);
+  it("handler count matches manifest count (4)", () => {
+    expect(Object.keys(KYBERSWAP_HANDLERS)).toHaveLength(4);
   });
 
   it("every handler is a function", () => {
@@ -97,25 +105,39 @@ describe("kyberswap handlers", () => {
 
   // ── Read-only handlers return data (no wallet needed) ────────────
 
-  it("kyberswap.chains returns chain list (18 aggregator chains, Scroll/zkSync/Etherlink dropped)", async () => {
-    const result = await KYBERSWAP_HANDLERS["kyberswap.chains"]!(
+  it("kyberswap.chains returns the registry (18 aggregator chains, Scroll/zkSync/Etherlink dropped)", async () => {
+    const result = await handlerFor("kyberswap.chains")(
       {},
       ctx({ sessionPermission: "restricted", approved: false }),
     );
     expect(result.success).toBe(true);
-    const data = JSON.parse(result.output);
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(18);
-    expect(data[0].slug).toBeDefined();
-    expect(data[0].chainId).toBeDefined();
-    expect(data[0].aggregator).toBeDefined();
+    const data = JSON.parse(result.output) as {
+      liveStatus: boolean;
+      liveStatusAvailable: boolean | null;
+      count: number;
+      chains: Array<{ slug: string; chainId: number; aggregator: boolean; state: string | null; stateReason: string | null }>;
+    };
+    expect(data.count).toBe(18);
+    expect(data.chains).toHaveLength(18);
+    const [first] = data.chains;
+    expect(first?.slug).toBeDefined();
+    expect(first?.chainId).toBeDefined();
+    expect(first?.aggregator).toBeDefined();
+    // No live read was asked for, so the state is null and SAYS why — an
+    // unexplained null would read as "the provider reports nothing".
+    expect(first?.state).toBeNull();
+    expect(first?.stateReason).toContain("liveStatus was not set");
+    expect(data.liveStatus).toBe(false);
+    // "not attempted" is a different answer from "attempted and failed".
+    expect(data.liveStatusAvailable).toBeNull();
+    expect(mockGetSupportedChains).not.toHaveBeenCalled();
   });
 
-  // C23 (Codex final-review finding 8): the provider's live list must be
-  // intersected with our OWN registry — a chain we no longer execute
-  // (Scroll/zkSync) or a brand-new provider-only chain must never be
-  // re-advertised as Vex-supported.
-  it("kyberswap.chains.supported intersects the provider list with the local registry", async () => {
+  // C23 (Codex final-review finding 8) survives the merge as the JOIN
+  // DIRECTION: rows are the registry's, so a chain we no longer execute
+  // (Scroll/zkSync) or a brand-new provider-only chain can never be
+  // re-advertised as Vex-supported. The live read can add a state, never a row.
+  it("kyberswap.chains liveStatus joins provider state onto registry rows without adding chains", async () => {
     mockGetSupportedChains.mockResolvedValueOnce([
       { chainId: 1, chainName: "ethereum", displayName: "Ethereum", state: "active" as const }, // ours
       { chainId: 534352, chainName: "scroll", displayName: "Scroll", state: "active" as const }, // dropped (ZaaS-only)
@@ -123,13 +145,61 @@ describe("kyberswap handlers", () => {
       { chainId: 999999, chainName: "future-chain", displayName: "Future Chain", state: "new" as const }, // unonboarded
     ]);
 
-    const result = await KYBERSWAP_HANDLERS["kyberswap.chains.supported"]!(
-      {},
+    const result = await handlerFor("kyberswap.chains")(
+      { liveStatus: true },
       ctx({ sessionPermission: "restricted", approved: false }),
     );
 
     expect(result.success).toBe(true);
-    const data = JSON.parse(result.output) as Array<{ chainId: number }>;
-    expect(data.map((c) => c.chainId)).toEqual([1]);
+    const data = JSON.parse(result.output) as {
+      liveStatus: boolean;
+      liveStatusAvailable: boolean | null;
+      chains: Array<{ chainId: number; slug: string; state: string | null; stateReason: string | null; displayName: string | null }>;
+    };
+    expect(data.liveStatus).toBe(true);
+    expect(data.liveStatusAvailable).toBe(true);
+    // Provider-only chains never enter the result.
+    expect(data.chains.map((c) => c.chainId)).not.toContain(534352);
+    expect(data.chains.map((c) => c.chainId)).not.toContain(324);
+    expect(data.chains.map((c) => c.chainId)).not.toContain(999999);
+
+    const ethereum = data.chains.find((c) => c.chainId === 1);
+    expect(ethereum?.state).toBe("active");
+    expect(ethereum?.stateReason).toBeNull();
+    expect(ethereum?.displayName).toBe("Ethereum");
+    // The field the whole namespace needs survives the live path.
+    expect(ethereum?.slug).toBeDefined();
+
+    // A registry chain the live list did not carry keeps its row and says why
+    // its state is unknown, rather than disappearing.
+    const uncarried = data.chains.find((c) => c.chainId !== 1);
+    expect(uncarried?.state).toBeNull();
+    expect(uncarried?.stateReason).toContain("did not carry this chain");
+  });
+
+  // A status endpoint being down must not cost the caller the registry half,
+  // which is the half the next kyberswap call depends on.
+  it("kyberswap.chains still returns the registry when the Common Service fails, with a stated reason", async () => {
+    mockGetSupportedChains.mockRejectedValueOnce(new Error("common service 503"));
+
+    const result = await handlerFor("kyberswap.chains")(
+      { liveStatus: true },
+      ctx({ sessionPermission: "restricted", approved: false }),
+    );
+
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output) as {
+      liveStatus: boolean;
+      liveStatusAvailable: boolean | null;
+      chains: Array<{ slug: string; state: string | null; stateReason: string | null }>;
+    };
+    expect(data.liveStatus).toBe(true);
+    expect(data.liveStatusAvailable).toBe(false);
+    expect(data.chains).toHaveLength(18);
+    for (const chain of data.chains) {
+      expect(chain.slug).toBeDefined();
+      expect(chain.state).toBeNull();
+      expect(chain.stateReason).toContain("Common Service unavailable");
+    }
   });
 });

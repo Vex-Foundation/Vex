@@ -58,13 +58,17 @@ beforeEach(() => {
 });
 
 describe("dispatcher — model-originated execute_tool", () => {
-  it("refuses it and names discover_tools + direct calls as the way forward", async () => {
+  it("refuses it and names ToolSearch + direct calls as the way forward", async () => {
     const result = await dispatchTool(EXECUTE_CALL, modelContext);
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("execute_tool is not callable");
-    expect(result.output).toContain("discover_tools");
-    expect(result.output).toContain("__");
+    expect(result.output).toContain("ToolSearch");
+    // The refusal states the CALLING CONVENTION, not a name transform: there is
+    // no `.`-to-`__` derivation any more (publicName is an authored table
+    // entry), so a refusal that showed one would teach the model to fabricate
+    // names the catalog rejects.
+    expect(result.output).toContain("no toolId, no params wrapper");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 

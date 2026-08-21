@@ -31,14 +31,20 @@ export {
   type FeedListResult,
 } from "./feed-pipeline.js";
 export {
+  BOOST_FEEDS,
   FEED_SORT_DIRECTIONS,
   FEED_SORT_KEYS,
+  PROFILE_FEEDS,
   parseFeedListQuery,
+  readBoostFeed,
+  readProfileFeed,
   type FeedListFilters,
   type FeedListQuery,
   type FeedListQueryDefaults,
+  type BoostFeed,
   type FeedSortDirection,
   type FeedSortKey,
+  type ProfileFeed,
 } from "./feed-query.js";
 export {
   computeFeedRowMetrics,

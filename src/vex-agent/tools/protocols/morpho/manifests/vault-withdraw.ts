@@ -30,6 +30,7 @@ import {
  */
 export const MORPHO_VAULT_WITHDRAW_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vault.withdraw",
+  publicName: "morpho__vault_withdraw",
   namespace: "morpho",
   lifecycle: "active",
   description:

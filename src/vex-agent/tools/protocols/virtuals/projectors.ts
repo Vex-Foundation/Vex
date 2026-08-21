@@ -53,7 +53,7 @@ const VIRTUAL_TOKEN_BY_CHAIN: Record<string, string> = {
   SOLANA: "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",
 };
 
-/** venue = the tool label the model uses; namespace = the discover_tools namespace. */
+/** venue = the tool label the model uses; namespace = the ToolSearch namespace. */
 const VENUE_BY_CHAIN: Record<string, { venue: string; namespace: string }> = {
   ROBINHOOD: { venue: "uniswap", namespace: "uniswap" },
   BASE: { venue: "kyberswap", namespace: "kyberswap" },

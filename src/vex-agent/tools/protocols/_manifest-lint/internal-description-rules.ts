@@ -10,16 +10,16 @@
  *
  * This lane runs over ALL 34 registered internal tools, the 14 included. The
  * overlap is deliberate and is the point: the tools carrying the strongest
- * obligations - `bridge`, `swap_execute`, `wallet_send_prepare`,
- * `wallet_send_confirm` - are inside those 14, and the older rule cannot state
+ * obligations - `bridge`, `SwapExecute`, `WalletSendPrepare`,
+ * `WalletSendConfirm` - are inside those 14, and the older rule cannot state
  * their obligations because it has no ActionKind to read. A tool linted by
  * both rules reports under two different rule ids and allowlists each finding
  * separately, so neither lane can hide the other's.
  *
  * Why not just reuse `lintToolDescription` as-is: that rule derives "this tool
  * spends funds" from `mutating`, and on the internal lane that inference is
- * simply false. `wallet_track_token` and `long_memory_suggest` carry a
- * non-read actionKind with `mutating: false`; `mission_draft_update` is
+ * simply false. `WalletTrackToken` and `MemorySuggest` carry a
+ * non-read actionKind with `mutating: false`; `MissionDraftUpdate` is
  * `mutating: false` while its pressure classification is mutating. The action
  * taxonomy (`taxonomy.ts`) is the field that was deliberately introduced so
  * policy would stop re-deriving intent from that boolean, so the requirement

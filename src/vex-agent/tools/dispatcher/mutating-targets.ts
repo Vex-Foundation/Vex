@@ -20,7 +20,7 @@ import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools
  * Phase 4d: does this dispatch run an IRREVERSIBLE (mutating) tool? For
  * `execute_tool` the answer comes from the TARGET protocol manifest (the
  * wrapper itself is `mutating: false`); a missing/unknown target is treated as
- * non-mutating. For a MUTATING protocol-alias (Stage 8b, e.g. `swap_execute`) the
+ * non-mutating. For a MUTATING protocol-alias (Stage 8b, e.g. `SwapExecute`) the
  * answer ALSO comes from the resolved TARGET manifest, so the mission
  * auto-retry-unsafe stamp reflects the target — not a generic alias default.
  * For other internal tools it is the registry `mutating` flag. Preview / dryRun
@@ -51,7 +51,7 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
       // that NEEDS it (the hidden Uniswap pair) always throws here, which
       // correctly falls back to the registry's static `mutating` flag below.
       const target = router(call.args, undefined);
-      // An ASYNC router (`bridge`, which awaits the live Khalani chain registry
+      // An ASYNC router (`BridgeExecute`, which awaits the live Khalani chain registry
       // to pick its venue) cannot be resolved at this SYNCHRONOUS classification
       // site. Fall back to the alias's registry flag exactly as an un-routable
       // call does - conservative, and identical to what either bridge target

@@ -8,7 +8,7 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
   summary:
     "Vex's read-only market-research backbone and source of truth for DexScreener-indexed AMM "
     + "pairs, including robinhood, and DexScreener's own profile/promotion labels. Research flow: "
-    + "discover → resolve the address with `token_find` → verify liquidity → quote on a venue. "
+    + "discover → resolve the address with `TokenFind` → verify liquidity → quote on a venue. "
     + "It does not establish contract safety, token identity from a ticker, complete market "
     + "coverage, or an executable price.",
   whenToUse:
@@ -16,9 +16,9 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
   preferInstead:
     "Use a dedicated chain safety tool for contract risk. For execution, always request a fresh quote from `kyberswap`, `solana`, or the chosen venue; never treat a DexScreener price as executable.",
   exampleQueries: [
-    'discover_tools(query="trending narratives", namespace="dexscreener")',
-    'discover_tools(query="community takeover", namespace="dexscreener")',
-    'discover_tools(query="pair liquidity research", namespace="dexscreener")',
+    'ToolSearch(query="trending narratives", namespace="dexscreener")',
+    'ToolSearch(query="community takeover", namespace="dexscreener")',
+    'ToolSearch(query="pair liquidity research", namespace="dexscreener")',
   ],
   aliases: ["dex screener", "market research", "trending narratives", "cto"],
   discoveryHints: [
@@ -45,9 +45,7 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
         "dexscreener.meta",
         "dexscreener.attention",
         "dexscreener.profiles",
-        "dexscreener.profiles.recent",
         "dexscreener.boosts",
-        "dexscreener.boosts.top",
       ],
       hints: ["trending narratives", "trending metas", "synthetic profile boost merge", "token profiles", "boosts", "top boosts"],
     },

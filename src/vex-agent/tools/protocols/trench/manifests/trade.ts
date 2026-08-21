@@ -25,6 +25,7 @@ const TRADE_PARAMS = [
 export const TRENCH_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.trade_quote",
+    publicName: "trench__trade_quote",
     namespace: "trench",
     lifecycle: "active",
     description:
@@ -37,6 +38,7 @@ export const TRENCH_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "trench.trade_execute",
+    publicName: "trench__trade_execute",
     namespace: "trench",
     lifecycle: "active",
     description:

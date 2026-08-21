@@ -16,6 +16,7 @@ import { PENDLE_YIELDS_DISCOVERY } from "../../embeddings/pendle/yields.js";
 export const PENDLE_READ_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.yields",
+    publicName: "pendle__markets_discover",
     namespace: "pendle",
     lifecycle: "active",
     description:
@@ -49,6 +50,7 @@ export const PENDLE_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.position.value",
+    publicName: "pendle__positions_get",
     namespace: "pendle",
     lifecycle: "active",
     description:

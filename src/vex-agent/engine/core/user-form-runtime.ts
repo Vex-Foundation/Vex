@@ -205,7 +205,7 @@ export async function commitUserFormToolResult(input: {
  * A moment later the consumption lands, the form leaves the outstanding set,
  * the lease is already gone, and the retained request has lost its only
  * observer. It does not disappear: it sits open until the NEXT thing to consult
- * the gate — a fresh user turn, a `loop_defer`, an approved dispatch — is
+ * the gate — a fresh user turn, a `LoopDefer`, an approved dispatch — is
  * refused by a stop that was never meant for it.
  *
  * ## The order, and why each step is where it is

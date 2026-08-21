@@ -156,13 +156,6 @@ export async function confirmVerifiedFill(
 
   counters.confirmed++;
 
-  // C3 ORDERING (Blocker 11): clear the reveal FIRST (in-memory, best-effort) so a
-  // later enqueue failure never strands a still-revealed confirmed route; the
-  // recovery path re-clears it too.
-  if (logical.protocol === "relay" && logical.sessionId && logical.normalizedRoute) {
-    deps.clearRelayReveal(logical.sessionId, logical.normalizedRoute);
-  }
-
   // B2/B8 (Blocker 9): every ADDITIONAL provider fill hash becomes a verified
   // `bridge_fill_observed` audit row (dedup by hash). An append failure here is
   // audit-only — it never blocks the confirm or the enqueue.

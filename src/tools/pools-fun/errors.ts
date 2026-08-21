@@ -231,7 +231,7 @@ export function mapPoolsFunError(status: number, body?: string): VexError {
       ErrorCodes.POOLS_NOT_FOUND,
       "pools.fun knows no pool for this token address",
       "The launchpad could not resolve a pool for that token: either the address is wrong, or the token "
-        + "was not launched on pools.fun (check it with pools.search first).",
+        + "was not launched on pools.fun (check it with `pools__tokens_search` first).",
     );
   }
 

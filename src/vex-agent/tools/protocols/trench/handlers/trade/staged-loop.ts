@@ -120,7 +120,7 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
         await abortRemaining(executionId, i + 1, `earlier ${plan.eventRole} ambiguous`);
         return {
           success: false,
-          output: `${TOOL_ID}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle. Do not retry; this attempt is recorded as pending and will resolve automatically. Verify with chain_read tx_receipt.`,
+          output: `${TOOL_ID}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle. Do not retry; this attempt is recorded as pending and will resolve automatically. Verify with ChainRead tx_receipt.`,
           data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
         };
       }

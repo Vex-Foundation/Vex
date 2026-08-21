@@ -30,10 +30,10 @@ describe("prompt-stack — permission & safety", () => {
       expect(prompt).toContain("Per-tool\n  policies always apply");
     });
 
-    it("mission RUN / restricted requires approval and supports loop_defer", () => {
+    it("mission RUN / restricted requires approval and supports LoopDefer", () => {
       const prompt = buildPermissionPrompt({ phase: "mission_run", permission: "restricted" });
       expect(prompt).toContain("approval");
-      expect(prompt).toContain("loop_defer");
+      expect(prompt).toContain("LoopDefer");
     });
 
     it("mission RUN / full grants full authority", () => {
@@ -43,16 +43,16 @@ describe("prompt-stack — permission & safety", () => {
     });
 
     // Mission SETUP used to receive the mission RUN policy ("take proactive
-    // actions", `loop_defer`), contradicting the setup execution lock shown
+    // actions", `LoopDefer`), contradicting the setup execution lock shown
     // three layers later. The phase input, derived from missionRunId, splits
     // them.
     it("mission SETUP carries the execution lock and the draft-first job, never the run loop", () => {
       for (const permission of ["restricted", "full"] as const) {
         const prompt = buildPermissionPrompt({ phase: "mission_setup", permission });
         expect(prompt).toContain("MISSION SETUP");
-        expect(prompt).toContain("mission_draft_update");
+        expect(prompt).toContain("MissionDraftUpdate");
         expect(prompt).toContain("LOCKED during");
-        expect(prompt).not.toContain("loop_defer");
+        expect(prompt).not.toContain("LoopDefer");
         expect(prompt).not.toContain("proactive");
       }
     });
@@ -104,7 +104,7 @@ describe("prompt-stack — permission & safety", () => {
     it("contains address-first rule", () => {
       const joined = joinedStack(makeContext());
       expect(joined).toContain("Address-first for EVM mutations");
-      expect(joined).toContain("khalani.tokens.search");
+      expect(joined).toContain("khalani__tokens_search");
     });
 
     it("khalani is canonical resolver in protocols section, kyberswap is not primary", () => {

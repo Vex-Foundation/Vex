@@ -86,7 +86,7 @@ export function validateConfirmParams(
 
   const missing =
     !network ? { key: "walletFamily", expected: 'a string ("eip155" or "solana")' }
-    : !intentId ? { key: "intentId", expected: "a string (the id wallet_send_prepare returned)" }
+    : !intentId ? { key: "intentId", expected: "a string (the id WalletSendPrepare returned)" }
     : null;
   if (missing !== null) {
     return {

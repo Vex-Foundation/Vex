@@ -1,7 +1,7 @@
 /**
  * `requestApply` — the ONE surface that queues a cutover.
  *
- * The UI button, the agent's `compact_apply` tool and the Full-Autonomous
+ * The UI button, the agent's `CompactApply` tool and the Full-Autonomous
  * auto-apply policy all land here and nowhere else. None of them performs a
  * cutover: this function only moves the FSM `summary_ready → apply_requested`.
  * The runner consumes it at its next iteration boundary

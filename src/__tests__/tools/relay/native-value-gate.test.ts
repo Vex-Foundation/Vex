@@ -151,8 +151,8 @@ describe("relayNativeValueGuidance — the part the agent has to act on", () => 
 
   it("names a path the agent can take with no user present", () => {
     const guidance = relayNativeValueGuidance("bridge_deposit");
-    expect(guidance).toMatch(/relay\.quote\.get/);
-    expect(guidance).toMatch(/khalani\.bridge/);
+    expect(guidance).toMatch(/relay__bridge_quote_get/);
+    expect(guidance).toMatch(/khalani__bridge_execute/);
   });
 });
 

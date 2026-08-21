@@ -41,7 +41,7 @@ export async function inspectBalances(addresses: string[]): Promise<ToolResult> 
   return ok({
     view: "balances",
     totalUsd,
-    note: "Use wallet_balances for fresh per-token live balances. This shows the selected wallet(s)' aggregate USD total from DB projections.",
+    note: "Use WalletBalances for fresh per-token live balances. This shows the selected wallet(s)' aggregate USD total from DB projections.",
   });
 }
 
