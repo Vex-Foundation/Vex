@@ -157,8 +157,19 @@ describe("dexscreener handlers", () => {
     expect(typeof data.returned).toBe("number");
     expect(typeof data.totalMatched).toBe("number");
     expect(Array.isArray(data.rows)).toBe(true);
-    // The two fields this feed used to parse and discard.
-    expect(typeof data.rows[0].updatedAt).toBe("string");
+    // The two fields this feed used to parse and discard. `updatedAt` is
+    // `string | null` BY CONTRACT (feed-row.ts) and null in practice here:
+    // the provider dropped the field from /token-profiles/latest/v1
+    // (measured live 2026-08-21: 0/30 rows carry it on this feed while
+    // recent-updates still sends it 30/30). A live pin asserts the canonical
+    // union and that any value parses - never the provider's mood.
+    expect(data.rows[0]).toHaveProperty("updatedAt");
+    for (const row of data.rows) {
+      if (row.updatedAt !== null) {
+        expect(typeof row.updatedAt).toBe("string");
+        expect(Number.isNaN(Date.parse(row.updatedAt))).toBe(false);
+      }
+    }
     expect(data.rows[0]).toHaveProperty("communityTakeover");
   });
 
