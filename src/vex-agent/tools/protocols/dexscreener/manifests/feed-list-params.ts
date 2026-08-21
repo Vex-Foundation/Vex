@@ -139,9 +139,13 @@ export const FEED_CHAIN_FILTER_PARAM: ProtocolParamDef = {
 /**
  * Freshness on the two PROFILE feeds.
  *
- * Both feeds send `updatedAt` on 30/30 rows, which is the only field in either
- * from which freshness is computable — and it was being discarded on the `latest`
- * feed until this card.
+ * `updatedAt` is the only field in either feed from which freshness is
+ * computable. Provider drift, measured live 2026-08-21: the recent-updates
+ * feed still sends it 30/30; the latest feed stopped sending it entirely
+ * (0/30), so this filter there excludes every row into
+ * droppedByFilter.unknownEventAge - honest, but empty. The param stays on
+ * both feeds because the filter semantics are identical and the provider may
+ * restore the field; the description steers the model to the feed that works.
  */
 export const PROFILE_FRESHNESS_PARAMS: readonly ProtocolParamDef[] = [
   {
@@ -151,9 +155,10 @@ export const PROFILE_FRESHNESS_PARAMS: readonly ProtocolParamDef[] = [
       "Keep profiles updated within this many seconds, computed from updatedAt against asOfMs and "
       + "reported as eventAgeSeconds on every row. Rows with no updatedAt are excluded and counted "
       + "in droppedByFilter.unknownEventAge — 'we cannot tell when' is a different answer from 'too "
-      + "old'. Measured on a live window: the recent-updates feed spanned 23-180 seconds old, the "
-      + "latest-profiles feed 64 seconds to 81 minutes. Every response is edge-cached about 30s, so "
-      + "nothing here is real-time. Whole number.",
+      + "old'. The latest-profiles feed currently sends no updatedAt at all (provider drift, "
+      + "measured 2026-08-21), so this filter there drops every row - use dexscreener.profiles.recent "
+      + "for freshness. Every response is edge-cached about 30s, so nothing here is real-time. "
+      + "Whole number.",
   },
   {
     key: "ctoOnly",
