@@ -39,14 +39,14 @@ import { cn } from "../../lib/utils.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 
-/** The trace's opening line — the stable summary of a settled block. */
+/** The trace's opening line - the stable summary of a settled block. */
 function firstLine(text: string): string {
   const newline = text.indexOf("\n");
   return newline === -1 ? text : text.slice(0, newline);
 }
 
 /**
- * The newest non-blank line — the live summary while the block is the
+ * The newest non-blank line - the live summary while the block is the
  * streaming tail. Trailing whitespace is dropped first so a delta that ends in
  * a newline does not momentarily blank the summary.
  */
@@ -124,7 +124,7 @@ export function ReasonedBlock({
         </button>
         {/* Expanding removes the moving summary: the full trace is right below
             in ordinary page flow, and page reading must never fight an
-            internal follower. `text-clip` while following — an ellipsis at the
+            internal follower. `text-clip` while following - an ellipsis at the
             end of a line that is being scrolled to its end is a lie about
             there being more. */}
         {!open ? (

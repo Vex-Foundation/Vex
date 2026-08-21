@@ -166,7 +166,7 @@ export function installScrollMetrics(
   });
   // Clamped on BOTH sides: a write past the floor is clamped as a real engine
   // clamps it, and a read after the flow SHRINKS reports the clamped value
-  // rather than a stale one — which is precisely the shrink-clamp delivery the
+  // rather than a stale one - which is precisely the shrink-clamp delivery the
   // follow model must attribute to the engine and not to the reader.
   const clamp = (value: number): number =>
     Math.max(0, Math.min(value, height - client));

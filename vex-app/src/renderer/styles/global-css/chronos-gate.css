@@ -177,7 +177,7 @@
 }
 
 /* The two ACTION sizes grow to a single h-12: `default` (wizard step
- * footers) and `lg` (SetupFrame primary CTAs). `sm` and `icon` stay quiet —
+ * footers) and `lg` (SetupFrame primary CTAs). `sm` and `icon` stay quiet - 
  * they mark small inline actions inside wallet/model rows, not page CTAs. */
 [data-vex-gate="true"] button[data-vex-button-size="default"],
 [data-vex-gate="true"] button[data-vex-button-size="lg"] {

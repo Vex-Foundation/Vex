@@ -1,5 +1,5 @@
 /**
- * THE RESIDENT SHELL — phase transitions and composer residency (R2-D2).
+ * THE RESIDENT SHELL - phase transitions and composer residency (R2-D2).
  *
  * This suite replaces the pre-residency "keyed session-enter" contract, which
  * asserted the opposite of what the panel now guarantees. The old panel keyed
@@ -10,7 +10,7 @@
  *    (hero / settling / active);
  *  - the composer seat and everything in it live OUTSIDE the keyed region, so
  *    the textarea DOM NODE and its caret survive every phase change and every
- *    session change — asserted here as element IDENTITY, not as a class;
+ *    session change - asserted here as element IDENTITY, not as a class;
  *  - `.vex-session-enter` moved onto the keyed SESSION CONTENT wrapper, which
  *    is the part that genuinely swaps, so the resolve-in animation still plays
  *    on a session change without remounting the composer.

@@ -52,7 +52,7 @@
  *    in the same commit, so by the time this is true the viewport has been
  *    driven to the floor with that fresh user row in view and nothing the
  *    reader was reading is being covered. (Under the retired top-anchor model
- *    the same signal drove the viewport to a top anchor instead — the
+ *    the same signal drove the viewport to a top anchor instead - the
  *    guarantee is unchanged, only the resting position moved.)
  *  - it closes PERMANENTLY for the submission on either the first real engine
  *    preview OR any newer non-user row. The second clause matters because

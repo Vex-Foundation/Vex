@@ -152,8 +152,8 @@ export function LicenseNotice({
             className={cn(
               // Gate paper-pill system (Phase 2b): --color-primary is paper
               // inside [data-vex-gate], so the label must be the deep-cobalt
-              // primary-foreground — the old accent-fill + text-white pair
-              // would render white-on-paper now that the onboarding accent
+              // primary-foreground: the retired accent-fill + paper-ink pair
+              // would render paper-on-paper now that the onboarding accent
               // re-projects to paper.
               "inline-flex h-9 items-center justify-center rounded-full bg-[var(--color-primary)] px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-primary-foreground)]",
               "hover:bg-[color-mix(in_oklab,var(--color-primary)_88%,transparent)]",

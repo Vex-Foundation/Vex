@@ -1,5 +1,5 @@
 /**
- * WHO SCROLLS, AND WHO IS THE READING COLUMN (standalone mount) — the two must not be the same
+ * WHO SCROLLS, AND WHO IS THE READING COLUMN (standalone mount) - the two must not be the same
  * element.
  *
  * The transcript's scroller used to BE the reading column, so the browser
@@ -13,9 +13,9 @@
  * This suite is what keeps those two roles apart. It exercises the STANDALONE
  * mount, where the transcript owns its own overflow; inside the resident shell
  * `SessionPanel`'s scroll body is the scrollport instead and these classes go
- * inert (`chat-transcript.css`). Everything the arrangement must not break —
+ * inert (`chat-transcript.css`). Everything the arrangement must not break - 
  * follow ownership, the force-scroll on the reader's own words, prepend
- * anchoring, the "↓ latest" pill — is pinned next door in
+ * anchoring, the "↓ latest" pill - is pinned next door in
  * `scroll-model.test.tsx`.
  */
 

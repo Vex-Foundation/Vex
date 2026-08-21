@@ -1,13 +1,13 @@
 /**
- * THE TRANSCRIPT'S SCROLL MODEL — follow-stream with reader ownership
+ * THE TRANSCRIPT'S SCROLL MODEL - follow-stream with reader ownership
  * (owner decision 3, 2026-08-21; replaces the top-anchor/never-follow model).
  *
  * The rule the whole file exists to enforce: **only reader input may change
  * follow ownership.** While the reader is pinned to the floor the transcript
  * follows the tip of the conversation; the moment the reader scrolls away it
- * stops and offers the jump instead of taking it. Nothing else — not a
+ * stops and offers the jump instead of taking it. Nothing else - not a
  * streamed delta, not a disclosure toggle, not a growing draft, not a browser
- * shrink-clamp, not a late programmatic delivery — is allowed to arm or
+ * shrink-clamp, not a late programmatic delivery - is allowed to arm or
  * disarm follow.
  *
  * HOW OWNERSHIP IS ATTRIBUTED. Every programmatic write records the resulting
@@ -20,7 +20,7 @@
  * advanced geometry before delivering the event still compares against the
  * ledger rather than against already-moved raw geometry.
  *
- * WHEN FOLLOW ACTUALLY FIRES. Not on every render — on every TIP MOVE. The
+ * WHEN FOLLOW ACTUALLY FIRES. Not on every render - on every TIP MOVE. The
  * layout effect compares a `followSig` assembled from the row-order tip, the
  * preview signature and the steering mark; a chrome-only re-render (the pill
  * appearing because the reader crossed the threshold) leaves the signature
@@ -30,8 +30,8 @@
  * new steering mark.
  *
  * WHERE IT SCROLLS. `scrollportOf` resolves the nearest
- * `[data-vex-conversation-scroll]` host — the resident shell's scroll body,
- * which also holds the sticky composer seat — and falls back to the
+ * `[data-vex-conversation-scroll]` host - the resident shell's scroll body,
+ * which also holds the sticky composer seat - and falls back to the
  * transcript's own element when the transcript is mounted alone (unit tests).
  * Bottom-follow, paging anchors and position persistence always target the
  * resolved scrollport, never whichever element happens to hold the rows.
@@ -143,7 +143,7 @@ interface TranscriptScroll {
   readonly scrollRef: (node: HTMLDivElement | null) => void;
   /** The same node as an object ref, for hooks that take one. */
   readonly scrollNodeRef: RefObject<HTMLDivElement | null>;
-  /** The message column — the growth this model follows while pinned. */
+  /** The message column - the growth this model follows while pinned. */
   readonly columnRef: (node: HTMLDivElement | null) => void;
   readonly showLatest: boolean;
   readonly jumpToLatest: () => void;
@@ -239,7 +239,7 @@ export function useTranscriptScroll({
   const followSigRef = useRef<string | null>(null);
 
   // The flow TIP. Follow fires only when this moves, never on a chrome
-  // re-render — the difference between "new content arrived" and "the pill
+  // re-render - the difference between "new content arrived" and "the pill
   // appeared", which is what keeps entering the threshold from snapping.
   const followSig = `${itemCount}:${oldestId}:${newestId}:${previewSig ?? ""}:${steeringSig ?? ""}`;
 

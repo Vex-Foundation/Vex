@@ -79,7 +79,7 @@ function TapeClock({
  * than by a character portrait (owner QA round 2, item 5).
  *
  * GUTTER: unchanged at `pl-9` (36px). `VexMark` is 824:658, so an 18px height
- * is ~23px wide — it fits the existing 26px box with room to spare, and the
+ * is ~23px wide - it fits the existing 26px box with room to spare, and the
  * whole `pl-9` family (assistant prose, tool acts, tool groups, the live
  * stream preview, the turn-stats line) therefore stays where it is. If that
  * box ever changes, EVERY member of the family moves with it.
@@ -90,8 +90,8 @@ function TapeClock({
  * circle, and the mark's 23x18 diagonal is 29.2px, so the glyph clears the
  * ring at every phase. Reduced motion stills it to a static arc.
  *
- * The mark is decorative here — the row's sr-only speaker label names the
- * turn — so it stays aria-hidden (VexMark sets that itself).
+ * The mark is decorative here - the row's sr-only speaker label names the
+ * turn - so it stays aria-hidden (VexMark sets that itself).
  */
 function AssistantAvatar({ working = false }: { readonly working?: boolean }): JSX.Element {
   return (
@@ -114,7 +114,7 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
 
 /**
  * The speaker label, for assistive technology only. The visual wordmark is
- * gone (owner QA round 2, item 5 — "REMOVE the VEX name text"), but a screen
+ * gone (owner QA round 2, item 5 - "REMOVE the VEX name text"), but a screen
  * reader still has to be told whose turn this is, and the mark carries no
  * accessible name. Mirrors `SidebarHomeSigil`: the mark alone, never a
  * wordmark, plus a text equivalent.
@@ -158,7 +158,7 @@ function AssistantActionsTail({
 }): JSX.Element {
   return (
     // Register C2: message chrome is HUMAN, so it wears the support small-caps
-    // stamp (`.vex-micro`, sans) — mono is reserved for genuinely technical
+    // stamp (`.vex-micro`, sans) - mono is reserved for genuinely technical
     // strings (code, raw JSON, addresses, tx hashes).
     <span
       data-vex-message-tail=""
