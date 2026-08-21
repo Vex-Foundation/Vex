@@ -235,7 +235,7 @@ describe("composer capsule - send key", () => {
     expect(send.className).toContain("h-[34px]");
     expect(send.className).toContain("w-[34px]");
     expect(send.className).toContain("rounded-full");
-    expect(send.className).toContain("bg-accent-primary");
+    expect(send.className).toContain("bg-button-accent");
     expect(send.disabled).toBe(true);
     typeDraft("buy the dip");
     expect(send.disabled).toBe(false);
