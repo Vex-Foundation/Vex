@@ -185,6 +185,35 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(glyphBox.className).toContain("shrink-0");
   });
 
+  it("the chip shows the bare model name; the full routed id stays the accessible name", () => {
+    // Display-only trim (owner QA round 3 follow-up): the brand glyph already
+    // names the provider, so `deepseek/deepseek-v4-pro` reads as
+    // `deepseek-v4-pro` on the chip. The FULL id must survive everywhere the
+    // identity matters: here, the aria-label.
+    models = [{ modelId: "deepseek/deepseek-v4-pro", reasoning: null }];
+    const { container } = mountDocked();
+    const label = container.querySelector(
+      "[data-vex-model-label]",
+    ) as HTMLElement;
+    expect(label.textContent).toBe("deepseek-v4-pro");
+    const chip = container.querySelector(
+      '[data-vex-area="composer-model-chip"]',
+    ) as HTMLElement;
+    expect(chip.getAttribute("aria-label")).toContain(
+      "deepseek/deepseek-v4-pro",
+    );
+  });
+
+  it("an unrouted model id passes through the display trim untouched", () => {
+    // Only the FIRST provider segment is cut; a bare id has nothing to cut,
+    // and a variant suffix after the model name must survive.
+    models = [{ modelId: "vex-local-model", reasoning: null }];
+    const { container } = mountDocked();
+    expect(
+      container.querySelector("[data-vex-model-label]")?.textContent,
+    ).toBe("vex-local-model");
+  });
+
   it("the reasoning placeholder carries no width FLOOR that the row cannot reclaim", () => {
     const { container } = mountDocked();
     const placeholder = container.querySelector(
