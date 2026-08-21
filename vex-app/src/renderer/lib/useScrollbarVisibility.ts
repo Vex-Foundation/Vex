@@ -38,9 +38,20 @@ import { useEffect, type RefObject } from "react";
 /** How long the bar lingers after the last scroll event. */
 const SCROLL_IDLE_MS = 1000;
 
-/** Marks `ref`'s element while it is scrolling, and unmarks it when idle. */
+/**
+ * Marks `ref`'s element while it is scrolling, and unmarks it when idle.
+ *
+ * `attachmentEpoch` is how a LATE-ATTACHING node gets bound. A plain ref object
+ * has stable identity, so an effect keyed on it alone runs exactly once - and a
+ * consumer that renders a node-less branch first (the transcript's loading
+ * state) had `ref.current === null` at that moment and never rebound when the
+ * real scroller arrived. A consumer that owns its node through a callback ref
+ * passes the counter it already bumps on attach; consumers whose node is
+ * present on first commit pass nothing.
+ */
 export function useScrollbarVisibility(
   ref: RefObject<HTMLElement | null>,
+  attachmentEpoch = 0,
 ): void {
   useEffect(() => {
     const el = ref.current;
@@ -71,5 +82,5 @@ export function useScrollbarVisibility(
       // The element may outlive this effect (a re-render, not an unmount).
       el.removeAttribute("data-vex-scrolling");
     };
-  }, [ref]);
+  }, [ref, attachmentEpoch]);
 }

@@ -26,6 +26,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { WELCOME_PORTFOLIO_WIDTH } from "../../../lib/shell-columns.js";
 
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
@@ -170,15 +171,17 @@ describe("WelcomePortfolioPanel - collapsed ⇄ expanded", () => {
     // A real flex sibling (sidebar behavior), not an absolute overlay.
     expect(aside?.tagName).toBe("ASIDE");
     expect(aside?.className).toContain("transition-[width]");
-    expect(aside?.className).toContain("w-[380px]");
-    expect(aside?.className).not.toContain("w-0");
+    // The width is the SHARED constant the shell reserves its third grid track
+    // from, so the aside and its reservation cannot drift (round-3 QA item 8).
+    expect((aside as HTMLElement | null)?.style.width).toBe(
+      `${WELCOME_PORTFOLIO_WIDTH}px`,
+    );
 
     rerender(<WelcomePortfolioPanel bookOpen={false} onToggle={() => {}} />);
     const collapsed = container.querySelector(
       '[data-vex-area="welcome-portfolio"]',
     );
-    expect(collapsed?.className).toContain("w-0");
-    expect(collapsed?.className).not.toContain("w-[380px]");
+    expect((collapsed as HTMLElement | null)?.style.width).toBe("0px");
   });
 });
 

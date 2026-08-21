@@ -143,6 +143,12 @@ interface TranscriptScroll {
   readonly scrollRef: (node: HTMLDivElement | null) => void;
   /** The same node as an object ref, for hooks that take one. */
   readonly scrollNodeRef: RefObject<HTMLDivElement | null>;
+  /**
+   * Bumped every time the flow root attaches or detaches. A hook that binds to
+   * `scrollNodeRef` must key its effect on this too, or it binds once against
+   * the null of the loading branch and never rebinds (`useScrollbarVisibility`).
+   */
+  readonly scrollNodeEpoch: number;
   /** The message column - the growth this model follows while pinned. */
   readonly columnRef: (node: HTMLDivElement | null) => void;
   readonly showLatest: boolean;
@@ -423,12 +429,13 @@ export function useTranscriptScroll({
   //   - the composer seat grows (a growing draft, the queue dock) → follow,
   //     and republish `--vex-composer-height` so the floating jump pill keeps
   //     clearing the seat;
-  //   - the scrollport itself resizes (window, rails) → republish
-  //     `--vex-conversation-viewport`, the height the centred working scene
-  //     centres itself in without contributing to `scrollHeight`.
-  // The two variables live here rather than with the seat because this model
-  // is the only consumer of both, and a second writer would be a second source
-  // of truth for the same geometry.
+  //   - the scrollport itself resizes (window, rails) → follow, so a rail
+  //     collapse or a window resize does not strand a pinned reader.
+  // `--vex-composer-height` lives here rather than with the seat because this
+  // model is its only consumer, and a second writer would be a second source
+  // of truth for the same geometry. (The retired centred scene's
+  // `--vex-conversation-viewport` went with it - nothing reads that height any
+  // more; the scrollport is still OBSERVED, because bottom-follow needs it.)
   useEffect(() => {
     const local = scrollRef.current;
     const column = columnRef.current;
@@ -440,10 +447,6 @@ export function useTranscriptScroll({
       if (seat !== null) {
         el.style.setProperty("--vex-composer-height", `${seat.offsetHeight}px`);
       }
-      el.style.setProperty(
-        "--vex-conversation-viewport",
-        `${el.clientHeight}px`,
-      );
       if (!atBottomRef.current) return;
       el.scrollTop = el.scrollHeight;
       observedTopRef.current = el.scrollTop;
@@ -460,6 +463,7 @@ export function useTranscriptScroll({
   return {
     scrollRef: setScrollNode,
     scrollNodeRef: scrollRef,
+    scrollNodeEpoch: nodeEpoch,
     columnRef: setColumnNode,
     showLatest,
     jumpToLatest,

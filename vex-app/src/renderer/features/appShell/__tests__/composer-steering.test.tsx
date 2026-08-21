@@ -23,10 +23,14 @@ let submitPending = false;
 
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
-    isPending: submitPending,
     mutateAsync: mockMutateAsync,
     stop: vi.fn(),
   }),
+  // The composer reads the SESSION-FILTERED answer, never the hook-wide
+  // `isPending` (a resident composer would otherwise inherit another
+  // session's turn). The fixture answers for the session under test only.
+  useIsChatSubmitting: (sessionId: string | null) =>
+    submitPending && sessionId === SESSION,
 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({
