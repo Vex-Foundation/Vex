@@ -215,6 +215,9 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // A creator fee CLAIM, which pays out two assets in one transaction. The
   // badge names the act; the two legs are the row's own output legs.
   pools_claim: "CLAIM",
+  // Migration 084 - `null`, like `swap`'s own role: the kind segment already
+  // reads TRANSFER, so a second segment would print `TRANSFER·TRANSFER`.
+  wallet_transfer: null,
 };
 
 /**

@@ -44,9 +44,17 @@ describe("solana-transaction façade surface", () => {
     const keys = Object.keys(txMod).sort();
     expect(keys).toEqual([
       "classifyProviderSubmitFailure",
+      "confirmStagedSignature",
       "confirmVersionedTx",
       "deserializeVersionedTx",
       "getSolanaConnection",
+      // Migration 084 split the legacy staged helper into a SIGN-ONLY half, a
+      // SUBMIT half and a CONFIRM-ONLY half, so the wallet-send writer can
+      // persist the signature plus its blockhash evidence before any bytes reach
+      // the network, and can submit through the classifying RPC lane while still
+      // reporting one confirmation vocabulary.
+      // `signAndSubmitLegacyTxStaged` stays, composed of those halves.
+      "prepareLegacyTx",
       "prepareVersionedTx",
       "resetSolanaConnection",
       "sendSignedVersionedTx",
@@ -55,6 +63,7 @@ describe("solana-transaction façade surface", () => {
       "signAndSubmitLegacyTxStaged",
       "signAndSubmitVersionedTxStaged",
       "signVersionedTx",
+      "submitPreparedLegacyTxStaged",
       "submitPreparedTxOverRpc",
     ]);
 
@@ -68,6 +77,11 @@ describe("solana-transaction façade surface", () => {
     expect(typeof txMod.resetSolanaConnection).toBe("function");
     expect(typeof txMod.signAndSendLegacyTx).toBe("function");
     expect(typeof txMod.signAndSubmitLegacyTxStaged).toBe("function");
+    expect(typeof txMod.prepareLegacyTx).toBe("function");
+    expect(typeof txMod.submitPreparedLegacyTxStaged).toBe("function");
+    // The confirm-only half, so a caller submitting through another lane still
+    // reports the same confirmation vocabulary.
+    expect(typeof txMod.confirmStagedSignature).toBe("function");
     expect(typeof txMod.prepareVersionedTx).toBe("function");
     expect(typeof txMod.submitPreparedTxOverRpc).toBe("function");
     expect(typeof txMod.classifyProviderSubmitFailure).toBe("function");
