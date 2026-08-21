@@ -98,7 +98,7 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
     <span
       data-vex-agent-avatar=""
       data-vex-agent-avatar-state={working ? "working" : "settled"}
-      className="absolute left-0 top-[1px] inline-flex h-[26px] w-[26px] items-center justify-center text-ink-primary"
+      className="absolute left-0 top-[1px] inline-flex h-[26px] w-[26px] items-center justify-center text-brand-mark"
     >
       {working ? (
         <span

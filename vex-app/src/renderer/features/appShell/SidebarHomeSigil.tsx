@@ -32,7 +32,7 @@ export function SidebarHomeSigil({
   // Height-driven size; width flows from the mark's native aspect. A light
   // rail crown (24px open / 20px collapsed), not a billboard.
   const mark = (
-    <span data-vex-home-mark className="select-none text-ink-primary">
+    <span data-vex-home-mark className="select-none text-brand-mark">
       <VexMark size={sidebarOpen ? 24 : 20} />
     </span>
   );

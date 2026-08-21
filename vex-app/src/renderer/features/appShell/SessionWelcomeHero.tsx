@@ -54,11 +54,10 @@ export function SessionWelcomeHero(): JSX.Element {
   return (
     <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
       <div className="vex-rise flex flex-col items-center justify-center gap-3">
-        {/* vx script mark on currentColor ink (owner QA round 3: BLACK on the
-          * celeris day scene, not brand blue) - ink-primary is white over the
-          * chronos night photo and near-black on celeris, so one inline mark
-          * replaces the two-asset theme swap. */}
-        <span aria-hidden className="text-ink-primary">
+        {/* vx script mark on the brand-mark token (owner rule 2026-08-21:
+          * white everywhere in chronos, brand blue in celeris) - one inline
+          * mark, the theme flip lives in tokens.css. */}
+        <span aria-hidden className="text-brand-mark">
           <VexMark size={64} />
         </span>
         <span
