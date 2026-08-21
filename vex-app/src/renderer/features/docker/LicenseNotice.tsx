@@ -91,7 +91,7 @@ export function LicenseNotice({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-mask-1 px-6"
       onClick={onDismiss}
     >
       <div

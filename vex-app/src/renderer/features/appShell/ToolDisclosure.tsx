@@ -24,7 +24,7 @@ export function ToolDisclosure({
   const bodyId = useId();
   const hasBody = body !== null && body.length > 0;
   return (
-    <div className="rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02] font-mono text-[11px] text-[var(--vex-text-2)]">
+    <div className="rounded-[6px] border border-[var(--vex-line)] bg-interactive-hover font-mono text-[11px] text-[var(--vex-text-2)]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

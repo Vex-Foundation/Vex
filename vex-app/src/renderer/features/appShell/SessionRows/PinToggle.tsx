@@ -36,7 +36,7 @@ export function PinToggle({
         className,
       )}
     >
-      pinned ? <IconStarFill size={13} /> : <IconStar size={13} />
+      {pinned ? <IconStarFill size={13} /> : <IconStar size={13} />}
     </button>
   );
 }

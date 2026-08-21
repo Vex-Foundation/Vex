@@ -35,6 +35,7 @@ import {
 } from "../../lib/api/sessions.js";
 import { useCollapseChoreography } from "../../lib/useCollapseChoreography.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
+import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { RailSearchField } from "../../components/ui/rail-list.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
@@ -103,6 +104,10 @@ export function SessionsList({
   const columnRef = useRef<HTMLElement | null>(null);
   const { quiet, onPointerEnter, onPointerLeave } =
     useQuietScrollbars(columnRef);
+  // The browsing region is the column's one scroller; it carries the overlay
+  // treatment like the other three long lists.
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  useScrollbarVisibility(listScrollRef);
 
   // Rail search: a title filter over the SAME resolved titles the rows
   // render, toggled by the header magnifier. Local, launch-ephemeral state.
@@ -340,7 +345,11 @@ export function SessionsList({
        * every row is reachable in place; the Sessions screen remains the
        * full register.) */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto px-2 py-3"
+        ref={listScrollRef}
+        // `overflow-x-clip`: a bare `overflow-y-auto` computes overflow-x to
+        // `auto`, so any row that overshoots the rail width draws a
+        // horizontal bar along the bottom of the column.
+        className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 py-3"
         data-rail-control
       >
         {query.isLoading ? (

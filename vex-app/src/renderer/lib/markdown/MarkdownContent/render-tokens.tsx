@@ -57,7 +57,7 @@ export function renderInline(
         return (
           <code
             key={i}
-            className="rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px]"
+            className="rounded-[3px] bg-interactive-hover px-1.5 py-0.5 font-mono text-[13px]"
           >
             {token.text}
           </code>

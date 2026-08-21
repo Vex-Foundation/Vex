@@ -474,7 +474,7 @@ function NoticeBody({
     );
   }
   return (
-    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-white/[0.03] px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
+    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-interactive-hover px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
       {children}
     </div>
   );

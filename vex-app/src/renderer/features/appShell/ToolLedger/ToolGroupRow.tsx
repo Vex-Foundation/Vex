@@ -64,7 +64,7 @@ export function ToolGroupRow({
     <div
       // Semantic contract: the group container is a tool row too.
       data-vex-message-role="tool"
-      className="rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
+      className="rounded-[6px] border border-[var(--vex-line)] bg-interactive-hover"
     >
       <div className="flex h-10 items-center gap-2 pr-2">
         <button
