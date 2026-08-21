@@ -20,17 +20,24 @@ export function TurnStatsLine({
   const groups = turnStatGroups(result.data);
   if (groups.length === 0) return null;
   return (
+    // `.vex-doto-label` owns the app-wide Doto floor (12px / w600 / 0.14em /
+    // tabular-nums); colour and case are call-site decisions. These are VALUES
+    // ("88.1K IN"), not an eyebrow, so no uppercase. The floor colour tier is
+    // ink-secondary: ink-tertiary and below are illegible on the dot-matrix
+    // face, which is the owner QA defect this fixes.
     <div
       data-vex-turn-stats=""
-      className="vex-stat-doto flex items-center gap-2 pl-9"
+      className="vex-doto-label flex items-center gap-2 pl-9 text-ink-secondary"
     >
       {groups.map((group, i) => (
         <span key={group} className="flex items-center gap-2">
           {i > 0 ? (
-            // 2x2 separator dot — the tool-row header's sep grammar.
+            // 2x2 separator dot - the tool-row header's sep grammar. `line-3`,
+            // not `ink-caption`: caption is the disabled/decoration tier and a
+            // 2px dot painted in it is invisible in both themes.
             <span
               aria-hidden
-              className="h-[2px] w-[2px] rounded-[1px] bg-ink-caption"
+              className="h-[2px] w-[2px] rounded-[1px] bg-line-3"
             />
           ) : null}
           <span>{group}</span>
