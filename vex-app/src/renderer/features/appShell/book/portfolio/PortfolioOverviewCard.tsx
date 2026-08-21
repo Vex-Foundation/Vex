@@ -115,7 +115,7 @@ function TotalFigure({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="vex-doto-label uppercase text-ink-secondary">
+      <span className="vex-micro-label uppercase text-ink-secondary">
         Total value
       </span>
       {/* Display figure: Inter Tight 600 tabular — the serif retired to the

@@ -1,6 +1,6 @@
 /* Chat transcript chrome: the RESIDENT SHELL geometry, the turn-status
  * shimmer, the running-row sweep, hover-revealed timestamps, day separators
- * and the Doto turn-stats line.
+ * and the micro-label turn-stats line.
  * All ambient loops still under prefers-reduced-motion. */
 
 /* ============================================================ *
@@ -233,10 +233,10 @@
   }
 }
 
-/* The Doto micro-stat register lives in landing-motifs.css as
- * `.vex-doto-label` since R2-C (12px/600 floor); the old `.vex-stat-doto`
- * block (11px/500 tertiary, below the floor on all three counts) retired
- * here once its last call site migrated. */
+/* The micro-stat register lives in landing-motifs.css as `.vex-micro-label`
+ * (Inter Tight small-caps, 11px/600; formerly `.vex-doto-label` before Doto
+ * retired on 2026-08-21). The old `.vex-stat-doto` block retired here once
+ * its last call site migrated. */
 
 /* Code token classes (lib/markdown/highlight.ts). Restrained palette:
  * keywords carry the accent, strings the success tone, comments recede;

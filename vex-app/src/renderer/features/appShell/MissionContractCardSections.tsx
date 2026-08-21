@@ -117,7 +117,7 @@ interface FieldProps {
 function Field({ label, hint, children }: FieldProps): JSX.Element {
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-2 vex-doto-label uppercase text-ink-secondary">
+      <div className="flex items-center gap-2 vex-micro-label uppercase text-ink-secondary">
         <span>{label}</span>
         {hint ? <span className="text-[10px] italic">· {hint}</span> : null}
       </div>
@@ -276,7 +276,7 @@ export function AutoRetrySection({
     <div className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <div className="vex-doto-label uppercase text-ink-secondary">
+          <div className="vex-micro-label uppercase text-ink-secondary">
             Auto-retry on error
           </div>
           <p className="text-xs text-ink-secondary">
@@ -293,22 +293,26 @@ export function AutoRetrySection({
           disabled={pending}
           onClick={() => onToggle(!enabled)}
           data-vex-action="toggle-auto-retry"
+          // THE SWITCH LOOK (owner item 4, ratified 2026-08-21). One treatment
+          // for every switch in the app; the Notifications toggle in
+          // SettingsPreferences wears the identical strings. ON = the
+          // accent-CTA track (deep brand blue on chronos, light accent on
+          // celeris) with the matching ink knob; OFF = the solid interactive
+          // track with the page's own primary ink, never an opacity wash. The
+          // one opacity here is the PENDING control as a whole (a mutation is
+          // in flight), not a stacked text tier.
           className={cn(
             "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-50",
             enabled
-              ? "border-accent-primary/85 bg-accent-primary"
-              : "border-line-4 bg-interactive-active",
+              ? "border-button-accent bg-button-accent"
+              : "border-line-4 bg-interactive-solid",
           )}
         >
           <span
             className={cn(
-              "inline-block h-3.5 w-3.5 transform rounded-full transition-transform",
-              // Enabled: the knob sits on the solid accent track, so it takes
-              // the accent-contrast ink. Off: the track is the interactive
-              // wash over the page surface, so the knob takes the page's own
-              // primary ink - light on chronos, dark on celeris.
+              "inline-block h-3.5 w-3.5 rounded-full transition-transform",
               enabled
-                ? "translate-x-[18px] bg-ink-on-accent"
+                ? "translate-x-[18px] bg-ink-on-button-accent"
                 : "translate-x-[3px] bg-ink-primary",
             )}
           />

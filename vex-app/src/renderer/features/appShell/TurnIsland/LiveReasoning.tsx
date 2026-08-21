@@ -9,8 +9,9 @@
  * too — a box that scrolls independently inside a scrolling transcript is two
  * competing scroll contexts, and it cut the thought mid-sentence.)
  *
- * REGISTER: `.vex-reasoning-prose` — Instrument Serif ITALIC, muted. Thinking
- * aloud is not speaking, so it is not set in the speaking face. The same class
+ * REGISTER: `.vex-reasoning-prose` — Inter Tight 14px, muted (the serif italic
+ * left shell chrome on 2026-08-21, owner 6/6a). Thinking aloud is still not
+ * speaking; the distance is carried by tone and size now. The same class
  * dresses the settled stamps and the persisted `ReasonedBlock`, so a trace
  * looks the same whether it is streaming, folded, or reopened a week later.
  *

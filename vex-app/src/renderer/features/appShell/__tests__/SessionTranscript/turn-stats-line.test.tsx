@@ -2,11 +2,12 @@
  * TurnStatsLine REGISTER (owner QA round 2, item 6: "88.1K IN / 554 OUT" was
  * illegible in chronos).
  *
- * Doto is a dot-matrix face: at a given size and weight it lays down roughly
- * half the ink a solid face does, so tiers calibrated for Inter Tight overstate
- * its perceived contrast. The fix is the app-wide floor class plus a colour
+ * The register was Doto, a dot-matrix face that laid down roughly half a solid
+ * face's ink, so tiers calibrated for Inter Tight overstated its perceived
+ * contrast. Doto retired on 2026-08-21 (owner decision 2) and the register is
+ * now Inter Tight small-caps. The fix is the app-wide class plus a colour
  * tier at or above ink-secondary - never a per-spot patch, and never a size or
- * weight re-declaration at the call site (builder-C's `.vex-doto-label`
+ * weight re-declaration at the call site (builder-C's `.vex-micro-label`
  * contract, board 2026-08-21).
  *
  * The pure grouping seams stay pinned in `./turnStats.test.ts`.
@@ -43,19 +44,19 @@ afterEach(() => {
 });
 
 describe("TurnStatsLine", () => {
-  it("rides the shared Doto floor class and the legible ink tier", () => {
+  it("rides the shared micro-label class and the legible ink tier", () => {
     useLastTurnUsage.mockReturnValue(resolved(usage()));
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );
     const line = container.querySelector("[data-vex-turn-stats]");
     expect(line).not.toBeNull();
-    expect(line?.className).toContain("vex-doto-label");
+    expect(line?.className).toContain("vex-micro-label");
     // The retired per-spot register (11px / w500 / label-tertiary) is gone.
     expect(line?.className).not.toContain("vex-stat-doto");
     expect(line?.className).toContain("text-ink-secondary");
     // Colour is the call site's, but the receding tiers are a red build on a
-    // Doto label - they are the illegibility the owner reported.
+    // micro label - they are the illegibility the owner reported.
     expect(line?.className).not.toContain("text-ink-tertiary");
     expect(line?.className).not.toContain("text-ink-caption");
     // Size, weight, tracking and tabular-nums belong to the class alone.

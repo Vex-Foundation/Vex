@@ -83,7 +83,7 @@ export function SettingsScreen({
                   <IconChevronLeft size={14} />
                   Settings
                 </button>
-                <span className="vex-doto-label uppercase text-ink-secondary">
+                <span className="vex-micro-label uppercase text-ink-secondary">
                   {activeMeta.name}
                 </span>
               </div>

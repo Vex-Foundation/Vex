@@ -25,11 +25,15 @@
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
- * REGISTER (owner decree 2026-07-30, "inna czcionka"): `.vex-reasoning-prose`
- * — Instrument Serif ITALIC, muted. Thinking aloud is not speaking, so it is
- * not set in the speaking face. The live island stream and the settled
- * in-turn stamps wear the identical class, so one trace looks the same
- * streaming, folded, and reopened a week later.
+ * REGISTER (owner 6/6a, ratified 2026-08-21 - the serif leaves shell chrome).
+ * The STAMP is deepseek's Think-row voice: the app sans at 13px/500 on the
+ * label-secondary tier beside the existing chevron. The word stays "Reasoned";
+ * only the face changed. The BODY is `.vex-reasoning-prose` (Inter Tight 14px,
+ * muted) - thinking aloud is still not speaking, but the distance is carried
+ * by tone and size rather than by a serif italic that cost legibility at
+ * paragraph length. The live island stream and the settled in-turn stamps wear
+ * the identical class, so one trace looks the same streaming, folded, and
+ * reopened a week later.
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
@@ -115,7 +119,7 @@ export function ReasonedBlock({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex flex-none items-center gap-1 rounded-[4px] text-left font-serif text-[12px] italic text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex flex-none items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           <IconChevronRight
             size={11}

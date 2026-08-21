@@ -71,7 +71,7 @@ export function RadioCard({
       ) : null}
       <span
         className={cn(
-          "vex-doto-label vex-doto-label--wide",
+          "vex-micro-label vex-micro-label--wide",
           checked
             ? "text-accent-primary"
             : "text-ink-tertiary",

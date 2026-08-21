@@ -111,7 +111,7 @@ export function PoolsLaunchForm({
               disabled={disabled}
               onClick={() => set("pairedAsset", asset)}
               className={
-                "rounded-full border px-3 py-1 vex-doto-label vex-doto-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
+                "rounded-full border px-3 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
                 + (values.pairedAsset === asset
                   ? "border-line-3 text-ink-primary"
                   : "border-line-2 text-ink-tertiary hover:text-ink-secondary")
@@ -233,7 +233,7 @@ function ImageField({
             disabled={disabled}
             onClick={() => onSet("imageSource", source as PoolsImageSource)}
             className={
-              "rounded-full border px-3 py-1 vex-doto-label vex-doto-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
+              "rounded-full border px-3 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
               + (values.imageSource === source
                 ? "border-line-3 text-ink-primary"
                 : "border-line-2 text-ink-tertiary hover:text-ink-secondary")

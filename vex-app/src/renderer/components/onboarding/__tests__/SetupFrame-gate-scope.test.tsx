@@ -5,7 +5,7 @@
  * toasts, hover cards and menus portal to `document.body` - outside that
  * subtree. A surface opened from a pre-shell screen therefore silently
  * reverted to shell values: shell hairlines, no `--vex-accent-text`, the
- * shell type scale and no Doto voice. SetupFrame now stamps the scope on
+ * shell type scale and no pre-shell micro-label weight. SetupFrame now stamps the scope on
  * documentElement for its own lifetime, which every portal target inherits.
  *
  * These assertions are about SCOPE REACH (which nodes the selector can

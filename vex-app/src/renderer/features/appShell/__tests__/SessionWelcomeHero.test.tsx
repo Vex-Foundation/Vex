@@ -1,6 +1,6 @@
 /**
  * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
- * 2026-08-20): vx mark pair themed by CSS, Doto date eyebrow carrying the
+ * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
  * honest build-stage disclosure, the display headline, the reserved
  * Agent | Studio toggle (Studio disabled + lock, runtimeMode read-only),
  * and the retirement of the BACKED BY footer (studio seam #2).
@@ -59,9 +59,9 @@ describe("SessionWelcomeHero", () => {
     }
   });
 
-  it("speaks the date in the Doto eyebrow and keeps the honest preview disclosure as its tooltip", () => {
+  it("speaks the date in the micro-label eyebrow and keeps the honest preview disclosure as its tooltip", () => {
     const { container } = render(<SessionWelcomeHero />);
-    const eyebrow = container.querySelector(".vex-doto-label");
+    const eyebrow = container.querySelector(".vex-micro-label");
     expect(eyebrow).not.toBeNull();
     // A date, uppercase, e.g. "WEDNESDAY · AUG 20" — pinned by grammar, not
     // by today's value.

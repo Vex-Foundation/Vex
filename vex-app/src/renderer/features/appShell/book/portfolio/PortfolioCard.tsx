@@ -3,7 +3,7 @@
  * (Portfolio Overview / Wallets / Balances / the session cards): a SOLID
  * layer-1 surface with an alpha hairline border and the lv1 elevation shadow
  * (celeris separates by border + shadow on white; chronos by the luminance
- * ladder + white-alpha border — both come free from the aliases). The Doto
+ * ladder + white-alpha border — both come free from the aliases). The micro-label
  * eyebrow is the card's dot-matrix signature voice.
  *
  * Each card is a `motion.section` riding the shared `cardVariants`, so the
@@ -42,7 +42,7 @@ export function PortfolioCard({
       <header className="mb-2.5 flex items-baseline justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2">
           {leading}
-          <h3 className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
+          <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
             {eyebrow}
           </h3>
         </span>
@@ -60,7 +60,7 @@ export function PortfolioCard({
 /**
  * Quiet state line for a card body (loading / empty / error) — factual and
  * never louder than the content it stands in for. `loading` speaks the
- * card's Doto micro-voice; `warn` uses the token warn label; `muted` is the
+ * card's micro-label voice; `warn` uses the token warn label; `muted` is the
  * default informational tone (empty states phrase an invitation, not a
  * mood).
  */
@@ -73,7 +73,7 @@ export function CardStateNote({
 }): JSX.Element {
   if (tone === "loading") {
     return (
-      <p className="vex-doto-label uppercase text-ink-secondary">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         {children}
       </p>
     );

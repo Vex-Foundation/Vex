@@ -37,7 +37,7 @@ function SettledThought({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-[4px] text-left font-serif text-[12px] italic text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="flex items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
         <IconChevronRight
           size={11}

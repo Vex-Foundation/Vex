@@ -1,6 +1,6 @@
 /**
  * The turn-stats line under the tail of a settled turn (gap A17): the last
- * turn's usage — tokens in/out, cache-hit share, cost — in the Doto
+ * turn's usage — tokens in/out, cache-hit share, cost — in the micro-label
  * micro-stat register. Mounted only while no turn is in flight; an empty or
  * unresolved usage read renders nothing (never an error surface).
  */
@@ -20,14 +20,14 @@ export function TurnStatsLine({
   const groups = turnStatGroups(result.data);
   if (groups.length === 0) return null;
   return (
-    // `.vex-doto-label` owns the app-wide Doto floor (12px / w600 / 0.14em /
-    // tabular-nums); colour and case are call-site decisions. These are VALUES
-    // ("88.1K IN"), not an eyebrow, so no uppercase. The floor colour tier is
-    // ink-secondary: ink-tertiary and below are illegible on the dot-matrix
-    // face, which is the owner QA defect this fixes.
+    // `.vex-micro-label` owns the app-wide stamp register (Inter Tight
+    // 11px / w600 / 0.06em / tabular-nums); colour and case are call-site
+    // decisions. These are VALUES ("88.1K IN"), not an eyebrow, so no
+    // uppercase. The floor colour tier is ink-secondary: ink-tertiary and
+    // below are the illegibility the owner's QA reported.
     <div
       data-vex-turn-stats=""
-      className="vex-doto-label flex items-center gap-2 pl-9 text-ink-secondary"
+      className="vex-micro-label flex items-center gap-2 pl-9 text-ink-secondary"
     >
       {groups.map((group, i) => (
         <span key={group} className="flex items-center gap-2">

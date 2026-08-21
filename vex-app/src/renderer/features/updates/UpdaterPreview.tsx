@@ -154,7 +154,7 @@ export function UpdaterPreview(): JSX.Element {
     <>
       <div
         data-vex-updater-preview
-        className="fixed bottom-4 right-[21.5rem] z-[70] flex flex-col gap-1 rounded-xl border border-line-3 bg-surface-2 p-2 vex-doto-label uppercase text-ink-secondary shadow-lv2"
+        className="fixed bottom-4 right-[21.5rem] z-[70] flex flex-col gap-1 rounded-xl border border-line-3 bg-surface-2 p-2 vex-micro-label uppercase text-ink-secondary shadow-lv2"
       >
         <span className="px-1 text-[9px] text-ink-tertiary">
           Updater preview
