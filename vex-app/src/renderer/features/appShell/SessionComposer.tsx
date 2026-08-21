@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, JSX } from "react";
+import type { DragEvent, JSX, MouseEvent as ReactMouseEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
@@ -62,6 +62,14 @@ import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
 import { EASE_STANDARD } from "../../lib/motion.js";
+
+/**
+ * The placeholder shown while a turn is running. It states what the Send key
+ * actually does at that moment (A33 steering, A27 queue fallback) instead of
+ * rotating an idle suggestion the key would not honour.
+ */
+export const STEER_QUEUE_PLACEHOLDER =
+  "Steer the running turn - or queue this for next.";
 
 /** jsdom-safe reduced-motion probe (the SidebarProfile pattern). */
 function prefersReducedMotion(): boolean {
@@ -219,13 +227,34 @@ export function SessionComposer({
   const submitDisabled = draftEmpty || submitPending;
   const stopping = stopAvailable && stopRequested;
 
+  // KEEP FOCUS on the send/stop key. Pressing a button moves focus off the
+  // draft, so without this the caret is lost and the next keystroke goes
+  // nowhere - the composer must stay typeable straight through a send. The
+  // default is suppressed at MOUSEDOWN (focus moves on the press) and the
+  // textarea is refocused with `preventScroll`, because the browser's focus
+  // reveal would scroll the conversation column underneath it.
+  const keepFocus = useCallback((event: ReactMouseEvent): void => {
+    event.preventDefault();
+    textareaRef.current?.focus({ preventScroll: true });
+  }, [textareaRef]);
+
   const rotatorPaused =
-    focused || draft.length > 0 || activeSession?.mode === "mission";
+    focused ||
+    draft.length > 0 ||
+    activeSession?.mode === "mission" ||
+    submitPending;
   const welcomePlaceholder = usePlaceholderRotator(rotatorPaused);
+  // PLACEHOLDER PRECEDENCE, highest first: mission copy (the run owns the
+  // field) -> the steer/queue hint while a turn is running -> the rotating
+  // default. The steer hint outranks the default because during a turn the
+  // Send key does something DIFFERENT from what the default advertises, and a
+  // rotating suggestion at that moment is actively misleading.
   const placeholder =
     activeSession?.mode === "mission"
       ? placeholderFor(activeSession)
-      : welcomePlaceholder;
+      : submitPending
+        ? STEER_QUEUE_PLACEHOLDER
+        : welcomePlaceholder;
 
   // File-drag visual only: attachments are not supported yet, so the drop
   // ring signals the surface and the drop itself answers honestly.
@@ -238,7 +267,7 @@ export function SessionComposer({
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 font-doto text-[9px] uppercase tracking-[0.16em] text-warning-label"
+            className="vex-doto-label vex-doto-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 uppercase text-warning-label"
           >
             AWAITING SIGNATURE
           </span>
@@ -247,7 +276,7 @@ export function SessionComposer({
           // by the composer stop test (source casing stays).
           <span
             data-vex-console-status="stopping"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 font-doto text-[9px] uppercase tracking-[0.16em] text-ink-tertiary"
+            className="vex-doto-label vex-doto-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 uppercase text-ink-secondary"
           >
             Stopping…
           </span>
@@ -394,6 +423,7 @@ export function SessionComposer({
                 stopRequested={stopRequested}
                 onStop={onStop}
                 submitDisabled={submitDisabled}
+                onKeepFocus={keepFocus}
               />
             </div>
           </div>

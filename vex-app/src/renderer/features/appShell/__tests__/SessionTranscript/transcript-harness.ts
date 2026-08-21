@@ -9,6 +9,7 @@
  */
 
 import { vi } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import { CHAT_SUBMIT_MUTATION_KEY } from "../../../../lib/api/chat.js";
 import type {
@@ -20,6 +21,7 @@ import {
   useStreamStore,
   type StreamPreview,
 } from "../../../../stores/streamStore.js";
+import { clearSavedScrollPositions } from "../../SessionTranscript/useTranscriptScroll.js";
 
 export const SESSION = "00000000-0000-4000-8000-0000000000aa";
 export const ISO = "2026-05-26T10:00:00.000Z";
@@ -132,11 +134,94 @@ export function startChatTurn(client: QueryClient): () => void {
   return () => settle();
 }
 
-/** The anchor run-out spacer — the last aria-hidden child of the row list. */
-export function anchorSpacer(container: HTMLElement): HTMLElement {
-  const el = getScroller(container).querySelector("div[aria-hidden]:last-child");
-  if (el === null) throw new Error("anchor spacer not found");
-  return el as HTMLElement;
+/**
+ * Install scripted scroll geometry on an element (the deepseek `chat-view`
+ * idiom). jsdom reports 0 for every layout property, so a scroll test that
+ * does not script them proves nothing.
+ *
+ * The `scrollTop` SETTER clamps to `[0, scrollHeight - clientHeight]`, which
+ * is what a real engine does and what the follow model's shrink-clamp
+ * attribution depends on: without the clamp, a programmatic write past the
+ * floor would be delivered verbatim and the ledger comparison would never see
+ * the case the browser actually produces.
+ */
+export function installScrollMetrics(
+  element: HTMLElement,
+  scrollHeight: number,
+  clientHeight: number,
+): {
+  setHeight: (value: number) => void;
+  setClientHeight: (value: number) => void;
+} {
+  let height = scrollHeight;
+  let client = clientHeight;
+  let top = 0;
+  Object.defineProperty(element, "scrollHeight", {
+    configurable: true,
+    get: () => height,
+  });
+  Object.defineProperty(element, "clientHeight", {
+    configurable: true,
+    get: () => client,
+  });
+  // Clamped on BOTH sides: a write past the floor is clamped as a real engine
+  // clamps it, and a read after the flow SHRINKS reports the clamped value
+  // rather than a stale one — which is precisely the shrink-clamp delivery the
+  // follow model must attribute to the engine and not to the reader.
+  const clamp = (value: number): number =>
+    Math.max(0, Math.min(value, height - client));
+  Object.defineProperty(element, "scrollTop", {
+    configurable: true,
+    get: () => clamp(top),
+    set: (value: number) => {
+      top = clamp(value);
+    },
+  });
+  return {
+    setHeight: (value: number) => {
+      height = value;
+    },
+    setClientHeight: (value: number) => {
+      client = value;
+    },
+  };
+}
+
+/**
+ * READER INPUT, of any device: a delivered position that deviates from the
+ * model's observed-top ledger. Every scroll case must go through this rather
+ * than assigning `scrollTop` directly, because the difference between a reader
+ * scroll and a programmatic write is the whole subject.
+ */
+export function readerScroll(element: HTMLElement, top: number): void {
+  element.scrollTop = top;
+  fireEvent.scroll(element);
+}
+
+/**
+ * A manually-driven ResizeObserver. The follow model owns column, seat and
+ * scrollport growth through ONE observer; `notify()` is how a test says "the
+ * column just grew" without a wall clock.
+ */
+export function installResizeObserver(): { notify: () => void; observed: number } {
+  const state = { notify: () => {}, observed: 0 };
+  class ResizeObserverStub {
+    constructor(callback: ResizeObserverCallback) {
+      state.notify = () => {
+        callback([], this as unknown as ResizeObserver);
+      };
+    }
+
+    observe(): void {
+      state.observed += 1;
+    }
+
+    unobserve(): void {}
+
+    disconnect(): void {}
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  return state;
 }
 
 /** A streaming `StreamPreview`, with the fields a test cares about overridden. */
@@ -162,6 +247,8 @@ export function livePreview(
 /** Per-test teardown shared by both suites. */
 export function resetTranscriptEnv(): void {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  clearSavedScrollPositions();
   useStreamStore.setState({ bySessionId: {} });
   // @ts-expect-error — test cleanup
   delete window.vex;

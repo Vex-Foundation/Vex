@@ -94,9 +94,13 @@ describe("TranscriptRows - what animates", () => {
 });
 
 describe("TranscriptRows - the animation must not sit on the anchored element", () => {
-  it("keeps the entry class OFF the element the top-anchor effect measures", () => {
-    // `data-vex-entry-id` + `data-vex-entry-variant` is exactly the selector
-    // SessionTranscript's layout effect queries.
+  it("keeps the entry class OFF the element the scroll model measures", () => {
+    // The scroll model reads this element's border box with
+    // `getBoundingClientRect()` when it captures and restores a paging anchor
+    // or a saved reader position, in the same commit a live row mounts in. A
+    // transform HERE would fold the animation's opening offset into the
+    // restored scrollTop; a descendant's transform cannot move its parent's
+    // border box.
     const { container } = renderRows([row(1, "user")], new Set());
     const anchored = entry(container, 1);
     expect(anchored.className).not.toContain("vex-message-send");
@@ -105,6 +109,17 @@ describe("TranscriptRows - the animation must not sit on the anchored element", 
     expect(
       anchored.querySelector(".vex-message-send"),
     ).not.toBeNull();
+  });
+
+  it("carries a STABLE anchor key on that same element", () => {
+    // `data-vex-anchor-key` is the scroll model's identity for a row. It is
+    // the entry key, not the row id: a tool GROUP borrows its first call's id,
+    // so an id-keyed anchor could not survive regrouping across a prepend.
+    const { container } = renderRows([row(1, "user")], new Set());
+    const anchored = entry(container, 1);
+    const key = anchored.getAttribute("data-vex-anchor-key");
+    expect(key).not.toBeNull();
+    expect(key).not.toBe("");
   });
 
   it("keeps the turn rhythm on the row element, where layout belongs", () => {

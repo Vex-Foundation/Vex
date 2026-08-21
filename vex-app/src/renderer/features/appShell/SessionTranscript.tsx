@@ -3,9 +3,19 @@
  *
  * Pages backward through `useTranscriptInfinite` (newest page first). Renders
  * loading / error / empty / list (`SessionTranscript/TranscriptStates.tsx`).
- * The whole scroll model — user-anchor-at-top, never-follow, "latest" pill,
- * load-older viewport hold — lives in
- * `SessionTranscript/useTranscriptScroll.ts`.
+ * The whole scroll model — follow-stream with reader ownership, force-scroll
+ * on the reader's own words, the jump pill, prepend anchoring and per-session
+ * position persistence — lives in `SessionTranscript/useTranscriptScroll.ts`.
+ *
+ * WHO SCROLLS. Inside the resident shell the transcript is ORDINARY FLOW
+ * CONTENT: `SessionPanel`'s scroll body (`[data-vex-conversation-scroll]`) is
+ * the scrollport, because it is the only box that can also hold the sticky
+ * composer seat. Mounted alone (unit tests) this component's own element
+ * scrolls instead. `scrollportOf` in the scroll model resolves which, and the
+ * nested-mode geometry lives in `chat-transcript.css`. Both floating surfaces
+ * — the centred working scene and the jump pill — are ZERO-HEIGHT STICKY
+ * SLOTS outside the row column's gap, so neither extends `scrollHeight` nor
+ * disturbs the column rhythm in either mode.
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
@@ -163,7 +173,23 @@ export function SessionTranscript({
       ? null
       : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
 
-  const { scrollRef, anchorSpacerRef, showLatest, jumpToLatest, onScroll } =
+  // The newest steering mark. A change is the reader's own words entering a
+  // running turn, so the scroll model force-scrolls to it exactly as it does
+  // for a sent user row — the steer is otherwise invisible mid-transcript.
+  const steeringSig = useMemo<string | null>(() => {
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      // `steering` lives on the message row model, not on a tool group, so
+      // the `in` check is the narrowing (the union has no shared discriminant
+      // that separates the two here).
+      if (row !== undefined && "steering" in row && row.steering === true) {
+        return String(row.id);
+      }
+    }
+    return null;
+  }, [rows]);
+
+  const { scrollRef, scrollNodeRef, columnRef, showLatest, jumpToLatest } =
     useTranscriptScroll({
       sessionId,
       query,
@@ -173,10 +199,11 @@ export function SessionTranscript({
       newestVariant,
       newestIsLiveAppend,
       previewSig,
+      steeringSig,
     });
 
   // macOS-style overlay bar: visible while scrolling, gone ~1s after.
-  useScrollbarVisibility(scrollRef);
+  useScrollbarVisibility(scrollNodeRef);
 
   if (query.isLoading) {
     return <TranscriptLoadingState />;
@@ -197,14 +224,15 @@ export function SessionTranscript({
   }
 
   return (
-    // Positioning frame for the "↓ latest" pill ONLY. It sizes exactly like the
-    // scroller it wraps (`flex min-h-0 flex-1`), so the transcript's own layout
-    // and scroll math are unchanged; the pill floats over it rather than inside
-    // it, which keeps the pill out of the scrolled content.
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    // The transcript frame. Standalone it is the flex parent of a scroller;
+    // nested under the resident shell `chat-transcript.css` collapses both to
+    // ordinary flow so the panel's scroll body owns overflow.
+    <div
+      data-vex-transcript-frame
+      className="relative flex min-h-0 flex-1 flex-col"
+    >
       <div
         ref={scrollRef}
-        onScroll={onScroll}
         data-vex-area="chat-transcript"
         data-state="ready"
         // SCROLLBAR (owner visual round 2026-07-30): the scroller spans the
@@ -224,7 +252,16 @@ export function SessionTranscript({
           (the shared width rule). The 16px column gap is the ONE vertical
           rhythm - no per-element margins. */}
       <div className="mx-auto w-full max-w-[780px] px-4">
-      <div className="relative flex flex-col gap-4">
+      {/* THE CENTRED SCENE — a zero-height sticky slot, first in the block so
+          its sticky range spans the whole transcript. It contributes nothing
+          to `scrollHeight` (see `VexingOverlay.tsx`), and it sits OUTSIDE the
+          row column so it takes none of the column's 16px gap. */}
+      <VexingOverlay
+        preview={preview}
+        centredSceneEligible={centredSceneEligible}
+        awaitingApproval={hasPendingApproval}
+      />
+      <div ref={columnRef} className="relative flex flex-col gap-4">
         {/* The gutter hosts the live working mark (StreamingBubble, left-0) —
             an indicator, not a wall. */}
         {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
@@ -250,43 +287,31 @@ export function SessionTranscript({
             centredSceneUp={centredSceneUp}
           />
         ) : null}
-        {/* Anchor spacer — inert run-out below the newest turn. Sized (via the
-            top-anchor effect, direct style so it lands in the same frame as
-            the scroll) so a just-sent user message can anchor at the viewport
-            TOP with the reply streaming into the space beneath it. Zeroed on
-            session switch: history browsing gets no dead scroll region. */}
-        <div ref={anchorSpacerRef} aria-hidden className="shrink-0" />
         </div>
-        </div>
-      </div>
-
-      {/* The centred scene — a SIBLING of the scroller, never a descendant.
-          See `SessionTranscript/VexingOverlay.tsx` for why. */}
-      <VexingOverlay
-        preview={preview}
-        centredSceneEligible={centredSceneEligible}
-        awaitingApproval={hasPendingApproval}
-      />
-
-      {/* "↓ LATEST" — the jump the transcript no longer takes on the reader's
-          behalf. Solid ink (no glass), bottom-centred over the chat column,
-          and mounted ONLY while newer content sits below the fold, so it never
-          covers text the reader is already looking at. The jump is instant, so
-          it needs no reduced-motion branch. */}
-      {/* A4 geometry: a 34px floating circle over the column's bottom edge,
-          l2 hairline + solid layer fill + lv2 shadow. Mounted ONLY while
-          newer content sits below the fold. */}
+      {/* "↓ LATEST" — the jump the transcript takes only for the reader's own
+          words; for everything else the pill offers it instead.
+          A ZERO-HEIGHT STICKY SLOT (deepseek ChatView's idiom): it never
+          extends `scrollHeight`, so raising the pill cannot itself move the
+          floor the pill is measured against. It rides above the sticky
+          composer seat by the seat's LIVE height, republished as
+          `--vex-composer-height` by the scroll model's ResizeObserver, so a
+          growing draft pushes the pill up with it. Mounted ONLY while newer
+          content sits below the fold. */}
       {showLatest ? (
-        <button
-          type="button"
-          data-vex-latest-pill
-          onClick={jumpToLatest}
-          aria-label="Jump to latest message"
-          className="absolute bottom-4 left-1/2 z-10 inline-flex h-[34px] w-[34px] -translate-x-1/2 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-ink-primary shadow-md transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-        >
-          <IconChevronDown size={14} />
-        </button>
+        <div data-vex-latest-slot>
+          <button
+            type="button"
+            data-vex-latest-pill
+            onClick={jumpToLatest}
+            aria-label="Jump to latest message"
+            className="pointer-events-auto -mt-[34px] inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-line-2 bg-surface-2 text-ink-primary shadow-md transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          >
+            <IconChevronDown size={14} />
+          </button>
+        </div>
       ) : null}
+      </div>
+      </div>
     </div>
   );
 }

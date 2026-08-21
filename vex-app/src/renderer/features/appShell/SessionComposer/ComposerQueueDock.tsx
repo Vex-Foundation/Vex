@@ -1,15 +1,29 @@
 /**
- * Queue dock (A27): the strip above the composer card listing messages that
- * were submitted while a turn was still running. Rows offer inline edit,
- * remove, and send-now; long content renders as a head/tail capped preview
- * (display-only - the full text always rides the eventual submit). The store
- * (`lib/composer-queue.ts`) is authoritative; the composer drains the head
- * when the session goes idle.
+ * Queue dock (A27): messages submitted while a turn was still running. Rows
+ * offer inline edit, remove and send-now; long content renders as a head/tail
+ * capped preview (display-only - the full text always rides the eventual
+ * submit). The store (`lib/composer-queue.ts`) is authoritative; the composer
+ * drains the head when the session goes idle.
+ *
+ * GEOMETRY (R2-D2, deepseek QueueDock): the dock is not a detached card above
+ * the composer, it is an ATTACHED SURFACE. It insets to the card's inner
+ * width, rounds only its top corners, drops its bottom border (the composer
+ * card's own top border closes the shape) and tucks under the card by 3px, so
+ * queue plus composer read as one instrument rather than two stacked chips.
+ *
+ * DENSITY: one pending row renders inline; two or more collapse behind a count
+ * header by default, because the queue is a status the operator glances at far
+ * more often than a list they act on. An active edit or an in-flight action
+ * keeps its rows visible regardless, and emptying the queue restores the
+ * collapsed default for the next one. Queue SEMANTICS are unchanged by any of
+ * this - the store still owns order, content and drain.
  */
 
-import { useState, type JSX } from "react";
+import { useEffect, useId, useState, type JSX } from "react";
 import {
   IconCheck,
+  IconChevronDown,
+  IconChevronUp,
   IconClose,
   IconEdit,
   IconQueue,
@@ -60,8 +74,24 @@ export function ComposerQueueDock({
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
     null,
   );
+  const [collapsed, setCollapsed] = useState(true);
+  const listId = useId();
+
+  // An edit whose row was drained or removed underneath it must not keep the
+  // dock in interaction state; an emptied queue restores the collapsed
+  // default so the NEXT queue does not inherit this one's expansion.
+  useEffect(() => {
+    if (queue.length === 0 && !collapsed) setCollapsed(true);
+    if (editing !== null && !queue.some((row) => row.id === editing.id)) {
+      setEditing(null);
+    }
+  }, [queue, collapsed, editing]);
 
   if (queue.length === 0) return null;
+
+  // Expansion is not purely the toggle: an open editor must stay on screen.
+  const expanded = !collapsed || editing !== null;
+  const listVisible = queue.length === 1 || expanded;
 
   const saveEdit = (): void => {
     if (editing === null || editing.text.trim().length === 0) return;
@@ -72,9 +102,36 @@ export function ComposerQueueDock({
   return (
     <div
       data-vex-area="composer-queue-dock"
-      className="mb-2 rounded-xl border border-line-2 bg-surface-composer shadow-lv1"
+      data-expanded={listVisible ? "true" : "false"}
+      // -mb-[3px] tucks the panel under the composer card's top edge; the
+      // card's own border closes the shape, so this surface drops its bottom
+      // border and its bottom radius.
+      className="mx-auto -mb-[3px] w-full max-w-[764px] overflow-hidden rounded-t-xl border border-b-0 border-line-2 bg-surface-2"
     >
-      <ul className="flex flex-col">
+      {queue.length > 1 ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => setCollapsed((open) => !open)}
+          className="flex h-9 w-full items-center gap-2.5 px-3 text-left text-[13px] leading-6 text-ink-primary transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
+        >
+          <span aria-hidden className="shrink-0 text-ink-tertiary">
+            <IconQueue size={14} />
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {queue.length} queued messages
+          </span>
+          <span aria-hidden className="shrink-0 text-ink-tertiary">
+            {expanded ? (
+              <IconChevronUp size={14} />
+            ) : (
+              <IconChevronDown size={14} />
+            )}
+          </span>
+        </button>
+      ) : null}
+      <ul id={listId} hidden={!listVisible} className="flex max-h-[180px] flex-col overflow-y-auto">
         {queue.map((row) => (
           <li
             key={row.id}

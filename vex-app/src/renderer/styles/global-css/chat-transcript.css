@@ -1,6 +1,128 @@
-/* Chat transcript chrome: the turn-status shimmer, the running-row sweep,
- * hover-revealed timestamps, day separators and the Doto turn-stats line.
+/* Chat transcript chrome: the RESIDENT SHELL geometry, the turn-status
+ * shimmer, the running-row sweep, hover-revealed timestamps, day separators
+ * and the Doto turn-stats line.
  * All ambient loops still under prefers-reduced-motion. */
+
+/* ============================================================ *
+ *  THE RESIDENT CONVERSATION SHELL                              *
+ *                                                               *
+ *  `SessionPanel` renders ONE persistent tree. The welcome hero *
+ *  and the docked session view are the same DOM in the same     *
+ *  positions, told apart only by `data-phase` on the panel root *
+ *  (hero / settling / active). The composer's textarea node and *
+ *  its caret survive the transition because nothing about it    *
+ *  remounts — only these rules change.                          *
+ *                                                               *
+ *  There is NO crossfade and NO morph between phases: the       *
+ *  position change of one persistent tree IS the transition.    *
+ * ============================================================ */
+
+/* Nested mode: the panel's scroll body owns overflow (it is the only box that
+ * can also hold the sticky composer seat), so the transcript collapses to
+ * ordinary flow content. Mounted alone the transcript keeps its own scroller —
+ * `scrollportOf` in `useTranscriptScroll.ts` resolves between the two. */
+[data-vex-conversation-scroll] [data-vex-transcript-frame],
+[data-vex-conversation-scroll] [data-vex-area="chat-transcript"] {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+
+/* HERO — the composer stack is FLEX-CENTRED in the scroll body. Flex, never
+ * `transform`: a transform on this box would make it the containing block for
+ * every `position: fixed` descendant (menus, dialogs, the command palette),
+ * silently shrinking them to this column. */
+[data-vex-area="session-panel"][data-phase="hero"]
+  > [data-vex-conversation-scroll] {
+  justify-content: center;
+}
+
+/* Foot inside the centred box floats the hero stack a little above true
+ * centre, which reads better than geometric centring. */
+[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
+  padding-bottom: 32px;
+}
+
+/* HERO GROWTH BAND (owner smoothness decree 2026-07-22, carried into
+ * residency). The band's LAYOUT height is pinned to the composer's resting
+ * stack, so an auto-growing pill overflows DOWNWARD instead of growing the
+ * flex-centred seat — which would move the hero crown up by half the growth,
+ * i.e. opposite to the thing the user is typing into. `overflow: visible` is
+ * what lets the overflow paint. 140px = mt-6 (24) + resting pill (56) + the
+ * starter-chip slot (60), the same constant the pre-residency band used. */
+[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock] {
+  height: 140px;
+  overflow: visible;
+}
+
+/* ACTIVE — the seat is the sticky floor of the scroll body, with the
+ * transcript dissolving into it.
+ *
+ * The mask stops are in PX, not percentages: a growing draft must widen the
+ * SOLID region only, never stretch the 36px fade band. The 0px stop is the
+ * plate colour at zero alpha (not white), so both themes fade from their own
+ * ground. `--vex-surface-0` is the shell plate the backdrop veil is built
+ * from; behind an active session that veil is already 80% of this colour, so
+ * the residual difference against the artwork reads as a mild deepening rather
+ * than a seam. */
+[data-vex-area="session-panel"][data-phase="active"] [data-vex-composer-seat] {
+  position: sticky;
+  bottom: 0;
+  z-index: 7;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--vex-surface-0) 0%, transparent) 0px,
+    var(--vex-surface-0) 36px
+  );
+}
+
+/* SETTLING — a session is opening and its transcript is still unknown, so
+ * hero-vs-docked is unknowable. The seat stays MOUNTED (residency is the whole
+ * point) but invisible, so no wrong layout flashes before the phase lands. */
+[data-vex-area="session-panel"][data-phase="settling"]
+  [data-vex-composer-seat] {
+  visibility: hidden;
+}
+
+/* ── Zero-height sticky slots ─────────────────────────────────────────────
+ * Both floating conversation surfaces are `height: 0` sticky boxes whose
+ * child overflows. A zero-height box adds no scroll range, so neither surface
+ * can move the floor the follow model measures itself against. */
+
+/* The centred working scene, centred in the VIEWPORT — not in the transcript's
+ * own box, which is the whole conversation once the shell owns the scrollport.
+ * `--vex-conversation-viewport` is republished by the scroll model's
+ * ResizeObserver; the `100vh` fallback covers the first paint before it
+ * fires. */
+[data-vex-viewport-slot] {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  height: 0;
+  pointer-events: none;
+}
+[data-vex-viewport-scene] {
+  display: grid;
+  place-items: center;
+  height: var(--vex-conversation-viewport, 100vh);
+}
+
+/* The jump-to-latest pill. Under the resident shell it clears the sticky seat
+ * by the seat's LIVE height, so a growing draft or an opening queue dock
+ * pushes the pill up with it. z-8 keeps it above the seat (z-7). */
+[data-vex-latest-slot] {
+  position: sticky;
+  bottom: 16px;
+  z-index: 8;
+  display: flex;
+  height: 0;
+  justify-content: center;
+  pointer-events: none;
+}
+[data-vex-conversation-scroll] [data-vex-latest-slot] {
+  bottom: calc(var(--vex-composer-height, 152px) + 16px);
+}
 
 /* Turn-status shimmer — 5-stop gradient, narrow bright band at 40-60%,
  * clipped to the glyphs. The highlight stop is blue-300 in BOTH themes

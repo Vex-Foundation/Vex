@@ -47,9 +47,13 @@
  *    row newer than the baseline, of the `user` variant, appended live. This is
  *    deliberately NOT a claim that the row belongs to "this send": the renderer
  *    holds no turn correlation id and must never pretend otherwise. It is the
- *    exact signal `SessionTranscript`'s top-anchor layout effect uses, so by
- *    the time it is true the viewport has been re-anchored onto a fresh user
- *    row and nothing is being covered;
+ *    exact signal the scroll model's FORCE-SCROLL arm keys on
+ *    (`useTranscriptScroll.ts`, "own words must be visible"), and both read it
+ *    in the same commit, so by the time this is true the viewport has been
+ *    driven to the floor with that fresh user row in view and nothing the
+ *    reader was reading is being covered. (Under the retired top-anchor model
+ *    the same signal drove the viewport to a top anchor instead — the
+ *    guarantee is unchanged, only the resting position moved.)
  *  - it closes PERMANENTLY for the submission on either the first real engine
  *    preview OR any newer non-user row. The second clause matters because
  *    stream-preview delivery is best-effort (`engine/core/turn.ts`): a round
