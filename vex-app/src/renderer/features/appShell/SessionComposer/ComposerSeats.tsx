@@ -35,6 +35,22 @@ const PlanDisplayModal = lazy(async () => ({
 const SEAT_CHIP =
   "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
 
+/**
+ * DISPLAY-ONLY trim of the routing prefix: `deepseek/deepseek-v4-pro` reads
+ * as `deepseek-v4-pro` on the chip (owner QA round 3 follow-up). The brand
+ * icon already names the provider, so the prefix was pure duplication eating
+ * the chip's 160px. Only the FIRST segment is cut - an id with no `/` passes
+ * through, and a variant suffix (`:free`) survives. The FULL id stays the
+ * source of truth everywhere else: the accessible name, the tooltip, the
+ * settings screen, and every request path.
+ */
+export function modelDisplayName(modelId: string): string {
+  const slash = modelId.indexOf("/");
+  return slash > 0 && slash < modelId.length - 1
+    ? modelId.slice(slash + 1)
+    : modelId;
+}
+
 export function ComposerModelChip({
   modelId,
 }: {
@@ -43,7 +59,7 @@ export function ComposerModelChip({
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   if (modelId === null) return null;
   return (
-    <Tooltip label="Runtime model - change it in Settings" side="top" delayMs={300}>
+    <Tooltip label={`${modelId} - change it in Settings`} side="top" delayMs={300}>
       <button
         type="button"
         data-vex-area="composer-model-chip"
@@ -58,7 +74,7 @@ export function ComposerModelChip({
           <ModelBrandIcon modelId={modelId} size={14} />
         </span>
         <span data-vex-model-label className="min-w-0 max-w-40 flex-1 truncate">
-          {modelId}
+          {modelDisplayName(modelId)}
         </span>
       </button>
     </Tooltip>
