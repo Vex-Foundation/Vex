@@ -278,28 +278,6 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
       "gate stops being theme-invariant, BOTH entries must go, not one.",
   },
-  // ── R3 WAVE-SCOPED, DELETE ON MERGE ────────────────────────────────────
-  // The Doto register retired to `.vex-micro-label` in UIUX round 3 lane F3,
-  // which renamed every call site in the app EXCEPT the composer's: lane F2 is
-  // rebuilding the composer seat IN PARALLEL and owns those two files, so it
-  // writes the new class name itself (register contract posted on the round-3
-  // board). Merge order is F1 -> F2 -> F3, so by the time F3 lands both files
-  // already carry `.vex-micro-label` and BOTH entries below are stale - the
-  // stale-whitelist check will not catch that, so delete them by hand at merge.
-  {
-    file: "features/appShell/SessionComposer.tsx",
-    pattern: "dead Doto class name (use .vex-micro-label)",
-    reason:
-      "Cross-lane rename seam: owned by round-3 lane F2 (composer seat), " +
-      "renamed there. Delete this entry when F2 is merged.",
-  },
-  {
-    file: "features/appShell/SessionComposer/ComposerMissionStrip.tsx",
-    pattern: "dead Doto class name (use .vex-micro-label)",
-    reason:
-      "Cross-lane rename seam: owned by round-3 lane F2 (composer seat), " +
-      "renamed there. Delete this entry when F2 is merged.",
-  },
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than

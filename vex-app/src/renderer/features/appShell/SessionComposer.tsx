@@ -258,7 +258,7 @@ export function SessionComposer({
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
-            className="vex-doto-label vex-doto-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 uppercase text-warning-label"
+            className="vex-micro-label vex-micro-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 uppercase text-warning-label"
           >
             AWAITING SIGNATURE
           </span>
@@ -267,7 +267,7 @@ export function SessionComposer({
           // by the composer stop test (source casing stays).
           <span
             data-vex-console-status="stopping"
-            className="vex-doto-label vex-doto-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 uppercase text-ink-secondary"
+            className="vex-micro-label vex-micro-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 uppercase text-ink-secondary"
           >
             Stopping…
           </span>
