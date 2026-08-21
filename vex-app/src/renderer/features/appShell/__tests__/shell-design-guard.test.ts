@@ -212,30 +212,11 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
   },
-  // ── TEMPORARY, wave-scoped (R2-C, 2026-08-21) ──────────────────────────
-  // The Doto register migrated ~70 shell call sites to `.vex-doto-label`. The
-  // composer's two remaining sites are the ONE set this lane must not touch:
-  // the conversation rework (wave 2) rebuilds those files wholesale, and an
-  // edit here would collide with it. The class contract is published on the
-  // round-2 board for that lane.
-  // OWNER: wave-2 builder D1. REMOVAL CONDITION: delete both entries the
-  // moment D1 lands the composer Doto sites on `.vex-doto-label` - the guard
-  // then holds the register with no exemptions at all. These are the only two
-  // sanctioned bare `font-doto` occurrences in the shell; do not add a third.
-  {
-    file: "features/appShell/SessionComposer.tsx",
-    pattern: "bare font-doto utility (use .vex-doto-label)",
-    reason:
-      "Wave-2 handoff: the queue/steering badges (9px Doto) migrate with the " +
-      "conversation rework, which owns this file. Temporary - remove with D1.",
-  },
-  {
-    file: "features/appShell/SessionComposer/ComposerMissionStrip.tsx",
-    pattern: "bare font-doto utility (use .vex-doto-label)",
-    reason:
-      "Wave-2 handoff: the mission strip label migrates with the conversation " +
-      "rework, which owns the composer tree. Temporary - remove with D1.",
-  },
+  // REMOVED (R2-D2, 2026-08-21): the two wave-scoped `font-doto` exemptions
+  // for `SessionComposer.tsx` and `SessionComposer/ComposerMissionStrip.tsx`.
+  // Their call sites now ride `.vex-doto-label` (+ `--wide`) at the
+  // `text-ink-secondary` floor, so the Doto register holds across the whole
+  // shell with ZERO exemptions. Do not reintroduce one.
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than
