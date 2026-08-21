@@ -33,10 +33,11 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "Get the latest token PROFILE METADATA on DEX Screener - icons, descriptions, social links, "
-      + "and each profile's updatedAt timestamp. A profile update is NOT token creation: this is "
-      + "not a new-token or new-listing feed, and updatedAt says when marketing text changed, not "
-      + "when anything launched. Keep one or more chains with chainIds and bound "
-      + "freshness with updatedWithinSeconds. "
+      + "and the community-takeover flag. A profile update is NOT token creation: this is "
+      + "not a new-token or new-listing feed. The provider currently sends no updatedAt on THIS "
+      + "feed (drift measured 2026-08-21), so updatedWithinSeconds here drops every row - for "
+      + "timestamps and freshness use dexscreener.profiles.recent. Keep one or more chains with "
+      + "chainIds. "
       + FEED_DESCRIPTION_WINDOW_CLAUSE + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,
     actionKind: "read",
