@@ -44,7 +44,12 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
           onClick={() => setVisible((v) => !v)}
           aria-pressed={visible}
           aria-label={visible ? "Hide password" : "Show password"}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 vex-micro text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          // Tier floor is SECONDARY, not tertiary: inside the pre-shell
+          // scope this is a Doto label, and Doto's dot glyphs carry a
+          // fraction of a solid face's ink, so tertiary reads as decoration
+          // rather than a control - in celeris especially. Hover lifts to
+          // primary.
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 vex-micro text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           {visible ? "hide" : "show"}
         </button>

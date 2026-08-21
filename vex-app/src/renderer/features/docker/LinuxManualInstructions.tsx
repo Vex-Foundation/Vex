@@ -64,7 +64,7 @@ export function LinuxManualInstructions({
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
-        <pre className="max-h-72 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 pr-12 text-xs leading-relaxed text-ink-primary">
+        <pre className="max-h-72 overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 pr-12 text-xs leading-relaxed text-ink-primary">
           <code className="font-mono">{instructions}</code>
         </pre>
         <button
@@ -89,7 +89,7 @@ export function LinuxManualInstructions({
 
       <p className="text-xs leading-relaxed text-ink-secondary">
         After install: log out and back in (or reboot) so your user joins the{" "}
-        <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-ink-primary">
+        <code className="rounded bg-gate-well px-1 py-0.5 font-mono text-ink-primary">
           docker
         </code>{" "}
         group, then click Recheck below.

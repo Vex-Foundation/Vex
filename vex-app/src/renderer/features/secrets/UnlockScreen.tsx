@@ -3,8 +3,9 @@
  * vault is configured but locked (typical cause: app restart after
  * onboarding).
  *
- * Visual system (Chronos rebrand, A2 plate + AMENDMENT A3 boxless): the
- * ink continuum plate (`SetupFrame`), the white vx mark above a serif
+ * Visual system (Chronos rebrand, A2 plate + AMENDMENT A3 boxless; theme
+ * spine round 2): the continuum plate (`SetupFrame`) - ink under chronos,
+ * light under celeris - the theme-swapped vx mark above a serif
  * "Welcome back." statement, and the form DISSOLVED directly onto the
  * plate — no card, no box; the plate and the mark are the whole
  * ceremony. No grid, no scanlines, no
@@ -13,9 +14,11 @@
  * password field runs the `.vex-sign-stroke--signing` ink loop ONLY
  * while the unlock IPC is in flight (the sanctioned in-flight loop).
  *
- * Functional logic (unchanged from the previous version):
+ * Functional logic:
  *   - password ref is uncontrolled (skill §14 — secret never lands in
- *     observable React state),
+ *     observable React state). The CTA's armed state rides a BOOLEAN
+ *     `hasInput` set from the field's `onInput`: emptiness is the only
+ *     thing that crosses into React,
  *   - PASSWORD_MIN_LENGTH client-side gate before IPC,
  *   - `secrets.unlock_throttled` surfaces an alert + 1s setInterval
  *     countdown; cleaned up on every state change (throttle windows are
@@ -72,6 +75,11 @@ export function UnlockScreen(): JSX.Element {
   const [resetPending, setResetPending] = useState(false);
   const [resetRestarting, setResetRestarting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // ARMED SIGNAL - a BOOLEAN, never the password. The field stays
+  // uncontrolled (skill §14): the only thing that crosses into React state
+  // is whether it is empty, which is what lights the CTA up. Guarded by
+  // `UnlockScreen-no-leak.test.tsx`.
+  const [hasInput, setHasInput] = useState(false);
   const beginUnlockCurtain = useUiStore((s) => s.beginUnlockCurtain);
 
   // Tick once a second while a throttle window is active so the countdown
@@ -140,6 +148,7 @@ export function UnlockScreen(): JSX.Element {
         return;
       }
       if (passwordRef.current) passwordRef.current.value = "";
+      setHasInput(false);
       beginUnlockCurtain();
     } finally {
       setPending(false);
@@ -186,7 +195,14 @@ export function UnlockScreen(): JSX.Element {
           alt=""
           aria-hidden
           draggable={false}
-          className="vex-rise mx-auto h-16 w-auto select-none"
+          className="vex-rise mx-auto h-16 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
+        />
+        <img
+          src="/brand/vex-mark-color.svg"
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="vex-rise mx-auto hidden h-16 w-auto select-none [[data-vex-theme=celeris]_&]:block"
         />
 
         <h1
@@ -214,7 +230,7 @@ export function UnlockScreen(): JSX.Element {
             <div className="flex flex-col gap-2.5">
               <Label
                 htmlFor="vex-unlock-password"
-                className="vex-micro font-medium text-ink-tertiary"
+                className="vex-micro font-medium text-ink-secondary"
               >
                 Master password
               </Label>
@@ -224,14 +240,17 @@ export function UnlockScreen(): JSX.Element {
                 autoComplete="current-password"
                 autoFocus
                 disabled={inputsDisabled}
-                className="[&_input]:h-11 [&_input]:bg-white/[0.10]"
+                onInput={(event) => {
+                  setHasInput(event.currentTarget.value.length > 0);
+                }}
+                className="[&_input]:h-11 [&_input]:bg-gate-well"
               />
               {/* SIGNATURE RAIL — resting hairline under the field; while
                 the unlock IPC is in flight the cobalt ink travels it
                 (.vex-sign-stroke--signing, the sanctioned in-flight loop). */}
               <div
                 aria-hidden
-                className="relative h-px w-full overflow-hidden bg-white/[0.08]"
+                className="relative h-px w-full overflow-hidden bg-gate-rail"
               >
                 <span
                   className={cn(
@@ -248,7 +267,7 @@ export function UnlockScreen(): JSX.Element {
                 <p
                   role="alert"
                   data-vex-unlock-throttle="active"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-sm text-[color-mix(in_oklab,var(--color-warning)_70%,white)]"
+                  className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-sm text-gate-warn"
                 >
                   {throttle.message}{" "}
                   <span className="font-mono text-xs tabular-nums">
@@ -262,7 +281,7 @@ export function UnlockScreen(): JSX.Element {
                 {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
                 <p
                   role="alert"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[color-mix(in_oklab,var(--color-danger)_70%,white)]"
+                  className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-gate-danger"
                 >
                   {error}
                 </p>
@@ -270,9 +289,17 @@ export function UnlockScreen(): JSX.Element {
               </div>
             ) : null}
 
+            {/* ARMED CTA - quiet outline capsule while the field is empty,
+              the primary ink inversion the moment anything is typed
+              (chronos: paper fill + ink text; celeris: ink fill + white
+              text - the existing primary tokens, no new colour). The
+              variant carries the 150ms colour transition; `data-armed`
+              carries only the boolean. */}
             <Button
               type="submit"
+              variant="armed"
               size="lg"
+              data-armed={hasInput}
               disabled={inputsDisabled}
               className="w-full"
             >

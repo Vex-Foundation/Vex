@@ -52,7 +52,7 @@ export function DaemonStoppedBody({
           <p className="vex-micro text-ink-secondary">
             Run this in a terminal
           </p>
-          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-ink-primary">
+          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
             <code>sudo systemctl start docker</code>
           </pre>
           <p className="text-xs text-ink-secondary">

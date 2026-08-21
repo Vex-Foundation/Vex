@@ -192,6 +192,44 @@
    * white in celeris too, so it lives only on :root. */
   --vex-alias-label-on-chrome: #ffffff;
 
+  /* PRE-SHELL (post-gate setup stack) - the theme-aware group the
+   * `[data-vex-gate="true"]` scope in chronos-gate.css re-projects onto the
+   * shadcn/utility names. Ratified 2026-08-21: every screen AFTER the
+   * Chronos Gate follows the theme; the gate itself stays the invariant dark
+   * brand moment and consumes NONE of these (it paints its own dither sky
+   * and its own white-alpha literals).
+   *
+   * `gate-plate` must equal the main-window `backgroundColor` in CHRONOS
+   * (#0a0d18, main/main-window.ts) so first paint and the plate are one
+   * surface. Under celeris the theme-invariant gate covers first paint, so
+   * the plate is free to be the light base. */
+  --vex-alias-gate-plate: var(--color-gray-1000);
+  /* Hairlines on the plate need a stronger step than the global line ramp
+   * (l2 is visually absent behind the vignette + grain); input wells get one
+   * more step so a field reads as a field. */
+  --vex-alias-gate-border: rgba(255, 255, 255, 0.22);
+  --vex-alias-gate-input: rgba(255, 255, 255, 0.28);
+  --vex-alias-gate-muted: rgba(255, 255, 255, 0.08);
+  /* Field fill and inline-code chips on the plate. */
+  --vex-alias-gate-well: rgba(255, 255, 255, 0.1);
+  /* 1px rails, progress tracks and quiet chips on the plate. */
+  --vex-alias-gate-rail: rgba(255, 255, 255, 0.08);
+  /* Multi-line log/command plates (docker output, migration errors). */
+  --vex-alias-gate-code: rgba(0, 0, 0, 0.4);
+  /* Alert-rail ink. Chronos lifts the status hue toward white to clear the
+   * ink plate; celeris deepens it instead - mixing toward white on a light
+   * plate is exactly the defect this pair replaces. */
+  --vex-alias-gate-danger-text: color-mix(
+    in oklab,
+    var(--color-danger) 70%,
+    white
+  );
+  --vex-alias-gate-warn-text: color-mix(
+    in oklab,
+    var(--color-warning) 70%,
+    white
+  );
+
   /* Scrollbar tint pairs (consumed through the runtime indirection in
    * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
   --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
@@ -256,6 +294,25 @@
   --vex-alias-state-error: var(--color-red-500);
   --vex-alias-state-error-wash: var(--color-red-100);
 
+  /* PRE-SHELL under celeris: the setup stack becomes a LIGHT room (design
+   * language - white surfaces, separation from borders and shadows, never a
+   * gray elevation ladder). Same alias names, inverted alpha cast. */
+  --vex-alias-gate-plate: var(--color-gray-0);
+  --vex-alias-gate-border: rgba(10, 13, 24, 0.22);
+  --vex-alias-gate-input: rgba(10, 13, 24, 0.28);
+  --vex-alias-gate-muted: rgba(10, 13, 24, 0.06);
+  --vex-alias-gate-well: rgba(10, 13, 24, 0.04);
+  --vex-alias-gate-rail: rgba(10, 13, 24, 0.1);
+  --vex-alias-gate-code: rgba(10, 13, 24, 0.04);
+  /* Deepen, never lighten: red-500/amber-500 mixed toward white would vanish
+   * on the white plate. */
+  --vex-alias-gate-danger-text: color-mix(
+    in oklab,
+    var(--color-danger) 80%,
+    black
+  );
+  --vex-alias-gate-warn-text: var(--color-warning-label);
+
   --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
   --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);
   --vex-alias-scrollbar-l2: rgba(10, 13, 24, 0.24);
@@ -317,6 +374,18 @@
 
   --color-tooltip: var(--vex-alias-tooltip-bg);
   --color-toast: var(--vex-alias-toast-bg);
+
+  /* Pre-shell utilities - `bg-gate-well`, `bg-gate-rail`, `bg-gate-code`,
+   * `bg-gate-input`, `text-gate-danger`, `text-gate-warn`. Only the setup
+   * stack consumes these; the shell has its own surface + status families.
+   * An alias WITHOUT a projection here compiles to nothing at the call site
+   * (silently, no build error) - `theme-matrix.test.ts` pins the pairing. */
+  --color-gate-input: var(--vex-alias-gate-input);
+  --color-gate-well: var(--vex-alias-gate-well);
+  --color-gate-rail: var(--vex-alias-gate-rail);
+  --color-gate-code: var(--vex-alias-gate-code);
+  --color-gate-danger: var(--vex-alias-gate-danger-text);
+  --color-gate-warn: var(--vex-alias-gate-warn-text);
 
   /* DotMatrix solid-theme preset color (components/ui/dotmatrix-core). */
   --color-dot-on: var(--vex-alias-accent-primary);

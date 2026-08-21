@@ -52,7 +52,7 @@ export function InstallProgressStrip({ active }: InstallProgressProps): JSX.Elem
           </span>
         ) : null}
       </div>
-      <div className="h-0.5 w-full overflow-hidden bg-white/[0.08]">
+      <div className="h-0.5 w-full overflow-hidden bg-gate-rail">
         <div
           className={cn(
             "h-full transition-[width] duration-150 ease-out",
