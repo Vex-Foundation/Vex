@@ -6,7 +6,7 @@
  * resolves the component renders nothing (inert). With multiple resolvable
  * refs the labels disambiguate (`tx 1 ↗`, `tx 2 ↗`). The row renders on its own
  * line and shows at most `VISIBLE_REF_CAP` chips, the rest behind a `+N more`
- * toggle that expands in place — display-only, every link keeps its distinct
+ * toggle that expands in place - display-only, every link keeps its distinct
  * `aria-label` whether it is currently visible or not.
  *
  * The link is passive: `target="_blank"` never opens a child window — main's
@@ -87,7 +87,7 @@ export function ExplorerRefLinks({
           aria-label={ref.ariaLabel}
           // 10px is the repo's mono floor (the act header's own microtype); the
           // old 9px with 0.14em tracking on uppercase digits is what read as
-          // unformatted. Tracking comes down with it — letter-spacing isolates
+          // unformatted. Tracking comes down with it - letter-spacing isolates
           // already-sparse glyphs rather than helping them.
           className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >

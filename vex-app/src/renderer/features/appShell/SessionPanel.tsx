@@ -1,5 +1,5 @@
 /**
- * THE RESIDENT CONVERSATION SHELL — orchestration only.
+ * THE RESIDENT CONVERSATION SHELL - orchestration only.
  *
  * ONE persistent tree, not two layouts. The welcome hero and the docked
  * session view are the same DOM in the same positions, told apart only by
@@ -7,7 +7,7 @@
  *
  *   hero      no session, or a session whose transcript is provably empty and
  *             whose turn is not in flight. The composer stack is FLEX-CENTRED
- *             in the scroll body (never transformed — a transform would become
+ *             in the scroll body (never transformed - a transform would become
  *             the containing block for every `position: fixed` descendant).
  *   settling  a session is opening and its transcript is still unknown, so
  *             hero-vs-docked is unknowable. The seat stays MOUNTED but
@@ -34,7 +34,7 @@
  * the transcript and a sticky composer seat. `SessionTranscript` is ordinary
  * flow content inside it and resolves the scrollport through `scrollportOf`.
  *
- * The mission contract + action plan are NOT in this column — they live in the
+ * The mission contract + action plan are NOT in this column - they live in the
  * DESK RULE header's badge cluster (`MissionRail`) as badges that open
  * `MissionContractModal` / `PlanDisplayModal`, so the transcript owns the full
  * column height and the Accept action stays reachable.

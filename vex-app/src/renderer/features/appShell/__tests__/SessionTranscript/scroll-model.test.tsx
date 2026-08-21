@@ -1,5 +1,5 @@
 /**
- * THE SCROLL MODEL — follow-stream with reader ownership (owner decision 3,
+ * THE SCROLL MODEL - follow-stream with reader ownership (owner decision 3,
  * 2026-08-21). Replaces the top-anchor/never-follow suite wholesale.
  *
  * What each case here is actually a claim about:
@@ -10,7 +10,7 @@
  *    the chrome, and that re-render must not finish the reader's scroll for
  *    them;
  *  - force-scroll-on-own-send: a live trailing user row and a steering mark
- *    scroll unconditionally, pinned or not — own words must be visible;
+ *    scroll unconditionally, pinned or not - own words must be visible;
  *  - shrink-clamp delivery: a non-reader event that lands on the floor minimum
  *    preserves ownership rather than reading as a reader gesture;
  *  - prepend anchor: an older page restores the reader's LATEST intent, and
@@ -518,7 +518,7 @@ describe("SessionTranscript follow-stream scroll model", () => {
     readerScroll(scroller, 40);
 
     // THE MOMENT OF THE BUG: the tool_call row persists and the live-sync hook
-    // retires the ROUND preview — but the TURN is still in flight.
+    // retires the ROUND preview - but the TURN is still in flight.
     round = 2;
     await act(async () => {
       useStreamStore.setState({ bySessionId: {} });

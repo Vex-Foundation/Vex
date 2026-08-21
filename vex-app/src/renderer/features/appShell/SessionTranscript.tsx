@@ -3,9 +3,9 @@
  *
  * Pages backward through `useTranscriptInfinite` (newest page first). Renders
  * loading / error / empty / list (`SessionTranscript/TranscriptStates.tsx`).
- * The whole scroll model — follow-stream with reader ownership, force-scroll
+ * The whole scroll model - follow-stream with reader ownership, force-scroll
  * on the reader's own words, the jump pill, prepend anchoring and per-session
- * position persistence — lives in `SessionTranscript/useTranscriptScroll.ts`.
+ * position persistence - lives in `SessionTranscript/useTranscriptScroll.ts`.
  *
  * WHO SCROLLS. Inside the resident shell the transcript is ORDINARY FLOW
  * CONTENT: `SessionPanel`'s scroll body (`[data-vex-conversation-scroll]`) is
@@ -13,7 +13,7 @@
  * composer seat. Mounted alone (unit tests) this component's own element
  * scrolls instead. `scrollportOf` in the scroll model resolves which, and the
  * nested-mode geometry lives in `chat-transcript.css`. Both floating surfaces
- * — the centred working scene and the jump pill — are ZERO-HEIGHT STICKY
+ * - the centred working scene and the jump pill - are ZERO-HEIGHT STICKY
  * SLOTS outside the row column's gap, so neither extends `scrollHeight` nor
  * disturbs the column rhythm in either mode.
  *
@@ -175,7 +175,7 @@ export function SessionTranscript({
 
   // The newest steering mark. A change is the reader's own words entering a
   // running turn, so the scroll model force-scrolls to it exactly as it does
-  // for a sent user row — the steer is otherwise invisible mid-transcript.
+  // for a sent user row - the steer is otherwise invisible mid-transcript.
   const steeringSig = useMemo<string | null>(() => {
     for (let i = rows.length - 1; i >= 0; i -= 1) {
       const row = rows[i];
@@ -252,7 +252,7 @@ export function SessionTranscript({
           (the shared width rule). The 16px column gap is the ONE vertical
           rhythm - no per-element margins. */}
       <div className="mx-auto w-full max-w-[780px] px-4">
-      {/* THE CENTRED SCENE — a zero-height sticky slot, first in the block so
+      {/* THE CENTRED SCENE - a zero-height sticky slot, first in the block so
           its sticky range spans the whole transcript. It contributes nothing
           to `scrollHeight` (see `VexingOverlay.tsx`), and it sits OUTSIDE the
           row column so it takes none of the column's 16px gap. */}
@@ -288,7 +288,7 @@ export function SessionTranscript({
           />
         ) : null}
         </div>
-      {/* "↓ LATEST" — the jump the transcript takes only for the reader's own
+      {/* "↓ LATEST" - the jump the transcript takes only for the reader's own
           words; for everything else the pill offers it instead.
           A ZERO-HEIGHT STICKY SLOT (deepseek ChatView's idiom): it never
           extends `scrollHeight`, so raising the pill cannot itself move the

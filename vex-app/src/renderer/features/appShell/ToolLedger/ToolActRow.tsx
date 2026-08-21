@@ -5,8 +5,8 @@
  * The card's header reads as a fact about the world rather than a symbol dump:
  * the protocol mark (contract C5 — venue logo when provenance is proven, the
  * category glyph otherwise), a human title ("Swap · KyberSwap", "Memory
- * recall"), one summary slot, and the measured duration chip when — and ONLY
- * when — a duration was actually measured (`null` is not zero; a call that
+ * recall"), one summary slot, and the measured duration chip when - and ONLY
+ * when - a duration was actually measured (`null` is not zero; a call that
  * never ran must never read "0 s"). The raw tool name stays available as the
  * header's `title` tooltip so nothing the ledger knew is lost.
  *
@@ -118,7 +118,7 @@ function SeparatorDot(): JSX.Element {
 
 /**
  * Measured-duration chip. The caller resolves the text first and renders this
- * only for a real measurement — `formatToolDuration` returns `null` for every
+ * only for a real measurement - `formatToolDuration` returns `null` for every
  * never-executed / synthetic / legacy act, and `null` is not zero: a call that
  * never ran must never read "0 s".
  *
@@ -139,8 +139,8 @@ function DurationChip({ text }: { readonly text: string }): JSX.Element {
 /**
  * A failed act's collapsed summary: the first line of its output, in the error
  * tone, REPLACING the leg line (deepseek ToolRow's error grammar). A number
- * beside a failed call reads as money that moved, so the leg line — which is
- * where amounts live — must not survive here.
+ * beside a failed call reads as money that moved, so the leg line - which is
+ * where amounts live - must not survive here.
  *
  * `displayStatus === "pending"` is deliberately excluded: an ambiguous
  * broadcast is unresolved, not failed, and `ToolLegLine` already labels it.
@@ -346,7 +346,7 @@ export function ToolActRow({
           {/* ONE LINE, always (deepseek ToolRow): title, separator dot, the
               FILL-truncating summary, then the measurement. `flex-nowrap` and
               `flex-none` on every fixed member are what stop a long summary or
-              a wide leg line from folding the header into two rows — the
+              a wide leg line from folding the header into two rows - the
               defect the QA screenshot caught. */}
           <span className="flex min-w-0 flex-1 flex-nowrap items-center">
             <span className="flex-none truncate text-[14px] leading-6 text-[var(--vex-text-2)]">
@@ -375,7 +375,7 @@ export function ToolActRow({
       {/* Explorer links get their OWN line under the header. They are anchors,
           so they can never nest inside the disclosure button (invalid HTML),
           and as a wrapping sibling INSIDE the header row they used to crush
-          the `min-w-0 flex-1` title and wrap off on their own — the "row of
+          the `min-w-0 flex-1` title and wrap off on their own - the "row of
           chips with no owner" in the QA screenshot. Inert when nothing
           resolves. */}
       <ExplorerRefLinks refs={act.explorerRefs} />

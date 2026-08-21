@@ -22,6 +22,23 @@ export default defineConfig({
     },
   },
   test: {
+    /**
+     * 15s instead of vitest's 5s default (UIUX round 2, 2026-08-21).
+     *
+     * Reason, measured not guessed: on the WSL2 drvfs mount this repo lives
+     * on, a FULL parallel `vitest run` intermittently times out ~7 files
+     * under `features/appShell/__tests__/AppShell/*` at exactly 5000ms; the
+     * same files pass 113/113 in isolation and a second full run is green.
+     * The cost is transform-time I/O contention across workers, not a
+     * product race, so a per-suite timeout would only chase the symptom
+     * from file to file as the suite grows.
+     *
+     * This raises the CEILING for a hung test; it does not slow a passing
+     * one and it weakens no assertion. A genuine deadlock still fails, just
+     * 10s later. Per-test `{ timeout: ... }` overrides (e.g. the 60s
+     * design-guard I/O budget) still win over this default.
+     */
+    testTimeout: 15_000,
     projects: [
       {
         extends: true,

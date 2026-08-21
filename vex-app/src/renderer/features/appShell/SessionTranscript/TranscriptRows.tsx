@@ -20,7 +20,7 @@
  * row itself would fold the animation's opening offset into the restored
  * `scrollTop`; a descendant's transform cannot move its parent's border box,
  * so the model always measures an untransformed row. (The pre-follow model
- * needed the same rule for its pre-paint top-anchor measurement — the reason
+ * needed the same rule for its pre-paint top-anchor measurement - the reason
  * moved with the scroll swap, the rule did not.)
  *
  * `data-vex-anchor-key` is `transcriptEntryKey(row)`, not `row.id`: a tool

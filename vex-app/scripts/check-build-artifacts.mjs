@@ -227,7 +227,7 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
 // 6. brand assets — exist, decode, expected dimensions, byte budget, no EXIF
 // EMPTY registry: vex.jpg was the only pinned raster and the transcript now
 // draws the inline `VexMark` SVG (UIUX round 2), so nothing is pinned today.
-// Kept as the gate for the next raster brand asset — add its entry here and
+// Kept as the gate for the next raster brand asset - add its entry here and
 // the matching copy step in copy-brand-assets.mjs together.
 const BRAND_ASSETS = [];
 

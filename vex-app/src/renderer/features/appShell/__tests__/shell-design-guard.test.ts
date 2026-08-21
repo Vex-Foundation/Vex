@@ -26,14 +26,22 @@
  *   5. theme-blind `white`/`black` utilities (round 2, owner QA 2026-08-21).
  *      A `bg-white/[0.04]` hover or a `text-white` glyph describes a colour,
  *      not a role, so it can only be right in ONE theme. Every such site in
- *      the shell was migrated to the alias families, so the whitelist for
- *      this pair is intentionally EMPTY.
+ *      the shell AND in the pre-shell was migrated to the alias families;
+ *      the only exemptions are the two Chronos Gate call sites below.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
  * turn island (components/ui/dialog.tsx, components/ui/select-menu.tsx,
- * components/ui/dynamic-island.tsx). Onboarding
- * surfaces are a separate, finished language and are NOT scanned.
+ * components/ui/dynamic-island.tsx), plus - since UIUX round 2 - the whole
+ * PRE-SHELL tree (features/{setup,systemCheck,secrets,wizard,docker,compose,
+ * database} and components/{onboarding,common}).
+ *
+ * The pre-shell used to be excluded as "a separate, finished language". That
+ * exclusion died with the owner's round-2 decision (2026-08-21): every screen
+ * AFTER the Chronos Gate is now theme-aware, so it is bound by the same
+ * theme-blind colour law as the shell and deserves the same red build. The
+ * ONE remaining theme-invariant surface is the gate composition itself,
+ * whitelisted by path below.
  *
  * Sources are read via `import.meta.glob(..., ?raw)` — Vite inlines the
  * file contents at transform time — instead of `node:fs`, so this test
@@ -68,12 +76,43 @@ const SHELL_SOURCES: Record<string, string> = {
     ],
     { query: "?raw", import: "default", eager: true },
   ),
+  // PRE-SHELL (round 2): the boot stack between first paint and the shell.
+  // `features/systemCheck` is in scope with the rest because the blocked-port
+  // / Docker-down screen is now a themed pre-shell surface, not a dark plate.
+  ...import.meta.glob<string>(
+    [
+      "../../setup/**/*.ts",
+      "../../setup/**/*.tsx",
+      "../../systemCheck/**/*.ts",
+      "../../systemCheck/**/*.tsx",
+      "../../secrets/**/*.ts",
+      "../../secrets/**/*.tsx",
+      "../../wizard/**/*.ts",
+      "../../wizard/**/*.tsx",
+      "../../docker/**/*.ts",
+      "../../docker/**/*.tsx",
+      "../../compose/**/*.ts",
+      "../../compose/**/*.tsx",
+      "../../database/**/*.ts",
+      "../../database/**/*.tsx",
+      "../../../components/onboarding/**/*.ts",
+      "../../../components/onboarding/**/*.tsx",
+      "../../../components/common/**/*.ts",
+      "../../../components/common/**/*.tsx",
+      "!../../**/__tests__/**",
+      "!../../../components/**/__tests__/**",
+    ],
+    { query: "?raw", import: "default", eager: true },
+  ),
 };
 
 /** Normalize a glob key to a stable renderer-relative path. */
 function normalizeKey(key: string): string {
-  if (key.startsWith("../../../components/ui/")) {
-    return `components/ui/${key.slice("../../../components/ui/".length)}`;
+  if (key.startsWith("../../../components/")) {
+    return `components/${key.slice("../../../components/".length)}`;
+  }
+  if (key.startsWith("../../")) {
+    return `features/${key.slice("../../".length)}`;
   }
   return `features/appShell/${key.replace(/^\.\.\//, "")}`;
 }
@@ -212,6 +251,30 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
   },
+  // ── The Chronos Gate composition: the theme-INVARIANT brand moment ──
+  // Owner decision 1, round 2 (2026-08-21): "gate zostaje domyslnie". Every
+  // screen after the gate follows celeris/chronos; the gate itself stays the
+  // dark-cobalt brand plate under both themes and under the system default,
+  // because it is also the first-paint cover for the window's dark
+  // backgroundColor. Its ink is therefore painted on a KNOWN fill, which is
+  // exactly the condition under which a literal is not theme-blind. Two
+  // entries, both reasoned per call site; no pattern-level exemption.
+  {
+    file: "features/setup/ChronosGate.tsx",
+    pattern: "theme-blind white literal",
+    reason:
+      "Gate corner stamp (`text-white/60`) on the invariant dark-cobalt gate " +
+      "plate. The gate never re-themes, so the fill under this glyph is " +
+      "fixed and the literal is a known-contrast choice, not a theme guess.",
+  },
+  {
+    file: "features/setup/ChronosGate/GateActs.tsx",
+    pattern: "theme-blind white literal",
+    reason:
+      "Gate act status line (`text-white/80`) inside the same invariant " +
+      "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
+      "gate stops being theme-invariant, BOTH entries must go, not one.",
+  },
   // REMOVED (R2-D2, 2026-08-21): the two wave-scoped `font-doto` exemptions
   // for `SessionComposer.tsx` and `SessionComposer/ComposerMissionStrip.tsx`.
   // Their call sites now ride `.vex-doto-label` (+ `--wide`) at the
@@ -262,6 +325,26 @@ describe("shell design guard (S7)", () => {
       const files = entries.map(([key]) => normalizeKey(key));
       expect(files).toContain("components/ui/dialog.tsx");
       expect(files).toContain("components/ui/select-menu.tsx");
+      // ... and the pre-shell trees round 2 added, so a broken glob cannot
+      // silently shrink the scope back to the shell.
+      expect(files).toContain("features/setup/ChronosGate.tsx");
+      expect(files).toContain("features/secrets/UnlockScreen.tsx");
+      expect(files).toContain("components/common/OpenLogsLink.tsx");
+      for (const tree of [
+        "features/systemCheck/",
+        "features/wizard/",
+        "features/docker/",
+        "features/compose/",
+        "features/database/",
+        "components/onboarding/",
+      ]) {
+        expect(
+          files.some((f) => f.startsWith(tree)),
+          `pre-shell tree not scanned: ${tree}`,
+        ).toBe(true);
+      }
+      // No test file may leak into the scan (the negative globs above).
+      expect(files.filter((f) => f.includes("__tests__"))).toEqual([]);
 
       const violations: Violation[] = [];
       for (const [key, source] of entries) {

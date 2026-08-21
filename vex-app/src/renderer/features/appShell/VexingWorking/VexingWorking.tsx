@@ -11,7 +11,7 @@
  *
  * GEOMETRY, and why it is a zero-height sticky slot rather than an absolute
  * overlay. The scene must centre itself in the VIEWPORT while contributing
- * nothing to `scrollHeight` — otherwise it moves the very floor the follow
+ * nothing to `scrollHeight` - otherwise it moves the very floor the follow
  * model measures against. A `height: 0` sticky box pinned to the scrollport's
  * top satisfies both in either mounting mode (transcript-owns-overflow when
  * mounted alone, shell-owns-overflow inside the resident panel): it travels

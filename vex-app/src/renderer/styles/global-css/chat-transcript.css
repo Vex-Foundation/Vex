@@ -11,7 +11,7 @@
  *  positions, told apart only by `data-phase` on the panel root *
  *  (hero / settling / active). The composer's textarea node and *
  *  its caret survive the transition because nothing about it    *
- *  remounts — only these rules change.                          *
+ *  remounts - only these rules change.                          *
  *                                                               *
  *  There is NO crossfade and NO morph between phases: the       *
  *  position change of one persistent tree IS the transition.    *
@@ -19,7 +19,7 @@
 
 /* Nested mode: the panel's scroll body owns overflow (it is the only box that
  * can also hold the sticky composer seat), so the transcript collapses to
- * ordinary flow content. Mounted alone the transcript keeps its own scroller —
+ * ordinary flow content. Mounted alone the transcript keeps its own scroller - 
  * `scrollportOf` in `useTranscriptScroll.ts` resolves between the two. */
 [data-vex-conversation-scroll] [data-vex-transcript-frame],
 [data-vex-conversation-scroll] [data-vex-area="chat-transcript"] {
@@ -29,7 +29,7 @@
   scrollbar-gutter: auto;
 }
 
-/* HERO — the composer stack is FLEX-CENTRED in the scroll body. Flex, never
+/* HERO - the composer stack is FLEX-CENTRED in the scroll body. Flex, never
  * `transform`: a transform on this box would make it the containing block for
  * every `position: fixed` descendant (menus, dialogs, the command palette),
  * silently shrinking them to this column. */
@@ -47,7 +47,7 @@
 /* HERO GROWTH BAND (owner smoothness decree 2026-07-22, carried into
  * residency). The band's LAYOUT height is pinned to the composer's resting
  * stack, so an auto-growing pill overflows DOWNWARD instead of growing the
- * flex-centred seat — which would move the hero crown up by half the growth,
+ * flex-centred seat - which would move the hero crown up by half the growth,
  * i.e. opposite to the thing the user is typing into. `overflow: visible` is
  * what lets the overflow paint. 140px = mt-6 (24) + resting pill (56) + the
  * starter-chip slot (60), the same constant the pre-residency band used. */
@@ -56,7 +56,7 @@
   overflow: visible;
 }
 
-/* ACTIVE — the seat is the sticky floor of the scroll body, with the
+/* ACTIVE - the seat is the sticky floor of the scroll body, with the
  * transcript dissolving into it.
  *
  * The mask stops are in PX, not percentages: a growing draft must widen the
@@ -77,7 +77,7 @@
   );
 }
 
-/* SETTLING — a session is opening and its transcript is still unknown, so
+/* SETTLING - a session is opening and its transcript is still unknown, so
  * hero-vs-docked is unknowable. The seat stays MOUNTED (residency is the whole
  * point) but invisible, so no wrong layout flashes before the phase lands. */
 [data-vex-area="session-panel"][data-phase="settling"]
@@ -90,7 +90,7 @@
  * child overflows. A zero-height box adds no scroll range, so neither surface
  * can move the floor the follow model measures itself against. */
 
-/* The centred working scene, centred in the VIEWPORT — not in the transcript's
+/* The centred working scene, centred in the VIEWPORT - not in the transcript's
  * own box, which is the whole conversation once the shell owns the scrollport.
  * `--vex-conversation-viewport` is republished by the scroll model's
  * ResizeObserver; the `100vh` fallback covers the first paint before it

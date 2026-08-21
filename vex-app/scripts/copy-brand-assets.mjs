@@ -19,7 +19,7 @@ const PUBLIC_DIR = path.join(VEX_APP, "src", "renderer", "public");
 // Currently EMPTY: the assistant avatar (vex.jpg) was the only entry, and the
 // transcript now draws the inline `VexMark` SVG instead (UIUX round 2), so no
 // raster brand asset is bundled. The script stays as the seam for the next
-// one — add an entry here and its pin in check-build-artifacts.mjs together.
+// one - add an entry here and its pin in check-build-artifacts.mjs together.
 const SOURCES = [];
 
 mkdirSync(PUBLIC_DIR, { recursive: true });

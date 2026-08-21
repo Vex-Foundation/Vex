@@ -9,7 +9,7 @@
  * composer used to be siblings in the panel's flex column, with the crown zone
  * balanced against a trailing spacer. They now live together INSIDE the
  * resident composer seat, which the scroll body flex-centres in the hero phase
- * — so the whole stack centres as one unit and the composer's DOM node
+ * - so the whole stack centres as one unit and the composer's DOM node
  * survives the move to the docked phase. The anchoring invariant is unchanged
  * and its mechanism is unchanged in kind: the crown is never inside the box
  * that grows, and the growing box has a FIXED layout height so growth
@@ -162,7 +162,7 @@ function expectAnchoredStructure(container: HTMLElement): void {
   const crown = crownOf(container);
   const band = bandOf(container);
   const seat = seatOf(container);
-  // Siblings inside the resident seat — the crown is never inside the box
+  // Siblings inside the resident seat - the crown is never inside the box
   // that grows, and the growth band is never inside the crown.
   expect(band.contains(crown)).toBe(false);
   expect(crown.contains(band)).toBe(false);
@@ -170,7 +170,7 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(seat.contains(crown)).toBe(true);
   expect(seat.contains(band)).toBe(true);
   // Crown DIRECTLY above the band in document order (growth expands
-  // downward, away from the crown — nothing re-centrable sits between).
+  // downward, away from the crown - nothing re-centrable sits between).
   expect(crown.nextElementSibling).toBe(band);
   // The band is inside the scrollport the shell flex-centres in hero phase;
   // the fixed height that keeps growth downward is asserted against the

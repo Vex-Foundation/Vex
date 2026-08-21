@@ -89,7 +89,7 @@ describe("ReasonedBlock", () => {
     );
     expect(container.querySelector("[data-vex-reasoning-summary]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
-    // Expanded, the full trace is in ordinary page flow — page reading must
+    // Expanded, the full trace is in ordinary page flow - page reading must
     // never fight an internal follower.
     expect(container.querySelector("[data-vex-reasoning-summary]")).toBeNull();
   });
@@ -116,7 +116,7 @@ describe("ReasonedBlock", () => {
 
 /**
  * THE ONE-LINE FOLLOWER (deepseek ReasoningRow). Deterministic through a
- * stubbed rAF map stepped by `flushAnimationFrames` — the 3-frame throttle is
+ * stubbed rAF map stepped by `flushAnimationFrames` - the 3-frame throttle is
  * the subject, so a wall-clock sleep would prove nothing about it.
  */
 describe("ReasonedBlock streaming summary follower", () => {

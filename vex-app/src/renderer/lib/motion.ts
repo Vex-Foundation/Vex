@@ -6,18 +6,18 @@
  *
  *  - SPRING_PANEL — the big-surface spring: the ShellScreen FLIP morph.
  *  - SPRING_SNAPPY — the small-surface pop: the profile side-panel menu.
- *  - EASE_STANDARD — the design-language §7 transition curve. Anything moving
+ *  - EASE_STANDARD - the design-language §7 transition curve. Anything moving
  *    BETWEEN two resting states: staggers, exits, crossfades.
- *  - EASE_OUT — the landing "Out" curve. ENTRANCES only: a surface arriving
+ *  - EASE_OUT - the landing "Out" curve. ENTRANCES only: a surface arriving
  *    from nothing and decelerating into place (every transcript keyframe).
- *  - EASE_INOUT — full-surface reveals (the Chronos Gate curtain).
+ *  - EASE_INOUT - full-surface reveals (the Chronos Gate curtain).
  *
  * INVARIANT, three files. This module is the JS mirror of ONE easing family
  * whose CSS side is split across two global sheets: `--vex-ease-standard` in
  * `styles/global-css/motion-primitives.css` (the transcript motion owner) and
  * `--vex-ease-out` / `--vex-ease-inout` in `styles/global-css/shell.css`. A
  * curve changed on one side and not the other splits the family and the app
- * starts moving with two different hands — change every site together.
+ * starts moving with two different hands - change every site together.
  *
  * Motion applies these via CSSOM property writes (MOTION-POLICY-safe; no
  * `layout`/`layoutId`, which would inject a runtime stylesheet the CSP
