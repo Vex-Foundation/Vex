@@ -69,7 +69,7 @@ export function SessionWelcomeHero(): JSX.Element {
           className="hidden h-16 w-auto [[data-vex-theme=celeris]_&]:block"
         />
         <span
-          className="font-doto text-[11px] font-medium uppercase tracking-[0.32em] text-ink-tertiary"
+          className="vex-doto-label vex-doto-label--wide vex-doto-chip uppercase text-ink-secondary"
           title={PREVIEW_TITLE}
         >
           {eyebrowDate()}

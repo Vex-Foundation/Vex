@@ -146,8 +146,8 @@ export function PlanDisplayModal({
               data-vex-state={pending ? "pending" : "accepted"}
               className={
                 pending
-                  ? "flex shrink-0 items-center gap-1.5 font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-warning"
-                  : "flex shrink-0 items-center gap-1.5 font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-success"
+                  ? "flex shrink-0 items-center gap-1.5 vex-doto-label uppercase text-warning"
+                  : "flex shrink-0 items-center gap-1.5 vex-doto-label uppercase text-success"
               }
             >
               {pending ? (

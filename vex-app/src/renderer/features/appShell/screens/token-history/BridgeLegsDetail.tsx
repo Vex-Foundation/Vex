@@ -65,7 +65,7 @@ export function BridgeLegs({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        className="vex-doto-label uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
         {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
       </button>

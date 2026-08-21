@@ -73,7 +73,7 @@ export function StickyToast({ entry }: { readonly entry: StickyToastEntry }): Re
       <div className="flex items-start gap-2">
         <LeadingMark icon={entry.icon} />
         <div className="min-w-0 flex-1">
-          <p className="font-doto text-[11px] uppercase tracking-[0.12em]">
+          <p className="vex-doto-label uppercase">
             {entry.title}
           </p>
           <p className="mt-1 text-[12px] leading-[18px]">{entry.text}</p>

@@ -71,7 +71,7 @@ export function RadioCard({
       ) : null}
       <span
         className={cn(
-          "font-doto text-[11px] font-medium tracking-[0.24em] tabular-nums",
+          "vex-doto-label vex-doto-label--wide",
           checked
             ? "text-accent-primary"
             : "text-ink-tertiary",

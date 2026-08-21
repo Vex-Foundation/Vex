@@ -299,7 +299,7 @@ function LinkRows({
           type="button"
           onClick={onAddRow}
           disabled={disabled}
-          className="w-fit rounded-full border border-line-2 px-3 py-1 font-doto text-[11px] font-medium uppercase tracking-[0.16em] text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
+          className="w-fit rounded-full border border-line-2 px-3 py-1 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
         >
           Add link
         </button>

@@ -105,7 +105,7 @@ export function LaunchCeilingsSection({
       className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3"
       data-vex-area="launch-ceilings"
     >
-      <div className="font-doto text-[11px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">
+      <div className="vex-doto-label uppercase text-ink-secondary">
         Autonomous launch ceilings
       </div>
       <p className="mt-1 text-xs text-ink-secondary">

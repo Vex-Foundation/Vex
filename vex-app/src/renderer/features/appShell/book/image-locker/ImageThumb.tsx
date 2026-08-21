@@ -57,7 +57,7 @@ export function ImageThumb({
       ) : (
         <span
           aria-hidden
-          className="flex h-full w-full items-center justify-center font-doto text-[9px] uppercase tracking-[0.14em] text-ink-tertiary"
+          className="flex h-full w-full items-center justify-center vex-micro text-ink-secondary"
         >
           {hasOnchainCopy && thumb.isLoading ? "…" : "-"}
         </span>
@@ -68,7 +68,7 @@ export function ImageThumb({
       {!hasOnchainCopy ? (
         <span
           title="Too large for a Trench launch, which stores the image on-chain. Usable on pools.fun."
-          className="pointer-events-none absolute left-1 top-1 rounded-full bg-surface-base/90 px-1.5 py-0.5 font-doto text-[8px] uppercase tracking-[0.14em] text-ink-tertiary"
+          className="pointer-events-none absolute left-1 top-1 rounded-full bg-surface-base/90 px-1.5 py-0.5 vex-micro text-ink-secondary"
         >
           pools only
         </span>

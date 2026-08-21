@@ -95,7 +95,7 @@ function ExportPrivateKeySection({
       className="border-t border-line-1 pt-5"
       data-vex-settings-export
     >
-      <h2 className="font-doto text-[11px] uppercase tracking-[0.14em] text-ink-tertiary">
+      <h2 className="vex-doto-label uppercase text-ink-secondary">
         Export a private key
       </h2>
       <p className="mt-2 text-[12px] leading-[18px] text-ink-secondary">

@@ -169,7 +169,7 @@ export function SessionsLibrary(): JSX.Element {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setSessionModeFilter(filter.value)}
-                className={`rounded-full px-2.5 py-1.5 font-doto text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
+                className={`rounded-full px-2.5 py-1.5 vex-doto-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
                   active
                     ? "bg-accent-wash text-accent-primary"
                     : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
@@ -202,7 +202,7 @@ export function SessionsLibrary(): JSX.Element {
                 setSearch("");
                 searchRef.current?.focus();
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 font-doto text-[10px] uppercase tracking-[0.12em] text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+              className="absolute right-2 top-1/2 -translate-y-1/2 vex-doto-label uppercase text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
             >
               Clear
             </button>
@@ -231,7 +231,7 @@ export function SessionsLibrary(): JSX.Element {
           <button
             type="button"
             onClick={clearFilters}
-            className="font-doto text-[11px] uppercase tracking-[0.14em] text-accent-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="vex-doto-label uppercase text-accent-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             Reset filters
           </button>
