@@ -1,6 +1,6 @@
 /**
  * The Settings landing register: six section rows in the profile-menu
- * grammar (round hairline icon badge, name, hint, Doto status word,
+ * grammar (round hairline icon badge, name, hint, micro-label status word,
  * chevron) followed by the Preferences group.
  */
 
@@ -64,7 +64,7 @@ export function SettingsRegister({
                 </span>
                 <span
                   className={cn(
-                    "shrink-0 vex-doto-label uppercase",
+                    "shrink-0 vex-micro-label uppercase",
                     STATUS_TONE_CLASS[status.tone],
                   )}
                 >

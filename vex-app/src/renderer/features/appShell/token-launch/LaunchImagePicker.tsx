@@ -100,7 +100,7 @@ export function LaunchImagePicker({
             type="button"
             onClick={runUpload}
             disabled={disabled || upload.isPending}
-            className="mt-1 w-fit rounded-full border border-line-3 px-3 py-1 vex-doto-label vex-doto-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
+            className="mt-1 w-fit rounded-full border border-line-3 px-3 py-1 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
           >
             {upload.isPending ? "Adding…" : "Add image"}
           </button>
@@ -141,7 +141,7 @@ function LockerStrip({
 
   if (query.isLoading) {
     return (
-      <p className="vex-doto-label uppercase text-ink-secondary">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Loading your photos…
       </p>
     );

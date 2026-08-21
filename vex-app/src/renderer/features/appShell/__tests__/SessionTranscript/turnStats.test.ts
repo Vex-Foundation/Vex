@@ -1,5 +1,5 @@
 /**
- * Pure presentation of one turn's usage as Doto stat groups — boundary seams
+ * Pure presentation of one turn's usage as micro-label stat groups — boundary seams
  * of the compact formatters and the drop-out rules for absent measurements.
  */
 

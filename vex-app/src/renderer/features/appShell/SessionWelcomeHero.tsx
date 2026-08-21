@@ -1,6 +1,6 @@
 /**
  * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
- * vx script mark over a Doto date eyebrow, the time-of-day greeting headline, and the
+ * vx script mark over a micro-label date eyebrow, the time-of-day greeting headline, and the
  * Agent | Studio runtime-mode toggle (Studio reserved: disabled with a lock
  * until vex-studio ships - seam #2). The parent (`SessionPanel`) seats this
  * directly above the composer and centers the column; the "BACKED BY"
@@ -69,7 +69,7 @@ export function SessionWelcomeHero(): JSX.Element {
           className="hidden h-16 w-auto [[data-vex-theme=celeris]_&]:block"
         />
         <span
-          className="vex-doto-label vex-doto-label--wide vex-doto-chip uppercase text-ink-secondary"
+          className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary"
           title={PREVIEW_TITLE}
         >
           {eyebrowDate()}

@@ -65,7 +65,7 @@ export function BookInspectPanel({
       className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-xl border border-line-2 bg-surface-1 p-4 shadow-lv1"
     >
       <header className="flex items-center justify-between gap-2">
-        <h3 className="vex-doto-label vex-doto-label--wide uppercase text-ink-secondary">
+        <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
           Inspect
         </h3>
         <button

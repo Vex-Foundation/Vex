@@ -164,27 +164,30 @@ const BANNED: readonly BannedPattern[] = [
     regex:
       /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-black(?![\w-])/,
   },
-  // R2-C Doto register (2026-08-21): `.vex-doto-label` in landing-motifs.css is
-  // now the ONLY sanctioned way to set Doto in the shell. It owns the measured
-  // floor (12px / weight 600 / tracking <= 0.16em / tabular-nums) that ~70
-  // ad-hoc `font-doto` call sites had drifted below (8-11px at weight 400),
-  // which the owner's QA read as invisible in both themes. The raw Tailwind
-  // utility carries no floor, so re-introducing it is a red build - migrate the
-  // call site to the class instead of whitelisting.
-  { name: "bare font-doto utility (use .vex-doto-label)", regex: /\bfont-doto\b/ },
+  // R3-F3 micro-label register (2026-08-21): Doto retired app-wide. The face,
+  // its `--font-doto` token, its `@font-face` and its woff2 files are gone, so
+  // the old `font-doto` utility no longer compiles to anything and banning it
+  // is moot - what a stale edit CAN still write is the DEAD CLASS NAME, which
+  // silently styles nothing. `.vex-micro-label` (+ `--wide`) in
+  // landing-motifs.css is the register; `.vex-doto-chip` is retired outright
+  // (owner decision 2: no backing plate under a micro label). Both names are a
+  // red build here - rename the call site, never whitelist.
+  {
+    name: "dead Doto class name (use .vex-micro-label)",
+    regex: /\bvex-doto-(?:label|chip)\b|\bfont-doto\b/,
+  },
   // The class sets no color on purpose (this sheet is unlayered and would beat
   // the call site's `text-*` utility), so the floor TIER is enforced here:
-  // Doto's dot glyphs discard roughly half a solid face's ink coverage, which
-  // puts `text-ink-tertiary` and `text-ink-caption` below the readable
-  // threshold for this face. `text-ink-secondary` is the floor. Variant-
+  // at 11px a stamp needs the readable tier, and `text-ink-tertiary` /
+  // `text-ink-caption` sit below it. `text-ink-secondary` is the floor. Variant-
   // prefixed tiers (`disabled:text-ink-tertiary`, `hover:...`) are EXEMPT by
   // the lookbehind - a receding disabled state is the correct use of tertiary.
   // Limitation: the scan is per class string, so it catches the common
   // single-literal case, not a tier assembled across a conditional expression.
   {
-    name: "Doto label below the ink-secondary floor tier",
+    name: "micro label below the ink-secondary floor tier",
     regex:
-      /vex-doto-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-doto-label/,
+      /vex-micro-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-micro-label/,
   },
 ];
 
@@ -275,11 +278,28 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
       "gate stops being theme-invariant, BOTH entries must go, not one.",
   },
-  // REMOVED (R2-D2, 2026-08-21): the two wave-scoped `font-doto` exemptions
-  // for `SessionComposer.tsx` and `SessionComposer/ComposerMissionStrip.tsx`.
-  // Their call sites now ride `.vex-doto-label` (+ `--wide`) at the
-  // `text-ink-secondary` floor, so the Doto register holds across the whole
-  // shell with ZERO exemptions. Do not reintroduce one.
+  // ── R3 WAVE-SCOPED, DELETE ON MERGE ────────────────────────────────────
+  // The Doto register retired to `.vex-micro-label` in UIUX round 3 lane F3,
+  // which renamed every call site in the app EXCEPT the composer's: lane F2 is
+  // rebuilding the composer seat IN PARALLEL and owns those two files, so it
+  // writes the new class name itself (register contract posted on the round-3
+  // board). Merge order is F1 -> F2 -> F3, so by the time F3 lands both files
+  // already carry `.vex-micro-label` and BOTH entries below are stale - the
+  // stale-whitelist check will not catch that, so delete them by hand at merge.
+  {
+    file: "features/appShell/SessionComposer.tsx",
+    pattern: "dead Doto class name (use .vex-micro-label)",
+    reason:
+      "Cross-lane rename seam: owned by round-3 lane F2 (composer seat), " +
+      "renamed there. Delete this entry when F2 is merged.",
+  },
+  {
+    file: "features/appShell/SessionComposer/ComposerMissionStrip.tsx",
+    pattern: "dead Doto class name (use .vex-micro-label)",
+    reason:
+      "Cross-lane rename seam: owned by round-3 lane F2 (composer seat), " +
+      "renamed there. Delete this entry when F2 is merged.",
+  },
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than
@@ -445,34 +465,41 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("an off-white plate, a coal-black rail")).toEqual([]);
   });
 
-  it("flags the bare font-doto utility but not the sanctioned class", () => {
-    expect(matchNames('className="font-doto text-[10px]"')).toContain(
-      "bare font-doto utility (use .vex-doto-label)",
-    );
-    // The class is the sanctioned register; its name must not self-trigger.
-    expect(matchNames('className="vex-doto-label uppercase"')).toEqual([]);
-    expect(matchNames('className="vex-doto-label vex-doto-label--wide"')).toEqual(
-      [],
-    );
+  it("flags the retired Doto names but not the live register", () => {
+    for (const dead of [
+      'className="font-doto text-[10px]"',
+      'className="vex-doto-label uppercase"',
+      'className="vex-doto-chip"',
+    ]) {
+      expect(matchNames(dead)).toContain(
+        "dead Doto class name (use .vex-micro-label)",
+      );
+    }
+    // The live register is the sanctioned class; it must not self-trigger.
+    expect(matchNames('className="vex-micro-label uppercase"')).toEqual([]);
+    expect(
+      matchNames('className="vex-micro-label vex-micro-label--wide"'),
+    ).toEqual([]);
   });
 
-  it("flags a Doto label below the ink-secondary floor tier, in either order", () => {
+  it("flags a micro label below the ink-secondary floor tier, in either order", () => {
     expect(
-      matchNames('className="vex-doto-label uppercase text-ink-tertiary"'),
-    ).toContain("Doto label below the ink-secondary floor tier");
+      matchNames('className="vex-micro-label uppercase text-ink-tertiary"'),
+    ).toContain("micro label below the ink-secondary floor tier");
     expect(
-      matchNames('className="text-ink-caption vex-doto-label uppercase"'),
-    ).toContain("Doto label below the ink-secondary floor tier");
+      matchNames('className="text-ink-caption vex-micro-label uppercase"'),
+    ).toContain("micro label below the ink-secondary floor tier");
     // The floor tier itself is fine, as is a receding DISABLED/hover state.
     expect(
-      matchNames('className="vex-doto-label uppercase text-ink-secondary"'),
+      matchNames('className="vex-micro-label uppercase text-ink-secondary"'),
     ).toEqual([]);
     expect(
       matchNames(
-        'className="vex-doto-label text-accent-primary disabled:text-ink-tertiary"',
+        'className="vex-micro-label text-accent-primary disabled:text-ink-tertiary"',
       ),
     ).toEqual([]);
-    // A tertiary tier on a NON-Doto label is untouched by this rule.
+    // A tertiary tier on the 10px CAPTION register is untouched by this rule:
+    // `.vex-micro` is a different class with a different contract.
     expect(matchNames('className="vex-micro text-ink-tertiary"')).toEqual([]);
   });
 

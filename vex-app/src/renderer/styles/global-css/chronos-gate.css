@@ -117,7 +117,7 @@
  * (toasts, hover cards, menus) opened from the pre-shell keep the same
  * projection. Colour tiers come from tokens v2; the scope keeps only what
  * the pre-shell genuinely re-pins: hairline strength, accent-as-text, the
- * type scale, and the Doto micro-label voice. Re-projection (not call-site
+ * type scale, and the micro-label weight. Re-projection (not call-site
  * edits) because six wizard steps are ALSO rendered by the app shell's
  * Settings screen.
  *
@@ -150,11 +150,14 @@
   --vex-micro-tracking: 0.14em;
 }
 
-/* Doto is the pre-shell's eyebrow voice (the brand's dot signature):
- * every `.vex-micro` technical label in the boot flow speaks it. Weight
- * 600 — Doto's dot glyphs thin out below it at 12px. */
+/* The pre-shell's eyebrow voice. This block used to re-pin `.vex-micro` to
+ * Doto (the brand's dot signature); Doto retired app-wide (owner decision 2,
+ * ratified 2026-08-21) and the pre-shell now speaks the SAME Inter Tight
+ * small-caps voice as the shell's `.vex-micro-label` register. The family
+ * therefore comes from `.vex-micro` itself and only the WEIGHT is re-pinned
+ * here: the boot flow's technical labels are must-read, and the ladder's
+ * answer to that is up a weight, never wider tracking. */
 [data-vex-gate="true"] .vex-micro {
-  font-family: var(--font-doto);
   font-weight: 600;
 }
 
@@ -434,10 +437,13 @@
   }
 }
 
-/* Act 3 chrome: the CHRONOS GATE label (Doto, letterspaced per the Gate
- * mockup) and the 2px progress line reporting the REAL launch pipeline. */
+/* Act 3 chrome: the CHRONOS GATE label (letterspaced per the Gate mockup)
+ * and the 2px progress line reporting the REAL launch pipeline. Set in the
+ * app-wide sans since Doto retired (2026-08-21). This is a WIDE-TRACKED
+ * DISPLAY STAMP on the brand plate, not a micro label, so it keeps its own
+ * 13px/700/0.42em scale rather than joining `.vex-micro-label`. */
 .chronos-gate-label {
-  font-family: var(--font-doto);
+  font-family: var(--font-sans);
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.42em;

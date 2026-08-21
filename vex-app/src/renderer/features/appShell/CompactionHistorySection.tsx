@@ -148,7 +148,7 @@ function CompactionRow({
           onClick={() => onRetry(item.checkpointGeneration)}
           disabled={pending}
           aria-label={`Retry compaction generation ${item.checkpointGeneration}`}
-          className="rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-doto-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary"
+          className="rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-micro-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary"
         >
           {pending ? "Retrying…" : "Retry"}
         </button>

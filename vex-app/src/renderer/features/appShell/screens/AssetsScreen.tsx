@@ -77,7 +77,7 @@ export function AssetsScreen({
           </label>
         </div>
         {query.isLoading ? (
-          <p className="vex-doto-label uppercase text-ink-secondary">
+          <p className="vex-micro-label uppercase text-ink-secondary">
             Loading…
           </p>
         ) : (result !== undefined && !result.ok) || query.isError ? (

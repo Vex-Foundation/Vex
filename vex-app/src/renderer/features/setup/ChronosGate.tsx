@@ -87,7 +87,7 @@ export function ChronosGate(): JSX.Element | null {
       data-vex-screen="chronos-gate"
       data-vex-gate-phase={revealing ? "reveal" : "hold"}
       // Carries the pre-shell token scope so `.vex-micro` speaks the
-      // gate's Doto voice at the pre-shell size.
+      // gate's label voice at the pre-shell size and weight.
       data-vex-gate="true"
       className="fixed inset-0 z-50 overflow-hidden"
     >

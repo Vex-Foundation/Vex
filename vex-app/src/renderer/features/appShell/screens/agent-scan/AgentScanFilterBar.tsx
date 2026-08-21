@@ -117,9 +117,9 @@ export function toggleValue(
 }
 
 /**
- * Chip register: Inter Tight small caps for the interactive chips (Doto is
- * reserved for the non-interactive eyebrow labels beside them); mono remains
- * banned outside technical artifacts.
+ * Chip register: Inter Tight small caps for the interactive chips, one step
+ * apart from the `.vex-micro-label` eyebrows beside them; mono remains banned
+ * outside technical artifacts.
  */
 const CHIP_BASE =
   "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-sans text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
@@ -161,7 +161,7 @@ function FilterGroup({
 }): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="w-[58px] shrink-0 vex-doto-label uppercase text-ink-secondary">
+      <span className="w-[58px] shrink-0 vex-micro-label uppercase text-ink-secondary">
         {label}
       </span>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
@@ -268,7 +268,7 @@ export function AgentScanFilterBar({
             </span>
           ) : null}
           {active > 0 ? (
-            <span className="vex-doto-label uppercase text-accent-primary">
+            <span className="vex-micro-label uppercase text-accent-primary">
               {active} filter{active === 1 ? "" : "s"} active
             </span>
           ) : null}

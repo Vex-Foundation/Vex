@@ -37,7 +37,7 @@ import { crossesLocalDay, dayLabel } from "./daySeparator.js";
 import type { MessageForkActions } from "./useMessageForkActions.js";
 
 /**
- * G12 — a quiet Doto date stamp between rows from different LOCAL calendar
+ * G12 — a quiet micro-label date stamp between rows from different LOCAL calendar
  * days (and above the very first loaded row, so a resumed session names its
  * day). Chrome, not content: aria-hidden, hairline-flanked.
  */
@@ -51,7 +51,7 @@ function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
       className="flex items-center gap-3"
     >
       <span className="h-px flex-1 bg-line-1" />
-      <span className="vex-doto-label uppercase text-ink-secondary">
+      <span className="vex-micro-label uppercase text-ink-secondary">
         {label}
       </span>
       <span className="h-px flex-1 bg-line-1" />

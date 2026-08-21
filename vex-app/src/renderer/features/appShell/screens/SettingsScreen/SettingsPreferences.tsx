@@ -47,7 +47,7 @@ const SUBMIT_CHOICES: ReadonlyArray<SubmitChoice> = [
 
 function GroupTitle({ children }: { readonly children: string }): JSX.Element {
   return (
-    <h2 className="vex-doto-label uppercase text-ink-secondary">
+    <h2 className="vex-micro-label uppercase text-ink-secondary">
       {children}
     </h2>
   );
@@ -156,19 +156,26 @@ function NotificationsRow(): JSX.Element {
         aria-checked={enabled}
         aria-label="Notifications"
         onClick={() => setNotificationsEnabled(!enabled)}
+        // THE SWITCH LOOK (owner item 4, ratified 2026-08-21). One treatment
+        // for every switch in the app; the auto-retry toggle in
+        // MissionContractCardSections wears the identical strings. ON = the
+        // accent-CTA track (deep brand blue on chronos, light accent on
+        // celeris) with the matching ink knob; OFF = the solid interactive
+        // track with the page's own primary ink, never an opacity wash.
         className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-          enabled ? "bg-accent-primary" : "bg-interactive-active",
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+          enabled
+            ? "border-button-accent bg-button-accent"
+            : "border-line-4 bg-interactive-solid",
         )}
       >
         <span
           aria-hidden
           className={cn(
-            // ink-on-chrome is the theme-invariant white (the toast/tooltip
-            // plate text token) - the knob stays white over the accent fill
-            // and the gray wash in both themes.
-            "absolute top-0.5 h-4 w-4 rounded-full bg-ink-on-chrome shadow-lv1 transition-transform",
-            enabled ? "translate-x-[18px]" : "translate-x-0.5",
+            "inline-block h-3.5 w-3.5 rounded-full transition-transform",
+            enabled
+              ? "translate-x-[18px] bg-ink-on-button-accent"
+              : "translate-x-[3px] bg-ink-primary",
           )}
         />
       </button>

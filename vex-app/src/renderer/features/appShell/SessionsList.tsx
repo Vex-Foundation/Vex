@@ -269,7 +269,13 @@ export function SessionsList({
       ) : null}
 
       <div className={cn("p-3", !wide && "px-2")} data-rail-control>
-        {/* The signing key: the sidebar's primary CTA — filled accent pill.
+        {/* The signing key: the sidebar's primary CTA — the app's one
+         * accent-FILLED key, so it wears the accent-CTA pair (owner decision
+         * 3, ratified 2026-08-21) rather than the accent-as-text family: a
+         * deep brand-blue plate with white ink under chronos, a light accent
+         * plate with near-black ink under celeris. Label is the app-wide
+         * small-caps register; the old `font-mono` uppercase micro-label was
+         * the last one of its kind in the rail.
          * The signing mechanics are unchanged: the ink stroke draws on
          * hover/focus and loops while SessionCreator's mutation is in
          * flight; the glint is the one-shot success light. */}
@@ -278,10 +284,10 @@ export function SessionsList({
           onClick={onCreate}
           aria-label="New session"
           className={cn(
-            "vex-sign-key relative flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors duration-150",
-            "hover:bg-[var(--vex-accent-hover)]",
-            "active:scale-[0.99] active:bg-[var(--vex-accent-active)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
+            "vex-sign-key vex-micro-label vex-micro-label--wide relative flex h-10 items-center justify-center gap-2 rounded-full bg-button-accent uppercase text-ink-on-button-accent transition-colors duration-150",
+            "hover:bg-button-accent-hover",
+            "active:scale-[0.99] active:bg-button-accent-hover",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
             wide ? "w-full px-4" : "mx-auto w-10",
           )}
         >
@@ -290,7 +296,7 @@ export function SessionsList({
           <span
             aria-hidden
             className={cn(
-              "vex-sign-stroke absolute bottom-[6px] h-[1.5px] rounded-full bg-[color-mix(in_oklab,var(--vex-accent-contrast)_90%,transparent)]",
+              "vex-sign-stroke absolute bottom-[6px] h-[1.5px] rounded-full bg-[color-mix(in_oklab,var(--color-ink-on-button-accent)_90%,transparent)]",
               wide ? "inset-x-4" : "inset-x-3",
               signingState === "signing" && "vex-sign-stroke--signing",
             )}
@@ -299,7 +305,7 @@ export function SessionsList({
             <span
               aria-hidden
               onAnimationEnd={() => setSigningState("idle")}
-              className="vex-intro-glint absolute bottom-[3px] right-4 h-1.5 w-1.5 rounded-full bg-[var(--vex-accent-contrast)]"
+              className="vex-intro-glint absolute bottom-[3px] right-4 h-1.5 w-1.5 rounded-full bg-ink-on-button-accent"
             />
           ) : null}
         </button>

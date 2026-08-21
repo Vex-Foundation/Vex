@@ -185,9 +185,11 @@ function AssistantActionsTail({
  *
  * TYPOGRAPHY LAW (owner readability round 2026-07-30): message BODY copy is
  * the sans reading register, Inter Tight. Instrument Serif is a condensed
- * display face and is now confined to headings, display figures and the
- * reasoning aside — the previous serif body was the "chujowo się czyta"
- * report. The face and metrics are declared once on `.vex-chat-prose`
+ * display face; the previous serif body was the "chujowo się czyta" report,
+ * and since 2026-08-21 (owner 6/6a) the serif is out of shell chrome
+ * altogether - it survives on the pre-shell display headings and the
+ * long-form article variant only. The face and metrics are declared once on
+ * `.vex-chat-prose`
  * (landing-motifs.css) and reach the body through `MarkdownContent`; this
  * wrapper only owns the tone and wrapping, so the two can never drift apart.
  */
@@ -272,7 +274,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {row.steering === true ? (
             <span
               data-vex-steering-mark=""
-              className="vex-doto-label mt-1 text-ink-secondary"
+              className="vex-micro-label mt-1 text-ink-secondary"
             >
               Steered · read at the agent's next step
             </span>
