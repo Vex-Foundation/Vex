@@ -1,16 +1,22 @@
 /**
- * Composer toolbar seats (B18/B20/B21): the model chip, the permission pill,
- * and the legacy-plan chip on the capsule's bottom row. The runtime model is
- * GLOBAL (env-resolved, no per-session mutation channel), so the model chip
- * navigates to Settings -> Model instead of offering a picker. Permission is
- * session-static and display-only (approval boundary - never a toggle).
+ * Composer toolbar seats (B18/B20/B21): the model chip and the legacy-plan
+ * chip on the capsule's bottom row, both in the LEADING cluster. The runtime
+ * model is GLOBAL (env-resolved, no per-session mutation channel), so the model
+ * chip navigates to Settings -> Model instead of offering a picker.
+ *
+ * The permission seat left this file in round 3: it moved to the TRAILING
+ * cluster beside the context meter and now owns a glyph and a container
+ * collapse, so it has its own owner (`ComposerPermissionSeat`).
+ *
+ * SHRINK CONTRACT (codex Bug 3). These seats are the toolbar's concession
+ * path: the chip box may shrink (`min-w-0`, no `shrink-0`), the brand icon is
+ * fixed, and the text label owns the ellipsis. Labels truncate FIRST; the
+ * trailing cluster never concedes.
  */
 
 import { lazy, Suspense, type JSX } from "react";
-import type { SessionPermission } from "@shared/schemas/sessions.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
-import { Pill } from "../../../components/ui/pill.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
 import { ModelBrandIcon } from "../../wizard/steps/provider/ModelBrandIcon.js";
 
@@ -20,14 +26,14 @@ const PlanDisplayModal = lazy(async () => ({
   default: (await import("../PlanDisplayModal.js")).PlanDisplayModal,
 }));
 
-/** Capsule seat chip: h28, r8, 13/20 w500 (catalog select-chip geometry). */
+/**
+ * Capsule seat chip: h28, r8, 13/20 w500 (catalog select-chip geometry).
+ * `min-w-0` and NO `shrink-0`: the box concedes, the label inside truncates.
+ * A visible focus ring is kept - a shrinking control must never become an
+ * unreachable or invisible focus target.
+ */
 const SEAT_CHIP =
-  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover";
-
-const PERMISSION_TOOLTIP: Readonly<Record<SessionPermission, string>> = {
-  restricted: "Restricted: every mutating transaction requires your approval.",
-  full: "Full access: auto-executes approved tools without prompting per call.",
-};
+  "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
 
 export function ComposerModelChip({
   modelId,
@@ -47,33 +53,14 @@ export function ComposerModelChip({
           setShellRoute({ kind: "settings", origin: null, section: "model" })
         }
       >
-        <ModelBrandIcon modelId={modelId} size={14} />
-        <span className="max-w-40 truncate">{modelId}</span>
+        {/* The brand icon is a FIXED glyph - identity never shrinks. */}
+        <span className="inline-flex shrink-0">
+          <ModelBrandIcon modelId={modelId} size={14} />
+        </span>
+        <span data-vex-model-label className="min-w-0 max-w-40 flex-1 truncate">
+          {modelId}
+        </span>
       </button>
-    </Tooltip>
-  );
-}
-
-export function ComposerPermissionChip({
-  permission,
-}: {
-  readonly permission: SessionPermission | null;
-}): JSX.Element | null {
-  if (permission === null) return null;
-  return (
-    <Tooltip label={PERMISSION_TOOLTIP[permission]} side="top" delayMs={300}>
-      <span
-        data-vex-area="composer-permission-chip"
-        data-permission={permission}
-        className="inline-flex"
-        // The tooltip needs a hoverable, focusable box; the Pill itself stays
-        // static - permission is locked at creation and never toggles here.
-        tabIndex={0}
-      >
-        <Pill variant={permission === "full" ? "accent" : "neutral"}>
-          {permission === "full" ? "Full access" : "Restricted"}
-        </Pill>
-      </span>
     </Tooltip>
   );
 }
@@ -108,7 +95,9 @@ export function ComposerPlanChip({
         className={SEAT_CHIP}
         onClick={() => onOpenChange(true)}
       >
-        Plan{plan.accepted ? "" : " · unaccepted"}
+        <span data-vex-plan-label className="min-w-0 truncate">
+          Plan{plan.accepted ? "" : " · unaccepted"}
+        </span>
       </button>
       {open ? (
         <Suspense fallback={null}>

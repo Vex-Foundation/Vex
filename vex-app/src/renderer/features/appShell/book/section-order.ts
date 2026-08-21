@@ -13,12 +13,17 @@
  * default rather than to a blank rail.
  */
 
+/**
+ * `runtime` ("Runtime & Cost") retired in round 3 (owner QA item 1): context
+ * occupancy and the access mode moved into the composer, and transcript turn
+ * stats remain the cost surface. A stored order that still lists it degrades
+ * cleanly - `resolveBookSectionOrder` drops unrecognised ids by design.
+ */
 export type BookSectionId =
   | "position"
   | "wallets"
   | "balances"
   | "activity"
-  | "runtime"
   | "session"
   | "trench";
 
@@ -28,7 +33,6 @@ export const DEFAULT_BOOK_SECTIONS: readonly BookSectionId[] = [
   "wallets",
   "balances",
   "activity",
-  "runtime",
   "session",
   "trench",
 ];
@@ -39,7 +43,6 @@ export const BOOK_SECTION_LABEL: Readonly<Record<BookSectionId, string>> = {
   wallets: "Wallets",
   balances: "Balances",
   activity: "Activity",
-  runtime: "Runtime & Cost",
   session: "Session",
   trench: "Trench Express",
 };
