@@ -126,7 +126,11 @@ const SESSION_A = "00000000-0000-4000-8000-00000000ab01";
 const SESSION_B = "00000000-0000-4000-8000-00000000ab02";
 
 afterEach(() => {
-  useUiStore.setState({ activeSessionId: null });
+  useUiStore.setState({
+    activeSessionId: null,
+    createSessionOpen: false,
+    createSessionInitialTurn: null,
+  });
   transcriptState.isLoading = false;
   transcriptState.pages = undefined;
   vi.clearAllMocks();
@@ -188,6 +192,63 @@ describe("SessionPanel - the resident shell", () => {
     expect(
       view.container.querySelector("[data-vex-session-content]"),
     ).not.toBeNull();
+    view.unmount();
+  });
+
+  it("a freshly created session never paints a settling frame, and keeps focus", () => {
+    // `completeSessionCreate` activates the new session and stores its first
+    // turn in ONE set, but the chat mutation does not start until the
+    // composer's passive hand-off effect fires a commit later. In that gap the
+    // transcript is loading with no preview and no pending submit, which used
+    // to resolve to `settling` - and `settling` HIDES the resident composer
+    // (visibility:hidden), flashing a seatless frame and putting focus on a
+    // hidden node (codex 4.3).
+    useUiStore.setState({ activeSessionId: null });
+    transcriptState.pages = [];
+    const view = renderPanel();
+    expect(phaseOf(view.container)).toBe("hero");
+    const field = view.getByTestId("composer-field") as HTMLTextAreaElement;
+    act(() => {
+      field.focus();
+    });
+    expect(document.activeElement).toBe(field);
+
+    act(() => {
+      transcriptState.isLoading = true;
+      transcriptState.pages = undefined;
+      // Exactly what `completeSessionCreate` writes, atomically.
+      useUiStore.setState({
+        activeSessionId: SESSION_A,
+        createSessionOpen: false,
+        createSessionInitialTurn: { message: "first turn", reasoningEffort: null },
+      });
+    });
+
+    expect(phaseOf(view.container)).toBe("active");
+    // Same node, still focused: nothing remounted and nothing was hidden.
+    expect(view.getByTestId("composer-field")).toBe(field);
+    expect(document.activeElement).toBe(field);
+    view.unmount();
+  });
+
+  it("still settles when a stored initial turn belongs to the OPEN create modal", () => {
+    // The same store field is non-null while the modal is open with a seeded
+    // draft - and at that moment it belongs to a session that does not exist
+    // yet, not to `activeSessionId`. Treating it as "turn starting" would skip
+    // the conservative phase for an ordinary session whose history is loading.
+    useUiStore.setState({ activeSessionId: null });
+    transcriptState.pages = [];
+    const view = renderPanel();
+    act(() => {
+      transcriptState.isLoading = true;
+      transcriptState.pages = undefined;
+      useUiStore.setState({
+        activeSessionId: SESSION_A,
+        createSessionOpen: true,
+        createSessionInitialTurn: { message: "seeded draft", reasoningEffort: null },
+      });
+    });
+    expect(phaseOf(view.container)).toBe("settling");
     view.unmount();
   });
 

@@ -123,6 +123,26 @@ export function SessionPanel({
   const preview = useStreamPreview(activeSessionId);
   const chatSubmitting = useIsChatSubmitting(activeSessionId ?? "");
 
+  // THE FRESH-SESSION HANDOFF, as a phase input. `completeSessionCreate`
+  // activates the new session and stores its first turn in ONE set, but the
+  // chat mutation does not start until the composer's passive handoff effect
+  // fires a commit later. In that gap the transcript is loading, there is no
+  // preview and no pending submit, so the phase resolved to `settling` - which
+  // hides the resident composer (`chat-transcript.css`) and flashed a seatless
+  // frame on every newly created session. A stored initial turn with the
+  // create modal already closed IS that turn starting, so the phase goes
+  // straight to `active`.
+  //
+  // The `createSessionOpen` half is load-bearing: the same field is also
+  // non-null while the modal is OPEN with a seeded draft, and at that moment it
+  // belongs to a session that does not exist yet, not to `activeSessionId`.
+  const createSessionInitialTurn = useUiStore((s) => s.createSessionInitialTurn);
+  const createSessionOpen = useUiStore((s) => s.createSessionOpen);
+  const turnStarting =
+    activeSessionId !== null &&
+    createSessionInitialTurn !== null &&
+    !createSessionOpen;
+
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   // macOS-style overlay bar on the conversation scrollport. The transcript
   // runs the same hook on its own element for the standalone mount; scroll
@@ -176,6 +196,7 @@ export function SessionPanel({
     !transcriptQuery.isLoading &&
     preview === null &&
     !chatSubmitting &&
+    !turnStarting &&
     transcriptPages !== undefined &&
     flattenTranscriptPages(transcriptPages).length === 0;
 
@@ -190,7 +211,8 @@ export function SessionPanel({
     activeSessionId !== null &&
     transcriptQuery.isLoading &&
     preview === null &&
-    !chatSubmitting;
+    !chatSubmitting &&
+    !turnStarting;
   const hero = activeSessionId === null || isIdleSession;
   const phase = settling ? "settling" : hero ? "hero" : "active";
 

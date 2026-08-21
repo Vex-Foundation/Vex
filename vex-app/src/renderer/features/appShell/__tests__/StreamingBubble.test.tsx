@@ -92,16 +92,15 @@ describe("TurnIsland - state transitions", () => {
     expect(label?.textContent).not.toContain("Working");
   });
 
-  it("stands the pill down entirely while the CENTRED scene owns the column", () => {
+  it("keeps the working pill in flow - it is the ONLY pending surface", () => {
+    // Regression guard for the retired centred scene: nothing may suppress
+    // this pill any more, or a pending turn would show nothing at all.
     const { container } = render(
-      createElement(StreamingBubble, {
-        preview: preview({ status: "working" }),
-        centredSceneUp: true,
-      }),
+      createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
-    // The same fact is never stated twice — but the sr-only announcement is
-    // deliberately unchanged, so a screen reader still hears the turn.
-    expect(container.querySelector("[data-vex-island-label]")).toBeNull();
+    expect(
+      container.querySelector("[data-vex-island-label]")?.textContent,
+    ).toBe("vexing\u2026");
     expect(screen.getByText("Vex is responding")).not.toBeNull();
   });
 

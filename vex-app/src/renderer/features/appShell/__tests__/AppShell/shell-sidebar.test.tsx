@@ -20,6 +20,7 @@ import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -577,15 +578,40 @@ describe("AppShell", () => {
     ).toBeNull();
   });
 
-  it("solves the shell grid tracks from the solver (sidebar 280px, welcome BOOK auto)", () => {
+  it("solves the shell grid tracks from the solver (sidebar 280px, welcome tab 380px)", () => {
     const view = renderShell();
     const frame = view.container.querySelector(
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
     expect(frame).not.toBeNull();
-    // jsdom: no ResizeObserver, viewport = window.innerWidth (1024). Welcome
-    // stage keeps the BOOK track auto (the floating tab sizes itself).
-    expect(frame?.style.gridTemplateColumns).toBe("280px minmax(0, 1fr) auto");
+    // jsdom: no ResizeObserver, viewport = window.innerWidth (1024). The
+    // welcome track carries the floating tab's OWN reservation, as a length.
+    expect(frame?.style.gridTemplateColumns).toBe(
+      `280px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
+    );
+  });
+
+  it("keeps the third track NUMERIC on both sides of the welcome<->session edge", () => {
+    // `auto` <-> length is not interpolable, so under the frame's 300ms
+    // grid-template-columns transition the retained `auto` track was re-solved
+    // against the newly mounted BOOK rail and swept it through the centre
+    // column (owner QA item 8). Every state must emit a length.
+    const view = renderShell();
+    const frame = view.container.querySelector(
+      "[data-vex-area='shell-frame']",
+    ) as HTMLElement | null;
+    const thirdTrack = (): string =>
+      (frame?.style.gridTemplateColumns ?? "").split(" ").at(-1) ?? "";
+
+    expect(thirdTrack()).toMatch(/^\d+px$/);
+    // Welcome, tab collapsed: exactly zero, still a length.
+    act(() => useUiStore.getState().toggleBook());
+    expect(thirdTrack()).toBe("0px");
+    act(() => useUiStore.getState().toggleBook());
+
+    // Session stage: the solved BOOK width (here its numeric collapsed spine).
+    act(() => useUiStore.getState().setActiveSessionId("s-1"));
+    expect(thirdTrack()).toMatch(/^\d+px$/);
   });
 
   it("mounts the sidebar drag handle only while the sidebar is expanded", () => {
@@ -608,7 +634,9 @@ describe("AppShell", () => {
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
     // The collapsed rail is the fixed 56px track.
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) auto");
+    expect(frame?.style.gridTemplateColumns).toBe(
+      `56px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
+    );
   });
 
   it("a dragged sidebar width re-solves the track and persists through the store", () => {
@@ -617,7 +645,9 @@ describe("AppShell", () => {
     const frame = view.container.querySelector(
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
-    expect(frame?.style.gridTemplateColumns).toBe("342px minmax(0, 1fr) auto");
+    expect(frame?.style.gridTemplateColumns).toBe(
+      `342px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
+    );
   });
 });
 

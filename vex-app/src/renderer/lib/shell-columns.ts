@@ -41,6 +41,23 @@ export const BOOK_MAX = 520;
 export const BOOK_DEFAULT = 360;
 /** Closed-BOOK spine (the collapse header + toggle stays visible). */
 export const BOOK_COLLAPSED = 48;
+/**
+ * Width the WELCOME stage's floating Portfolio tab reserves while open
+ * (24px gutter + 340px card stack + 16px breathing).
+ *
+ * ONE constant for two consumers that must agree exactly: `WelcomePortfolioPanel`
+ * sizes its aside from it and `AppShell` reserves the shell's third grid track
+ * from it, so the child width and the reservation cannot drift. It lives here
+ * rather than in the panel because the frame must not import a feature
+ * component's internals to lay itself out.
+ *
+ * WHY THE TRACK MUST BE NUMERIC. The frame transitions `grid-template-columns`
+ * for 300ms. `auto` <-> length is not interpolable, so on the welcome<->session
+ * edge the retained `auto` track was re-solved against the newly mounted BOOK
+ * rail's intrinsic content and swept the rail through the centre column before
+ * the pixel track won (owner QA item 8). Every state now emits a length.
+ */
+export const WELCOME_PORTFOLIO_WIDTH = 380;
 
 /**
  * Clamp a panel width into its contract range and round to whole pixels.

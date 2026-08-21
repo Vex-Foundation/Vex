@@ -41,6 +41,10 @@ const mockSubmitChat = {
 };
 vi.mock("../../../../lib/api/chat.js", () => ({
   useSubmitChat: () => mockSubmitChat,
+  // Session-filtered pending: the resident composer reads this, not the
+  // hook-wide `isPending`. The fixture drives one session, so the two
+  // answers coincide here.
+  useIsChatSubmitting: () => mockSubmitChat.isPending,
 }));
 vi.mock("../../../../lib/api/messages.js", () => ({
   useTranscriptInfinite: () => ({ data: undefined, isSuccess: false }),
