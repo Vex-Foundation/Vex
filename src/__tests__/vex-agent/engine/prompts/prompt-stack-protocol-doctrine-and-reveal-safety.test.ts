@@ -24,25 +24,22 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("### virtuals");
       const section = prompt.split("### virtuals")[1]?.split("###")[0] ?? "";
-      expect(section).toContain("agent-token intelligence");
+      // Wave 2 migration rows T449-T451.
+      expect(section).toContain("read-only intelligence");
       // Read-only namespace: no mutating marker in its section.
       expect(section).not.toContain("Contains mutating tools");
     });
 
-    it("carries the static Virtuals Agent Tokens trading doctrine (imperative, cache-safe)", () => {
+    it("carries Virtuals acquisition and anti-sniper judgment in the static task shape", () => {
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("## Virtuals Agent Tokens");
-      // Graduated tokens trade via the chain's venue tool quoted in VIRTUAL.
-      expect(prompt).toContain("trades against VIRTUAL on its chain's venue");
-      expect(prompt).toContain("`tradingRoute` hint");
-      // NEVER buy while the anti-sniper window is active.
+      // Wave 2 migration rows T452-T459.
+      expect(prompt).toContain("### Swap");
+      expect(prompt).toContain("Virtuals discovery is read-only");
+      expect(prompt).toContain("venue named by its route");
       expect(prompt).toContain("NEVER buy while `windowActive` is true");
       expect(prompt).toContain("virtuals__agent_get");
-      // UNDERGRAD = bonding-curve pre-graduation, extreme caution.
-      expect(prompt).toContain("UNDERGRAD means bonding-curve pre-graduation");
-      expect(prompt).toContain("extreme caution");
-      // isVerified is an anti-impersonation badge, not a quality/safety signal.
-      expect(prompt).toContain("anti-impersonation badge, not a quality or safety signal");
+      expect(prompt).toContain("Bonding-curve pre-graduation can be illiquid");
+      expect(prompt).toContain("anti-impersonation, not a quality or safety signal");
     });
 
     it("Virtuals doctrine renders in the STATIC prefix in every mode", () => {
@@ -53,23 +50,20 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       ];
       for (const ctx of variants) {
         const staticJoined = buildPromptStack(ctx).staticLayers.join("\n");
-        expect(staticJoined).toContain("## Virtuals Agent Tokens");
+        // Wave 2 migration row T460.
+        expect(staticJoined).toContain("NEVER buy while `windowActive` is true");
       }
     });
 
-    it("carries the static Fixed Yield (Pendle) doctrine (imperative, cache-safe)", () => {
+    it("carries Pendle declaration and yield judgment in the static protocol layer", () => {
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("## Fixed Yield (Pendle)");
-      // PT is a term commitment; buying locks a fixed rate until expiry.
-      expect(prompt).toContain("TERM COMMITMENT");
-      // Early exit is market-priced and can lose.
+      // Wave 2 migration rows T461-T466.
+      expect(prompt).toContain("### pendle");
+      expect(prompt).toContain("principal token");
       expect(prompt).toContain("market-priced");
-      // Matured PT redeems ~1:1 via pendle__pt_redeem; value at face.
-      expect(prompt).toContain("pendle__pt_redeem");
-      // Never present points as yield.
-      expect(prompt).toContain("NEVER present points as yield");
-      // Preview + gate before trading.
-      expect(prompt).toContain("pendle__pt_quote");
+      expect(prompt).toContain("speculative points are not yield");
+      expect(prompt).toContain("dry run before broadcast");
+      expect(prompt).toContain("Route fixed term yield with a maturity date to Pendle");
     });
 
     it("Pendle doctrine renders in the STATIC prefix in every mode", () => {
@@ -80,7 +74,8 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       ];
       for (const ctx of variants) {
         const staticJoined = buildPromptStack(ctx).staticLayers.join("\n");
-        expect(staticJoined).toContain("## Fixed Yield (Pendle)");
+        // Wave 2 migration row T467.
+        expect(staticJoined).toContain("### pendle");
       }
     });
 
@@ -156,7 +151,9 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       const stack = buildPromptStack(makeContext());
       const full = [...stack.staticLayers, ...stack.turnLayers].join("\n");
 
-      expect(full).toContain("KyberSwap is the PRIMARY swap route");
+      // Wave 2 migration rows T473 and T474.
+      expect(full).toContain("KyberSwap is the primary EVM swap venue");
+      expect(full.match(/KyberSwap is the primary EVM swap venue/g)).toHaveLength(1);
       // The preference is guidance, never a gate: the prompt must not claim the
       // alternative is locked, unavailable, or has to be unlocked by a failure.
       expect(full).not.toMatch(/unlocks? it|now available for this session|backup venue is now available/i);

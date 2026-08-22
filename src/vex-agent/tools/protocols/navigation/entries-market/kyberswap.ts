@@ -28,6 +28,28 @@ export const KYBERSWAP_NAVIGATION: ProtocolNamespaceNavigation = {
     "Use when the user wants to buy, sell, swap or exit a token on an EVM chain, wants the rate, route, gas cost or price impact before trading, or wants a token checked for honeypot or fee-on-transfer behaviour. Quote first, then execute with the same params.",
   preferInstead:
     "KyberSwap is the PRIMARY EVM swap route: use `uniswap` when KyberSwap has no aggregator support for the chain or cannot route the pair, `khalani` to resolve token addresses across chains or to bridge between them, `solana` for Solana trading, and `dexscreener` for read-only research.",
+  declaration: {
+    identity: "KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.",
+    read: "Read supported EVM chains and networks, the feature matrix, live chain status, token metadata, and a safety check that reports honeypot and fee-on-transfer signals.",
+    quote: "Preview a token swap without signing and inspect the best price, route, output, gas estimate, price impact, slippage, and safety results for both token legs.",
+    act: "Buy, sell, swap, or exit a position after a fresh quote with identical economic parameters. Execution signs and broadcasts from the wallet and can confirm, revert after spending gas, be refused before signing, or remain pending.",
+    whenItApplies: "Use it for EVM chain discovery, token-contract safety, a requested buy or sell, an exact-input token swap, route inspection, or position exit.",
+    characteristicAndLimits: "Quotes and live chain state can become stale, route availability is not guaranteed, and raw route amounts use different units from human summaries. Token safety signals are evidence, not a guarantee. Robinhood support is provisional and provider rate limits are not quantified.",
+    retrievalTerms: [
+      "EVM chains",
+      "feature matrix",
+      "live chain status",
+      "preview a token swap",
+      "best price",
+      "price impact",
+      "slippage",
+      "exit a position",
+      "safety check",
+      "honeypot",
+      "fee-on-transfer",
+    ],
+    facets: ["Chains and token safety", "Swaps"],
+  },
   exampleQueries: [
     'ToolSearch(query="swap on base", namespace="kyberswap")',
     'ToolSearch(query="check token honeypot", namespace="kyberswap")',

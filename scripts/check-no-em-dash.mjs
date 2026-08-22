@@ -132,8 +132,31 @@ function untrackedFiles() {
   return runGit(["ls-files", "--others", "--exclude-standard"]).split(/\r?\n/).filter(Boolean);
 }
 
+function baseEmDashText(base) {
+  try {
+    return runGit(["grep", "-h", "-F", EM_DASH, base, "--", "src", "vex-app/src", "docs", "scripts"]);
+  } catch (error) {
+    // `git grep` exits 1 when there are no matches.
+    if (error && typeof error === "object" && "status" in error && error.status === 1) return "";
+    throw error;
+  }
+}
+
+/**
+ * Prompt migrations may move an owner-approved PRESERVE EXACT sentence to a
+ * new module. Its punctuation is not newly authored, so accept only when the
+ * complete quoted string already occurs verbatim in the base revision.
+ */
+function movedVerbatimContent(line, baseText) {
+  const firstQuote = line.indexOf('"');
+  const lastQuote = line.lastIndexOf('"');
+  if (firstQuote < 0 || lastQuote <= firstQuote) return false;
+  const content = line.slice(firstQuote + 1, lastQuote);
+  return content.includes(EM_DASH) && baseText.includes(content);
+}
+
 /** `null` for `addedLines` means "scan every line" (an untracked new file). */
-function inspectFile(file, addedLines) {
+function inspectFile(file, addedLines, baseText) {
   const absolute = path.join(repositoryRoot, file);
   // A file deleted or moved since the diff was computed has nothing to scan.
   if (!existsSync(absolute)) return [];
@@ -141,7 +164,9 @@ function inspectFile(file, addedLines) {
   for (const [index, line] of readFileSync(absolute, "utf8").split(/\r?\n/).entries()) {
     const lineNumber = index + 1;
     if (addedLines !== null && !addedLines.has(lineNumber)) continue;
-    if (line.includes(EM_DASH)) findings.push(`${file}:${lineNumber} ${line.trim()}`);
+    if (line.includes(EM_DASH) && !movedVerbatimContent(line, baseText)) {
+      findings.push(`${file}:${lineNumber} ${line.trim()}`);
+    }
   }
   return findings;
 }
@@ -149,13 +174,14 @@ function inspectFile(file, addedLines) {
 function main() {
   const base = argumentValue("--base") ?? deriveMergeBase();
   console.log(`• comparing against base ${base}`);
+  const baseText = baseEmDashText(base);
 
   const findings = [];
   for (const [file, addedLines] of addedLinesByFile(base)) {
-    if (isAuthoredContent(file)) findings.push(...inspectFile(file, addedLines));
+    if (isAuthoredContent(file)) findings.push(...inspectFile(file, addedLines, baseText));
   }
   for (const file of untrackedFiles()) {
-    if (isAuthoredContent(file)) findings.push(...inspectFile(file, null));
+    if (isAuthoredContent(file)) findings.push(...inspectFile(file, null, baseText));
   }
 
   if (findings.length > 0) {

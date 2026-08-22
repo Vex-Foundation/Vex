@@ -51,7 +51,7 @@ describe("static prompt layers agree with the manifest", () => {
     const prompt = buildProtocolsPrompt();
 
     expect(prompt).toContain("erc20_balance");
-    // The venue routing line is not this change's business.
-    expect(prompt).toContain("Swap Venue Routing");
+    // The swap task shape is not this change's business.
+    expect(prompt).toContain("### Swap");
   });
 });

@@ -122,7 +122,7 @@ describe("cache breakpoints land on the NEW assembled prompt stack (P3 e2e)", ()
     expect(staticParts[0].text).toContain("# Execution Policy");
     expect(staticParts[0].text).toContain("# Safety Contract");
     expect(staticParts[0].text).toContain("# Tool Model");
-    expect(staticParts[0].text).toContain("# Available Protocol Namespaces");
+    expect(staticParts[0].text).toContain("# Protocols");
     expect(staticParts[0].text).toContain("# Memory & Learning");
     expect(staticParts[0].text).toContain("# Research");
     expect(staticParts[0].text).toContain("# Response Formatting");

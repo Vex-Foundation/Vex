@@ -110,13 +110,11 @@ describe("prompt-stack — identity content", () => {
 
     it("repositions dexscreener as the market-discovery backbone in the protocols prompt", () => {
       const prompt = buildProtocolsPrompt();
-      const dexSection = prompt.split("### dexscreener")[1]?.split("##")[0] ?? "";
-      expect(dexSection).toContain("market-research backbone");
-      // NOTE: still the pre-rename spelling because its SOURCE is
-      // `tools/protocols/navigation/entries-market/dexscreener.ts`, a cross-reference
-      // owned by the protocol-naming workstream and not renamed in this change.
-      expect(dexSection).toContain("Research flow: discover → resolve the address with `TokenFind` → verify liquidity → quote on a venue.");
-      expect(dexSection).toContain("robinhood");
+      const dexSection = prompt.split("### dexscreener\n")[1]?.split("\n### ")[0] ?? "";
+      // Wave 2 migration rows T319-T321.
+      expect(dexSection).toContain("read-only market research");
+      expect(dexSection).toContain("exact chain and contract address");
+      expect(dexSection).toContain("provider's index");
     });
   });
 });

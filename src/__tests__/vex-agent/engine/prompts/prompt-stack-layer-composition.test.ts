@@ -54,7 +54,8 @@ describe("prompt-stack — layer composition", () => {
           expect(joined).toContain("2-step transfer rule");
 
           // Protocols marker
-          expect(joined).toContain("# Available Protocol Namespaces");
+          // Wave 2 migration row T336.
+          expect(joined).toContain("## What Vex can reach");
         });
       }
     }

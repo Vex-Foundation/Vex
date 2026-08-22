@@ -23,8 +23,10 @@
  * The scanned surfaces are every place a morpho capability statement can reach a
  * reader: the manifest descriptions and their param descriptions, the retrieval
  * passages and their aliases and example intents, every field of the navigation
- * entry including its facets, the Morpho doctrine section of the system prompt,
- * and the how-vex-works page the desktop app renders.
+ * entry including its facets and its typed declaration, the rendered Morpho
+ * surfaces of the protocols prompt (the `### morpho` declaration and the Yield
+ * and Positions task shapes that carry Morpho procedure), and the how-vex-works
+ * page the desktop app renders.
  *
  * The SECOND assertion is a different kind of honesty. The 1.25 health-factor
  * floor is a pre-signature buffer: the calldata Vex signs is a plain Morpho Blue
@@ -71,17 +73,23 @@ const HOW_VEX_WORKS_PATH = fileURLToPath(
 );
 
 /**
- * The Morpho doctrine slice of the system prompt. Sliced rather than scanned
- * whole so a denial in the Pendle or Solana lending section, which may be
- * perfectly true there, cannot fail this test.
+ * The Morpho surfaces of the protocols prompt: the rendered `### morpho`
+ * declaration and the two task shapes that carry Morpho procedure. Sliced
+ * rather than scanned whole so a denial in the Pendle or Solana sections, which
+ * may be perfectly true there, cannot fail this test.
  */
-function morphoDoctrine(): string {
+const MORPHO_PROMPT_HEADINGS = ["### morpho\n", "### Yield\n", "### Positions and risk\n"] as const;
+
+function morphoPromptSurfaces(): string {
   const prompt = buildProtocolsPrompt();
-  const start = prompt.indexOf("## Lending (Morpho)");
-  const end = prompt.indexOf("## Bridge Routing", start);
-  expect(start, "Morpho doctrine heading missing from the protocols prompt").toBeGreaterThan(-1);
-  expect(end, "Bridge Routing heading missing after the Morpho doctrine").toBeGreaterThan(start);
-  return prompt.slice(start, end);
+  const slices: string[] = [];
+  for (const heading of MORPHO_PROMPT_HEADINGS) {
+    const start = prompt.indexOf(heading);
+    expect(start, `${heading.trim()} heading missing from the protocols prompt`).toBeGreaterThan(-1);
+    const next = prompt.indexOf("\n### ", start + heading.length);
+    slices.push(prompt.slice(start, next === -1 ? prompt.length : next));
+  }
+  return slices.join("\n");
 }
 
 /** Only the Morpho section of the how-vex-works page, for the same reason. */
@@ -125,8 +133,24 @@ function collectStatements(): MorphoStatement[] {
     statements.push({ source: `navigation facet ${facet.label}`, text: `${facet.label}. ${facet.summary}` });
   }
 
-  for (const line of morphoDoctrine().split("\n")) {
-    if (line.trim().length > 0) statements.push({ source: "doctrine line", text: line });
+  const declaration = MORPHO_NAVIGATION.declaration;
+  const declarationProse = {
+    identity: declaration.identity,
+    read: declaration.read,
+    quote: declaration.quote,
+    act: declaration.act,
+    whenItApplies: declaration.whenItApplies,
+    characteristicAndLimits: declaration.characteristicAndLimits,
+  };
+  for (const [field, text] of Object.entries(declarationProse)) {
+    statements.push({ source: `declaration ${field}`, text });
+  }
+  for (const term of declaration.retrievalTerms) {
+    statements.push({ source: "declaration retrievalTerm", text: term });
+  }
+
+  for (const line of morphoPromptSurfaces().split("\n")) {
+    if (line.trim().length > 0) statements.push({ source: "protocols prompt line", text: line });
   }
 
   statements.push({ source: "how-vex-works Morpho section", text: howVexWorksMorphoSection() });

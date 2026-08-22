@@ -62,9 +62,9 @@ export function buildMissionRunPrompt(
   lines.push("- Deployed capital and portfolio change since this run started are given to you each turn in `# Mission Capital`. Read them there. Do not recompute them from the transcript, and never treat a balance that existed before the run started as progress. If that section is absent, say the start value is unknown instead of assuming one");
   // The old hard-coded research-tool list here drifted from the real routing
   // rule (and named `solana` unconditionally, in an install that may not have
-  // the key). `## Token Research Map` in `# Research` owns which surface
+  // the key). The Research task shape owns which surface
   // answers which question, env-gated line by line — point at it instead.
-  lines.push("- Route research through the `## Token Research Map`: it names which surface answers which token question. Use them only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
+  lines.push("- Route research through the `### Research` task shape: it names which surface answers which token question. Use them only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
   // Env-gated recommendation: the `solana.*` namespace needs JUPITER_API_KEY.
   // Recommending it in an install without the key sends the model at a tool the
   // dispatcher will refuse — same availability predicate the registry uses.
