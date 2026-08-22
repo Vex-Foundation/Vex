@@ -292,8 +292,12 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
 
     expect(snap.tokens).toHaveLength(4);
     expect(snap.truncated).toBe(true);
-    expect(snap.truncationNote).toContain("raise `limit`");
-    expect(snap.truncationNote).toContain("detailed");
+    // The recovery text is part of the contract: `detailed` is the one complete
+    // recovery, and `limit` is promised only what it can deliver (the priced
+    // rows it cut), never the unpriced-cap or zero-balance rows.
+    expect(snap.truncationNote).toContain('response_format:"detailed" (the only complete recovery)');
+    expect(snap.truncationNote).toContain("Raising `limit` recovers only the priced rows it cut");
+    expect(snap.truncationNote).toContain("FULL projected scan");
     // bounded_non_pageable: there is nothing to page to, and the note must not
     // suggest otherwise.
     expect(snap.truncationNote).toContain("no continuation");
@@ -360,6 +364,9 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
 
     expect(snap.unpricedOmitted).toBe(5);
     expect(snap.truncated).toBe(true);
-    expect(snap.truncationNote).toBeDefined();
+    // Rows past the 20-row unpriced cap cannot come back through `limit`; the
+    // note must send the agent to `detailed`, not to a bigger limit.
+    expect(snap.truncationNote).toContain('response_format:"detailed" (the only complete recovery)');
+    expect(snap.truncationNote).toContain("never the rows the 20-row unpriced cap");
   });
 });

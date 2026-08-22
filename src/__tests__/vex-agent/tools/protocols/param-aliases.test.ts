@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { normalizeParamAliases } from "@vex-agent/tools/protocols/runtime/param-aliases.js";
+import { makeProtocolContext } from "../_test-context.js";
 import { paramsToJsonSchema } from "@vex-agent/tools/registry/khalani.js";
 import { getProtocolManifest, PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { BANNED_PARAM_KEYS, CANONICAL_PARAM_KEYS } from "@vex-agent/tools/protocols/conventions.js";
@@ -124,7 +125,7 @@ describe("the alias rewrite runs FIRST inside executeProtocolTool", () => {
     const callArguments: Record<string, unknown> = { wallet: "solana", limit: 5 };
     const result = await executeProtocolTool(
       { toolId: "khalani.orders.list", params: callArguments },
-      { sessionPermission: "full", approved: true, sessionId: "s1" } as never,
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "s1" }),
     );
 
     expect(result.success).toBe(true);
@@ -190,5 +191,34 @@ describe("aliases are never model-visible", () => {
       // The retired spelling is not also a live key.
       expect(manifest?.params.some((p) => p.key === retired)).toBe(false);
     }
+  });
+});
+
+describe("the approval envelope persists the canonical spelling", () => {
+  it("carries the normalized object itself, with canonical keys and the manifest fingerprint", async () => {
+    const { buildApprovalToolCall, computeManifestFingerprint } = await import(
+      "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js"
+    );
+    const manifest = getProtocolManifest("khalani.orders.list");
+    if (!manifest) throw new Error("khalani.orders.list is not in the catalog");
+
+    // The dispatcher's own arguments object, normalized in place the way
+    // executeProtocolTool does it first, then handed to the envelope builder
+    // exactly as the approval branch hands it (the ORIGINAL object, not a copy).
+    const callArguments: Record<string, unknown> = { wallet: "solana", limit: 5 };
+    expect(normalizeParamAliases(manifest, callArguments)).toEqual({ ok: true });
+
+    const envelope = buildApprovalToolCall("khalani__orders_list", callArguments) as {
+      command: string;
+      args: { toolId: string; params: Record<string, unknown> };
+      vex: { manifestFingerprint: string };
+    };
+    expect(envelope.command).toBe("execute_tool");
+    expect(envelope.args.toolId).toBe("khalani.orders.list");
+    // Object identity: what the durable row would hold IS the normalized object.
+    expect(envelope.args.params).toBe(callArguments);
+    expect(envelope.args.params).toEqual({ walletFamily: "solana", limit: 5 });
+    expect("wallet" in envelope.args.params).toBe(false);
+    expect(envelope.vex.manifestFingerprint).toBe(computeManifestFingerprint(manifest));
   });
 });

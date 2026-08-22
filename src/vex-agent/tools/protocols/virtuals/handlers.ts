@@ -101,17 +101,24 @@ function genesisContinuation(pagination: VirtualsPagination | null): Record<stri
 function genesisTruncationNote(input: {
   readonly returned: number;
   readonly fetched: number;
-  readonly pageSize: number;
   readonly limit: number;
+  readonly page: number;
 }): string {
   const dropped = input.fetched - input.returned;
-  const recovery = input.pageSize <= GENESIS_LIMIT_MAX
-    ? `raise \`limit\` to ${input.pageSize} (the maximum \`limit\` is ${GENESIS_LIMIT_MAX})`
-    : `lower \`pageSize\` to ${input.limit}, so one provider page maps to one reply`;
+  // The recovery is phrased from `fetched`, never from the requested
+  // `pageSize`: the dropped rows sit on THIS page, and a page keeps its
+  // boundaries only while `pageSize` stays the same. Changing `pageSize`
+  // renumbers every page, so on page 2 "lower pageSize to limit" would fetch
+  // different rows, not the ones that were dropped.
+  const recovery = input.fetched <= GENESIS_LIMIT_MAX
+    ? `re-read this same \`page\` (${input.page}) with \`limit\` ${input.fetched} and the SAME \`pageSize\``
+    : `this page holds more rows than the maximum \`limit\` (${GENESIS_LIMIT_MAX}) can return, so `
+      + `restart from \`page\` 1 with \`pageSize\` at most ${input.limit} and walk the pages; changing `
+      + "`pageSize` changes where every page starts, which is why the restart begins at page 1";
   return (
     `${dropped} row${dropped === 1 ? "" : "s"} fetched from this provider page were dropped by `
     + `\`limit\` (${input.returned} of ${input.fetched} kept). They are on the page you already fetched, `
-    + `not behind a later one: ${recovery} to see them.`
+    + `not behind a later one: ${recovery}.`
   );
 }
 
@@ -265,7 +272,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
         fetched,
         truncated: dropped > 0,
         ...(dropped > 0
-          ? { truncationNote: genesisTruncationNote({ returned: projected.length, fetched, pageSize, limit }) }
+          ? { truncationNote: genesisTruncationNote({ returned: projected.length, fetched, limit, page }) }
           : {}),
         // `page`/`pageSize` above echo the REQUEST; the continuation below is
         // computed from the provider's own pagination block only.

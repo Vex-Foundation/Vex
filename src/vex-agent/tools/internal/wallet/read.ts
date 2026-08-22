@@ -123,15 +123,21 @@ interface WalletSnapshot {
 }
 
 /**
- * Narrowing action for a trimmed snapshot. There is no cursor and no page: the
- * only ways to see the missing rows are a bigger `limit` or the `detailed`
- * format, so the note says exactly that rather than implying a next call.
+ * Narrowing action for a trimmed snapshot, phrased against the FULL projected
+ * scan, which is what `truncated` is measured against. The concise trim drops
+ * rows three ways (priced rows past `limit`, unpriced rows past the 20-row
+ * cap, unpriced rows with a zero balance) and only the first is recoverable by
+ * raising `limit`; the `detailed` format is the one recovery that returns
+ * every row. There is no cursor and no page, so the note must not imply a
+ * next call, and it must not promise `limit` more than it can deliver.
  */
 const TRUNCATION_NOTE =
-  "Some rows this wallet holds are not listed: the concise trim kept the top `limit` "
-  + "priced rows (plus up to 20 held-but-unpriced rows). There is no continuation to "
-  + "fetch. To see the rest, raise `limit`, or pass response_format:\"detailed\" for "
-  + "every row. `tokenCount` and `totalUsd` already describe the FULL scan.";
+  "Some rows of the FULL projected scan for this wallet are not listed: the concise trim "
+  + "keeps the top `limit` priced rows, then at most 20 held-but-unpriced rows, and drops "
+  + "unpriced rows with a zero balance. There is no continuation to fetch. To see every row, "
+  + "pass response_format:\"detailed\" (the only complete recovery). Raising `limit` recovers "
+  + "only the priced rows it cut, never the rows the 20-row unpriced cap or the zero-balance "
+  + "rule removed. `tokenCount` and `totalUsd` already describe the FULL scan.";
 
 /**
  * A broken scan set can fail on hundreds of tokens; the agent needs to know it

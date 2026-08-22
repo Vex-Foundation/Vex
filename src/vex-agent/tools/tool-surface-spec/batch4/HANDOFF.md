@@ -14,9 +14,9 @@ on feat/prompt-wave2 (PR #109, ../wave2/HANDOFF.md).
   extra-fetch handlers), O5 deferred to the Studio MCP design.
 - Evidence: recon.md in this directory (three Explore reports, measured
   2026-08-22, static evidence only).
-- Plan: /tmp/harness-batch4-plan.md during the arc (archived here as
-  plan-v1-codex-reviewed.md once Codex approves), Codex thread
-  harness-batch4.
+- Plan: plan-v3-codex-reviewed.md in this directory (sections 10 and 11,
+  the v2 and v3 revisions, win over sections 3, 5, 7 and 8 where they
+  conflict), Codex thread harness-batch4.
 - Implementation mode chosen by the owner: builder subagents (Opus 5,
   effort low) in parallel, three lanes on disjoint files; the coordinator
   reads every diff, regenerates toolsnaps and the lexical baseline once,
@@ -25,20 +25,24 @@ on feat/prompt-wave2 (PR #109, ../wave2/HANDOFF.md).
 ## The three lanes (disjoint files)
 
 1. Vocabulary (O3): conventions.ts, allowlist.ts, protocols/types.ts,
-   runtime/params.ts (alias rewrite at step 0), registry/khalani.ts
-   (schema never emits an alias), tool-call-envelope.ts (fingerprint
-   includes aliases), _manifest-lint rule, khalani/manifest.ts (two
-   `wallet` -> `walletFamily`), morpho markets-discover and
-   vaults-discover manifests (`search` -> `query`), registry/action-aliases.ts
-   BridgeStatus (`address` -> `walletAddress`, `wallet` -> `walletFamily`)
-   and its args mapper, parameter-vocabulary.md, tests; plus the Group A
-   descriptions of the three tools in those files.
+   runtime/param-aliases.ts (the rewrite, called first in
+   executeProtocolTool), tool-call-envelope.ts (fingerprint hashes alias
+   keys only when declared), _manifest-lint `param-alias` rule,
+   khalani/manifest.ts (two `wallet` -> `walletFamily`), morpho
+   markets-discover and vaults-discover manifests (`search` -> `query`),
+   registry/action-aliases.ts and tools/internal/action-aliases.ts
+   (BridgeStatus `address` -> `walletAddress`, `wallet` -> `walletFamily`,
+   rewritten before the Zod parse), khalani/bridge-status-mode.ts, the
+   readers khalani/handlers/read.ts and morpho/read-params/*,
+   parameter-vocabulary.md, tests; plus the Group A descriptions of the
+   three tools in those files.
 2. Envelope (O4): trench/handlers/images.ts, virtuals/handlers.ts (genesis
    arm), solana-jupiter/handlers/predict.ts (events search arm) and their
    manifests; the twelve remaining Group A descriptions; tests.
-3. response_format: new internal/response-format.ts, its nine sites,
-   WalletBalances `truncated` in internal/wallet/read.ts and its
-   description in registry/wallet.ts, output-envelope.md 7.3, tests.
+3. response_format: src/vex-agent/response-format.ts (repository-neutral
+   seam), its nine sites, WalletBalances `truncated` in
+   internal/wallet/read.ts and its description in registry/wallet.ts,
+   output-envelope.md section 7, tests.
 
 ## Task 0b
 
@@ -144,3 +148,23 @@ arm and its row-predicate mirror). Nothing to implement in this batch.
   explicit guards (test:unsafe-escapes), and the GenesisReply test type
   gained `filtersApplied` (typecheck:test:ratchet). Implementation
   committed on feat/tool-surface-4 for the Codex final review.
+- Codex final review turn 1 (b427f0b7): BLOCKED on four contract defects,
+  all accepted and fixed by the coordinator: the WalletBalances
+  truncationNote and description now define truncation against the full
+  projected scan, name `detailed` as the only complete recovery and
+  promise `limit` only the priced rows it cut (tests assert the text);
+  the genesis recovery is phrased from `fetched` and the current page
+  (same page, same pageSize, larger limit) and, when the page exceeds
+  what `limit` can return, restarts from page 1 with a smaller pageSize
+  because page boundaries move with pageSize (page > 1 regression tests);
+  the trench images description is conditional (raise `limit` below 50;
+  at 50 the rest is unreachable, ask the user); the BridgeStatus schema
+  descriptions no longer mention the retired spellings (regression test
+  on ACTION_ALIAS_TOOLS). Missing validation added: the approval
+  envelope test passes the normalized object through
+  buildApprovalToolCall (identity, canonical keys, fingerprint), plus
+  pins for `address` with `walletAddress` and for `orderId` with a
+  retired list key. Scope note from Codex: the studio-mcp research docs,
+  O20-O25, the audit addendum and D19 travel in the same commit; they
+  are owner-directed (D18) and no history is rewritten without the
+  owner's word, so they stay and are named in the PR body.

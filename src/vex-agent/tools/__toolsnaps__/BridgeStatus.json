@@ -35,11 +35,11 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "List mode: the ACCOUNT address whose orders to list (optional - omit to use your configured wallet). The former key `address` is retired and is rewritten to this one.",
+            "description": "List mode: the ACCOUNT address whose orders to list (optional - omit to use your configured wallet).",
             "type": "string"
           },
           "walletFamily": {
-            "description": "List mode: wallet FAMILY, never a chain - eip155 or solana. The former key `wallet` is retired and is rewritten to this one.",
+            "description": "List mode: wallet FAMILY, never a chain - eip155 or solana.",
             "type": "string"
           }
         },

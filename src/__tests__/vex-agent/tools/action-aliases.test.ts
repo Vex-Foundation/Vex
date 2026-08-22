@@ -43,6 +43,7 @@ import {
   handleBridgeStatus,
   handleBridgeQuote,
 } from "@vex-agent/tools/internal/action-aliases.js";
+import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 // Minimal context — the aliases only forward the execution-context slice
@@ -286,6 +287,42 @@ describe("BridgeStatus — orders.get (id) vs orders.list (no id)", () => {
     expect(result.output).toContain("BridgeStatus takes EITHER orderId (one order) OR the list filters");
     expect(result.output).toContain("walletFamily, limit");
     expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("refuses `address` together with `walletAddress` before the schema parse", async () => {
+    const result = await handleBridgeStatus({ address: "0xabc", walletAddress: "0xdef" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('"address"');
+    expect(result.output).toContain('"walletAddress"');
+    expect(result.output).toContain("Vex will not guess which one you meant");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("treats orderId plus a RETIRED list key as the same mode conflict, on the canonical name", async () => {
+    // The rewrite runs before conflict detection, so the conflict is detected
+    // and reported in the canonical vocabulary, never missed because the
+    // retired spelling is absent from the list-only set.
+    const result = await handleBridgeStatus({ orderId: "order_x", wallet: "solana" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("BridgeStatus takes EITHER orderId (one order) OR the list filters");
+    expect(result.output).toContain("walletFamily");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("advertises canonical keys only: the schema has no retired property and teaches no retired spelling", () => {
+    const bridgeStatus = ACTION_ALIAS_TOOLS.find((tool) => tool.name === "BridgeStatus");
+    if (!bridgeStatus) throw new Error("BridgeStatus is not registered in ACTION_ALIAS_TOOLS");
+    const properties = bridgeStatus.parameters["properties"];
+    if (typeof properties !== "object" || properties === null) throw new Error("BridgeStatus has no properties");
+    const keys = Object.keys(properties);
+    expect(keys).toContain("walletAddress");
+    expect(keys).toContain("walletFamily");
+    expect(keys).not.toContain("address");
+    expect(keys).not.toContain("wallet");
+    // D15: the model-visible schema advertises the canonical key alone; a
+    // retired spelling named in a description would teach it back.
+    const descriptions = JSON.stringify(properties) + bridgeStatus.description;
+    expect(descriptions).not.toMatch(/former key|retired|rewritten to/i);
   });
 });
 

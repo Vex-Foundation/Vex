@@ -26,7 +26,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { VIRTUALS_HANDLERS } from "../../../vex-agent/tools/protocols/virtuals/handlers.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
 import type { VirtualsGenesis, VirtualsPagination } from "@tools/virtuals/types.js";
-import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "./_test-context.js";
 
 vi.mock("@tools/virtuals/client.js", () => ({
   getVirtualsClient: vi.fn(),
@@ -36,10 +36,7 @@ vi.mock("@utils/logger.js", () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const CTX = {
-  sessionPermission: "restricted",
-  approved: false,
-} as unknown as ProtocolExecutionContext;
+const CTX = makeProtocolContext({ sessionPermission: "restricted", approved: false });
 
 function genesis(id: number): VirtualsGenesis {
   return {
@@ -79,8 +76,11 @@ type GenesisReply = {
   filtersApplied: Record<string, never>;
 };
 
+const genesesHandler = VIRTUALS_HANDLERS["virtuals.geneses"];
+if (!genesesHandler) throw new Error("virtuals.geneses is not registered in VIRTUALS_HANDLERS");
+
 async function callGeneses(params: Record<string, unknown>): Promise<GenesisReply> {
-  const res = await VIRTUALS_HANDLERS["virtuals.geneses"]!(params, CTX);
+  const res = await genesesHandler(params, CTX);
   expect(res.success).toBe(true);
   return res.data as GenesisReply;
 }
@@ -107,18 +107,41 @@ describe("virtuals.geneses - within-page truncation", () => {
     expect(data.truncated).toBe(true);
     expect(String(data.truncationNote)).toContain("1 row fetched");
     expect(String(data.truncationNote)).toContain("(5 of 6 kept)");
-    // pageSize 6 is at or under the `limit` ceiling of 100, so raising limit
-    // is the recovery that actually exists.
-    expect(String(data.truncationNote)).toContain("raise `limit` to 6");
-    expect(String(data.truncationNote)).toContain("the maximum `limit` is 100");
+    // 6 fetched rows fit under the `limit` ceiling of 100, so re-reading the
+    // SAME page with limit 6 and the same pageSize is the recovery that exists.
+    expect(String(data.truncationNote)).toContain("re-read this same `page` (1) with `limit` 6 and the SAME `pageSize`");
   });
 
-  it("tells the agent to lower `pageSize` when the page is bigger than `limit` can ever be", async () => {
+  it("phrases the recovery from `fetched` and the CURRENT page, not from the requested pageSize", async () => {
+    // Page 2 at pageSize 30: the dropped rows are offsets 50..59 of the
+    // calendar. Changing pageSize would renumber the pages, so the only
+    // recovery that returns THESE rows is the same page, same pageSize,
+    // a larger limit.
+    mockGenesesPage(30, { page: 2, pageSize: 30, pageCount: 4, total: 100 });
+    const data = await callGeneses({ limit: 20, page: 2, pageSize: 30 });
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("re-read this same `page` (2) with `limit` 30 and the SAME `pageSize`");
+    expect(String(data.truncationNote)).not.toContain("lower `pageSize`");
+  });
+
+  it("sends the agent back to page 1 with a smaller pageSize when the page exceeds what `limit` can return", async () => {
     mockGenesesPage(150, { page: 1, pageSize: 150, pageCount: 2, total: 400 });
     const data = await callGeneses({ limit: 20, pageSize: 150 });
     expect(data.truncated).toBe(true);
-    expect(String(data.truncationNote)).toContain("lower `pageSize` to 20");
-    expect(String(data.truncationNote)).not.toContain("raise `limit`");
+    expect(String(data.truncationNote)).toContain("restart from `page` 1 with `pageSize` at most 20");
+    expect(String(data.truncationNote)).toContain("changing `pageSize` changes where every page starts");
+    expect(String(data.truncationNote)).not.toContain("re-read this same `page`");
+  });
+
+  it("on page 2 of an oversized pageSize the restart still begins at page 1, never at page 2", async () => {
+    // Regression for the page-boundary mistake: page 2 at size 150 covers
+    // offsets 150..299; page 2 at size 20 covers 20..39. "Lower pageSize and
+    // stay on this page" would fetch unrelated rows.
+    mockGenesesPage(150, { page: 2, pageSize: 150, pageCount: 3, total: 400 });
+    const data = await callGeneses({ limit: 20, page: 2, pageSize: 150 });
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("restart from `page` 1");
+    expect(String(data.truncationNote)).not.toContain("`page` (2)");
   });
 
   it("keeps the fields it already emitted untouched", async () => {
