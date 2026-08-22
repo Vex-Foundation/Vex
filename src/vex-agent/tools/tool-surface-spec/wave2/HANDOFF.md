@@ -201,6 +201,27 @@ test that changes is listed in a migration inventory with its new contract.
   ratchet, diff --check, em-dash, all green. Wave 2 is complete on the
   branch; the PR waits for the owner's word, then D14 continues with
   Batch 4 (O3-O5), the Studio MCP server, and the live-test phase last.
+- Owner follow-up on the rendered Research shape (2026-08-22, recorded as
+  D19 on the Batch 4 branch): DexScreener is the primary research surface
+  on every chain; WebResearch and TwitterAccount add news and social
+  evidence (each named only when its key is configured; RETTIWT_API_KEY
+  joined the protocols-layer availability fingerprint); on Solana,
+  Jupiter's `solana__tokens_discover` feeds add fresh discovery (with
+  JUPITER_API_KEY); Trench, pools.fun and Virtuals are launchpad-native
+  reads of lower general value, reached for only when the token lives
+  there or the user names it. Implemented in task-shapes.ts and
+  protocol-capabilities.ts; snapshots regenerated (24 lines across the 12
+  files); ceilings raised by 340 B per mode (54,135 / 54,836 / 60,558 /
+  60,577 / 59,174 / 58,989 B). Committed as 913b9405.
+- WITHDRAWN the same day by the owner ("niech widzi protokoły i sam sobie
+  wybierze"): no ranking of research tools in the prompt; the model sees
+  the protocol declarations and chooses. task-shapes.ts,
+  protocol-capabilities.ts, the ceiling test and the 12 snapshots are
+  restored to their 76f6306d content (the Codex-approved Research shape:
+  the three-layer procedure, the mission-setup exception and the neutral
+  freshness-lag note stay). D19 on the Batch 4 branch records the
+  withdrawal. RETTIWT_API_KEY therefore left the availability fingerprint
+  again.
 
 ## The owner's personality setup (vex-app Personalize)
 
