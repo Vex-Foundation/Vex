@@ -356,6 +356,20 @@ Where a line above conflicts with this section, this section wins.
     have production callers (buildProtocolsPrompt,
     buildBridgeCapabilityPrompt); the facade is kept anyway, at low cost.
     The worktree was not clean (recon.md untracked); WP0 commits it.
+13. The owner's "personality" set up in vex-app (the Personalize screen,
+    SidebarProfile.tsx; schema vex-app/src/shared/schemas/user-profile.ts;
+    IPC vex:settings:setUserProfile) already reaches the prompt as the
+    "## User profile (style preferences)" block in identity.ts:97-151:
+    address-as name, work description, tone preset, style traits, risk
+    appetite (tone only, never authority), the free-form instructions
+    Markdown through sanitizeUntrustedBlock, and the subordination clause
+    LAST. Wave 2 renders this block byte-identically in its current
+    position (the per-mode snapshots prove it), and no declaration or task
+    shape restates, re-voices or references the profile: voice and address
+    are the profile's job, capability and procedure are the rebuild's. The
+    pre-existing em dash in the tone line (identity.ts:126) is an untouched
+    line under O12 and is left as is unless the identity layer is rewritten
+    for another reason.
 
 ## 14. Verification plan
 

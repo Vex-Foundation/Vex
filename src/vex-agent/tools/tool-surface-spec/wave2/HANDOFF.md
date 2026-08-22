@@ -80,6 +80,19 @@ test that changes is listed in a migration inventory with its new contract.
    per mode (same posture), run every gate, read the whole diff, Codex final
    review on harness-wave2, PR on the owner's word.
 
+## The owner's personality setup (vex-app Personalize)
+
+Asked by the owner on 2026-08-22. The Personalize screen
+(vex-app/src/renderer/features/appShell/SidebarProfile.tsx) writes a
+UserProfile (vex-app/src/shared/schemas/user-profile.ts, IPC
+vex:settings:setUserProfile); the engine renders it in identity.ts:97-151 as
+"## User profile (style preferences)": address-as name, work description,
+tone preset, style traits, risk appetite (tone only, never authority), the
+user's free-form instructions through sanitizeUntrustedBlock, and the
+subordination clause last. Wave 2 keeps this block byte-identical and in
+place; declarations and task shapes never restate or reference it (plan
+section 15 item 13).
+
 ## Open items carried into this wave
 
 - O12 (pre-existing em dashes in untouched model-visible prompt copy) is
