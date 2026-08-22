@@ -15,7 +15,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Wallet / on-chain | YES | wallet_balances, wallet_track_token, wallet_send_prepare, wallet_send_confirm, chain_read, agent_scan |
 | Research | YES | web_research, twitter_account |
 | Math | YES | units_convert |
-| Protocol tools | YES, all namespaces | the full catalog (137 toolIds today), under their publicName |
+| Protocol tools | YES, all namespaces | the full catalog (134 toolIds today), under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
 | Knowledge | NO | already retired from the agent surface; stays retired in the export |

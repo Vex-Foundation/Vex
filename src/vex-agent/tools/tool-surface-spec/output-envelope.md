@@ -173,45 +173,81 @@ What is forbidden is a blanket cap applied at the batch loop that slices any
 tool's output without the producer knowing. What is required is that a producer
 which drops anything says so.
 
-## 5. Stale copy inventory
+## 5. Stale copy inventory - CLEARED 2026-08-21 (Batch 3 Wave 0)
 
-Five to seven manifests and modules still describe a "16,384 B tool-output cap"
-that no longer exists. Plan v3 section 5.3 lists five references; **the measured
-count is higher and the plan's list is both slightly off and incomplete**. Full
-inventory from a repo-wide scan of non-test sources:
+**Status: every claim below is fixed and a lint now prevents its return. This
+section is retained as the record of what was wrong, not as a worklist.**
 
-**Model-visible (inside a description the model receives), the priority half:**
+The rule is `stale-output-cap-claim`
+(`protocols/_manifest-lint/source-rules.ts`), driven from
+`__tests__/vex-agent/tools/protocols/manifest-lint.test.ts`. It scans four roots
+- `engine/prompts`, `tools/protocols`, `tools/registry`, `tools/internal` -
+because the claim had four different owners and a protocol-tree-only scan would
+have caught three of the eight model-facing sites. It lands at ZERO with an
+empty allowlist, and the suite asserts the allowlist stays empty, so a future
+occurrence cannot be admitted as recorded debt.
 
-| Location | Text |
-| --- | --- |
-| `tools/registry/web.ts:38` | "well past the 16,384 B tool-output cap" |
-| `tools/registry/web.ts:40` | "will exceed the 16,384 B output cap" |
-| `tools/registry/twitter-account.ts:91` | "~12 KB of the 16 KB tool-output cap" |
-| `tools/protocols/solana-jupiter/manifests/core.ts:45` | "27,970 B against the 16,384 B tool-output cap" |
-| `tools/protocols/dexscreener/manifests/pair-list-params.ts:145` | "24,139 B against the 16,384 B" |
-| `tools/protocols/dexscreener/manifests/pair-list-params.ts:178` | "16,384 B tool-output cap (live batch, 2026-08-17...)" |
+### What this section previously got wrong
 
-**Internal comments only (no model impact, correct for accuracy):**
+It claimed "five to seven manifests and modules" and presented its own list as
+the complete correction to the plan. Both were understatements. The measured
+figures are **6 model-facing source files / 8 sites**, **10 comment-only source
+files / 13 sites**, 1 unrelated cap, plus 6 generated toolsnap mirrors and 2
+immutable migration comments. Two of the model-facing sites - the ones with the
+widest blast radius - were missing from the table below entirely.
 
-`tools/internal/web-research/search-options.ts:13`;
-`tools/internal/twitter-projection.ts:6` and `:14`;
-`tools/protocols/solana-jupiter/projectors.ts:7` (plan said `:8`);
-`tools/protocols/solana-jupiter/handlers/core/token-handlers.ts:158`;
-`tools/protocols/dexscreener/feed-list/feed-fields.ts:9`;
-`tools/protocols/dexscreener/manifests/pair-list-params.ts:107`.
+**Model-visible (inside a string the model receives) - 8 sites, all fixed:**
 
-Correction to the plan: it named `registry/web.ts:38,40`,
-`internal/web-research/search-options.ts:13`, `internal/twitter-projection.ts:6,14`
-and `projectors.ts:8`, which is four of the seven files and misses **every
-model-visible reference except `web.ts`**. `twitter-account.ts:91`,
-`solana-jupiter/manifests/core.ts:45` and `pair-list-params.ts:145,178` are the
-ones a model actually reads and the ones worth correcting first.
+| Location | Was | Now |
+| --- | --- | --- |
+| `engine/prompts/research.ts:177` | "~21 KB of page text, over the output cap" | names `fetchTop` as the bound. **Was missing from this inventory**: it is the system prompt, the single most-read string in the product. |
+| `tools/internal/twitter-account.ts:36` | "measured 1.6-1.9x the tool-output cap" | states 26,082 B and 30,321 B. **Was missing from this inventory**: a runtime `fail()` returned to the model, and the only site that asserted the cap as a RATIO with no number - less falsifiable, not more. |
+| `tools/registry/web.ts:38` | "well past the 16,384 B tool-output cap" | "and no parameter bounds it" |
+| `tools/registry/web.ts:40` | "will exceed the 16,384 B output cap" | clause deleted; the ~21 KB measurement stays |
+| `tools/registry/twitter-account.ts:91` | "~12 KB of the 16 KB tool-output cap" | "~12 KB in one response. `count` and `cursor` are what bound it." |
+| `tools/protocols/solana-jupiter/manifests/core.ts:48` (this inventory said `:45`) | "27,970 B against the 16,384 B tool-output cap" | "measured 27,970 B, so limit is applied Vex-side" |
+| `tools/protocols/dexscreener/manifests/pair-list-params.ts:145` | "24,139 B against the 16,384 B tool-output cap" | keeps 24,139 B; "`limit` is what bounds them" |
+| `tools/protocols/dexscreener/manifests/pair-list-params.ts:178` | "22,378 B against the 16,384 B tool-output cap ... about 23 rows fit one response" | keeps 22,378 B; the row count was DERIVED from the phantom cap, so it is restated as ~640 B/row and ~38 KB for 60 addresses, bounded by offset paging |
 
-Note the measured byte figures in these strings are still true and still useful.
-Only the clause naming a cap that enforces them is false. The correction is to
-keep the measurement and restate the consequence as a producer-level bound ("so
-pass a `limit`"), not to delete the numbers. Test files and unrelated
-`16 KB` matches (keystore, inference config, secret vault) are out of scope.
+The 6 mirrors in `tools/__toolsnaps__/` (`WebResearch`, `TwitterAccount`,
+`solana__tokens_discover`, `dexscreener__pairs_search`,
+`dexscreener__tokens_get`) are regenerated in the same change, as reviewed
+contract artifacts.
+
+**Internal comments only - 13 sites across 10 files, all fixed.** The previous
+list held 7 of them. It missed `dexscreener/feed-list/feed-row.ts:51`,
+`dexscreener/handlers/feeds.ts:18` and `:120`,
+`solana-jupiter/projectors.ts:26`, and
+`solana-jupiter/handlers/core/token-handlers.ts:153` - the last of which
+contained no magnitude at all ("under the overflow threshold") and was found by
+the lint after a repo-wide grep for `16384` had already come back clean. That is
+the case for having the rule rather than a one-time sweep.
+
+**Out of scope, deliberately:**
+
+- `engine/core/explorer-refs.ts` - says "output cap" but means `MAX_REFS = 8`, a
+  real bound. The comments now name `MAX_REFS` so the phrase is unambiguous.
+- `db/migrations/013_tool_output_blobs.sql:5,:35` - reference
+  `TOOL_OUTPUT_OVERFLOW_BYTES` and the deleted `tool-output-policy.ts`. Applied
+  migrations are history; not edited.
+- Unrelated `16384` matches: scrypt `N`, `maxOutputTokens`,
+  `REASONING_PAYLOAD_CAP`, `context_length: 163840`.
+- `src/__tests__/dexscreener/_byte-budget.ts` keeps
+  `DEXSCREENER_BYTE_BUDGET_BYTES = 16_384` as a self-imposed authoring budget.
+  That is legitimate: a budget the repository chooses for itself is not a claim
+  to the model that the runtime enforces one. Only
+  `persona-gate-follow-ups.test.ts` changed, because it asserted the cap clause
+  had to be PRESENT in a model-visible description.
+
+### The remediation rule (unchanged, and now enforced)
+
+The measured byte figures in these strings were always true and are still
+useful. Only the clause naming a cap that enforces them was false. The
+correction keeps the measurement and restates the consequence as a
+producer-level bound (`limit`, `offset`, `fetchTop`, `count`/`cursor`, or the
+projection). Where a surface genuinely has no bound - `WebResearch(url=...)` -
+the honest statement is that none exists. **Never invent a ceiling to replace
+the removed one**, and never delete a measurement to avoid the question.
 
 ## 6. One shared `ok` / `fail` helper
 
