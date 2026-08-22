@@ -168,3 +168,10 @@ arm and its row-predicate mirror). Nothing to implement in this batch.
   O20-O25, the audit addendum and D19 travel in the same commit; they
   are owner-directed (D18) and no history is rewritten without the
   owner's word, so they stay and are named in the PR body.
+- Fix-up committed as 2692ada2 (pushed). Codex final review turn 2:
+  GREEN LIGHT (recovery guidance truthful, BridgeStatus canonical-only,
+  edge cases covered, snapshots matching, documentation scope accepted).
+  Three more unsafe test escapes (`as never`, `as unknown as`, a non-null
+  assertion in lane tests) were replaced by the typed makeProtocolContext
+  helper and explicit guards before the commit. Batch 4 is complete on
+  the branch; the PR against main follows the Wave 2 merge.
