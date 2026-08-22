@@ -174,7 +174,7 @@ function buildFullResearchPrompt(): string {
 - \`WebResearch(query="...")\` — DEFAULT: ${WEB_SEARCH_DEFAULT_MAX_RESULTS} hits, top ${WEB_SEARCH_DEFAULT_FETCH_TOP} read.
 - \`WebResearch(query="...", topic="news")\` — the ONLY shape that carries publication dates. Use it for "why is this token moving today"; pair it with \`timeRange="day"\` for a fresh window.
 - \`WebResearch(query="...", fetchTop=0)\` — snippets only, no page reads. Cheapest.
-- \`WebResearch(query="...", fetchTop=${WEB_SEARCH_MAX_FETCH_TOP})\` — deep research across many sources; ~21 KB of page text, over the output cap. Pay it knowingly.
+- \`WebResearch(query="...", fetchTop=${WEB_SEARCH_MAX_FETCH_TOP})\` - deep research across many sources; ~21 KB of page text in one result, and \`fetchTop\` is the only thing that bounds it. Pay it knowingly.
 - \`WebResearch(url="https://...")\` — read one specific page. NOT query-targeted: the whole document, routinely 20 KB+.
 
 Young or niche tokens are often NOT indexed: a token under ~30 days old or with under a few thousand holders can come back with nothing usable, and that is missing coverage — not evidence the token is fake. Search the CONTRACT ADDRESS plus the chain name (a ticker alone collides with older projects), retry once with \`topic="news"\` and a \`timeRange\` window, and when the web still has nothing, say the web has nothing and get the answer from first-party and on-chain sources instead — route by the \`## Token Research Map\` below: \`dexscreener.*\` for the pair, \`TwitterAccount\` for the project's own posts, \`virtuals.*\` for an agent token.

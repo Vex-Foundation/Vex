@@ -177,7 +177,12 @@ export function draftToPromptContext(m: Mission): string {
   const draft = missionToDraft(m);
   const lines: string[] = [];
 
-  lines.push(`# Mission: ${draft.title ?? "(untitled)"}`);
+  // Bold, not an H1: this block renders under the `## Mission Contract`
+  // heading of the mission-run prompt, so an H1 inside an H2 section was
+  // structurally wrong, and the untrusted-block sanitizer that now owns the
+  // render boundary would demote it. Bold carries the same emphasis and is
+  // byte-stable through the sanitizer.
+  lines.push(`**Mission:** ${draft.title ?? "(untitled)"}`);
   lines.push("");
   if (draft.goal) lines.push(`**Goal:** ${draft.goal}`);
   if (draft.capitalSource) lines.push(`**Capital:** ${draft.startingCapital ?? "?"} from ${draft.capitalSource}`);

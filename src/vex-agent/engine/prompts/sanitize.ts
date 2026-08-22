@@ -39,7 +39,7 @@
 /**
  * The system-block sentinels, as a pattern rather than the two literals: a
  * forged close only has to LOOK like the marker to the model, so case and
- * incidental spacing are covered too. `system-boundary.test.ts` pins that this
+ * incidental spacing are covered too. `turn-envelope-system-boundaries.test.ts` pins that this
  * matches both exported constants, so a rename cannot desync the two.
  */
 const SYSTEM_BLOCK_SENTINEL = /<<<\s*VEX_SYSTEM_BLOCK_(?:START|END)\s*>>>/gi;
