@@ -97,8 +97,10 @@ test that changes is listed in a migration inventory with its new contract.
   PRESERVE EXACT rows land verbatim at their ledger destinations even when
   their current section is replaced. The declaration contract (identity,
   read, quote, act, whenItApplies, characteristicAndLimits, retrievalTerms,
-  facets, optional coverageNote) is in /tmp/harness-wave2-build2.md and in
-  the Codex thread.
+  facets, optional coverageNote) is the ProtocolNamespaceDeclaration type
+  in src/vex-agent/tools/protocols/navigation/types.ts and is recorded in
+  the Codex thread harness-wave2 (the /tmp build prompts were deleted at
+  closeout).
 - Build turn 2 (Codex, 2026-08-22): 36 files. ProtocolNamespaceDeclaration
   added to navigation/types.ts and all eleven entries; new modules
   protocol-capabilities.ts (renders "## What Vex can reach"),
@@ -191,6 +193,14 @@ test that changes is listed in a migration inventory with its new contract.
   four cases (fails before the base carries it, passes at the destination,
   fails in any other file, fails with a second em dash on the line). The
   list only ever shrinks (O12).
+- Fix-up committed as b4e251f2 (pushed). Codex final review turn 2:
+  GREEN LIGHT, no remaining blockers or discussion points; the five
+  allowlist entries verified against their destination files, the base
+  sentences and ledger rows L024, L025, L039, L368, L294. Final gate set on
+  b4e251f2: tsc, vitest 1063 files / 14130 tests, build, unsafe-escapes,
+  ratchet, diff --check, em-dash, all green. Wave 2 is complete on the
+  branch; the PR waits for the owner's word, then D14 continues with
+  Batch 4 (O3-O5), the Studio MCP server, and the live-test phase last.
 
 ## The owner's personality setup (vex-app Personalize)
 
