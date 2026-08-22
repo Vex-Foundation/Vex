@@ -244,7 +244,7 @@ export async function pendleRewardsMerkle(
     nextStep:
       "These rewards are NOT claimable through Vex and never will be through this endpoint — Pendle publishes the " +
       "amount but not the merkle proof needed to claim it. Claim them at app.pendle.finance. For the yield Vex CAN " +
-      "sweep (YT interest and LP rewards) use pendle.claim, and for position-level accruals pendle.position.value.",
+      "sweep (YT interest and LP rewards) use pendle__rewards_claim, and for position-level accruals pendle__positions_get.",
   });
 }
 

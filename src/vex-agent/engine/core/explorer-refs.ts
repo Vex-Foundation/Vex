@@ -126,7 +126,7 @@ export function deriveExplorerRefs(
   let scanned = 0;
 
   // Collect from both sources through one bounded scan/dedupe/cap pass. Returns
-  // false to signal "stop" — either the scan budget or the output cap is spent.
+  // false to signal "stop" - either the scan budget or the MAX_REFS cap is spent.
   const collect = (
     candidate: unknown,
     toRef: (v: unknown) => ExplorerRef | null,
@@ -136,10 +136,10 @@ export function deriveExplorerRefs(
     const ref = toRef(candidate);
     if (ref === null) return true; // skipped, keep scanning
     const key = JSON.stringify([ref.chain, ref.txRef]);
-    if (seen.has(key)) return true; // dedupe: does not consume the output cap
+    if (seen.has(key)) return true; // dedupe: does not consume the MAX_REFS cap
     seen.add(key);
     refs.push(ref);
-    return refs.length < MAX_REFS; // stop once the output cap is hit
+    return refs.length < MAX_REFS; // stop once the MAX_REFS cap is hit
   };
 
   for (const capture of captures) {

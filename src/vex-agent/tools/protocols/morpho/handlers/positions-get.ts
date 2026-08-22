@@ -255,7 +255,7 @@ export async function morphoPositionsGet(
     if (q.scope !== "vaults") markets = await readMarketHalf(client, q, signal);
     if (q.scope !== "markets") vaults = await readVaultHalf(client, q, signal);
   } catch (err) {
-    return fail(`morpho.positions.get failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__positions_get failed ${morphoFailureDetail(err)}`);
   }
 
   const marketRows = (markets?.positions ?? []).slice(
@@ -361,19 +361,19 @@ export async function morphoPositionsGet(
             "V2 vault coverage is PARTIAL. Morpho serves no per-user list of V2 vault positions, so Vex finds "
             + "candidate vaults from this wallet's V2 transaction history and reads each one; that scan hit its "
             + "bound here, so a V2 position may exist that is not listed. Read a specific one with "
-            + "morpho.vault.get plus the vault address if you suspect it.",
+            + "morpho__vault_get plus the vault address if you suspect it.",
         }
         : {}),
     },
     nextStep:
       liquidatable.length > 0
-        ? "At least one position is liquidatable NOW. Read the market with morpho.market.get to see the oracle and "
-          + "the liquidity, and check morpho.markets.activity for liquidations already happening there. Vex CAN "
-          + "act: quote a repay or a supplyCollateral with morpho.market.quote, then execute that quote with "
-          + "morpho.market.repay or morpho.market.supplyCollateral."
-        : "Read any market that concerns you with morpho.market.get, and its recent liquidations with "
-          + "morpho.markets.activity. To change a position, quote it first with morpho.market.quote or "
-          + "morpho.vault.quote, then execute that quote with the matching execute tool.",
+        ? "At least one position is liquidatable NOW. Read the market with morpho__market_get to see the oracle and "
+          + "the liquidity, and check morpho__markets_activity_list for liquidations already happening there. Vex CAN "
+          + "act: quote a repay or a supplyCollateral with morpho__market_quote, then execute that quote with "
+          + "morpho__market_repay or morpho__market_supply_collateral."
+        : "Read any market that concerns you with morpho__market_get, and its recent liquidations with "
+          + "morpho__markets_activity_list. To change a position, quote it first with morpho__market_quote or "
+          + "morpho__vault_quote, then execute that quote with the matching execute tool.",
   });
 }
 

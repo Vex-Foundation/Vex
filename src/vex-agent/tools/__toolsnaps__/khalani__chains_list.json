@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "List all Khalani-supported chains with metadata (live registry, EVM + Solana).",
+      "description": "List every chain Khalani can bridge to or from, EVM and Solana alike, read from the live provider registry. Use this before quoting or executing a bridge when it is not certain a chain is covered, or when the user asks which networks can be bridged. The set is DYNAMIC and Vex states no count for it, so read it here rather than assuming one. RETURNS `chains`, the number of rows, and `data`, one concise row per chain: `id` (the chain id every other khalani param accepts), `name`, `type` (the chain family, eip155 or solana), `nativeSymbol` and `nativeDecimals`, each null when the registry carried no native currency. RPC and explorer URLs are deliberately not returned. Robinhood Chain (4663) is NOT in this registry; `BridgeQuoteRelay` and `BridgeExecuteRelay` are the only route that reaches it. The list is complete and there is no pagination.",
       "name": "khalani__chains_list",
       "parameters": {
         "additionalProperties": false,

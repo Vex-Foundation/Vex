@@ -28,7 +28,7 @@ const SY_PARAM = {
   type: "string" as const,
   required: true,
   description:
-    "The SY (Standardised Yield) CONTRACT ADDRESS. Read it from pendle.market.get as the market's `sy` field, or from the `deliveredAsset` a pendle.pt.redeem fallback reported.",
+    "The SY (Standardised Yield) CONTRACT ADDRESS. Read it from pendle__market_get as the market's `sy` field, or from the `deliveredAsset` a pendle__pt_redeem fallback reported.",
 };
 
 const SLIPPAGE_PARAM = {
@@ -53,7 +53,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Wrap a plain token into Pendle SY (Standardised Yield) — the wrapper form of a yield-bearing asset that PT and YT are minted from. Needs: the chain, the SY contract address, the payment token address (ERC-20 only; pass wrapped native, never native), and amountIn in human-readable units (e.g. '1.5', not raw base units). Returns the transaction hash plus the RECEIPT-DECODED amounts (executedAmountIn / executedAmountOut) beside the quoted ones, so you can see the slippage you actually got. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: mint PT or YT (use pendle.py.mint), buy a PT (pendle.pt.buy), guarantee an exact output amount, accept native currency, or send the SY anywhere but your own wallet.",
+      "Wrap a plain token into Pendle SY (Standardised Yield) - the wrapper form of a yield-bearing asset that PT and YT are minted from. Use this when the user wants to hold the SY form itself, or before a PT or YT mint that needs SY on hand. Needs: the chain, the SY contract address, the payment token address (ERC-20 only; pass wrapped native, never native), and amountIn in human-readable units (e.g. '1.5', not raw base units). Returns the transaction hash plus the RECEIPT-DECODED amounts (executedAmountIn / executedAmountOut) beside the quoted ones, so you can see the slippage you actually got. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: mint PT or YT (use pendle__py_mint), buy a PT (pendle__pt_buy), guarantee an exact output amount, accept native currency, or send the SY anywhere but your own wallet.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
@@ -85,7 +85,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Unwrap Pendle SY (Standardised Yield) back into a plain token. THIS IS THE RECOVERY PATH for a pendle.pt.redeem that fell back to the direct Router redeem: that fallback pays SY instead of the market's underlying and reports it as `deliveredAsset` — pass that address here as `sy` to finish the exit. Needs: the chain, the SY contract address, the token address to receive, and amountIn (the SY amount) in human-readable units. Returns the transaction hash plus the RECEIPT-DECODED amounts beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: redeem a PT (pendle.pt.redeem) or a PT+YT pair (pendle.py.redeem), guarantee an exact output amount, deliver native currency, or send the proceeds anywhere but your own wallet.",
+      "Unwrap Pendle SY (Standardised Yield) back into a plain token. THIS IS THE RECOVERY PATH for a pendle__pt_redeem that fell back to the direct Router redeem: that fallback pays SY instead of the market's underlying and reports it as `deliveredAsset` - pass that address here as `sy` to finish the exit. Use this whenever a Pendle exit paid out SY and the user expected a plain token, or when they simply want to unwrap an SY holding. Needs: the chain, the SY contract address, the token address to receive, and amountIn (the SY amount) in human-readable units. Returns the transaction hash plus the RECEIPT-DECODED amounts beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: redeem a PT (pendle__pt_redeem) or a PT+YT pair (pendle__py_redeem), guarantee an exact output amount, deliver native currency, or send the proceeds anywhere but your own wallet.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

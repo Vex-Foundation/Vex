@@ -10,7 +10,7 @@
  * Tavily-only for a month because a source degraded quietly.
  *
  * DEFAULTS ARE A BYTE BUDGET. `maxResults: 6` + `fetchTop: 3` lands a typical
- * default call near 12 KB against the 16,384 B overflow cap, measured from the
+ * default call near 12 KB, measured from the
  * live per-row means (snippet ≈ 1.0 KB, page read ≈ 2.1 KB). The previous
  * hardcoded shape (10 rows + 5 reads) measured 14,753 B and 16,470 B minutes
  * apart on the SAME query — a coin flip, not a margin.

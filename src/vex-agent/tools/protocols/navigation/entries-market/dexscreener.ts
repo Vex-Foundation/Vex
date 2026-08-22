@@ -9,6 +9,10 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
     "Vex's read-only market-research backbone and source of truth for DexScreener-indexed AMM "
     + "pairs, including robinhood, and DexScreener's own profile/promotion labels. Research flow: "
     + "discover → resolve the address with `TokenFind` → verify liquidity → quote on a venue. "
+    + "Characteristic: its pool depth, liquidity and volume observations are real, but indexing "
+    + "LAGS - on some chains a new pair takes hours to appear - so it answers how deep and how "
+    + "real a market is, not what launched in the last hour, and it is not a token-creation or "
+    + "newly-listed-pair feed. "
     + "It does not establish contract safety, token identity from a ticker, complete market "
     + "coverage, or an executable price.",
   whenToUse:

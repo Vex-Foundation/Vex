@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get real-time USD prices for one or more Solana token mints — pass raw mint addresses via mints, OR symbols/names/mints via queries (resolved automatically, no separate lookup tool needed first). Returns each requested id's price (under prices, or resolved for queries); any mint/query Jupiter could not price is listed in missing instead of being silently dropped. Provide exactly one of: mints, queries.",
+      "description": "Get real-time USD prices for one or more Solana token mints. Use this when you already know WHICH tokens you want priced and need nothing else about them - pass raw mint addresses via mints, or symbols, names or mints via queries, which are resolved for you with no separate lookup call first. Returns `prices` on the mints branch and `resolved` plus `raw` on the queries branch, and on both a `missing` list naming every mint or query Jupiter could not price, so an unpriceable token is disclosed rather than silently dropped. Exactly one of mints or queries: both is refused, neither is refused. Provide exactly one of: mints, queries.",
       "name": "solana__token_prices_get",
       "parameters": {
         "additionalProperties": false,

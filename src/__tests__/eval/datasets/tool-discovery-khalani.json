@@ -1,0 +1,223 @@
+{
+  "version": "khalani-v1",
+  "namespace": "khalani",
+  "description": "Retrieval-verification dataset for the khalani namespace (primary bridge plus the cross-chain token resolver). Queries are written from the user outcome only, independent of the discovery index text, with a blind and a protocol-aware row for each of the 9 live tools.",
+  "queries": [
+    {
+      "query": "which networks can I move funds between with this wallet",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.chains.list"],
+      "expectedCoverageGroups": [["khalani.chains.list"]]
+    },
+    {
+      "query": "is Arbitrum one of the networks supported for cross-chain transfers",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.chains.list"],
+      "expectedCoverageGroups": [["khalani.chains.list"]]
+    },
+    {
+      "query": "Khalani supported network registry with chain ids and native currency",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.chains.list"],
+      "expectedCoverageGroups": [["khalani.chains.list"]]
+    },
+    {
+      "query": "what are the popular assets people move onto Base",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.top"],
+      "expectedCoverageGroups": [["khalani.tokens.top"]]
+    },
+    {
+      "query": "browse the major assets available for transfer before the user picks one",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.top"],
+      "expectedCoverageGroups": [["khalani.tokens.top"]]
+    },
+    {
+      "query": "most bridged assets on Khalani for Ethereum and Solana",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.top"],
+      "expectedCoverageGroups": [["khalani.tokens.top"]]
+    },
+    {
+      "query": "find the exact USDC contract address on Base before sending anything",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.search"],
+      "expectedCoverageGroups": [["khalani.tokens.search"]]
+    },
+    {
+      "query": "look up the ticker WETH and get its decimals and address on each network",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.search"],
+      "expectedCoverageGroups": [["khalani.tokens.search"]]
+    },
+    {
+      "query": "resolve a token symbol to its contract metadata using Khalani's multi-chain registry",
+      "awareness": "protocol-aware",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.search"],
+      "expectedCoverageGroups": [["khalani.tokens.search"]]
+    },
+    {
+      "query": "the user typed \"send 250 usdc to arb\" and I need to know what is still missing",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.autocomplete"],
+      "expectedCoverageGroups": [["khalani.tokens.autocomplete"]]
+    },
+    {
+      "query": "turn a half-typed phrase like \"50 eth on op\" into suggested asset amount and network completions",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.autocomplete"],
+      "expectedCoverageGroups": [["khalani.tokens.autocomplete"]]
+    },
+    {
+      "query": "Khalani suggestions for an incomplete transfer phrase, and which field it expects next",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.autocomplete"],
+      "expectedCoverageGroups": [["khalani.tokens.autocomplete"]]
+    },
+    {
+      "query": "what do I hold across all my EVM networks with dollar values",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.balances"],
+      "expectedCoverageGroups": [["khalani.tokens.balances"]]
+    },
+    {
+      "query": "find a funded network holding enough USDT before I price a transfer",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.balances"],
+      "expectedCoverageGroups": [["khalani.tokens.balances"]]
+    },
+    {
+      "query": "scan my Solana-family holdings across every chain Khalani covers",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.tokens.balances"],
+      "expectedCoverageGroups": [["khalani.tokens.balances"]]
+    },
+    {
+      "query": "how much USDC would land on Base if I send 500 from Ethereum and how long does it take",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.quote.get"],
+      "expectedCoverageGroups": [["khalani.quote.get"]]
+    },
+    {
+      "query": "price a cross-chain move of 2 ETH from Arbitrum to Optimism and compare the available routes",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.quote.get"],
+      "expectedCoverageGroups": [["khalani.quote.get"]]
+    },
+    {
+      "query": "get a Khalani route estimate with fees and expiry for 1000 USDT Ethereum to Solana",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.quote.get"],
+      "expectedCoverageGroups": [["khalani.quote.get"]]
+    },
+    {
+      "query": "send 300 USDC from Ethereum to Base for real now that the user approved it",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.bridge"],
+      "expectedCoverageGroups": [["khalani.bridge"]]
+    },
+    {
+      "query": "sign and broadcast the cross-chain deposit that moves 0.5 WETH to Arbitrum",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.bridge"],
+      "expectedCoverageGroups": [["khalani.bridge"]]
+    },
+    {
+      "query": "execute the agreed Khalani transfer of 1500 USDT from Base to Solana",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.bridge"],
+      "expectedCoverageGroups": [["khalani.bridge"]]
+    },
+    {
+      "query": "show my past cross-chain transfers and which ones are still in flight",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.list"],
+      "expectedCoverageGroups": [["khalani.orders.list"]]
+    },
+    {
+      "query": "I only remember the deposit transaction hash, find the transfer it belongs to",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.list"],
+      "expectedCoverageGroups": [["khalani.orders.list"]]
+    },
+    {
+      "query": "page through this wallet's Khalani transfer history filtered by destination network",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.list"],
+      "expectedCoverageGroups": [["khalani.orders.list"]]
+    },
+    {
+      "query": "did the transfer with this id actually deliver, give me its full lifecycle",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.get"],
+      "expectedCoverageGroups": [["khalani.orders.get"]]
+    },
+    {
+      "query": "check every leg and the fee outcome of one specific cross-chain order id",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.get"],
+      "expectedCoverageGroups": [["khalani.orders.get"]]
+    },
+    {
+      "query": "look up one Khalani order by its id and compare the provider status with what Vex recorded",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["khalani.orders.get"],
+      "expectedCoverageGroups": [["khalani.orders.get"]]
+    }
+  ]
+}

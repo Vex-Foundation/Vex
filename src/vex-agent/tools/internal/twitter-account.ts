@@ -33,7 +33,8 @@ export async function handleTwitterAccount(
     return fail(
       "TwitterAccount: `response_format` was retired — there is one response shape now "
       + "(the concise projection), and it never truncates post text. The verbatim client payload "
-      + "measured 1.6-1.9x the tool-output cap on an ordinary 20-row search. Remove the parameter.",
+      + "measured 26,082 B and 30,321 B on ordinary 20-row searches, against a far smaller "
+      + "projected payload for the same rows. Remove the parameter.",
     );
   }
 

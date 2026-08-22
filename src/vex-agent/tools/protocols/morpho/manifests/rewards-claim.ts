@@ -25,7 +25,7 @@ export const MORPHO_REWARDS_CLAIM_TOOL: ProtocolToolManifest = {
     "CLAIM the reward tokens the wallet has already earned on Morpho, sweeping them from Merkl's distributor into "
     + "the wallet. This SPENDS real funds in the sense that it signs and broadcasts an on-chain transaction and "
     + "costs gas; it cannot be undone. Use it when the user asks to claim, collect, harvest or sweep their rewards. "
-    + "Read morpho.rewards.get first to see what is claimable and on which chain. "
+    + "Read morpho__rewards_get first to see what is claimable and on which chain. "
     + "NO QUOTE IS NEEDED AND NONE EXISTS. Unlike every other Morpho write, this tool is not gated on a fresh quote: "
     + "a claim has no price, no slippage, no counterparty and no size to choose. It moves an already-earned balance "
     + "the distributor has fixed, so there is nothing a quote could tell the user that the rewards read does not. "

@@ -278,7 +278,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
       expect(result.success).toBe(false);
       expect(result.output).toContain(USDC_MINT);
       expect(result.output).toMatch(/no .*position/i);
-      expect(result.output).toContain("solana.lend.positions");
+      expect(result.output).toContain("solana__lend_earn_positions_list");
       expectRefusedAfterPositionsRead();
     });
 

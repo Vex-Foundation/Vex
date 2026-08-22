@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Pin an ERC-20 token on a LOCAL chain (e.g. Robinhood 4663) so `WalletBalances` and the portfolio track it. Local chains scan a fixed set (seed tokens + pins); pin any token received by transfer or airdrop — swap and bridge executes auto-pin theirs. DB-only bookmark: no on-chain transaction. Khalani-covered chains do not need pinning.",
+      "description": "Pin an ERC-20 token on a LOCAL chain (e.g. Robinhood 4663) so `WalletBalances` and the portfolio track it. Local chains scan a fixed set (seed tokens + pins), so a token outside that set is invisible until it is pinned. Use this when a token arrived on a local chain by transfer or airdrop and does not show up in balances; swap and bridge executes auto-pin what they buy, so you rarely need it after a trade. It writes a DB-only bookmark against your wallet and that chain - no on-chain transaction, nothing signed, nothing spent - and the effect the user sees is the extra token appearing in `WalletBalances` and the portfolio. Khalani-covered chains discover tokens on their own and are refused by name here. RETURNS chain and chainId with, for pin, the token and `pinned`, plus a note when the address was already a seed token; for unpin, the token and `unpinned`; and for list, the wallet with `seedTokens` (address, label) and `pinned` (address, source, createdAt).",
       "name": "WalletTrackToken",
       "parameters": {
         "additionalProperties": false,

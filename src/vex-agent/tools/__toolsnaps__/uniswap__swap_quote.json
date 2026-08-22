@@ -11,11 +11,11 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug/alias or id (e.g. robinhood, base, 4663).",
+            "description": "The chain to quote on. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). Robinhood Chain is `robinhood` / `4663`.",
             "type": "string"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It pins the minimum output the resulting swap will enforce, and is the ONLY price protection that trade has. Pass the SAME value to uniswap.swap.execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the router's \"Too little received\" / \"INSUFFICIENT_OUTPUT_AMOUNT\" comes back from the pre-sign gas estimate, so nothing is signed and NO gas is spent, and the activity row records failure code slippage. LESS OFTEN the pool moves after that estimate passes: the router REVERTS once mined, the row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair — and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It pins the minimum output the resulting swap will enforce, and is the ONLY price protection that trade has. Pass the SAME value to uniswap__swap_execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the router's \"Too little received\" / \"INSUFFICIENT_OUTPUT_AMOUNT\" comes back from the pre-sign gas estimate, so nothing is signed and NO gas is spent, and the activity row records failure code slippage. LESS OFTEN the pool moves after that estimate passes: the router REVERTS once mined, the row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair - and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
             "type": "number"
           },
           "tokenIn": {

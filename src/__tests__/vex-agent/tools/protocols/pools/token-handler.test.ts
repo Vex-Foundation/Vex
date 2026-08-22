@@ -87,7 +87,7 @@ describe("pools.token params", () => {
   it("rejects a symbol handed in where an address belongs", async () => {
     const res = await token({ tokenAddress: "SUSHICAT" });
     expect(res.success).toBe(false);
-    expect(res.output).toContain("pools.search");
+    expect(res.output).toContain("pools__tokens_search");
   });
 });
 

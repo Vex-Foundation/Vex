@@ -1,0 +1,181 @@
+{
+  "version": "relay-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-relay",
+  "datasetVersion": "relay-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:13:26.578Z",
+  "metrics": {
+    "overall": {
+      "count": 11,
+      "recall1": 0.273,
+      "recall5": 0.727,
+      "coverage5": 0.727,
+      "mrr5": 0.412,
+      "groupMrr5": 0.389
+    },
+    "awareness": {
+      "blind": {
+        "count": 6,
+        "recall1": 0.167,
+        "recall5": 0.5,
+        "coverage5": 0.5,
+        "mrr5": 0.25,
+        "groupMrr5": 0.25
+      },
+      "protocolAware": {
+        "count": 5,
+        "recall1": 0.4,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.607,
+        "groupMrr5": 0.557
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 9,
+        "recall1": 0.222,
+        "recall5": 0.778,
+        "coverage5": 0.778,
+        "mrr5": 0.393,
+        "groupMrr5": 0.393
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 2,
+        "recall1": 0.5,
+        "recall5": 0.5,
+        "coverage5": 0.5,
+        "mrr5": 0.5,
+        "groupMrr5": 0.375
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "bridge": {
+        "count": 11,
+        "recall1": 0.273,
+        "recall5": 0.727,
+        "coverage5": 0.727,
+        "mrr5": 0.412,
+        "groupMrr5": 0.389
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-relay@relay-v1, mode lexical, 11 cases evaluated.",
+    "overall recall@1 0.273, recall@5 0.727, coverage@5 0.727, mrr@5 0.412, groupMrr@5 0.389.",
+    "Measured delta: none, metrics are identical to the previous baseline."
+  ]
+}

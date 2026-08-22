@@ -49,7 +49,7 @@ export async function morphoVaultGet(
       context?.abortSignal,
     );
   } catch (err) {
-    return fail(`morpho.vault.get failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__vault_get failed ${morphoFailureDetail(err)}`);
   }
 
   const vault = projectVaultDetail(detail, q.includeHistory);
@@ -96,8 +96,8 @@ export async function morphoVaultGet(
         : "Set includeHistory:true to add Morpho's trailing average APY alongside the live rate.",
     },
     nextStep:
-      "Compare against siblings with morpho.vaults.discover on the same asset, and read any allocation that concerns "
-      + "you with morpho.market.get. To act on this vault, quote first with morpho.vault.quote, then execute that "
-      + "quote with morpho.vault.deposit or morpho.vault.withdraw.",
+      "Compare against siblings with morpho__vaults_discover on the same asset, and read any allocation that concerns "
+      + "you with morpho__market_get. To act on this vault, quote first with morpho__vault_quote, then execute that "
+      + "quote with morpho__vault_deposit or morpho__vault_withdraw.",
   });
 }

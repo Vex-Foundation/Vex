@@ -44,7 +44,7 @@ export async function morphoMarketsActivity(
       context?.abortSignal,
     );
   } catch (err) {
-    return fail(`morpho.markets.activity failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__markets_activity_list failed ${morphoFailureDetail(err)}`);
   }
 
   const rows = page.transactions.map(projectActivityRow);
@@ -101,8 +101,8 @@ export async function morphoMarketsActivity(
         + "took it. On every other row `userAddress` is whoever moved the funds.",
     },
     nextStep:
-      "Read a market in full with morpho.market.get (it needs `marketId` and `chain`) to see whether the bad debt "
-      + "and the oracle explain what happened here, or morpho.positions.get to check whether a wallet still holds a "
+      "Read a market in full with morpho__market_get (it needs `marketId` and `chain`) to see whether the bad debt "
+      + "and the oracle explain what happened here, or morpho__positions_get to check whether a wallet still holds a "
       + "position in it.",
   });
 }

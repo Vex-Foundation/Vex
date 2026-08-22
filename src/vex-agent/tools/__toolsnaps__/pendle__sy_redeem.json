@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Unwrap Pendle SY (Standardised Yield) back into a plain token. THIS IS THE RECOVERY PATH for a pendle.pt.redeem that fell back to the direct Router redeem: that fallback pays SY instead of the market's underlying and reports it as `deliveredAsset` — pass that address here as `sy` to finish the exit. Needs: the chain, the SY contract address, the token address to receive, and amountIn (the SY amount) in human-readable units. Returns the transaction hash plus the RECEIPT-DECODED amounts beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: redeem a PT (pendle.pt.redeem) or a PT+YT pair (pendle.py.redeem), guarantee an exact output amount, deliver native currency, or send the proceeds anywhere but your own wallet.",
+      "description": "Unwrap Pendle SY (Standardised Yield) back into a plain token. THIS IS THE RECOVERY PATH for a pendle__pt_redeem that fell back to the direct Router redeem: that fallback pays SY instead of the market's underlying and reports it as `deliveredAsset` - pass that address here as `sy` to finish the exit. Use this whenever a Pendle exit paid out SY and the user expected a plain token, or when they simply want to unwrap an SY holding. Needs: the chain, the SY contract address, the token address to receive, and amountIn (the SY amount) in human-readable units. Returns the transaction hash plus the RECEIPT-DECODED amounts beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: redeem a PT (pendle__pt_redeem) or a PT+YT pair (pendle__py_redeem), guarantee an exact output amount, deliver native currency, or send the proceeds anywhere but your own wallet.",
       "name": "pendle__sy_redeem",
       "parameters": {
         "additionalProperties": false,
@@ -23,7 +23,7 @@
             "type": "number"
           },
           "sy": {
-            "description": "The SY (Standardised Yield) CONTRACT ADDRESS. Read it from pendle.market.get as the market's `sy` field, or from the `deliveredAsset` a pendle.pt.redeem fallback reported.",
+            "description": "The SY (Standardised Yield) CONTRACT ADDRESS. Read it from pendle__market_get as the market's `sy` field, or from the `deliveredAsset` a pendle__pt_redeem fallback reported.",
             "type": "string"
           },
           "tokenOut": {

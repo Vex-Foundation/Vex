@@ -46,7 +46,7 @@ export function marketAbsenceAnswer(
     queried: { [addressParam]: address },
     asOf,
     nextStep: proven
-      ? "Check the chain first — the same address on another chain is a different asset. pendle.yields lists what does exist, and includeMatured:true covers expired markets."
-      : "Retry, or narrow with pendle.yields (which pages explicitly and reports hasMore) before drawing any conclusion.",
+      ? "Check the chain first - the same address on another chain is a different asset. pendle__markets_discover lists what does exist, and includeMatured:true covers expired markets."
+      : "Retry, or narrow with pendle__markets_discover (which pages explicitly and reports hasMore) before drawing any conclusion.",
   };
 }

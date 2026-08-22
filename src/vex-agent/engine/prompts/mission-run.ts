@@ -7,6 +7,7 @@
 
 import type { EngineContext } from "../types.js";
 import { isProtocolNamespaceAvailable } from "./capability-availability.js";
+import { sanitizeUntrustedBlock } from "./sanitize.js";
 
 export interface MissionRunContext {
   /** Frozen mission summary for prompt injection. */
@@ -94,7 +95,15 @@ export function buildMissionRunPrompt(
   if (runContext) {
     if (runContext.missionPromptContext) {
       lines.push("## Mission Contract");
-      lines.push(runContext.missionPromptContext);
+      // The contract snapshot is assembled OUTSIDE the prompt stack
+      // (`mission/mapper.ts` -> the persisted `run-contract` snapshot) from
+      // title, goal, success criteria and stop conditions that the model's own
+      // `MissionDraftUpdate` tool and the host UI write. This layer is part of
+      // the STATIC cached prefix, which `turn-envelope.ts` wraps in the system
+      // sentinels, so unsanitized text here would sit inside the operator
+      // block. Sanitized at this boundary, not per field in the mapper, so
+      // snapshots persisted before this change are covered too.
+      lines.push(sanitizeUntrustedBlock(runContext.missionPromptContext));
       lines.push("");
     }
     // NOTE: the `Iteration: N` line deliberately does NOT live here anymore

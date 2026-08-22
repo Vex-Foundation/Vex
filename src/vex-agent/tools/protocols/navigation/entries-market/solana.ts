@@ -5,11 +5,12 @@ export const SOLANA_NAVIGATION: ProtocolNamespaceNavigation = {
   advertised: true,
   groupId: "solana",
   groupLabel: "Solana",
-  summary: "Jupiter-backed Solana surface for token search, prices, swaps, lending, and prediction markets.",
+  summary:
+    "Jupiter's whole Solana surface: token identity and prices, swaps routed by Jupiter, Earn lending and collateralized Borrow, and Jupiter prediction markets. It is both the FRESHEST token feed Vex has - a recent-mints read measured rows 10 to 175 seconds old, each with its own createdAt - and the only namespace that can execute on Solana.",
   whenToUse:
-    "Use when the task is Solana-only: resolve mints, fetch Jupiter prices, swap on Solana, inspect lend positions, or trade Jupiter prediction markets.",
+    "Use when the chain is Solana: resolve a mint, price a token, find freshly launched or trending tokens, quote and then execute a swap, read or move an Earn or Borrow position, or browse and trade prediction markets.",
   preferInstead:
-    "Use `khalani` for cross-chain bridging and `kyberswap` for EVM-only execution.",
+    "Use `khalani` to bridge onto or off Solana, and `kyberswap` for EVM execution.",
   exampleQueries: [
     'ToolSearch(query="solana token search", namespace="solana")',
     'ToolSearch(query="swap on solana", namespace="solana")',

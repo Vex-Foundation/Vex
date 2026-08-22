@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Roll a Pendle PT into a LATER-expiry PT of another market in ONE transaction — sell the PT you hold and buy the destination PT without ever holding the underlying. Needs: the chain, the PT address you hold (fromPt), the PT address you want (toPt), and amountIn in human-readable units. The SOURCE PT MAY BE MATURED (rolling out of an expired position is exactly what this is for); the DESTINATION PT MUST BE ACTIVE — a matured destination is refused by name, with its expiry date. Returns both expiries (fromExpiry / toExpiry) and, when Pendle reports them, impliedApyBeforePercent / impliedApyAfterPercent as PERCENT STRINGS (e.g. '4.21' = 4.21%), so you can see whether the roll improves the rate; amounts come back as raw/decimals/exact triplets. Approval-gated; pins the canonical Pendle Router and holds EVERY internal leg to its own minimum-output floor. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: roll across chains, roll a YT or an LP (pendle.lp.transfer moves LP), sell to a token (pendle.pt.sell), redeem a matured PT for its underlying (pendle.pt.redeem), guarantee an exact output amount, or send the destination PT anywhere but your own wallet.",
+      "description": "Roll a Pendle PT into a LATER-expiry PT of another market in ONE transaction - sell the PT you hold and buy the destination PT without ever holding the underlying. Needs: the chain, the PT address you hold (fromPt), the PT address you want (toPt), and amountIn in human-readable units. The SOURCE PT MAY BE MATURED (rolling out of an expired position is exactly what this is for); the DESTINATION PT MUST BE ACTIVE - a matured destination is refused by name, with its expiry date. Returns both expiries (fromExpiry / toExpiry) and, when Pendle reports them, impliedApyBeforePercent / impliedApyAfterPercent as PERCENT STRINGS (e.g. '4.21' = 4.21%), so you can see whether the roll improves the rate; amounts come back as raw/decimals/exact triplets. Approval-gated; pins the canonical Pendle Router and holds EVERY internal leg to its own minimum-output floor. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: roll across chains, roll a YT or an LP (pendle__lp_transfer moves LP), sell to a token (pendle__pt_sell), redeem a matured PT for its underlying (pendle__pt_redeem), guarantee an exact output amount, or send the destination PT anywhere but your own wallet.",
       "name": "pendle__pt_rollover",
       "parameters": {
         "additionalProperties": false,
@@ -19,7 +19,7 @@
             "type": "boolean"
           },
           "fromPt": {
-            "description": "The PT CONTRACT ADDRESS you currently hold (the source maturity). May belong to a MATURED market. Read it from pendle.market.get as the market's `pt` field.",
+            "description": "The PT CONTRACT ADDRESS you currently hold (the source maturity). May belong to a MATURED market. Read it from pendle__market_get as the market's `pt` field.",
             "type": "string"
           },
           "slippageBps": {
@@ -27,7 +27,7 @@
             "type": "number"
           },
           "toPt": {
-            "description": "The PT CONTRACT ADDRESS to roll INTO (the destination maturity). Must belong to an ACTIVE market — find one with pendle.yields.",
+            "description": "The PT CONTRACT ADDRESS to roll INTO (the destination maturity). Must belong to an ACTIVE market - find one with pendle__markets_discover.",
             "type": "string"
           }
         },

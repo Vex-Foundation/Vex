@@ -25,7 +25,7 @@ export const MORPHO_WALLET_BALANCE_TOOL: ProtocolToolManifest = {
     + "has already approved to move them. Use this before acting on Morpho, or to audit standing spending "
     + "permissions: whether an approval already exists, whether it is unlimited, and whether there is native "
     + "balance to pay gas. For a plain 'how much do I have' question with no approval angle, WalletBalances and "
-    + "ChainRead are cheaper and cover more chains; use morpho.positions.get for what is already inside Morpho. "
+    + "ChainRead are cheaper and cover more chains; use morpho__positions_get for what is already inside Morpho. "
     + "THE APPROVAL HALF IS THE REASON THIS TOOL EXISTS. It reports the allowance granted to each of four "
     + "contracts, pinned per chain from Morpho's own address registry and never taken from a parameter: Morpho "
     + "Blue, the core lending protocol; Bundler3, the batch entry point; GeneralAdapter1, the contract that "

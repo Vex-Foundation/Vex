@@ -1,0 +1,181 @@
+{
+  "version": "morpho-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-morpho",
+  "datasetVersion": "morpho-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:12:37.194Z",
+  "metrics": {
+    "overall": {
+      "count": 57,
+      "recall1": 0.474,
+      "recall5": 0.842,
+      "coverage5": 0.842,
+      "mrr5": 0.616,
+      "groupMrr5": 0.616
+    },
+    "awareness": {
+      "blind": {
+        "count": 38,
+        "recall1": 0.474,
+        "recall5": 0.816,
+        "coverage5": 0.816,
+        "mrr5": 0.611,
+        "groupMrr5": 0.611
+      },
+      "protocolAware": {
+        "count": 19,
+        "recall1": 0.474,
+        "recall5": 0.895,
+        "coverage5": 0.895,
+        "mrr5": 0.626,
+        "groupMrr5": 0.626
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 57,
+        "recall1": 0.474,
+        "recall5": 0.842,
+        "coverage5": 0.842,
+        "mrr5": 0.616,
+        "groupMrr5": 0.616
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 6,
+        "recall1": 0.167,
+        "recall5": 0.333,
+        "coverage5": 0.333,
+        "mrr5": 0.2,
+        "groupMrr5": 0.2
+      },
+      "bridge": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 13,
+        "recall1": 0.231,
+        "recall5": 0.692,
+        "coverage5": 0.692,
+        "mrr5": 0.387,
+        "groupMrr5": 0.387
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 6,
+        "recall1": 0.5,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.708,
+        "groupMrr5": 0.708
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 2,
+        "recall1": 0.5,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.667,
+        "groupMrr5": 0.667
+      },
+      "workflow": {
+        "count": 30,
+        "recall1": 0.633,
+        "recall5": 0.967,
+        "coverage5": 0.967,
+        "mrr5": 0.776,
+        "groupMrr5": 0.776
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-morpho@morpho-v1, mode lexical, 57 cases evaluated.",
+    "overall recall@1 0.474, recall@5 0.842, coverage@5 0.842, mrr@5 0.616, groupMrr@5 0.616.",
+    "Measured delta: none, metrics are identical to the previous baseline."
+  ]
+}

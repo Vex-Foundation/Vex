@@ -91,7 +91,7 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         "Required when `direction` is `supplyCollateral`. RAW base units of the COLLATERAL token, whose decimals are "
-        + "usually NOT the loan token's: read `collateralAsset.decimals` from `morpho.market.get`. Another "
+        + "usually NOT the loan token's: read `collateralAsset.decimals` from `morpho__market_get`. Another "
         + "direction's amount key is refused by name rather than dropped.",
     },
     {
@@ -106,14 +106,14 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         "Required when `direction` is `borrow`. RAW base units of the LOAN token, at that token's own decimals "
-        + "(`loanAsset.decimals` from `morpho.market.get`).",
+        + "(`loanAsset.decimals` from `morpho__market_get`).",
     },
     {
       key: "repayAmountRaw",
       type: "string",
       description:
         "Used when `direction` is `repay` and the repayment is PARTIAL. RAW base units of the LOAN token, at that "
-        + "token's own decimals: read `loanAsset.decimals` from `morpho.market.get`, not from TokenFind, because the "
+        + "token's own decimals: read `loanAsset.decimals` from `morpho__market_get`, not from TokenFind, because the "
         + "market names its own loan asset. Omit it and send `repayFullDebt: true` to price closing the debt "
         + "completely; sending both is refused.",
     },
@@ -130,7 +130,7 @@ export const MORPHO_MARKET_QUOTE_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         "Required when `direction` is `supply`. RAW base units of the LOAN token being LENT into the market, at that "
-        + "token's own decimals (`loanAsset.decimals` from `morpho.market.get`). This is the lender's side; "
+        + "token's own decimals (`loanAsset.decimals` from `morpho__market_get`). This is the lender's side; "
         + "`supplyCollateralAmountRaw` is a different operation on a different token and is refused by name.",
     },
     {

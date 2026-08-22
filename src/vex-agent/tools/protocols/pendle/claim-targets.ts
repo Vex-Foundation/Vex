@@ -256,7 +256,7 @@ export function describePendleClaimSkips(targets: PendleClaimTargets): string | 
   if (notHeld.length > 0) {
     parts.push(
       `The wallet holds no YT or LP position in ${notHeld.join(", ")} on this chain, so there is nothing to claim `
-      + "and no transaction was sent. Check pendle.position.value for the markets this wallet is actually in.",
+      + "and no transaction was sent. Check pendle__positions_get for the markets this wallet is actually in.",
     );
   }
   return parts.join(" ");

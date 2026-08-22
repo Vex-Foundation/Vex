@@ -40,7 +40,7 @@ import { sourceObservation } from "./source-observation.js";
 export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.trending": async (p) => {
     const parsed = parseNarrativeListQuery(p);
-    if (!parsed.ok) return fail(`dexscreener.trending: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__narratives_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const metas = await client.getMetasTrending();
@@ -68,7 +68,7 @@ export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
       allowChainFilter: true,
       limit: 20,
     });
-    if (!parsed.ok) return fail(`dexscreener.meta: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__narrative_get: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const detail = await client.getMeta(slug);
@@ -79,7 +79,7 @@ export const DEXSCREENER_NARRATIVE_HANDLERS: Record<string, ProtocolHandler> = {
     // and as a failure. No claim is made about WHY the shape changed.
     if (!detail) {
       return fail(
-        `dexscreener.meta could not read the narrative feed for "${slug}": the endpoint responded but the payload did not match the expected shape. Retrying will not change it. Check the slug against dexscreener.trending.`,
+        `dexscreener__narrative_get could not read the narrative feed for "${slug}": the endpoint responded but the payload did not match the expected shape. Retrying will not change it. Check the slug against dexscreener__narratives_list.`,
       );
     }
 

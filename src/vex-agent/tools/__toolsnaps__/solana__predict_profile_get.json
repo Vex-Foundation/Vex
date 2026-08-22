@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get a trader's aggregate lifetime Jupiter Prediction stats — realized PnL, total volume, win/loss counts. Session-scoped: a walletAddress other than the session's selected wallet is REJECTED, so use solana.predict.leaderboards to compare other traders. Use solana.predict.pnlHistory instead for a PnL time series, or solana.predict.leaderboards to compare against other traders. Money fields (realizedPnlUsd, totalVolumeUsd, totalPositionsValueUsd) are exact-decimal USD strings with raw *Micro siblings.",
+      "description": "Read one trader's aggregate LIFETIME Jupiter Prediction record - how they have done overall, not what they hold. Use this when the user asks how their prediction trading has gone; solana__predict_leaderboard_list is the ranked comparison against other traders, since this read is SESSION-SCOPED and a walletAddress other than the session's selected wallet is REJECTED by name. Returns the provider's profile record: realizedPnlUsd, totalVolumeUsd and totalPositionsValueUsd as exact-decimal USD strings each with a raw *Micro sibling, alongside predictionsCount, correctPredictions, wrongPredictions and totalActiveContracts with its own Micro/Decimal quantity siblings. One record, complete, with no paging.",
       "name": "solana__predict_profile_get",
       "parameters": {
         "additionalProperties": false,

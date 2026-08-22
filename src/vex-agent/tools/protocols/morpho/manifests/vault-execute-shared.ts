@@ -23,7 +23,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "../../slippage-p
 
 /** Quote-first, named as a gate rather than as advice. */
 export const MORPHO_QUOTE_FIRST_SENTENCE =
-  "QUOTE FIRST, ALWAYS: this tool is gated on a fresh `morpho.vault.quote` for EXACTLY these params (same vault, same "
+  "QUOTE FIRST, ALWAYS: this tool is gated on a fresh `morpho__vault_quote` for EXACTLY these params (same vault, same "
   + "chain, same raw amount, same slippageBps), and it is REFUSED without one. A quote for the other direction does "
   + "not authorize this one.";
 
@@ -80,6 +80,6 @@ export const MORPHO_SLIPPAGE_PARAM_DESCRIPTION =
 
 /** The vault address param, identical on both tools. */
 export const MORPHO_VAULT_ADDRESS_PARAM_DESCRIPTION =
-  "The vault's 0x-prefixed 40-hex contract address, from `morpho.vaults.discover` or `morpho.vault.get`. A 64-hex "
+  "The vault's 0x-prefixed 40-hex contract address, from `morpho__vaults_discover` or `morpho__vault_get`. A 64-hex "
   + "value is rejected by name because that is a MARKET id, not a vault. Both vault generations are detected "
   + "automatically.";

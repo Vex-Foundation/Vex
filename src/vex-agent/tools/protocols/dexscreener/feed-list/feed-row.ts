@@ -48,7 +48,7 @@
  * zero information, costs ~120 B/row (~3.6 KB per call), and the model cannot see
  * an image regardless. `icon` and `header` are NOT derivable, so they survive as
  * opt-in `fields` — dropping them from the default row is what brings four of
- * these feeds from 20-23 KB under the 16 KiB cap.
+ * these feeds down from 20-23 KB.
  */
 
 import type {

@@ -22,7 +22,7 @@ export const POOLS_TOKEN_TOOLS: readonly ProtocolToolManifest[] = [
         type: "string",
         required: true,
         description:
-          "Contract address of the token to inspect. Resolve a name to an address with pools.search first, since symbols repeat across this launchpad.",
+          "Contract address of the token to inspect. Resolve a name to an address with pools__tokens_search first, since symbols repeat across this launchpad.",
       },
     ],
     exampleParams: { tokenAddress: "0x0ab8d01664d4bb625705f9f3c595a8a19b3dcfb0" },

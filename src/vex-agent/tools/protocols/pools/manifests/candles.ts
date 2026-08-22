@@ -26,7 +26,7 @@ export const POOLS_CANDLES_TOOLS: readonly ProtocolToolManifest[] = [
         type: "string",
         required: true,
         description:
-          "Contract address of the pools.fun token whose price history to read. Resolve it with pools.search first - a symbol is not an identity on this launchpad.",
+          "Contract address of the pools.fun token whose price history to read. Resolve it with pools__tokens_search first - a symbol is not an identity on this launchpad.",
       },
       {
         key: "timeframe",

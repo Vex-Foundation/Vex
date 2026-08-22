@@ -123,7 +123,7 @@ export async function executePendleLpToPt(
         return refuse(
           "route_not_found",
           sameUnderlying
-            ? `${toolId}: ${expectedPt} is a PT of a DIFFERENT ${chainSlug} market with the same underlying asset — this tool only converts an LP into its OWN market's PT (${ptOut}). To reach another maturity, convert here first and then roll with pendle.pt.rollover.`
+            ? `${toolId}: ${expectedPt} is a PT of a DIFFERENT ${chainSlug} market with the same underlying asset - this tool only converts an LP into its OWN market's PT (${ptOut}). To reach another maturity, convert here first and then roll with pendle__pt_rollover.`
             : `${toolId}: ${expectedPt} is not this market's PT — refusing a CROSS-UNDERLYING conversion. This market's PT is ${ptOut}; the two represent different underlying assets, so Vex will not substitute one for the other.`,
         );
       }

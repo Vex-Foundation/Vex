@@ -188,7 +188,7 @@ export interface JupiterLendBorrowPositionsReadout {
  */
 const HOW_TO_READ_RISK =
   "Every *Raw value is raw atomic units of the token named beside it: divide by that leg's *Decimals to read it, and "
-  + "build solana.lend.borrowOperate amounts in the same scale. totalDebtRaw = borrowRaw + dustBorrowRaw (dust is "
+  + "build solana__lend_borrow_operate amounts in the same scale. totalDebtRaw = borrowRaw + dustBorrowRaw (dust is "
   + "accrued interest, ADDITIONAL to the principal) and is what LTV is computed from. Branch on risk.status before "
   + "acting: \"computed\" means currentLtvPercent and ltvPercentagePointsToLiquidation are usable; "
   + "\"undercollateralized\" means debt against no collateral, already past liquidation; \"unknown\" means the risk "

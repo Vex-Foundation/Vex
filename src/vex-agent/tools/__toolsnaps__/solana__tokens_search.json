@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Search for or look up one or more SPECIFIC Solana tokens you can already name — by symbol, name, or mint address (up to 100 comma-separated mints for a batch lookup) — for identity, price, market cap, liquidity, holder count, and safety-audit flags. Use solana.tokens.trending instead when you don't have a name yet and want to discover new, popular, or top-moving tokens.",
+      "description": "Look up SPECIFIC Solana tokens you can already name - by symbol, name, or up to 100 comma-separated mint addresses for a batch lookup. Use this when the user names a token and you need to know what it is and whether it is safe to touch; solana__tokens_discover is the surface when there is no name yet and the user wants what is new, popular or top-moving. Returns one projected row per matching token: identity, price, market cap and liquidity, holder and organic-trading signals, the safety-audit flags, tags and launchpad, and age - the ~40-field provider payload narrowed to what a trading decision uses, with every matching row kept. minOrganicScore, verifiedOnly and minLiquidity filter the result and an out-of-range value is rejected rather than clamped. The rows are the whole answer; there is no continuation to page through.",
       "name": "solana__tokens_search",
       "parameters": {
         "additionalProperties": false,

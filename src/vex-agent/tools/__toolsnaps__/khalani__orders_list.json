@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "List Khalani bridge orders for an address with pagination and filters.",
+      "description": "List a wallet's Khalani bridge orders, newest page first, filterable by source chain, destination chain, order ids or transaction hash. Use this when the user asks about their bridge history, wants to see which transfers are still in flight, or is looking for a bridge they only remember by transaction hash; for the full lifecycle of ONE order, including Vex's own record of it, call `khalani__order_get` with the id. Defaults to the session's own wallet, and under a session-scoped wallet `walletAddress` must equal the selected wallet. RETURNS `count`, `cursor` and `orders`, the provider's own order rows carried through unprojected. PAGE WITH `cursor`: pass back the `cursor` the previous reply returned rather than computing one, and `limit` is capped at the provider maximum of 20, with anything outside 1-20 rejected before the call.",
       "name": "khalani__orders_list",
       "parameters": {
         "additionalProperties": false,

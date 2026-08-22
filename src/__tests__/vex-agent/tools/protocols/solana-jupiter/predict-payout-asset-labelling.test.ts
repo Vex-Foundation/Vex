@@ -272,7 +272,7 @@ describe("prediction payout leg — JupUSD identity, never a USD estimate as a t
     expect(result.output).toContain(JUPITER_PREDICTION_PAYOUT_SYMBOL);
     expect(result.output).toContain(JUPITER_PREDICTION_PAYOUT_MINT);
     expect(result.output).toMatch(/later keeper transaction/i);
-    expect(result.output).toContain("solana.swap.execute");
+    expect(result.output).toContain("solana__swap_execute");
     expect((result.data as Record<string, unknown>).settlementAsset).toEqual({
       mint: JUPITER_PREDICTION_PAYOUT_MINT,
       symbol: JUPITER_PREDICTION_PAYOUT_SYMBOL,

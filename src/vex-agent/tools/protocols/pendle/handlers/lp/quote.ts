@@ -92,7 +92,7 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
       if (direction === "add") {
         return fail(await explainUnresolvedPendleMarket(chainId, chainEntry.slug, marketAddress, { action: "lp.add", leg: "market" }));
       }
-      return fail("`market` is not a Pendle market on this chain — find it via pendle.yields.");
+      return fail("`market` is not a Pendle market on this chain - find it via pendle__markets_discover.");
     }
     const marketAddr = getAddress(market.address);
     const slippage = resolvePendleSlippage("pendle.lp.quote", num(p, "slippageBps"));
@@ -111,7 +111,7 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
       });
       if (!response || response.routes.length === 0) return fail("Pendle returned no add-liquidity route for these tokens.");
       if (response.action !== "add-liquidity") {
-        return fail("Pendle did not return an add-liquidity route — for a plain PT buy use pendle.pt.buy.");
+        return fail("Pendle did not return an add-liquidity route - for a plain PT buy use pendle__pt_buy.");
       }
       const best = response.routes[0]!;
       const lpOut = best.outputs.find((o) => o.token.toLowerCase() === marketAddr.toLowerCase())?.amount ?? "0";
@@ -179,6 +179,6 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
       slippageBps: slippageBpsEcho,
     });
   } catch (err) {
-    return fail(`Pendle LP quote unavailable (${failureDetail("pendle.lp.quote", err)})`);
+    return fail(`Pendle LP quote unavailable (${failureDetail("pendle__lp_quote", err)})`);
   }
 }

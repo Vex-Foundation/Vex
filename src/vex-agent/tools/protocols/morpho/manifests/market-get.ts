@@ -21,7 +21,7 @@ export const MORPHO_MARKET_GET_TOOL: ProtocolToolManifest = {
   description:
     "Read ONE Morpho Blue lending market in full, by its `marketId` and the `chain` it lives on (both REQUIRED - a "
     + "market id is chain-scoped and the same id on the wrong chain resolves to nothing). Use this AFTER "
-    + "`morpho.markets.discover` has narrowed the candidates and before treating a market as an entry, because it "
+    + "`morpho__markets_discover` has narrowed the candidates and before treating a market as an entry, because it "
     + "returns the risk facts the screening call cannot carry. RETURNS everything the discovery row has (both assets "
     + "with decimals, lltvPercent, utilizationPercent, supply/borrow/collateral/liquidity as {raw, decimals, symbol, "
     + "human, usd}, the labelled APY block, oracle, irmAddress, listed flag and warnings) PLUS: outstanding and "
@@ -48,7 +48,7 @@ export const MORPHO_MARKET_GET_TOOL: ProtocolToolManifest = {
       required: true,
       description:
         "The Morpho Blue market id: a 0x-prefixed 64-hex hash, NOT a 40-hex contract address. Read one from "
-        + "`morpho.markets.discover`. An address is rejected by name, because Morpho answers an address-shaped id with "
+        + "`morpho__markets_discover`. An address is rejected by name, because Morpho answers an address-shaped id with "
         + "an empty result rather than an error.",
     },
     {

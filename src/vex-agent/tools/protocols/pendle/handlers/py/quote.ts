@@ -100,7 +100,7 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
       });
       if (!response || response.routes.length === 0) return fail("Pendle returned no mint route for these tokens.");
       if (response.action !== "mint-py") {
-        return fail("Pendle did not return a mint route — for a plain PT buy use pendle.pt.buy, or a YT buy use pendle.yt.buy.");
+        return fail("Pendle did not return a mint route - for a plain PT buy use pendle__pt_buy, or a YT buy use pendle__yt_buy.");
       }
       const best = response.routes[0]!;
       const ptOut = outputAmountFor(best.outputs, ptAddress);
@@ -152,7 +152,7 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
     });
     if (!response || response.routes.length === 0) return fail("Pendle returned no pre-expiry redeem route.");
     if (response.action !== "redeem-py") {
-      return fail("Pendle did not return a pre-expiry redeem route — a MATURED PT (PT only) uses pendle.pt.redeem.");
+      return fail("Pendle did not return a pre-expiry redeem route - a MATURED PT (PT only) uses pendle__pt_redeem.");
     }
     const best = response.routes[0]!;
     const outAmount = best.outputs[0]?.amount ?? "0";
@@ -177,6 +177,6 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
       slippageBps: slippageBpsEcho,
     });
   } catch (err) {
-    return fail(`Pendle PY quote unavailable (${failureDetail("pendle.py.quote", err)})`);
+    return fail(`Pendle PY quote unavailable (${failureDetail("pendle__py_quote", err)})`);
   }
 }

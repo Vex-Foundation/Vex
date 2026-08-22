@@ -127,8 +127,8 @@ export function parseNarrativeListQuery(
       ok: false,
       reason:
         '"chainIds" does not apply to a narrative feed — a narrative is a cross-chain theme and '
-        + "carries no chain of its own. Use dexscreener.meta with chainIds to see one narrative's "
-        + "pools on chosen chains, or dexscreener.search for tokens.",
+        + "carries no chain of its own. Use dexscreener__narrative_get with chainIds to see one narrative's "
+        + "pools on chosen chains, or dexscreener__pairs_search for tokens.",
     };
   }
 

@@ -24,7 +24,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "../../slippage-p
 
 /** Quote-first, named as a gate rather than as advice. */
 export const MORPHO_MARKET_QUOTE_FIRST_SENTENCE =
-  "QUOTE FIRST: REFUSED without a fresh `morpho.market.quote` of THIS direction for exactly these params. A quote of "
+  "QUOTE FIRST: REFUSED without a fresh `morpho__market_quote` of THIS direction for exactly these params. A quote of "
   + "any other direction does not authorize it.";
 
 /**
@@ -122,7 +122,7 @@ export const MORPHO_LENDER_WITHDRAW_BOUNDS_SENTENCE =
   + "lending directly, and it is not a failure of Vex: wait for a repayment or withdraw the part that is free.";
 
 export const MORPHO_MARKET_ID_PARAM =
-  "The market's 0x-prefixed 64-hex id, from `morpho.markets.discover` or `morpho.positions.get`. A 40-hex value is a "
+  "The market's 0x-prefixed 64-hex id, from `morpho__markets_discover` or `morpho__positions_get`. A 40-hex value is a "
   + "CONTRACT ADDRESS and is rejected by name. Chain-scoped.";
 
 export const MORPHO_MARKET_CHAIN_PARAM =

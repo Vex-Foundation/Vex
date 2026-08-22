@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Get ONE prediction position's full detail by pubkey — open or resolved, contracts, payout, claimability. Use solana.predict.positions to list all of a wallet's open positions and find a pubkey.",
+      "description": "Read ONE Jupiter prediction position in full by its positionPubkey, open or already resolved. Use this before selling or claiming, to confirm what a position is actually worth and whether it is claimable. Returns pubkey, owner, contracts with its exact contractsMicro/contractsDecimal siblings, claimed, eventId, curated eventMetadata and marketMetadata, and sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd and payoutUsd as exact-decimal USD strings each with a raw *Micro sibling. Account on contractsMicro/contractsDecimal rather than the bare legacy contracts field. Find a pubkey with solana__predict_positions_list.",
       "name": "solana__predict_position_get",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "positionPubkey": {
-            "description": "Position public key (from solana.predict.positions).",
+            "description": "Position public key (from solana__predict_positions_list).",
             "type": "string"
           }
         },

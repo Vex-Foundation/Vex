@@ -90,7 +90,7 @@ export const MORPHO_QUOTE_GOVERNANCE_UNKNOWN_NOTE =
   "The vault's governance could not be read on this call, so whether a gate can block a withdrawal, how long a "
   + "curator change waits, and how many changes are already queued are ALL UNKNOWN here. Unknown is not the same as "
   + "absent: do not present this vault as ungated or unchanged on the strength of a read that did not answer. Call "
-  + "morpho.vault.get on the same address and chain before acting.";
+  + "morpho__vault_get on the same address and chain before acting.";
 
 export const MORPHO_QUOTE_PREVIEW_NOTE =
   "This is a PREVIEW and it commits nothing. No approval was granted, no permit was signed, no transaction was sent, "

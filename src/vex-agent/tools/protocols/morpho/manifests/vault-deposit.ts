@@ -73,7 +73,7 @@ export const MORPHO_VAULT_DEPOSIT_TOOL: ProtocolToolManifest = {
       required: true,
       description:
         "How much of the vault's ASSET to deposit, in that asset's RAW base units as a whole-number string. THE "
-        + "SCALE IS THE VAULT ASSET'S OWN: read `asset.decimals` from `morpho.vault.get` for this vault, not the "
+        + "SCALE IS THE VAULT ASSET'S OWN: read `asset.decimals` from `morpho__vault_get` for this vault, not the "
         + "vault's SHARE decimals, which are a different number reported beside it. A human amount is refused, not "
         + "rounded. It must equal the amount the quote priced.",
     },

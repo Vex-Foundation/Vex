@@ -50,7 +50,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     chainId = slugToChainId(slug);
   } catch (err) {
     const fallbackNote = venueFallbackNoteOnFailure(err, context.sessionId, false);
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}.${fallbackNote}`);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}.${fallbackNote}`);
   }
 
   let tokenIn: ResolvedKyberTokenMetadata;
@@ -64,7 +64,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     tokenIn = await resolveTokenMetadataStrict(tokenInRaw, chainId);
     tokenOut = await resolveTokenMetadataStrict(tokenOutRaw, chainId);
   } catch (err) {
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}`);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}`);
   }
   // Agent-facing labels only. A native leg's `symbol` is the chain-agnostic
   // `NATIVE` sentinel, which tells the agent nothing about what it is trading;
@@ -91,7 +91,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     ]);
   } catch (err) {
     const fallbackNote = venueFallbackNoteOnFailure(err, context.sessionId, true);
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}.${fallbackNote}`);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}.${fallbackNote}`);
   }
   const safety: QuoteSafety = { tokenIn: safetyIn, tokenOut: safetyOut };
   const route = formatRouteSummary(response.data.routeSummary);

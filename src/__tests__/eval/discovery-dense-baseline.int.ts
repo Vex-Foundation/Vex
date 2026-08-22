@@ -5,7 +5,12 @@
  * `pnpm test` never picks it up. Run only with:
  *
  *   pnpm test:eval:dense           # --check (default): compares, writes nothing
- *   pnpm test:eval:dense:update    # recaptures baselines/dense.json
+ *   pnpm test:eval:dense:update    # recaptures every dense baseline in the registry
+ *
+ * Both commands cover EVERY dataset the shared registry owns (`eval-targets.ts`):
+ * the canonical seed dataset, the supplemental coverage dataset, and each
+ * authored per-namespace dataset. A namespace whose dataset file does not exist
+ * contributes no target.
  *
  * Required local dependencies:
  * - Postgres/pgvector with migration 010 applied
@@ -23,32 +28,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadProviderDotenv } from "../../providers/env-resolution.js";
 import { closePool } from "../../vex-agent/db/client.js";
 import { assertToolEmbeddingsReady } from "../../vex-agent/tools/protocols/embeddings/health.js";
-import {
-  resolveBaselineMode,
-  runBaselineTarget,
-  type BaselineTarget,
-  type MeasuredBaseline,
-} from "./baseline.js";
-import { toBaselineMetrics } from "./report-metrics.js";
-import {
-  evaluateDiscoverTools,
-  loadDataset,
-  round3,
-  validateDatasetExpectedTools,
-  validateDatasetPrompts,
-} from "./retrieval-eval-harness.js";
+import { resolveBaselineMode, runBaselineTarget } from "./baseline.js";
+import { denseTargets } from "./eval-targets.js";
+import { applyRequiresEnvSentinels, describeAppliedSentinels } from "./requires-env-sentinels.js";
 
 loadProviderDotenv();
 
-const CANONICAL_DATASET_ID = "tool-discovery-seed";
-const DATASET_VERSION = "v3-agent-116";
-const REQUIRED_ENV = "VEX_REAL_DENSE_EVAL";
+// Unconditional, and BEFORE any candidate set exists. This is a baseline
+// writer: it may only ever measure the full catalog, so the eval-only
+// `requiresEnv` sentinels are not opt-in here. Vitest imports the module before
+// it runs any hook, so this must sit at module scope, above `beforeAll` and
+// above the first `evaluateDiscoverTools` call. No handler runs on this path.
+const appliedSentinels = applyRequiresEnvSentinels();
 
-// Quality floors — unchanged by the 2026-08-03 baseline-tooling work.
-const RECALL5_OVERALL_FLOOR = 0.95;
-const RECALL5_BLIND_FLOOR = 0.94;
-const RECALL5_PROTOCOL_AWARE_FLOOR = 0.98;
-const MRR5_OVERALL_FLOOR = 0.88;
+const REQUIRED_ENV = "VEX_REAL_DENSE_EVAL";
 
 const realStackRequested = process.env[REQUIRED_ENV] === "1";
 
@@ -77,53 +70,35 @@ describe("real-stack discover_tools dense baseline", () => {
     await closePool();
   });
 
-  it("checks dense-primary metrics against the stored baseline", async () => {
-    const mode = resolveBaselineMode(process.argv.slice(2), process.env);
-    const queries = loadDataset();
-    expect(validateDatasetPrompts(queries)).toEqual([]);
-    expect(validateDatasetExpectedTools(queries)).toEqual([]);
+  /**
+   * Every dense target the shared registry owns: the canonical seed dataset,
+   * the supplemental coverage dataset, and each authored per-namespace dataset.
+   *
+   * Nothing is hand-wired here any more. Each target validates its dataset,
+   * asserts the full candidate set, asserts every row was a real dense
+   * measurement and enforces the shared quality floors inside `measure`, all of
+   * which `runBaselineTarget` awaits before it can reach a writer.
+   *
+   * ONE CASE PER TARGET, registered at collection time. Vitest runs the cases
+   * of one file in order, so the single embedding sidecar still sees one query
+   * stream at a time, but a target that misses its floors fails ITS case and
+   * every other target still runs and reports. Each target protects its own
+   * writer, so a failing dataset stays unwritable while a passing one can be
+   * captured.
+   */
+  const mode = resolveBaselineMode(process.argv.slice(2), process.env);
+  const targets = denseTargets();
 
-    const report = await evaluateDiscoverTools(queries, 5);
-    const metrics = toBaselineMetrics(report);
+  it("applied the eval-only requiresEnv sentinels before any candidate set was built", () => {
+    process.stdout.write(`${describeAppliedSentinels(appliedSentinels)}\n`);
+    expect(targets.length).toBeGreaterThan(0);
+  });
 
-    const denseFailures = report.results
-      .filter((result) => result.denseFailed || result.retrievalMethod !== "dense")
-      .map((result) => ({
-        query: result.query.query,
-        retrievalMethod: result.retrievalMethod,
-        denseFailed: result.denseFailed,
-        topIds: result.topIds,
-      }));
-
-    const measured: MeasuredBaseline = {
-      mode: "dense",
-      datasetId: CANONICAL_DATASET_ID,
-      datasetVersion: DATASET_VERSION,
-      metrics,
-    };
-    const target: BaselineTarget = {
-      name: "dense / canonical seed dataset",
-      fileName: "dense.json",
-      expectedCaseCount: queries.length,
-      measure: () => measured,
-    };
-
-    const outcome = await runBaselineTarget(target, mode);
-    process.stdout.write(`${outcome.report}\n`);
-
-    // Dense fallback and the quality floors are asserted regardless of mode:
-    // an --update must never be able to record a broken capture as the new
-    // truth.
-    expect(
-      denseFailures,
-      `Dense fallback occurred for ${denseFailures.length} queries:\n${JSON.stringify(denseFailures.slice(0, 10), null, 2)}`,
-    ).toEqual([]);
-    expect(round3(metrics.overall.recall5)).toBeGreaterThanOrEqual(RECALL5_OVERALL_FLOOR);
-    expect(round3(metrics.overall.mrr5)).toBeGreaterThanOrEqual(MRR5_OVERALL_FLOOR);
-    expect(round3(metrics.awareness?.blind.recall5 ?? 0)).toBeGreaterThanOrEqual(RECALL5_BLIND_FLOOR);
-    expect(round3(metrics.awareness?.protocolAware.recall5 ?? 0))
-      .toBeGreaterThanOrEqual(RECALL5_PROTOCOL_AWARE_FLOOR);
-
-    expect(outcome.ok, outcome.report).toBe(true);
-  }, 240_000);
+  for (const target of targets) {
+    it(`${target.name}: ${mode === "update" ? "recaptures" : "checks"} the stored baseline`, async () => {
+      const outcome = await runBaselineTarget(target, mode);
+      process.stdout.write(`${outcome.report}\n`);
+      expect(outcome.ok, outcome.report).toBe(true);
+    }, 300_000);
+  }
 });

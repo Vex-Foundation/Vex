@@ -1,0 +1,181 @@
+{
+  "version": "pendle-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-pendle",
+  "datasetVersion": "pendle-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:12:43.806Z",
+  "metrics": {
+    "overall": {
+      "count": 67,
+      "recall1": 0.254,
+      "recall5": 0.642,
+      "coverage5": 0.642,
+      "mrr5": 0.398,
+      "groupMrr5": 0.398
+    },
+    "awareness": {
+      "blind": {
+        "count": 37,
+        "recall1": 0.108,
+        "recall5": 0.432,
+        "coverage5": 0.432,
+        "mrr5": 0.229,
+        "groupMrr5": 0.229
+      },
+      "protocolAware": {
+        "count": 30,
+        "recall1": 0.433,
+        "recall5": 0.9,
+        "coverage5": 0.9,
+        "mrr5": 0.606,
+        "groupMrr5": 0.606
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 67,
+        "recall1": 0.254,
+        "recall5": 0.642,
+        "coverage5": 0.642,
+        "mrr5": 0.398,
+        "groupMrr5": 0.398
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 3,
+        "recall1": 0.667,
+        "recall5": 0.667,
+        "coverage5": 0.667,
+        "mrr5": 0.667,
+        "groupMrr5": 0.667
+      },
+      "bridge": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_lp": {
+        "count": 14,
+        "recall1": 0.286,
+        "recall5": 0.643,
+        "coverage5": 0.643,
+        "mrr5": 0.407,
+        "groupMrr5": 0.407
+      },
+      "evm_swap": {
+        "count": 30,
+        "recall1": 0.233,
+        "recall5": 0.633,
+        "coverage5": 0.633,
+        "mrr5": 0.38,
+        "groupMrr5": 0.38
+      },
+      "limit_order": {
+        "count": 2,
+        "recall1": 0.5,
+        "recall5": 0.5,
+        "coverage5": 0.5,
+        "mrr5": 0.5,
+        "groupMrr5": 0.5
+      },
+      "market_research": {
+        "count": 13,
+        "recall1": 0.231,
+        "recall5": 0.769,
+        "coverage5": 0.769,
+        "mrr5": 0.438,
+        "groupMrr5": 0.438
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 5,
+        "recall1": 0,
+        "recall5": 0.4,
+        "coverage5": 0.4,
+        "mrr5": 0.167,
+        "groupMrr5": 0.167
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-pendle@pendle-v1, mode lexical, 67 cases evaluated.",
+    "overall recall@1 0.254, recall@5 0.642, coverage@5 0.642, mrr@5 0.398, groupMrr@5 0.398.",
+    "Measured delta: none, metrics are identical to the previous baseline."
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "List top Khalani tokens, optionally filtered by chain IDs.",
+      "description": "List the most commonly bridged tokens across the chains Khalani supports, optionally narrowed to given chain ids. Use this when the user wants to browse what is worth moving cross-chain, or asks which major assets a chain carries, before they have named a specific token. It is a POPULARITY list, not a resolver: when the user already named a ticker or address, use TokenFind (or `khalani__tokens_search`) instead, because this tool can legitimately not carry a token that exists. RETURNS `count` and `tokens`, one concise row each: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when the provider carried them. Logos and the provider's open extensions bag are dropped. Answers with the provider's own list in one reply; there is no pagination.",
       "name": "khalani__tokens_top_list",
       "parameters": {
         "additionalProperties": false,

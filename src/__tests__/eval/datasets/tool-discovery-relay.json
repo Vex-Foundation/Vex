@@ -1,0 +1,95 @@
+{
+  "version": "relay-v1",
+  "namespace": "relay",
+  "description": "Retrieval-verification dataset for the relay namespace: the keyless cross-chain bridge quote and execute pair, and the only route Vex has to or from Robinhood Chain (4663). Blind rows describe the bridging outcome without naming the brand; protocol-aware rows name it.",
+  "queries": [
+    {
+      "query": "preview what a cross-chain transfer of 0.05 ETH from Base to Robinhood Chain would deliver, without signing anything",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "how much USDG arrives and how long does it take if I move 250 USDG off Robinhood Chain to Base",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "estimate the bridging fee and destination amount for sending VIRTUAL to chain 4663 before I commit",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "get a Relay bridge quote for 0.1 ETH from Arbitrum into Robinhood Chain",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "price a Relay route to a chain Khalani cannot reach and show the slippage and time estimate",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "actually move 300 USDC from Base onto Robinhood Chain now so I can fund trading there",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.bridge"],
+      "expectedCoverageGroups": [["relay.bridge"]]
+    },
+    {
+      "query": "sign and broadcast the bridge that takes my 0.4 ETH out of Robinhood Chain back to Ethereum mainnet",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.bridge"],
+      "expectedCoverageGroups": [["relay.bridge"]]
+    },
+    {
+      "query": "execute the Relay bridge I just priced and send the 150 USDG across to Robinhood Chain",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.bridge"],
+      "expectedCoverageGroups": [["relay.bridge"]]
+    },
+    {
+      "query": "run the Relay transfer for real, spending funds from my wallet, to bring VIRTUAL onto chain 4663",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.bridge"],
+      "expectedCoverageGroups": [["relay.bridge"]]
+    },
+    {
+      "query": "quote a Relay bridge of 0.2 ETH into Robinhood Chain and then carry it out once the numbers look fine",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "workflow",
+      "expectedToolIds": ["relay.quote.get", "relay.bridge"],
+      "expectedCoverageGroups": [["relay.quote.get"], ["relay.bridge"]]
+    },
+    {
+      "query": "check what 1000 USDC would become on the other chain and then perform the transfer to Robinhood Chain",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "workflow",
+      "expectedToolIds": ["relay.quote.get", "relay.bridge"],
+      "expectedCoverageGroups": [["relay.quote.get"], ["relay.bridge"]]
+    }
+  ]
+}

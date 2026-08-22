@@ -115,7 +115,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     });
     if (!response) return refuse("route_not_found", "Pendle returned no mint route for these tokens.");
     if (response.action !== "mint-py") {
-      return refuse("route_not_found", "Pendle did not return a mint route — for a plain PT buy use pendle.pt.buy.");
+      return refuse("route_not_found", "Pendle did not return a mint route - for a plain PT buy use pendle__pt_buy.");
     }
 
     const intent: PendleTxIntent = {
@@ -197,6 +197,6 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     };
   } catch (err) {
     if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.py.mint", txHash, err);
-    return fail(`Pendle mint failed (${failureDetail("pendle.py.mint", err)})`);
+    return fail(`Pendle mint failed (${failureDetail("pendle__py_mint", err)})`);
   }
 }

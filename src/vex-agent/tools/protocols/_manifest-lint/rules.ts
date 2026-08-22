@@ -25,6 +25,15 @@ export type ManifestLintRule =
   | "example-params-required"
   | "generic-error-literal"
   | "slippage-default-home"
+  // A string asserting a GLOBAL tool-output byte cap. The runtime enforces none
+  // (`engine/core/tool-output-policy.ts` was deleted; tool output persists
+  // verbatim and inline), so every such claim budgets the model against a number
+  // nothing enforces. Source-level rule: `_manifest-lint/source-rules.ts`.
+  | "stale-output-cap-claim"
+  // A model-visible manifest or param description naming a DOTTED tool id.
+  // Only `publicName` is callable; the dotted id is the internal and audit
+  // identity. Own rules module: `_manifest-lint/dotted-toolid-rules.ts`.
+  | "dotted-toolid-reference"
   | "chain-doc-parity"
   | "exclusive-param-groups"
   | "enum-declaration"

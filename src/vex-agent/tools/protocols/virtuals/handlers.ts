@@ -115,7 +115,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
         agents: projected,
       });
     } catch (err) {
-      return fail(`Virtuals list unavailable (${failureDetail("virtuals.list", err)})`);
+      return fail(`Virtuals list unavailable (${failureDetail("virtuals__agents_discover", err)})`);
     }
   },
 
@@ -132,7 +132,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
       if (!agent) return fail(`No Virtuals agent found for id ${id}.`);
       return ok({ agent: projectVirtualsDetail(agent) });
     } catch (err) {
-      return fail(`Virtuals detail unavailable for id ${id} (${failureDetail("virtuals.get", err)})`);
+      return fail(`Virtuals detail unavailable for id ${id} (${failureDetail("virtuals__agent_get", err)})`);
     }
   },
 
@@ -174,7 +174,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
         agents: projected,
       });
     } catch (err) {
-      return fail(`Virtuals graduations unavailable (${failureDetail("virtuals.graduations", err)})`);
+      return fail(`Virtuals graduations unavailable (${failureDetail("virtuals__graduations_list", err)})`);
     }
   },
 
@@ -194,7 +194,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
         geneses: projected,
       });
     } catch (err) {
-      return fail(`Virtuals geneses unavailable (${failureDetail("virtuals.geneses", err)})`);
+      return fail(`Virtuals geneses unavailable (${failureDetail("virtuals__genesis_launches_list", err)})`);
     }
   },
 };

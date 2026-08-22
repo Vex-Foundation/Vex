@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Close every open prediction position for the wallet in one call — each position gets its own independent sell-or-claim (whichever applies) and its own broadcast result; a failure on one position never blocks or rolls back the others. Zero open positions is reported as an explicit success with zero rows, never an error. Every result is truthful-pending — this never confirms any position in this call. Use solana.predict.sell/.claim instead to close just ONE position.",
+      "description": "Close EVERY open Jupiter prediction position for the wallet in one call. SPENDS REAL FUNDS: each position gets its own independent sell or claim, whichever applies, and its own signed broadcast; a failure on one never blocks or rolls back the others, so this is not an atomic batch. Use this when the user wants out of everything at once - solana__predict_sell and solana__predict_claim close ONE named position. minSellPriceSlippageBps applies to EVERY sell in the batch, so pick a tolerance you accept across all of them; it is required (the provider has no default), capped at 1000 bps, and a higher value is REJECTED rather than clamped. Returns one TRUTHFUL-PENDING row per position - its signature, explorer link and pending status - and never a confirmation for any of them. Zero open positions answers with an explicit success carrying zero rows, never an error.",
       "name": "solana__predict_close_all",
       "parameters": {
         "additionalProperties": false,

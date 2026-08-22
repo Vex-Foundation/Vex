@@ -157,6 +157,6 @@ export async function trenchTradeQuoteHandler(
       },
     });
   } catch (err) {
-    return fail(`trench.trade_quote failed (${trenchFailureDetail("trench.trade_quote", err)})`);
+    return fail(`trench__trade_quote failed (${trenchFailureDetail("trench__trade_quote", err)})`);
   }
 }

@@ -75,7 +75,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     const resolved = await resolveExitMarketByPt(chainId, ptAddress);
     const market = resolved?.market ?? null;
     if (!market || !market.yt || !market.underlyingAsset) {
-      const reason = "No Pendle market for this PT — cannot resolve YT/underlying for redeem. Check pendle.market.get, which reads matured markets too.";
+      const reason = "No Pendle market for this PT - cannot resolve YT/underlying for redeem. Check pendle__market_get, which reads matured markets too.";
       await recordPendleRefusal(
         {
           toolId, eventRole: "yield_pt", chainId, chainSlug,
@@ -197,7 +197,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
       // arrives; if the market publishes no SY we have no honest asset to name,
       // so the redeem is refused rather than booked against the wrong token.
       if (!market.sy) {
-        return fail("Pendle did not report this market's SY, so a direct redeem could not be recorded honestly. Retry, or use pendle.market.get to confirm the market.");
+        return fail("Pendle did not report this market's SY, so a direct redeem could not be recorded honestly. Retry, or use pendle__market_get to confirm the market.");
       }
       deliveredAsset = getAddress(market.sy);
       deliveredPath = "router_fallback_redeemPyToSy";
@@ -239,7 +239,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     }
 
     const deliveredNote = usedFallback
-      ? "Redeemed via the Router fallback, which pays SY — NOT the market's underlying. The amount is the SY credit decoded from the receipt. To finish the exit, unwrap that SY with pendle.sy.redeem, passing this deliveredAsset as its `sy`."
+      ? "Redeemed via the Router fallback, which pays SY - NOT the market's underlying. The amount is the SY credit decoded from the receipt. To finish the exit, unwrap that SY with pendle__sy_redeem, passing this deliveredAsset as its `sy`."
       : null;
 
     logger.info("pendle.pt.redeem.executed", { pt: ptAddress, fallback: usedFallback });
@@ -265,6 +265,6 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     };
   } catch (err) {
     if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.pt.redeem", txHash, err);
-    return fail(`Pendle redeem failed (${failureDetail("pendle.pt.redeem", err)})`);
+    return fail(`Pendle redeem failed (${failureDetail("pendle__pt_redeem", err)})`);
   }
 }

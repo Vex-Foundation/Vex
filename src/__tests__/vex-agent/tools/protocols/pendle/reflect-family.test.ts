@@ -399,7 +399,7 @@ describe("the term-mobility manifests meet the context-free agent bar", () => {
     }
     // lp.toPt acquires the SAME market's PT, so it is destination-shaped end to end.
     expect(manifestFor("pendle.lp.toPt").description).toMatch(/MUST BE ACTIVE/);
-    expect(manifestFor("pendle.lp.toPt").description).toMatch(/pendle\.lp\.remove/);
+    expect(manifestFor("pendle.lp.toPt").description).toMatch(/pendle__lp_remove/);
   });
 
   it("lp.toPt says it is same-market only and that a foreign PT is refused", () => {

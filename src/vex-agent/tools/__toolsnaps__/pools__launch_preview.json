@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "imageId": {
-            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench.images (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools.launch_execute REQUIRES it.",
+            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
             "type": "string"
           },
           "name": {

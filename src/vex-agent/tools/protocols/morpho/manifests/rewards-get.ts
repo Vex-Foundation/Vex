@@ -19,7 +19,7 @@ export const MORPHO_REWARDS_GET_TOOL: ProtocolToolManifest = {
     "Read the reward tokens ONE wallet can claim on top of its Morpho lending rate, and what is still accruing. "
     + "Morpho's incentive campaigns settle through Merkl (Morpho's own distributor is deprecated), so that is the "
     + "source. Use this when the user asks about unclaimed rewards, incentive tokens, or what they have earned "
-    + "beyond the rate; use morpho.positions.get for the lending position itself and morpho.vault.get for the "
+    + "beyond the rate; use morpho__positions_get for the lending position itself and morpho__vault_get for the "
     + "campaign's vault. ONE WALLET PER CALL, by design, because a reward read maps an account to its holdings. "
     + "THREE NUMBERS, ONLY ONE OF WHICH IS CLAIMABLE. `claimable` is the lifetime accrued amount MINUS what has "
     + "already been claimed on-chain, and it is the only figure a claim would deliver now. `pending` is accrual "
@@ -46,7 +46,7 @@ export const MORPHO_REWARDS_GET_TOOL: ProtocolToolManifest = {
     + "are frequently thin, so treat every dollar figure as an estimate. A reward token is a SEPARATE asset whose "
     + "price moves independently of whatever was supplied to earn it, so an unclaimed reward is not guaranteed "
     + "income: it can lose its value before it is claimed and a campaign can end. TO ACTUALLY CLAIM, use "
-    + "morpho.rewards.claim, which sweeps one chain's claimable rows in a single transaction and needs no quote. "
+    + "morpho__rewards_claim, which sweeps one chain's claimable rows in a single transaction and needs no quote. "
     + "Read-only - it signs nothing and spends nothing.",
   mutating: false,
   actionKind: "read",

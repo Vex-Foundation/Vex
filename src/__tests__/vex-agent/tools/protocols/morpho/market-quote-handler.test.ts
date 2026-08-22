@@ -21,6 +21,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { MORPHO_TOOLS } from "@vex-agent/tools/protocols/morpho/manifest.js";
+import {
+  MORPHO_MARKET_DIRECTIONS,
+  morphoAmountKey,
+  morphoEngineOperation,
+  type MorphoMarketDirection,
+} from "@vex-agent/tools/protocols/morpho/read-params.js";
 import { definedValue, mutableRecord } from "../../../../_test-value-guards.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -78,6 +85,26 @@ function payload(result: ToolResult): Record<string, unknown> {
 function section(data: Record<string, unknown>, key: string): Record<string, unknown> {
   return mutableRecord(data[key], key);
 }
+
+/**
+ * The expected name, read from the SAME manifest the handler projects, so this
+ * asserts the projection rather than restating a hand-typed string beside it.
+ */
+function publicNameOf(toolId: string): string {
+  const tool = MORPHO_TOOLS.find((entry) => entry.toolId === toolId);
+  expect(tool, `${toolId} is not shipped by the Morpho manifest`).toBeDefined();
+  return definedValue(tool, toolId).publicName;
+}
+
+/** Which of the market's two tokens each direction's amount is denominated in. */
+const AMOUNT_RAW_FOR: Readonly<Record<MorphoMarketDirection, string>> = {
+  supplyCollateral: COLLATERAL_AMOUNT_RAW,
+  withdrawCollateral: COLLATERAL_AMOUNT_RAW,
+  borrow: LOAN_AMOUNT_RAW,
+  repay: LOAN_AMOUNT_RAW,
+  supply: LOAN_AMOUNT_RAW,
+  withdraw: LOAN_AMOUNT_RAW,
+};
 
 function borrowQuote(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { marketId: MARKET_ID, chain: "base", direction: "borrow", borrowAmountRaw: LOAN_AMOUNT_RAW, ...overrides };
@@ -270,8 +297,8 @@ describe("morpho.market.quote is honest about what it committed and what it auth
   it("names the SINGLE execute this direction authorizes, and refuses to imply it authorizes another", async () => {
     const nextStep = String(payload(await morphoMarketQuote(borrowQuote(), context()))["nextStep"]);
 
-    expect(nextStep).toContain("morpho.market.borrow");
-    expect(nextStep).not.toContain("morpho.market.supplyCollateral");
+    expect(nextStep).toContain("morpho__market_borrow");
+    expect(nextStep).not.toContain("morpho__market_supply_collateral");
     expect(nextStep).toContain("does not authorize it");
     expect(nextStep).toContain("spends real funds");
   });
@@ -286,9 +313,37 @@ describe("morpho.market.quote is honest about what it committed and what it auth
       supplyCollateralAmountRaw: COLLATERAL_AMOUNT_RAW,
     }, context()))["nextStep"]);
 
-    expect(nextStep).toContain("morpho.market.supplyCollateral");
-    expect(nextStep).not.toContain("morpho.market.borrow");
+    expect(nextStep).toContain("morpho__market_supply_collateral");
+    expect(nextStep).not.toContain("morpho__market_borrow");
   });
+
+  // A TABLE over all six directions, in the discipline
+  // `swap-prequote/morpho-market-gate.test.ts` states: the map this renders from
+  // is a lookup keyed by the direction union, so only a row per member proves it
+  // complete. Two rows were missing and a `supply` or `withdraw` quote rendered
+  // "This quote AUTHORIZES undefined" into the transcript the model rereads
+  // every turn.
+  //
+  // EXACT equality on the token after "AUTHORIZES ", never `toContain`:
+  // `morpho__market_supply` is a prefix of `morpho__market_supply_collateral`,
+  // so containment would pass the very confusion the six names exist to prevent.
+  it.each(MORPHO_MARKET_DIRECTIONS)(
+    "names the callable publicName of the %s execute, and never renders undefined",
+    async (direction) => {
+      preview.mockResolvedValue(marketPreview(morphoEngineOperation(direction)));
+
+      const nextStep = String(payload(await morphoMarketQuote({
+        marketId: MARKET_ID,
+        chain: "base",
+        direction,
+        [morphoAmountKey(direction)]: AMOUNT_RAW_FOR[direction],
+      }, context()))["nextStep"]);
+
+      const authorized = /AUTHORIZES (\S+)/.exec(nextStep)?.[1];
+      expect(authorized).toBe(publicNameOf(`morpho.market.${direction}`));
+      expect(nextStep).not.toContain("undefined");
+    },
+  );
 
   it("echoes every parameter it acted on, including the tolerance it defaulted", async () => {
     const data = payload(await morphoMarketQuote(borrowQuote({ walletAddress: WALLET_MIXED }), context()));

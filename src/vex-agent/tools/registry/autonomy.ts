@@ -59,7 +59,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
       "",
       "TOKEN_PRICE LATENCY, HONESTLY. The price source's own edge cache is about 30 seconds old, the poll runs about every 3 seconds, and the wake executor ticks about every 2 seconds. Worst case you learn about a cross about 35 seconds after it happened, and the price will have moved again by then. This is a heads-up mechanism, not a stop-loss and not an execution guarantee. Never promise the user tighter timing than that, and re-read the price when you wake before you trade on it.",
       "",
-      "WHAT YOU GET BACK. { defer_id, due_at, watch_armed, watch_rejected } and the run parks immediately after this turn - UNLESS a watch condition was already true, in which case you get { deferred: false, watch_satisfied, watch_rejected }, nothing is scheduled, and you keep the turn.",
+      "WHAT THIS RETURNS. One sentence, not a JSON object: \"Loop deferred until <time> (defer_id=<id>).\", with a note appended naming any watch condition that could not be armed. The run parks immediately after this turn. If a watch condition was ALREADY TRUE you get \"Not deferred - <condition> Act on it now.\" instead, nothing is scheduled, and you keep the turn. The defer id is inside that sentence and is the only handle you get; there are no result fields to read off this call.",
       "",
       "WHAT HAPPENS ON WAKE. Real time has passed and you did not observe it. Your conversation, plan and memory are exactly as you left them; you get a wake banner carrying your own reason and the scheduled time, and a fresh turn with your iteration counters reset. Nothing was checked for you while you slept — re-read live state before acting on anything you knew before the defer.",
       "",

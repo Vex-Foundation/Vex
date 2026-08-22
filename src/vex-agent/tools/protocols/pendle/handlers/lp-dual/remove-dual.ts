@@ -84,12 +84,12 @@ export async function executePendleLpRemoveDual(
     // past expiry — the resolver refuses anything else by name.
     const resolved = await resolveExitMarketByAddress(chainId, marketAddress);
     if (!resolved || !resolved.market.address) {
-      return refuse("route_not_found", "No Pendle market at this address — check pendle.yields (includeMatured:true covers expired markets).");
+      return refuse("route_not_found", "No Pendle market at this address - check pendle__markets_discover (includeMatured:true covers expired markets).");
     }
     const market = resolved.market;
     const marketAddr = getAddress(market.address);
     if (!market.pt) {
-      return refuse("route_not_found", "This Pendle market reports no PT, so a dual remove has no second output leg — use pendle.lp.remove.");
+      return refuse("route_not_found", "This Pendle market reports no PT, so a dual remove has no second output leg - use pendle__lp_remove.");
     }
     const ptAddress = getAddress(market.pt);
     const outRaw = str(p, "tokenOut");
@@ -155,7 +155,7 @@ export async function executePendleLpRemoveDual(
       return refuse("route_not_found", "Pendle returned no dual remove-liquidity route for this market.");
     }
     if (response.action !== "remove-liquidity-dual") {
-      return refuse("route_not_found", "Pendle did not return a dual remove-liquidity route — for a single-token exit use pendle.lp.remove.");
+      return refuse("route_not_found", "Pendle did not return a dual remove-liquidity route - for a single-token exit use pendle__lp_remove.");
     }
 
     const intent: PendleTxIntent = {

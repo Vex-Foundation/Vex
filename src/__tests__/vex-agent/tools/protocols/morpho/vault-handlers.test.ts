@@ -346,7 +346,7 @@ describe("morpho.vault.get", () => {
     expect(result.success).toBe(false);
     // The real cause, classified, with the remediation appended - not a generic
     // label and not a schema-refusal message.
-    expect(result.output).toContain("morpho.vault.get failed [MORPHO_VAULT_NOT_FOUND/not_found");
+    expect(result.output).toContain("morpho__vault_get failed [MORPHO_VAULT_NOT_FOUND/not_found");
     expect(result.output).toMatch(/checked both the V2 and the V1 vault registries/);
   });
 

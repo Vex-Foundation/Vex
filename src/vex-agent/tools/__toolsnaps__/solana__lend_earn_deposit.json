@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Deposit tokens into a Jupiter Lend EARN vault to start earning yield — simple lending, not collateral for borrowing (for that, use solana.lend.borrowOperate's depositAmountRaw instead). Broadcasts and returns truthful-pending: confirmation is tracked automatically, do not resubmit. Read solana.lend.rates first for the vault's assetDecimals to convert a human amount into amountRaw's raw atomic units.",
+      "description": "Deposit tokens into a Jupiter Lend EARN vault to start earning yield - simple lending, which supplies an asset and backs no loan. SPENDS REAL FUNDS: it signs and broadcasts an irreversible on-chain deposit with the session's Solana wallet and is approval-gated. Use this when the user wants to put an idle Solana balance to work; solana__lend_borrow_operate's depositAmountRaw is the different thing, collateral for a loan. Read solana__lend_earn_rates_list BEFORE calling, for the market's assetDecimals, because amountRaw is RAW atomic units and a human figure sent here moves the wrong amount. Returns TRUTHFUL-PENDING and never a confirmation: on a successful broadcast the reply carries the transaction signature and an explorer link, names the asset and amount, and says confirmation is tracked automatically and must not be resubmitted. A provider refusal before broadcast is reported with its own named cause and states that nothing went on-chain.",
       "name": "solana__lend_earn_deposit",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount to deposit, in RAW atomic units of the asset as an integer string, never human decimals (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\") — read the asset's decimals from solana.lend.rates' assetDecimals, or from TokenFind, before building it.",
+            "description": "Amount to deposit, in RAW atomic units of the asset as an integer string, never human decimals (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\") - read the asset's decimals from solana__lend_earn_rates_list's assetDecimals, or from TokenFind, before building it.",
             "type": "string"
           },
           "asset": {

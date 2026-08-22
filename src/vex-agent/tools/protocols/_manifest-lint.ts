@@ -59,9 +59,12 @@ export {
   isLinterOwnSource,
   lintGenericErrorLiterals,
   lintSlippageDefaultHome,
+  lintStaleOutputCapClaims,
   SLIPPAGE_DEFAULT_OWNER,
 } from "./_manifest-lint/source-rules.js";
 export type { SourceFile } from "./_manifest-lint/source-rules.js";
+export { lintDottedToolIdReferences } from "./_manifest-lint/dotted-toolid-rules.js";
+export type { DottedReferenceSubject } from "./_manifest-lint/dotted-toolid-rules.js";
 
 /** A tool surface reduced to what the convention rules actually read. */
 export interface LintSubject {

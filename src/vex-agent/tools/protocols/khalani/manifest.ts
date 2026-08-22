@@ -44,7 +44,16 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__chains_list",
     namespace: "khalani",
     lifecycle: "active",
-    description: "List all Khalani-supported chains with metadata (live registry, EVM + Solana).",
+    description:
+      "List every chain Khalani can bridge to or from, EVM and Solana alike, read from the live provider registry. "
+      + "Use this before quoting or executing a bridge when it is not certain a chain is covered, or when the user "
+      + "asks which networks can be bridged. The set is DYNAMIC and Vex states no count for it, so read it here "
+      + "rather than assuming one. RETURNS `chains`, the number of rows, and `data`, one concise row per chain: "
+      + "`id` (the chain id every other khalani param accepts), `name`, `type` (the chain family, eip155 or solana), "
+      + "`nativeSymbol` and `nativeDecimals`, each null when the registry carried no native currency. RPC and "
+      + "explorer URLs are deliberately not returned. Robinhood Chain (4663) is NOT in this registry; "
+      + "`BridgeQuoteRelay` and `BridgeExecuteRelay` are the only route that reaches it. The list is complete and "
+      + "there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -58,7 +67,15 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__tokens_top_list",
     namespace: "khalani",
     lifecycle: "active",
-    description: "List top Khalani tokens, optionally filtered by chain IDs.",
+    description:
+      "List the most commonly bridged tokens across the chains Khalani supports, optionally narrowed to given chain "
+      + "ids. Use this when the user wants to browse what is worth moving cross-chain, or asks which major assets a "
+      + "chain carries, before they have named a specific token. It is a POPULARITY list, not a resolver: when the "
+      + "user already named a ticker or address, use TokenFind (or `khalani__tokens_search`) instead, because this "
+      + "tool can legitimately not carry a token that exists. RETURNS `count` and `tokens`, one concise row each: "
+      + "`symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when the "
+      + "provider carried them. Logos and the provider's open extensions bag are dropped. Answers with the "
+      + "provider's own list in one reply; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -72,7 +89,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__tokens_search",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds).",
+    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds). RETURNS `count` and `tokens`, one concise row per match: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when the provider carried them. A ticker can match SEVERAL contracts across chains, so pick the row whose `chainId` is the chain you are about to act on rather than the first row. The provider answers with its own match set in one reply; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -87,7 +104,17 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__tokens_autocomplete",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Semantic token autocomplete — understands '100 usdc on ethereum'.",
+    description:
+      "Parse a partial natural-language token phrase such as '100 usdc on ethereum' into structured token, amount "
+      + "and chain suggestions. Use this when the user typed an incomplete bridge or swap intent and you need to "
+      + "know which slot to ask for next, or to offer completions; when the user has already named a token "
+      + "unambiguously, resolve it with TokenFind instead of guessing from suggestions here. RETURNS `data`, one "
+      + "row per suggestion carrying `description`, `chain` (`id`, `name`, `type`, `nativeSymbol`, "
+      + "`nativeDecimals`), `token` (`symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` "
+      + "and `isRiskToken` when carried), `amount` and `usdAmount`; plus `parsed`, what the provider understood "
+      + "from the phrase, and `nextSlots`, which field it expects next. These are SUGGESTIONS, not a resolution: "
+      + "confirm the address before it reaches a bridge or a swap. `limit` bounds the reply at the provider "
+      + "maximum of 20; there is no pagination beyond it.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -103,7 +130,18 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__token_balances_get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `walletAddress` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `WalletBalances` tool.",
+    description:
+      "Scan one wallet's token balances across the Khalani-supported chains of ONE wallet family (eip155 or "
+      + "solana), with USD prices. Use this when the user asks what they hold across chains, or when you need to "
+      + "find a funded source asset before quoting a bridge or a swap. Defaults to the session's own wallet; pass "
+      + "`walletAddress` to read a different one, which under a session-scoped wallet must equal the selected "
+      + "wallet or the call fails with WALLET_SCOPE_MISMATCH. One call covers ONE family, so an EVM and a Solana "
+      + "answer are two calls. It does NOT cover app-local chains such as Robinhood Chain (4663); read those with "
+      + "`WalletBalances`. RETURNS `address`, `wallet` (the family scanned), `count`, `totalUsd`, "
+      + "`scannedChainIds`, `chainErrors` (the chains whose scan failed, so a missing token is distinguishable "
+      + "from an unscanned chain), and `tokens`, one concise row each: `symbol`, `name`, `address`, `chainId`, "
+      + "`decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried. Balances are RAW base units; read "
+      + "them with the row's own `decimals`. Every matching row is returned; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -119,7 +157,26 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__bridge_quote_get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Get cross-chain bridge quote with routes, pricing, ETA, and each route's DEADLINE (expiresAtUnixSeconds plus expiresInSeconds remaining). khalani.bridge hard-fails with deadline_expired past that deadline, so check the remaining window before acting and re-quote if it has run out. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
+    description:
+      "Price a cross-chain transfer on Khalani without signing anything: the routes available for this pair, what "
+      + "would arrive, how long it would take, and each route's DEADLINE. Use this before every bridge, and "
+      + "whenever the user asks what they would receive, how long a transfer takes, or which route is best. "
+      + "Khalani is the PRIMARY bridge; `BridgeQuoteRelay` is the alternative when Khalani has no route, and it is "
+      + "the ONLY route that reaches Robinhood Chain (4663), which Khalani does not carry. Resolve `fromToken` and "
+      + "`toToken` to addresses with TokenFind first, and pass `amountRaw` in the source token's RAW atomic units. "
+      + "Vex takes 25 bps (0.25%) of the input token, quoted INSIDE the amounts below so the output shown is what "
+      + "actually arrives. `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters here and are rejected by "
+      + "name: the refund destination is derived from the source wallet and Vex never takes a fee from a "
+      + "caller-supplied address. RETURNS `quoteId`, `routeCount`, `routes` and `vexFee`, plus an `expiryNote`. "
+      + "Each route carries `routeId`, `type`, `amountIn` and `amountOut` (RAW atomic units), `etaSeconds`, "
+      + "`expiresAtUnixSeconds` with `expiresInSeconds` remaining, `validBeforeUnixSeconds`, "
+      + "`quoteExpiresAtUnixSeconds`, `estimatedGas` and `tags`. `vexFee` states `charged`, `bps`, the fee amount "
+      + "raw and decimal, its USD estimate, the receiver, and `bridgedAmountRaw` versus `totalDebitedRaw`; when no "
+      + "fee applies it says so with a `reason`. Treat `expiresInSeconds` as the window you have to act in, not a "
+      + "guarantee the same route survives it: `khalani__bridge_execute` re-quotes and hard-fails with "
+      + "deadline_expired once the deadline passes, so re-quote instead of retrying. A no-route answer is a "
+      + "FAILURE that names the Relay alternative, not an empty list. All routes come back in one reply; there is "
+      + "no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -156,7 +213,16 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__orders_list",
     namespace: "khalani",
     lifecycle: "active",
-    description: "List Khalani bridge orders for an address with pagination and filters.",
+    description:
+      "List a wallet's Khalani bridge orders, newest page first, filterable by source chain, destination chain, "
+      + "order ids or transaction hash. Use this when the user asks about their bridge history, wants to see which "
+      + "transfers are still in flight, or is looking for a bridge they only remember by transaction hash; for the "
+      + "full lifecycle of ONE order, including Vex's own record of it, call `khalani__order_get` with the id. "
+      + "Defaults to the session's own wallet, and under a session-scoped wallet `walletAddress` must equal the "
+      + "selected wallet. RETURNS `count`, `cursor` and `orders`, the provider's own order rows carried through "
+      + "unprojected. PAGE WITH `cursor`: pass back the `cursor` the previous reply returned rather than computing "
+      + "one, and `limit` is capped at the provider maximum of 20, with anything outside 1-20 rejected before the "
+      + "call.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -177,7 +243,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__order_get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Get a single Khalani bridge order by ID with full lifecycle details, MERGED with Vex's own record of it: `order` is the provider's view, `vex` carries the execution id, Vex's logical status, every Vex leg (deposit, fee, expected fill) and the Vex fee collection outcome, and `vexNote` says why there is no Vex record when there is none. The two views can legitimately disagree — Khalani may report a fill before Vex has verified it on-chain — so read `vex.note` before concluding anything about the funds.",
+    description: "Get a single Khalani bridge order by ID with full lifecycle details, MERGED with Vex's own record of it: `order` is the provider's view, `vex` carries the execution id, Vex's logical status, every Vex leg (deposit, fee, expected fill) and the Vex fee collection outcome, and `vexNote` says why there is no Vex record when there is none. The two views can legitimately disagree, because Khalani may report a fill before Vex has verified it on-chain, so read `vex.note` before concluding anything about the funds. RETURNS `order` (the provider's own order record), `vex` (`_executionId`, `vexStatus`, `lastRecordedProviderStatus`, `legs` each with `role`, `status`, `chainSlug`, `txHash` and `failureReason`, `vexFeeCollection`, and `note`), `vexNote` when there is no Vex record to correlate, and `_executionId` mirrored at the top level. `vex` is null when Vex has no record of this order, which is normal for a bridge Vex did not itself execute. One order per call; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -191,7 +257,32 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__bridge_execute",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Execute a cross-chain bridge: quote → build deposit → sign → broadcast → submit. Requires wallet access. Resolve fromToken/toToken addresses via khalani.tokens.search first. This BROADCASTS the origin-chain deposit and returns while the destination fill is still IN PROGRESS — a returned bridge is NOT yet confirmed. Vex tracks it and finalizes the record when the fill is verified; do not resubmit or call this again for the same transfer. Check progress with BridgeStatus (or khalani.orders.get) using the returned order id.",
+    description:
+      "Move tokens between chains FOR REAL: signs and broadcasts the origin-chain deposit with the session's "
+      + "wallet and submits it to Khalani. SPENDS REAL FUNDS AND IS IRREVERSIBLE. Use this once the user has agreed "
+      + "to a transfer you already quoted; Khalani is the PRIMARY bridge, and `BridgeExecuteRelay` is the "
+      + "alternative when Khalani has no route and the ONLY route that reaches Robinhood Chain (4663). "
+      + "CALL IT WITH `dryRun: true` FIRST: that branch quotes and signs nothing, and it is the only branch that "
+      + "returns success. APPROVAL: in a RESTRICTED session the real call does not execute, it returns pending "
+      + "approval for a human to see first; in a FULL-permission session it executes directly. PRECONDITIONS, each "
+      + "refused BY NAME: a fresh matching quote must already exist; a route whose deadline has passed fails with "
+      + "deadline_expired and must be re-quoted, never retried; a bridge already in flight on the same route "
+      + "refuses rather than starting a second; and `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters "
+      + "and are rejected, because the refund destination is derived from the source wallet and Vex never takes a "
+      + "fee from a caller-supplied address. UNITS: `amountRaw` is RAW atomic units of `fromToken`; resolve the "
+      + "decimals with TokenFind. Vex takes 25 bps (0.25%) of the input token as a SEPARATE transfer that runs "
+      + "after the deposit, so a bridge that never happens is never charged. The `dryRun` preview RETURNS "
+      + "`dryRun`, `quoteId`, `route`, `fromChain`, `toChain`, `vexFee` and `nativeCost`. A real run RETURNS "
+      + "`summary`, `status`, `message`, `fromChain`, `toChain`, `route`, `etaSeconds`, `amountIn` and `amountOut` "
+      + "(each with `token`, `tokenAddress`, `amountHuman`, `amountRaw`, `usdEstimate`), `usdNote`, `vexFee` with "
+      + "its `collection` outcome, `nativeCost`, `legs`, `orderId`, `depositTxHash` and `_executionId`. "
+      + "A REAL RUN NEVER REPORTS SUCCESS, and that is not a failure: the deposit broadcasts while the destination "
+      + "fill is still in progress, so read `status`. `pending` and `filled_unverified` both mean the deposit went "
+      + "through and delivery is not yet independently verified; `failed` and `refunded` mean Khalani says the "
+      + "destination amount did NOT arrive and money coming back is not a successful bridge; `reverted`, "
+      + "`not_attempted` and `broadcast_unconfirmed` describe the deposit leg itself. In EVERY one of those states "
+      + "the attempt is already recorded and reconciled automatically, so DO NOT re-bridge or call this again for "
+      + "the same transfer. Follow it with `BridgeStatus` or `khalani__order_get` on the returned `orderId`.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

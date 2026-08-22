@@ -46,13 +46,13 @@ export interface PendleRefusalContext {
  * reporting absence.
  */
 const MATURED_NEXT_STEP: Record<PendleActiveOnlyAction, string> = {
-  "pt.buy": "Buying a matured PT is impossible — there is no yield left to buy. If you already hold this PT, redeem it with pendle.pt.redeem.",
-  "pt.sell": "Selling into the AMM is impossible after expiry, but you have not lost the position: redeem the PT for its underlying with pendle.pt.redeem.",
+  "pt.buy": "Buying a matured PT is impossible - there is no yield left to buy. If you already hold this PT, redeem it with pendle__pt_redeem.",
+  "pt.sell": "Selling into the AMM is impossible after expiry, but you have not lost the position: redeem the PT for its underlying with pendle__pt_redeem.",
   "yt.buy": "Buying YT after expiry is impossible — a matured YT accrues nothing and is worth zero.",
-  "yt.sell": "A matured YT has already decayed to zero and there is no market to sell it into. Any remaining value in this market sits in the PT (pendle.pt.redeem) or the LP (pendle.lp.remove).",
-  "py.mint": "Minting PT+YT after expiry is impossible. To exit an existing position use pendle.pt.redeem.",
-  "py.redeem": "The PT+YT pair redemption is a PRE-EXPIRY action. After maturity the YT is worthless and the PT redeems on its own — use pendle.pt.redeem.",
-  "lp.add": "Adding liquidity after expiry is impossible. To exit an existing LP position use pendle.lp.remove, which does work after expiry.",
+  "yt.sell": "A matured YT has already decayed to zero and there is no market to sell it into. Any remaining value in this market sits in the PT (pendle__pt_redeem) or the LP (pendle__lp_remove).",
+  "py.mint": "Minting PT+YT after expiry is impossible. To exit an existing position use pendle__pt_redeem.",
+  "py.redeem": "The PT+YT pair redemption is a PRE-EXPIRY action. After maturity the YT is worthless and the PT redeems on its own - use pendle__pt_redeem.",
+  "lp.add": "Adding liquidity after expiry is impossible. To exit an existing LP position use pendle__lp_remove, which does work after expiry.",
 };
 
 /**
@@ -74,26 +74,26 @@ export async function explainUnresolvedPendleMarket(
   } catch {
     // The classifier is a courtesy, not a dependency. If it cannot answer, say
     // only what the active-only lookup already established.
-    return `No ACTIVE Pendle market on ${chainSlug} has ${context.leg} ${address}, and Vex could not check whether a matured one does. Try pendle.market.get, which reads the full catalogue including matured markets.`;
+    return `No ACTIVE Pendle market on ${chainSlug} has ${context.leg} ${address}, and Vex could not check whether a matured one does. Try pendle__market_get, which reads the full catalogue including matured markets.`;
   }
 
   if (lookup.status === "found" && lookup.matured) {
     const expiry = lookup.market.expiry ?? "an unreported date";
     return (
       `This Pendle market matured on ${expiry.slice(0, 10)} — ${MATURED_NEXT_STEP[context.action]} `
-      + "Its market data is still readable with pendle.market.get and pendle.position.value."
+      + "Its market data is still readable with pendle__market_get and pendle__positions_get."
     );
   }
 
   if (lookup.status === "found") {
     // Present, ACTIVE, yet the money-path resolver missed it — so maturity is
     // NOT the cause and must not be claimed as one.
-    return `${context.leg} ${address} belongs to a Pendle market on ${chainSlug} that is still active, but it is not usable for ${context.action} on this chain. Check the leg you passed: pendle.market.get reports the market's PT, YT and LP addresses.`;
+    return `${context.leg} ${address} belongs to a Pendle market on ${chainSlug} that is still active, but it is not usable for ${context.action} on this chain. Check the leg you passed: pendle__market_get reports the market's PT, YT and LP addresses.`;
   }
 
   if (lookup.status === "not_found") {
-    return `No Pendle market on ${chainSlug} has ${context.leg} ${address} — the full catalogue was read, including matured markets. Check the chain first: the same address on another chain is a different asset. pendle.yields lists what does exist.`;
+    return `No Pendle market on ${chainSlug} has ${context.leg} ${address} - the full catalogue was read, including matured markets. Check the chain first: the same address on another chain is a different asset. pendle__markets_discover lists what does exist.`;
   }
 
-  return `Vex could not prove whether ${chainSlug} has a market with ${context.leg} ${address}: the catalogue walk hit its page budget before finishing, so absence is NOT established. Retry, or narrow the search with pendle.yields before concluding the market does not exist.`;
+  return `Vex could not prove whether ${chainSlug} has a market with ${context.leg} ${address}: the catalogue walk hit its page budget before finishing, so absence is NOT established. Retry, or narrow the search with pendle__markets_discover before concluding the market does not exist.`;
 }

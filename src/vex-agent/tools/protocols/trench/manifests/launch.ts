@@ -33,7 +33,7 @@ const LAUNCH_FIELD_PARAMS = [
     type: "string" as const,
     required: true,
     description:
-      "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench.images). "
+      "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench__images_list). "
       + "A token's image is written on-chain at creation and can never be added later, so a launch without one is refused.",
   },
   {
@@ -66,7 +66,9 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "create anything; the user reviews the exact cost and clicks Deploy. Your turn PARKS while the form is open and "
       + "the runtime resumes it with the outcome when the user deploys, dismisses the form, or it expires — so do not "
       + "call it again while the form is open, and never assume the launch happened without that resumed outcome. Use "
-      + "this whenever a human should decide the launch. If it is ever invoked outside a tool call there is nothing to "
+      + "this whenever a human should decide the launch. It returns the parked request itself - its intentId, a status of "
+      + "awaiting_user_form, when it expires, and the chain - and then the runtime answers this same call with the human's "
+      + "real outcome. If it is ever invoked outside a tool call there is nothing to "
       + "resume, and it refuses instead of parking: report that and stop, never improvise a launch by another route.",
     // FALSE, deliberately: preparing a form is not a mutation. It writes a draft
     // intent row and parks the turn; nothing on-chain happens.
@@ -93,14 +95,24 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's creation fee (read on-chain at "
       + "signing time) and, if you set a prebuy, buys that much of the new token on its curve in the same transaction. "
       + "Vex also charges 25 bps of that whole ETH amount (creation fee + prebuy) as a SEPARATE transfer that runs only "
-      + "after the launch confirms — price a launch with trench.launch_preview, which shows it and the fee-inclusive total. "
+      + "after the launch confirms - price a launch with trench__launch_preview, which shows it and the fee-inclusive total. "
       + "An image is REQUIRED and must already be in the locker. It runs ONLY under explicit authority, and which one "
       + "depends on where you are: in a FULL-permission chat session the user's permission is the authority and this "
-      + "executes directly; in a RESTRICTED session it refuses BY NAME and you must call trench.launch_request_form "
+      + "executes directly; in a RESTRICTED session it refuses BY NAME and you must call trench__launch_request_form "
       + "instead — that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION "
       + "run the authority is the contract's HOST-authored launch ceilings (max launch value, max launch count), which "
       + "you cannot write, and while a contract carries none this tool REFUSES BY NAME — report that refusal and tell "
-      + "the user to set them on the contract card rather than launching some other way.",
+      + "the user to set them on the contract card rather than launching some other way. It also REFUSES BY NAME before "
+      + "anything is signed when the image store is unavailable, the imageId is unknown or too large for the on-chain "
+      + "budget, the creation fee cannot be read, a mission ceiling on launch value or launch count would be exceeded, "
+      + "gas cannot be estimated, or the wallet's balance is short or unreadable; and the whole authorization is "
+      + "re-derived and compared field by field immediately before signing, so any drift refuses rather than launching. "
+      + "Returns a status of confirmed, reverted, pending, or confirmed_pending_identity. A confirmed launch names the "
+      + "new tokenAddress, the transaction hash, msgValueWei with its creationFeeWei and prebuyWei legs as raw amounts, "
+      + "the tokens the prebuy actually bought, the Vex fee's own outcome, and that the token is on its bonding curve. "
+      + "`reverted` means no token was created and no Vex fee was charged. `pending` means the outcome is UNKNOWN and "
+      + "already recorded, and `confirmed_pending_identity` means it settled but the token could not be PROVEN from the "
+      + "receipt - in both of those the address is never guessed and you must NOT launch again.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: LAUNCH_FIELD_PARAMS,

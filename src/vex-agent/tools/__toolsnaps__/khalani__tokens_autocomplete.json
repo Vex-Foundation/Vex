@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Semantic token autocomplete — understands '100 usdc on ethereum'.",
+      "description": "Parse a partial natural-language token phrase such as '100 usdc on ethereum' into structured token, amount and chain suggestions. Use this when the user typed an incomplete bridge or swap intent and you need to know which slot to ask for next, or to offer completions; when the user has already named a token unambiguously, resolve it with TokenFind instead of guessing from suggestions here. RETURNS `data`, one row per suggestion carrying `description`, `chain` (`id`, `name`, `type`, `nativeSymbol`, `nativeDecimals`), `token` (`symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried), `amount` and `usdAmount`; plus `parsed`, what the provider understood from the phrase, and `nextSlots`, which field it expects next. These are SUGGESTIONS, not a resolution: confirm the address before it reaches a bridge or a swap. `limit` bounds the reply at the provider maximum of 20; there is no pagination beyond it.",
       "name": "khalani__tokens_autocomplete",
       "parameters": {
         "additionalProperties": false,

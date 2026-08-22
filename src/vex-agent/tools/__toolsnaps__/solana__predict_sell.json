@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Sell (close) an OPEN prediction position before the market resolves, for whatever it's currently worth. Use solana.predict.claim instead once the market has RESOLVED and this position is a winner — claim settles at the resolved price; a sell takes whatever the book offers and Vex applies the provider's own default tolerance — size the position accordingly. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
+      "description": "Close an OPEN Jupiter prediction position before its market resolves, at whatever the book currently offers. SPENDS REAL FUNDS in the sense that it signs and broadcasts an irreversible on-chain close from the session's Solana wallet, and it is approval-gated. Use this while the market is still OPEN; once it has RESOLVED and the position won, solana__predict_claim settles at the resolved price instead, which is the better exit. A sell takes the book's price under the provider's own default tolerance, so size the position accordingly. Returns TRUTHFUL-PENDING and never a confirmation: the reply names the closed position, the transaction signature and an explorer link, says confirmation is tracked automatically and must not be retried, and states that the payout settles in JupUSD (6 decimals), NOT USDC, arriving in a LATER keeper transaction that this broadcast does not deliver - so the position stays pending until settlement is observed. Convert a JupUSD payout with solana__swap_quote then solana__swap_execute once the balance appears. A refusal before broadcast says nothing went on-chain and why.",
       "name": "solana__predict_sell",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "positionPubkey": {
-            "description": "Position public key (from solana.predict.positions).",
+            "description": "Position public key (from solana__predict_positions_list).",
             "type": "string"
           }
         },

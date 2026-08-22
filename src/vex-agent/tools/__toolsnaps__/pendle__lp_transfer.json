@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Move Pendle liquidity from one market's LP straight into another market's LP in ONE transaction — no manual remove-then-add, no intermediate token in your wallet. Needs: the chain, the market you are leaving (fromMarket), the market you are entering (toMarket), and amountIn (the source LP amount) in human-readable units. A Pendle market address IS its LP token, so these are market addresses. The SOURCE market MAY BE MATURED (leaving an expired pool is legal); the DESTINATION market MUST BE ACTIVE — a matured destination is refused by name, with its expiry date. Returns both expiries and, when Pendle reports them, impliedApyBeforePercent / impliedApyAfterPercent as PERCENT STRINGS; amounts come back as raw/decimals/exact triplets. Approval-gated; pins the canonical Pendle Router and holds EVERY internal leg to its own minimum-output floor. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: transfer across chains, keep the YT (no keepYt variant is served), transfer a PT (pendle.pt.rollover), withdraw to a token (pendle.lp.remove), convert LP into PT (pendle.lp.toPt), guarantee an exact output amount, or send the destination LP anywhere but your own wallet.",
+      "description": "Move Pendle liquidity from one market's LP straight into another market's LP in ONE transaction - no manual remove-then-add, no intermediate token in your wallet. Needs: the chain, the market you are leaving (fromMarket), the market you are entering (toMarket), and amountIn (the source LP amount) in human-readable units. A Pendle market address IS its LP token, so these are market addresses. The SOURCE market MAY BE MATURED (leaving an expired pool is legal); the DESTINATION market MUST BE ACTIVE - a matured destination is refused by name, with its expiry date. Returns both expiries and, when Pendle reports them, impliedApyBeforePercent / impliedApyAfterPercent as PERCENT STRINGS; amounts come back as raw/decimals/exact triplets. Approval-gated; pins the canonical Pendle Router and holds EVERY internal leg to its own minimum-output floor. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: transfer across chains, keep the YT (no keepYt variant is served), transfer a PT (pendle__pt_rollover), withdraw to a token (pendle__lp_remove), convert LP into PT (pendle__lp_to_pt), guarantee an exact output amount, or send the destination LP anywhere but your own wallet.",
       "name": "pendle__lp_transfer",
       "parameters": {
         "additionalProperties": false,
@@ -27,7 +27,7 @@
             "type": "number"
           },
           "toMarket": {
-            "description": "The Pendle MARKET ADDRESS to move the liquidity into. Must be ACTIVE — find one with pendle.yields.",
+            "description": "The Pendle MARKET ADDRESS to move the liquidity into. Must be ACTIVE - find one with pendle__markets_discover.",
             "type": "string"
           }
         },

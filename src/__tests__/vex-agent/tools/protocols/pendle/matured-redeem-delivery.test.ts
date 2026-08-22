@@ -297,7 +297,7 @@ describe("the FALLBACK path delivers SY — and no longer pretends otherwise (P1
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
     const note = String(output(res).note);
     expect(note).toMatch(/SY/);
-    expect(note).toMatch(/pendle\.sy\.redeem/);
+    expect(note).toMatch(/pendle__sy_redeem/);
     expect(note).toMatch(/unknown|not.*decoded|receipt/i);
   });
 

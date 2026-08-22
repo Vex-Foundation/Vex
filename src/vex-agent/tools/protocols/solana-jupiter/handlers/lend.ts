@@ -268,7 +268,7 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
     return {
       ok: false,
       result: fail(
-        "solana.lend.withdraw: withdrawAll: false is not a valid instruction. Omit withdrawAll entirely and "
+        "solana__lend_earn_withdraw: withdrawAll: false is not a valid instruction. Omit withdrawAll entirely and "
         + "pass amountRaw (raw atomic units) to withdraw part of the position, or pass withdrawAll: true to exit it fully.",
       ),
     };
@@ -277,7 +277,7 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
     return {
       ok: false,
       result: fail(
-        "solana.lend.withdraw: pass exactly one of amountRaw or withdrawAll: true — both were provided. Drop "
+        "solana__lend_earn_withdraw: pass exactly one of amountRaw or withdrawAll: true - both were provided. Drop "
         + "withdrawAll to withdraw exactly amountRaw, or drop amountRaw to exit the whole position.",
       ),
     };
@@ -287,7 +287,7 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
   return {
     ok: false,
     result: fail(
-      "solana.lend.withdraw: pass exactly one of amountRaw (raw atomic units — see solana.lend.positions for the "
+      "solana__lend_earn_withdraw: pass exactly one of amountRaw (raw atomic units - see solana__lend_earn_positions_list for the "
       + "balance) or withdrawAll: true (exit the whole position). Neither was provided.",
     ),
   };
@@ -331,8 +331,8 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     return {
       ok: false,
       result: fail(
-        `solana.lend.withdraw: this wallet has no Jupiter Lend Earn position in ${asset} — nothing to withdraw. `
-        + "Call solana.lend.positions to see which assets it actually holds in Earn.",
+        `solana__lend_earn_withdraw: this wallet has no Jupiter Lend Earn position in ${asset} - nothing to withdraw. `
+        + "Call solana__lend_earn_positions_list to see which assets it actually holds in Earn.",
       ),
     };
   }
@@ -340,8 +340,8 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     return {
       ok: false,
       result: fail(
-        `solana.lend.withdraw: ${matches.length} Jupiter Lend Earn positions match ${asset} for this wallet — `
-        + "refusing to guess which one to exit. Call solana.lend.positions and withdraw a specific amount instead.",
+        `solana__lend_earn_withdraw: ${matches.length} Jupiter Lend Earn positions match ${asset} for this wallet - `
+        + "refusing to guess which one to exit. Call solana__lend_earn_positions_list and withdraw a specific amount instead.",
       ),
     };
   }
@@ -353,7 +353,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     return {
       ok: false,
       result: fail(
-        `solana.lend.withdraw: internal position-resolution error for ${asset} — retry, and if it persists withdraw a specific amount instead.`,
+        `solana__lend_earn_withdraw: internal position-resolution error for ${asset} - retry, and if it persists withdraw a specific amount instead.`,
       ),
     };
   }
@@ -367,7 +367,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     return {
       ok: false,
       result: fail(
-        `solana.lend.withdraw: Jupiter reported a share balance for the ${asset} Earn position that is not a `
+        `solana__lend_earn_withdraw: Jupiter reported a share balance for the ${asset} Earn position that is not a `
         + "whole number of shares — refusing to redeem a magnitude it cannot prove. Withdraw a specific amount instead.",
       ),
     };
@@ -376,7 +376,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     return {
       ok: false,
       result: fail(
-        `solana.lend.withdraw: the Jupiter Lend Earn position in ${asset} holds 0 shares — nothing to withdraw.`,
+        `solana__lend_earn_withdraw: the Jupiter Lend Earn position in ${asset} holds 0 shares - nothing to withdraw.`,
       ),
     };
   }
@@ -414,7 +414,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     const asset = str(p, "asset"), amount = str(p, "amountRaw");
     if (!asset || !amount) return fail("Missing required: asset, amountRaw");
     const sessionId = ctx.sessionId;
-    if (!sessionId) return fail("solana.lend.deposit requires an active session.");
+    if (!sessionId) return fail("solana__lend_earn_deposit requires an active session.");
     // Resolve owner + signer BEFORE any provider call (5D-protocols p2) so a
     // session scope mismatch fails closed without an on-chain side effect.
     let addr: string, secret: Uint8Array;
@@ -439,7 +439,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     const requested = resolveEarnWithdrawIntent(p);
     if (!requested.ok) return requested.result;
     const sessionId = ctx.sessionId;
-    if (!sessionId) return fail("solana.lend.withdraw requires an active session.");
+    if (!sessionId) return fail("solana__lend_earn_withdraw requires an active session.");
     let addr: string, secret: Uint8Array;
     try {
       addr = walletAddress(p, ctx);

@@ -41,6 +41,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     description: [
       // WHAT
       "Propose a durable, cross-session LESSON for long-term memory — a trading insight, a strategy/risk lesson, a stable user preference, or a project fact or constraint. Write title and summary in English (embedding retrieval is significantly stronger on English).",
+      "Use this when something just learned would change how a LATER session acts: a strategy that worked or failed for a stated reason, a risk rule the user set, a preference they expressed, or a protocol constraint you had to discover the hard way. A fact that only matters for the rest of this conversation does not belong here.",
       // HOW IT WORKS
       "This does NOT write memory directly. It STAGES a candidate; an async manager later reviews it, dedupes it, and decides whether to promote it into long-term memory. You get back a candidateId and status, not a stored memory.",
       // DO NOT (steering — reject policy advertised so you rarely trip it)
@@ -137,6 +138,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     description: [
       // WHAT
       "Semantic recall over LONG-TERM, cross-session memory — durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out.",
+      "Use this when the user refers to something settled earlier that is not in this transcript, before committing to a strategy or a risk size they may already have ruled on, and before repeating an approach an earlier session may already have tried. For what happened earlier in THIS session, use `SessionMemorySearch` instead.",
       // HOW IT WORKS (strategy hidden on purpose)
       "Hides its retrieval strategy: it blends promoted long-term entries (source:'long_memory') with FRESH un-consolidated signals from this and recent sessions (source:'memory_candidate', notConsolidated:true). A confirmed long-term lesson always outranks a fresh candidate at equal relevance; a much stronger fresh match can still surface. Treat notConsolidated results as soft hints, never as established fact.",
       // QUERY GUIDANCE
@@ -189,6 +191,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       "Fetch a single long-term memory entry by id (the numeric id returned by MemorySearch results with source:'long_memory'). Loads its full content into context.",
+      "Use this when a MemorySearch row looks decisive but arrived without inline content - a via_graph(entity) lead, or a concise row whose title alone is not enough to act on - and when you are following a lineage pointer to the entry that superseded or preceded another.",
       "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use MemorySearch to find a current id, MemoryHistory to trace the version chain.",
       "response_format: 'concise' (default) returns id/kind/title/summary/status + lineage links (the full body is still loaded into context); 'detailed' additionally inlines content_md, tags, source refs, confidence, and lifecycle metadata. Does not require the embeddings service.",
     ].join(" "),

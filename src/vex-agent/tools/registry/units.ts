@@ -17,7 +17,7 @@ import type { ToolDef } from "../types.js";
  * learns one reading rule instead of five.
  */
 const AMOUNT_SHAPE_SENTENCE =
-  "Every amount comes back as { raw, decimals, human }: `raw` is the exact integer in base units, `decimals` says how to read it, `human` is that same number already rendered. `remainder` appears ONLY when flooring discarded value, and each op below names what its remainder counts.";
+  "It returns every amount as { raw, decimals, human }: `raw` is the exact integer in base units, `decimals` says how to read it, `human` is that same number already rendered. `remainder` appears ONLY when flooring discarded value, and each op below names what its remainder counts.";
 
 const OP_DESCRIPTION = [
   "Which calculation to run.",

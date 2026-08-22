@@ -15,7 +15,7 @@
  * → everything blobs → the agent spends more calls reading blobs back. The owner's
  * worked example was not slow but IMPOSSIBLE: "fresh memecoins on the robinhood
  * chain" could not be expressed, because the recent-updates feed had no chain filter and
- * returned 30 rows across all chains at 40,089 B — 2.45x the 16 KiB cap.
+ * returned 30 rows across all chains at 40,089 B.
  *
  * They now share ONE vocabulary through `../feed-list/`: `limit` (no
  * default), `offset`, `fields`, `chainIds`, `sortBy`, `sortDir`, plus the per-feed
@@ -117,12 +117,12 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
   // projection: only the URL and what it populates differ. The reply names
   // WHICH it read through the envelope's `providerWindow.endpoint` - the echo
   // the provenance envelope already owns, rather than a second copy of the same
-  // fact costing bytes against the 16 KiB output cap this feed sits closest to.
+  // fact costing bytes in the largest of these feeds.
   "dexscreener.profiles": async (p) => {
     const feedChoice = readProfileFeed(p);
-    if (!feedChoice.ok) return fail(`dexscreener.profiles: ${feedChoice.reason}`);
+    if (!feedChoice.ok) return fail(`dexscreener__profiles_list: ${feedChoice.reason}`);
     const parsed = parseFeedListQuery(p, PROFILE_FEED);
-    if (!parsed.ok) return fail(`dexscreener.profiles: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__profiles_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const profiles = feedChoice.value === "latest"
@@ -150,12 +150,12 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
   // a thinned feed is visible rather than silent.
   "dexscreener.boosts": async (p) => {
     const feedChoice = readBoostFeed(p);
-    if (!feedChoice.ok) return fail(`dexscreener.boosts: ${feedChoice.reason}`);
+    if (!feedChoice.ok) return fail(`dexscreener__boosts_list: ${feedChoice.reason}`);
     const parsed = parseFeedListQuery(
       p,
       feedChoice.value === "latest" ? BOOST_FEED : TOP_BOOST_FEED,
     );
-    if (!parsed.ok) return fail(`dexscreener.boosts: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__boosts_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const feed = feedChoice.value === "latest"
@@ -178,7 +178,7 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
   "dexscreener.communityTakeovers": async (p) => {
     const parsed = parseFeedListQuery(p, TAKEOVER_FEED);
-    if (!parsed.ok) return fail(`dexscreener.communityTakeovers: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__community_takeovers_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const takeovers = await client.getCommunityTakeovers();
@@ -196,7 +196,7 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
   "dexscreener.attention": async (p) => {
     const parsed = parseFeedListQuery(p, ATTENTION_FEED);
-    if (!parsed.ok) return fail(`dexscreener.attention: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__attention_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     // Two SLOW-lane calls (60/min) for one tool. Fetched in parallel, as before.
@@ -223,7 +223,7 @@ export const DEXSCREENER_FEED_HANDLERS: Record<string, ProtocolHandler> = {
 
   "dexscreener.ads": async (p) => {
     const parsed = parseFeedListQuery(p, AD_FEED);
-    if (!parsed.ok) return fail(`dexscreener.ads: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__ads_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const ads = await client.getAds();

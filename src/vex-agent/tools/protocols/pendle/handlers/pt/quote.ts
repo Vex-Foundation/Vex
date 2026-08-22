@@ -108,6 +108,6 @@ export async function pendlePtQuote(p: Record<string, unknown>, context: Protoco
       slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
     });
   } catch (err) {
-    return fail(`Pendle quote unavailable (${failureDetail("pendle.pt.quote", err)})`);
+    return fail(`Pendle quote unavailable (${failureDetail("pendle__pt_quote", err)})`);
   }
 }

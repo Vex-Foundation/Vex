@@ -80,7 +80,7 @@ export async function poolsCandlesHandler(
   if (!isEvmAddress(tokenAddress)) {
     return fail(
       `"tokenAddress" must be a contract address (0x followed by 40 hex characters), received "${tokenAddress}". `
-        + "Resolve a name or symbol to an address with pools.search first.",
+        + "Resolve a name or symbol to an address with pools__tokens_search first.",
     );
   }
 
@@ -124,6 +124,6 @@ export async function poolsCandlesHandler(
         + "volumeUsd is in US dollars. Read the order field rather than assuming which end is newest.",
     });
   } catch (err) {
-    return fail(`pools.fun candles unavailable (${poolsFailureDetail("pools.candles", err)})`);
+    return fail(`pools.fun candles unavailable (${poolsFailureDetail("pools__token_candles_list", err)})`);
   }
 }

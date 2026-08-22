@@ -78,6 +78,6 @@ export async function poolsSearchHandler(
       tokens: rows,
     });
   } catch (err) {
-    return fail(`pools.fun search unavailable (${poolsFailureDetail("pools.search", err)})`);
+    return fail(`pools.fun search unavailable (${poolsFailureDetail("pools__tokens_search", err)})`);
   }
 }

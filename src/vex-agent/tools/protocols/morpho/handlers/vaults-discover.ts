@@ -161,7 +161,7 @@ export async function morphoVaultsDiscover(
     try {
       direct = await fetchDirectOptions(q.direct, q, context?.abortSignal);
     } catch (err) {
-      return fail(`morpho.vaults.discover failed reading the direct-supply markets ${morphoFailureDetail(err)}`);
+      return fail(`morpho__vaults_discover failed reading the direct-supply markets ${morphoFailureDetail(err)}`);
     }
   }
 
@@ -212,7 +212,7 @@ export async function morphoVaultsDiscover(
       dropped += page.droppedRows;
     }
   } catch (err) {
-    return fail(`morpho.vaults.discover failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__vaults_discover failed ${morphoFailureDetail(err)}`);
   }
 
   const window = merged ? mergeSorted(vaults, q.sort, q.order).slice(q.offset, q.offset + q.limit) : vaults;

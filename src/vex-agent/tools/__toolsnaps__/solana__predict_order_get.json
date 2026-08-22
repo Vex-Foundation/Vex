@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Get a single prediction order by pubkey (from solana.predict.orders). Errors once the order account closes post-fill — use solana.predict.orderStatus instead for a lookup that survives closure.",
+      "description": "Read ONE live Jupiter prediction order by its orderPubkey, straight from its on-chain account. Use this when the order is still OPEN: once it fills, the account CLOSES and this call errors, so solana__predict_order_status_get is the lookup that survives a filled or cancelled order. Returns the order's own fields (minus internal PDA noise) plus curated eventMetadata and marketMetadata, with maxFillPriceUsd, maxBuyPriceUsd, minSellPriceUsd, avgFillPriceUsd and sizeUsd as exact-decimal USD strings each carrying a raw *Micro sibling. One record, complete, with no paging. Find an orderPubkey with solana__predict_orders_list.",
       "name": "solana__predict_order_get",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "orderPubkey": {
-            "description": "Order public key (from solana.predict.orders).",
+            "description": "Order public key (from solana__predict_orders_list).",
             "type": "string"
           }
         },

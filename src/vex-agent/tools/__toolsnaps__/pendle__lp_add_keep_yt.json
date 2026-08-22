@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Add liquidity to a Pendle market with ONE token and KEEP the yield token (YT) it produces, receiving TWO instruments: the market's LP token and its YT. A plain pendle.lp.add sells that YT into the pool; this variant hands it to you, so use it when the user wants LP exposure without giving up the yield leg. It is still a SINGLE-token deposit — Pendle has no two-token 'dual add'. Needs: the chain, the market address, the payment token address (ERC-20 only; pass wrapped native, never native), and amountIn in human-readable units (e.g. '1.5', not raw base units). The market must NOT have expired: liquidity cannot be added after maturity, and a matured market is refused by name. Returns the transaction hash plus the RECEIPT-DECODED amounts for BOTH legs beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: deposit two tokens, sell the YT for you (use pendle.lp.add), buy a YT on its own (pendle.yt.buy), add to an expired market, guarantee an exact output amount on either leg, accept native currency, or send the LP or YT anywhere but your own wallet.",
+      "description": "Add liquidity to a Pendle market with ONE token and KEEP the yield token (YT) it produces, receiving TWO instruments: the market's LP token and its YT. A plain pendle__lp_add sells that YT into the pool; this variant hands it to you, so use it when the user wants LP exposure without giving up the yield leg. It is still a SINGLE-token deposit - Pendle has no two-token 'dual add'. Needs: the chain, the market address, the payment token address (ERC-20 only; pass wrapped native, never native), and amountIn in human-readable units (e.g. '1.5', not raw base units). The market must NOT have expired: liquidity cannot be added after maturity, and a matured market is refused by name. Returns the transaction hash plus the RECEIPT-DECODED amounts for BOTH legs beside the quoted ones. Approval-gated; pins the canonical Pendle Router. CALL IT TWICE: first with dryRun: true, which quotes and records the authorization; then with the EXACT same params to broadcast. Without that fresh dry run the execute is refused. CANNOT: deposit two tokens, sell the YT for you (use pendle__lp_add), buy a YT on its own (pendle__yt_buy), add to an expired market, guarantee an exact output amount on either leg, accept native currency, or send the LP or YT anywhere but your own wallet.",
       "name": "pendle__lp_add_keep_yt",
       "parameters": {
         "additionalProperties": false,
@@ -19,7 +19,7 @@
             "type": "boolean"
           },
           "market": {
-            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the market IS its LP token. Find it with pendle.yields or read it from pendle.market.get.",
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS - the market IS its LP token. Find it with pendle__markets_discover or read it from pendle__market_get.",
             "type": "string"
           },
           "slippageBps": {

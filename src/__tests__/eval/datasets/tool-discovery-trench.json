@@ -1,0 +1,199 @@
+{
+  "version": "trench-v1",
+  "namespace": "trench",
+  "description": "Retrieval-verification dataset for the trench namespace (Trench Express, the bonding-curve launchpad on Robinhood Chain 4663). Every live tool carries at least one blind row, written the way a model would phrase the user's outcome without naming the launchpad, and at least one protocol-aware row that names Trench. Queries were authored from the manifests and the navigation entry only, never from the retrieval index text, so a hit measures the index rather than a copy of itself.",
+  "queries": [
+    {
+      "query": "what tokens just launched on the Robinhood Chain bonding curve today",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.tokens"],
+      "expectedCoverageGroups": [["trench.tokens"]]
+    },
+    {
+      "query": "screen bonding curve coins that are more than 80 percent of the way to graduating into a pool",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.tokens"],
+      "expectedCoverageGroups": [["trench.tokens"]]
+    },
+    {
+      "query": "browse Trench Express launchpad tokens sorted by recent activity, curve stage only",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.tokens"],
+      "expectedCoverageGroups": [["trench.tokens"]]
+    },
+    {
+      "query": "find a launchpad coin whose ticker is DOGWIF on Robinhood Chain",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.search"],
+      "expectedCoverageGroups": [["trench.search"]]
+    },
+    {
+      "query": "look up a Trench token by name to get its contract address",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.search"],
+      "expectedCoverageGroups": [["trench.search"]]
+    },
+    {
+      "query": "is anyone actually buying this curve token, show me the recent fills for 0x58659Ef9Be57216632BFD341FC57736a429EFB91",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trades"],
+      "expectedCoverageGroups": [["trench.trades"]]
+    },
+    {
+      "query": "recent trade tape for a Trench token, buys and sells with makers and timestamps",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trades"],
+      "expectedCoverageGroups": [["trench.trades"]]
+    },
+    {
+      "query": "how many tokens do I get for 0.05 ETH on this bonding curve, including fees and price impact",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_quote"],
+      "expectedCoverageGroups": [["trench.trade_quote"]]
+    },
+    {
+      "query": "price selling 2,500,000 units of a curve token back to ETH before I commit",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_quote"],
+      "expectedCoverageGroups": [["trench.trade_quote"]]
+    },
+    {
+      "query": "get a Trench curve quote for spending 0.01 ETH with 1% slippage",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_quote"],
+      "expectedCoverageGroups": [["trench.trade_quote"]]
+    },
+    {
+      "query": "buy 0.02 ETH worth of this Robinhood Chain curve token now",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_execute"],
+      "expectedCoverageGroups": [["trench.trade_execute"]]
+    },
+    {
+      "query": "dump my whole bag of this curve coin back into ETH and broadcast it",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_execute"],
+      "expectedCoverageGroups": [["trench.trade_execute"]]
+    },
+    {
+      "query": "execute the Trench buy I just quoted and sign it with my wallet",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.trade_execute"],
+      "expectedCoverageGroups": [["trench.trade_execute"]]
+    },
+    {
+      "query": "what would it cost me to create a new memecoin on Robinhood Chain, fee plus gas, without deploying anything",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_preview"],
+      "expectedCoverageGroups": [["trench.launch_preview"]]
+    },
+    {
+      "query": "dry run creating a token with a 0.0005 ETH prebuy so I can see the total before signing",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_preview"],
+      "expectedCoverageGroups": [["trench.launch_preview"]]
+    },
+    {
+      "query": "simulate a Trench Express launch and tell me the predicted token address and creation fee",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_preview"],
+      "expectedCoverageGroups": [["trench.launch_preview"]]
+    },
+    {
+      "query": "which pictures has the user already staged in the app that I can attach to a new coin",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.images"],
+      "expectedCoverageGroups": [["trench.images"]]
+    },
+    {
+      "query": "check the Trench photo locker before planning a launch and pick an image id",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.images"],
+      "expectedCoverageGroups": [["trench.images"]]
+    },
+    {
+      "query": "let the user deploy the coin themselves, open a prefilled creation form and wait for their decision",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_request_form"],
+      "expectedCoverageGroups": [["trench.launch_request_form"]]
+    },
+    {
+      "query": "I am in a restricted session, ask the human to approve the Trench token creation in the app form instead of signing it myself",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_request_form"],
+      "expectedCoverageGroups": [["trench.launch_request_form"]]
+    },
+    {
+      "query": "deploy the new coin on the Robinhood Chain curve for real, name PIXEL ticker PXL, and prebuy 0.001 ETH",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_execute"],
+      "expectedCoverageGroups": [["trench.launch_execute"]]
+    },
+    {
+      "query": "go ahead and launch the token on Trench Express, sign and broadcast the creation transaction",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.launch_execute"],
+      "expectedCoverageGroups": [["trench.launch_execute"]]
+    },
+    {
+      "query": "list the coins I created from this wallet and how the initial buy on each went",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.my_launches"],
+      "expectedCoverageGroups": [["trench.my_launches"]]
+    },
+    {
+      "query": "show my own Trench launches with their creation transactions, most recent first",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["trench.my_launches"],
+      "expectedCoverageGroups": [["trench.my_launches"]]
+    }
+  ]
+}

@@ -37,9 +37,11 @@ import {
 /**
  * Mirrors `discovery.ts`'s candidate filter for a session-less caller.
  *
- * The Uniswap reveal gate is intentionally absent: the `uniswap` namespace is
- * not an advertised namespace, so both of its manifests are already removed by
- * the advertised-namespace filter and the reveal gate would be a no-op here.
+ * There is no reveal gate to mirror: owner decision D4 removed it in Batch 2,
+ * and every namespace entry under `navigation/entries-market/` is now
+ * `advertised: true`, `uniswap` included (uniswap.ts:19). The filter is exactly
+ * the advertised-namespace gate plus the lifecycle/env availability gate, which
+ * is what `discovery.ts` applies.
  */
 export function buildDiscoveryCandidates(): ProtocolToolManifest[] {
   return PROTOCOL_TOOLS
@@ -72,6 +74,7 @@ export function evaluateLexicalQueries(
       groupMrr5: groupMrr5(topIds, query.expectedCoverageGroups),
       denseFailed: false,
       retrievalMethod: "lexical",
+      candidateCount: candidates.length,
     };
   });
 }

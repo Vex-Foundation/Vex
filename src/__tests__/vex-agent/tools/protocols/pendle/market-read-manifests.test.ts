@@ -178,7 +178,7 @@ describe("new Pendle read manifests — honesty about what Vex cannot do", () =>
   it("warns that LP volume on the candles endpoint is structurally zero", () => {
     const description = PENDLE_MARKET_CANDLES_TOOL.description;
     expect(description).toContain("volume as 0");
-    expect(description).toContain("pendle.market.history");
+    expect(description).toContain("pendle__market_history_get");
   });
 
   it("tells the agent that history describes the past and does not predict a fill", () => {

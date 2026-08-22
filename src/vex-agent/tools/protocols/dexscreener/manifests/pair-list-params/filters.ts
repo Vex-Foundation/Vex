@@ -214,7 +214,7 @@ export const PAIR_QUALITY_FILTER_PARAMS: readonly ProtocolParamDef[] = [
     type: "boolean",
     description:
       "Keep only rows with an active paid boost. Nearly useless over pair rows — measured on 1 of "
-      + "489 — use dexscreener.boosts or dexscreener.ads for paid-visibility feeds.",
+      + "489 - use dexscreener__boosts_list or dexscreener__ads_list for paid-visibility feeds.",
   },
 ];
 
@@ -234,6 +234,6 @@ export const SEARCH_CHAIN_FILTER_PARAM: ProtocolParamDef = {
     + `echoed lowercase. ${STRING_OR_ARRAY_CLAUSE} `
     + "DexScreener applies no server-side equivalent, so this only subtracts "
     + "from the at most 30 rows it already chose: an EMPTY RESULT DOES NOT MEAN THERE IS NO POOL "
-    + "THERE. Read droppedByFilter to tell the two apart, then use dexscreener.tokenPairs to ask "
+    + "THERE. Read droppedByFilter to tell the two apart, then use dexscreener__token_pairs_list to ask "
     + "the question properly.",
 };

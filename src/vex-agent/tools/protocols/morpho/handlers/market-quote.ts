@@ -34,7 +34,8 @@ import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
-import { parseMorphoMarketQuoteParams } from "../read-params.js";
+import { parseMorphoMarketQuoteParams, type MorphoMarketDirection } from "../read-params.js";
+import { MORPHO_TOOLS } from "../manifest.js";
 import {
   MORPHO_MARKET_PLAN_NOTE,
   MORPHO_ONE_LEG_NOTE,
@@ -47,12 +48,53 @@ import { morphoFailureDetail } from "./shared.js";
 
 const TOOL_ID = "morpho.market.quote";
 
-/** Which execute a quote of this direction authorizes. One each, never a set. */
-const EXECUTE_FOR: Readonly<Record<string, string>> = {
-  supplyCollateral: "morpho.market.supplyCollateral",
-  withdrawCollateral: "morpho.market.withdrawCollateral",
-  borrow: "morpho.market.borrow",
-  repay: "morpho.market.repay",
+/**
+ * `toolId -> publicName`, off the namespace manifest, exactly as
+ * `./vaults-discover.ts` builds its routing projection. Namespace-local on
+ * purpose: `protocols/catalog.ts` imports this handler bundle, so reading the
+ * global catalog from a handler would close an import cycle.
+ */
+const MORPHO_PUBLIC_NAMES: ReadonlyMap<string, string> = new Map(
+  MORPHO_TOOLS.map((tool) => [tool.toolId, tool.publicName]),
+);
+
+/**
+ * The CALLABLE name of the execute that a quote of this direction authorizes.
+ *
+ * Prose, not identity. `nextStep` tells the model what to call next, and only
+ * `publicName` is callable, so the dotted id is looked up and never emitted. The
+ * sibling map in `./market-execute.ts` is the other case and stays dotted: it is
+ * the authority and audit identity that parsing, refusals and execution
+ * recording key on.
+ *
+ * Throws at module load if the namespace manifest ever stops shipping one of the
+ * six executes, because a build that renders `undefined` into an authorization
+ * sentence the transcript keeps is worse than a build that will not start.
+ */
+function executePublicName(direction: MorphoMarketDirection): string {
+  const toolId = `morpho.market.${direction}`;
+  const publicName = MORPHO_PUBLIC_NAMES.get(toolId);
+  if (publicName === undefined) {
+    throw new Error(`morpho.market.quote: no manifest ships ${toolId}, so nextStep cannot name it`);
+  }
+  return publicName;
+}
+
+/**
+ * Which execute a quote of this direction authorizes. One each, never a set.
+ *
+ * Keyed by `MorphoMarketDirection` so a seventh direction, or a row dropped in a
+ * rename, fails at `tsc` (TS2739). It was typed `Record<string, string>` with
+ * four of the six rows, and a `supply` or `withdraw` quote rendered
+ * "This quote AUTHORIZES undefined" into the persisted transcript.
+ */
+const EXECUTE_FOR: Readonly<Record<MorphoMarketDirection, string>> = {
+  supplyCollateral: executePublicName("supplyCollateral"),
+  withdrawCollateral: executePublicName("withdrawCollateral"),
+  borrow: executePublicName("borrow"),
+  repay: executePublicName("repay"),
+  supply: executePublicName("supply"),
+  withdraw: executePublicName("withdraw"),
 };
 
 export async function morphoMarketQuote(

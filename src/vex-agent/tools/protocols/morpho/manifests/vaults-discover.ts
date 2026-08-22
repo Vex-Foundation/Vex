@@ -36,9 +36,9 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "A Morpho vault is a CURATED, MANAGED deposit: the depositor hands one asset to a curator who spreads it across "
     + "many Morpho Blue lending markets and takes a fee from the yield. That is a different product from a lending "
     + "market, and the routing rule is simple - use THIS tool when the user wants somewhere passive to park an asset, "
-    + "asks which vault pays best, or wants to compare curators; use `morpho.markets.discover` when they want to lend "
+    + "asks which vault pays best, or wants to compare curators; use `morpho__markets_discover` when they want to lend "
     + "into ONE specific asset pair themselves, or to borrow. Use `pendle.*` for a FIXED rate locked to an expiry date "
-    + "and `solana.lend.*` for Solana. "
+    + "and the `solana__lend_*` tools for Solana. "
     + "COVERS BOTH VAULT GENERATIONS. `version` selects v1 (MetaMorpho), v2, or both (the default). At `both` this "
     + "tool queries BOTH generations, takes the top (offset + limit) rows from EACH under your sort key, merges them "
     + "and re-sorts the union, so the returned ordering is the exact global ranking for that window and `matched` is "
@@ -68,7 +68,7 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "decides whether a depositor may exit at all; `gating.depositGated` blocks entry. Live gated vaults exist, so "
     + "never recommend a deposit without reading this flag. V1 vaults report `gating: null` and a single "
     + "`timelockSeconds`; V2 vaults report `timelockSeconds: null` because their timelocks are per-function and are "
-    + "returned by `morpho.vault.get`. "
+    + "returned by `morpho__vault_get`. "
     + "`listedOnly` defaults to TRUE because anyone can deploy a vault: reading Morpho's own unordered vault list in "
     + "a live capture put a vault named `tstcntrct` in SECOND position, next to one named `Test`, both unlisted and "
     + "holding about ten dollars between them. "
@@ -168,7 +168,7 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
       description:
         "Comma list or array of Morpho's own asset-class TAGS the vault's asset must carry, to screen a whole class "
         + "of vault rather than one named token. The accepted set is not enumerated here, for the reason recorded on "
-        + "`morpho.markets.discover.loanAssetTags`; an unknown tag is rejected by name with the full set spelled out, "
+        + "`morpho__markets_discover`'s own `loanAssetTags`; an unknown tag is rejected by name with the full set spelled out, "
         + "rather than sent as a predicate that matches nothing. V1-ONLY: "
         + "Morpho's V2 filter input declares no tag predicate, so this is rejected by name unless `version` is 'v1'.",
     },

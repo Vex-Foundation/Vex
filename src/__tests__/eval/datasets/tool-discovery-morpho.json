@@ -1,0 +1,463 @@
+{
+  "version": "morpho-v1",
+  "namespace": "morpho",
+  "description": "Retrieval-verification dataset for the morpho namespace: 19 live tools, each covered by at least one brand-blind query and one brand-naming query. Queries were written from the manifests and the navigation entry only, phrased the way a model would type a need into ToolSearch, and never contain a tool identity.",
+  "queries": [
+    {
+      "query": "find floating rate lending markets where I can supply USDC on Base and see the supply APY",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.discover"],
+      "expectedCoverageGroups": [["morpho.markets.discover"]]
+    },
+    {
+      "query": "which isolated lending pairs accept cbBTC as collateral and have the cheapest borrow rate right now",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.discover"],
+      "expectedCoverageGroups": [["morpho.markets.discover"]]
+    },
+    {
+      "query": "screen Morpho lending markets on Ethereum sorted by supplied size with at least 50% utilization",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.discover"],
+      "expectedCoverageGroups": [["morpho.markets.discover"]]
+    },
+    {
+      "query": "somewhere passive to park 10k USDC where a professional manager spreads it around for me",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vaults.discover"],
+      "expectedCoverageGroups": [["morpho.vaults.discover"]]
+    },
+    {
+      "query": "compare curated WETH yield products on Base by net APY and how much the manager takes as a fee",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vaults.discover"],
+      "expectedCoverageGroups": [["morpho.vaults.discover"]]
+    },
+    {
+      "query": "list Morpho vaults on Base for USDC ranked by TVL including MetaMorpho v1 and v2",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vaults.discover"],
+      "expectedCoverageGroups": [["morpho.vaults.discover"]]
+    },
+    {
+      "query": "show the full detail of one lending market before I enter it: bad debt, oracle price and free liquidity",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.get"],
+      "expectedCoverageGroups": [["morpho.market.get"]]
+    },
+    {
+      "query": "what has the average lending rate been over the past month on this one market id on Base",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.get"],
+      "expectedCoverageGroups": [["morpho.market.get"]]
+    },
+    {
+      "query": "read one Morpho market by its market id on Arbitrum and tell me if it is safe to lend into",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.get"],
+      "expectedCoverageGroups": [["morpho.market.get"]]
+    },
+    {
+      "query": "who runs this yield vault, how fast can they change it, and which markets is my money sitting in",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.get"],
+      "expectedCoverageGroups": [["morpho.vault.get"]]
+    },
+    {
+      "query": "can a gate contract stop me withdrawing from this vault address on Base",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.get"],
+      "expectedCoverageGroups": [["morpho.vault.get"]]
+    },
+    {
+      "query": "full detail on one Morpho vault address including its curator, timelocks and current allocations",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.get"],
+      "expectedCoverageGroups": [["morpho.vault.get"]]
+    },
+    {
+      "query": "show recent liquidations in this lending market and whether any of them left bad debt behind",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.activity"],
+      "expectedCoverageGroups": [["morpho.markets.activity"]]
+    },
+    {
+      "query": "is this lending pair still being used at all, list the supplies and borrows in the last week",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.activity"],
+      "expectedCoverageGroups": [["morpho.markets.activity"]]
+    },
+    {
+      "query": "audit one address on Morpho: every supply, repay and liquidation event it was part of on Base",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.markets.activity"],
+      "expectedCoverageGroups": [["morpho.markets.activity"]]
+    },
+    {
+      "query": "how close is my borrow position to liquidation and how far can the collateral price fall first",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.positions.get"],
+      "expectedCoverageGroups": [["morpho.positions.get"]]
+    },
+    {
+      "query": "what have I lent, what did I put up as collateral and what do I owe across these EVM chains",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.positions.get"],
+      "expectedCoverageGroups": [["morpho.positions.get"]]
+    },
+    {
+      "query": "show my Morpho positions and the health factor of each loan for my wallet",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.positions.get"],
+      "expectedCoverageGroups": [["morpho.positions.get"]]
+    },
+    {
+      "query": "check on chain whether my wallet already granted an unlimited spending allowance for USDC on Base",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.wallet.balance"],
+      "expectedCoverageGroups": [["morpho.wallet.balance"]]
+    },
+    {
+      "query": "how much WETH does this address hold and which contracts can pull it, plus is there gas in the account",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.wallet.balance"],
+      "expectedCoverageGroups": [["morpho.wallet.balance"]]
+    },
+    {
+      "query": "audit which Morpho contracts my wallet has approved to move my USDC and how large each approval is",
+      "awareness": "protocol-aware",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.wallet.balance"],
+      "expectedCoverageGroups": [["morpho.wallet.balance"]]
+    },
+    {
+      "query": "do I have any unclaimed incentive tokens on top of my lending rate and how much is still accruing",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.get"],
+      "expectedCoverageGroups": [["morpho.rewards.get"]]
+    },
+    {
+      "query": "how much have I earned in reward tokens from lending campaigns, and how much did I already claim",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.get"],
+      "expectedCoverageGroups": [["morpho.rewards.get"]]
+    },
+    {
+      "query": "read my claimable Morpho reward tokens per chain for my wallet",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.get"],
+      "expectedCoverageGroups": [["morpho.rewards.get"]]
+    },
+    {
+      "query": "claim and sweep my earned lending incentive tokens into my wallet on Base",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.claim"],
+      "expectedCoverageGroups": [["morpho.rewards.claim"]]
+    },
+    {
+      "query": "harvest every reward token I can collect on this chain in one transaction",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.claim"],
+      "expectedCoverageGroups": [["morpho.rewards.claim"]]
+    },
+    {
+      "query": "claim my Morpho rewards now on Ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.rewards.claim"],
+      "expectedCoverageGroups": [["morpho.rewards.claim"]]
+    },
+    {
+      "query": "preview putting 5000 USDC into a curated vault: how many shares would I get and what must I approve first",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.quote"],
+      "expectedCoverageGroups": [["morpho.vault.quote"]]
+    },
+    {
+      "query": "simulate taking 2 WETH back out of this managed vault and show the gas and the decoded transaction",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.quote"],
+      "expectedCoverageGroups": [["morpho.vault.quote"]]
+    },
+    {
+      "query": "quote a Morpho vault deposit of 1000 USDC on Base before I sign anything",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.quote"],
+      "expectedCoverageGroups": [["morpho.vault.quote"]]
+    },
+    {
+      "query": "put 2500 USDC into this curated vault on Base now and mint me the shares",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.deposit"],
+      "expectedCoverageGroups": [["morpho.vault.deposit"]]
+    },
+    {
+      "query": "execute the deposit of my 1 WETH into the managed yield vault I picked",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.deposit"],
+      "expectedCoverageGroups": [["morpho.vault.deposit"]]
+    },
+    {
+      "query": "deposit 100 USDC into this Morpho vault address on Base",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.deposit"],
+      "expectedCoverageGroups": [["morpho.vault.deposit"]]
+    },
+    {
+      "query": "take my money out of the curated vault I am in and send the USDC back to my wallet",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.withdraw"],
+      "expectedCoverageGroups": [["morpho.vault.withdraw"]]
+    },
+    {
+      "query": "redeem my vault shares for 3000 USDC and exit the managed deposit",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.withdraw"],
+      "expectedCoverageGroups": [["morpho.vault.withdraw"]]
+    },
+    {
+      "query": "withdraw 500 USDC from my Morpho vault on Base",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.vault.withdraw"],
+      "expectedCoverageGroups": [["morpho.vault.withdraw"]]
+    },
+    {
+      "query": "what would borrowing 5000 USDC against my cbBTC do to my health factor, and can the market fund it",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.quote"],
+      "expectedCoverageGroups": [["morpho.market.quote"]]
+    },
+    {
+      "query": "price pulling 0.5 wstETH of collateral back out of this lending pair without doing it",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.quote"],
+      "expectedCoverageGroups": [["morpho.market.quote"]]
+    },
+    {
+      "query": "quote a Morpho market repayment of 2000 USDC before I sign it and show the health factor after",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.quote"],
+      "expectedCoverageGroups": [["morpho.market.quote"]]
+    },
+    {
+      "query": "post 0.25 cbBTC as collateral on this lending pair so I can borrow against it",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supplyCollateral"],
+      "expectedCoverageGroups": [["morpho.market.supplyCollateral"]]
+    },
+    {
+      "query": "add more collateral to my loan on Base to push the health factor back up",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supplyCollateral"],
+      "expectedCoverageGroups": [["morpho.market.supplyCollateral"]]
+    },
+    {
+      "query": "supply 1 wstETH as collateral to this Morpho market id on Ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supplyCollateral"],
+      "expectedCoverageGroups": [["morpho.market.supplyCollateral"]]
+    },
+    {
+      "query": "take 0.1 cbBTC of my collateral back out of this lending pair now that the loan is closed",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdrawCollateral"],
+      "expectedCoverageGroups": [["morpho.market.withdrawCollateral"]]
+    },
+    {
+      "query": "free up some of the collateral backing my loan and send it back to my wallet",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdrawCollateral"],
+      "expectedCoverageGroups": [["morpho.market.withdrawCollateral"]]
+    },
+    {
+      "query": "withdraw my collateral from this Morpho market on Base",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdrawCollateral"],
+      "expectedCoverageGroups": [["morpho.market.withdrawCollateral"]]
+    },
+    {
+      "query": "take out a 4000 USDC loan against the collateral I already posted on this lending pair",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.borrow"],
+      "expectedCoverageGroups": [["morpho.market.borrow"]]
+    },
+    {
+      "query": "borrow WETH against my cbBTC on Base and send it to my wallet",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.borrow"],
+      "expectedCoverageGroups": [["morpho.market.borrow"]]
+    },
+    {
+      "query": "borrow 1000 USDC on this Morpho market id at the current variable rate",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.borrow"],
+      "expectedCoverageGroups": [["morpho.market.borrow"]]
+    },
+    {
+      "query": "pay off my loan completely down to zero debt so I can unlock the collateral",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.repay"],
+      "expectedCoverageGroups": [["morpho.market.repay"]]
+    },
+    {
+      "query": "pay back 750 USDC of what I owe on this lending pair to improve my health factor",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.repay"],
+      "expectedCoverageGroups": [["morpho.market.repay"]]
+    },
+    {
+      "query": "repay my Morpho debt on Base in full and close the position",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.repay"],
+      "expectedCoverageGroups": [["morpho.market.repay"]]
+    },
+    {
+      "query": "lend 5000 USDC straight into one isolated lending pair myself instead of paying a curator fee",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supply"],
+      "expectedCoverageGroups": [["morpho.market.supply"]]
+    },
+    {
+      "query": "put my USDC on the lender side of this market on Base to earn the full borrow rate",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supply"],
+      "expectedCoverageGroups": [["morpho.market.supply"]]
+    },
+    {
+      "query": "supply 2000 USDC as the loan asset to this Morpho market id on Base",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.supply"],
+      "expectedCoverageGroups": [["morpho.market.supply"]]
+    },
+    {
+      "query": "stop lending into this pair and pull back the USDC I lent plus the interest it earned",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdraw"],
+      "expectedCoverageGroups": [["morpho.market.withdraw"]]
+    },
+    {
+      "query": "take 1500 USDC of what I lent back out of this market on Base into my wallet",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdraw"],
+      "expectedCoverageGroups": [["morpho.market.withdraw"]]
+    },
+    {
+      "query": "withdraw the loan asset I supplied to this Morpho market and end my lender position",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["morpho.market.withdraw"],
+      "expectedCoverageGroups": [["morpho.market.withdraw"]]
+    }
+  ]
+}

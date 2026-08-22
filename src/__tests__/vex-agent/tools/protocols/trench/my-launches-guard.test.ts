@@ -46,7 +46,7 @@ describe("trench.my_launches — the local index read is guarded", () => {
     const result = await trenchMyLaunchesHandler({}, context());
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("trench.my_launches");
+    expect(result.output).toContain("trench__my_launches_list");
     expect(result.output).toContain("connection to the launch index was refused");
     // The distinction that makes this worth a guard at all.
     expect(result.output).toContain("NOT an empty launch history");

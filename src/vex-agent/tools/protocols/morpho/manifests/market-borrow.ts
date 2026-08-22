@@ -80,7 +80,7 @@ export const MORPHO_MARKET_BORROW_TOOL: ProtocolToolManifest = {
       description:
         "How much to borrow, in the LOAN token's RAW base units as a whole-number string. THE SCALE IS THE LOAN "
         + "TOKEN'S OWN, which is usually NOT the collateral token's: read `loanAsset.decimals` from "
-        + "`morpho.market.get`. A human decimal amount is refused, not rounded. Another operation's amount key is "
+        + "`morpho__market_get`. A human decimal amount is refused, not rounded. Another operation's amount key is "
         + "refused by name. Quote first to see where this leaves the health factor before committing to a size.",
     },
     {

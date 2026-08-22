@@ -88,7 +88,7 @@ export async function poolsMyLaunchesHandler(
       "eip155",
     );
   } catch (err) {
-    return fail(`pools.my_launches: ${err instanceof Error ? err.message : String(err)}`);
+    return fail(`pools__my_launches_list: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   try {
@@ -139,7 +139,7 @@ export async function poolsMyLaunchesHandler(
       launches: enriched,
     });
   } catch (err) {
-    return fail(`pools.my_launches unavailable (${poolsFailureDetail("pools.my_launches", err)})`);
+    return fail(`pools__my_launches_list unavailable (${poolsFailureDetail("pools__my_launches_list", err)})`);
   }
 }
 

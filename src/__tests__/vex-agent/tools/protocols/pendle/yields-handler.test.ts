@@ -169,7 +169,7 @@ describe("pendle.yields — output contract", () => {
     expect(data!.returned).toBe(1);
     expect(data!.hasMore).toBe(true);
     expect(data!.nextOffset).toBe(1);
-    expect(data!.nextStep).toContain("pendle.pt.quote");
+    expect(String(data?.nextStep)).toContain("pendle__pt_quote");
     expect(data!.asOf).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 

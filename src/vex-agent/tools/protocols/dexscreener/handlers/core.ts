@@ -223,7 +223,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     // with the actual reason.
     if (query.trim().length < 2) {
       return fail(
-        'dexscreener.search: "query" must be at least 2 characters — DexScreener rejects shorter '
+        'dexscreener__pairs_search: "query" must be at least 2 characters - DexScreener rejects shorter '
         + "queries with an HTTP 400 it does not explain.",
       );
     }
@@ -232,7 +232,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       allowChainFilter: true,
       limit: 5,
     });
-    if (!parsed.ok) return fail(`dexscreener.search: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__pairs_search: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const result = await client.search(query);
@@ -286,21 +286,21 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     // downstream, so the upstream request and the `requestedPairAddresses` echo
     // cannot disagree about what was asked for.
     const pairAddressRead = readStringOrArrayParam(p, "pairAddress");
-    if (!pairAddressRead.ok) return fail(`dexscreener.pairs: ${pairAddressRead.reason}`);
+    if (!pairAddressRead.ok) return fail(`dexscreener__pairs_get: ${pairAddressRead.reason}`);
     const pairAddress = pairAddressRead.value ?? "";
     const missing = missingRequired("dexscreener.pairs", { chain: chainRaw, pairAddress });
     if (missing) return fail(missing);
     const chain = resolveDexScreenerChain(chainRaw);
-    if (!chain.ok) return fail(`dexscreener.pairs: ${chain.reason}`);
+    if (!chain.ok) return fail(`dexscreener__pairs_get: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "relevance", limit: null });
-    if (!parsed.ok) return fail(`dexscreener.pairs: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__pairs_get: ${parsed.reason}`);
     const requestedPairs = splitRequestedAddresses(pairAddress);
     if (requestedPairs.length === 0) {
-      return fail("dexscreener.pairs: pairAddress must contain at least one address.");
+      return fail("dexscreener__pairs_get: pairAddress must contain at least one address.");
     }
     if (requestedPairs.length > MAX_BATCH_ADDRESSES) {
       return fail(
-        `dexscreener.pairs: at most ${MAX_BATCH_ADDRESSES} pair addresses are accepted per tool `
+        `dexscreener__pairs_get: at most ${MAX_BATCH_ADDRESSES} pair addresses are accepted per tool `
         + `call; received ${requestedPairs.length}. Split larger lists into separate calls.`,
       );
     }
@@ -317,7 +317,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     );
     if (batchOutcome.fulfilled.length === 0) {
       return fail(
-        `dexscreener.pairs: every DexScreener batch failed - `
+        `dexscreener__pairs_get: every DexScreener batch failed - `
         + `${batchOutcome.firstFailureMessage ?? "unknown cause"}`,
       );
     }
@@ -372,22 +372,22 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     // describe a different list from the one we sent. Casing is preserved:
     // Solana base58 is case-sensitive and folding one would corrupt it.
     const tokenAddressesRead = readStringOrArrayParam(p, "tokenAddresses");
-    if (!tokenAddressesRead.ok) return fail(`dexscreener.tokens: ${tokenAddressesRead.reason}`);
+    if (!tokenAddressesRead.ok) return fail(`dexscreener__tokens_get: ${tokenAddressesRead.reason}`);
     const tokenAddresses = tokenAddressesRead.value ?? "";
     const missing = missingRequired("dexscreener.tokens", { chain: chainRaw, tokenAddresses });
     if (missing) return fail(missing);
     const chain = resolveDexScreenerChain(chainRaw);
-    if (!chain.ok) return fail(`dexscreener.tokens: ${chain.reason}`);
+    if (!chain.ok) return fail(`dexscreener__tokens_get: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "relevance", limit: 15 });
-    if (!parsed.ok) return fail(`dexscreener.tokens: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__tokens_get: ${parsed.reason}`);
 
     const requested = splitRequestedAddresses(tokenAddresses);
     if (requested.length === 0) {
-      return fail("dexscreener.tokens: tokenAddresses must contain at least one address.");
+      return fail("dexscreener__tokens_get: tokenAddresses must contain at least one address.");
     }
     if (requested.length > MAX_BATCH_ADDRESSES) {
       return fail(
-        `dexscreener.tokens: at most ${MAX_BATCH_ADDRESSES} token addresses are accepted `
+        `dexscreener__tokens_get: at most ${MAX_BATCH_ADDRESSES} token addresses are accepted `
         + `per tool call; received ${requested.length}. Split the portfolio into smaller calls.`,
       );
     }
@@ -404,7 +404,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     );
     if (batchOutcome.fulfilled.length === 0) {
       return fail(
-        `dexscreener.tokens: every DexScreener batch failed - `
+        `dexscreener__tokens_get: every DexScreener batch failed - `
         + `${batchOutcome.firstFailureMessage ?? "unknown cause"}`,
       );
     }
@@ -456,9 +456,9 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const missing = missingRequired("dexscreener.tokenPairs", { chain: chainRaw, tokenAddress });
     if (missing) return fail(missing);
     const chain = resolveDexScreenerChain(chainRaw);
-    if (!chain.ok) return fail(`dexscreener.tokenPairs: ${chain.reason}`);
+    if (!chain.ok) return fail(`dexscreener__token_pairs_list: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "liquidityUsd", limit: 15 });
-    if (!parsed.ok) return fail(`dexscreener.tokenPairs: ${parsed.reason}`);
+    if (!parsed.ok) return fail(`dexscreener__token_pairs_list: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
     const result = await client.getTokenPairs(chain.slug, tokenAddress);

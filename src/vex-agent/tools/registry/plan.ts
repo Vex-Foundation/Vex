@@ -29,7 +29,9 @@ export const PLAN_TOOLS: readonly ToolDef[] = [
       + "5) Cadence/aggressiveness, 6) Sub-tasks (one at a time, checkboxes), "
       + "7) Stop conditions, 8) Success criteria & self-verify, 9) Re-plan log. "
       + "Rewrite the plan whenever research or new market/on-chain info changes the approach (any content change requires re-acceptance). "
-      + "The user must ACCEPT the plan before you may execute side-effecting actions — after writing, ask the user to review and accept it.",
+      + "The user must ACCEPT the plan before you may execute side-effecting actions - after writing, ask the user to review and accept it. "
+      + "It returns one confirmation sentence rather than a result object: the plan was saved and acceptance is pending, or the content was identical and nothing changed. "
+      + "The plan is stored for this session and shown to the user in the plan view, capped at 4,000 characters and 120 lines; anything past that is cut WITHOUT a warning, so keep the plan inside that bound rather than relying on the tool to tell you.",
     parameters: { type: "object", properties: {
       plan_md: { type: "string", description: "The full action plan as markdown, following the 9-section template. Length-capped on save." },
     }, required: ["plan_md"], additionalProperties: false },

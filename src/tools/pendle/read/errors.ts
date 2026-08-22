@@ -64,7 +64,7 @@ function buildReadError(status: number, endpoint: string, cause: string): VexErr
     return new VexError(
       ErrorCodes.PENDLE_MARKET_NOT_FOUND,
       withCause(`Pendle has no ${endpoint} data for that market (HTTP 404)`, cause),
-      "The market may be matured, may not exist on that chain, or may not be covered by this endpoint. Re-check it with pendle.yields.",
+      "The market may be matured, may not exist on that chain, or may not be covered by this endpoint. Re-check it with `pendle__markets_discover`.",
     );
   }
   if (status === 400) {

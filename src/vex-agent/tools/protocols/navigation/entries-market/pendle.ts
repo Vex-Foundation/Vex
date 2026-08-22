@@ -6,11 +6,11 @@ export const PENDLE_NAVIGATION: ProtocolNamespaceNavigation = {
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
   summary:
-    "Pendle term-yield markets across 11 chains (Ethereum, Arbitrum, Base, BSC, and more): discover and inspect markets (rates, APY history, candles, order-book depth), value positions, trade fixed-rate principal tokens (PT) and variable yield tokens (YT), mint/redeem the PT+YT pair, wrap/unwrap SY, provide or move single-token liquidity, roll a PT to a later maturity, and claim accrued income.",
+    "Where Vex trades TERM yield on 11 EVM chains: Pendle splits a yield-bearing asset into a principal token (PT), whose rate is FIXED until a maturity date, and a yield token (YT), whose yield is VARIABLE and decays to zero at that same expiry. Every position here has an expiry, and that date is what decides which action is possible on it.",
   whenToUse:
-    "Use for any Pendle term-yield intent on its 11 chains: find or inspect a market, lock or exit a fixed rate (PT), take variable yield (YT), LP in/out (including the dual-instrument variants), extend or move a term (pendle.pt.rollover / pendle.lp.transfer / pendle.lp.toPt), wrap/unwrap SY, or claim income. The PT/YT/LP/SY rules — including quote-first and dryRun-first — live in the Fixed Yield (Pendle) doctrine below.",
+    "Use when the user wants a rate LOCKED to a date rather than one that floats: find or inspect a market and its implied APY, lock or exit a fixed rate with PT, take or exit variable yield with YT, mint or unwind the PT+YT pair, provide or move single-token liquidity, roll a position into a later maturity, wrap or unwrap SY, value what they already hold, or claim accrued income. Also use it whenever a Pendle position is nearing or past its expiry, because a matured position can only be redeemed or removed. The PT/YT/LP/SY rules - including quote-first and dryRun-first - live in the Fixed Yield (Pendle) doctrine below.",
   preferInstead:
-    "Use `kyberswap` for ordinary spot swaps; Pendle is specifically for term yield.",
+    "Pendle is specifically for a FIXED rate locked to a maturity date: use `morpho` when the user wants a VARIABLE rate that floats with utilization and has no expiry, and `kyberswap` for an ordinary spot swap with no yield term at all.",
   exampleQueries: [
     'ToolSearch(query="pendle fixed yield", namespace="pendle")',
     'ToolSearch(query="buy YT variable yield", namespace="pendle")',

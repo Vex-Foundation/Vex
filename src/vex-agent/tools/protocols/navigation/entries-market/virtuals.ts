@@ -6,9 +6,9 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
   groupId: "market-research",
   groupLabel: "Market Research",
   summary:
-    "Read-only Virtuals Protocol agent-token intelligence — screen, inspect, and track agent tokens on Robinhood (chain 4663), Base, Solana, and Ethereum: status (bonding-curve UNDERGRAD vs graduated), holders, market cap in VIRTUAL, the anti-sniper buy-tax window, recent graduations, and the genesis launch calendar.",
+    "Virtuals Protocol agent-token intelligence, READ-ONLY, on the exactly four chains Virtuals indexes: Robinhood (4663), Base, Solana and Ethereum. It is the only place that answers UNDERGRAD-versus-graduated status, market cap denominated in VIRTUAL, the graduation feed and the anti-sniper buy-tax window - the one fact that decides whether buying right now costs almost everything.",
   whenToUse:
-    "Use to discover or vet a Virtuals agent token before trading it: list/screen agents on a chain, get one agent's full detail, watch the 'what just graduated' feed, or browse the genesis launch calendar. The trading rules live in the Virtuals Agent Tokens doctrine below.",
+    "Use when the user names an agent token, asks what just graduated, or asks what is launching on Virtuals: screen agents on one chain, read one agent in full, watch the graduation feed, or browse the genesis calendar. Always read the anti-sniper window before buying.",
   preferInstead:
     "Use `dexscreener` for general multi-chain pair/liquidity research, and `SwapQuote`/`SwapExecute` (or `solana.*` on Solana) to execute the trade — Virtuals never executes.",
   exampleQueries: [

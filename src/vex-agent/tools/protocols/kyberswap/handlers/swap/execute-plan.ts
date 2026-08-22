@@ -149,7 +149,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       // agent must always receive.
       `Refused before signing: ${verdict.reason}.`,
       verdict.kind === "price_floor"
-        ? "Nothing was signed. Get a fresh kyberswap.swap.quote."
+        ? "Nothing was signed. Get a fresh kyberswap__swap_quote."
         : "Nothing was signed. Re-quote; do not retry this build.",
     );
   }

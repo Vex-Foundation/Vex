@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Open, adjust, or close a Jupiter Lend Borrow position in ONE call: deposit/withdraw collateral and/or borrow/repay debt, via the six params below (at least one required). You are responsible for the health of this position: read solana.lend.borrowVaults for maxLtvPercent and liquidationThresholdPercent, and solana.lend.borrowPositions for current collateral and debt, and compute the post-operation LTV yourself BEFORE calling this — no preview is shown in an autonomous session. If either risk number is absent or the position reports isLiquidated, treat that as UNKNOWN risk, never as healthy: reduce debt or add collateral rather than increasing exposure. At most one collateral param (depositAmountRaw|withdrawAmountRaw|withdrawAll) and one debt param (borrowAmountRaw|repayAmountRaw|repayAll), and the two must move in OPPOSITE directions: deposit+borrow and withdraw+repay are accepted; deposit+repay and withdraw+borrow are REJECTED before signing, because the ledger records at most one incoming and one outgoing leg per call — run those as two calls. Reads first: solana.lend.borrowVaults for vaultId + thresholds, solana.lend.borrowPositions for an existing positionId. Jupiter's /operate endpoint never wraps or unwraps native SOL — depositing or repaying a leg denominated in native SOL requires WRAPPED SOL (WSOL) already sitting in your wallet; this call fails clearly beforehand if that balance is insufficient, rather than broadcasting. This tool broadcasts and returns truthful-pending — it is tracked automatically, do not resubmit. Provide at most one of: depositAmountRaw, withdrawAmountRaw, withdrawAll. Provide at most one of: borrowAmountRaw, repayAmountRaw, repayAll. Provide at most one of: depositAmountRaw, repayAmountRaw, repayAll. Provide at most one of: withdrawAmountRaw, withdrawAll, borrowAmountRaw. Provide at least one of: depositAmountRaw, withdrawAmountRaw, withdrawAll, borrowAmountRaw, repayAmountRaw, repayAll.",
+      "description": "Open, adjust, or close a Jupiter Lend Borrow position in ONE call: deposit/withdraw collateral and/or borrow/repay debt, via the six params below (at least one required). You are responsible for the health of this position: read solana__lend_borrow_vaults_list for maxLtvPercent and liquidationThresholdPercent, and solana__lend_borrow_positions_list for current collateral and debt, and compute the post-operation LTV yourself BEFORE calling this - no preview is shown in an autonomous session. If either risk number is absent or the position reports isLiquidated, treat that as UNKNOWN risk, never as healthy: reduce debt or add collateral rather than increasing exposure. At most one collateral param (depositAmountRaw|withdrawAmountRaw|withdrawAll) and one debt param (borrowAmountRaw|repayAmountRaw|repayAll), and the two must move in OPPOSITE directions: deposit+borrow and withdraw+repay are accepted; deposit+repay and withdraw+borrow are REJECTED before signing, because the ledger records at most one incoming and one outgoing leg per call - run those as two calls. Reads first: solana__lend_borrow_vaults_list for vaultId + thresholds, solana__lend_borrow_positions_list for an existing positionId. Jupiter's /operate endpoint never wraps or unwraps native SOL - depositing or repaying a leg denominated in native SOL requires WRAPPED SOL (WSOL) already sitting in your wallet; this call fails clearly beforehand if that balance is insufficient, rather than broadcasting. This tool broadcasts and returns truthful-pending - it is tracked automatically, do not resubmit. Provide at most one of: depositAmountRaw, withdrawAmountRaw, withdrawAll. Provide at most one of: borrowAmountRaw, repayAmountRaw, repayAll. Provide at most one of: depositAmountRaw, repayAmountRaw, repayAll. Provide at most one of: withdrawAmountRaw, withdrawAll, borrowAmountRaw. Provide at least one of: depositAmountRaw, withdrawAmountRaw, withdrawAll, borrowAmountRaw, repayAmountRaw, repayAll.",
       "name": "solana__lend_borrow_operate",
       "parameters": {
         "additionalProperties": false,
@@ -19,7 +19,7 @@
             "type": "string"
           },
           "positionId": {
-            "description": "Existing position id to adjust — from solana.lend.borrowPositions. Omit (or 0) to create a NEW position.",
+            "description": "Existing position id to adjust - from solana__lend_borrow_positions_list. Omit (or 0) to create a NEW position.",
             "type": "number"
           },
           "repayAll": {
@@ -31,7 +31,7 @@
             "type": "string"
           },
           "vaultId": {
-            "description": "Vault to operate on — from solana.lend.borrowVaults, which also gives the two legs' decimals every amount param below is expressed in.",
+            "description": "Vault to operate on - from solana__lend_borrow_vaults_list, which also gives the two legs' decimals every amount param below is expressed in.",
             "type": "number"
           },
           "withdrawAll": {
