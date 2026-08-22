@@ -4,42 +4,42 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:13:31.690Z",
+  "capturedAt": "2026-08-22T19:13:44.663Z",
   "metrics": {
     "overall": {
       "count": 17,
       "recall1": 0.412,
-      "recall5": 0.647,
-      "coverage5": 0.647,
-      "mrr5": 0.492,
-      "groupMrr5": 0.492
+      "recall5": 0.765,
+      "coverage5": 0.765,
+      "mrr5": 0.522,
+      "groupMrr5": 0.522
     },
     "awareness": {
       "blind": {
         "count": 9,
         "recall1": 0.111,
-        "recall5": 0.444,
-        "coverage5": 0.444,
-        "mrr5": 0.207,
-        "groupMrr5": 0.207
+        "recall5": 0.556,
+        "coverage5": 0.556,
+        "mrr5": 0.235,
+        "groupMrr5": 0.235
       },
       "protocolAware": {
         "count": 8,
         "recall1": 0.75,
-        "recall5": 0.875,
-        "coverage5": 0.875,
-        "mrr5": 0.813,
-        "groupMrr5": 0.813
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.844,
+        "groupMrr5": 0.844
       }
     },
     "intentShapes": {
       "single": {
         "count": 16,
         "recall1": 0.438,
-        "recall5": 0.688,
-        "coverage5": 0.688,
-        "mrr5": 0.523,
-        "groupMrr5": 0.523
+        "recall5": 0.813,
+        "coverage5": 0.813,
+        "mrr5": 0.554,
+        "groupMrr5": 0.554
       },
       "cross": {
         "count": 0,
@@ -110,10 +110,10 @@
       "market_research": {
         "count": 16,
         "recall1": 0.375,
-        "recall5": 0.625,
-        "coverage5": 0.625,
-        "mrr5": 0.46,
-        "groupMrr5": 0.46
+        "recall5": 0.75,
+        "coverage5": 0.75,
+        "mrr5": 0.492,
+        "groupMrr5": 0.492
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v1, mode lexical, 17 cases evaluated.",
-    "overall recall@1 0.412, recall@5 0.647, coverage@5 0.647, mrr@5 0.492, groupMrr@5 0.492.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.412, recall@5 0.765, coverage@5 0.765, mrr@5 0.522, groupMrr@5 0.522.",
+    "Measured delta vs previous baseline (virtuals-v1, captured 2026-08-22T14:13:31.690Z): 20 metric values moved; overall recall@5 0.647 -> 0.765, overall mrr@5 0.492 -> 0.522, case count 17 -> 17."
   ]
 }

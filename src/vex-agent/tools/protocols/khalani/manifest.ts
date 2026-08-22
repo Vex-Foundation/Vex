@@ -38,6 +38,21 @@ const STRING_OR_ARRAY_CLAUSE =
  */
 const LIMIT_1_TO_20_CLAUSE = "Range 1-20 (provider maximum, default 10); anything else is rejected before the call.";
 
+/**
+ * `wallet` was the pre-convention spelling of `walletFamily` on the two Khalani
+ * reads that take a family (owner decision D15). Declared as an input alias, so
+ * a session that read the old schema is rewritten at the boundary instead of
+ * spending a call on an unknown-parameter answer. The schema, discovery and
+ * every description advertise `walletFamily` alone.
+ */
+const WALLET_FAMILY_RETIRED_SPELLING = {
+  key: "wallet",
+  removeAfter:
+    "D5 owner acceptance: a stale call carrying `wallet` is rewritten to `walletFamily`; the alias goes "
+    + "when the owner accepts that such a call should instead receive the unknown-parameter answer naming "
+    + "`walletFamily`.",
+} as const;
+
 export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "khalani.chains.list",
@@ -146,10 +161,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH." },
-      { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (default: eip155)." },
+      { key: "walletFamily", type: "string", aliases: [WALLET_FAMILY_RETIRED_SPELLING], description: "Wallet FAMILY, never a chain: eip155 or solana (default: eip155)." },
       { key: "chainIds", type: "string", acceptsStringArray: true, description: `Comma-separated chain IDs or aliases. Omit to scan all chains in the family. ${STRING_OR_ARRAY_CLAUSE}` },
     ],
-    exampleParams: { wallet: "eip155", chainIds: "1,8453" },
+    exampleParams: { walletFamily: "eip155", chainIds: "1,8453" },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.tokens.balances"],
   },
   {
@@ -219,23 +234,25 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "transfers are still in flight, or is looking for a bridge they only remember by transaction hash; for the "
       + "full lifecycle of ONE order, including Vex's own record of it, call `khalani__order_get` with the id. "
       + "Defaults to the session's own wallet, and under a session-scoped wallet `walletAddress` must equal the "
-      + "selected wallet. RETURNS `count`, `cursor` and `orders`, the provider's own order rows carried through "
-      + "unprojected. PAGE WITH `cursor`: pass back the `cursor` the previous reply returned rather than computing "
-      + "one, and `limit` is capped at the provider maximum of 20, with anything outside 1-20 rejected before the "
-      + "call.",
+      + "selected wallet. RETURNS `count`, `orders` (the provider's own order rows, carried through unprojected) "
+      + "and, when another page exists, `cursor`. `cursor` IS THE ONLY CONTINUATION SIGNAL: it is the provider's "
+      + "own opaque value, and the way to read the next page is to send it back verbatim as the `cursor` "
+      + "parameter. Never compute one. A reply with NO `cursor` field is the end of the list - there is no "
+      + "`hasMore`, no `nextCursor` and no total. `limit` is capped at the provider maximum of 20, with anything "
+      + "outside 1-20 rejected before the call.",
     mutating: false,
     actionKind: "read",
     params: [
       { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose orders to list; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet." },
-      { key: "wallet", type: "string", description: "Wallet family: eip155 or solana." },
+      { key: "walletFamily", type: "string", aliases: [WALLET_FAMILY_RETIRED_SPELLING], description: "Wallet FAMILY, never a chain: eip155 or solana." },
       { key: "limit", type: "number", description: `Max results. ${LIMIT_1_TO_20_CLAUSE}` },
-      { key: "cursor", type: "number", description: "Pagination cursor for next page." },
+      { key: "cursor", type: "number", description: "The provider's own continuation value, echoed back as `cursor` on the previous reply. Pass back exactly what that reply returned; never compute one. Omit for the first page, and when a reply carries no `cursor` there is no next page." },
       { key: "fromChain", type: "string", description: "Source chain filter (ID or alias)." },
       { key: "toChain", type: "string", description: "Destination chain filter (ID or alias)." },
       { key: "orderIds", type: "string", acceptsStringArray: true, description: `Comma-separated order IDs to filter. ${STRING_OR_ARRAY_CLAUSE}` },
       { key: "txHashSearch", type: "string", description: "Search by transaction hash. At most 66 characters (0x + 64 hex, the provider maximum); a longer value is rejected before the call." },
     ],
-    exampleParams: { wallet: "solana", limit: 20 },
+    exampleParams: { walletFamily: "solana", limit: 20 },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.orders.list"],
   },
   {

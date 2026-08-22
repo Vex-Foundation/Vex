@@ -27,7 +27,8 @@
  * changed while the approval sat in the queue, the resume REFUSES instead of
  * executing against a different contract. The fingerprint covers EVERY field
  * that validation or normalization reads — toolId, `mutating`, `actionKind`,
- * the param schema (key, type, required, unit, enum, acceptsStringArray) and
+ * the param schema (key, type, required, unit, enum, acceptsStringArray, and
+ * the retired-spelling `aliases` when a param declares any) and
  * the three cross-param group fields (`exclusiveParamGroups`, `atMostOne`,
  * `atLeastOneOf`). A v1 fingerprint omitted the enum / array / group fields, so
  * a manifest could tighten admission under a queued approval and still resume;
@@ -210,6 +211,14 @@ export function computeManifestFingerprint(manifest: ProtocolToolManifest): stri
       // difference in what the handler receives.
       enum: param.enum ? [...param.enum] : null,
       acceptsStringArray: param.acceptsStringArray === true,
+      // ONLY when declared, so every alias-free manifest keeps the exact hash it
+      // had before this field existed and no queued approval is stranded by the
+      // mechanism's arrival. The alias KEYS alone, SORTED: an alias widens what
+      // the boundary ADMITS under a queued approval, which is call shape;
+      // declaration order and the `removeAfter` prose are not.
+      ...(param.aliases && param.aliases.length > 0
+        ? { aliases: param.aliases.map((alias) => alias.key).sort(compareStrings) }
+        : {}),
     }))
     .sort((a, b) => compareStrings(a.key, b.key));
 

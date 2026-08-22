@@ -54,12 +54,8 @@ import {
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { str, num, enumField, ok, fail } from "../types.js";
-
-// ── Response format (tool-only — NOT a candidate field) ──────────
-
-const RESPONSE_FORMATS = ["concise", "detailed"] as const;
-type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
+import { str, num, ok, fail } from "../types.js";
+import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 
 // ── Steering messages (D-A — advertised, agent-facing) ───────────
 
@@ -186,8 +182,7 @@ export async function handleLongMemorySuggest(
 ): Promise<ToolResult> {
   // 1. Read + map + validate. response_format is tool-only — read separately and
   // never forwarded to the candidate schema.
-  const responseFormat: ResponseFormat =
-    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
+  const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
 
   const mapResult = mapAndValidate(params);
   if (!mapResult.ok) {

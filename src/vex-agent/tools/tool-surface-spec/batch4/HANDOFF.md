@@ -74,6 +74,73 @@ arm and its row-predicate mirror). Nothing to implement in this batch.
   `check:boundaries` script exists; evidence is import inspection, tsc,
   build, tests). Turn 3 dispatched for the verdict (convergence cap).
 - D18 recorded the same day: github-mcp-server is the reference for the
-  Studio MCP server's code and architecture; a deep-research pass on the
-  2026 MCP landscape and an Explore map of github-mcp-server are running
-  and land under tool-surface-spec/studio-mcp/.
+  Studio MCP server's code and architecture; the deep-research pass
+  (studio-mcp/mcp-landscape-2026.md) and the Explore map
+  (studio-mcp/github-mcp-architecture-map.md) landed, with two audit
+  corrections and the new open decisions O20-O24 for the MCP phase.
+- Plan review turn 3: GREEN LIGHT. Docs baseline committed as d0d44c8a;
+  three builders launched in parallel (mode b).
+- Lane 3 (response_format, WalletBalances truncated): DONE_WITH_CONCERNS,
+  reviewed and accepted. Module at src/vex-agent/response-format.ts (zod
+  only); six sites consume it with no default change; twitter retirement
+  still before the schema parse (message re-punctuated, facts verbatim);
+  WalletBalances `truncated` = trimmed < projected, present as false
+  otherwise, `truncationNote` when true; tests 271 in the touched suites.
+  Coordinator fixed output-envelope.md line 290 (the preamble said
+  "default concise"). Flagged, not acted on: MemoryHistory declares a
+  `response_format` its handler never reads (description now says it adds
+  nothing; removal needs its own ruling); the prompt layer has a
+  same-named file engine/prompts/response-format.ts (unrelated).
+- Lane 2 (envelope): DONE_WITH_CONCERNS, reviewed and accepted. Three
+  handlers additive only (trench images `truncated`; virtuals genesis
+  `returned`/`fetched`/`truncated` plus `hasMore`/`nextPage` only with
+  total, page and pageSize all finite from the provider, else
+  `continuationNote`; predict events search `returned`/`totalMatched`/
+  `truncated`); fifteen descriptions name the emitted fields; the
+  dexscreener narratives `offset` param text "No pagination exists." was
+  reconciled with the emitted envelope. Coordinator added `filtersApplied:
+  {}` to the genesis reply (page_window class requirement R4 had dropped),
+  its description clause and a test assertion (40/40 in the two virtuals
+  files). Lane 2 exported `SEARCH_MAX_LIMIT` from
+  solana-jupiter/predict-params.ts (outside its list, trivial, accepted)
+  and replaced three pre-existing em dashes on lines it touched.
+- Lane 1 (vocabulary): DONE, reviewed and accepted. 141 keys ratified
+  (329 allowlist rows deleted: 325 ratified, 4 renamed), `search` banned
+  with replacement `query`; `ProtocolParamAlias` and `aliases` on
+  ProtocolParamDef; the rewrite lives in runtime/param-aliases.ts and is
+  called first thing in executeProtocolTool on the caller's own object
+  (before both coercers, the preview reader, validation, capture and the
+  approval enqueue); both spellings refused by name; fingerprint hashes
+  sorted alias keys only when declared (alias-free pin
+  4e1100eabcbaf452be7826f62a9ad4a6 derived independently); lint rule
+  `param-alias`; BridgeStatus rewrites `address`/`wallet` before its Zod
+  parse and bridge-status-mode lists the canonical keys; readers follow
+  (resolveWalletFamily reads walletFamily; Morpho read-params read
+  `query`, translate to the provider's `search`, echo
+  `filtersApplied.query`). Side effect worth knowing: BridgeStatus list
+  mode used to forward `address`, which khalani.orders.list never
+  declared, so list-by-address was rejected; it now forwards
+  `walletAddress` and works. Flagged by lane 1 and recorded as O25: the
+  Morpho discover handlers emit `nextOffset: null` at the end, while
+  parameter-vocabulary 4.1 says present iff hasMore; descriptions state
+  the live shape, nothing changed.
+- Coordinator: toolsnaps regenerated once (26 contracts: the five
+  schema-changing ones read line by line, renamed keys and continuation
+  prose correct; the rest description-only). Lexical check BEFORE update:
+  seed, dexscreener, virtuals improved (virtuals recall@5 0.647 to 0.765);
+  supplemental, kyberswap, morpho, pendle, pools, relay, trench, uniswap
+  identical; khalani mrr@5 0.100 to 0.094 (protocol-aware 0.278 to 0.259)
+  from the longer orders_list description; solana recall@1 0.441 to 0.426
+  (prediction_discovery 0.571 to 0.500, mrr@5 0.571 to 0.536) because the
+  five predict descriptions now share continuation vocabulary, recall@5
+  unchanged. Both degradations are explained by the description changes
+  D16 ordered; dense retrieval (the primary lane, embeddingText frozen by
+  D9) is unaffected. The five drifted baselines were updated one target
+  at a time; the other eight were left untouched.
+- Full gate set on the combined tree: tsc, vitest 1067 files / 14192
+  tests, build, diff --check, em-dash and lexical 13/13 green on the
+  first run; two red gates fixed by the coordinator and re-run green:
+  five non-null assertions in lane 2 and lane 3 test files replaced by
+  explicit guards (test:unsafe-escapes), and the GenesisReply test type
+  gained `filtersApplied` (typecheck:test:ratchet). Implementation
+  committed on feat/tool-surface-4 for the Codex final review.

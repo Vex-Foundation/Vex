@@ -117,7 +117,7 @@ describe("morpho.vaults.discover param contract", () => {
 
   it("rejects a V1-only predicate BY NAME when v2 is in scope, instead of half-applying it", async () => {
     const { calls } = stubMorphoByOperation({});
-    for (const params of [{ search: "steakhouse" }, { assetSymbol: "USDC" }]) {
+    for (const params of [{ query: "steakhouse" }, { assetSymbol: "USDC" }]) {
       const result = await morphoVaultsDiscover(params);
       expect(result.success).toBe(false);
       expect(result.output).toMatch(/V1-only predicate/);
@@ -129,9 +129,12 @@ describe("morpho.vaults.discover param contract", () => {
 
   it("accepts the same V1-only predicate once version is narrowed to v1", async () => {
     const { calls } = stubMorphoByOperation({ VexMorphoVaultsV1: MORPHO_VAULTS_V1_PAGE });
-    const result = await morphoVaultsDiscover({ version: "v1", search: "steakhouse", limit: 6 });
+    // D1: the AGENT-facing key is `query`; the provider predicate is still
+    // spelled `search`, and that translation stays inside the Morpho adapter.
+    const result = await morphoVaultsDiscover({ version: "v1", query: "steakhouse", limit: 6 });
     expect(result.success).toBe(true);
     expect((calls[0].variables["where"] as Record<string, unknown>)["search"]).toBe("steakhouse");
+    expect(JSON.parse(result.output)["filtersApplied"]["query"]).toBe("steakhouse");
   });
 
   it("rejects a sort a generation cannot serve BY NAME rather than reordering by something else", async () => {

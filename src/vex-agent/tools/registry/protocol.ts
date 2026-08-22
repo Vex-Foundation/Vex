@@ -54,6 +54,7 @@ const TOOL_SEARCH_DESCRIPTION = [
   `(2) SELECT - \`query: "${TOOL_SEARCH_SELECT_PREFIX}Name1,Name2"\` makes tools you already know the name of callable, 1 to ${MAX_SELECT_TOOL_NAMES} public names per call. Use it after a namespace listing, and to recover a tool whose schema the conversation compacted away.`,
   "(3) NAMESPACE LISTING - `namespace` alone, with no `query`, returns EVERY tool of that protocol as one-line rows carrying its required parameter keys. A listing is a menu: it changes nothing until you select from it.",
   "SEARCH answers with names, one-line summaries and match evidence. SELECT answers with acknowledgement rows only - the name and whether it is now callable - because you already know what you asked for. Neither returns parameter schemas: each tool they return is added to your tool list as a real function carrying its full schema, callable FROM YOUR NEXT MESSAGE and not from this one.",
+  `SEARCH also answers with \`count\`, \`totalCount\` and \`hasMore\`: hasMore is true when more capabilities matched than the rows you were shown, and the only way to reach them is a higher \`limit\` (maximum ${MAX_DISCOVERY_LIMIT}) or a narrower query - there is no cursor, page or offset on this tool. A namespace listing always answers hasMore false, because a listing is the whole namespace.`,
   "For a curated internal tool, read the Tool Map instead of searching. For a name that is already callable this session, call it directly rather than selecting it again.",
 ].join(" ");
 

@@ -27,7 +27,7 @@
             "type": "string"
           },
           "response_format": {
-            "description": "concise (default) → id/title/scores; detailed → adds summary, content, tags, maturity, source tier, evidence.",
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' adds summary, content, tags, maturity, source tier and evidence to the id, title and scores 'concise' returns.",
             "enum": [
               "concise",
               "detailed"

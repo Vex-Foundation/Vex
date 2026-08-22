@@ -58,7 +58,9 @@ export interface MorphoMarketsDiscoverQuery {
 export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoParams<MorphoMarketsDiscoverQuery> {
   const chainIds = readChains(p["chainIds"], "chainIds");
   if (!chainIds.ok) return chainIds;
-  const search = readOptionalString(p["search"]);
+  // Agent-facing key `query` (owner decision D1); the PROVIDER's predicate is
+  // still spelled `search`, and that translation stays inside this adapter.
+  const query = readOptionalString(p["query"]);
   const loanTokens = readAddressCsv(p["loanTokenAddress"], "loanTokenAddress");
   if (!loanTokens.ok) return loanTokens;
   const collateralTokens = readAddressCsv(p["collateralTokenAddress"], "collateralTokenAddress");
@@ -126,7 +128,7 @@ export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoPara
   const filters: MorphoMarketFilters = {
     listed,
     ...(chainIds.value ? { chainId_in: chainIds.value } : {}),
-    ...(search !== undefined ? { search } : {}),
+    ...(query !== undefined ? { search: query } : {}),
     ...(loanTokens.value ? { loanAssetAddress_in: loanTokens.value } : {}),
     ...(collateralTokens.value ? { collateralAssetAddress_in: collateralTokens.value } : {}),
     ...(marketIds.value ? { uniqueKey_in: marketIds.value } : {}),
@@ -155,7 +157,7 @@ export function parseMorphoMarketsParams(p: Record<string, unknown>): MorphoPara
   };
   const optional: Array<[string, unknown]> = [
     ["chainIds", chainIds.value?.map((id) => String(id))],
-    ["search", search],
+    ["query", query],
     ["loanTokenAddress", loanTokens.value],
     ["collateralTokenAddress", collateralTokens.value],
     ["marketIds", marketIds.value],

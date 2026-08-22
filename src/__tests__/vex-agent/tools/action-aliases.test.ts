@@ -250,10 +250,30 @@ describe("BridgeStatus — orders.get (id) vs orders.list (no id)", () => {
   });
 
   it("without orderId routes to khalani.orders.list and forwards provided filters", async () => {
-    await handleBridgeStatus({ wallet: "solana", limit: 20 }, CTX);
+    await handleBridgeStatus({ walletFamily: "solana", limit: 20 }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("khalani.orders.list");
-    expect(params).toEqual({ wallet: "solana", limit: 20 });
+    expect(params).toEqual({ walletFamily: "solana", limit: 20 });
+  });
+
+  // D15: the two retired spellings are rewritten BEFORE the schema parse, so the
+  // target sees only the canonical keys. `BridgeStatusArgs` strips undeclared
+  // keys, which is why the rewrite cannot live after it: `address` would have
+  // vanished and the call would have listed the WRONG wallet's orders silently.
+  it("rewrites the retired `address` / `wallet` spellings before the schema parse", async () => {
+    await handleBridgeStatus({ address: "0xabc", wallet: "eip155", limit: 3 }, CTX);
+    const { toolId, params } = lastCall();
+    expect(toolId).toBe("khalani.orders.list");
+    expect(params).toEqual({ walletAddress: "0xabc", walletFamily: "eip155", limit: 3 });
+  });
+
+  it("refuses BY NAME when a retired spelling and its canonical key both arrive", async () => {
+    const result = await handleBridgeStatus({ wallet: "eip155", walletFamily: "solana" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('"wallet"');
+    expect(result.output).toContain('"walletFamily"');
+    expect(result.output).toContain("Vex will not guess which one you meant");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   // W2d: orderId no longer "takes precedence" — the combination is REJECTED BY
@@ -261,10 +281,10 @@ describe("BridgeStatus — orders.get (id) vs orders.list (no id)", () => {
   // also supplied, and the agent had no way to learn they were never applied
   // (SPEC §2.4 item 22).
   it("rejects orderId combined with list filters, naming what would be discarded", async () => {
-    const result = await handleBridgeStatus({ orderId: "order_x", wallet: "solana", limit: 5 }, CTX);
+    const result = await handleBridgeStatus({ orderId: "order_x", walletFamily: "solana", limit: 5 }, CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("BridgeStatus takes EITHER orderId (one order) OR the list filters");
-    expect(result.output).toContain("wallet, limit");
+    expect(result.output).toContain("walletFamily, limit");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });

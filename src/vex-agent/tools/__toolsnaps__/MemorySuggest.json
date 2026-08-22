@@ -63,7 +63,7 @@
             "type": "string"
           },
           "response_format": {
-            "description": "concise (default) → id + status; detailed → adds redaction counts, source tier, dual-trace window.",
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' adds redaction counts, source tier and the dual-trace window to the id and status 'concise' returns.",
             "enum": [
               "concise",
               "detailed"

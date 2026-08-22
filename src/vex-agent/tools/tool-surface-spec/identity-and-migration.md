@@ -99,6 +99,14 @@ so an alias can never shadow a live tool. Vex adopts that ordering.
 
 ## 3. Deprecation alias table
 
+This table is about tool NAMES. A retired PARAMETER spelling is a separate
+mechanism with a separate owner: `ProtocolParamDef.aliases`, rewritten at the
+runtime boundary, never advertised in a schema, and carrying its own
+`removeAfter` condition per entry. Its contract is section 7 of
+[parameter-vocabulary.md](./parameter-vocabulary.md). The two do not compose: a
+tool-name alias cannot map arguments (`registry/name-resolution.ts`), so a change
+that retires both a name and a param key needs both mechanisms.
+
 ### 3.1 Shape
 
 The reference's table is `map[string]string`

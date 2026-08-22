@@ -35,7 +35,10 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
   {
     key: "offset",
     type: "number",
-    description: "Skip this many narratives of the same provider window (default 0). No pagination exists.",
+    description:
+      "Skip this many narratives of the same provider window (default 0). The PROVIDER has no pagination: this "
+      + "walks the single trending list Vex already fetched, so the reply's `hasMore` and `totalMatched` are "
+      + "about that list. Continue by adding the reply's `returned` to this value while hasMore is true.",
   },
   {
     key: "fields",

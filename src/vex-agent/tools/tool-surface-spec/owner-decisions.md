@@ -322,3 +322,33 @@ a także architektury").
   tasks, dynamic tool lists, tool search and lazy loading, security
   guidance, how Claude Code and Codex CLI consume servers), with
   citations, in `tool-surface-spec/studio-mcp/`.
+
+## D19. Research priorities in the task shape
+
+Recorded 2026-08-22 from the owner's words on the rendered Research shape.
+Applied on feat/prompt-wave2 (PR #109) in `engine/prompts/task-shapes.ts`.
+
+- DexScreener is the PRIMARY research surface on every chain: identity,
+  pairs, liquidity, volume, price sanity, narratives and promotion are
+  resolved there first.
+- Web search (`WebResearch`) and Twitter (`TwitterAccount`) add news,
+  narrative and social evidence. Both are env-gated, so the sentence
+  names only the tools whose key is configured (the availability
+  fingerprint of the protocols layer now includes RETTIWT_API_KEY next to
+  TAVILY_API_KEY and JUPITER_API_KEY).
+- On Solana, Jupiter's `solana__tokens_discover` trending and recent feeds
+  add fresh discovery (rendered only with JUPITER_API_KEY).
+- Trench, pools.fun and Virtuals are launchpad-native reads of LOWER
+  general value: reached for only when the token lives on that launchpad
+  or the user names it. The freshness-lag sentence keeps the one case
+  where they come first (a token DexScreener has not indexed yet).
+- The three-layer rule and the mission-setup exception are unchanged.
+
+WITHDRAWN the same day (2026-08-22, "niech widzi protokoły i sam sobie
+wybierze"): the prompt carries NO ranking of research surfaces. The
+Research shape keeps only the Codex-approved text (three layers in agent
+sessions and mission runs, orientation in mission setup, the neutral note
+that DexScreener indexing lags so a launchpad-native read or Jupiter's
+recent feed can see a token first). The model reads the eleven protocol
+declarations and chooses. feat/prompt-wave2 was restored to the 76f6306d
+prompt text after 913b9405.

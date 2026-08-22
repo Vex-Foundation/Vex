@@ -25,6 +25,7 @@ import { getLocalChain, listLocalChains } from "@tools/evm-chains/registry.js";
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { buildTokenScanSet } from "@vex-agent/sync/local-chain-balance-sync.js";
+import { responseFormatSchema, type ResponseFormat } from "@vex-agent/response-format.js";
 import {
   type ConciseKhalaniToken,
   projectTokens,
@@ -69,7 +70,10 @@ const WalletReadArgs = z.object({
   }).optional(),
   // 'detailed' (DEFAULT, compatibility-first) returns every projected token.
   // 'concise' enables the `limit` trim to the top-N tokens by held USD value.
-  response_format: z.enum(["concise", "detailed"]).optional().default("detailed"),
+  //
+  // The `detailed` default is the RATIFIED EXCEPTION of D17, not drift: see the
+  // state-2 note in `@vex-agent/response-format.js`.
+  response_format: responseFormatSchema("detailed"),
 }).strict();
 
 /**
@@ -103,8 +107,31 @@ interface WalletSnapshot {
   tokenErrorsOmitted?: number;
   /** Held-but-unpriced rows the concise trim's cap dropped. Present only when non-zero. */
   unpricedOmitted?: number;
+  /**
+   * Whether `tokens` is short of the full projected scan for this wallet (D16,
+   * bounded_non_pageable class). ALWAYS PRESENT, including as `false` on the
+   * `detailed` path and on a `{limit}` call that carried no `response_format`:
+   * an absent field would read as "no answer", and the whole point of the
+   * field is that the agent can tell a complete row set from a trimmed one
+   * without re-deriving the trim rules. There is no continuation to fetch;
+   * `truncationNote` names the narrowing action instead.
+   */
+  truncated: boolean;
+  /** The recovery instruction. Present only when `truncated` is true. */
+  truncationNote?: string;
   tokens: WalletTokenRow[];
 }
+
+/**
+ * Narrowing action for a trimmed snapshot. There is no cursor and no page: the
+ * only ways to see the missing rows are a bigger `limit` or the `detailed`
+ * format, so the note says exactly that rather than implying a next call.
+ */
+const TRUNCATION_NOTE =
+  "Some rows this wallet holds are not listed: the concise trim kept the top `limit` "
+  + "priced rows (plus up to 20 held-but-unpriced rows). There is no continuation to "
+  + "fetch. To see the rest, raise `limit`, or pass response_format:\"detailed\" for "
+  + "every row. `tokenCount` and `totalUsd` already describe the FULL scan.";
 
 /**
  * A broken scan set can fail on hundreds of tokens; the agent needs to know it
@@ -371,6 +398,11 @@ export async function handleWalletBalances(
       });
 
       const trimmed = trimTokens(projected, parsed.data.limit, parsed.data.response_format);
+      // Measured against the FULL projected set, so it covers all three ways a
+      // row can be missing: the priced overflow past `limit`, the 20-row
+      // unpriced cap, and the zero-balance unpriced rows the trim drops (which
+      // `unpricedOmitted` deliberately does not count).
+      const truncated = trimmed.tokens.length < projected.length;
       snapshots.push({
         wallet: family,
         address,
@@ -381,6 +413,8 @@ export async function handleWalletBalances(
         tokenErrors,
         ...(tokenErrorsOmitted > 0 ? { tokenErrorsOmitted } : {}),
         ...(trimmed.unpricedOmitted > 0 ? { unpricedOmitted: trimmed.unpricedOmitted } : {}),
+        truncated,
+        ...(truncated ? { truncationNote: TRUNCATION_NOTE } : {}),
         tokens: trimmed.tokens,
       });
     } catch (err) {
@@ -478,7 +512,7 @@ function holdsBalance(token: ConciseKhalaniToken): boolean {
 function trimTokens(
   tokens: ConciseKhalaniToken[],
   limit: number | undefined,
-  responseFormat: "concise" | "detailed",
+  responseFormat: ResponseFormat,
 ): { tokens: WalletTokenRow[]; unpricedOmitted: number } {
   if (responseFormat === "detailed" || limit === undefined) return { tokens, unpricedOmitted: 0 };
   // Stable sort: rows with equal held USD (every unpriced row scores 0) keep

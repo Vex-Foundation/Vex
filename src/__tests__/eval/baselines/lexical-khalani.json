@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-khalani",
   "datasetVersion": "khalani-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:12:59.898Z",
+  "capturedAt": "2026-08-22T19:13:30.640Z",
   "metrics": {
     "overall": {
       "count": 27,
       "recall1": 0.074,
       "recall5": 0.148,
       "coverage5": 0.148,
-      "mrr5": 0.1,
-      "groupMrr5": 0.1
+      "mrr5": 0.094,
+      "groupMrr5": 0.094
     },
     "awareness": {
       "blind": {
@@ -28,8 +28,8 @@
         "recall1": 0.222,
         "recall5": 0.333,
         "coverage5": 0.333,
-        "mrr5": 0.278,
-        "groupMrr5": 0.278
+        "mrr5": 0.259,
+        "groupMrr5": 0.259
       }
     },
     "intentShapes": {
@@ -38,8 +38,8 @@
         "recall1": 0.074,
         "recall5": 0.148,
         "coverage5": 0.148,
-        "mrr5": 0.1,
-        "groupMrr5": 0.1
+        "mrr5": 0.094,
+        "groupMrr5": 0.094
       },
       "cross": {
         "count": 0,
@@ -80,8 +80,8 @@
         "recall1": 0.067,
         "recall5": 0.2,
         "coverage5": 0.2,
-        "mrr5": 0.113,
-        "groupMrr5": 0.113
+        "mrr5": 0.102,
+        "groupMrr5": 0.102
       },
       "evm_lp": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-khalani@khalani-v1, mode lexical, 27 cases evaluated.",
-    "overall recall@1 0.074, recall@5 0.148, coverage@5 0.148, mrr@5 0.1, groupMrr@5 0.1.",
-    "Measured delta vs previous baseline (khalani-v1, captured 2026-08-22T13:40:20.391Z): 16 metric values moved; overall recall@5 0.222 -> 0.148, overall mrr@5 0.117 -> 0.1, case count 27 -> 27."
+    "overall recall@1 0.074, recall@5 0.148, coverage@5 0.148, mrr@5 0.094, groupMrr@5 0.094.",
+    "Measured delta vs previous baseline (khalani-v1, captured 2026-08-22T14:12:59.898Z): 8 metric values moved; overall recall@5 0.148 -> 0.148, overall mrr@5 0.1 -> 0.094, case count 27 -> 27."
   ]
 }

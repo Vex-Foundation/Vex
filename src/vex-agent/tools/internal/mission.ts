@@ -10,7 +10,8 @@ import { z } from "zod";
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
-import { str, enumField, fail } from "./types.js";
+import { str, fail } from "./types.js";
+import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 import { dropEmptyModelValues, formatZodIssueForModel } from "./arg-validation.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
@@ -25,9 +26,6 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 const MAX_STRING_LENGTH = 2_000;
 const MAX_ARRAY_ITEMS = 50;
 const MAX_ARRAY_ITEM_LENGTH = 500;
-
-const RESPONSE_FORMATS = ["concise", "detailed"] as const;
-type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
 
 const MissionDraftUpdateArgs = z
   .object({
@@ -75,8 +73,7 @@ export async function handleMissionDraftUpdate(
   // response_format is a tool-only param read off RAW params — MissionDraftUpdateArgs
   // is .strict() and must not see it. Default to 'concise' server-side because LLMs
   // frequently omit the knob even when the schema declares a default.
-  const responseFormat: ResponseFormat =
-    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
+  const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
   const { response_format: _ignored, ...patchParams } = params;
 
   // Empty means ABSENT here too — eleven nullable-optional fields make this the

@@ -11,7 +11,7 @@
             "type": "number"
           },
           "response_format": {
-            "description": "concise (default) → metadata + lineage links (body still loaded into context); detailed → also inlines content_md + lifecycle metadata.",
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' also inlines content_md and lifecycle metadata on top of the metadata and lineage links 'concise' returns (the body is loaded into context either way).",
             "enum": [
               "concise",
               "detailed"

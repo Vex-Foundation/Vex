@@ -14,10 +14,13 @@
  */
 
 /** Every `BridgeStatus` parameter that only has meaning in LIST mode. */
+// The retired spellings `address` and `wallet` are deliberately NOT listed: the
+// alias rewrite in `tools/internal/action-aliases.ts` runs before this check and
+// before the schema parse, so by the time conflict detection reads the call
+// there is exactly one spelling of each key (owner decision D15).
 export const BRIDGE_STATUS_LIST_ONLY_PARAMS: readonly string[] = [
-  "address",
   "walletAddress",
-  "wallet",
+  "walletFamily",
   "limit",
   "cursor",
   "fromChain",

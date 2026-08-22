@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "List a wallet's Khalani bridge orders, newest page first, filterable by source chain, destination chain, order ids or transaction hash. Use this when the user asks about their bridge history, wants to see which transfers are still in flight, or is looking for a bridge they only remember by transaction hash; for the full lifecycle of ONE order, including Vex's own record of it, call `khalani__order_get` with the id. Defaults to the session's own wallet, and under a session-scoped wallet `walletAddress` must equal the selected wallet. RETURNS `count`, `cursor` and `orders`, the provider's own order rows carried through unprojected. PAGE WITH `cursor`: pass back the `cursor` the previous reply returned rather than computing one, and `limit` is capped at the provider maximum of 20, with anything outside 1-20 rejected before the call.",
+      "description": "List a wallet's Khalani bridge orders, newest page first, filterable by source chain, destination chain, order ids or transaction hash. Use this when the user asks about their bridge history, wants to see which transfers are still in flight, or is looking for a bridge they only remember by transaction hash; for the full lifecycle of ONE order, including Vex's own record of it, call `khalani__order_get` with the id. Defaults to the session's own wallet, and under a session-scoped wallet `walletAddress` must equal the selected wallet. RETURNS `count`, `orders` (the provider's own order rows, carried through unprojected) and, when another page exists, `cursor`. `cursor` IS THE ONLY CONTINUATION SIGNAL: it is the provider's own opaque value, and the way to read the next page is to send it back verbatim as the `cursor` parameter. Never compute one. A reply with NO `cursor` field is the end of the list - there is no `hasMore`, no `nextCursor` and no total. `limit` is capped at the provider maximum of 20, with anything outside 1-20 rejected before the call.",
       "name": "khalani__orders_list",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "cursor": {
-            "description": "Pagination cursor for next page.",
+            "description": "The provider's own continuation value, echoed back as `cursor` on the previous reply. Pass back exactly what that reply returned; never compute one. Omit for the first page, and when a reply carries no `cursor` there is no next page.",
             "type": "number"
           },
           "fromChain": {
@@ -40,12 +40,12 @@
             "description": "Search by transaction hash. At most 66 characters (0x + 64 hex, the provider maximum); a longer value is rejected before the call.",
             "type": "string"
           },
-          "wallet": {
-            "description": "Wallet family: eip155 or solana.",
-            "type": "string"
-          },
           "walletAddress": {
             "description": "Optional. The ACCOUNT address whose orders to list; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet.",
+            "type": "string"
+          },
+          "walletFamily": {
+            "description": "Wallet FAMILY, never a chain: eip155 or solana.",
             "type": "string"
           }
         },

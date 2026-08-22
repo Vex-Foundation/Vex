@@ -18,7 +18,7 @@
  */
 
 import { getVirtualsClient } from "@tools/virtuals/client.js";
-import type { VirtualsAgent } from "@tools/virtuals/types.js";
+import type { VirtualsAgent, VirtualsPagination } from "@tools/virtuals/types.js";
 import { VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
 import { describeFailureForAgent, describeFailureForLog } from "../runtime/errors.js";
@@ -26,6 +26,7 @@ import type { ProtocolHandler } from "../types.js";
 import { num, ok, fail } from "../handler-helpers.js";
 import { virtualsChainSlug } from "./chain-param.js";
 import {
+  VIRTUALS_LIST_NUMERIC_PARAMS,
   readChain,
   readVirtualsListParams,
   readVirtualsWindow,
@@ -48,6 +49,70 @@ function matchesStatus(status: string | null, filter: StatusFilter): boolean {
 /** A graduated agent with a real LP creation time — the graduations feed's row. */
 function isGraduation(agent: VirtualsAgent): boolean {
   return agent.status === "AVAILABLE" && agent.lpCreatedAt !== null;
+}
+
+/**
+ * The declared ceiling of `limit`, read from the ONE place it is stated so the
+ * recovery sentence below cannot drift from the bound the boundary enforces.
+ */
+const GENESIS_LIMIT_MAX = VIRTUALS_LIST_NUMERIC_PARAMS.limit?.max ?? 100;
+
+/** The three provider numbers `page * pageSize < total` needs to mean anything. */
+const GENESIS_PAGE_METADATA_KEYS = ["total", "page", "pageSize"] as const;
+
+/**
+ * `page_window` continuation for the genesis calendar (parameter-vocabulary.md
+ * section 4.1), derived from the PROVIDER's own pagination block and nothing
+ * else.
+ *
+ * `VirtualsPagination` lets each field be null INDEPENDENTLY
+ * (`@tools/virtuals/types.ts`), so a present block is not sufficient evidence:
+ * `total`, `page` and `pageSize` must EACH be a finite number before the
+ * comparison means anything. When any of them is missing the reply omits
+ * `hasMore` and `nextPage` entirely and says which number was absent instead.
+ * Claiming "that was the last page" from metadata the provider never sent is
+ * the one thing this must never do.
+ */
+function genesisContinuation(pagination: VirtualsPagination | null): Record<string, unknown> {
+  const missing = GENESIS_PAGE_METADATA_KEYS.filter((key) => {
+    const value = pagination?.[key];
+    return typeof value !== "number" || !Number.isFinite(value);
+  });
+  if (missing.length > 0 || pagination === null) {
+    return {
+      continuationNote:
+        `The provider returned no ${missing.map((key) => `\`${key}\``).join(" and no ")} for this page, so `
+        + "whether more genesis events exist beyond it is UNKNOWN - this is NOT a statement that the "
+        + "calendar ended here. Request the next `page` to find out: an empty reply is the end.",
+    };
+  }
+  const hasMore = pagination.page! * pagination.pageSize! < pagination.total!;
+  return { hasMore, ...(hasMore ? { nextPage: pagination.page! + 1 } : {}) };
+}
+
+/**
+ * The within-page drop this tool has always performed silently: ONE provider
+ * page of `pageSize` rows is fetched and then sliced to `limit`, so with the
+ * defaults (limit 20, pageSize 100) eighty fetched rows used to vanish without
+ * a word. The rows are recoverable without another provider call shape - they
+ * are on the page the agent already paid for - so the note names the knob
+ * rather than a continuation.
+ */
+function genesisTruncationNote(input: {
+  readonly returned: number;
+  readonly fetched: number;
+  readonly pageSize: number;
+  readonly limit: number;
+}): string {
+  const dropped = input.fetched - input.returned;
+  const recovery = input.pageSize <= GENESIS_LIMIT_MAX
+    ? `raise \`limit\` to ${input.pageSize} (the maximum \`limit\` is ${GENESIS_LIMIT_MAX})`
+    : `lower \`pageSize\` to ${input.limit}, so one provider page maps to one reply`;
+  return (
+    `${dropped} row${dropped === 1 ? "" : "s"} fetched from this provider page were dropped by `
+    + `\`limit\` (${input.returned} of ${input.fetched} kept). They are on the page you already fetched, `
+    + `not behind a later one: ${recovery} to see them.`
+  );
 }
 
 /**
@@ -185,12 +250,29 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
     try {
       const client = getVirtualsClient();
       const result = await client.listGeneses({ page, pageSize });
+      const fetched = result.geneses.length;
       const projected = result.geneses.map(projectGenesis).slice(0, limit);
+      const dropped = fetched - projected.length;
       return ok({
         count: projected.length,
         total: result.pagination?.total ?? null,
         page,
         pageSize,
+        // `returned` and `fetched` are different numbers on this tool and both
+        // matter: `fetched` is what the provider page held, `returned` is what
+        // survived `limit`.
+        returned: projected.length,
+        fetched,
+        truncated: dropped > 0,
+        ...(dropped > 0
+          ? { truncationNote: genesisTruncationNote({ returned: projected.length, fetched, pageSize, limit }) }
+          : {}),
+        // `page`/`pageSize` above echo the REQUEST; the continuation below is
+        // computed from the provider's own pagination block only.
+        ...genesisContinuation(result.pagination ?? null),
+        // The page_window class echoes the filters that ran; this read has none,
+        // so the honest value is the empty object, never an invented filter.
+        filtersApplied: {},
         geneses: projected,
       });
     } catch (err) {

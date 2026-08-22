@@ -298,8 +298,8 @@ export async function handleTokenCheck(
 
 const BridgeStatusArgs = z.object({
   orderId: z.string().min(1).optional(),
-  address: z.string().min(1).optional(),
-  wallet: z.string().min(1).optional(),
+  walletAddress: z.string().min(1).optional(),
+  walletFamily: z.string().min(1).optional(),
   limit: z.number().int().positive().optional(),
   cursor: z.number().int().nonnegative().optional(),
   fromChain: z.string().min(1).optional(),
@@ -308,10 +308,48 @@ const BridgeStatusArgs = z.object({
   txHashSearch: z.string().min(1).optional(),
 });
 
+/**
+ * The two retired `BridgeStatus` spellings, rewritten BEFORE the schema parse.
+ *
+ * Before the parse for two reasons. `BridgeStatusArgs` strips keys it does not
+ * declare, so a retired spelling would vanish silently and the call would run as
+ * if the caller had filtered nothing. And the mode-conflict check
+ * (`rejectBridgeStatusModeConflict`) must run on ONE vocabulary, or `orderId`
+ * plus a retired list key would be read as an unambiguous by-id call.
+ *
+ * Both spellings present is a REFUSAL, not a precedence rule - the same contract
+ * `refuseRetiredTokenCheckAddress` above applies, and the same contract the
+ * protocol lane applies in `protocols/runtime/param-aliases.ts`. Owner decision
+ * D15; the alias goes under D5, when a stale call should instead be answered by
+ * name.
+ */
+const BRIDGE_STATUS_RETIRED_KEYS: readonly (readonly [retired: string, canonical: string])[] = [
+  ["address", "walletAddress"],
+  ["wallet", "walletFamily"],
+];
+
+function normalizeRetiredBridgeStatusKeys(args: Record<string, unknown>): string | null {
+  for (const [retired, canonical] of BRIDGE_STATUS_RETIRED_KEYS) {
+    if (args[retired] === undefined) continue;
+    if (args[canonical] !== undefined) {
+      return (
+        `BridgeStatus: the parameter "${retired}" was retired and renamed to "${canonical}", and you `
+        + `supplied BOTH. Vex will not guess which one you meant. Re-send the call with "${canonical}" only.`
+      );
+    }
+    args[canonical] = args[retired];
+    delete args[retired];
+  }
+  return null;
+}
+
 export async function handleBridgeStatus(
   args: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  const retired = normalizeRetiredBridgeStatusKeys(args);
+  if (retired) return fail(retired);
+
   const parsed = BridgeStatusArgs.safeParse(args);
   if (!parsed.success) {
     return fail(`BridgeStatus: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
@@ -332,8 +370,8 @@ export async function handleBridgeStatus(
 
   // List mode — forward only the list filters that were provided.
   const params: Record<string, unknown> = {};
-  if (a.address !== undefined) params.address = a.address;
-  if (a.wallet !== undefined) params.wallet = a.wallet;
+  if (a.walletAddress !== undefined) params.walletAddress = a.walletAddress;
+  if (a.walletFamily !== undefined) params.walletFamily = a.walletFamily;
   if (a.limit !== undefined) params.limit = a.limit;
   if (a.cursor !== undefined) params.cursor = a.cursor;
   if (a.fromChain !== undefined) params.fromChain = a.fromChain;

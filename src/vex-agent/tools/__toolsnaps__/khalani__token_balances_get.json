@@ -20,12 +20,12 @@
             ],
             "description": "Comma-separated chain IDs or aliases. Omit to scan all chains in the family. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
           },
-          "wallet": {
-            "description": "Wallet family: eip155 or solana (default: eip155).",
-            "type": "string"
-          },
           "walletAddress": {
             "description": "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH.",
+            "type": "string"
+          },
+          "walletFamily": {
+            "description": "Wallet FAMILY, never a chain: eip155 or solana (default: eip155).",
             "type": "string"
           }
         },
