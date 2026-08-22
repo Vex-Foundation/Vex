@@ -145,7 +145,7 @@ describe("solana-jupiter handlers — predict search + event lookup", () => {
 
   it("search: passes the validated provider and limit through to the SDK", async () => {
     searchJupiterPredictionEvents.mockResolvedValue({ data: [] });
-    await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", provider: "kalshi", limit: 5 }, ctx());
+    await searchHandler({ query: "btc", provider: "kalshi", limit: 5 }, ctx());
     expect(searchJupiterPredictionEvents).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "kalshi", query: "btc", limit: 5 }),
     );
@@ -161,10 +161,56 @@ describe("solana-jupiter handlers — predict search + event lookup", () => {
     searchJupiterPredictionEvents.mockResolvedValue({
       data: [structuredClone(FULL_EVENT), structuredClone(FULL_EVENT), structuredClone(FULL_EVENT)],
     });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", limit: 2 }, ctx());
+    const result = await searchHandler({ query: "btc", limit: 2 }, ctx());
     expect(result.success).toBe(true);
     const data = result.data as { data: Record<string, unknown>[] };
     expect(data.data).toHaveLength(2);
+  });
+
+  // ── The local slice is DISCLOSED (O4, owner ruling D16) ────────────
+  // `bounded_non_pageable` (parameter-vocabulary.md 4.1): the slice above
+  // drops rows and this search has no cursor, page or offset, so the reply
+  // must state the drop and name the only recoveries that exist. The boundary
+  // is what these pin: exactly `limit` rows is not truncation.
+  const searchHandler = SOLANA_JUPITER_HANDLERS["solana.predict.search"];
+  if (!searchHandler) throw new Error("solana.predict.search is not registered in SOLANA_JUPITER_HANDLERS");
+
+  it("search: reports returned/totalMatched and truncated:false at exactly `limit` rows", async () => {
+    searchJupiterPredictionEvents.mockResolvedValue({
+      data: [structuredClone(FULL_EVENT), structuredClone(FULL_EVENT)],
+    });
+    const result = await searchHandler({ query: "btc", limit: 2 }, ctx());
+    const data = result.data as Record<string, unknown>;
+    expect(data.returned).toBe(2);
+    expect(data.totalMatched).toBe(2);
+    expect(data.truncated).toBe(false);
+    expect(data.truncationNote).toBeUndefined();
+  });
+
+  it("search: reports truncated:true with the drop and both recoveries one row later", async () => {
+    searchJupiterPredictionEvents.mockResolvedValue({
+      data: [structuredClone(FULL_EVENT), structuredClone(FULL_EVENT), structuredClone(FULL_EVENT)],
+    });
+    const result = await searchHandler({ query: "btc", limit: 2 }, ctx());
+    const data = result.data as Record<string, unknown>;
+    expect(data.returned).toBe(2);
+    expect(data.totalMatched).toBe(3);
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("1 of the 3 matching events");
+    expect(String(data.truncationNote)).toContain("NO continuation");
+    expect(String(data.truncationNote)).toContain("more specific `query`");
+    expect(String(data.truncationNote)).toContain("raise `limit` (maximum 20)");
+  });
+
+  it("search: at the maximum `limit` the note offers only a narrower query, never a higher limit", async () => {
+    searchJupiterPredictionEvents.mockResolvedValue({
+      data: Array.from({ length: 21 }, () => structuredClone(FULL_EVENT)),
+    });
+    const result = await searchHandler({ query: "btc", limit: 20 }, ctx());
+    const data = result.data as Record<string, unknown>;
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("more specific `query`");
+    expect(String(data.truncationNote)).not.toContain("raise `limit`");
   });
 
   it("search: defaults the local window to 20 when limit is omitted", async () => {
@@ -174,21 +220,21 @@ describe("solana-jupiter handlers — predict search + event lookup", () => {
   });
 
   it("search: rejects a limit above 20 instead of clamping, without calling the SDK", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", limit: 21 }, ctx());
+    const result = await searchHandler({ query: "btc", limit: 21 }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("limit");
     expect(searchJupiterPredictionEvents).not.toHaveBeenCalled();
   });
 
   it("search: rejects a limit below 1 instead of clamping, without calling the SDK", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", limit: 0 }, ctx());
+    const result = await searchHandler({ query: "btc", limit: 0 }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("limit");
     expect(searchJupiterPredictionEvents).not.toHaveBeenCalled();
   });
 
   it("search: rejects an invalid provider value instead of silently dropping it", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", provider: "coinbase" }, ctx());
+    const result = await searchHandler({ query: "btc", provider: "coinbase" }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("provider");
     expect(searchJupiterPredictionEvents).not.toHaveBeenCalled();
@@ -204,7 +250,7 @@ describe("solana-jupiter handlers — predict search + event lookup", () => {
 
   it("search: includeMarkets:true restores the nested markets array", async () => {
     searchJupiterPredictionEvents.mockResolvedValue({ data: [structuredClone(FULL_EVENT)] });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!({ query: "btc", includeMarkets: true }, ctx());
+    const result = await searchHandler({ query: "btc", includeMarkets: true }, ctx());
     expect(result.success).toBe(true);
     const data = result.data as { data: Record<string, unknown>[] };
     expectProjectedEventWithMarkets(data.data[0]!);

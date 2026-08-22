@@ -6,12 +6,8 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
-          "address": {
-            "description": "List mode: wallet address (optional — uses your configured wallet).",
-            "type": "string"
-          },
           "cursor": {
-            "description": "List mode: pagination cursor for the next page.",
+            "description": "List mode: the provider's own opaque continuation value, echoed back as `cursor` on the previous reply. Send back exactly what that reply returned; a reply with no `cursor` is the end of the list.",
             "type": "number"
           },
           "fromChain": {
@@ -38,8 +34,12 @@
             "description": "List mode: search by transaction hash.",
             "type": "string"
           },
-          "wallet": {
-            "description": "List mode: wallet family — eip155 or solana.",
+          "walletAddress": {
+            "description": "List mode: the ACCOUNT address whose orders to list (optional - omit to use your configured wallet).",
+            "type": "string"
+          },
+          "walletFamily": {
+            "description": "List mode: wallet FAMILY, never a chain - eip155 or solana.",
             "type": "string"
           }
         },

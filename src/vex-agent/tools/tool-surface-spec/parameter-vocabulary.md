@@ -1,7 +1,8 @@
 # Parameter Vocabulary
 
-Spec S4, Batch 1. Docs only. Nothing here is enforced yet; the lint rules that
-will enforce it land in Batch 2.
+Spec S4, Batch 1, revised in Batch 4 (owner decisions D1 and D15). The key table
+and the alias contract are ENFORCED: `param-key` and `param-alias` in the
+manifest linter, and the boundary rewrite in `protocols/runtime/param-aliases.ts`.
 
 Companion documents: [style-guide.md](./style-guide.md) (description template),
 [output-envelope.md](./output-envelope.md) (what a paged tool returns),
@@ -10,69 +11,45 @@ Companion documents: [style-guide.md](./style-guide.md) (description template),
 ## 1. Where the vocabulary already lives
 
 `src/vex-agent/tools/protocols/conventions.ts` is the existing owner of the
-param vocabulary and it is **live**, not aspirational. Its own header claims
-otherwise:
-
-> `conventions.ts:10-12`: "NOTHING consumes it yet."
-
-That sentence is false today. `CANONICAL_PARAM_KEYS` and `BANNED_PARAM_KEYS`
-are read by the manifest linter (`_manifest-lint/rules.ts:84-103`, function
-`lintParamKey`), the chain-parity rule (`rules.ts:237-247`), and the canonical
-sentences are imported across the manifest tree. The header is stale copy and
-is listed for correction alongside the other stale copy in
-[output-envelope.md](./output-envelope.md#5-stale-copy-inventory).
+param vocabulary and it is **live**, not aspirational. Its header used to claim
+otherwise ("NOTHING consumes it yet"); Batch 4 corrected it, because the table
+has three live readers: `lintParamKey` and the chain-parity rule in the manifest
+linter, the untrusted boundary in `runtime/params.ts` (which answers a
+`BANNED_PARAM_KEYS` spelling with its replacement), and the `param-alias` rule,
+which admits an input alias only for a key banned there. The canonical sentences
+are imported across the manifest tree.
 
 **Consequence for this spec: this document does not restate the key table. It
 extends it.** `conventions.ts` stays the single home for which keys exist; this
 document adds only the per-key canonical *description sentence* and the
 pagination classification, neither of which lives there today.
 
-## 2. Conflict with plan section 5.3 (unresolved, escalated)
+## 2. Free text and continuation: resolved by owner decision D1/D15
 
-Plan v3 section 5.3 names the canonical keys as
-"query, sort + order, limit, offset (offset APIs) or cursor (cursor APIs),
-chain, walletFamily".
+Batch 1 recorded a conflict here and refused to resolve it: plan 5.3 named
+`query` and `cursor` as canonical, while `conventions.ts` ratified `search` and
+deliberately withheld both, because "canonicalizing one of them would silently
+retire a fleet-wide rename this task has no mandate to decide".
 
-Two of those contradict the live ratified table:
+**The owner gave that mandate.** D1 chose `query`; D15 ratified the 141
+allowlisted keys that had no canonical target, `query` and `cursor` among them,
+and retired `search`. The resolution, as it stands in code today:
 
-| Plan 5.3 says | `conventions.ts` says | Evidence |
+| Key | State | Where |
 | --- | --- | --- |
-| `query` | `search` is the ratified free-text key; `query` is **not** in `CANONICAL_PARAM_KEYS` | `conventions.ts:114` ratifies `search`; `conventions.ts:216-219` names `query` as one of the screening family's older spellings deliberately **not** ratified |
-| `cursor` | not ratified; explicitly withheld | `conventions.ts:216-221` |
+| `query` | canonical, the free-text key | `CANONICAL_PARAM_KEYS` |
+| `cursor` | canonical, the cursor-class continuation key | `CANONICAL_PARAM_KEYS` |
+| `search` | BANNED, replacement `query` | `BANNED_PARAM_KEYS` |
 
-The withholding is reasoned, not accidental:
+The choice went to `query` on the count that already existed: seven tools spelled
+it `query`, two spelled it `search`. The two `search` params (Morpho markets and
+vaults discover, both reads) were renamed, each carrying an input alias under the
+contract in section 7. Morpho's own provider predicate is still spelled `search`;
+that translation lives inside `morpho/read-params/*.ts`, which is the same rule
+`conventions.ts` already states for every other provider spelling.
 
-> `conventions.ts:216-220`: "The screening family's older spellings (`sortBy`,
-> `cursor`, `query`, `minMarketCapUsd`, `maxMarketCapUsd`) are NOT added here,
-> because a dozen existing tools carry allowlist debt against them and
-> canonicalizing one of them would silently retire a fleet-wide rename this
-> task has no mandate to decide."
-
-`sort` and `order` are already ratified (`conventions.ts:115-116`), so the plan
-and the code agree there. `limit` (`:94`), `chain` (`:60`), `offset` (`:117`)
-and `walletFamily` (`:64`) also agree.
-
-**This spec does not resolve the conflict, because resolving it is exactly the
-fleet-wide rename decision `conventions.ts:216-220` says nobody has a mandate
-for.** It records the two options and their costs:
-
-- **Option A (adopt the live table).** Free text stays `search`; the cursor
-  lane keeps whatever each provider adapter spells today until a separate
-  decision ratifies one. Cost: plan 5.3's wording is wrong and should be
-  amended; the `pagination: "cursor"` class below has no canonical key to
-  point at, so its param requirement stays "the tool's declared cursor key"
-  rather than a fixed spelling.
-- **Option B (ratify `query` and `cursor`).** `conventions.ts` gains both keys
-  and the fleet-wide `search` to `query` rename becomes a migration wave with
-  its own allowlist churn across the 340 existing `param-key` entries
-  (`_manifest-lint/allowlist.ts`, measured tally: `param-key` 340,
-  `tool-description` 180, `chain-doc-parity` 61, `enum-declaration` 27,
-  `param-description` 26). Cost: a rename the current mandate does not cover,
-  touching every screening tool.
-
-Until an owner decides, **the rest of this document is written against Option
-A**, because Option A is the one that does not contradict code that is live and
-tested today. Every place the choice matters is marked `RATIFICATION PENDING`.
+`sort`, `order`, `limit`, `offset`, `chain` and `walletFamily` were never in
+dispute and are unchanged.
 
 ## 3. Canonical description sentences
 
@@ -87,12 +64,12 @@ This spec adds the sentences the screening family lacks. Each is a proposed
 export for `conventions.ts` in Batch 2, in the same style as the existing four:
 one sentence, stating the contract the runtime actually enforces.
 
-**`search`** (`conventions.ts:114`)
+**`query`** (ratified by D1; `search` is its banned spelling)
 
 > Free-text substring match over a row's name and symbol identifiers. It is a
 > filter, not a ranker: it narrows the set, and `sort` decides the order.
 
-The second clause exists because a model that reads `search` as "search
+The second clause exists because a model that reads a free-text key as "search
 ranking" stops passing `sort` and then reports the first row as the best row.
 
 **`sort`** (`conventions.ts:115`)
@@ -143,9 +120,15 @@ generalize (`protocols/types.ts:124-131`).
 > The wallet FAMILY (`eip155` | `solana` | `all`). Never a chain. `network` and
 > `wallet` are banned spellings of this key (`conventions.ts:275-276`).
 
-**`cursor`** - `RATIFICATION PENDING` (section 2). No canonical sentence is
-proposed until the key itself is ratified. Proposing prose for an unratified
-key would create the second source of truth this document exists to prevent.
+**`cursor`** (ratified by D1/D15)
+
+> The provider's own opaque continuation value. Send back exactly what the
+> previous reply returned; never compute one, never parse it. A reply that
+> carries no cursor is the end of the list.
+
+Opaque to the agent AND to Vex. A provider that needs a different wire shape
+converts inside its own adapter, which is the rule `conventions.ts` already
+states for provider spellings.
 
 ## 4. Pagination classification vocabulary
 
@@ -194,8 +177,7 @@ Row-offset paging, the shape `conventions.ts:117` already describes.
 
 Opaque provider continuation token.
 
-- Required params: the tool's declared cursor key (`RATIFICATION PENDING`, see
-  section 2).
+- Required params: `cursor` (ratified; see section 2).
 - Required output fields: `hasMore`, `nextCursor`, `filtersApplied`.
 - The cursor is **opaque to both the agent and Vex**. It is round-tripped
   verbatim and never parsed, inspected, or synthesized. A Vex-side adapter that
@@ -314,6 +296,61 @@ reports any other key against the tool that introduced it.
 Before adding, check `BANNED_PARAM_KEYS` (`conventions.ts:268-277`). Each
 banned spelling names its replacement, because "a rejection that does not say
 what to write instead costs the agent another call"
-(`conventions.ts:264-266`). The eight banned spellings are `amount`,
-`inputToken`, `outputToken`, `chainId`, `chains`, `address`, `network`,
-`wallet`. Nothing in this spec proposes unbanning any of them.
+(`conventions.ts`). The nine banned spellings are `amount`, `inputToken`,
+`outputToken`, `chainId`, `chains`, `address`, `network`, `wallet` and `search`.
+Nothing in this spec proposes unbanning any of them.
+
+## 7. Aliases: accepting a retired spelling for one migration
+
+A rename costs every in-flight session one burnt call: the model holds a schema
+it read before the change and sends the spelling that schema declared.
+`ProtocolParamDef.aliases` buys that back for a bounded period, under a contract
+narrow enough that it cannot become a second vocabulary.
+
+**The contract.**
+
+1. An alias is INPUT ONLY. `paramsToJsonSchema`, the discovery row and every
+   description advertise the canonical key alone, so nothing the model reads
+   today teaches it the retired spelling.
+2. The rewrite runs at the EARLIEST runtime boundary: first thing in
+   `executeProtocolTool`, before the string-array and numeric-string coercers,
+   before the preview reader, before `validateProtocolParams` and before the
+   approval enqueue. It mutates the ORIGINAL arguments object, because the
+   enqueue persists that object into `approval_queue.tool_call`. Owner:
+   `protocols/runtime/param-aliases.ts`.
+3. Both spellings in one call is a REFUSAL naming both keys, never a precedence
+   rule. A caller that sent both has not said what it wants.
+4. An alias key must be a key of `BANNED_PARAM_KEYS`, must not be canonical,
+   and must collide with no declared key or other alias of the same tool.
+   Enforced by the `param-alias` lint rule.
+5. Every alias carries `removeAfter`, the condition under which it is deleted.
+   For the six Batch 4 renames that condition is owner decision D5: the alias
+   goes when the owner accepts that a stale call should instead receive the
+   unknown-parameter answer naming the new key. A shim with no named removal
+   condition never gets removed (rule 03).
+6. Declared aliases enter the approval fingerprint as their sorted KEYS, and
+   only when a param declares any, so a manifest with no alias hashes exactly as
+   it did before the field existed. An alias widens what the boundary admits
+   under a queued approval, which is call shape; `removeAfter` prose is not.
+
+**The internal lane.** `BridgeStatus` is a `ToolDef` with its own Zod parse, not
+a protocol manifest, so it carries the same contract in a helper of its own
+(`tools/internal/action-aliases.ts`) that runs BEFORE `safeParse`. It has to run
+before the parse: the schema strips undeclared keys, so a retired spelling would
+otherwise vanish silently and the call would run as if nothing had been filtered.
+
+**The six renames, all on READ tools.**
+
+| Tool | Retired | Canonical |
+| --- | --- | --- |
+| `BridgeStatus` | `address` | `walletAddress` |
+| `BridgeStatus` | `wallet` | `walletFamily` |
+| `khalani__orders_list` | `wallet` | `walletFamily` |
+| `khalani__token_balances_get` | `wallet` | `walletFamily` |
+| `morpho__markets_discover` | `search` | `query` |
+| `morpho__vaults_discover` | `search` | `query` |
+
+Output field names are NOT renamed by any of these: `khalani__token_balances_get`
+still returns `wallet` as the family it scanned. The one output that follows the
+input is `filtersApplied.query` on the two Morpho discover tools, because that
+field exists to echo the agent-facing key back.

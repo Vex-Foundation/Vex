@@ -66,6 +66,29 @@ export interface ToolDiscoveryMetadata {
 
 // ── Manifest (declarative tool definition) ───────────────────────
 
+/**
+ * One RETIRED input spelling of a param, accepted for a bounded migration.
+ *
+ * An alias exists so a rename does not cost every in-flight session one burnt
+ * call. It is INPUT-ONLY: the model-visible schema, the discovery row and every
+ * description advertise {@link ProtocolParamDef.key} alone.
+ */
+export interface ProtocolParamAlias {
+  /**
+   * The retired spelling. It must be a key of `conventions.ts`'s
+   * `BANNED_PARAM_KEYS` (the only durable record of a retired spelling once the
+   * lint allowlist rows are deleted) and must collide with no declared key or
+   * alias of the same tool. Enforced by the `param-alias` lint rule.
+   */
+  readonly key: string;
+  /**
+   * The condition under which this alias is DELETED, in prose, so a compatibility
+   * shim can never become a permanent second vocabulary (rule 03). Never hashed
+   * into the approval fingerprint and never model-visible.
+   */
+  readonly removeAfter: string;
+}
+
 export interface ProtocolParamDef {
   key: string;
   type: "string" | "number" | "boolean" | "object";
@@ -133,6 +156,31 @@ export interface ProtocolParamDef {
    * {@link ProtocolParamDef.acceptsStringArray}, EVERY member must be on the list.
    */
   enum?: readonly string[];
+  /**
+   * RETIRED input spellings of {@link ProtocolParamDef.key}, accepted for a
+   * bounded migration and rewritten to the canonical key before anything reads
+   * the call.
+   *
+   * Read in exactly three places, and NOWHERE else:
+   *  - `runtime/param-aliases.ts::normalizeParamAliases`, called first thing in
+   *    `executeProtocolTool`, rewrites the retired key IN PLACE on the original
+   *    arguments object and refuses BY NAME when both spellings arrive. It runs
+   *    before the string-array and numeric-string coercers, before the preview
+   *    reader, before `validateProtocolParams` and before the approval enqueue,
+   *    so the handler, the capture row, the fingerprint check and the queued
+   *    approval all see ONE spelling;
+   *  - `computeManifestFingerprint` hashes the sorted alias KEYS when any are
+   *    declared, because an alias widens what a queued approval would admit; a
+   *    manifest with no alias hashes exactly as it did before this field existed;
+   *  - the `param-alias` lint rule, which refuses an alias that is not a retired
+   *    spelling, collides with another key of the same tool, or has no
+   *    {@link ProtocolParamAlias.removeAfter}.
+   *
+   * It is deliberately NOT read by `paramsToJsonSchema` or by discovery: the
+   * schema advertises the canonical key alone, so a model reading the manifest
+   * today never learns the retired spelling.
+   */
+  aliases?: readonly ProtocolParamAlias[];
 }
 
 export interface ProtocolToolManifest {

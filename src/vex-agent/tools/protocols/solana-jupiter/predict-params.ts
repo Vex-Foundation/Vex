@@ -60,7 +60,8 @@ export function resolvePredictionWindow(p: Record<string, unknown>): PredictionW
 // 1-100 bound also does not apply here: search has its own stricter,
 // SDK-validated 1-20 range (`validateJupiterPredictionSearchEventsParams`).
 const SEARCH_DEFAULT_LIMIT = 20;
-const SEARCH_MAX_LIMIT = 20;
+/** Exported so the search handler's truncation note names the same ceiling this rejects above. */
+export const SEARCH_MAX_LIMIT = 20;
 
 export type SearchWindowResult =
   | { readonly ok: true; readonly limit: number }

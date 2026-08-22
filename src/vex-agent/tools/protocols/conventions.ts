@@ -7,9 +7,15 @@
  * and what replaces them, and the shared description sentences that must not be
  * retyped per manifest.
  *
- * NOTHING consumes it yet. It is landed ahead of the migration waves so the
- * manifest linter (`_manifest-lint.ts`) can measure today's distance from the
- * convention, and so each later wave edits ONE table instead of hunting copies.
+ * IT IS LIVE. `CANONICAL_PARAM_KEYS` and `BANNED_PARAM_KEYS` are read by the
+ * manifest linter's `param-key` rule (`_manifest-lint/rules.ts::lintParamKey`);
+ * `BANNED_PARAM_KEYS` is read again at the untrusted boundary, where a retired
+ * spelling is answered with its replacement (`runtime/params.ts`), and by the
+ * `param-alias` rule, which admits an input alias only for a key banned here.
+ * The canonical sentences below are imported across the manifest tree, and
+ * `CHAIN_VALUE_PARAM_KEYS` bounds the two normalizations the boundary performs.
+ * An earlier header said "NOTHING consumes it yet": true when the table landed
+ * ahead of the migration waves, false from the moment the linter shipped.
  *
  * Deliberate non-goals: no runtime validation lives here (the boundary owner is
  * `runtime/params.ts`), and no provider translation lives here (a provider that
@@ -111,7 +117,9 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // any screening tool that pages, ranks or projects rows uses these exact
   // four keys, and a model that learned them on one tool composes them
   // correctly on the next.
-  ["search", "free-text substring match over a row's name/symbol identifiers"],
+  // `search` used to sit here. Owner decision D1 made `query` the canonical
+  // free-text key (the fleet already spelled it that way seven times to
+  // `search`'s two), so `search` moved to BANNED_PARAM_KEYS naming `query`.
   ["sort", "ranking key; the accepted set is declared as an `enum`, never left in prose"],
   ["order", "ranking direction, `asc` or `desc`; declared as an `enum`"],
   ["offset", "row offset for paging; pairs with the reply's `nextOffset`"],
@@ -214,11 +222,13 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // not pre-convention debt: each names a filter the provider serves server-side
   // and has no canonical spelling to be renamed to. The screening family's older
   // spellings (`sortBy`, `cursor`, `query`, `minMarketCapUsd`, `maxMarketCapUsd`)
-  // are NOT added here, because a dozen existing tools carry allowlist debt
-  // against them and canonicalizing one of them would silently retire a
-  // fleet-wide rename this task has no mandate to decide. `order` is NOT in this
-  // list: the screening block above ratified it, so the pools manifests use the
-  // canonical key with no waiver.
+  // were withheld here for one wave, because a dozen tools carried allowlist debt
+  // against them and canonicalizing one would have decided a fleet-wide rename
+  // this task had no mandate for. Owner decision D15 gave that mandate: they are
+  // RATIFIED in the block at the end of this table, and `search` (not `query`) is
+  // the spelling that was retired. `order` is NOT in this list: the screening
+  // block above ratified it, so the pools manifests use the canonical key with no
+  // waiver.
   ["platform", "which launcher a multi-launchpad provider should answer for; never a chain"],
   ["live", "restrict a list to the provider's live/recently-active feed"],
   ["maxAgeHours", "keep only rows younger than N hours; the fresh-launch filter"],
@@ -278,6 +288,215 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // null and a stated reason, never a failed call.
   ["feed", "which provider FEED fills a shared row shape; the accepted set is declared as an `enum`"],
   ["liveStatus", "join a live provider status onto a local registry read; degrades to a null state with a stated reason"],
+
+  // -- Free text and opaque continuation (owner decision D1) ---------
+  //
+  // `query` is the free-text key the fleet already spells on seven tools, and
+  // D1 makes it THE canonical one: `search` moves to BANNED_PARAM_KEYS naming
+  // it, so the two Morpho discover tools that spelled it the other way are
+  // renamed rather than left as a second vocabulary. `cursor` is ratified as
+  // the cursor-class continuation key: the value is the PROVIDER's, opaque to
+  // the agent and to Vex, and the only legal thing to do with it is send back
+  // exactly what the previous reply returned.
+  ["query", "free-text substring match over a row's name/symbol identifiers; a FILTER, not a ranker - `sort` decides the order"],
+  ["cursor", "opaque provider continuation; pass back exactly what the reply returned, never a value you computed"],
+
+  // -- The ranking spellings that ship beside `sort` / `order` --------
+  //
+  // Ratified, not renamed: twenty-two tools carry these and a fleet-wide fold
+  // into `sort`/`order` is a migration with its own mandate. They mean exactly
+  // what the canonical pair means; the accepted set is still declared as an
+  // `enum` on every one of them.
+  ["sortBy", "ranking key on the tools that spell it this way; same contract as `sort`, declared as an `enum`"],
+  ["sortDir", "ranking direction on the tools that spell it this way; same contract as `order`, declared as an `enum`"],
+  ["sortDirection", "the third live spelling of ranking direction (solana predict); same contract as `order`"],
+
+  // -- Pair and token screening (dexscreener) -------------------------
+  //
+  // One provider's screening surface, named key by key because a declared key
+  // is type-checked, echoed back and rejected by name, which an opaque filter
+  // bag cannot be. Every `*Usd`, `*Pct`, `*Seconds` and `*Ratio` suffix carries
+  // the UNIT in the key for the reason the `*Percent` block above gives.
+  ["window", "which stats window a screen measures over (5m/1h/6h/24h); the row's numbers follow it"],
+  ["includeAllWindows", "return every stats window per row instead of only the one `window` selects"],
+  ["omitFields", "row field GROUPS to drop from a large result; the inverse of `fields`"],
+  ["explainDrops", "return why each row was dropped by the filters, so an empty page is diagnosable"],
+  ["slug", "the provider's own identifier for one curated meta list"],
+  ["pairAddress", "one DEX PAIR contract address; not a token address and not a wallet"],
+  ["labels", "a LIST of provider pool labels to keep (v3, stable, ...)"],
+  ["dexIds", "a LIST of DEX identifiers to keep"],
+  ["excludeDexIds", "a LIST of DEX identifiers to drop; the complement of `dexIds`"],
+  ["quoteSymbols", "a LIST of quote-asset symbols the pair must trade against"],
+  ["onlyBoosted", "keep only pairs carrying a paid boost"],
+  ["ctoOnly", "keep only community-takeover profiles"],
+  ["requirePriceUsd", "drop rows the provider prices at null, rather than ranking an unpriced row"],
+  ["requireLiquidityUsd", "drop rows with null liquidity, which bonding-curve pairs report"],
+  ["requireSocials", "keep only rows carrying at least one social link"],
+  ["requireWebsite", "keep only rows carrying a website"],
+  ["minBoostCountTotal", "floor on the total boosts a token has ever received"],
+  ["minTokenCount", "floor on how many tokens a trending group must contain"],
+  ["placedWithinSeconds", "keep only ads placed within the last N seconds"],
+  ["claimedWithinSeconds", "keep only takeovers claimed within the last N seconds"],
+  ["updatedWithinSeconds", "keep only profiles updated within the last N seconds"],
+  ["minPairAgeSeconds", "floor on pair age in SECONDS; the fresh-pair filter"],
+  ["maxPairAgeSeconds", "ceiling on pair age in SECONDS"],
+  ["minLiquidityUsd", "floor on pool liquidity, in USD"],
+  ["maxLiquidityUsd", "ceiling on pool liquidity, in USD"],
+  ["minMarketCapUsd", "floor on market capitalisation, in USD"],
+  ["maxMarketCapUsd", "ceiling on market capitalisation, in USD"],
+  ["minFdvUsd", "floor on fully diluted valuation, in USD"],
+  ["maxFdvUsd", "ceiling on fully diluted valuation, in USD"],
+  ["minVolumeUsd", "floor on traded volume over `window`, in USD"],
+  ["maxVolumeUsd", "ceiling on traded volume over `window`, in USD"],
+  ["minTxnCount", "floor on trades over `window`"],
+  ["minPriceChangePct", "floor on price change over `window`, as a PERCENT"],
+  ["maxPriceChangePct", "ceiling on price change over `window`, as a PERCENT"],
+  ["minTurnoverRatio", "floor on volume divided by liquidity; a RATIO, not a percent"],
+  ["maxTurnoverRatio", "ceiling on volume divided by liquidity; a RATIO, not a percent"],
+  ["minBuySellRatio", "floor on buys divided by sells; a RATIO, not a percent"],
+  ["maxBuySellRatio", "ceiling on buys divided by sells; a RATIO, not a percent"],
+  ["minQuoteDepthTokens", "floor on quote-side depth counted in TOKENS, not USD"],
+
+  // -- Bridge routing and order lookup (khalani, relay) ---------------
+  //
+  // The cross-chain vocabulary. `recipient` and `fromAddress` are deliberately
+  // distinct from `walletAddress`: they name the two ENDS of a transfer, and a
+  // single account key would let one be silently used as the other on a money
+  // path.
+  ["recipient", "the ACCOUNT that receives the destination-side funds; distinct from the source wallet"],
+  ["fromAddress", "the ACCOUNT the source-side funds leave; distinct from `recipient`"],
+  ["tradeType", "whether the amount given is the INPUT or the OUTPUT side; declared as an `enum`"],
+  ["filler", "restrict quotes to one named filler of the provider's solver set"],
+  ["depositMethod", "how the origin-chain deposit is made; declared as an `enum`"],
+  ["routeId", "the id of a route a quote already returned; never synthesised by the caller"],
+  ["orderId", "one bridge order's own id; the singular form, for the by-id read"],
+  ["orderIds", "a LIST of bridge order ids to filter a list read by"],
+  ["txHashSearch", "look a bridge order up by the transaction hash the user remembers"],
+  ["keyword", "the partial phrase an autocomplete read parses; not a filter over rows"],
+  ["refresh", "bypass the local cache and re-read the provider registry"],
+
+  // -- Fixed-rate yield instruments (pendle) --------------------------
+  //
+  // Pendle splits one asset into three tradable legs at a maturity date, so it
+  // needs keys for the legs (`pt`, `yt`, `sy`) and for the market that pairs
+  // them. They are NOT `token`: which leg a call names decides what is bought,
+  // and folding them into one key would make a PT purchase and a YT purchase
+  // the same call.
+  ["market", "a Pendle (or Solana lend) MARKET address or id; the venue, not a token"],
+  ["pt", "the PRINCIPAL token leg: the discounted claim on the underlying at maturity"],
+  ["yt", "the YIELD token leg: the claim on yield accrued until maturity"],
+  ["sy", "the STANDARDIZED-YIELD wrapper leg both other legs are minted from"],
+  ["fromMarket", "source market of a liquidity transfer; pairs with `toMarket`"],
+  ["toMarket", "destination market of a liquidity transfer; pairs with `fromMarket`"],
+  ["fromPt", "the maturing PT a rollover leaves; pairs with `toPt`"],
+  ["toPt", "the PT a rollover moves into; pairs with `fromPt`"],
+  ["asset", "the underlying asset a price or candle series is quoted for"],
+  ["from", "series window start, in the unit the tool's description names"],
+  ["to", "series window end, in the unit the tool's description names"],
+  ["timeFrame", "the base unit of one candle in a Pendle series; distinct from `timeframe`, which is the pools.fun spelling"],
+  ["precision", "how many price levels of an orderbook to return"],
+  ["ids", "a LIST of provider asset ids to price"],
+  ["type", "which class of asset a price read covers; declared as an `enum`"],
+  ["categories", "a LIST of yield categories to keep"],
+  ["excludeCategories", "a LIST of yield categories to drop; the complement of `categories`"],
+  ["expiryAfter", "keep only markets maturing after this date"],
+  ["expiryBefore", "keep only markets maturing before this date"],
+  ["minDaysToExpiry", "floor on days remaining to maturity"],
+  ["maxDaysToExpiry", "ceiling on days remaining to maturity"],
+  ["minImpliedApyPercent", "floor on the market-implied fixed rate, as a PERCENT"],
+  ["maxImpliedApyPercent", "ceiling on the market-implied fixed rate, as a PERCENT"],
+  ["includeMatured", "also return markets whose maturity has already passed"],
+  ["isNew", "keep only markets the provider flags as newly listed"],
+  ["isPrime", "keep only markets on the provider's curated prime list"],
+  ["underlyingSymbol", "symbol of the asset a yield market is built on"],
+  ["kinds", "a LIST of position leg kinds to value; declared as an `enum`"],
+  ["includeAccrued", "add accrued-but-unclaimed yield to a position valuation"],
+  ["minValueUsd", "floor on a position's value, in USD; drops dust rows"],
+  ["redeemableOnly", "keep only positions that can be redeemed right now"],
+
+  // -- Solana swap execution knobs (jupiter) --------------------------
+  //
+  // Transaction-shaping parameters, not filters. Each one changes how the
+  // transaction is BUILT, so each is named rather than hidden behind a single
+  // opaque options object a model could not be rejected by name against.
+  ["dexes", "a LIST of DEXes the route may use"],
+  ["excludeDexes", "a LIST of DEXes the route may NOT use; the complement of `dexes`"],
+  ["computeUnitPricePercentile", "which percentile of recent priority fees to pay, as the fee's own scale"],
+  ["forJitoBundle", "build the transaction for a Jito bundle rather than a plain send"],
+  ["maxAccounts", "ceiling on accounts the route may touch, to keep the transaction under the size limit"],
+  ["tipLamports", "the validator tip, in LAMPORTS; raw base units, as the key says"],
+  ["wrapAndUnwrapSol", "wrap and unwrap native SOL around the swap instead of requiring wSOL"],
+
+  // -- Solana token screening and pricing (jupiter) -------------------
+  ["minLiquidity", "floor on pool liquidity in the provider's own unit; NOT the USD-suffixed dexscreener key"],
+  ["minOrganicScore", "floor on the provider's own organic-activity score"],
+  ["statsInterval", "which stats window the row's numbers are measured over"],
+  ["verifiedOnly", "keep only tokens the provider has verified"],
+  ["category", "which provider-curated list a trending or event read answers for"],
+  ["interval", "the bucket size of a time series"],
+  ["mints", "a LIST of Solana mint addresses to price"],
+  ["queries", "a LIST of free-text price queries; the plural of `query` on a batch read"],
+
+  // -- Prediction markets (solana predict) ----------------------------
+  //
+  // `*Pubkey` keys are Solana account addresses of a SPECIFIC record - a
+  // position, an order, a market. They keep the `Pubkey` suffix rather than
+  // folding into `walletAddress` or `tokenAddress` because they identify a
+  // program-owned account, not an account that holds funds and not a token.
+  ["includeMarkets", "expand each event's markets inline instead of returning the event alone"],
+  ["provider", "which prediction-market venue to answer for; declared as an `enum`"],
+  ["positionPubkey", "the Solana account address of ONE position record"],
+  ["orderPubkey", "the Solana account address of ONE order record"],
+  ["marketPubkey", "the Solana account address of ONE market record"],
+  ["eventId", "the provider's own id for one event"],
+  ["filter", "the provider's own named row filter for an event list; declared as an `enum`"],
+  ["subcategory", "narrower band inside `category`"],
+  ["tags", "a LIST of the provider's own classification tags an event must carry"],
+  ["isYes", "which side of a binary market to keep"],
+  ["side", "buy or sell side of a prediction order; declared as an `enum`"],
+  ["amountUsdc", "order size in USDC, carrying its asset in the key because this venue quotes in nothing else"],
+  ["metric", "which leaderboard measure to rank by; declared as an `enum`"],
+  ["period", "the leaderboard window"],
+  ["count", "how many buckets a PnL history returns; distinct from `limit`, which caps rows"],
+  ["id", "the provider's own id for one record on a by-id read"],
+
+  // -- Solana lending (jupiter lend) ----------------------------------
+  ["vaultId", "the lending vault ONE operation acts on"],
+  ["vaultIds", "a LIST of lending vault ids to read; the plural of `vaultId`"],
+  ["positionId", "the borrow position ONE operation acts on"],
+  ["withdrawAll", "withdraw the whole balance; the shares path, so an accruing balance closes at zero"],
+  ["repayAll", "repay the whole debt; the shares path, for the same reason as `withdrawAll`"],
+  ["assets", "a LIST of assets a rates read covers"],
+  ["minSupplyRate", "floor on the supply rate a rates read returns"],
+  ["minTotalRate", "floor on the total (rewards-inclusive) rate a rates read returns"],
+
+  // -- Launchpad creation and screening (trench, pools.fun) -----------
+  //
+  // The token a launch CREATES does not exist yet, so these are not `token`
+  // keys: they are the metadata the launch is minted with. `prebuy` is the
+  // creator's own first buy in the same transaction.
+  ["name", "the display NAME the launch mints the token with"],
+  ["symbol", "the SYMBOL the launch mints the token with"],
+  ["description", "the launch's own description text, minted into the token metadata"],
+  ["links", "the social and website links minted into the token metadata"],
+  ["prebuy", "the creator's own first buy, executed in the launch transaction"],
+  ["pairedAsset", "which asset the new token is paired against in its pool"],
+  ["imageByteLength", "size of the image a launch preview will upload, in BYTES"],
+  ["creator", "the ACCOUNT that launched a token; the launchpad's deployer filter"],
+  ["status", "which lifecycle state a listing must be in; declared as an `enum`"],
+  ["excludeRuggedFlagged", "drop rows the launchpad has flagged as rugged"],
+  ["includeCurveProgress", "add each row's bonding-curve progress, which costs a per-row read"],
+  ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
+  ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
+
+  // -- Wallet and response shaping (internal tools) -------------------
+  //
+  // `response_format` is the shared verbosity contract
+  // (`tool-surface-spec/output-envelope.md`); it is ratified here because the
+  // linter reads the same table for the JSON-schema lane as for manifests.
+  ["action", "which sub-operation of a multi-mode tool to run; declared as an `enum`"],
+  ["intentId", "the id of a prepared intent this call confirms; never synthesised by the caller"],
+  ["response_format", "reply verbosity; the shared four-state contract, defaulting per tool and stated in its description"],
 ]);
 
 /**
@@ -294,6 +513,7 @@ export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["address", "use `tokenAddress` (a contract) or `walletAddress` (an account) — the bare key meant both"],
   ["network", "use `walletFamily` — it selects a wallet family, not a chain"],
   ["wallet", "use `walletFamily`"],
+  ["search", "use `query` - one free-text key across the fleet (owner decision D1)"],
 ]);
 
 /**

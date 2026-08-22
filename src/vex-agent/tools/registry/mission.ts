@@ -1,6 +1,7 @@
 /** Mission tools — only visible in mission setup/run contexts. */
 
 import type { ToolDef } from "../types.js";
+import { responseFormatParam } from "@vex-agent/response-format.js";
 
 export const MISSION_TOOLS: readonly ToolDef[] = [
   {
@@ -8,7 +9,12 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
     visibility: { requiresMissionSetup: true },
     description: "Save or update the mission draft during mission setup/edit. Call this before telling the user the mission draft is ready. response_format: 'concise' (default) returns missionId/status/ready/missingFields/nextAction; 'detailed' also echoes the full currentDraft.",
     parameters: { type: "object", properties: {
-      response_format: { type: "string", enum: ["concise", "detailed"], description: "concise (default) → status + missingFields + nextAction; detailed → also echoes the full currentDraft." },
+      response_format: responseFormatParam({
+        default: "concise",
+        whatDetailedAdds:
+          "also echoes the full currentDraft on top of the status, missingFields and "
+          + "nextAction 'concise' returns",
+      }),
       title: { type: "string", description: "Short mission title" },
       goal: { type: "string", description: "Mission goal or objective" },
       capitalSource: { type: "string", description: "Where starting capital comes from" },

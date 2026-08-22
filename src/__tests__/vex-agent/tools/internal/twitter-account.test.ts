@@ -182,6 +182,25 @@ describe("TwitterAccount", () => {
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
+  // D17 state 4: the rejection is shared mechanism now
+  // (`@vex-agent/response-format.js`), and it must still run BEFORE the schema
+  // parse. If the order ever flipped, a call that is wrong in two ways would be
+  // answered about the wrong one, and the caller would keep sending a param
+  // that no longer exists.
+  it("names the retired param even when the call ALSO fails schema validation", async () => {
+    const result = await handleTwitterAccount(
+      { action: "not_a_real_action", response_format: "detailed" },
+      baseContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(result.output).toContain("retired");
+    // Not the action error: the schema never got to run.
+    expect(result.output).not.toContain("not_a_real_action");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
+  });
+
   /**
    * This used to assert a DENYLIST: the provider's sentence reached the model
    * with three secret shapes rewritten to `[redacted]`. The contract is now an

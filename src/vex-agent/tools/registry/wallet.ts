@@ -7,6 +7,7 @@
 
 import type { ToolDef } from "../types.js";
 import { CANONICAL_HUMAN_AMOUNT_SENTENCE } from "../protocols/conventions.js";
+import { responseFormatParam } from "@vex-agent/response-format.js";
 
 /**
  * The wallet FAMILY selector (SPEC §1.1). `network` and `wallet` both named it
@@ -18,7 +19,7 @@ const WALLET_FAMILY_DESCRIPTION =
 export const WALLET_TOOLS: readonly ToolDef[] = [
   {
     name: "WalletBalances", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
-    description: "Read your token balances on every chain Vex can reach: Khalani-covered chains via Khalani, plus local chains like Robinhood Chain (4663) read directly from RPC. Defaults to your personal wallets - both EVM (`eip155`) and Solana - aggregated in one call. Pass `walletFamily` or `chainIds` only when you want to narrow the scan. Use this when the user asks what they hold or what a position is worth, and after a swap, bridge or transfer to confirm the tokens actually landed - this reads live balances, while `AgentScan` reads recorded history. RETURNS walletFamily, walletCount, totalUsd, walletErrors, and one snapshot per wallet carrying address, tokenCount, totalUsd, scannedChainIds, chainErrors, tokenErrors and tokens; each token row has symbol, name, address, chainId, decimals and balance in smallest units, plus priceUsd and isRiskToken when known. A chain or token that could not be read appears in chainErrors/tokenErrors rather than vanishing, and `tokenErrorsOmitted`/`unpricedOmitted` count what those 20-row caps left out. `tokenCount` and `totalUsd` always describe the FULL scan even when `limit` trimmed the rows you can see.",
+    description: "Read your token balances on every chain Vex can reach: Khalani-covered chains via Khalani, plus local chains like Robinhood Chain (4663) read directly from RPC. Defaults to your personal wallets - both EVM (`eip155`) and Solana - aggregated in one call. Pass `walletFamily` or `chainIds` only when you want to narrow the scan. Use this when the user asks what they hold or what a position is worth, and after a swap, bridge or transfer to confirm the tokens actually landed - this reads live balances, while `AgentScan` reads recorded history. RETURNS walletFamily, walletCount, totalUsd, walletErrors, and one snapshot per wallet carrying address, tokenCount, totalUsd, scannedChainIds, chainErrors, tokenErrors and tokens; each token row has symbol, name, address, chainId, decimals and balance in smallest units, plus priceUsd and isRiskToken when known. A chain or token that could not be read appears in chainErrors/tokenErrors rather than vanishing, and `tokenErrorsOmitted`/`unpricedOmitted` count what those 20-row caps left out. Every snapshot also carries `truncated`: false means you are seeing every row of the full projected scan, true means the concise trim left rows out (priced rows past `limit`, unpriced rows past the 20-row cap, or zero-balance unpriced rows) and a `truncationNote` says how to widen the read: response_format 'detailed' returns every row, while raising `limit` recovers only the priced rows it cut; there is no continuation to fetch. `tokenCount` and `totalUsd` always describe the FULL scan even when `limit` trimmed the rows you can see.",
     parameters: { type: "object", properties: {
       walletFamily: { type: "string", enum: ["eip155", "solana", "all"], description: "Which wallet FAMILY to read — 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`." },
       // Accepts BOTH spellings the model reaches for: the CSV string and a real
@@ -29,7 +30,12 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
         anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
         description: "Optional. Omit (or pass empty) to scan all supported chains (Khalani + local). To restrict, pass chain IDs/aliases either comma-separated ('ethereum,base,solana') or as an array (['ethereum','base']).",
       },
-      response_format: { type: "string", enum: ["concise", "detailed"], description: "Output verbosity. Default 'detailed' returns every token per wallet. Set 'concise' to enable the `limit` trim (top tokens by held USD value)." },
+      response_format: responseFormatParam({
+        default: "detailed",
+        whatDetailedAdds:
+          "returns every token per wallet; 'concise' is what enables the `limit` trim "
+          + "(top rows by held USD value) and sets `truncated` when rows were left out",
+      }),
       limit: { type: "number", description: "Optional. Caps the PRICED rows per wallet snapshot, top-N by held USD value. Held tokens with no usable price are appended after them, outside this limit, marked `priceUnavailable` so 'no price feed' never reads as 'not held'; they are capped at 20 with the surplus counted in `unpricedOmitted`. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan." },
     } },
   },

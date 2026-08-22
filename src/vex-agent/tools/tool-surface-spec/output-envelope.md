@@ -287,7 +287,7 @@ result shapes should capture one helper's shape, not two.
 
 ## 7. `response_format`
 
-`concise` | `detailed`, one shared module, **default `concise`**.
+`concise` | `detailed`, one shared module (`src/vex-agent/response-format.ts`, D17). The default is `concise` everywhere except `wallet_balances`, whose `detailed` default is the ratified exception recorded in section 7.3.
 
 ### 7.1 Current state: four sites, three behaviors
 
@@ -324,7 +324,7 @@ The last is `twitter_account` and its reasoning must survive any consolidation:
 A shared module that treats "retired" as merely "absent" would reintroduce the
 silent-drop this rejection exists to prevent.
 
-### 7.3 The `wallet_balances` divergence: resolution requires an owner decision
+### 7.3 The `wallet_balances` divergence: RESOLVED 2026-08-22 as R2 (D17)
 
 `wallet_balances` defaults to `detailed`, and the code says why:
 
@@ -345,21 +345,35 @@ what an existing caller receives from a wallet-reading tool: fewer token rows,
 and a previously-inert `limit` suddenly trimming. That is a behavior change on a
 money-adjacent read, which rule 00 makes an explicit-direction item.
 
-Two candidate resolutions, for the owner:
+**The owner chose R2 on 2026-08-22 (D17): `wallet_balances` keeps `detailed`,
+recorded as a ratified exception.**
 
-- **R1: flip to `concise`, keep the trim opt-in.** Uniform default across all
-  tools; `limit` still requires an explicit value, so a bare call returns every
-  row exactly as today and only the *label* changes. This is the smallest change
-  that removes the divergence, and it appears to preserve observable behavior for
-  bare calls, but that equivalence must be proven by a test before the flip, not
-  assumed from reading `trimTokens` (`read.ts:481-483`).
-- **R2: keep `detailed` and record it as a ratified exception.** The divergence
-  becomes documented policy with a reason, not debt. Costs uniformity; costs
-  nothing else.
+The two candidates were R1 (flip to `concise`, keeping the trim opt-in, for a
+uniform default) and R2 (keep `detailed` and document why). R1 was rejected on
+this reason: on this tool the default does not only label the reply, it gates
+the trim. Under a `concise` default a caller who sent `{limit: N}` and nothing
+else would start receiving a trimmed and RE-RANKED row set from a
+money-adjacent read, having asked for neither. The uniformity R1 buys is not
+worth a wallet read quietly dropping holdings.
 
-R1 is recommended if and only if the bare-call equivalence test passes. Absent
-that evidence, R2 is the honest state. Either way the decision is recorded in
-the shared module, not discovered by reading a handler.
+So the divergence is now documented policy rather than debt:
+
+- The reason lives in the shared module's header
+  (`src/vex-agent/response-format.ts`, state 2), not in a handler comment, so
+  it is found before the code is changed rather than after.
+- The behavior is pinned by test, not by prose: `{limit: N}` with no
+  `response_format` returns every row, unmarked and untruncated
+  (`__tests__/vex-agent/tools/internal/wallet/read-concise-unpriced.test.ts`,
+  "the detailed default (D17 R2) and `truncated` (D16)"). The same suite
+  asserts field-for-field equality between a bare call and
+  `response_format: "concise"` without a limit, which is the equivalence R1
+  would have needed and which now guards the exception instead.
+
+Related, from D16: each wallet snapshot now carries `truncated` (always
+present, `false` on the `detailed` path and on a `{limit}` call with no
+format) plus a `truncationNote` when true. `wallet_balances` is
+bounded_non_pageable: there is no continuation to fetch, so the note names the
+narrowing action (raise `limit`, or ask for `detailed`) instead.
 
 ### 7.4 What `concise` must never drop
 

@@ -154,7 +154,13 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
       + "NARRATIVES, not individual tokens; drill into one with "
       + "dexscreener__narrative_get. Every filter, sort and window is applied by Vex to the provider's current "
       + "trending list, whose size the provider chooses (19 narratives in current captures). No "
-      + "server-side filter, sort, limit or pagination exists. Live but undocumented API surface — "
+      + "server-side filter, sort, limit or pagination exists, so paging here walks the ONE list the "
+      + "provider returned instead of asking it for more. Every reply carries the provenance envelope: "
+      + "`totalMatched` (narratives left after your filters), `returned`, `offset`, `hasMore` (true exactly "
+      + "when offset + returned is below totalMatched), `filtersApplied` and `droppedByFilter`, plus a "
+      + "`providerWindow` block naming the endpoint and how many rows it gave. Continue by adding `returned` "
+      + "to `offset` while hasMore is true; hasMore false is the end of that provider list, never a claim "
+      + "about every narrative that exists. Live but undocumented API surface - "
       + "may change; if it does the call fails with the real reason (rate limit, transport, or "
       + "unreadable payload), it does not return an empty success." + " " + SOURCE_OBSERVATION_CLAUSE,
     mutating: false,

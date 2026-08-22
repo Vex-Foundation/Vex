@@ -72,9 +72,29 @@ export async function trenchImagesHandler(p: Record<string, unknown>) {
     uploadedAt: row.uploadedAt,
   }));
 
+  // Pagination class `bounded_non_pageable` (parameter-vocabulary.md section
+  // 4.1): this read takes `limit` and offers NO continuation, so the only
+  // honest thing the reply can do about the rows it dropped is say that it
+  // dropped them and name the knob that brings them back. Both counts were
+  // already in hand; nothing here reads the locker a second time.
+  const dropped = rows.length - images.length;
+  const truncated = dropped > 0;
+
   return ok({
     count: images.length,
     totalAvailable: rows.length,
+    truncated,
+    ...(truncated
+      ? {
+        truncationNote:
+            `${dropped === 1 ? "1 more image exists" : `${dropped} more images exist`} in the locker beyond this reply. `
+            + "There is no continuation through this tool - no cursor, no page - so "
+            + (limit < MAX_LIMIT
+              ? `raise \`limit\` (maximum ${MAX_LIMIT}) to see them.`
+              : `the locker holds more than the maximum \`limit\` of ${MAX_LIMIT}, and the rest are `
+                + "unreachable here; ask the user which image they mean if it is not listed."),
+      }
+      : {}),
     images,
     ...(images.length === 0 ? { guidance: EMPTY_LOCKER_GUIDANCE } : {}),
   });

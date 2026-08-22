@@ -33,6 +33,7 @@ import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { validateProtocolParams } from "./runtime/params.js";
+import { normalizeParamAliases } from "./runtime/param-aliases.js";
 import { coerceStringArrayParams } from "./runtime/string-array-coercion.js";
 import { coerceNumericStringParams } from "./runtime/numeric-string-coercion.js";
 import { renderProtocolFailureOutput, summarizeProtocolError } from "./runtime/errors.js";
@@ -86,6 +87,24 @@ export async function executeProtocolTool(
       success: false,
       output: `Unknown protocol tool: ${request.toolId}. Use ToolSearch to find available tools.`,
     };
+  }
+
+  // RETIRED INPUT SPELLINGS, rewritten FIRST and on the caller's own object.
+  // This must precede every other reader of the params - the two coercers
+  // below, `isPreviewExecution`, `validateProtocolParams`, the capture row and
+  // the approval enqueue, which persists the ORIGINAL arguments object. See
+  // `./runtime/param-aliases.ts` for why it mutates and why both spellings are
+  // a refusal rather than a precedence rule. A manifest with no declared alias
+  // is untouched by this call.
+  const aliasNormalization = normalizeParamAliases(manifest, request.params ?? {});
+  if (!aliasNormalization.ok) {
+    // Stamped with the manifest's own kind rather than the preview override:
+    // nothing ran, and the conservative classification of a refused call is the
+    // tool's real one.
+    return withActionKind(
+      { success: false, output: aliasNormalization.reason },
+      manifest.actionKind,
+    );
   }
 
   // Resolve target action kind ONCE — every subsequent return path stamps

@@ -259,3 +259,21 @@ Doc drift: mcp-export-scope.md:18 says "137 toolIds today"; the catalog holds
 - The 17 "session wallet" descriptions are a wording problem: they
   describe real behavior.
 - Anything here was verified at runtime: every count is static.
+
+## Addendum 2026-08-22: two corrections from the github-mcp-server architecture map
+
+Measured against the reference at 8ec6249 (`studio-mcp/github-mcp-architecture-map.md`):
+
+1. Criterion 5 cites `pkg/utils/result.go:79` as "github-mcp emits
+   StructuredContent". That site is the MCP Apps `awaiting_user_submission`
+   sentinel (an `IsError: true` result meaning a form is open and the
+   operation has NOT happened); `csv_output.go:104` nils the field. The
+   reference has no structured output channel; its output is text content.
+   The "L" behavior item at line 95 is not supported by the reference and
+   O5 stays deferred.
+2. The dynamic-toolsets meta-tool mode (`enable_toolset`,
+   `list_available_toolsets`) does not exist in the reference at this
+   commit. The surface is fixed per connection by flags or headers, and
+   `pkg/inventory/tool_availability.go` filters `tools/list` by the client's
+   protocol version and declared capabilities. Any design citing the
+   meta-tool mode as prior art cites something that no longer exists.

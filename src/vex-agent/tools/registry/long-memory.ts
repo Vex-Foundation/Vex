@@ -29,6 +29,7 @@
 
 import type { ToolDef } from "../types.js";
 import { formatKindExamples } from "@vex-agent/memory/kind-catalog.js";
+import { responseFormatParam } from "@vex-agent/response-format.js";
 
 export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
   {
@@ -118,11 +119,12 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
           type: "string",
           description: "Optional ISO 8601 timestamp of when you observed the lesson.",
         },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → id + status; detailed → adds redaction counts, source tier, dual-trace window.",
-        },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds redaction counts, source tier and the dual-trace window to the id and "
+            + "status 'concise' returns",
+        }),
       },
       required: ["kind", "title", "summary"],
       additionalProperties: false,
@@ -163,11 +165,12 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
           // Intentional change: 2 → 4 examples, catalog order (D-KINDS).
           description: `Optional exact kind filter (free-form snake_case, e.g. ${formatKindExamples()}). Omit to search across all kinds.`,
         },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → id/title/scores; detailed → adds summary, content, tags, maturity, source tier, evidence.",
-        },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds summary, content, tags, maturity, source tier and evidence to the "
+            + "id, title and scores 'concise' returns",
+        }),
         include_candidates: {
           type: "boolean",
           description: "Include fresh un-consolidated dual-trace signals (default true). Set false to see only promoted long-term entries.",
@@ -199,11 +202,12 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
       type: "object",
       properties: {
         id: { type: "number", description: "Long-term memory entry id (from a MemorySearch 'long_memory' result)." },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → metadata + lineage links (body still loaded into context); detailed → also inlines content_md + lifecycle metadata.",
-        },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "also inlines content_md and lifecycle metadata on top of the metadata and "
+            + "lineage links 'concise' returns (the body is loaded into context either way)",
+        }),
       },
       required: ["id"],
       additionalProperties: false,
@@ -225,11 +229,16 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
       type: "object",
       properties: {
         id: { type: "number", description: "Any long-term memory entry id in the chain (root, middle, or head)." },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "Reserved — the chain + reinforcement timeline are returned the same way for both.",
-        },
+        // Accepted for symmetry with the other memory tools, and it genuinely
+        // changes nothing here: the handler returns the same chain and
+        // reinforcement timeline for both values. Said plainly rather than as
+        // "reserved", so the model does not spend a turn trying the other one.
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds nothing on this tool: the version chain and reinforcement timeline "
+            + "are returned exactly the same way for both values",
+        }),
       },
       required: ["id"],
       additionalProperties: false,

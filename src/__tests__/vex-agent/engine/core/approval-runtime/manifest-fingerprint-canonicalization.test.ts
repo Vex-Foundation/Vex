@@ -90,3 +90,50 @@ describe("computeManifestFingerprint — orderings that remain canonicalized", (
     expect(computeManifestFingerprint(a)).toBe(computeManifestFingerprint(b));
   });
 });
+
+describe("computeManifestFingerprint - retired-spelling aliases", () => {
+  const alias = (key: string) => ({ key, removeAfter: "D5 owner acceptance." });
+
+  // The load-bearing one. `aliases` entered the projection in Batch 4; if it had
+  // entered unconditionally (as `aliases: null`), EVERY queued approval in the
+  // system would have been stranded by the field's arrival alone.
+  it("leaves an alias-FREE manifest byte-identical to its pre-alias hash", () => {
+    const bare = manifestWith({ params: [param({ key: "chain" })] });
+    // Pinned literal, derived independently from the PRE-alias v2 field list
+    // (key/type/required/unit/enum/acceptsStringArray plus the three group
+    // fields), not copied out of the current implementation. A change here is a
+    // stranded-approval migration, not a refactor.
+    expect(computeManifestFingerprint(bare)).toBe("4e1100eabcbaf452be7826f62a9ad4a6");
+  });
+
+  it("CHANGES when an alias is added - an alias widens what the boundary admits", () => {
+    const before = manifestWith({ params: [param({ key: "walletFamily" })] });
+    const after = manifestWith({
+      params: [param({ key: "walletFamily", aliases: [alias("wallet")] })],
+    });
+
+    expect(computeManifestFingerprint(after)).not.toBe(computeManifestFingerprint(before));
+  });
+
+  it("is UNCHANGED when alias declaration order is reshuffled - the keys are a SET", () => {
+    const a = manifestWith({
+      params: [param({ key: "walletFamily", aliases: [alias("wallet"), alias("network")] })],
+    });
+    const b = manifestWith({
+      params: [param({ key: "walletFamily", aliases: [alias("network"), alias("wallet")] })],
+    });
+
+    expect(computeManifestFingerprint(a)).toBe(computeManifestFingerprint(b));
+  });
+
+  it("is UNCHANGED when only the `removeAfter` prose differs - it is not call shape", () => {
+    const a = manifestWith({
+      params: [param({ key: "walletFamily", aliases: [{ key: "wallet", removeAfter: "one" }] })],
+    });
+    const b = manifestWith({
+      params: [param({ key: "walletFamily", aliases: [{ key: "wallet", removeAfter: "another" }] })],
+    });
+
+    expect(computeManifestFingerprint(a)).toBe(computeManifestFingerprint(b));
+  });
+});

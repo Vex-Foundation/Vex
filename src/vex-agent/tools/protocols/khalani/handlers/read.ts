@@ -102,7 +102,11 @@ export async function parseChainIds(raw: string | undefined): Promise<number[] |
 }
 
 export function resolveWalletFamily(params: Record<string, unknown>): ChainFamily {
-  const walletFamily = str(params, "wallet") || "eip155";
+  // The canonical key (owner decision D15). A call that arrived with the retired
+  // `wallet` spelling was already rewritten to `walletFamily` at the runtime
+  // boundary (`protocols/runtime/param-aliases.ts`), so there is exactly one
+  // spelling to read here. The default is unchanged.
+  const walletFamily = str(params, "walletFamily") || "eip155";
   if (walletFamily === "eip155" || walletFamily === "solana") return walletFamily;
   throw new VexError(
     ErrorCodes.AGENT_VALIDATION_ERROR,

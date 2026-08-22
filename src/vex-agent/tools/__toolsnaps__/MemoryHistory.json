@@ -11,7 +11,7 @@
             "type": "number"
           },
           "response_format": {
-            "description": "Reserved — the chain + reinforcement timeline are returned the same way for both.",
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' adds nothing on this tool: the version chain and reinforcement timeline are returned exactly the same way for both values.",
             "enum": [
               "concise",
               "detailed"

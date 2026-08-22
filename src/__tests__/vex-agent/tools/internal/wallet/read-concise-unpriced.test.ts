@@ -84,6 +84,15 @@ function localRead() {
 
 type Row = { symbol: string; priceUsd?: string; priceUnavailable?: boolean };
 
+/** Only the fields these tests assert on; the handler emits more. */
+type Snapshot = {
+  tokens: Row[];
+  tokenCount: number;
+  unpricedOmitted?: number;
+  truncated: boolean;
+  truncationNote?: string;
+};
+
 async function tokensFor(params: Record<string, unknown>): Promise<Row[]> {
   const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood", ...params }, CONTEXT);
   expect(res.success).toBe(true);
@@ -219,5 +228,145 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
     const tokens = await tokensFor({ response_format: "concise" });
     expect(tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
     expect(tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+  });
+});
+
+/**
+ * D17 (R2) and D16 (`truncated`).
+ *
+ * The `detailed` default on `wallet_balances` is a RATIFIED exception, and the
+ * reason is the first test here: because the default also gates the trim, a
+ * `concise` default would make a bare `{limit: N}` call silently start dropping
+ * and re-ranking rows on a money-adjacent read. This file is where that stays
+ * pinned, so a later "make the defaults uniform" change fails loudly.
+ *
+ * `truncated` is the honesty half: the bounded_non_pageable class has no
+ * continuation, so the field says whether rows are missing and the note says
+ * how to widen the read.
+ */
+describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)", () => {
+  async function snapshotFor(params: Record<string, unknown>): Promise<Snapshot> {
+    const res = await handleWalletBalances(
+      { walletFamily: "eip155", chainIds: "robinhood", ...params },
+      CONTEXT,
+    );
+    expect(res.success).toBe(true);
+    const snap = (res.data as { wallets: Snapshot[] }).wallets[0];
+    if (!snap) throw new Error("wallet_balances returned no snapshot for the eip155 wallet");
+    return snap;
+  }
+
+  it("`{limit: N}` with NO response_format returns every row, unmarked and untruncated", async () => {
+    const snap = await snapshotFor({ limit: 2 });
+
+    // The whole point of R2: `limit` is inert under the default format. If this
+    // ever returns 4 rows, the default was flipped and a wallet read started
+    // hiding holdings nobody asked it to hide.
+    expect(snap.tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
+    expect(snap.tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    expect(snap.truncated).toBe(false);
+    expect(snap.truncationNote).toBeUndefined();
+  });
+
+  it("the bare default and concise-without-limit are field-for-field identical", async () => {
+    const bare = await snapshotFor({});
+    const conciseNoLimit = await snapshotFor({ response_format: "concise" });
+
+    // Not just the token list: every field, so `truncated`, the omission
+    // counters and the totals are all proven equivalent, which is what makes
+    // "only the label differs" a measured claim rather than a reading of
+    // `trimTokens`.
+    expect(conciseNoLimit).toEqual(bare);
+  });
+
+  it("`truncated` is present as false on the detailed path", async () => {
+    const snap = await snapshotFor({ response_format: "detailed", limit: 1 });
+    // Present, not absent: an absent field reads as "no answer".
+    expect("truncated" in snap).toBe(true);
+    expect(snap.truncated).toBe(false);
+  });
+
+  it("concise with a limit BELOW the priced count is truncated, and the note names the recovery", async () => {
+    // 4 priced + 2 unpriced held = 6 projected; limit 2 keeps 2 + 2 = 4.
+    const snap = await snapshotFor({ response_format: "concise", limit: 2 });
+
+    expect(snap.tokens).toHaveLength(4);
+    expect(snap.truncated).toBe(true);
+    // The recovery text is part of the contract: `detailed` is the one complete
+    // recovery, and `limit` is promised only what it can deliver (the priced
+    // rows it cut), never the unpriced-cap or zero-balance rows.
+    expect(snap.truncationNote).toContain('response_format:"detailed" (the only complete recovery)');
+    expect(snap.truncationNote).toContain("Raising `limit` recovers only the priced rows it cut");
+    expect(snap.truncationNote).toContain("FULL projected scan");
+    // bounded_non_pageable: there is nothing to page to, and the note must not
+    // suggest otherwise.
+    expect(snap.truncationNote).toContain("no continuation");
+  });
+
+  it("concise with a limit AT or ABOVE the priced count is not truncated", async () => {
+    const atCount = await snapshotFor({ response_format: "concise", limit: 4 });
+    expect(atCount.tokens).toHaveLength(6);
+    expect(atCount.truncated).toBe(false);
+    expect(atCount.truncationNote).toBeUndefined();
+
+    const above = await snapshotFor({ response_format: "concise", limit: 99 });
+    expect(above.tokens).toHaveLength(6);
+    expect(above.truncated).toBe(false);
+  });
+
+  it("a zero-balance unpriced row the trim drops still counts as truncation", async () => {
+    // This row is dropped by design (retention is for real holdings), and
+    // `unpricedOmitted` deliberately does not count it - which is exactly why
+    // `truncated` is measured against the full projected set instead.
+    mockReadLocal.mockResolvedValue({
+      ...localRead(),
+      tokens: [
+        { address: "0xa", symbol: "AAA", decimals: 18, balanceWei: ONE, priceUsd: 1 },
+        { address: "0xz", symbol: "ZERO", decimals: 18, balanceWei: 0n, priceUsd: null },
+      ],
+    });
+
+    const snap = await snapshotFor({ response_format: "concise", limit: 1 });
+    expect(snap.tokens.map((t) => t.symbol)).toEqual(["AAA"]);
+    expect(snap.unpricedOmitted).toBeUndefined();
+    expect(snap.truncated).toBe(true);
+  });
+
+  it("the 20-row unpriced cap sets truncated too", async () => {
+    const dust = Array.from({ length: 25 }, (_, i) => ({
+      address: `0xdust${i}`,
+      chainId: 8453,
+      symbol: `DUST${i}`,
+      name: `Dust ${i}`,
+      decimals: 18,
+      extensions: { balance: ONE.toString() },
+    }));
+    mockScan.mockResolvedValue({
+      address: "0xWALLET",
+      family: "eip155" as ChainFamily,
+      tokens: [
+        { address: "0xusdc", chainId: 8453, symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
+        ...dust,
+      ],
+      scannedChainIds: [8453],
+      chainErrors: [],
+      totalUsd: 100,
+    });
+    mockReadLocal.mockResolvedValue({ nativeWei: 0n, nativePriceUsd: null, tokens: [], tokenFailures: [] });
+
+    const res = await handleWalletBalances(
+      { walletFamily: "eip155", response_format: "concise", limit: 1 },
+      CONTEXT,
+    );
+    expect(res.success).toBe(true);
+    const snap = (res.data as { wallets: Snapshot[] }).wallets[0];
+    if (!snap) throw new Error("wallet_balances returned no snapshot for the eip155 wallet");
+
+    expect(snap.unpricedOmitted).toBe(5);
+    expect(snap.truncated).toBe(true);
+    // Rows past the 20-row unpriced cap cannot come back through `limit`; the
+    // note must send the agent to `detailed`, not to a bigger limit.
+    expect(snap.truncationNote).toContain('response_format:"detailed" (the only complete recovery)');
+    expect(snap.truncationNote).toContain("never the rows the 20-row unpriced cap");
   });
 });

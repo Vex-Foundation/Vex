@@ -78,7 +78,7 @@
             "type": "string"
           },
           "response_format": {
-            "description": "concise (default) → status + missingFields + nextAction; detailed → also echoes the full currentDraft.",
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' also echoes the full currentDraft on top of the status, missingFields and nextAction 'concise' returns.",
             "enum": [
               "concise",
               "detailed"
