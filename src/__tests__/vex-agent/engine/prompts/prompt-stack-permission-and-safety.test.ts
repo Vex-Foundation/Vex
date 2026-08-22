@@ -107,12 +107,12 @@ describe("prompt-stack — permission & safety", () => {
       expect(joined).toContain("khalani__tokens_search");
     });
 
-    it("khalani is canonical resolver in protocols section, kyberswap is not primary", () => {
+    it("the swap task resolves token identity before venue execution", () => {
       const prompt = buildProtocolsPrompt();
-      // kyberswap section should reference khalani as resolver, not itself
-      const kyberSection = prompt.split("### kyberswap")[1]?.split("##")[0] ?? "";
-      expect(kyberSection).toContain("khalani");
-      expect(kyberSection).not.toContain("kyberswap.tokens.search");
+      // Wave 2 migration rows T433 and T434.
+      const swapSection = prompt.split("### Swap\n")[1]?.split("\n### ")[0] ?? "";
+      expect(swapSection).toContain("Resolve the exact token and chain");
+      expect(swapSection).not.toContain("kyberswap.tokens.search");
     });
 
   });

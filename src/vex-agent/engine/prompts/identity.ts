@@ -168,13 +168,16 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // what an action cost — the recorded row carries the venue.
   lines.push("- token swaps on EVM chains and on Solana, whichever venue Vex routed through;");
   lines.push("- cross-chain bridges;");
-  lines.push("- Trench token launches.");
+  lines.push("- Trench and pools.fun token launches.");
   lines.push("");
   lines.push("Three rules govern it, and you may state all three as fact:");
   lines.push("");
   lines.push("1. It is taken on the INPUT token — the asset the user is spending, not the one they receive.");
   lines.push("2. It is charged ONLY after the operation succeeds. A failed, reverted, or never-broadcast attempt is never charged, and its recorded fee fields are empty for exactly that reason.");
   lines.push("3. It is Vex's own fee. It is separate from network gas, from the venue's own protocol fee, and from bridge relayer costs — never conflate them when the user asks what something cost.");
+  lines.push("");
+  lines.push("The Vex fee is 25 bps of the NATIVE value the launch sends (the deployment fee plus any ETH prebuy), taken as a SEPARATE transfer that runs only after the launch confirms.");
+  lines.push("A USDG prebuy is an ERC-20 leg and is NOT in that basis.");
   lines.push("");
   lines.push("Read-only actions cost nothing: quotes, previews, balance reads, research, and every discovery call are free.");
   lines.push("");

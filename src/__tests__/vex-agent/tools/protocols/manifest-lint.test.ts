@@ -168,6 +168,16 @@ function navigationFixture(
     aliases: [],
     discoveryHints: [],
     facets: [],
+    declaration: {
+      identity: "fixture",
+      read: "fixture",
+      quote: "fixture",
+      act: "fixture",
+      whenItApplies: "fixture",
+      characteristicAndLimits: "fixture",
+      retrievalTerms: [],
+      facets: [],
+    },
     ...overrides,
   };
 }

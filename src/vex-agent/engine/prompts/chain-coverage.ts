@@ -1,104 +1,125 @@
 /**
- * CHAIN COVERAGE - which venues exist on which chain, as one static map.
+ * Runtime-owned chain coverage projected into protocol declarations.
  *
- * The agent's recurring failure this section answers: it plans a whole action
- * on a chain it can reach with one venue and cannot leave, or assumes a venue
- * it has seen on Base exists everywhere. The venue half of that question is
- * fully knowable at build time, so it is answered here rather than being
- * rediscovered by a failed tool call.
- *
- * KV-CACHE SAFE BY CONSTRUCTION: every value below is derived from a registry
- * compiled into the build, so the rendered text is byte-identical for the whole
- * lifetime of a build. NO live number, no snapshot timestamp and no fetched
- * list may enter this module. The LIVE bridge truth (Khalani's real-time chain
- * list, the Relay health gate) belongs to the turn-state layer in
- * `protocols.ts`, which is re-rendered per turn precisely because it moves.
- *
- * The bridge column here is therefore a STATIC PINNED SNAPSHOT and says so in
- * the rendered text: it tells the agent where to expect reach, and the turn
- * state tells it what is true right now.
- *
- * `protocols.ts` renders it once, inside the static prefix.
+ * Navigation aliases, discovery hints, and declaration prose are never chain
+ * truth. Every rendered row comes from the registry or constant used by the
+ * corresponding runtime path.
  */
 
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../constants/solana-chain.js";
+import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { MORPHO_CHAINS } from "@tools/morpho/chains.js";
 import { PENDLE_CHAIN_REGISTRY } from "@tools/pendle/chains.js";
+import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
+import { listUniswapDeployments } from "@tools/uniswap/deployments.js";
+import { BRIDGE_FAMILY } from "@vex-agent/tools/protocols/relay/handlers/bridge/constants.js";
+import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js";
+import { CURATED_BRIDGE_CHAIN_NAMES } from "@vex-agent/tools/protocols/khalani/capability-snapshot.js";
+import type { ProtocolNamespace } from "@vex-agent/tools/protocols/types.js";
 
-/**
- * Khalani-served EVM chain ids, pinned 2026-08-17 from the live `/v1/chains`
- * registry. A PIN, not a cache: this section must render identically on every
- * turn of a build, and the live list is served to the model separately in the
- * turn state. Re-pin this array deliberately, with a new date, when the owner
- * accepts a coverage change - never wire it to a fetch.
- */
-const KHALANI_PINNED_EVM_CHAIN_IDS: readonly number[] = [
+/** Static expectation pinned from Khalani's live registry on 2026-08-17. */
+export const KHALANI_PINNED_EVM_CHAIN_IDS: readonly number[] = [
   1, 10, 56, 130, 137, 143, 324, 2741, 5000, 8453, 16661, 42161, 43114, 59144, 80094, 747474,
-];
+] as const;
 
-const khalaniPinned: ReadonlySet<number> = new Set(KHALANI_PINNED_EVM_CHAIN_IDS);
-const morphoChainIds: ReadonlySet<number> = new Set(MORPHO_CHAINS.map((c) => c.chainId));
-const pendleChainIds: ReadonlySet<number> = new Set(PENDLE_CHAIN_REGISTRY.map((c) => c.chainId));
-
-/** What a chain can be used FOR, in the order the agent needs to read it. */
-function venueLabels(chainId: number): string[] {
-  const labels: string[] = ["swap"];
-  if (morphoChainIds.has(chainId)) labels.push("lend");
-  if (pendleChainIds.has(chainId)) labels.push("fixed yield");
-  // Robinhood Chain (4663) carries BOTH launchpads - Trench Express and
-  // pools.fun - so this one predicate already labels the chain correctly for
-  // both, and keying it on pools as well would only push a duplicate "launch"
-  // onto the same row. `TRENCH_CHAIN_ID` is read here as "the chain that has a
-  // launchpad", not as a Trench-only fact; the two products are told apart in
-  // the doctrine sections of `protocols.ts`, not in this venue table.
-  if (chainId === TRENCH_CHAIN_ID) labels.push("launch");
-  return labels;
+export interface ProtocolNamespaceCoverage {
+  readonly namespace: ProtocolNamespace;
+  readonly line: string;
 }
 
-/**
- * The bridge annotation. Two states only, because they are the two a STATIC
- * table can honestly claim: a chain the pinned Khalani snapshot covers (both
- * bridges may serve it) and one it does not (Relay is the only candidate).
- * "Neither" is deliberately absent - proving it needs Relay's live `/chains`,
- * which is exactly the fact this module refuses to embed.
- */
-function bridgeLabel(chainId: number): string {
-  return khalaniPinned.has(chainId) ? "khalani+relay" : "RELAY ONLY";
+function renderNamedChains(chains: readonly { readonly name: string; readonly chainId: number }[]): string {
+  return chains.map((chain) => `${chain.name} (${chain.chainId})`).join(", ");
 }
 
-function chainLine(name: string, chainId: number): string {
-  return `- ${name} (${chainId}): ${venueLabels(chainId).join(", ")} | bridge ${bridgeLabel(chainId)}`;
+function renderSluggedChains(chains: readonly { readonly slug: string; readonly chainId: number }[]): string {
+  return chains.map((chain) => `${chain.slug} (${chain.chainId})`).join(", ");
 }
 
-/**
- * The rendered CHAIN COVERAGE section. Pure, deterministic, and free of live
- * data - call it anywhere in the constant prompt layer.
- */
-export function buildChainCoveragePrompt(): string {
-  const lines: string[] = [];
+function localChainLine(chainId: number): string {
+  const chain = getLocalChain(chainId);
+  return chain ? `${chain.name} (${chain.id})` : `chain ${chainId}`;
+}
 
-  // `##` matches the section heading discipline of the static prefix in
-  // `protocols.ts`, which is the only place this section renders.
-  lines.push("## Chain Coverage");
-  lines.push(
-    "Before planning an action on a chain, confirm you can REACH it and LEAVE it: the venues per "
-    + "chain are listed below and do not change within a session, while live bridge reach is in "
-    + "the turn state. A chain you can swap on but cannot bridge off is a position you can enter "
-    + "and not exit, so check the bridge column before committing funds, not after.",
-  );
-  lines.push(
-    "Bridge column: `khalani+relay` means both bridges are expected to serve the chain and the "
-    + "router picks one automatically; `RELAY ONLY` means Khalani does not serve it and every "
-    + "bridge goes through Relay. The column is a pinned snapshot, so confirm a route by quoting "
-    + "before relying on it.",
-  );
-
-  const evmChains = [...getKyberChains()].sort((a, b) => a.chainId - b.chainId);
-  for (const chain of evmChains) {
-    lines.push(chainLine(chain.name, chain.chainId));
+function renderKhalaniPinnedEvmChains(): string {
+  const named: string[] = [];
+  let hasUnnamed = false;
+  for (const chainId of KHALANI_PINNED_EVM_CHAIN_IDS) {
+    const name = CURATED_BRIDGE_CHAIN_NAMES[chainId];
+    if (name) named.push(`${name} (${chainId})`);
+    else hasUnnamed = true;
   }
-  lines.push("- Solana: swap, lend via `solana.*` (Jupiter). Not an EVM chain and not in the table above; its bridge reach is in the turn state.");
+  if (hasUnnamed) named.push("and others");
+  return named.join(", ");
+}
 
-  return lines.join("\n");
+function virtualsManifestChainValues(): readonly string[] {
+  const values = VIRTUALS_TOOLS
+    .flatMap((tool) => tool.params)
+    .find((param) => param.key === "chain" && param.enum)?.enum;
+  if (!values) throw new Error("Virtuals manifest must declare its closed chain enum.");
+  return values;
+}
+
+const KYBERSWAP_COVERAGE = getKyberChains()
+  .filter((chain) => chain.aggregator)
+  .map((chain) => ({ name: chain.name, chainId: chain.chainId }));
+
+const UNISWAP_COVERAGE = listUniswapDeployments().map((deployment) => ({
+  name: deployment.name,
+  chainId: deployment.chainId,
+}));
+
+const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, ProtocolNamespaceCoverage>>> = {
+  khalani: {
+    namespace: "khalani",
+    line: `Coverage: ${renderKhalaniPinnedEvmChains()}, plus Solana (${SOLANA_SYNTHETIC_CHAIN_ID}). Live bridge reach is in the turn state.`,
+  },
+  relay: {
+    namespace: "relay",
+    line: `Coverage: ${BRIDGE_FAMILY} EVM chains only. ${localChainLine(TRENCH_CHAIN_ID)} is reachable only through Relay when its live health gate passes; Solana is not supported.`,
+  },
+  kyberswap: {
+    namespace: "kyberswap",
+    line: `Coverage: ${renderNamedChains(KYBERSWAP_COVERAGE)}.`,
+  },
+  uniswap: {
+    namespace: "uniswap",
+    line: `Coverage: ${renderNamedChains(UNISWAP_COVERAGE)}.`,
+  },
+  morpho: {
+    namespace: "morpho",
+    line: `Coverage: ${renderSluggedChains(MORPHO_CHAINS)}.`,
+  },
+  pendle: {
+    namespace: "pendle",
+    line: `Coverage: ${renderNamedChains(PENDLE_CHAIN_REGISTRY)}.`,
+  },
+  trench: {
+    namespace: "trench",
+    line: `Coverage: ${localChainLine(TRENCH_CHAIN_ID)} only.`,
+  },
+  pools: {
+    namespace: "pools",
+    line: `Coverage: ${localChainLine(POOLS_CHAIN_ID)} only.`,
+  },
+  solana: {
+    namespace: "solana",
+    line: `Coverage: Solana (${SOLANA_SYNTHETIC_CHAIN_ID}) only.`,
+  },
+  virtuals: {
+    namespace: "virtuals",
+    line: `Coverage: ${virtualsManifestChainValues().join(", ")}.`,
+  },
+} as const;
+
+export function getProtocolNamespaceCoverage(
+  namespace: ProtocolNamespace,
+): ProtocolNamespaceCoverage | undefined {
+  return COVERAGE_BY_NAMESPACE[namespace];
+}
+
+export function getProjectedProtocolCoverages(): readonly ProtocolNamespaceCoverage[] {
+  return Object.values(COVERAGE_BY_NAMESPACE);
 }

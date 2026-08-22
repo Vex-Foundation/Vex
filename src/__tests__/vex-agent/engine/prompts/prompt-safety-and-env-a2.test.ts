@@ -20,6 +20,7 @@ import { buildSafetyContractPrompt } from "../../../../vex-agent/engine/prompts/
 import { buildSafetyReanchorPrompt } from "../../../../vex-agent/engine/prompts/safety-reanchor.js";
 import { buildToolModelPrompt } from "../../../../vex-agent/engine/prompts/tool-model.js";
 import { buildResearchPrompt } from "../../../../vex-agent/engine/prompts/research.js";
+import { buildProtocolsPrompt } from "../../../../vex-agent/engine/prompts/protocols.js";
 import { listMissingCapabilities } from "../../../../vex-agent/engine/prompts/capability-availability.js";
 import { PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
@@ -176,16 +177,17 @@ describe("env-gated capability notice (# Tool Model)", () => {
 describe("# Research — env gating of the WebResearch teaching", () => {
   it("teaches the WebResearch shapes when TAVILY_API_KEY is present", () => {
     setKeys(true);
-    const prompt = buildResearchPrompt();
-    expect(prompt).toContain('WebResearch(query="...", topic="news")');
-    expect(prompt).toContain("## Capability Orientation vs Operational Research");
+    // Wave 2 migration rows T280 and T281.
+    expect(buildProtocolsPrompt()).toContain('topic="news"');
+    expect(buildResearchPrompt()).toContain("## Capability Orientation vs Operational Research");
   });
 
   it("drops the shapes but KEEPS the orientation discipline when the key is missing", () => {
     setKeys(false);
     const prompt = buildResearchPrompt();
     expect(prompt).toContain("# Research");
-    expect(prompt).not.toContain('WebResearch(query="...", topic="news")');
+    // Wave 2 migration rows T282-T286.
+    expect(buildProtocolsPrompt()).not.toContain('topic="news"');
     expect(prompt).not.toContain("searches through Tavily");
     expect(prompt).toContain("## Capability Orientation vs Operational Research");
     expect(prompt).toContain("Operational Research");
@@ -193,11 +195,12 @@ describe("# Research — env gating of the WebResearch teaching", () => {
 
   it("re-teaches the shapes when the key comes back (absent → present → absent)", () => {
     setKeys(false);
-    expect(buildResearchPrompt()).not.toContain("searches through Tavily");
+    // Wave 2 migration rows T287-T289.
+    expect(buildProtocolsPrompt()).not.toContain("Web research shapes:");
     setKeys(true);
-    expect(buildResearchPrompt()).toContain("searches through Tavily");
+    expect(buildProtocolsPrompt()).toContain("Web research shapes:");
     setKeys(false);
-    expect(buildResearchPrompt()).not.toContain("searches through Tavily");
+    expect(buildProtocolsPrompt()).not.toContain("Web research shapes:");
   });
 });
 
@@ -208,13 +211,14 @@ describe("# Mission Execution — env-gated Solana recommendation", () => {
     missionRunId: "run-1",
   });
 
-  it("recommends solana__tokens_discover only when JUPITER_API_KEY is configured", () => {
+  it("recommends Solana yield only when JUPITER_API_KEY is configured", () => {
     setKeys(true);
+    // Wave 2 migration rows T290 and T291.
     expect(buildPromptStack(missionContext).staticLayers.join("\n"))
-      .toContain("solana__tokens_discover");
+      .toContain("Route Solana yield to Jupiter Lend for earn and collateralized borrowing");
     setKeys(false);
     expect(buildPromptStack(missionContext).staticLayers.join("\n"))
-      .not.toContain("solana__tokens_discover");
+      .toContain("Solana yield is unavailable until its configured capability is enabled");
   });
 });
 

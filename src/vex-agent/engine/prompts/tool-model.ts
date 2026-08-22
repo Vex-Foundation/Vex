@@ -30,19 +30,6 @@
  * The `# Available Tool Map` (built in `tool-catalog.ts`) lists what is
  * callable RIGHT NOW for the active mode + pressure band.
  *
- * SCHEMA-READING DOCTRINE lives here (`### Reading an injected tool schema`),
- * relocated from the retired discovery tool's own description in
- * `tools/registry/protocol.ts` (`tool-surface-spec/toolsearch-design.md` §6). It
- * was roughly 1.6 KB — the single largest block of a ~4 KB tool description —
- * and none of it was about SEARCHING; it is the routing model, which is this
- * layer's job. It is written against the INJECTED FUNCTION SCHEMA rather than
- * the old `params` array, because the ToolSearch merge stopped shipping that
- * array to the model: the schema now reaches it through exactly one channel,
- * the one the provider validates.
- * Adopted from `agents-colab/github-mcp-server/pkg/github/toolset_instructions.go`:
- * protocol and workflow guidance lives in the instruction stack, a tool
- * description states what one tool does.
- *
  * Tool-specific operational contracts (semantic-intent examples, save /
  * do-not-save lists, per-arg ✓/✗ examples) live on the ToolDef.description
  * payloads in `tools/registry/*.ts` so the model sees them at the tool
@@ -72,7 +59,7 @@ Two ways to call tools:
 
 2. **Protocol tools** — the full multi-chain protocol surface. You do not see them until you ask: call \`ToolSearch\`, and every tool it returns is added to your tool list as a REAL function with its full parameter schema, which you then call BY NAME like any other tool. Use the name EXACTLY as the result gave it (\`kyberswap__swap_quote\`, \`khalani__bridge_execute\`) — the name is an authored identifier, not something you can build from a dotted id, and a name you construct yourself will not resolve.
 
-Use the Tool Map for the DIRECT tools: if a direct internal tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed that list to what the dispatcher will accept. Do not emit calls to direct tools that are not in the Map — the dispatcher rejects them with an actionable error explaining which gate blocked. Protocol tools are NOT listed there individually: the Map carries \`ToolSearch\`, and the protocol surface behind it is what \`# Available Protocol Namespaces\` describes — a namespace missing from the Map is not evidence its tools do not exist.
+Use the Tool Map for the DIRECT tools: if a direct internal tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed that list to what the dispatcher will accept. Do not emit calls to direct tools that are not in the Map - the dispatcher rejects them with an actionable error explaining which gate blocked. Protocol tools are NOT listed there individually: the Map carries \`ToolSearch\`, and the protocol surface behind it is what \`## What Vex can reach\` describes - a namespace missing from the Map is not evidence its tools do not exist.
 
 Every call example in this prompt is written as \`tool_name(param="value")\`. That notation shows INTENT, not wire format — always emit a real tool call through the tools API, never the example text as a message.
 
@@ -85,7 +72,7 @@ The curated shortcuts below run the SAME protocol code as the protocol tools the
 | \`TokenFind\` | \`khalani__tokens_search\` (canonical token resolver) |
 | \`TokenCheck\` | \`kyberswap__token_safety_check\` (EVM honeypot / fee-on-transfer) |
 | \`SwapQuote\` / \`SwapExecute\` | the chain's swap venue (EVM → \`kyberswap__swap_*\`, \`chain="solana"\` → \`solana__swap_*\`) |
-| \`BridgeQuote\` / \`BridgeExecute\` | the route's bridge provider, auto-selected (\`khalani.*\`, or \`relay.*\` to/from Robinhood Chain) |
+| \`BridgeQuote\` / \`BridgeExecute\` | the route's bridge provider, auto-selected (Khalani, or Relay to/from Robinhood Chain) |
 | \`BridgeStatus\` | \`khalani__order_get\` (with \`orderId\`) / \`khalani__orders_list\` |
 
 Reach for \`ToolSearch\` for everything these shortcuts do not cover.
@@ -127,16 +114,7 @@ turn N+1:  kyberswap__swap_quote(chain="base",
 
 Read that trace for three things: the call uses \`publicName\` EXACTLY as returned, never a name you assembled yourself; the call happens on the FOLLOWING turn, because that is when the schema reaches you; and the values are literal — an address stays an address, a \`bps\` value is basis points (100 = 1%), and an amount is raw atomic units or human decimals exactly as its own parameter description says.
 
-### Reading an injected tool schema
-
-A selected tool arrives as an ordinary function definition: named parameters, types, and a \`required\` list the provider enforces. The search result never carries that schema, so read it off the tool definition itself.
-
-- **Types are literal.** A \`number\` parameter must be a JSON number, not a string.
-- **Units are literal.** A parameter's description states its unit and you follow it exactly; \`bps\` means basis points, where 100 = 1%.
-- **An amount is raw base units or human decimals, exactly as its name and description say.** The two differ by orders of magnitude. Do not convert, round, or guess a unit — resolve decimals with \`TokenFind\` first.
-- **Read every description you rely on** — of every parameter you intend to send, AND of every parameter you intend to omit. Defaults, value formats, mutually-exclusive groups, and everything else the type cannot express are stated there.
-- **Never invent a parameter the schema does not list.** An unknown parameter is rejected BY NAME, not silently ignored.
-- **Never invent a tool name.** Call only names a \`ToolSearch\` result in THIS session returned. Long-memory recall may hint at which namespace or approach to try; the authoritative name still comes from the search.
+An amount is raw base units or human decimals, exactly as its name and description say. The two differ by orders of magnitude. Do not convert, round, or guess a unit - resolve decimals with \`TokenFind\` first.
 
 Rules:
 

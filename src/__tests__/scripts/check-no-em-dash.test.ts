@@ -9,6 +9,11 @@
  * repository whose only content is untracked, so a regression that drops the
  * `git ls-files --others` lane turns this test red.
  *
+ * The second block pins the gate's ONLY exemption, the closed allowlist of
+ * relocated PRESERVE EXACT prompt sentences: the sentence passes at its named
+ * destination once the base revision carries it verbatim, and fails before the
+ * base carries it, in any other file, and when another em dash shares the line.
+ *
  * The em dash is built from its code point, never written literally: a literal
  * here would make this file trip the very gate it tests.
  */
@@ -88,5 +93,48 @@ describe("check-no-em-dash", () => {
     const result = runGate();
     rmSync(path.join(sandbox, "src/vex-agent/tools/__toolsnaps__"), { recursive: true });
     expect(result.code).toBe(0);
+  });
+});
+
+describe("check-no-em-dash relocated-sentence allowlist", () => {
+  // One real allowlist entry (ledger row L025), duplicated here on purpose so
+  // a silent edit of the script's list fails this test.
+  const DESTINATION = "src/vex-agent/engine/prompts/bridge-capability.ts";
+  const SENTENCE = `Bridge chain list unavailable ${EM_DASH} verify by quoting.`;
+  const ORIGIN = "src/vex-agent/engine/prompts/protocols.ts";
+
+  it("fails the allowlisted sentence at its destination while the base does not carry it", () => {
+    writeSandboxFile(DESTINATION, `lines.push("${SENTENCE}");\n`);
+    const result = runGate();
+    rmSync(path.join(sandbox, DESTINATION));
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(`${DESTINATION}:1`);
+  });
+
+  it("passes the allowlisted sentence at its destination once the base carries it verbatim", () => {
+    writeSandboxFile(ORIGIN, `lines.push("${SENTENCE}");\n`);
+    git("add", "-A");
+    git("commit", "-m", "legacy sentence in its original module");
+    writeSandboxFile(DESTINATION, `lines.push("${SENTENCE}");\n`);
+    const result = runGate();
+    rmSync(path.join(sandbox, DESTINATION));
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("no em dashes");
+  });
+
+  it("fails the same sentence in any other file", () => {
+    writeSandboxFile("src/elsewhere.ts", `export const copy = "${SENTENCE}";\n`);
+    const result = runGate();
+    rmSync(path.join(sandbox, "src/elsewhere.ts"));
+    expect(result.code).toBe(1);
+    expect(result.output).toContain("src/elsewhere.ts:1");
+  });
+
+  it("fails another em dash sharing the allowlisted line", () => {
+    writeSandboxFile(DESTINATION, `lines.push("${SENTENCE}"); // and ${EM_DASH} more\n`);
+    const result = runGate();
+    rmSync(path.join(sandbox, DESTINATION));
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(`${DESTINATION}:1`);
   });
 });

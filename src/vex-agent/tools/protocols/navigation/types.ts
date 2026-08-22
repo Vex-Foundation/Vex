@@ -13,6 +13,19 @@ export interface ProtocolNavigationFacet {
   hints: readonly string[];
 }
 
+export interface ProtocolNamespaceDeclaration {
+  readonly identity: string;
+  readonly read: string;
+  readonly quote: string;
+  readonly act: string;
+  readonly whenItApplies: string;
+  readonly characteristicAndLimits: string;
+  readonly retrievalTerms: readonly string[];
+  readonly facets: readonly string[];
+  /** Used only when no runtime-owned chain projection exists. */
+  readonly coverageNote?: string;
+}
+
 export interface ProtocolNamespaceNavigation {
   namespace: ProtocolNamespace;
   advertised: boolean;
@@ -25,6 +38,7 @@ export interface ProtocolNamespaceNavigation {
   aliases: readonly string[];
   discoveryHints: readonly string[];
   facets: readonly ProtocolNavigationFacet[];
+  readonly declaration: ProtocolNamespaceDeclaration;
 }
 
 export interface ProtocolNavigationGroup {

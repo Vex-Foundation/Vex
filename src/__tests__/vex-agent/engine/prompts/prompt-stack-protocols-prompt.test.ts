@@ -10,7 +10,6 @@ import {
   PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
   PROTOCOL_NAMESPACE_ALLOWLIST,
   PROTOCOL_TOOLS,
-  isProtocolToolAvailable,
 } from "../../../../vex-agent/tools/protocols/catalog.js";
 import { makeContext, joinedStack } from "./_prompt-stack-helpers.js";
 
@@ -22,12 +21,11 @@ describe("prompt-stack — protocols prompt", () => {
   // ── Protocols generated from catalog ────────────────────────
 
   describe("protocols prompt", () => {
-    it("mentions the AVAILABLE action count from the actual catalog", () => {
+    it("renders the declaration layer without a tool inventory", () => {
       const prompt = buildProtocolsPrompt();
-      const availableToolCount = PROTOCOL_TOOLS.filter((tool) =>
-        PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
-      ).filter(isProtocolToolAvailable).length;
-      expect(prompt).toContain(`Total: ${availableToolCount} protocol actions`);
+      // Wave 2 migration row T840.
+      expect(prompt).toContain("## What Vex can reach");
+      expect(prompt).not.toContain(" protocol actions");
     });
 
     it("contains all advertised namespaces from catalog", () => {
@@ -47,17 +45,13 @@ describe("prompt-stack — protocols prompt", () => {
       }
     });
 
-    it("gives each namespace its prefix, an action count, and example publicNames (scent, not a menu)", () => {
+    it("renders declarations without capsule inventory scaffolding", () => {
       const prompt = buildProtocolsPrompt();
-
-      expect(prompt).toContain("`dexscreener.*`");
-      expect(prompt).toMatch(/· \d+ actions/);
-      // The examples are MODEL-VISIBLE publicNames, never dotted toolIds: the
-      // catalog rejects a dotted id as a call, so a `dexscreener.` example
-      // would teach a name the model cannot call.
-      expect(prompt).toContain("Examples: dexscreener__");
+      // Wave 2 migration rows T477-T482.
+      expect(prompt).toContain("### dexscreener");
+      expect(prompt).not.toMatch(/· \d+ actions/);
+      expect(prompt).not.toContain("Examples: dexscreener__");
       expect(prompt).not.toMatch(/Examples: [a-z]+\./);
-      // The full per-action documentation lives behind discovery, not here.
       expect(prompt).not.toContain("Paths:");
       expect(prompt).not.toContain("Requires env:");
     });
@@ -80,9 +74,11 @@ describe("prompt-stack — protocols prompt", () => {
       }
     });
 
-    it("renders explicit product groups instead of heuristic families", () => {
+    it("renders task shapes after the declarations", () => {
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("## Cross-chain"); // P3 heading fix: group H2 (was ###, inverted)
+      // Wave 2 migration rows T483 and T484.
+      expect(prompt).toContain("## How Vex works a task");
+      expect(prompt).not.toContain("## Cross-chain");
       expect(prompt).not.toContain("Families:");
     });
 
@@ -99,20 +95,20 @@ describe("prompt-stack — protocols prompt", () => {
       );
 
       for (const ns of namespacesWithMutating) {
-        const nsSection = prompt.split(`### ${ns}`)[1]?.split("##")[0] ?? "";
-        // Env-gated namespaces can legitimately have zero AVAILABLE actions in
-        // this install; the marker describes what is callable, not the catalog.
-        if (nsSection.includes("· 0 actions")) continue;
+        const nsSection = prompt.split(`### ${ns}\n`)[1]?.split("\n### ")[0] ?? "";
+        // Wave 2 migration row T485. An unavailable namespace has one
+        // availability line and no mutation marker.
+        if (nsSection.includes("Availability:")) continue;
         expect(nsSection).toContain("mutating");
       }
     });
 
-    it("is not hardcoded — count changes with catalog", () => {
+    it("is not hardcoded - advertised catalog namespaces each have a declaration block", () => {
       const prompt = buildProtocolsPrompt();
-      const availableToolCount = PROTOCOL_TOOLS.filter((tool) =>
-        (PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(tool.namespace),
-      ).filter(isProtocolToolAvailable).length;
-      expect(prompt).toContain(String(availableToolCount));
+      // Wave 2 migration row T841.
+      for (const namespace of PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST) {
+        expect(prompt).toContain(`### ${namespace}\n`);
+      }
     });
   });
 
@@ -128,9 +124,11 @@ describe("prompt-stack — protocols prompt", () => {
       }));
 
       // Both should have the same protocols prompt
-      const setupProtocols = setupStack.staticLayers.find(s => s.includes("# Available Protocol Namespaces"));
-      const fullProtocols = fullStack.staticLayers.find(s => s.includes("# Available Protocol Namespaces"));
+      // Wave 2 migration row T842.
+      const setupProtocols = setupStack.staticLayers.find(s => s.includes("## What Vex can reach"));
+      const fullProtocols = fullStack.staticLayers.find(s => s.includes("## What Vex can reach"));
       expect(setupProtocols).toBe(fullProtocols);
+      expect(setupProtocols).toBeDefined();
 
       // Both should have the same tool-model prompt (P3: `# Tool Usage` §1–3
       // became the `# Tool Model` layer).
@@ -188,8 +186,9 @@ describe("prompt-stack — protocols prompt", () => {
       delete process.env.JUPITER_API_KEY;
       const prompt = buildProtocolsPrompt();
       const solanaSection = prompt.split("### solana")[1]?.split("###")[0] ?? "";
-      expect(solanaSection).toContain("· 0 actions");
-      expect(solanaSection).toContain("a required API key is not configured");
+      // Wave 2 migration rows T490-T492.
+      expect(solanaSection).toContain("Availability:");
+      expect(solanaSection).toContain("JUPITER_API_KEY is configured");
       // PRESERVED, never deleted: its absence would read as "this capability
       // does not exist" rather than "a key is missing".
       expect(prompt).toContain("### solana");
@@ -199,7 +198,8 @@ describe("prompt-stack — protocols prompt", () => {
       delete process.env.JUPITER_API_KEY;
       const absent = buildProtocolsPrompt();
       expect(protocolAvailabilityFingerprint()).not.toContain("JUPITER_API_KEY");
-      expect(absent.split("### solana")[1]?.split("###")[0] ?? "").toContain("· 0 actions");
+      // Wave 2 migration row T494.
+      expect(absent.split("### solana")[1]?.split("###")[0] ?? "").toContain("Availability:");
 
       // No resetProtocolsPromptCache() anywhere below: the cache must notice
       // the env change on its own, exactly as it does when the vault unlocks
@@ -209,8 +209,9 @@ describe("prompt-stack — protocols prompt", () => {
       expect(protocolAvailabilityFingerprint()).toContain("JUPITER_API_KEY");
       expect(present).not.toBe(absent);
       const presentSolana = present.split("### solana")[1]?.split("###")[0] ?? "";
-      expect(presentSolana).not.toContain("· 0 actions");
-      expect(presentSolana).toContain("Examples: solana__");
+      // Wave 2 migration rows T496 and T497.
+      expect(presentSolana).not.toContain("Availability:");
+      expect(presentSolana).toContain("Read:");
 
       delete process.env.JUPITER_API_KEY;
       const absentAgain = buildProtocolsPrompt();

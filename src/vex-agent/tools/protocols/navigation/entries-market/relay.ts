@@ -10,6 +10,26 @@ export const RELAY_NAVIGATION: ProtocolNamespaceNavigation = {
     "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out.",
   preferInstead:
     "Use `khalani` for bridges between its supported chains; use `relay` whenever either side is Robinhood Chain (or Khalani lacks the route).",
+  declaration: {
+    identity: "Relay is a keyless cross-chain bridge for moving a token from one EVM chain to another without a bridge account or manual destination claim.",
+    read: "Read route serviceability, steps, input and output amounts, minimum output, estimated time, fees, and the last provider state for a transfer involving Relay-supported EVM chains.",
+    quote: "Request a Relay quote to Robinhood Chain, preview bridge Base ETH to Robinhood, inspect the bridge cost into Robinhood, or quote bridge out of Robinhood without signing.",
+    act: "Move funds into Robinhood Chain or bridge ETH back out after a fresh matching quote, then swap on-chain when the task also requires a trade.",
+    whenItApplies: "Use it for a cross-chain bridge involving Robinhood Chain, to fund my Robinhood wallet, or when a supported EVM route needs a keyless bridge execution.",
+    characteristicAndLimits: "A quote is read-only and execution broadcasts an origin-chain deposit whose destination fill can remain pending. Relay is EVM-only in this integration, does not support Solana, and exposes no static complete chain list or numeric request-rate contract.",
+    retrievalTerms: [
+      "cross-chain bridge",
+      "Relay quote to Robinhood Chain",
+      "preview bridge Base ETH to Robinhood",
+      "bridge cost into Robinhood",
+      "quote bridge out of Robinhood",
+      "bridge ETH",
+      "move funds into Robinhood Chain",
+      "fund my Robinhood wallet",
+      "then swap on-chain",
+    ],
+    facets: ["Bridge quotes and execution"],
+  },
   exampleQueries: [
     'ToolSearch(query="bridge to robinhood", namespace="relay")',
     'ToolSearch(query="bridge quote relay", namespace="relay")',

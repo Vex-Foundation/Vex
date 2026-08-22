@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-import { buildResearchPrompt } from "@vex-agent/engine/prompts/research.js";
+import { buildProtocolsPrompt, resetProtocolsPromptCache } from "@vex-agent/engine/prompts/protocols.js";
 import { WEB_TOOLS } from "@vex-agent/tools/registry/web.js";
 
 /** Tokens both surfaces must carry — the shared young-token contract. */
@@ -25,9 +25,11 @@ describe("young-token guidance (two-surface contract)", () => {
   beforeEach(() => {
     // The research prompt only teaches WebResearch when its env gate is up.
     vi.stubEnv("TAVILY_API_KEY", "test-key");
+    resetProtocolsPromptCache();
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+    resetProtocolsPromptCache();
   });
 
   it("the WebResearch tool description carries the full guidance", () => {
@@ -40,8 +42,15 @@ describe("young-token guidance (two-surface contract)", () => {
   });
 
   it("the research prompt carries the same guidance", () => {
-    const prompt = buildResearchPrompt();
-    for (const token of SHARED_TOKENS) {
+    const prompt = buildProtocolsPrompt();
+    // Wave 2 migration rows T744 and T847.
+    for (const token of [
+      "30 days old",
+      "under a few thousand holders",
+      "contract address plus chain",
+      "timeRange",
+      "not evidence the token is fake",
+    ]) {
       expect(prompt).toContain(token);
     }
     expect(prompt).toContain('topic="news"');

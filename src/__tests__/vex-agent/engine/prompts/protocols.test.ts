@@ -4,6 +4,9 @@ import {
   resetProtocolsPromptCache,
 } from "../../../../vex-agent/engine/prompts/protocols.js";
 import { getKyberChains } from "@tools/kyberswap/chains.js";
+import { getProtocolNamespaceCoverage } from "@vex-agent/engine/prompts/chain-coverage.js";
+import { buildPromptStack } from "@vex-agent/engine/prompts/index.js";
+import { makeContext } from "./_prompt-stack-helpers.js";
 
 describe("buildProtocolsPrompt", () => {
   it("advertises real active namespaces", () => {
@@ -31,7 +34,8 @@ describe("buildProtocolsPrompt", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
     expect(prompt).toContain("### uniswap");
-    expect(prompt).toContain("KyberSwap is the PRIMARY swap route");
+    // Wave 2 migration rows T531-T534.
+    expect(prompt).toContain("KyberSwap is the primary EVM swap venue");
     // The preference must never be phrased as a lock.
     expect(prompt).not.toContain("backup venue is now available");
     expect(prompt).not.toMatch(/unlocks? it/i);
@@ -43,8 +47,9 @@ describe("buildProtocolsPrompt", () => {
   it("names the availability class and the conditions that are NOT reasons to switch", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
-    expect(prompt).toContain("the venue being unavailable to us at all");
-    expect(prompt).toContain("neither is a slippage, balance, allowance, or deadline failure");
+    // Wave 2 migration rows T535 and T536.
+    expect(prompt).toContain("or is unavailable");
+    expect(prompt).toContain("Do not switch for a bad price alone or for slippage, balance, allowance, or deadline failures");
   });
 
   it("the venue-routing lines carry no em dash (owner decree 2026-08-05)", () => {
@@ -52,9 +57,11 @@ describe("buildProtocolsPrompt", () => {
     // Re-anchored: the single "backup venue" line the decree originally
     // policed was replaced by three preference lines (owner decision D4), so
     // the anchor is now the doctrine they all state.
+    // Wave 2 migration row T843. Ledger-mandated verbatim sentences keep
+    // their original punctuation; newly authored routing prose does not.
     const routingLines = buildProtocolsPrompt()
       .split("\n")
-      .filter((line) => line.includes("PRIMARY swap route") || line.includes("Switch venue when"));
+      .filter((line) => line.startsWith("Default procedure: Resolve the exact token"));
     expect(routingLines.length).toBeGreaterThan(0);
     for (const line of routingLines) expect(line).not.toContain("—");
   });
@@ -69,9 +76,10 @@ describe("buildProtocolsPrompt", () => {
     it("routes trading to kyberswap and states the namespace has no trade tool", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("## pools.fun Launchpad");
-      expect(prompt).toContain("TRADING IS DELIBERATELY NOT IN THIS NAMESPACE");
-      expect(prompt).toContain("13 of 13 sampled tokens routed");
+      // Wave 2 migration rows T538-T540.
+      expect(prompt).toContain("### pools");
+      expect(prompt).toContain("This namespace has no trading quote");
+      expect(prompt).toContain("13 of 13 sampled tokens");
     });
 
     // The two Robinhood launchpads must be distinguishable AT THE VENUE
@@ -80,19 +88,19 @@ describe("buildProtocolsPrompt", () => {
     it("contrasts the no-curve pools token against the Trench curve exception", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("pools.fun contrast, same chain");
-      expect(prompt).toContain("NO bonding curve and NO graduation");
-      expect(prompt).toContain("Never route a pools.fun token through `trench__trade_*`");
-      // The Trench exception it contrasts with must still be there.
-      expect(prompt).toContain("Trench exception, Robinhood Chain (4663)");
+      // Wave 2 migration rows T541-T544.
+      expect(prompt).toContain("pools.fun has no curve");
+      expect(prompt).toContain("Trench token still on its curve trades only against ETH");
+      expect(prompt).toContain("separate standard swap quote from its first block");
     });
 
     it("names the research gap: no holder count, no liquidity, dexscreener instead", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("NO holder count and NO liquidity figure ANYWHERE");
-      expect(prompt).toContain("indexed as sushiswap v3 on chain robinhood");
-      expect(prompt).toContain("pools__my_launches_list");
+      // Wave 2 migration rows T545-T547.
+      expect(prompt).toContain("Holder count and liquidity are unavailable here");
+      expect(prompt).toContain("pair research is a separate stage");
+      expect(prompt).toContain("my launches on the Robinhood launchpad");
     });
 
     // The address is NOT knowable at preview time (image -> metadata link ->
@@ -104,9 +112,9 @@ describe("buildProtocolsPrompt", () => {
     it("states that the agent path requires an image and that execute refuses without one", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("AN IMAGE IS REQUIRED on the agent path");
-      expect(prompt).toContain("`pools__launch_execute` REFUSES without one and launches nothing");
-      expect(prompt).toContain("`trench__images_list`");
+      // Wave 2 migration rows T548-T551.
+      expect(prompt).toContain("agent path requires a staged image");
+      expect(prompt).toContain("Both agent paths start from a user-staged image");
       // The blank-token outcome survives only as the user's own manual choice,
       // never as something the agent may elect.
       expect(prompt).toContain("Only the user's own launch form may choose to launch without one");
@@ -115,30 +123,31 @@ describe("buildProtocolsPrompt", () => {
     it("marks the launch preview advisory: no address, dynamic fee", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools__launch_preview` is ADVISORY");
+      // Wave 2 migration rows T552-T554.
+      expect(prompt).toContain("The preview is advisory");
       expect(prompt).toContain("Never promise a predicted address from a preview");
-      expect(prompt).toContain("THE DEPLOYMENT FEE IS DYNAMIC");
+      expect(prompt).toContain("The deployment cost is dynamic");
     });
 
     // Fee basis and destination are the two facts rule 90 says must never be
     // model-chosen: 25 bps on the NATIVE value only, recipient pinned.
     it("states the 25 bps native-only fee basis and the pinned fee recipient", () => {
       resetProtocolsPromptCache();
-      const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("25 bps of the NATIVE value the launch sends");
-      expect(prompt).toContain("USDG prebuy is an ERC-20 leg and is NOT in that basis");
-      expect(prompt).toContain("THE CREATOR FEE RECIPIENT IS PINNED");
-      expect(prompt).toContain("NO recipient parameter");
+      const full = buildPromptStack(makeContext()).staticLayers.join("\n");
+      // Wave 2 migration rows T555-T558. Fee prose has one owner: Identity.
+      expect(full).toContain("25 bps of the NATIVE value the launch sends");
+      expect(full).toContain("USDG prebuy is an ERC-20 leg and is NOT in that basis");
+      expect(full).toContain("THE CREATOR FEE RECIPIENT IS PINNED");
+      expect(full).toContain("NO recipient parameter");
     });
 
     it("routes a restricted session to the launch form and mirrors the authority matrix", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools__launch_request_form` is how you hand the launch DECISION");
-      expect(prompt).toContain("do not call it again while the form is open");
-      expect(prompt).toMatch(
-        /`pools__launch_execute`[\s\S]*RESTRICTED session it refuses BY NAME - call `pools__launch_request_form`/,
-      );
+      // Wave 2 migration rows T559-T562.
+      expect(prompt).toContain("keep a human form separate from direct execution");
+      expect(prompt).toContain("never infer that a drafted or pending launch happened");
+      expect(prompt).toContain("In a RESTRICTED session it refuses BY NAME - call `pools__launch_request_form` instead.");
       expect(prompt).toContain("HOST-authored launch ceilings");
     });
 
@@ -147,18 +156,19 @@ describe("buildProtocolsPrompt", () => {
     it("states dryRun claim semantics: both legs, and alreadyCollected is not the total", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("`pools__fees_claim`");
-      expect(prompt).toContain("`dryRun: true` FIRST");
-      expect(prompt).toContain("already-collected figures are fees the locker ALREADY holds and are NOT the claimable total");
+      // Wave 2 migration rows T563-T566.
+      expect(prompt).toContain("claim my creator fees after a dry-run simulation");
+      expect(prompt).toContain("Value multi-token rewards separately");
       expect(prompt).toContain("costs gas, so say so before claiming a dust balance");
     });
 
     it("the pools doctrine carries no em dash (owner decree 2026-08-05)", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      const start = prompt.indexOf("## pools.fun Launchpad");
+      // Wave 2 migration row T844.
+      const start = prompt.indexOf("### pools\n");
       expect(start).toBeGreaterThan(-1);
-      const section = prompt.substring(start, prompt.indexOf("## Virtuals Agent Tokens"));
+      const section = prompt.substring(start, prompt.indexOf("\n## How Vex works a task"));
       expect(section).not.toContain("—");
     });
   });
@@ -174,19 +184,12 @@ describe("buildProtocolsPrompt", () => {
   // recomputed expectation would diverge and the test would fail.
   it("kyberswap chain list is lockstepped to the live registry, never hand-written", () => {
     resetProtocolsPromptCache();
-    const prompt = buildProtocolsPrompt();
-    const match = prompt.match(/Swap-supported EVM chains: ([^.]+)\./);
-    expect(
-      match,
-      `expected a "Swap-supported EVM chains" sentence in the built prompt; got:\n${prompt}`,
-    ).not.toBeNull();
-    const promptedSlugs = match![1]!.split(", ").map((s) => s.trim());
-    const registrySlugs = getKyberChains()
+    // Wave 2 migration rows T568 and T845.
+    const projected = getProtocolNamespaceCoverage("kyberswap")?.line ?? "";
+    const registryChains = getKyberChains()
       .filter((chain) => chain.aggregator)
-      .map((chain) => chain.slug);
-    expect(promptedSlugs).toEqual(registrySlugs);
-    // Never mentions the hidden Uniswap fallback (C30) — a chain-list line
-    // is exactly the kind of place a future edit might accidentally add it.
-    expect(prompt.match(/Swap-supported EVM chains: [^.]+\./)![0]).not.toContain("uniswap");
+      .map((chain) => `${chain.name} (${chain.chainId})`);
+    for (const chain of registryChains) expect(projected).toContain(chain);
+    expect(projected).not.toContain("uniswap");
   });
 });
