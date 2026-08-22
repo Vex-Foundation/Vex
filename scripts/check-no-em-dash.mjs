@@ -25,6 +25,13 @@
  * are generated output, not authored content: their text is regenerated from
  * the manifests and the prompt modules, so those sources are where a violation
  * is fixed and where this gate must fail.
+ *
+ * ONE exemption, and it is a closed allowlist (`RELOCATED_VERBATIM_SENTENCES`):
+ * owner-approved PRESERVE EXACT prompt sentences that a migration moved
+ * verbatim into a new module keep their historical punctuation, at their
+ * named destination only, and only while the base revision still carries the
+ * same sentence. The same sentence in any other file, or any other em dash on
+ * the same line, fails.
  */
 
 import { execFileSync } from "node:child_process";
@@ -143,16 +150,54 @@ function baseEmDashText(base) {
 }
 
 /**
- * Prompt migrations may move an owner-approved PRESERVE EXACT sentence to a
- * new module. Its punctuation is not newly authored, so accept only when the
- * complete quoted string already occurs verbatim in the base revision.
+ * Owner-approved PRESERVE EXACT sentences that the Wave 2 prompt rebuild moved
+ * verbatim into a new module, keyed by DESTINATION path and EXACT sentence
+ * (`ledgerRow` names the row in
+ * `src/vex-agent/tools/tool-surface-spec/wave2/doctrine-migration-ledger.md`).
+ * Their punctuation is not newly authored, so an added line is exempt only when
+ * all three hold: the file is the entry's destination, the line carries the
+ * entry's exact sentence, and that sentence still occurs verbatim in the base
+ * revision. Any other em dash on the line still fails.
+ *
+ * This list only ever shrinks: delete an entry when its sentence is rewritten
+ * without the em dash (OPEN-DECISIONS O12). Never add an entry for newly
+ * authored text.
  */
-function movedVerbatimContent(line, baseText) {
-  const firstQuote = line.indexOf('"');
-  const lastQuote = line.lastIndexOf('"');
-  if (firstQuote < 0 || lastQuote <= firstQuote) return false;
-  const content = line.slice(firstQuote + 1, lastQuote);
-  return content.includes(EM_DASH) && baseText.includes(content);
+const RELOCATED_VERBATIM_SENTENCES = [
+  {
+    file: "src/vex-agent/engine/prompts/bridge-capability.ts",
+    ledgerRow: "L024",
+    text: `(This bridge chain list may be up to a day old ${EM_DASH} confirm a route by quoting before relying on it.)`,
+  },
+  {
+    file: "src/vex-agent/engine/prompts/bridge-capability.ts",
+    ledgerRow: "L025",
+    text: `Bridge chain list unavailable ${EM_DASH} verify by quoting.`,
+  },
+  {
+    file: "src/vex-agent/engine/prompts/task-shapes.ts",
+    ledgerRow: "L039",
+    text: `A quote whose priceImpact is strongly NEGATIVE (output supposedly worth more than input), or an execute reverting with 'Return amount is not enough', means the quote overestimated the pool ${EM_DASH} do NOT retry with higher slippage; re-quote, or tell the user KyberSwap's pricing looks unreliable for this pair.`,
+  },
+  {
+    file: "src/vex-agent/engine/prompts/task-shapes.ts",
+    ledgerRow: "L368",
+    text: `NEVER buy while \`windowActive\` is true ${EM_DASH} the buy tax starts near 99% at graduation and decays to ~1% over the window.`,
+  },
+  {
+    file: "src/vex-agent/engine/prompts/task-shapes.ts",
+    ledgerRow: "L294",
+    text: `In a RESTRICTED session it refuses by name ${EM_DASH} call \`trench__launch_request_form\` instead, because the launch form is this tool's consent surface and the user's Deploy click is what launches.`,
+  },
+];
+
+function relocatedVerbatimSentence(file, line, baseText) {
+  return RELOCATED_VERBATIM_SENTENCES.some((entry) => {
+    if (entry.file !== file || !line.includes(entry.text)) return false;
+    if (!baseText.includes(entry.text)) return false;
+    // The exemption covers the relocated sentence and nothing else on the line.
+    return !line.replace(entry.text, "").includes(EM_DASH);
+  });
 }
 
 /** `null` for `addedLines` means "scan every line" (an untracked new file). */
@@ -164,7 +209,7 @@ function inspectFile(file, addedLines, baseText) {
   for (const [index, line] of readFileSync(absolute, "utf8").split(/\r?\n/).entries()) {
     const lineNumber = index + 1;
     if (addedLines !== null && !addedLines.has(lineNumber)) continue;
-    if (line.includes(EM_DASH) && !movedVerbatimContent(line, baseText)) {
+    if (line.includes(EM_DASH) && !relocatedVerbatimSentence(file, line, baseText)) {
       findings.push(`${file}:${lineNumber} ${line.trim()}`);
     }
   }

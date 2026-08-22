@@ -175,6 +175,22 @@ test that changes is listed in a migration inventory with its new contract.
   `### morpho`, `### Yield` and `### Positions and risk` surfaces instead
   of the retired doctrine slice; fixtures in metadata-compile and
   manifest-lint gained a declaration. Snapshots regenerated again.
+- Committed as d5312b4d on feat/prompt-wave2 (pushed). Codex final review
+  turn 1 (harness-wave2): BLOCKED on one item, everything else clean (layer
+  neutral, D4 only in Swap and Bridge, research requires all three layers
+  outside mission setup, coverage lines trace to runtime sources, Morpho
+  guard surfaces sufficient, DexScreener negative tool-name pin
+  appropriate, no invariant row edited including the addendum, D9
+  unchanged, no research sentence to restore). The blocker: the em-dash
+  exemption `movedVerbatimContent()` accepted any quoted string with an em
+  dash that occurs anywhere in the base tree. Fixed by the coordinator: a
+  closed allowlist `RELOCATED_VERBATIM_SENTENCES` keyed by destination path
+  and exact sentence (bridge-capability.ts L024, L025; task-shapes.ts L039,
+  L368, L294), exempt only when the base still carries the sentence
+  verbatim and no other em dash shares the line; the gate's test gained
+  four cases (fails before the base carries it, passes at the destination,
+  fails in any other file, fails with a second em dash on the line). The
+  list only ever shrinks (O12).
 
 ## The owner's personality setup (vex-app Personalize)
 
