@@ -11,90 +11,97 @@
  * as a vitest flag. The lexical lane needs no Postgres, no embedding endpoint
  * and no credentials, so this command is runnable in any environment.
  *
- * Two targets, two baselines: the canonical 116-query seed dataset and the
- * supplemental Pendle/Relay/Virtuals coverage dataset. Either one drifting
- * exits non-zero.
+ * One baseline per dataset in the shared registry (`eval-targets.ts`): the
+ * canonical 116-query seed dataset, the supplemental Pendle/Relay/Virtuals
+ * coverage dataset, and every per-namespace dataset whose file exists. Any one
+ * of them drifting exits non-zero. `--target` accepts `seed`, `supplemental`,
+ * `all`, or a namespace name.
  */
 
+import { applyRequiresEnvSentinels, describeAppliedSentinels } from "./requires-env-sentinels.js";
+import { resolveBaselineMode, runBaselineTarget, type BaselineTarget } from "./baseline.js";
 import {
-  resolveBaselineMode,
-  runBaselineTarget,
-  type BaselineTarget,
-} from "./baseline.js";
-import { evaluateLexicalDiscovery } from "./lexical-retrieval.js";
-import { toBaselineMetrics } from "./report-metrics.js";
-import { loadDataset } from "./retrieval-eval-harness.js";
-import { SUPPLEMENTAL_DATASET_ID, loadSupplementalDataset } from "./supplemental-dataset.js";
+  CANONICAL_DATASET_ID,
+  evalDatasets,
+  lexicalTarget,
+  type EvalDataset,
+} from "./eval-targets.js";
+import { namespaceDatasetId } from "./namespace-dataset.js";
+import { SUPPLEMENTAL_DATASET_ID } from "./supplemental-dataset.js";
 
-const CANONICAL_DATASET_ID = "tool-discovery-seed";
-const CANONICAL_DATASET_VERSION = "v3-agent-116";
-const DISCOVERY_LIMIT = 5;
-
-const TARGET_NAMES = ["seed", "supplemental", "all"] as const;
-type TargetName = (typeof TARGET_NAMES)[number];
+/**
+ * Unconditional, and BEFORE any candidate set is built.
+ *
+ * This command is a baseline writer, so it may only ever measure the full
+ * catalog. `buildDiscoveryCandidates()` applies the runtime env availability
+ * gate, so without the eval-only sentinels a machine with no `JUPITER_API_KEY`
+ * silently drops 34 solana tools and the lane records their absence as quality:
+ * that is how `baselines/lexical-solana.json` was captured with all 68 rows at
+ * zero recall, coverage and MRR. There is no opt-in flag here because there is
+ * no legitimate run of this command against a reduced catalog. The lexical lane
+ * touches no database, no endpoint and no handler, so the sentinel presence
+ * cannot reach a provider.
+ */
+const appliedSentinels = applyRequiresEnvSentinels();
 
 /**
  * Which baselines this invocation touches. Exists so a recapture can be scoped
- * to ONE baseline — the canonical seed baseline and the supplemental coverage
- * baseline move for different reasons and are owned by different changes.
+ * to ONE baseline: the canonical seed baseline, the supplemental coverage
+ * baseline and each per-namespace baseline move for different reasons and are
+ * owned by different changes.
+ *
+ * The target list is derived from the shared dataset registry, so a namespace
+ * dataset becomes selectable the moment its file exists, with no edit here.
  */
-function resolveTarget(argv: readonly string[]): TargetName {
+function selectDatasets(argv: readonly string[]): EvalDataset[] {
+  const datasets = evalDatasets();
   const index = argv.indexOf("--target");
-  if (index === -1) return "all";
+  if (index === -1) return datasets;
 
   const value = argv[index + 1];
-  if (value === undefined || !isTargetName(value)) {
+  if (value === "all") return datasets;
+  const selected = value === undefined ? undefined : datasets.find(
+    (dataset) => dataset.datasetId === targetToDatasetId(value),
+  );
+  if (selected === undefined) {
     throw new Error(
-      `--target requires one of: ${TARGET_NAMES.join(", ")} (received ${value === undefined ? "nothing" : `"${value}"`}).`,
+      `--target requires one of: ${targetNames(datasets).join(", ")} `
+      + `(received ${value === undefined ? "nothing" : `"${value}"`}).`,
     );
   }
-  return value;
+  return [selected];
 }
 
-function isTargetName(value: string): value is TargetName {
-  return (TARGET_NAMES as readonly string[]).includes(value);
+/** "seed" and "supplemental" are the established aliases; otherwise a namespace. */
+function targetToDatasetId(value: string): string {
+  if (value === "seed") return CANONICAL_DATASET_ID;
+  if (value === "supplemental") return SUPPLEMENTAL_DATASET_ID;
+  return namespaceDatasetId(value);
 }
 
-function canonicalTarget(): BaselineTarget {
-  const queries = loadDataset();
-  return {
-    name: "lexical / canonical seed dataset",
-    fileName: "lexical.json",
-    expectedCaseCount: queries.length,
-    measure: () => ({
-      mode: "lexical",
-      datasetId: CANONICAL_DATASET_ID,
-      datasetVersion: CANONICAL_DATASET_VERSION,
-      metrics: toBaselineMetrics(evaluateLexicalDiscovery(queries, DISCOVERY_LIMIT)),
+function targetNames(datasets: readonly EvalDataset[]): string[] {
+  return [
+    "all",
+    ...datasets.map((dataset) => {
+      if (dataset.datasetId === CANONICAL_DATASET_ID) return "seed";
+      if (dataset.datasetId === SUPPLEMENTAL_DATASET_ID) return "supplemental";
+      return dataset.datasetId.replace("tool-discovery-", "");
     }),
-  };
-}
-
-function supplementalTarget(): BaselineTarget {
-  const dataset = loadSupplementalDataset();
-  return {
-    name: "lexical / supplemental Pendle+Relay+Virtuals coverage",
-    fileName: "lexical-supplemental.json",
-    expectedCaseCount: dataset.queries.length,
-    measure: () => ({
-      mode: "lexical",
-      datasetId: SUPPLEMENTAL_DATASET_ID,
-      datasetVersion: dataset.version,
-      metrics: toBaselineMetrics(evaluateLexicalDiscovery(dataset.queries, DISCOVERY_LIMIT)),
-    }),
-  };
+  ];
 }
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const mode = resolveBaselineMode(argv, process.env);
-  const targetName = resolveTarget(argv);
-  process.stdout.write(`Lexical retrieval baselines — mode: --${mode}, target: ${targetName}\n\n`);
+  const targetIndex = argv.indexOf("--target");
+  const requested = targetIndex === -1 ? "all" : argv[targetIndex + 1] ?? "all";
+  const datasets = selectDatasets(argv);
+  process.stdout.write(
+    `Lexical retrieval baselines - mode: --${mode}, target: ${requested}\n`
+    + `${describeAppliedSentinels(appliedSentinels)}\n\n`,
+  );
 
-  const targets: BaselineTarget[] = [
-    ...(targetName === "supplemental" ? [] : [canonicalTarget()]),
-    ...(targetName === "seed" ? [] : [supplementalTarget()]),
-  ];
+  const targets: BaselineTarget[] = datasets.map(lexicalTarget);
 
   let failed = false;
   for (const target of targets) {

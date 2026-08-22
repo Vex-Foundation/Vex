@@ -1,45 +1,45 @@
 {
-  "version": "supplemental-v1",
+  "version": "dexscreener-v1",
   "mode": "lexical",
-  "datasetId": "tool-discovery-supplemental",
-  "datasetVersion": "supplemental-v1",
+  "datasetId": "tool-discovery-dexscreener",
+  "datasetVersion": "dexscreener-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:12:30.939Z",
+  "capturedAt": "2026-08-22T14:12:54.321Z",
   "metrics": {
     "overall": {
-      "count": 12,
-      "recall1": 0.417,
-      "recall5": 0.917,
-      "coverage5": 0.917,
-      "mrr5": 0.565,
-      "groupMrr5": 0.586
+      "count": 35,
+      "recall1": 0.457,
+      "recall5": 0.8,
+      "coverage5": 0.8,
+      "mrr5": 0.588,
+      "groupMrr5": 0.588
     },
     "awareness": {
       "blind": {
-        "count": 0,
-        "recall1": 0,
-        "recall5": 0,
-        "coverage5": 0,
-        "mrr5": 0,
-        "groupMrr5": 0
+        "count": 23,
+        "recall1": 0.304,
+        "recall5": 0.696,
+        "coverage5": 0.696,
+        "mrr5": 0.453,
+        "groupMrr5": 0.453
       },
       "protocolAware": {
         "count": 12,
-        "recall1": 0.417,
-        "recall5": 0.917,
-        "coverage5": 0.917,
-        "mrr5": 0.565,
-        "groupMrr5": 0.586
+        "recall1": 0.75,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.847,
+        "groupMrr5": 0.847
       }
     },
     "intentShapes": {
       "single": {
-        "count": 12,
-        "recall1": 0.417,
-        "recall5": 0.917,
-        "coverage5": 0.917,
-        "mrr5": 0.565,
-        "groupMrr5": 0.586
+        "count": 35,
+        "recall1": 0.457,
+        "recall5": 0.8,
+        "coverage5": 0.8,
+        "mrr5": 0.588,
+        "groupMrr5": 0.588
       },
       "cross": {
         "count": 0,
@@ -76,28 +76,28 @@
         "groupMrr5": 0
       },
       "bridge": {
-        "count": 3,
-        "recall1": 0.333,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.528,
-        "groupMrr5": 0.611
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "evm_lp": {
-        "count": 1,
+        "count": 0,
         "recall1": 0,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.2,
-        "groupMrr5": 0.2
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "evm_swap": {
-        "count": 2,
+        "count": 0,
         "recall1": 0,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.375,
-        "groupMrr5": 0.375
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "limit_order": {
         "count": 0,
@@ -108,12 +108,12 @@
         "groupMrr5": 0
       },
       "market_research": {
-        "count": 4,
-        "recall1": 0.75,
-        "recall5": 0.75,
-        "coverage5": 0.75,
-        "mrr5": 0.75,
-        "groupMrr5": 0.75
+        "count": 35,
+        "recall1": 0.457,
+        "recall5": 0.8,
+        "coverage5": 0.8,
+        "mrr5": 0.588,
+        "groupMrr5": 0.588
       },
       "prediction_discovery": {
         "count": 0,
@@ -132,12 +132,12 @@
         "groupMrr5": 0
       },
       "rewards": {
-        "count": 2,
-        "recall1": 0.5,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.625,
-        "groupMrr5": 0.625
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "solana_lend": {
         "count": 0,
@@ -174,8 +174,8 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-supplemental@supplemental-v1, mode lexical, 12 cases evaluated.",
-    "overall recall@1 0.417, recall@5 0.917, coverage@5 0.917, mrr@5 0.565, groupMrr@5 0.586.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "dataset tool-discovery-dexscreener@dexscreener-v1, mode lexical, 35 cases evaluated.",
+    "overall recall@1 0.457, recall@5 0.8, coverage@5 0.8, mrr@5 0.588, groupMrr@5 0.588.",
+    "Measured delta vs previous baseline (dexscreener-v1, captured 2026-08-22T13:40:14.513Z): 12 metric values moved; overall recall@5 0.8 -> 0.8, overall mrr@5 0.602 -> 0.588, case count 35 -> 35."
   ]
 }

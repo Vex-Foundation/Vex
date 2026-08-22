@@ -1,0 +1,552 @@
+{
+  "version": "pendle-v1",
+  "namespace": "pendle",
+  "description": "Retrieval-verification dataset for the pendle namespace: for every live term-yield tool, blind queries phrased the way a user describes the outcome (fixed rate to a date, variable yield leg, pool exposure, expiry handling) and protocol-aware queries that name the brand. Written from the manifests and the navigation entry only, so the wording is independent of the retrieval index text.",
+  "queries": [
+    {
+      "query": "find markets where I can lock a fixed rate on stETH until a set maturity date",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yields"],
+      "expectedCoverageGroups": [["pendle.yields"]]
+    },
+    {
+      "query": "which term yield markets on arbitrum have the highest implied APY expiring within six months",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yields"],
+      "expectedCoverageGroups": [["pendle.yields"]]
+    },
+    {
+      "query": "screen Pendle markets by liquidity and implied APY on base",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yields"],
+      "expectedCoverageGroups": [["pendle.yields"]]
+    },
+    {
+      "query": "what maturities exist on Pendle for weETH and how deep are they",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yields"],
+      "expectedCoverageGroups": [["pendle.yields"]]
+    },
+
+    {
+      "query": "how much fixed yield would I get if I put 5000 USDC into this maturity, price it first",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.quote"],
+      "expectedCoverageGroups": [["pendle.pt.quote"]]
+    },
+    {
+      "query": "preview what selling my principal token early would return in USDC on ethereum",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.quote"],
+      "expectedCoverageGroups": [["pendle.pt.quote"]]
+    },
+    {
+      "query": "quote a Pendle PT trade for 2 wstETH before I commit",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.quote"],
+      "expectedCoverageGroups": [["pendle.pt.quote"]]
+    },
+    {
+      "query": "buy into a fixed rate locked to expiry with 200 USDC on arbitrum",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.buy"],
+      "expectedCoverageGroups": [["pendle.pt.buy"]]
+    },
+    {
+      "query": "lock in the principal token rate for 1 ETH until the December maturity, go ahead and execute",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.buy"],
+      "expectedCoverageGroups": [["pendle.pt.buy"]]
+    },
+    {
+      "query": "buy PT on Pendle for 200 USDC on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.buy"],
+      "expectedCoverageGroups": [["pendle.pt.buy"]]
+    },
+    {
+      "query": "get me out of my fixed rate position early, sell the principal token back to USDC at market",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.sell"],
+      "expectedCoverageGroups": [["pendle.pt.sell"]]
+    },
+    {
+      "query": "sell 50 of my Pendle PT before its expiry date on arbitrum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.sell"],
+      "expectedCoverageGroups": [["pendle.pt.sell"]]
+    },
+    {
+      "query": "my principal token matured, cash it out at face value for the underlying",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.redeem"],
+      "expectedCoverageGroups": [["pendle.pt.redeem"]]
+    },
+    {
+      "query": "the maturity date has passed, collect the principal I locked up",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.redeem"],
+      "expectedCoverageGroups": [["pendle.pt.redeem"]]
+    },
+    {
+      "query": "redeem my expired Pendle PT on ethereum for 300 units",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.redeem"],
+      "expectedCoverageGroups": [["pendle.pt.redeem"]]
+    },
+
+    {
+      "query": "price taking leveraged variable yield exposure on eETH with 500 USDC before I decide",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.quote"],
+      "expectedCoverageGroups": [["pendle.yt.quote"]]
+    },
+    {
+      "query": "quote the Pendle yield token side both ways for 100 USDC on base",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.quote"],
+      "expectedCoverageGroups": [["pendle.yt.quote"]]
+    },
+    {
+      "query": "I want to bet that realized yield beats the implied rate, buy the yield leg with 1000 USDC",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.buy"],
+      "expectedCoverageGroups": [["pendle.yt.buy"]]
+    },
+    {
+      "query": "buy YT on Pendle for 250 USDC on arbitrum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.buy"],
+      "expectedCoverageGroups": [["pendle.yt.buy"]]
+    },
+    {
+      "query": "dump my variable yield tokens back to USDC before they decay any further",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.sell"],
+      "expectedCoverageGroups": [["pendle.yt.sell"]]
+    },
+    {
+      "query": "sell my Pendle YT early on ethereum, 40 units back to USDC",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yt.sell"],
+      "expectedCoverageGroups": [["pendle.yt.sell"]]
+    },
+
+    {
+      "query": "preview splitting 3 wstETH into equal principal and yield legs",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.quote"],
+      "expectedCoverageGroups": [["pendle.py.quote"]]
+    },
+    {
+      "query": "quote a Pendle mint of the PT and YT pair, and also what burning the pair back would return",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.quote"],
+      "expectedCoverageGroups": [["pendle.py.quote"]]
+    },
+    {
+      "query": "split 2 ETH into a principal token and a yield token so I can keep one and sell the other",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.mint"],
+      "expectedCoverageGroups": [["pendle.py.mint"]]
+    },
+    {
+      "query": "mint the PT and YT pair on Pendle from 1000 USDC on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.mint"],
+      "expectedCoverageGroups": [["pendle.py.mint"]]
+    },
+    {
+      "query": "I hold matching principal and yield tokens, recombine them back into the underlying before expiry",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.redeem"],
+      "expectedCoverageGroups": [["pendle.py.redeem"]]
+    },
+    {
+      "query": "unwind my Pendle PT plus YT pair back to USDC while the market is still active",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.py.redeem"],
+      "expectedCoverageGroups": [["pendle.py.redeem"]]
+    },
+
+    {
+      "query": "wrap 5 stETH into the standardised yield wrapper form on ethereum",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.sy.mint"],
+      "expectedCoverageGroups": [["pendle.sy.mint"]]
+    },
+    {
+      "query": "wrap wstETH into Pendle SY so I have it on hand before minting",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.sy.mint"],
+      "expectedCoverageGroups": [["pendle.sy.mint"]]
+    },
+    {
+      "query": "my redemption paid me a wrapped yield-bearing token instead of the plain asset, unwrap it into USDC",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.sy.redeem"],
+      "expectedCoverageGroups": [["pendle.sy.redeem"]]
+    },
+    {
+      "query": "unwrap 4 units of Pendle SY back into wstETH on arbitrum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.sy.redeem"],
+      "expectedCoverageGroups": [["pendle.sy.redeem"]]
+    },
+
+    {
+      "query": "estimate what depositing 2000 USDC into that yield pool would give me in pool tokens",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.quote"],
+      "expectedCoverageGroups": [["pendle.lp.quote"]]
+    },
+    {
+      "query": "quote adding and quote withdrawing single-token liquidity on a Pendle pool on base",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.quote"],
+      "expectedCoverageGroups": [["pendle.lp.quote"]]
+    },
+    {
+      "query": "deposit 1500 USDC into the pool to earn its trading fees instead of locking a rate",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.add"],
+      "expectedCoverageGroups": [["pendle.lp.add"]]
+    },
+    {
+      "query": "provide single-token liquidity on Pendle with 1 ETH on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.add"],
+      "expectedCoverageGroups": [["pendle.lp.add"]]
+    },
+    {
+      "query": "pull my pool position out entirely, back into one ordinary token",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.remove"],
+      "expectedCoverageGroups": [["pendle.lp.remove"]]
+    },
+    {
+      "query": "withdraw 3 LP from my Pendle pool on arbitrum into USDC, the pool already matured",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.remove"],
+      "expectedCoverageGroups": [["pendle.lp.remove"]]
+    },
+    {
+      "query": "exit part of my pool position into a plain token but keep the principal exposure as well",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.removeDual"],
+      "expectedCoverageGroups": [["pendle.lp.removeDual"]]
+    },
+    {
+      "query": "remove Pendle liquidity into two legs, USDC and the market's PT, 2.5 LP on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.removeDual"],
+      "expectedCoverageGroups": [["pendle.lp.removeDual"]]
+    },
+    {
+      "query": "put 1000 USDC into the pool but do not sell the yield leg the deposit creates, hand it to me",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.addKeepYt"],
+      "expectedCoverageGroups": [["pendle.lp.addKeepYt"]]
+    },
+    {
+      "query": "add Pendle liquidity and keep the YT, depositing 0.5 WETH on base",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.addKeepYt"],
+      "expectedCoverageGroups": [["pendle.lp.addKeepYt"]]
+    },
+
+    {
+      "query": "my fixed rate position is about to expire, move it straight into a later maturity in one transaction",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.rollover"],
+      "expectedCoverageGroups": [["pendle.pt.rollover"]]
+    },
+    {
+      "query": "extend my locked rate: swap the principal token I hold for the one expiring next June without touching the underlying",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.rollover"],
+      "expectedCoverageGroups": [["pendle.pt.rollover"]]
+    },
+    {
+      "query": "roll my Pendle PT into a later expiry market on arbitrum, 100 units",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.rollover"],
+      "expectedCoverageGroups": [["pendle.pt.rollover"]]
+    },
+    {
+      "query": "shift my pool position from the expiring pool into a longer-dated pool without withdrawing first",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.transfer"],
+      "expectedCoverageGroups": [["pendle.lp.transfer"]]
+    },
+    {
+      "query": "move my Pendle liquidity from one market to another on ethereum, 5 LP",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.transfer"],
+      "expectedCoverageGroups": [["pendle.lp.transfer"]]
+    },
+    {
+      "query": "swap my pool exposure in this market for its own fixed rate instrument, no withdrawal step",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.toPt"],
+      "expectedCoverageGroups": [["pendle.lp.toPt"]]
+    },
+    {
+      "query": "turn my Pendle LP into that market's PT on base, 2 LP",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.toPt"],
+      "expectedCoverageGroups": [["pendle.lp.toPt"]]
+    },
+
+    {
+      "query": "look up one term yield market by address: its legs, expiry, accepted tokens and current implied APY",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.get"],
+      "expectedCoverageGroups": [["pendle.market.get"]]
+    },
+    {
+      "query": "which tokens does this market accept as input, and has it already matured",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.get"],
+      "expectedCoverageGroups": [["pendle.market.get"]]
+    },
+    {
+      "query": "show me the details of this Pendle market on ethereum including when the PT expires",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.get"],
+      "expectedCoverageGroups": [["pendle.market.get"]]
+    },
+    {
+      "query": "is today's fixed rate high or low for this market, show me implied APY and TVL over the last 90 days",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.history"],
+      "expectedCoverageGroups": [["pendle.market.history"]]
+    },
+    {
+      "query": "daily history of implied APY and traded volume for this Pendle market",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.history"],
+      "expectedCoverageGroups": [["pendle.market.history"]]
+    },
+    {
+      "query": "give me hourly open high low close candles for this principal token before I buy it",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.candles"],
+      "expectedCoverageGroups": [["pendle.market.candles"]]
+    },
+    {
+      "query": "weekly price candles for a Pendle YT on arbitrum over the past quarter",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.market.candles"],
+      "expectedCoverageGroups": [["pendle.market.candles"]]
+    },
+    {
+      "query": "show the resting limit orders on this yield market so I can judge whether the pool quote is competitive",
+      "awareness": "blind",
+      "scenario": "limit_order",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.orderbook"],
+      "expectedCoverageGroups": [["pendle.orderbook"]]
+    },
+    {
+      "query": "how deep is the Pendle limit order book around my size, best bid and ask in implied APY terms",
+      "awareness": "protocol-aware",
+      "scenario": "limit_order",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.orderbook"],
+      "expectedCoverageGroups": [["pendle.orderbook"]]
+    },
+    {
+      "query": "what is this principal token worth in dollars right now, I do not hold it",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.prices.assets"],
+      "expectedCoverageGroups": [["pendle.prices.assets"]]
+    },
+    {
+      "query": "USD price marks for Pendle PT, YT and LP tokens on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.prices.assets"],
+      "expectedCoverageGroups": [["pendle.prices.assets"]]
+    },
+
+    {
+      "query": "what does my principal token position look like, and how much is it worth across chains",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.position.value"],
+      "expectedCoverageGroups": [["pendle.position.value"]]
+    },
+    {
+      "query": "which of my fixed yield positions have matured and are ready to redeem",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.position.value"],
+      "expectedCoverageGroups": [["pendle.position.value"]]
+    },
+    {
+      "query": "value all my Pendle positions and tell me how much interest has accrued",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.position.value"],
+      "expectedCoverageGroups": [["pendle.position.value"]]
+    },
+
+    {
+      "query": "harvest the interest my yield tokens earned and the rewards my pool positions earned on ethereum",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.claim"],
+      "expectedCoverageGroups": [["pendle.claim"]]
+    },
+    {
+      "query": "sweep the accrued income from my term yield positions into my wallet, show me first what would be collected",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.claim"],
+      "expectedCoverageGroups": [["pendle.claim"]]
+    },
+    {
+      "query": "claim my Pendle rewards on arbitrum",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.claim"],
+      "expectedCoverageGroups": [["pendle.claim"]]
+    },
+    {
+      "query": "what campaign incentives have accrued to my wallet off-market that I have not collected yet",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.rewards.merkle"],
+      "expectedCoverageGroups": [["pendle.rewards.merkle"]]
+    },
+    {
+      "query": "list my unclaimed merkle distributed Pendle incentives per reward token with their USD value",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.rewards.merkle"],
+      "expectedCoverageGroups": [["pendle.rewards.merkle"]]
+    }
+  ]
+}

@@ -1,0 +1,159 @@
+{
+  "version": "pools-v1",
+  "description": "Retrieval-verification dataset for the pools.fun launchpad namespace on Robinhood Chain (4663). Two rows per live tool, one blind and one protocol-aware, written from the manifests and the navigation entry only, so the query wording is independent of the retrieval index's own discovery text. Blind rows describe the outcome a user wants without naming the launchpad; protocol-aware rows name pools.fun. Every expectation is the exact full dotted toolId.",
+  "namespace": "pools",
+  "queries": [
+    {
+      "query": "list tokens that launched on the Robinhood Chain launchpad in the last six hours, newest first",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.tokens"],
+      "expectedCoverageGroups": [["pools.tokens"]]
+    },
+    {
+      "query": "screen new launchpad tokens with a market cap between 50k and 500k and at least 200 trades in the last day",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.tokens"],
+      "expectedCoverageGroups": [["pools.tokens"]]
+    },
+    {
+      "query": "browse pools.fun launches ranked by one hour volume so I can see what is actually trading right now",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.tokens"],
+      "expectedCoverageGroups": [["pools.tokens"]]
+    },
+    {
+      "query": "the user said the ticker is SUSHICAT, get me the contract address of that launchpad token",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.search"],
+      "expectedCoverageGroups": [["pools.search"]]
+    },
+    {
+      "query": "resolve a token by name on pools.fun and show every copycat sharing that symbol",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.search"],
+      "expectedCoverageGroups": [["pools.search"]]
+    },
+    {
+      "query": "full detail on one launchpad token: which pool is its real pool, who deployed it, the fee split and its decimals",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.token"],
+      "expectedCoverageGroups": [["pools.token"]]
+    },
+    {
+      "query": "who earns the creator fees on the pools.fun token at 0x0ab8d01664d4bb625705f9f3c595a8a19b3dcfb0 and how is the 1 percent split",
+      "awareness": "protocol-aware",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.token"],
+      "expectedCoverageGroups": [["pools.token"]]
+    },
+    {
+      "query": "hourly open high low close and volume history for a launchpad token on Robinhood Chain, last 24 bars",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.candles"],
+      "expectedCoverageGroups": [["pools.candles"]]
+    },
+    {
+      "query": "chart a pools.fun token in 15 minute candles so I can see how it has traded since it opened",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.candles"],
+      "expectedCoverageGroups": [["pools.candles"]]
+    },
+    {
+      "query": "which tokens has my own wallet deployed on this launchpad, I need the address of the coin I made",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.my_launches"],
+      "expectedCoverageGroups": [["pools.my_launches"]]
+    },
+    {
+      "query": "review my own pools.fun launches and show what each one currently has waiting to be claimed",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.my_launches"],
+      "expectedCoverageGroups": [["pools.my_launches"]]
+    },
+    {
+      "query": "collect the creator fees my launched token has accrued in the locker and pay them out to my wallet",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.claim_fees"],
+      "expectedCoverageGroups": [["pools.claim_fees"]]
+    },
+    {
+      "query": "simulate first: how much would claiming the creator fees on my pools.fun token pay in both assets before I sign",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.claim_fees"],
+      "expectedCoverageGroups": [["pools.claim_fees"]]
+    },
+    {
+      "query": "estimate what deploying a new token on the Robinhood Chain launchpad would cost me, including a 0.05 ETH first buy",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_preview"],
+      "expectedCoverageGroups": [["pools.launch_preview"]]
+    },
+    {
+      "query": "price a pools.fun launch before I commit to it, with the current deployment fee broken out",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_preview"],
+      "expectedCoverageGroups": [["pools.launch_preview"]]
+    },
+    {
+      "query": "I am not allowed to spend here, so ask the user to confirm the new token deployment in the app's own form",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_request_form"],
+      "expectedCoverageGroups": [["pools.launch_request_form"]]
+    },
+    {
+      "query": "open the pools.fun launch form prefilled with the proposed name, ticker and 0.01 ETH prebuy and wait for the user to submit it",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_request_form"],
+      "expectedCoverageGroups": [["pools.launch_request_form"]]
+    },
+    {
+      "query": "deploy the token now on Robinhood Chain: name Moon Cat, ticker MCAT, paired against ETH, 0.02 ETH prebuy, using the staged image",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_execute"],
+      "expectedCoverageGroups": [["pools.launch_execute"]]
+    },
+    {
+      "query": "sign and broadcast my coin's launch on pools.fun for real against USDG",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_execute"],
+      "expectedCoverageGroups": [["pools.launch_execute"]]
+    }
+  ]
+}

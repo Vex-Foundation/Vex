@@ -1,0 +1,103 @@
+{
+  "version": "uniswap-v1",
+  "namespace": "uniswap",
+  "description": "Per-namespace retrieval-verification dataset for the uniswap namespace (2 live tools). Every live tool has blind rows (no brand word) and protocol-aware rows (brand named). Queries were written from the manifests and the navigation entry only, phrased the way a model would type them into tool search on the user's behalf. The generic swap-pricing and swap-execution rows are deliberately worded like the sibling kyberswap dataset's rows so the venue-pair behaviour (D11: both venues' quote tools returning close together for a plain swap query) is observable; the Robinhood Chain rows cover the coverage this venue uniquely serves.",
+  "queries": [
+    {
+      "query": "price 2 ETH into USDC on Ethereum against the pools directly, show output amount and price impact",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "how much VIRTUAL would 100 VEX get me on Robinhood Chain, quote only",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "best of the V2 and V3 pool routes for 5000 USDC into WETH on Base, read-only with gas and fee breakdown",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "the aggregator has no route for this pair on chain 4663, price it at the spot venue instead",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "Uniswap quote for 1.5 ETH to DAI on Ethereum with 50 bps slippage",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "what does Uniswap price a 250 VIRTUAL buy of an agent token at on Robinhood Chain",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.quote"],
+      "expectedCoverageGroups": [["uniswap.swap.quote"]]
+    },
+    {
+      "query": "swap 400 VIRTUAL into VEX on Robinhood Chain for real, sign it and return the tx hash",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    },
+    {
+      "query": "go ahead with the spot pool trade we priced, 1 ETH into USDC on Ethereum, broadcast from my wallet",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    },
+    {
+      "query": "the aggregator could not route this pair, submit the trade at the fallback venue instead, 300 USDC into WETH on Base",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    },
+    {
+      "query": "execute the Uniswap swap with the slippage from the quote, 0.6 ETH into USDC on Ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    },
+    {
+      "query": "buy VEX with 200 VIRTUAL on Robinhood Chain through Uniswap and send the transaction",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    },
+    {
+      "query": "sell my agent token back into VIRTUAL on Uniswap, exact input, broadcast it",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["uniswap.swap.execute"],
+      "expectedCoverageGroups": [["uniswap.swap.execute"]]
+    }
+  ]
+}

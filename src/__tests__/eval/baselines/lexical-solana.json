@@ -1,0 +1,181 @@
+{
+  "version": "solana-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-solana",
+  "datasetVersion": "solana-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:13:12.067Z",
+  "metrics": {
+    "overall": {
+      "count": 68,
+      "recall1": 0.441,
+      "recall5": 0.603,
+      "coverage5": 0.603,
+      "mrr5": 0.496,
+      "groupMrr5": 0.496
+    },
+    "awareness": {
+      "blind": {
+        "count": 34,
+        "recall1": 0.235,
+        "recall5": 0.382,
+        "coverage5": 0.382,
+        "mrr5": 0.284,
+        "groupMrr5": 0.284
+      },
+      "protocolAware": {
+        "count": 34,
+        "recall1": 0.647,
+        "recall5": 0.824,
+        "coverage5": 0.824,
+        "mrr5": 0.708,
+        "groupMrr5": 0.708
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 68,
+        "recall1": 0.441,
+        "recall5": 0.603,
+        "coverage5": 0.603,
+        "mrr5": 0.496,
+        "groupMrr5": 0.496
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 16,
+        "recall1": 0.563,
+        "recall5": 0.688,
+        "coverage5": 0.688,
+        "mrr5": 0.609,
+        "groupMrr5": 0.609
+      },
+      "bridge": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 6,
+        "recall1": 0.667,
+        "recall5": 0.833,
+        "coverage5": 0.833,
+        "mrr5": 0.7,
+        "groupMrr5": 0.7
+      },
+      "prediction_discovery": {
+        "count": 14,
+        "recall1": 0.571,
+        "recall5": 0.571,
+        "coverage5": 0.571,
+        "mrr5": 0.571,
+        "groupMrr5": 0.571
+      },
+      "prediction_trading": {
+        "count": 12,
+        "recall1": 0.5,
+        "recall5": 0.833,
+        "coverage5": 0.833,
+        "mrr5": 0.625,
+        "groupMrr5": 0.625
+      },
+      "rewards": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_lend": {
+        "count": 14,
+        "recall1": 0,
+        "recall5": 0.143,
+        "coverage5": 0.143,
+        "mrr5": 0.038,
+        "groupMrr5": 0.038
+      },
+      "solana_swap": {
+        "count": 4,
+        "recall1": 0.5,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.688,
+        "groupMrr5": 0.688
+      },
+      "token_safety": {
+        "count": 2,
+        "recall1": 0.5,
+        "recall5": 0.5,
+        "coverage5": 0.5,
+        "mrr5": 0.5,
+        "groupMrr5": 0.5
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
+    "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.496, groupMrr@5 0.496.",
+    "Measured delta vs previous baseline (solana-v1, captured 2026-08-22T13:40:33.679Z): 54 metric values moved; overall recall@5 0 -> 0.603, overall mrr@5 0 -> 0.496, case count 68 -> 68."
+  ]
+}

@@ -1,45 +1,45 @@
 {
-  "version": "supplemental-v1",
+  "version": "kyberswap-v1",
   "mode": "lexical",
-  "datasetId": "tool-discovery-supplemental",
-  "datasetVersion": "supplemental-v1",
+  "datasetId": "tool-discovery-kyberswap",
+  "datasetVersion": "kyberswap-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:12:30.939Z",
+  "capturedAt": "2026-08-22T14:13:17.267Z",
   "metrics": {
     "overall": {
-      "count": 12,
-      "recall1": 0.417,
-      "recall5": 0.917,
-      "coverage5": 0.917,
-      "mrr5": 0.565,
-      "groupMrr5": 0.586
+      "count": 20,
+      "recall1": 0.2,
+      "recall5": 0.4,
+      "coverage5": 0.4,
+      "mrr5": 0.279,
+      "groupMrr5": 0.279
     },
     "awareness": {
       "blind": {
-        "count": 0,
-        "recall1": 0,
-        "recall5": 0,
-        "coverage5": 0,
-        "mrr5": 0,
-        "groupMrr5": 0
+        "count": 12,
+        "recall1": 0.167,
+        "recall5": 0.25,
+        "coverage5": 0.25,
+        "mrr5": 0.188,
+        "groupMrr5": 0.188
       },
       "protocolAware": {
-        "count": 12,
-        "recall1": 0.417,
-        "recall5": 0.917,
-        "coverage5": 0.917,
-        "mrr5": 0.565,
-        "groupMrr5": 0.586
+        "count": 8,
+        "recall1": 0.25,
+        "recall5": 0.625,
+        "coverage5": 0.625,
+        "mrr5": 0.417,
+        "groupMrr5": 0.417
       }
     },
     "intentShapes": {
       "single": {
-        "count": 12,
-        "recall1": 0.417,
-        "recall5": 0.917,
-        "coverage5": 0.917,
-        "mrr5": 0.565,
-        "groupMrr5": 0.586
+        "count": 20,
+        "recall1": 0.2,
+        "recall5": 0.4,
+        "coverage5": 0.4,
+        "mrr5": 0.279,
+        "groupMrr5": 0.279
       },
       "cross": {
         "count": 0,
@@ -76,28 +76,28 @@
         "groupMrr5": 0
       },
       "bridge": {
-        "count": 3,
-        "recall1": 0.333,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.528,
-        "groupMrr5": 0.611
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "evm_lp": {
-        "count": 1,
+        "count": 0,
         "recall1": 0,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.2,
-        "groupMrr5": 0.2
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "evm_swap": {
-        "count": 2,
-        "recall1": 0,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.375,
-        "groupMrr5": 0.375
+        "count": 15,
+        "recall1": 0.2,
+        "recall5": 0.333,
+        "coverage5": 0.333,
+        "mrr5": 0.256,
+        "groupMrr5": 0.256
       },
       "limit_order": {
         "count": 0,
@@ -108,12 +108,12 @@
         "groupMrr5": 0
       },
       "market_research": {
-        "count": 4,
-        "recall1": 0.75,
-        "recall5": 0.75,
-        "coverage5": 0.75,
-        "mrr5": 0.75,
-        "groupMrr5": 0.75
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "prediction_discovery": {
         "count": 0,
@@ -132,12 +132,12 @@
         "groupMrr5": 0
       },
       "rewards": {
-        "count": 2,
-        "recall1": 0.5,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.625,
-        "groupMrr5": 0.625
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
       },
       "solana_lend": {
         "count": 0,
@@ -156,12 +156,12 @@
         "groupMrr5": 0
       },
       "token_safety": {
-        "count": 0,
-        "recall1": 0,
-        "recall5": 0,
-        "coverage5": 0,
-        "mrr5": 0,
-        "groupMrr5": 0
+        "count": 5,
+        "recall1": 0.2,
+        "recall5": 0.6,
+        "coverage5": 0.6,
+        "mrr5": 0.35,
+        "groupMrr5": 0.35
       },
       "workflow": {
         "count": 0,
@@ -174,8 +174,8 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-supplemental@supplemental-v1, mode lexical, 12 cases evaluated.",
-    "overall recall@1 0.417, recall@5 0.917, coverage@5 0.917, mrr@5 0.565, groupMrr@5 0.586.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
+    "overall recall@1 0.2, recall@5 0.4, coverage@5 0.4, mrr@5 0.279, groupMrr@5 0.279.",
+    "Measured delta vs previous baseline (kyberswap-v1, captured 2026-08-22T13:40:39.501Z): 12 metric values moved; overall recall@5 0.4 -> 0.4, overall mrr@5 0.338 -> 0.279, case count 20 -> 20."
   ]
 }

@@ -98,13 +98,13 @@ function buildDeltaNotes(
   ];
 
   if (existing === null) {
-    notes.push("First capture — no previous baseline to measure a delta against.");
+    notes.push("First capture: no previous baseline to measure a delta against.");
     return notes;
   }
 
   const comparison = compareBaseline(existing, measured);
   if (comparison.ok) {
-    notes.push("Measured delta: none — metrics are identical to the previous baseline.");
+    notes.push("Measured delta: none, metrics are identical to the previous baseline.");
     return notes;
   }
 
@@ -132,8 +132,8 @@ function buildReconciliation(
     reason:
       `Previous baseline was captured against dataset ${existing.datasetVersion} `
       + `(${existing.metrics.overall.count} cases) on ${existing.capturedAt}; the canonical dataset is now `
-      + `${measured.datasetVersion} (${measured.metrics.overall.count} cases). The baseline was STALE — it was `
-      + "never recaptured after the dataset changed — so this update re-anchors it against the current dataset. "
+      + `${measured.datasetVersion} (${measured.metrics.overall.count} cases). The baseline was STALE: it was `
+      + "never recaptured after the dataset changed, so this update re-anchors it against the current dataset. "
       + "The dataset contract and its quality floors were NOT changed.",
   };
 }
