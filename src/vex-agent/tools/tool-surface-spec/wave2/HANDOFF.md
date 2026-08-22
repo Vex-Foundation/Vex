@@ -212,7 +212,16 @@ test that changes is listed in a migration inventory with its new contract.
   there or the user names it. Implemented in task-shapes.ts and
   protocol-capabilities.ts; snapshots regenerated (24 lines across the 12
   files); ceilings raised by 340 B per mode (54,135 / 54,836 / 60,558 /
-  60,577 / 59,174 / 58,989 B).
+  60,577 / 59,174 / 58,989 B). Committed as 913b9405.
+- WITHDRAWN the same day by the owner ("niech widzi protokoły i sam sobie
+  wybierze"): no ranking of research tools in the prompt; the model sees
+  the protocol declarations and chooses. task-shapes.ts,
+  protocol-capabilities.ts, the ceiling test and the 12 snapshots are
+  restored to their 76f6306d content (the Codex-approved Research shape:
+  the three-layer procedure, the mission-setup exception and the neutral
+  freshness-lag note stay). D19 on the Batch 4 branch records the
+  withdrawal. RETTIWT_API_KEY therefore left the availability fingerprint
+  again.
 
 ## The owner's personality setup (vex-app Personalize)
 

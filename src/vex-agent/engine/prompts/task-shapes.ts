@@ -6,46 +6,15 @@ import {
 
 export interface TaskShapeAvailability {
   readonly webResearch: boolean;
-  readonly twitterAccount: boolean;
   readonly solana: boolean;
 }
 
-/**
- * The owner's research priorities (2026-08-22): DexScreener is the primary
- * research surface on every chain; web search and Twitter add news and
- * social evidence when their keys exist; on Solana, Jupiter's discovery feed
- * adds fresh discovery; the launchpad-native reads (Trench, pools.fun,
- * Virtuals) are of lower general value and are reached for only when the
- * token lives on that launchpad or the user names it. Every tool named
- * here is rendered only when its key is configured, so the prompt never
- * points at a tool the install cannot call.
- */
-function researchSurfaceSentence(availability: TaskShapeAvailability): string {
-  const parts = [
-    "Default procedure: DexScreener is the primary research surface on every chain: resolve identity, pairs, liquidity, volume, price sanity, narratives and promotion there first.",
-  ];
-  const evidence: string[] = [];
-  if (availability.webResearch) evidence.push("`WebResearch`");
-  if (availability.twitterAccount) evidence.push("`TwitterAccount`");
-  if (evidence.length === 1) parts.push(`${evidence[0]} adds news, narrative and social evidence.`);
-  if (evidence.length === 2) parts.push(`${evidence[0]} and ${evidence[1]} add news, narrative and social evidence.`);
-  if (availability.solana) {
-    parts.push("On Solana, Jupiter's `solana__tokens_discover` trending and recent feeds add fresh discovery that DexScreener indexes minutes to hours later.");
-  }
-  parts.push(
-    "Trench, pools.fun and Virtuals are launchpad-native reads of lower general value: reach for them only when the token lives on that launchpad or the user names it.",
-    "In an agent session or active mission run, answer research through all three layers before reporting: identity and discovery, depth and price sanity, then narrative and safety. If a layer is unreachable, continue through the others and report which layer was unavailable and why. Only mission setup stops at capability orientation because mutations are locked and the task is drafting.",
-  );
-  return parts.join(" ");
-}
-
-function buildResearchShape(availability: TaskShapeAvailability): string[] {
-  const webResearchAvailable = availability.webResearch;
+function buildResearchShape(webResearchAvailable: boolean): string[] {
   const lines = [
     "### Research",
     "Trigger: The user needs identity, freshness, depth, narrative, promotion, safety, or evidence before a decision.",
-    researchSurfaceSentence(availability),
-    "DexScreener indexing lags by minutes to hours for brand-new tokens, so a launchpad-native read on Trench or pools.fun, or Jupiter's recent feed on Solana, can see a token first; use DexScreener afterwards for depth and price sanity. Virtuals is read-only launchpad intelligence, so acquiring an agent token continues as a separate swap task.",
+    "Default procedure: In an agent session or active mission run, answer research through all three layers before reporting: identity and discovery, depth and price sanity, then narrative and safety. If a layer is unreachable, continue through the others and report which layer was unavailable and why. Only mission setup stops at capability orientation because mutations are locked and the task is drafting.",
+    "DexScreener indexing lags by minutes to hours for brand-new tokens. Fresh Solana discovery and Trench launchpad discovery can precede indexed pair research; use DexScreener afterwards for depth and price sanity. Virtuals is read-only launchpad intelligence, so acquiring an agent token continues as a separate swap task.",
     "Report: Name the exact chain and contract identity, source freshness, observed liquidity and market evidence, missing coverage, provider labels that are not proof, and whether the result is research or an executable quote.",
   ];
   if (webResearchAvailable) {
@@ -136,7 +105,7 @@ export function buildTaskShapesPrompt(availability: TaskShapeAvailability): stri
   return [
     "## How Vex works a task",
     "",
-    ...buildResearchShape(availability),
+    ...buildResearchShape(availability.webResearch),
     "",
     ...buildSwapShape(),
     "",
