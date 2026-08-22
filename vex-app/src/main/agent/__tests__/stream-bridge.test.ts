@@ -123,7 +123,7 @@ describe("stream bridge", () => {
 
   it.each([
     ["trench__launch_execute", "trench.launch_execute"],
-    ["dexscreener__tokenPairs", "dexscreener.tokenPairs"],
+    ["dexscreener__token_pairs_list", "dexscreener.tokenPairs"],
     // Unresolvable: the live island must show the raw name, never borrow a venue.
     ["kyberswapp__swap__quote", "kyberswapp__swap__quote"],
     // Internal tools are untouched.

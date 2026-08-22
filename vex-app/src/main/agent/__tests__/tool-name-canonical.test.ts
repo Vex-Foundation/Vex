@@ -3,7 +3,7 @@
  * boundary that reverses it.
  *
  * The model calls a discovered protocol manifest under an OpenAI-legal name
- * (`kyberswap.swap.quote` -> `kyberswap__swap__quote`). Everything that SHOWS a
+ * (`kyberswap.swap.quote` -> `kyberswap__swap_quote`). Everything that SHOWS a
  * tool to a human must show the dotted id back. If the codec and this boundary
  * ever disagree — a new manifest whose id breaks the bijection, an incidental
  * `toLowerCase()` on a camelCase id — the whole catalog sweep below fails,
@@ -54,11 +54,13 @@ describe("canonicalToolName - an unresolvable name keeps its raw form", () => {
  * catalog sweep above.
  */
 describe("canonicalToolName - case is preserved", () => {
+  // The wire name is the manifest's publicName (Batch 2: `namespace__resource_action`),
+  // resolved through the live catalog; the dotted id it maps back to keeps its case.
   it.each([
-    ["dexscreener__tokenPairs", "dexscreener.tokenPairs"],
-    ["dexscreener__communityTakeovers", "dexscreener.communityTakeovers"],
-    ["solana__lend__borrowOperate", "solana.lend.borrowOperate"],
-    ["pendle__lp__toPt", "pendle.lp.toPt"],
+    ["dexscreener__token_pairs_list", "dexscreener.tokenPairs"],
+    ["dexscreener__community_takeovers_list", "dexscreener.communityTakeovers"],
+    ["solana__lend_borrow_operate", "solana.lend.borrowOperate"],
+    ["pendle__lp_to_pt", "pendle.lp.toPt"],
   ])("maps %s to %s", (wire, dotted) => {
     expect(canonicalToolName(wire)).toBe(dotted);
   });
