@@ -123,7 +123,7 @@ export async function pendleMarketHistory(
     if (err instanceof VexError && err.httpStatus === 404) {
       return fail(
         `Pendle serves no historical data for ${q.market} on ${chain} (it answered 404). Confirm the market with ` +
-          "pendle.market.get — the same address on another chain is a different asset — rather than requesting it again.",
+          "pendle__market_get - the same address on another chain is a different asset - rather than requesting it again.",
       );
     }
     return fail(`Pendle market history unavailable (${failureDetail(TOOL_ID, err)})`);
@@ -181,8 +181,8 @@ export async function pendleMarketHistory(
     asOf: new Date(nowMs).toISOString(),
     nextStep:
       "`stats.changePercent` is the relative move from the first point to the last, not an APY. For the market's " +
-      "identity, accepted tokens and current rates call pendle.market.get; for the PT/YT/LP price candles behind these " +
-      "numbers call pendle.market.candles. A high implied APY on a thin market is not an opportunity — check tvlUsd too.",
+      "identity, accepted tokens and current rates call pendle__market_get; for the PT/YT/LP price candles behind these " +
+      "numbers call pendle__market_candles_get. A high implied APY on a thin market is not an opportunity - check tvlUsd too.",
   });
 }
 

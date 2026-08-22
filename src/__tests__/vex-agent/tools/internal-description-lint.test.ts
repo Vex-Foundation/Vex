@@ -3,11 +3,14 @@
  *
  * Coverage, exactly:
  *
- *   rule `tool-description` (protocols/manifest-lint.test.ts): the 137
+ *   rule `tool-description` (protocols/manifest-lint.test.ts): the 134
  *       protocol manifests plus 14 internal tools (action-alias + wallet).
  *       Unchanged by this suite.
- *   rule `internal-tool-description` (here): ALL 34 registered internal
+ *   rule `internal-tool-description` (here): ALL 32 registered internal
  *       `ToolDef`s, the 14 included.
+ *
+ * (The 137/34 this comment claimed were stale by the ToolSearch merge; the
+ * live figures are asserted below, and 14 is still correct.)
  *
  * The ActionKind lane deliberately overlaps the older rule. The tools with the
  * strongest obligations - `BridgeExecute`, `SwapExecute`, `WalletSendPrepare`,
@@ -88,16 +91,31 @@ describe("G2 - internal tool description lint", () => {
     expect(moneyPath.filter((name) => !BASIC_LANE.has(name))).toEqual([]);
   });
 
-  // A recorded, deletable fact rather than a rewrite: `BridgeExecute` broadcasts from
-  // the user wallet and its description never names the approval that gates
-  // it. The entry is what makes the gap visible to the rewrite wave.
-  it("records bridge's missing approval statement as measured debt", () => {
+  // CONTRACT CHANGE (internal-description rewrite wave). This test previously
+  // asserted the INVERSE: that `BridgeExecute`'s missing approval sentence was
+  // still detected, and still allowlisted. That was right while the gap was
+  // recorded debt and is wrong now that it is fixed - a test pinning a
+  // money-path defect in place outlives its purpose the moment the defect is
+  // paid off. It now asserts what the wave delivered: the
+  // `user_wallet_broadcast` that moves funds across chains NAMES the human
+  // decision gating it, with nothing left excusing it.
+  it("bridge names the approval that gates its broadcast", () => {
     const bridge = SUBJECTS.find((tool) => tool.name === "BridgeExecute");
     expect(bridge?.actionKind).toBe("user_wallet_broadcast");
 
     const found = issues.filter((i) => i.subject === "BridgeExecute" && i.detail === "approval");
-    expect(found, "bridge's approval gap is no longer detected").toHaveLength(1);
-    expect(withoutInternalAllowlisted(found), "the gap must be allowlisted, not unreported").toEqual([]);
+    expect(found, "bridge's approval statement regressed").toEqual([]);
+    expect(
+      INTERNAL_DESCRIPTION_ALLOWLIST.filter((e) => e.subject === "BridgeExecute"),
+      "bridge may not be excused by an allowlist entry again",
+    ).toEqual([]);
+  });
+
+  // The same wave paid off the whole lane, so the table is empty and may only
+  // stay that way: with no rows, a NEW violation on any of the 32 tools fails
+  // immediately rather than being admissible as recorded debt.
+  it("the internal-description allowlist is empty and may only stay empty", () => {
+    expect(INTERNAL_DESCRIPTION_ALLOWLIST).toEqual([]);
   });
 
   it("no internal tool description violates the rules outside the allowlist", () => {

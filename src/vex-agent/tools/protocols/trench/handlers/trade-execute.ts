@@ -48,7 +48,7 @@ export async function trenchTradeExecuteHandler(
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
 ): Promise<ToolResult> {
-  if (params.dryRun === true) return fail(`${TOOL_ID} does not support dryRun — call trench.trade_quote instead.`);
+  if (params.dryRun === true) return fail(`${TOOL_ID} does not support dryRun - call trench__trade_quote instead.`);
 
   const resolved = resolveTradeInputs(params);
   if (!resolved.ok) return fail(resolved.reason);

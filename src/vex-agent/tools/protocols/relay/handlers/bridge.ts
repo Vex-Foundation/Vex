@@ -137,7 +137,7 @@ async function relayQuoteGet(
   try {
     quote = await getRelayClient().getQuote(buildRequest(legs, user, params));
   } catch (err) {
-    return fail(`relay.quote.get failed: ${summarizeProtocolError(err).message}`);
+    return fail(`relay__bridge_quote_get failed: ${summarizeProtocolError(err).message}`);
   }
   if (quote.steps.length === 0) return fail("Relay returned no steps for this route.");
 

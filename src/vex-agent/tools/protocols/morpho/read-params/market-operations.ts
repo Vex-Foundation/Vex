@@ -177,7 +177,7 @@ function readRawAmount(raw: unknown, key: string): MorphoParams<bigint> {
 function readMarketId(p: Record<string, unknown>): MorphoParams<string> {
   const marketId = readOptionalString(p["marketId"]);
   if (marketId === undefined) {
-    return reject("marketId", "`marketId` is required. Read one from morpho.markets.discover or morpho.positions.get.");
+    return reject("marketId", "`marketId` is required. Read one from morpho__markets_discover or morpho__positions_get.");
   }
   if (!MARKET_ID_PATTERN.test(marketId)) {
     return reject(
@@ -187,7 +187,7 @@ function readMarketId(p: Record<string, unknown>): MorphoParams<string> {
         ? ", which is a 40-hex CONTRACT ADDRESS. A vault has an address; a Blue market has a 64-hex id, and this "
           + "tool operates on markets only."
         : ".")
-      + " Read one from morpho.markets.discover.",
+      + " Read one from morpho__markets_discover.",
     );
   }
   return { ok: true, value: marketId.toLowerCase() };
@@ -396,7 +396,7 @@ export function parseMorphoMarketExecuteParams(
       "walletAddress",
       `\`walletAddress\` was supplied to ${toolId}. An execute NEVER takes an address from model input: it signs `
       + "with the session's selected wallet, and borrowed assets or withdrawn collateral land in that same wallet. "
-      + "Use morpho.market.quote if you want to price this against another address.",
+      + "Use morpho__market_quote if you want to price this against another address.",
     );
   }
 

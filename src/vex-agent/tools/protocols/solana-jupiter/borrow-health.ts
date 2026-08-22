@@ -265,14 +265,14 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
   if (collateralPrice === null) {
     return unknown(
       `Vault ${input.vaultId} reported no usable USD price for its collateral token, so no LTV could be computed. `
-      + `Re-read solana.lend.borrowVaults for a fresher price.`,
+      + `Re-read solana__lend_borrow_vaults_list for a fresher price.`,
     );
   }
   const debtPrice = parsePositivePrice(input.debtPriceUsd);
   if (debtPrice === null) {
     return unknown(
       `Vault ${input.vaultId} reported no usable USD price for its debt token, so no LTV could be computed. `
-      + `Re-read solana.lend.borrowVaults for a fresher price.`,
+      + `Re-read solana__lend_borrow_vaults_list for a fresher price.`,
     );
   }
 
@@ -282,7 +282,7 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
     return unknown(
       `Vault ${input.vaultId} reported token decimals that cannot scale its raw amounts (collateral `
       + `${input.collateralDecimals}, debt ${input.debtDecimals}), so no LTV could be computed and the raw amounts `
-      + `cannot be read as token quantities either. Re-read solana.lend.borrowVaults for a usable vault row.`,
+      + `cannot be read as token quantities either. Re-read solana__lend_borrow_vaults_list for a usable vault row.`,
     );
   }
 
@@ -297,7 +297,7 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
     return unknown(
       `Vault ${input.vaultId}'s collateral or debt valuation overflowed to a number this reader cannot represent, `
       + `so no LTV could be computed. Compare the raw amounts against the vault's maxLtvPercent / `
-      + `liquidationThresholdPercent yourself, or re-read solana.lend.borrowVaults for fresher prices and decimals.`,
+      + `liquidationThresholdPercent yourself, or re-read solana__lend_borrow_vaults_list for fresher prices and decimals.`,
     );
   }
 

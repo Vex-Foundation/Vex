@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Claim winnings from a RESOLVED (settled) prediction position — the market has an outcome and this position won. Use solana.predict.sell instead to exit an OPEN position before resolution. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
+      "description": "Claim the winnings of a RESOLVED Jupiter prediction position - the market has an outcome and this position won. It signs and broadcasts an irreversible on-chain claim with the session's Solana wallet and is approval-gated; it spends network fees rather than principal. Use this AFTER the market resolves; solana__predict_sell is the exit while it is still open. Returns TRUTHFUL-PENDING and never a confirmation: the reply names the claimed position, the transaction signature and an explorer link, says confirmation is tracked automatically and must not be retried, and states that the payout settles in JupUSD (6 decimals), NOT USDC, arriving in a LATER keeper transaction that this broadcast does not deliver - so the position stays pending until settlement is observed. Convert a JupUSD payout with solana__swap_quote then solana__swap_execute once the balance appears. A refusal before broadcast says nothing went on-chain and why.",
       "name": "solana__predict_claim",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "positionPubkey": {
-            "description": "Position public key (from solana.predict.positions).",
+            "description": "Position public key (from solana__predict_positions_list).",
             "type": "string"
           }
         },

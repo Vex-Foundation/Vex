@@ -5,7 +5,7 @@ export const RELAY_NAVIGATION: ProtocolNamespaceNavigation = {
   advertised: true,
   groupId: "cross-chain",
   groupLabel: "Cross-chain",
-  summary: "Keyless cross-chain bridge (Relay) — the ONLY bridge to/from Robinhood Chain (4663); also bridges across its wider chain registry.",
+  summary: "Relay is a keyless cross-chain bridge: it moves a token on one chain into a token on another with no bridge account and no manual claim, quoted first and then executed. It is the ONLY route Vex has to or from Robinhood Chain (4663), which Khalani does not cover, and it also bridges across Relay's wider chain registry.",
   whenToUse:
     "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out.",
   preferInstead:

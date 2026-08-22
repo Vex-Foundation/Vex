@@ -88,12 +88,12 @@ export async function pendleAssetPrices(
           missingIds,
           missingNote:
             "Pendle does not price these ids on this chain. That is not a price of zero — the asset may not be a " +
-            "Pendle PT/YT/LP/SY at all, or may live on another chain. Confirm it with pendle.market.get.",
+            "Pendle PT/YT/LP/SY at all, or may live on another chain. Confirm it with pendle__market_get.",
         }),
     prices,
     nextStep:
-      "For a market's tradable rate and implied APY call pendle.market.get; for the price history behind a mark call " +
-      "pendle.market.candles. Do not size a trade off these figures — quote it with pendle.pt.quote or pendle.yt.quote.",
+      "For a market's tradable rate and implied APY call pendle__market_get; for the price history behind a mark call " +
+      "pendle__market_candles_get. Do not size a trade off these figures - quote it with pendle__pt_quote or pendle__yt_quote.",
   });
 }
 

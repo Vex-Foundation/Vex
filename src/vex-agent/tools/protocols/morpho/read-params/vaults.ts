@@ -363,8 +363,8 @@ export function parseMorphoVaultGetParams(p: Record<string, unknown>): MorphoPar
     return reject(
       "vaultAddress",
       `\`vaultAddress\` must be a 0x-prefixed 40-hex contract address. Received "${vaultAddress}"`
-      + (looksLikeMarketId ? ", which is a 64-hex MARKET id - that belongs to morpho.market.get." : ".")
-      + " Read one from morpho.vaults.discover.",
+      + (looksLikeMarketId ? ", which is a 64-hex MARKET id - that belongs to morpho__market_get." : ".")
+      + " Read one from morpho__vaults_discover.",
     );
   }
 

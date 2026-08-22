@@ -24,12 +24,19 @@ export const PENDLE_PRICES_ASSETS_TOOL: ProtocolToolManifest = {
   lifecycle: "active",
   description:
     "USD price marks for Pendle assets on ONE chain — principal tokens (PT), yield tokens (YT), LP tokens and " +
-    "standardised-yield (SY) tokens — including assets the wallet does not hold. Name specific assets with `ids`, or " +
-    "omit them to page through the chain's assets. Prices come back as exact decimal strings and are Pendle's own " +
+    "standardised-yield (SY) tokens - including assets the wallet does not hold. Use this when the user asks what a " +
+    "PT, YT, LP or SY token is worth in dollars, or when you need to mark a position you are not trading. Name " +
+    "specific assets with `ids`, or " +
+    "omit them to page through the chain's assets. RETURNS `summary`, `chain`, `asOf`, `note`, `filtersApplied`, " +
+    "`count`, `total`, `nextStep`, `missingIds` with a `missingNote` when any id was unpriced, and `prices`: one " +
+    "row per asset carrying `id`, `chain`, `chainId`, `address` and `priceUsd`. Prices are exact decimal strings " +
+    "and are Pendle's own " +
     "snapshot, refreshed roughly every 15-60 seconds: they are display and portfolio figures, NOT executable quotes " +
-    "and not a pre-trade rate — use pendle.market.get for a market's tradable rate and implied APY. A requested id " +
+    "and not a pre-trade rate - use pendle__market_get for a market's tradable rate and implied APY. A requested id " +
     "Pendle does not price is reported in missingIds rather than dropped, so an unpriced asset never reads as a " +
-    "worthless one. Read-only.",
+    "worthless one. PAGE WITH `offset`/`limit` when no `ids` are given: the reply carries `hasMore` and, when it " +
+    "is true, the `nextOffset` to pass back. Naming `ids` returns exactly those and reports `hasMore` false. " +
+    "Read-only.",
   mutating: false,
   actionKind: "read",
   params: [

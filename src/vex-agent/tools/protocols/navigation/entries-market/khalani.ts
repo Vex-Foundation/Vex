@@ -5,11 +5,11 @@ export const KHALANI_NAVIGATION: ProtocolNamespaceNavigation = {
   advertised: true,
   groupId: "cross-chain",
   groupLabel: "Cross-chain",
-  summary: "Cross-chain bridge, token resolver, balances, quotes, and order tracking across EVM + Solana chains.",
+  summary: "The bridge Vex moves tokens between blockchains with, across the EVM and Solana chains its own live registry returns, and the canonical cross-chain token resolver behind it: resolve a ticker or address to the exact contract on a chain, read balances across chains, quote a transfer, execute it, and track the order to delivery.",
   whenToUse:
-    "Use when the task crosses chains or needs multi-chain token resolution, wallet balances, a bridge quote, or a bridge execution flow. Token resolution is exposed as the `TokenFind` shortcut — prefer it. The full khalani toolset is listable with ToolSearch for this namespace.",
+    "Use when the task crosses chains: bridge funds from one network to another, get assets onto the chain a trade needs, check what a transfer would deliver and how long it takes, or look up an in-flight or past bridge. Also use it to resolve a token symbol or address before ANY EVM swap or bridge, through the `TokenFind` shortcut. Bridges quote first and then execute, and a real execution reports delivery still in progress rather than a completed transfer.",
   preferInstead:
-    "Use `kyberswap` for EVM-only swaps and `solana` for Solana-only swaps.",
+    "Khalani is the PRIMARY bridge: use `relay` when Khalani has no route, and always when either side is Robinhood Chain (4663), which Khalani's registry does not carry. Use `kyberswap` for EVM-only swaps and `solana` for Solana-only swaps.",
   exampleQueries: [
     'ToolSearch(query="token search", namespace="khalani")',
     'ToolSearch(query="bridge quote", namespace="khalani")',

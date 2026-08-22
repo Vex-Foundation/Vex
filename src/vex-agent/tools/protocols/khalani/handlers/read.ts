@@ -270,7 +270,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (forbiddenParam !== null) {
       return {
         success: false,
-        output: `khalani.quote.get failed: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+        output: `khalani__bridge_quote_get failed: ${forbiddenParam.param} is not an accepted parameter - ${forbiddenParam.reason} Remove it and retry.`,
       };
     }
 
@@ -298,7 +298,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
       return {
         success: false,
-        output: `khalani.quote.get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${fallbackNote}`,
+        output: `khalani__bridge_quote_get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${fallbackNote}`,
       };
     }
 
@@ -388,12 +388,12 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
       return {
         success: false,
-        output: `${renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err))}${fallbackNote}`,
+        output: `${renderProtocolFailureOutput("khalani__bridge_quote_get", summarizeProtocolError(err))}${fallbackNote}`,
       };
     }
     if (outcome.outcome === "no_route") {
       const fallbackNote = venueFallbackNoteOnKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
-      return { success: false, output: `khalani.quote.get: Khalani has no route for this pair.${fallbackNote}` };
+      return { success: false, output: `khalani__bridge_quote_get: Khalani has no route for this pair.${fallbackNote}` };
     }
 
     // Fee disclosure (fail-soft token facts — a lookup miss degrades the human
@@ -425,7 +425,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         routeCount: outcome.routes.length,
         routes: projectQuoteRoutes(outcome.routes, Date.now()),
         vexFee,
-        expiryNote: "khalani.bridge re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
+        expiryNote: "khalani__bridge_execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
           + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
       data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee },

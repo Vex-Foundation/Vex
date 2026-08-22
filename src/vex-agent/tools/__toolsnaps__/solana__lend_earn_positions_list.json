@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get a wallet's open Jupiter Lend EARN positions — supplied assets/balances (raw atomic units) plus accrued earnings, per position. Covers Earn (simple lending) only — for collateralized Borrow positions (collateral/debt) use solana.lend.borrowPositions instead.",
+      "description": "Read a wallet's open Jupiter Lend EARN positions. Use this when the user asks what they have lent on Solana or what it has earned, and before a withdrawal, to learn the raw balance actually available. Returns `positions`, one row per supplied asset with its balance in RAW atomic units, and `earnings`, the accrued yield alongside it - `earnings` comes back as an empty array when there is no position, never as null and never as an error. The wallet defaults to the session's selected Solana wallet, and under session scope a different address is rejected. The rows are the whole answer; there is no continuation. Covers Earn only; collateral-and-debt positions are solana__lend_borrow_positions_list.",
       "name": "solana__lend_earn_positions_list",
       "parameters": {
         "additionalProperties": false,

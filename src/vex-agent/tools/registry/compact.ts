@@ -42,6 +42,7 @@ export const COMPACT_TOOLS: readonly ToolDef[] = [
       "Effect: the conversation prefix is archived, the rolling summary is replaced by the prepared one, and the checkpoint generation advances. Messages after the preparation's watermark are carried over verbatim, so nothing you have done since it was prepared is lost.",
       "Timing: this QUEUES the cutover; the runtime performs it at the next safe boundary, which may be immediately after this turn. It is deliberately not instantaneous — the runtime will not rewrite the transcript while a payment, approval or on-chain action is unresolved.",
       "You do not have to call this. The runtime applies a ready compaction on its own when context pressure becomes critical, and Full-Autonomous sessions apply it automatically. Calling it is how you relieve pressure EARLY, at a moment you choose — ideally after finishing a subtask rather than in the middle of one.",
+      "It returns one sentence rather than a result object, and the sentence is the whole answer: the cutover was queued, one was already requested, there is no live runner to consume it, the preparation is not ready, or none exists. Nothing here reports the compaction as already applied.",
     ].join(" "),
     parameters: {
       type: "object",

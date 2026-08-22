@@ -56,7 +56,7 @@ export async function trenchImagesHandler(p: Record<string, unknown>) {
     rows = await listLaunchImages();
   } catch (err) {
     return fail(
-      `The image locker could not be read (${trenchFailureDetail("trench.images", err)}). ` +
+      `The image locker could not be read (${trenchFailureDetail("trench__images_list", err)}). ` +
         `Do not launch without confirming an image — retry the listing first.`,
     );
   }

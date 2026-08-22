@@ -56,4 +56,4 @@ export const PREDICTION_PAYOUT_SETTLEMENT_NOTE =
   + `(mint ${JUPITER_PREDICTION_PAYOUT_MINT}, ${JUPITER_PREDICTION_PAYOUT_DECIMALS} decimals), `
   + "not USDC, and it arrives in a later keeper transaction rather than this one — "
   + "the settled amount is unknown until it lands, so no payout amount is recorded yet. "
-  + `Use solana.swap.execute to convert ${JUPITER_PREDICTION_PAYOUT_SYMBOL} to USDC once it arrives.`;
+  + `Use solana__swap_execute to convert ${JUPITER_PREDICTION_PAYOUT_SYMBOL} to USDC once it arrives.`;

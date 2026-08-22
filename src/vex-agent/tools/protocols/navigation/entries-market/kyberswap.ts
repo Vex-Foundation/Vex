@@ -23,11 +23,11 @@ export const KYBERSWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   advertised: true,
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
-  summary: `EVM-only swaps and token safety checks across KyberSwap routes. Swap-supported EVM chains: ${KYBER_SWAP_EXECUTE_CHAIN_SLUGS.join(", ")}.`,
+  summary: `The aggregator Vex swaps EVM tokens through: one exact-input trade routed across 400+ DEXes for the best price, quoted before it is signed, plus a honeypot and fee-on-transfer safety check on any EVM token. Swap-supported EVM chains: ${KYBER_SWAP_EXECUTE_CHAIN_SLUGS.join(", ")}.`,
   whenToUse:
-    "Use when the user wants EVM execution on an existing chain: swap, or run honeypot/FOT checks.",
+    "Use when the user wants to buy, sell, swap or exit a token on an EVM chain, wants the rate, route, gas cost or price impact before trading, or wants a token checked for honeypot or fee-on-transfer behaviour. Quote first, then execute with the same params.",
   preferInstead:
-    "Use `khalani` to resolve cross-chain token addresses first, `solana` for Solana trading, and `dexscreener` for read-only research.",
+    "KyberSwap is the PRIMARY EVM swap route: use `uniswap` when KyberSwap has no aggregator support for the chain or cannot route the pair, `khalani` to resolve token addresses across chains or to bridge between them, `solana` for Solana trading, and `dexscreener` for read-only research.",
   exampleQueries: [
     'ToolSearch(query="swap on base", namespace="kyberswap")',
     'ToolSearch(query="check token honeypot", namespace="kyberswap")',

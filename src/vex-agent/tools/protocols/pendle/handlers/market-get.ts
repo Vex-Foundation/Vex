@@ -172,7 +172,7 @@ export async function pendleMarketGet(
       // not fail on it: the market is real, it simply no longer trades.
       ratesNote =
         "This market has MATURED, so Pendle serves no live PT/YT rates for it (the rates endpoint answers " +
-        "'market is expired'). A matured PT is redeemed at its accounting value rather than swapped — see pendle.pt.redeem.";
+        "'market is expired'). A matured PT is redeemed at its accounting value rather than swapped - see pendle__pt_redeem.";
     } else if (isDefinitiveNotFound(err)) {
       ratesNote =
         "Pendle serves no live rates for this market (it answered 404 for the rates endpoint). The market resolves in " +
@@ -226,8 +226,8 @@ export async function pendleMarketGet(
     asOf,
     nextStep:
       "Rates here are Pendle's own pre-trade source — cheaper and more honest than a convert quote, which Pendle says " +
-      "not to use as a price. For the trend behind them call pendle.market.history; for resting limit-order depth call " +
-      "pendle.orderbook; to trade, call pendle.pt.quote / pendle.yt.quote with a tokenIn and tokenOut from `accepts`. " +
+      "not to use as a price. For the trend behind them call pendle__market_history_get; for resting limit-order depth call " +
+      "pendle__market_orderbook_get; to trade, call pendle__pt_quote / pendle__yt_quote with a tokenIn and tokenOut from `accepts`. " +
       "Amounts on the quote and trade tools are HUMAN units, not base units.",
   });
 }

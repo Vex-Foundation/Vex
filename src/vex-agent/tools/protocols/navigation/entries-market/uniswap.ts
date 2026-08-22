@@ -19,7 +19,7 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   advertised: true,
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
-  summary: "Keyless on-chain Uniswap V2/V3 swaps (best route). An all-EVM fallback for KyberSwap, including on Robinhood Chain (4663) — where $VEX and Virtuals agent tokens trade against VIRTUAL.",
+  summary: "Uniswap is on-chain spot swapping straight against V2 and V3 pools, routed for the best of the two and quoted before it is executed. It is Vex's all-EVM alternative to the KyberSwap aggregator, and the venue that covers Robinhood Chain (4663), where $VEX and Virtuals agent tokens trade against VIRTUAL. It takes token contract ADDRESSES; there is no symbol search.",
   whenToUse:
     "Use as a fallback on any EVM chain when KyberSwap is unavailable or lacks a route, including Robinhood Chain (quote/execute against VIRTUAL/ETH). Pass token contract ADDRESSES (no symbol search).",
   preferInstead:

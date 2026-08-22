@@ -23,8 +23,8 @@ export const MORPHO_POSITIONS_GET_TOOL: ProtocolToolManifest = {
   description:
     "Read ONE wallet's Morpho footprint: its lending-market positions (collateral, assets lent, debt owed, health "
     + "factor) and its curated-vault deposits, across the EVM chains Vex reads Morpho on. Use this when the user "
-    + "asks what they ALREADY hold, what they owe, or how safe their loan is; use morpho.markets.discover or "
-    + "morpho.vaults.discover to find somewhere to go, and morpho.markets.activity for what happened in a market. "
+    + "asks what they ALREADY hold, what they owe, or how safe their loan is; use morpho__markets_discover or "
+    + "morpho__vaults_discover to find somewhere to go, and morpho__markets_activity_list for what happened in a market. "
     + "ONE WALLET PER CALL: Morpho accepts a list of addresses and this tool refuses to send one, because a "
     + "position read maps an account to its debts. A second address is rejected by name. "
     + "HEALTH FACTOR IS A RATIO, NOT A PERCENT, returned as a decimal string. Below 1 the position is liquidatable "

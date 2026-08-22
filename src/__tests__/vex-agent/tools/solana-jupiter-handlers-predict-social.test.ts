@@ -205,7 +205,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
     const message = (thrown as Error).message;
     expect(message).toContain("HTTP 404: Not Found");
     expect(message).toMatch(/returned 404 for every wallet/);
-    expect(message).toContain("solana.predict.profile");
+    expect(message).toContain("solana__predict_profile_get");
     expect(message.indexOf("HTTP 404: Not Found")).toBeLessThan(message.indexOf("returned 404 for every wallet"));
     expect((thrown as { httpStatus?: number }).httpStatus).toBe(404);
   });

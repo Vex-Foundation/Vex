@@ -294,7 +294,7 @@ describe("morpho.market.get", () => {
       chain: "base",
     });
     expect(result.success).toBe(false);
-    expect(result.output).toContain("morpho.market.get failed");
+    expect(result.output).toContain("morpho__market_get failed");
     expect(result.output).toContain("MORPHO_API_ERROR/provider_refusal");
     expect(result.output).toContain("HTTP 400");
     expect(result.output).toContain('Cannot query field "priceUsd"');

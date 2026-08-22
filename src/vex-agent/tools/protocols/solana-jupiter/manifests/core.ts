@@ -7,7 +7,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "solana__token_prices_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get real-time USD prices for one or more Solana token mints — pass raw mint addresses via mints, OR symbols/names/mints via queries (resolved automatically, no separate lookup tool needed first). Returns each requested id's price (under prices, or resolved for queries); any mint/query Jupiter could not price is listed in missing instead of being silently dropped.",
+    description: "Get real-time USD prices for one or more Solana token mints. Use this when you already know WHICH tokens you want priced and need nothing else about them - pass raw mint addresses via mints, or symbols, names or mints via queries, which are resolved for you with no separate lookup call first. Returns `prices` on the mints branch and `resolved` plus `raw` on the queries branch, and on both a `missing` list naming every mint or query Jupiter could not price, so an unpriceable token is disclosed rather than silently dropped. Exactly one of mints or queries: both is refused, neither is refused.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -26,7 +26,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "solana__tokens_search",
     namespace: "solana",
     lifecycle: "active",
-    description: "Search for or look up one or more SPECIFIC Solana tokens you can already name — by symbol, name, or mint address (up to 100 comma-separated mints for a batch lookup) — for identity, price, market cap, liquidity, holder count, and safety-audit flags. Use solana.tokens.trending instead when you don't have a name yet and want to discover new, popular, or top-moving tokens.",
+    description: "Look up SPECIFIC Solana tokens you can already name - by symbol, name, or up to 100 comma-separated mint addresses for a batch lookup. Use this when the user names a token and you need to know what it is and whether it is safe to touch; solana__tokens_discover is the surface when there is no name yet and the user wants what is new, popular or top-moving. Returns one projected row per matching token: identity, price, market cap and liquidity, holder and organic-trading signals, the safety-audit flags, tags and launchpad, and age - the ~40-field provider payload narrowed to what a trading decision uses, with every matching row kept. minOrganicScore, verifiedOnly and minLiquidity filter the result and an out-of-range value is rejected rather than clamped. The rows are the whole answer; there is no continuation to page through.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -45,7 +45,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "solana__tokens_discover",
     namespace: "solana",
     lifecycle: "active",
-    description: "Discover Solana tokens without already knowing a name — freshly launched/new (recent), trending, top-traded, top-organic, verified, tokenized stocks, or liquid staking. THE fastest fresh-token surface on Solana: category=recent measured live (2026-08-17) at 30 rows spanning ages 10-175 SECONDS since mint, every row carrying createdAt as proof of age — where DexScreener's feeds reached ~16 minutes at best. createdAt is provider-optional, so treat a null as unknown age, never as fresh. The response is an accounted window: returned/totalMatched/hasMore plus tokens (a bare recent call measured 27,970 B against the 16,384 B tool-output cap, so limit is applied Vex-side and never silently). Richer signal (organic score, verification, holder data, audit flags) than generic feeds. Use solana.tokens.search instead once you already have a specific symbol, name, or mint to look up.",
+    description: "Discover Solana tokens without already knowing a name - freshly launched/new (recent), trending, top-traded, top-organic, verified, tokenized stocks, or liquid staking. THE fastest fresh-token surface on Solana: category=recent measured live (2026-08-17) at 30 rows spanning ages 10-175 SECONDS since mint, every row carrying createdAt as proof of age - where DexScreener's feeds reached ~16 minutes at best. createdAt is provider-optional, so treat a null as unknown age, never as fresh. Use this when the user wants what is NEW, hot or heavily traded on Solana and cannot name a token yet; solana__tokens_search is the lookup once a symbol, name or mint is known. Returns an accounted window: `tokens`, one projected row each (identity, price, market cap and liquidity, holder and organic-trading signals, the safety-audit flags, tags and launchpad, age), alongside `returned`, `totalMatched` and `hasMore`, so a trimmed result always says so - a bare recent call measured 27,970 B, so limit is applied Vex-side and never silently. Richer signal (organic score, verification, holder data, audit flags) than generic feeds.",
     mutating: false,
     actionKind: "read",
     params: [

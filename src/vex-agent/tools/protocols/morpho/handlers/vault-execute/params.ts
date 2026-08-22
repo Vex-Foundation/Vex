@@ -91,7 +91,7 @@ export function parseMorphoVaultExecuteParams(
 ): MorphoParams<MorphoVaultExecuteQuery> {
   const vaultAddress = readOptionalString(p["vaultAddress"]);
   if (vaultAddress === undefined) {
-    return reject("vaultAddress", "`vaultAddress` is required. Read one from morpho.vaults.discover.");
+    return reject("vaultAddress", "`vaultAddress` is required. Read one from morpho__vaults_discover.");
   }
   if (!ADDRESS_PATTERN.test(vaultAddress)) {
     return reject(
@@ -100,7 +100,7 @@ export function parseMorphoVaultExecuteParams(
       + (MARKET_ID_PATTERN.test(vaultAddress)
         ? ", which is a 64-hex MARKET id. Markets are not vaults and this tool operates on vaults only."
         : ".")
-      + " Read one from morpho.vaults.discover.",
+      + " Read one from morpho__vaults_discover.",
     );
   }
 

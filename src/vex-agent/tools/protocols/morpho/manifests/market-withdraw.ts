@@ -3,7 +3,6 @@ import { MORPHO_BORROW_EXECUTE_DISCOVERY } from "../../embeddings/morpho/execute
 import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 import {
-  MORPHO_LENDER_CHOICE_SENTENCE,
   MORPHO_LENDER_NO_HEALTH_SENTENCE,
   MORPHO_LENDER_WITHDRAW_BOUNDS_SENTENCE,
   MORPHO_MARKET_CHAIN_PARAM,
@@ -30,6 +29,14 @@ import {
  * IT PULLS NOTHING FROM THE WALLET, so it is a single direct Morpho Blue call
  * with no approval and no standing allowance, exactly like a collateral
  * withdrawal.
+ *
+ * IT DELIBERATELY DOES NOT CARRY `MORPHO_LENDER_CHOICE_SENTENCE` (Batch 3, D8).
+ * The measured direct-versus-curated fee table is the copy that decides where to
+ * PUT money, and it already ships on the three surfaces where that decision is
+ * live: `morpho.market.supply`, `morpho.vaults.discover`, and the Morpho
+ * doctrine in the system prompt. On the EXIT the choice has already been made,
+ * so ~610 bytes of it were persuading the model to re-litigate a decision the
+ * user is walking away from.
  */
 export const MORPHO_MARKET_WITHDRAW_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.withdraw",
@@ -40,17 +47,16 @@ export const MORPHO_MARKET_WITHDRAW_TOOL: ProtocolToolManifest = {
     "WITHDRAW assets previously SUPPLIED to one Morpho Blue market back into the wallet, ending or reducing the "
     + "lender position. This SPENDS gas and moves real funds: it signs and broadcasts an on-chain transaction from "
     + "the user's wallet and cannot be undone. THIS IS THE LENDER'S SIDE: it withdraws the LOAN asset that was lent "
-    + "to earn interest, NOT the collateral backing a loan, which is `morpho.market.withdrawCollateral` on a "
-    + "different token. It is also not `morpho.vault.withdraw`, which redeems from a curated vault. "
+    + "to earn interest, NOT the collateral backing a loan, which is `morpho__market_withdraw_collateral` on a "
+    + "different token. It is also not `morpho__vault_withdraw`, which redeems from a curated vault. "
     + `${MORPHO_LENDER_NO_HEALTH_SENTENCE} `
     + `${MORPHO_LENDER_WITHDRAW_BOUNDS_SENTENCE} `
     + "The amount withdrawable is the supplied principal PLUS the interest accrued into the share price, so it is "
-    + "normally larger than what was supplied; read it from `morpho.positions.get` rather than from memory of the "
+    + "normally larger than what was supplied; read it from `morpho__positions_get` rather than from memory of the "
     + "deposit. "
     + `${MORPHO_MARKET_QUOTE_FIRST_SENTENCE} `
     + `${MORPHO_RECEIVING_CONSENT_SENTENCE} `
     + `${MORPHO_ORACLE_VOUCHING_SENTENCE} `
-    + `${MORPHO_LENDER_CHOICE_SENTENCE} `
     + `${MORPHO_NO_COMBO_SENTENCE} `
     + `${MORPHO_ONE_LEG_SENTENCE} `
     + `${MORPHO_MARKET_LEDGER_SENTENCE} `
@@ -78,7 +84,7 @@ export const MORPHO_MARKET_WITHDRAW_TOOL: ProtocolToolManifest = {
       required: true,
       description:
         "How much of the LOAN asset to withdraw, in the LOAN token's RAW base units as a whole-number string. THE "
-        + "SCALE IS THE LOAN TOKEN'S OWN: read `loanAsset.decimals` from `morpho.market.get`. A human decimal amount "
+        + "SCALE IS THE LOAN TOKEN'S OWN: read `loanAsset.decimals` from `morpho__market_get`. A human decimal amount "
         + "is refused, not rounded. `withdrawCollateralAmountRaw` is a DIFFERENT operation on a DIFFERENT token and "
         + "is refused by name. An amount above the supplied position, or above the market's free liquidity, is "
         + "refused by name rather than reduced to what would fit.",

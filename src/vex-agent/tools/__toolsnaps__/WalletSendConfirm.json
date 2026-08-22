@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Confirm and broadcast a prepared transfer. Requires approval in restricted/off mode.",
+      "description": "Broadcast the transfer that `WalletSendPrepare` already prepared. SPENDS REAL FUNDS AND IS IRREVERSIBLE: this is the call that signs the transaction with the user's wallet and sends it. APPROVAL: in a RESTRICTED session it signs nothing - it comes back asking for approval, and the same intent is consumed only after the user confirms; in a FULL-permission session the user's standing permission is the authority and it broadcasts directly. Vex normally dispatches this itself as the trusted follow-up to `WalletSendPrepare`, so call it by hand only when that follow-up did not run. PRECONDITIONS, each refused BY NAME rather than guessed: the intentId must belong to THIS session, still be pending, and be inside its 10-minute expiry; `walletFamily` must match the one the intent recorded; and the session's currently selected wallet must be the exact wallet the intent bound, or it refuses and asks you to re-prepare rather than signing from a different address. The intent is consumed atomically, so one prepared transfer can be broadcast at most once. RETURNS txHash, chain and status, plus blockNumber on EVM and explorerUrl on Solana. Every other outcome is a sentence, and they do not mean the same thing: reverted on-chain (a real transaction, no transfer), broadcast but confirmation UNKNOWN (the transaction exists and may still settle - do NOT retry, read it yourself with `ChainRead` action tx_receipt), and failed before broadcast (nothing was sent). Only the last is safe to prepare again.",
       "name": "WalletSendConfirm",
       "parameters": {
         "additionalProperties": false,

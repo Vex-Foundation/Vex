@@ -56,8 +56,8 @@ export const PROVIDER_FEED_WINDOW_NOTE =
   + "filter. This is the window it chose, not the full set of tokens carrying this signal — every "
   + "filter, sort and window in filtersApplied was applied by Vex to the rows below. These rows "
   + "carry NO price, liquidity, volume or pool address: resolve MANY rows in one call with "
-  + "dexscreener.tokens (chain + comma-separated addresses, up to 60), or one token's full pool "
-  + "list with dexscreener.tokenPairs.";
+  + "dexscreener__tokens_get (chain + comma-separated addresses, up to 60), or one token's full pool "
+  + "list with dexscreener__token_pairs_list.";
 
 /**
  * Narrative-level honesty. §4.4: nine candidate sorts were ruled out against the
@@ -77,7 +77,7 @@ export const PROVIDER_NARRATIVE_WINDOW_NOTE =
  */
 export const TOKEN_DECIMALS_RESOLVER_NOTE =
   "DexScreener returns no token decimals, so no raw on-chain amount here can be converted. "
-  + "Resolve decimals with khalani.tokens.search (EVM) or solana.tokens.search (Solana) before "
+  + "Resolve decimals with khalani__tokens_search (EVM) or solana__tokens_search (Solana) before "
   + "using any raw amount.";
 
 /**
@@ -92,7 +92,7 @@ export const SEARCH_PROVIDER_RELEVANCE_NOTE =
   "DexScreener chose these rows by its own undisclosed relevance across all chains at once, and "
   + "ignores every other query parameter. The order is not a ranking and is not stable. An empty "
   + "chain-filtered result does NOT mean the token has no pool on that chain — check "
-  + "droppedByFilter, then call dexscreener.tokenPairs with the token address on that chain.";
+  + "droppedByFilter, then call dexscreener__token_pairs_list with the token address on that chain.";
 
 export type ProviderOrder = "relevance" | "unspecified";
 

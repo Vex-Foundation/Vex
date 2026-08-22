@@ -33,7 +33,10 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
     + "would I get', 'what would I have to approve first', or 'what would this cost in gas'. It builds the exact "
     + "transaction, decodes it leg by leg against Vex's own allowlist of permitted contracts and selectors, bounds "
     + "its gas with Vex's own headroom, and simulates it against current chain state. "
-    + "RETURNS `input` and `expectedShares`, each as {raw, decimals, human, symbol}: on a deposit the asset going in "
+    + "RETURNS a `quote` block and, beside it at the top level, `governance`. EVERY FIELD NAMED BELOW EXCEPT "
+    + "`governance` LIVES INSIDE `quote`, so read them as `quote.input`, `quote.preflight` and so on rather than "
+    + "off the root. "
+    + "`input` and `expectedShares`, each as {raw, decimals, human, symbol}: on a deposit the asset going in "
     + "and the shares that would be minted, on a withdrawal the asset coming out and the shares that would be "
     + "burned. THE TWO SCALES ARE DIFFERENT and this is the most expensive confusion here: shares are typically 18 "
     + "decimals while a USDC asset is 6, so the two `raw` figures must never be compared, subtracted or presented as "
@@ -73,8 +76,8 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
     + "publishes no service guarantee. "
     + "Read-only. THIS IS A PREVIEW AND IT COMMITS NOTHING: nothing is signed, nothing is sent, no approval is "
     + "granted and no funds move. Present the result as what a transaction would do, never as something that has "
-    + "been set up. It DOES authorize the matching execute for a limited time: `morpho.vault.deposit` and "
-    + "`morpho.vault.withdraw` are REFUSED without a fresh quote for exactly the same params, and a quote for one "
+    + "been set up. It DOES authorize the matching execute for a limited time: `morpho__vault_deposit` and "
+    + "`morpho__vault_withdraw` are REFUSED without a fresh quote for exactly the same params, and a quote for one "
     + "direction never authorizes the other.",
   mutating: false,
   actionKind: "read",
@@ -84,7 +87,7 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
       type: "string",
       required: true,
       description:
-        "The vault's 0x-prefixed 40-hex contract address, from `morpho.vaults.discover` or `morpho.vault.get`. A "
+        "The vault's 0x-prefixed 40-hex contract address, from `morpho__vaults_discover` or `morpho__vault_get`. A "
         + "64-hex value is rejected by name because that is a MARKET id, not a vault. Both generations are detected "
         + "automatically.",
     },
@@ -113,7 +116,7 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
       description:
         "How much of the vault's ASSET to price going IN, in that asset's RAW base units as a whole-number string. "
         + "Send it with `direction: deposit`, never alongside `withdrawAmountRaw`. THE SCALE IS THE VAULT ASSET'S "
-        + "OWN: read `asset.decimals` from `morpho.vault.get` for this vault, not the vault's SHARE decimals, which "
+        + "OWN: read `asset.decimals` from `morpho__vault_get` for this vault, not the vault's SHARE decimals, which "
         + "are a different number reported beside it. A human amount is refused, not rounded.",
     },
     {
@@ -123,7 +126,7 @@ export const MORPHO_VAULT_QUOTE_TOOL: ProtocolToolManifest = {
       description:
         "How much of the vault's ASSET to price coming OUT, in that asset's RAW base units as a whole-number "
         + "string. Send it with `direction: withdraw`, never alongside `depositAmountRaw`. THE SCALE IS THE VAULT "
-        + "ASSET'S OWN: read `asset.decimals` from `morpho.vault.get` for this vault, not the SHARE decimals and "
+        + "ASSET'S OWN: read `asset.decimals` from `morpho__vault_get` for this vault, not the SHARE decimals and "
         + "not the share count you want to burn, which is a different quantity in a different unit.",
     },
     {

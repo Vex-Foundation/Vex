@@ -40,7 +40,7 @@ export const PENDLE_MARKET_HISTORY_TOOL: ProtocolToolManifest = {
       type: "string",
       required: true,
       description:
-        "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT — resolve those to their market with pendle.market.get first.",
+        "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT - resolve those to their market with pendle__market_get first.",
     },
     {
       key: "timeFrame",

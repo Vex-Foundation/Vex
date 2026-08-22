@@ -11,7 +11,7 @@
             "type": "number"
           },
           "fetchTop": {
-            "description": "Search-only. How many of the top hits to read in full, 0-10 (default 3); 0 = snippets only. Budget: each page read costs ~2.1 KB (max observed 2,508 B), so fetchTop: 10 is ~21 KB of page text alone and will exceed the 16,384 B output cap. The default shape measures ~12 KB.",
+            "description": "Search-only. How many of the top hits to read in full, 0-10 (default 3); 0 = snippets only. Budget: each page read costs ~2.1 KB (max observed 2,508 B), so fetchTop: 10 is ~21 KB of page text alone. The default shape measures ~12 KB.",
             "type": "number"
           },
           "maxResults": {
@@ -49,7 +49,7 @@
             "type": "string"
           },
           "url": {
-            "description": "Absolute http:// or https:// URL to read as markdown. Unlike a search page read this is NOT query-targeted — you get the whole document, measured at 21,319 B for one documentation page, well past the 16,384 B tool-output cap. Other schemes (ftp, file, mailto, data) rejected. Pass this OR `query`, not both.",
+            "description": "Absolute http:// or https:// URL to read as markdown. Unlike a search page read this is NOT query-targeted - you get the whole document, measured at 21,319 B for one documentation page, and no parameter bounds it. Other schemes (ftp, file, mailto, data) rejected. Pass this OR `query`, not both.",
             "type": "string"
           }
         },

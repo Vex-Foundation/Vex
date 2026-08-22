@@ -288,6 +288,8 @@ describe("DexScreener feed + narrative param validation", () => {
 
   it("a rejection names the tool, so the agent knows which call to fix", async () => {
     const result = await run("dexscreener.communityTakeovers", { limit: 0 });
-    expect(result.output).toContain("dexscreener.communityTakeovers");
+    // The dotted id stays the internal catalog key; the message names the callable
+    // publicName, which is the name the agent has to fix in its next call.
+    expect(result.output).toContain("dexscreener__community_takeovers_list");
   });
 });

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Execute a token swap via Jupiter's Router (/build) — routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana.swap.quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending — it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.",
+      "description": "Execute a token swap via Jupiter's Router (/build) - routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana__swap_quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending - it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.",
       "name": "solana__swap_execute",
       "parameters": {
         "additionalProperties": false,

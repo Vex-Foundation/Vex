@@ -119,7 +119,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     });
     if (!response) return refuse("route_not_found", "Pendle returned no pre-expiry redeem route.");
     if (response.action !== "redeem-py") {
-      return refuse("route_not_found", "Pendle did not return a pre-expiry redeem route — a MATURED PT uses pendle.pt.redeem.");
+      return refuse("route_not_found", "Pendle did not return a pre-expiry redeem route - a MATURED PT uses pendle__pt_redeem.");
     }
 
     const intent: PendleTxIntent = {
@@ -189,6 +189,6 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     };
   } catch (err) {
     if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.py.redeem", txHash, err);
-    return fail(`Pendle redeem failed (${failureDetail("pendle.py.redeem", err)})`);
+    return fail(`Pendle redeem failed (${failureDetail("pendle__py_redeem", err)})`);
   }
 }

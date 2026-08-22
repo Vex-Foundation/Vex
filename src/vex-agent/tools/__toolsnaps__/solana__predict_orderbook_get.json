@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get bid/ask order-book depth for a prediction market — YES/NO price levels and sizes, beyond the top-of-book price solana.predict.market already returns. Depth is uncapped upstream and can be large for liquid markets. Fails with a clear error (never a silent empty book) when Jupiter's own upstream order-book data is temporarily unavailable.",
+      "description": "Read bid and ask DEPTH for one Jupiter prediction market - the YES and NO price levels and the size resting at each. Use this before sizing a position that is large enough for the top-of-book price from solana__predict_market_get to be misleading. Returns the provider's own book: the native price-level arrays with their yes_dollars/no_dollars decimal-dollar mirrors, passed through in full. Depth is uncapped upstream and can be long on a liquid market; there is no depth or limit parameter and Vex adds no client-side cap. When Jupiter's own order-book fetch fails it answers with a clear named error naming the market, never a silently empty book, so an empty result is never manufactured from a failure.",
       "name": "solana__predict_orderbook_get",
       "parameters": {
         "additionalProperties": false,

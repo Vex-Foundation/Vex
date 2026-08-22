@@ -3,15 +3,14 @@
  *
  * The Rettiwt client returns verbose `ITweet` / `IUser` / `ISpace` payloads
  * (profile/banner image URLs, entities, pinned tweets, full participant lists)
- * that routinely push tool output past the 16 KiB overflow threshold while
- * carrying little signal for the agent. This module curates the output string
+ * that routinely push tool output past 25 KB while carrying little signal for
+ * the agent. This module curates the output string
  * BEFORE `ok()` — the only lever, since the internal-tool `data` is dropped at
  * the batch loop and only the `output` string reaches the model.
  *
  * THIS PROJECTION IS THE ONLY SHAPE (W2B). The `response_format: "detailed"`
  * escape hatch was retired: it existed to dump the verbatim client payload,
- * measured at 26,082 B and 30,321 B on ordinary 20-row searches — 1.59x and
- * 1.85x the overflow cap — and the fields it added beyond this projection are
+ * measured at 26,082 B and 30,321 B on ordinary 20-row searches - and the fields it added beyond this projection are
  * profile images, banners, entities and inflated quoted tweets, none of which
  * serve the tool's two jobs. Retirement is enforced by NAME-REJECTION in the
  * handler, never by silent deletion.

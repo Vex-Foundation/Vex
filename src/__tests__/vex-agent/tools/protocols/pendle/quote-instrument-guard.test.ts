@@ -229,7 +229,7 @@ describe("pendle.pt.quote — symmetric instrument guard", () => {
 
     expect(res.success).toBe(false);
     expect(res.output).toMatch(/matured on 2026-04-02/);
-    expect(res.output).toMatch(/pendle\.pt\.redeem/);
+    expect(res.output).toMatch(/pendle__pt_redeem/);
     expect(mockConvert).not.toHaveBeenCalled();
   });
 

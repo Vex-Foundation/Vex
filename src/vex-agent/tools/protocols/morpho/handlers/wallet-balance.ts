@@ -40,7 +40,7 @@ export async function morphoWalletBalance(
   try {
     snapshot = await readMorphoWalletSnapshot(q.chainId, q.walletAddress, q.tokenAddresses);
   } catch (err) {
-    return fail(`morpho.wallet.balance failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__wallet_balance_get failed ${morphoFailureDetail(err)}`);
   }
 
   const wallet = projectWalletSnapshot(snapshot, q.chainSlug);
@@ -71,9 +71,9 @@ export async function morphoWalletBalance(
         + "transaction on this chain at all, whatever its approvals say.",
     },
     nextStep:
-      "This is a balance read only: nothing here is approved, spent or signed. Use morpho.positions.get for what "
+      "This is a balance read only: nothing here is approved, spent or signed. Use morpho__positions_get for what "
       + "the wallet already holds inside Morpho. To PUT any of this balance to work, quote first with "
-      + "morpho.vault.quote or morpho.market.quote and then execute that quote with the matching tool - the vault "
+      + "morpho__vault_quote or morpho__market_quote and then execute that quote with the matching tool - the vault "
       + "and Blue market mutators do exist, and each one prices, gates and discloses its own approval before it "
       + "signs anything.",
   });

@@ -462,7 +462,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     expect(pair.priceInQuoteToken).toBe("1892.5670");
     expect(pair.decimalsAvailable).toBe(false);
     // …and the payload names the resolver, because DexScreener sends no decimals.
-    expect(data.tokenDecimalsNote).toContain("khalani.tokens.search");
+    expect(data.tokenDecimalsNote).toContain("khalani__tokens_search");
   });
 });
 
@@ -717,7 +717,7 @@ describe("dexscreener metas + recent handlers", () => {
     expect(data.tokenCount).toBeUndefined();
     expect(data.marketCap).toBeUndefined();
     expect(data.pairCount).toBeUndefined();
-    expect(data.narrativeSubsetNote).toContain("dexscreener.trending");
+    expect(data.narrativeSubsetNote).toContain("dexscreener__narratives_list");
     // Pairs are AgentDexPair rows now — `projectors.ts` is deleted.
     expect(data.pairs[0].liquidityUsd).toBe(10);
     expect(data.pairs[0].turnoverRatioH24).toBeDefined();

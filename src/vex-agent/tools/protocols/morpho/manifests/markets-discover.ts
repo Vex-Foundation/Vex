@@ -43,8 +43,8 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "A Morpho market is ONE loan asset borrowed against ONE collateral asset at a fixed liquidation threshold; "
     + "rates float with utilization and there is no maturity. Use this when the user asks where to lend or deposit an "
     + "asset, what a deposit would earn, where the cheapest borrow rate is, which markets accept a given collateral, or "
-    + "how deep a lending market is; use `pendle.yields` instead when they want a FIXED rate locked to an expiry date, "
-    + "and `solana.lend.*` for Solana. Filter by chain, free-text search, loan token, collateral token, Morpho's own "
+    + "how deep a lending market is; use `pendle__markets_discover` instead when they want a FIXED rate locked to an expiry date, "
+    + "and the `solana__lend_*` tools for Solana. Filter by chain, free-text search, loan token, collateral token, Morpho's own "
     + "asset TAGS on either side, a set of known market ids, oracle contract, "
     + "interest-rate-model contract, whether the market is IDLE, supplied USD, "
     + "borrowed USD, utilization percent, net supply APY percent, net borrow APY percent and liquidation-threshold "
@@ -123,7 +123,7 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
       acceptsStringArray: true,
       description:
         "Comma list or array of up to 20 known 64-hex market ids, to re-read a specific set in ONE call instead of "
-        + "one morpho.market.get per market. Use it to refresh markets you already hold or already shortlisted. A "
+        + "one morpho__market_get per market. Use it to refresh markets you already hold or already shortlisted. A "
         + "40-hex contract address here is rejected by name as an address.",
     },
     {

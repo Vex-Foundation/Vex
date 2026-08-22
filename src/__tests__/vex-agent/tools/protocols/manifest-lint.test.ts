@@ -22,10 +22,21 @@ import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
 import { CANONICAL_CHAIN_SLUGS } from "@vex-agent/tools/protocols/conventions.js";
 import { readRejectedParamReason } from "@vex-agent/tools/protocols/runtime/params.js";
 import { listLocalChains } from "@tools/evm-chains/registry.js";
+import { PROTOCOL_NAMESPACE_NAVIGATION } from "@vex-agent/tools/protocols/descriptions.js";
+import type { ProtocolNamespaceNavigation } from "@vex-agent/tools/protocols/navigation/types.js";
+// Deep import: the dotted rule's two subject builders are internal projections
+// with no consumer outside this suite, so they are not widened onto the
+// `_manifest-lint` public gate merely to be tested.
+import {
+  lintDottedToolIdReferences,
+  navigationProseSubject,
+  toolProseSubject,
+} from "@vex-agent/tools/protocols/_manifest-lint/dotted-toolid-rules.js";
 import {
   isLinterOwnSource,
   lintGenericErrorLiterals,
   lintSlippageDefaultHome,
+  lintStaleOutputCapClaims,
   lintToolSubject,
   MANIFEST_LINT_ALLOWLIST,
   SLIPPAGE_DEFAULT_OWNER,
@@ -74,12 +85,92 @@ const aliasIssues = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS].flatMap((tool) =>
 );
 
 const protocolSources = readSources("src/vex-agent/tools/protocols");
+
+/**
+ * The scan roots for `stale-output-cap-claim`, which is DELIBERATELY wider than
+ * the protocol tree.
+ *
+ * The phantom 16,384 B cap was asserted from four different owners: the research
+ * system prompt (`engine/prompts`), two internal tool definitions
+ * (`tools/registry`), a runtime error returned to the model (`tools/internal`),
+ * and protocol manifests + their comments (`tools/protocols`). A rule scoped to
+ * the protocol tree alone would have caught three of eight model-facing sites,
+ * so it would not be the guard it claims to be.
+ */
+const OUTPUT_CAP_SCAN_ROOTS: readonly string[] = [
+  "src/vex-agent/engine/prompts",
+  "src/vex-agent/tools/protocols",
+  "src/vex-agent/tools/registry",
+  "src/vex-agent/tools/internal",
+];
+
+const outputCapSources = OUTPUT_CAP_SCAN_ROOTS.flatMap((root) => readSources(root));
+
 const sourceIssues = [
   ...lintGenericErrorLiterals(protocolSources),
   ...lintSlippageDefaultHome([...protocolSources, ...readSources("src/tools")]),
+  ...lintStaleOutputCapClaims(outputCapSources),
 ];
 
-const allIssues = [...protocolIssues, ...aliasIssues, ...sourceIssues];
+/**
+ * Batch 3 Wave 1: the dotted-toolId sweep's guard. Read off the LIVE catalog
+ * rather than the `tool-surface-spec/mappings/*.json` artifacts on purpose -
+ * `public-name-gate` already proves those two agree in both directions, and a
+ * lint that re-reads the artifact would fail for artifact drift under a rule
+ * about prose.
+ */
+const dottedCatalog = PROTOCOL_TOOLS.map((manifest) => ({
+  toolId: manifest.toolId,
+  publicName: manifest.publicName,
+}));
+
+/**
+ * Both model-visible prose lanes, in ONE issue stream against ONE catalog.
+ *
+ * The manifests are what `discover_tools` returns; the namespace navigation is
+ * what `engine/prompts/protocols.ts` renders into the standing protocols layer.
+ * A dotted id costs the model the same wasted turn either way, so they are held
+ * to the same zero. The navigation records are NOT catalog identities: a
+ * namespace is not a callable tool, and `navigationProseSubject` keys its issues
+ * by the namespace without ever claiming a `publicName` for it.
+ */
+const dottedIssues = lintDottedToolIdReferences(dottedCatalog, [
+  ...PROTOCOL_TOOLS.map((manifest) => toolProseSubject({
+    toolId: manifest.toolId,
+    publicName: manifest.publicName,
+    description: manifest.description,
+    params: manifest.params.map((param) => ({ key: param.key, description: param.description })),
+  })),
+  ...Object.values(PROTOCOL_NAMESPACE_NAVIGATION).map(navigationProseSubject),
+]);
+
+const allIssues = [...protocolIssues, ...aliasIssues, ...sourceIssues, ...dottedIssues];
+
+/** Three live Morpho ids, as identity only, for the reintroduction fixture. */
+const MORPHO_FIXTURE_CATALOG = [
+  { toolId: "morpho.market.get", publicName: "morpho__market_get" },
+  { toolId: "morpho.market.quote", publicName: "morpho__market_quote" },
+  { toolId: "morpho.markets.discover", publicName: "morpho__markets_discover" },
+];
+
+/** A navigation record with every required field, overridden per case. */
+function navigationFixture(
+  overrides: Partial<ProtocolNamespaceNavigation>,
+): ProtocolNamespaceNavigation {
+  return {
+    namespace: "morpho",
+    advertised: true,
+    groupId: "evm-trading",
+    groupLabel: "EVM trading",
+    summary: "fixture",
+    whenToUse: "fixture",
+    exampleQueries: [],
+    aliases: [],
+    discoveryHints: [],
+    facets: [],
+    ...overrides,
+  };
+}
 
 describe("W0 — manifest convention linter", () => {
   it("reads a non-empty surface (sanity)", () => {
@@ -117,6 +208,177 @@ describe("W0 — manifest convention linter", () => {
       `a second slippage default exists — move it onto ${SLIPPAGE_DEFAULT_OWNER}:\n${format(slippageIssues)}`,
     ).toEqual([]);
     expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "slippage-default-home")).toEqual([]);
+  });
+
+  // Batch 3 Wave 0: the phantom output cap. Modelled on the W4b slippage test
+  // rather than on the debt tables, and for the same reason: the goal is ZERO
+  // occurrences, not a recorded set. Asserting the allowlist is empty for this
+  // rule is what stops a future claim from being re-admitted as debt.
+  it("no model-visible string asserts a global tool-output cap, and none is allowlisted", () => {
+    const capIssues = lintStaleOutputCapClaims(outputCapSources);
+    expect(
+      capIssues,
+      "these strings assert a tool-output byte cap the runtime does not enforce:\n"
+        + format(capIssues),
+    ).toEqual([]);
+    expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "stale-output-cap-claim")).toEqual([]);
+  });
+
+  // Batch 3 Wave 1: the dotted tool id. Same zero-and-empty-allowlist shape as
+  // the output-cap test above, for the same reason - a manifest that names
+  // `morpho.market.get` costs the model a turn and an unknown-tool refusal,
+  // because `publicName` is the only name `injected-protocol-tools.ts`
+  // projects. There is no version of that worth recording as debt.
+  it("no manifest, param or navigation prose names a dotted tool id, and none is allowlisted", () => {
+    expect(
+      dottedIssues,
+      "these model-visible strings tell the model to call a name it cannot call:\n"
+        + format(dottedIssues),
+    ).toEqual([]);
+    expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "dotted-toolid-reference")).toEqual([]);
+  });
+
+  // Proves the rule above is not vacuously green: same live catalog, one
+  // description mutated back to the pre-sweep spelling. Without this, a regex
+  // that silently stopped matching would read as a clean tree.
+  it("flags a dotted tool id reintroduced into a description, and resolves its publicName", () => {
+    const issues = lintDottedToolIdReferences(MORPHO_FIXTURE_CATALOG, [
+      toolProseSubject({
+        toolId: "morpho.market.quote",
+        publicName: "morpho__market_quote",
+        description: "Quote a supply. Read the market with morpho.market.get first.",
+        params: [{ key: "marketId", description: "The id from morpho.markets.discover." }],
+      }),
+    ]);
+
+    expect(issues.map((issue) => `${issue.subject} ${issue.detail}`)).toEqual([
+      "morpho.market.quote description/morpho.market.get",
+      "morpho.market.quote param:marketId/morpho.markets.discover",
+    ]);
+    expect(issues[0]?.message).toContain("morpho__market_get");
+    expect(issues[1]?.message).toContain("morpho__markets_discover");
+  });
+
+  // A dotted shape in a live namespace that resolves to NO live tool is the
+  // worse case, not the safer one: it names something retired or invented, so
+  // the rule must fail loudly rather than propose an unverified substitution.
+  it("flags a dotted shape that resolves to no live tool, without inventing a replacement", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "pendle.market.get", publicName: "pendle__market_get" }],
+      [toolProseSubject({
+        toolId: "pendle.market.get",
+        publicName: "pendle__market_get",
+        description: "Read a market. For the raw feed call pendle.oracle.read instead.",
+        params: [],
+      })],
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.detail).toBe("description/pendle.oracle.read");
+    expect(issues[0]?.message).toContain("not a live tool id at all");
+  });
+
+  // A MERGED tool's retired id (`dexscreener.boosts.top` folded into
+  // `dexscreener.boosts` under D7) prefix-resolves to the survivor, and the
+  // message must say the dropped segment became a parameter rather than
+  // proposing a name with a stray suffix welded on.
+  it("resolves a merged-away id to the surviving tool and names the leftover as a parameter", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "dexscreener.boosts", publicName: "dexscreener__boosts_list" }],
+      [toolProseSubject({
+        toolId: "dexscreener.boosts",
+        publicName: "dexscreener__boosts_list",
+        description: "Read boosts. For the top slice call dexscreener.boosts.top instead.",
+        params: [],
+      })],
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.detail).toBe("description/dexscreener.boosts.top");
+    expect(issues[0]?.message).toContain("dexscreener__boosts_list");
+    expect(issues[0]?.message).toContain("express it as that tool's parameter");
+  });
+
+  // The brand and the hostname are not tool ids, and excusing them as debt
+  // would misfile them. Decided in the rule, asserted here so a later edit to
+  // `NON_TOOL_TOKENS` cannot quietly widen it.
+  it("does not flag the venue brand or a hostname that contains a namespace", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "pools.tokens", publicName: "pools__tokens_discover" }],
+      [toolProseSubject({
+        toolId: "pools.tokens",
+        publicName: "pools__tokens_discover",
+        description: "Newly launched tokens on pools.fun. Merkle claims are made at app.pendle.finance.",
+        params: [],
+      })],
+    );
+
+    expect(issues).toEqual([]);
+  });
+
+  // ── The navigation lane ───────────────────────────────────────────────────
+  //
+  // A namespace navigation record is model-visible prose (the protocols prompt
+  // layer renders `summary`, `whenToUse`, `preferInstead`, the facet lines and
+  // the `Try:` line verbatim) but it is NOT a tool. These cases pin that it is
+  // scanned as prose against the tool catalog, and never admitted to it.
+
+  it("flags a dotted tool id in navigation preferInstead and names its publicName", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "solana.lend.earn.deposit", publicName: "solana__lend_earn_deposit" }],
+      [navigationProseSubject(navigationFixture({
+        preferInstead: "Use solana.lend.earn.deposit for lending on Solana.",
+      }))],
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.subject).toBe("morpho");
+    expect(issues[0]?.detail).toBe("preferInstead/solana.lend.earn.deposit");
+    expect(issues[0]?.message).toContain("solana__lend_earn_deposit");
+    // The COMPLETE field, not a window around the match.
+    expect(issues[0]?.message).toContain("Use solana.lend.earn.deposit for lending on Solana.");
+  });
+
+  it("does not flag a bare namespace word in navigation prose", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "solana.lend.earn.deposit", publicName: "solana__lend_earn_deposit" }],
+      [navigationProseSubject(navigationFixture({
+        preferInstead: "Use solana for lending on Solana.",
+        summary: "Morpho lends on EVM chains; solana does the Solana side.",
+      }))],
+    );
+
+    expect(issues).toEqual([]);
+  });
+
+  it("never scans toolPrefixes, which are durable dotted identity", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "morpho.market.quote", publicName: "morpho__market_quote" }],
+      [navigationProseSubject(navigationFixture({
+        facets: [{
+          label: "Markets",
+          summary: "Blue markets.",
+          // Both fields below are matched against `toolId` by the catalog, so
+          // dotted is CORRECT here and flagging it would invert the rule.
+          toolPrefixes: ["morpho.market.", "morpho.markets."],
+          hints: ["quote a borrow on morpho.market.quote"],
+        }],
+      }))],
+    );
+
+    expect(issues).toEqual([]);
+  });
+
+  it("does not flag the venue brand in navigation prose", () => {
+    const issues = lintDottedToolIdReferences(
+      [{ toolId: "pools.tokens", publicName: "pools__tokens_discover" }],
+      [navigationProseSubject(navigationFixture({
+        summary: "Token launches on pools.fun.",
+        exampleQueries: ["what launched on pools.fun today"],
+      }))],
+    );
+
+    expect(issues).toEqual([]);
   });
 
   it("the allowlist carries no stale entry (a fixed violation must be deleted, not kept)", () => {

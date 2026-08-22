@@ -434,7 +434,7 @@ describe("every borrow-lane kind has its own wording and none falls through to S
 
       if (decision.kind !== "block") throw new Error("expected a block");
       expect(decision.message).toContain(expected.opening);
-      expect(decision.message).toContain("morpho.market.quote");
+      expect(decision.message).toContain("morpho__market_quote");
       expect(decision.message).toContain(`direction ${expected.direction}`);
       for (const marker of SWAP_FALLBACK_MARKERS) {
         expect(decision.message).not.toContain(marker);

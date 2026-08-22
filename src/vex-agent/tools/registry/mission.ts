@@ -39,7 +39,7 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
   {
     name: "MissionStop", kind: "internal", mutating: false, pressureSafety: "safe_at_barrier", actionKind: "local_write",
     visibility: { requiresMissionRun: true },
-    description: "Stop the current mission run. Only valid during active mission execution. goal_reached is success; other non-emergency reasons must match the user-approved mission stopConditions.",
+    description: "Stop the current mission run. Only valid during active mission execution. Call this when a stop condition the user approved has actually been met, or the goal is reached - deferring instead of stopping leaves a finished mission burning budget, and stopping for a reason the contract does not list breaks the agreement the user accepted. goal_reached is success; every other non-emergency reason must match the user-approved mission stopConditions, and emergency_stop is for danger, not for inconvenience. It returns one confirmation sentence naming the reason and your summary, not a result object; the run then winds down through the engine rather than inside this call, so read that sentence as the request being accepted.",
     parameters: { type: "object", properties: {
       reason: { type: "string", enum: ["goal_reached", "deadline_reached", "capital_depleted", "max_loss_hit", "no_viable_opportunity", "emergency_stop"], description: "Stop reason" },
       summary: { type: "string", description: "Concise explanation of why the mission should stop" },

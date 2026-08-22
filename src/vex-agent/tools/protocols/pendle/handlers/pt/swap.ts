@@ -133,7 +133,7 @@ export async function executePendleSwap(
     });
     if (!response) return refuse("route_not_found", "Pendle returned no route for this trade.");
     if (response.action !== "swap") {
-      return refuse("route_not_found", "Pendle did not return a swap route — a matured PT can only be redeemed (use pendle.pt.redeem).");
+      return refuse("route_not_found", "Pendle did not return a swap route - a matured PT can only be redeemed (use pendle__pt_redeem).");
     }
 
     const intent: PendleTxIntent = {

@@ -45,7 +45,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // still passes `dryRun` must NEVER reach a real broadcast just because
   // the runtime treated the call as a preview.
   if (p.dryRun === true) {
-    return fail(`${toolId} does not support dryRun preview — call kyberswap.swap.quote instead.`);
+    return fail(`${toolId} does not support dryRun preview - call kyberswap__swap_quote instead.`);
   }
 
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");

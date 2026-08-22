@@ -49,7 +49,7 @@ export const ALL_NARRATIVE_FIELDS: readonly string[] = [
 export const OMITTABLE_NARRATIVE_FIELDS: readonly string[] = ["description"];
 
 export const OMIT_NARRATIVE_FIELDS_NOTE =
-  "slug is the identifier you pass back to dexscreener.meta and the aggregates are what the feed "
+  "slug is the identifier you pass back to dexscreener__narrative_get and the aggregates are what the feed "
   + "exists to report, so neither is omittable. description is opt-in via \"fields\" — omitting it "
   + "is only meaningful together with fields: \"full\".";
 

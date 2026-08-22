@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get a wallet's PAST (closed/settled) prediction trade history — buys, sells, claims, realized PnL. Use solana.predict.positions instead for currently OPEN positions. Money *Usd fields (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd, etc.) are exact-decimal USD strings with raw *Micro siblings; transferAmountTokenRaw is a SEPARATE unit family — the transferred token's own native units, never a USD amount — do not convert or compare it against the *Usd fields.",
+      "description": "Read a wallet's PAST Jupiter prediction activity - the settled record of buys, sells, claims and realized PnL, one row per history event. Use this when the question is what a wallet already did or what it actually made; solana__predict_positions_list answers what it still holds. Returns `data`, one row per event, carrying the event's own fields plus curated eventMetadata and marketMetadata: every *Usd money field (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd and the rest) is an exact-decimal USD string with a raw *Micro sibling, while transferAmountTokenRaw is a DIFFERENT unit family - the transferred token's own native units, never a USD amount - so never convert or compare it against the *Usd fields. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range.",
       "name": "solana__predict_trade_history_list",
       "parameters": {
         "additionalProperties": false,

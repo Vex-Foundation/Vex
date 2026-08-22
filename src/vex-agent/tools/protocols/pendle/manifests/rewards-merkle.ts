@@ -30,9 +30,19 @@ export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
     "List the merkle-distributed Pendle rewards accrued to the session wallet — per reward token, with the raw amount " +
     "and its decimals, the accrual window, the chain, and a USD value where the token can be priced. These are " +
     "campaign and incentive rewards distributed off-market, separate from the YT interest and LP rewards that " +
-    "pendle.claim sweeps on-chain. VEX CANNOT CLAIM THEM: Pendle's public API publishes the amount but not the merkle " +
+    "pendle__rewards_claim sweeps on-chain. Use this when the user asks about unclaimed Pendle incentives, campaign or " +
+    "points rewards, or what a Pendle position has earned on top of its rate; use pendle__rewards_claim instead when they " +
+    "want Vex to actually collect the on-chain interest and LP rewards, which is a different pot. RETURNS " +
+    "`summary`, `wallet`, `chainFilter`, `asOf`, `note`, `claimableCount`, `claimableShown`, `claimedCount`, " +
+    "`claimedShown`, `truncated`, `totalClaimableUsd`, `totalIsPartial`, `pricedRows`, `unpricedRows`, an optional " +
+    "`totalNote` and `amountsNote`, `nextStep`, and the two row lists `claimable` and `claimed`, each row carrying " +
+    "`chain`, `chainId`, `token` with its address, symbol and decimals, `amount` as a raw value with its decimals " +
+    "and an exact human figure, `valueUsd`, and the accrual `window` with its `from` and `to`. Read " +
+    "`totalIsPartial` before quoting a total: rows Pendle could not price are counted but not valued. " +
+    "VEX CANNOT CLAIM THEM: Pendle's public API publishes the amount but not the merkle " +
     "proof a claim transaction needs, so no Vex tool can ever execute this claim — claim at app.pendle.finance " +
-    "instead. Reads the session's own wallet only; it takes no wallet address. Read-only.",
+    "instead. Reads the session's own wallet only; it takes no wallet address. Rows beyond the cap are reported " +
+    "in `truncated` and are not reachable by paging; narrow with `chain` instead. Read-only.",
   mutating: false,
   actionKind: "read",
   params: [

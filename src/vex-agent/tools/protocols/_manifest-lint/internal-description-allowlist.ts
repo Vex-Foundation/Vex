@@ -16,73 +16,25 @@
  *     changes, and no new violation appears. Without it the first internal
  *     rename strands every entry keyed on an old name.
  *
- * Descriptions are NOT rewritten in this batch. Landing the lane green with a
- * full table is what makes the debt MEASURED and frozen: the money-path gaps
- * below - `BridgeExecute` never naming the approval step that gates a broadcast,
- * `WalletSendConfirm` describing a fund-moving confirm in 84 characters -
- * are recorded here as the rewrite wave's worklist, and nothing may join them.
- *
  * The length of this table is the internal lane's description debt. It is only
- * allowed to shrink.
+ * allowed to shrink, and it is now EMPTY - see the note on the array below.
  */
 
 import type { ManifestLintIssue } from "./rules.js";
 import { allowlistKey, type ManifestLintAllowlistEntry } from "./allowlist.js";
 
-const WAVE = "pre-style-guide description; deleted by the internal-description rewrite wave";
 
 export const INTERNAL_DESCRIPTION_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
-  // ── approval (1) ──
-  // A user_wallet_broadcast whose description never names the human decision
-  // that gates it, so the model can present the broadcast as already done.
-  // This is the money-path gap the ActionKind lane exists to surface, and the
-  // first entry the rewrite wave should delete.
-  { subject: "BridgeExecute", rule: "internal-tool-description", detail: "approval", reason: `user_wallet_broadcast with no approval sentence; ${WAVE}` },
-
-  // ── length (1) ──
-  // 84 chars for a fund-moving confirm: too short to carry scope,
-  // preconditions, and result shape.
-  { subject: "WalletSendConfirm", rule: "internal-tool-description", detail: "length", reason: WAVE },
-
-  // ── when-to-use (12) ──
-  // No sentence answering "which question does this tool answer", so tool
-  // selection is left to name similarity.
-  { subject: "BridgeStatus", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "BridgeQuote", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "AgentScan", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "MissionStop", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "ChainRead", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "WalletBalances", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "WalletTrackToken", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "WalletSendPrepare", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "WalletSendConfirm", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "MemorySuggest", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "MemorySearch", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-  { subject: "MemoryGet", rule: "internal-tool-description", detail: "when-to-use", reason: WAVE },
-
-  // ── returns (23) ──
-  // The result keys are left for the model to guess.
-  { subject: "TokenFind", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "SwapQuote", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "SwapExecute", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "BridgeExecute", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "TokenCheck", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "BridgeStatus", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "BridgeQuote", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "TwitterAccount", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "AgentScan", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "MissionStop", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "LoopDefer", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "ChainRead", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "WalletBalances", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "WalletTrackToken", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "WalletSendConfirm", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "UnitsConvert", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "CompactApply", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "SessionMemoryResolve", rule: "internal-tool-description", detail: "returns", reason: WAVE },
-  { subject: "PlanWrite", rule: "internal-tool-description", detail: "returns", reason: WAVE },
+  // EMPTY. The internal-description rewrite wave paid this lane off in full:
+  // every one of the 33 entries was deleted by fixing the description it
+  // excused, including the two money-path gaps the table was created to make
+  // visible - `BridgeExecute` never naming the approval that gates a broadcast,
+  // and `WalletSendConfirm` describing a fund-moving confirm in 84 characters.
+  //
+  // A new violation now fails immediately, which is the point. Adding a row is
+  // not an available move: the table is only allowed to shrink, and it has
+  // reached zero.
 ];
-
 /** Drop the issues this tree has explicitly accepted as internal-lane debt. */
 export function withoutInternalAllowlisted(
   issues: readonly ManifestLintIssue[],

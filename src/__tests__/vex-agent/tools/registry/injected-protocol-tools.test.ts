@@ -116,6 +116,25 @@ describe("injected tool names — bijective over the whole catalog", () => {
     }
   });
 
+  // The INTERNAL half of the exported surface. `PROTOCOL_TOOLS` is pinned above;
+  // the internal `ToolDef`s ship under their own hand-written `name`, which no
+  // projection normalises, so nothing else proves they satisfy the same grammar.
+  // Every one passes today; a Studio MCP export re-publishes exactly these names
+  // (with a server prefix, which only shortens the budget), so a future tool
+  // named with a dot or a space has to fail here rather than at export time.
+  // `TOOLS` is the registry's own master array and needs no session context.
+  it("every internal tool name is a legal OpenAI function name within 64 chars", () => {
+    expect(TOOLS.length).toBeGreaterThan(0);
+    for (const tool of TOOLS) {
+      expect(
+        OPENAI_TOOL_NAME_PATTERN.test(tool.name),
+        `internal tool "${tool.name}" is not a legal OpenAI function name`,
+      ).toBe(true);
+      expect(tool.name.length, `internal tool "${tool.name}" is longer than 64 chars`)
+        .toBeLessThanOrEqual(64);
+    }
+  });
+
   it("resolves an injected name back to its manifest and rejects a non-injected one", () => {
     const [first] = PROTOCOL_TOOLS;
     assert.ok(first);

@@ -87,7 +87,7 @@ export async function trenchTokensHandler(
   // Reject structurally unsupported filters BY NAME (never a silent no-op).
   for (const key of Object.keys(TRENCH_UNSUPPORTED_PARAMS)) {
     if (!isAbsent(p[key])) {
-      return fail(`"${key}" is not a supported filter for trench.tokens — ${TRENCH_UNSUPPORTED_PARAMS[key]}`);
+      return fail(`"${key}" is not a supported filter for trench__tokens_discover - ${TRENCH_UNSUPPORTED_PARAMS[key]}`);
     }
   }
 
@@ -179,7 +179,7 @@ export async function trenchTokensHandler(
         // constant. Refuse the curve params and name why.
         return fail(
           "Curve-progress filtering is unavailable: the authoritative graduation threshold could not be read "
-            + `on-chain (${trenchFailureDetail("trench.tokens", err)}). Retry, or omit minCurveProgressPct/`
+            + `on-chain (${trenchFailureDetail("trench__tokens_discover", err)}). Retry, or omit minCurveProgressPct/`
             + "maxCurveProgressPct/includeCurveProgress to list tokens without the on-chain curve signal.",
         );
       }
@@ -215,7 +215,7 @@ export async function trenchTokensHandler(
       tokens: projected,
     });
   } catch (err) {
-    return fail(`Trench tokens unavailable (${trenchFailureDetail("trench.tokens", err)})`);
+    return fail(`Trench tokens unavailable (${trenchFailureDetail("trench__tokens_discover", err)})`);
   }
 }
 

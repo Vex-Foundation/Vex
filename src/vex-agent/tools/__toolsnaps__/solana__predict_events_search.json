@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Search prediction events by keyword across all categories and providers — use this to find a SPECIFIC event/topic by name (e.g. \"bitcoin\", \"election\") instead of browsing via solana.predict.events. Once you have a marketId/eventId from the results, use solana.predict.market or solana.predict.event for full detail.",
+      "description": "Find Jupiter prediction EVENTS by keyword across every category on one provider. Use this when the user names a topic (\"bitcoin\", \"super bowl\", \"election\") - solana__predict_events_discover is the browse surface when they have no name yet. Returns `data`, one row per matching event: eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets. Take an eventId to solana__predict_event_get or a marketId to solana__predict_market_get for full detail before trading. The provider ignores its own limit and answers with up to 10 rows, so Vex enforces the requested count (1-20, default 20) locally by slicing; there is no continuation, and a value out of that range is REJECTED by name.",
       "name": "solana__predict_events_search",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "includeMarkets": {
-            "description": "Include each event's nested markets array (default false — lean; use solana.predict.event for one event's markets).",
+            "description": "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets).",
             "type": "boolean"
           },
           "limit": {

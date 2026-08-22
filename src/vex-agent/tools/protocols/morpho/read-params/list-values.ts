@@ -103,7 +103,7 @@ export function readMarketIdList(raw: unknown, param: string): MorphoParams<stri
         param,
         `\`${param}\` contains "${token}", which is not a 0x-prefixed 64-hex market id.`
         + (ADDRESS_PATTERN.test(token) ? " That is a 20-byte contract ADDRESS, not a market id." : "")
-        + " Read one from morpho.markets.discover.",
+        + " Read one from morpho__markets_discover.",
       );
     }
     const lower = token.toLowerCase();

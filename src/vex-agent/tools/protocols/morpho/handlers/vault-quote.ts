@@ -63,7 +63,7 @@ export async function morphoVaultQuote(
       ...(q.walletAddress === undefined ? {} : { walletAddress: q.walletAddress as Address }),
     });
   } catch (err) {
-    return fail(`morpho.vault.quote failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__vault_quote failed ${morphoFailureDetail(err)}`);
   }
 
   const governance = await readGovernance(q.vaultAddress, q.chainId, context?.abortSignal);
@@ -98,8 +98,8 @@ export async function morphoVaultQuote(
       simulation: quote.preflight.explanation,
     },
     nextStep:
-      "This quote AUTHORIZES the matching execute for a limited time: call `morpho.vault.deposit` or "
-      + "`morpho.vault.withdraw` with EXACTLY these params (same vault, same chain, same raw amount, same "
+      "This quote AUTHORIZES the matching execute for a limited time: call `morpho__vault_deposit` or "
+      + "`morpho__vault_withdraw` with EXACTLY these params (same vault, same chain, same raw amount, same "
       + "slippageBps) to perform it. A quote for the other direction does not authorize this one, and the execute is "
       + "refused without a fresh matching quote. Report the shares, the requirements and any gating plainly first: "
       + "the execute spends real funds and cannot be undone.",

@@ -526,6 +526,6 @@ export async function trenchLaunchPreviewHandler(
         + "and is 'unpriced' whenever the image was not priced, because a real launch always carries an image.",
     });
   } catch (err) {
-    return fail(`Launch preview simulation failed (${trenchFailureDetail("trench.launch_preview", err)})`);
+    return fail(`Launch preview simulation failed (${trenchFailureDetail("trench__launch_preview", err)})`);
   }
 }

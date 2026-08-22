@@ -70,7 +70,7 @@ export async function trenchLaunchExecuteHandler(
   deps: LaunchExecuteDeps = DEFAULT_DEPS,
 ): Promise<ToolResult> {
   if (params.dryRun === true) {
-    return fail(`${TOOL_ID} does not support dryRun — call trench.launch_preview instead.`);
+    return fail(`${TOOL_ID} does not support dryRun - call trench__launch_preview instead.`);
   }
 
   // 1. Boundary.

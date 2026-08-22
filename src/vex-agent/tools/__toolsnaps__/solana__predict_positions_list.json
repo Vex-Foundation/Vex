@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get a wallet's currently OPEN prediction positions — exposure, unrealized PnL, and claimability, one row per YES/NO side held. Use solana.predict.history instead for PAST (closed/settled) trades. Money fields (sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd, payoutUsd) are exact-decimal USD strings with raw *Micro siblings; prefer contractsMicro/contractsDecimal over the legacy contracts field for exact accounting.",
+      "description": "List a wallet's currently OPEN Jupiter prediction positions - exposure, unrealized PnL and claimability, one row per YES/NO side held. Use this when the question is what the wallet holds RIGHT NOW; solana__predict_trade_history_list answers what already happened. Returns `data`, one row per position: pubkey (the positionPubkey every trade tool takes), owner, contracts with its exact contractsMicro/contractsDecimal siblings, claimed, eventId, curated eventMetadata and marketMetadata, and sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd and payoutUsd as exact-decimal USD strings each with a raw *Micro sibling. Account on contractsMicro/contractsDecimal - the bare legacy contracts field is documented as unfit for accounting. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range.",
       "name": "solana__predict_positions_list",
       "parameters": {
         "additionalProperties": false,

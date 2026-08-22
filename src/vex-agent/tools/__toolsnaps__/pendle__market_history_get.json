@@ -19,7 +19,7 @@
             "type": "string"
           },
           "market": {
-            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT — resolve those to their market with pendle.market.get first.",
+            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT - resolve those to their market with pendle__market_get first.",
             "type": "string"
           },
           "timeFrame": {

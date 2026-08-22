@@ -75,7 +75,7 @@ function readRawAmount(raw: unknown, param: string): MorphoParams<bigint> {
       `\`${param}\` must be RAW base units as a whole-number string, e.g. "1000000". Received "${value}"`
       + (looksDecimal
         ? ". That is a HUMAN decimal amount. Multiply it by 10 to the power of the vault asset's decimals first, "
-          + "reading those decimals from the `asset.decimals` field of morpho.vault.get on this same vault."
+          + "reading those decimals from the `asset.decimals` field of morpho__vault_get on this same vault."
         : ".")
       + " Vex refuses the value rather than rounding it, because a rounded amount is still an amount it would price.",
     );
@@ -100,7 +100,7 @@ export function parseMorphoVaultQuoteParams(p: Record<string, unknown>): MorphoP
       + (looksLikeMarketId
         ? ", which is a 64-hex MARKET id. Markets are not vaults and this tool prices vault deposits only."
         : ".")
-      + " Read one from morpho.vaults.discover.",
+      + " Read one from morpho__vaults_discover.",
     );
   }
 
@@ -138,7 +138,7 @@ export function parseMorphoVaultQuoteParams(p: Record<string, unknown>): MorphoP
   const amount = readRawAmount(p[expectedKey], expectedKey);
   if (!amount.ok) return amount;
 
-  const slippage = resolveMorphoSlippageBps(`Parameter \`slippageBps\` for morpho.vault.quote`, p["slippageBps"]);
+  const slippage = resolveMorphoSlippageBps(`Parameter \`slippageBps\` for morpho__vault_quote`, p["slippageBps"]);
   if (!slippage.ok) return reject("slippageBps", slippage.reason);
 
   const walletInput = readOptionalString(p["walletAddress"]);

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "List/browse prediction market events across categories (crypto, sports, politics, culture, economics, tech), with filtering, sorting, and pagination. Use solana.predict.search instead for a keyword lookup, or solana.predict.event for one already-known event by ID. Money field volumeUsd is an exact-decimal USD string with a raw volumeUsdMicro sibling.",
+      "description": "Browse Jupiter prediction-market EVENTS across categories (crypto, sports, politics, esports, culture, economics, tech), filtered by status and sorted by volume or start time. An event is the QUESTION; the tradable YES/NO contracts are the MARKETS nested inside it. Use this when the user wants to see what is on offer rather than a topic they can already name - solana__predict_events_search finds a named one, solana__predict_event_get reads one already-known eventId. Returns `data`, one row per event: eventId, category, curated metadata (eventId, title, subtitle), and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets (marketId, title, status, result, openTime, closeTime, resolveAt, pricing). Page with offset/limit (integer 1-100, default 20); an out-of-range value is REJECTED by name, never clamped.",
       "name": "solana__predict_events_discover",
       "parameters": {
         "additionalProperties": false,
@@ -15,7 +15,7 @@
             "type": "string"
           },
           "includeMarkets": {
-            "description": "Include each event's nested markets array (default false — lean; use solana.predict.event for one event's markets).",
+            "description": "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets).",
             "type": "boolean"
           },
           "limit": {

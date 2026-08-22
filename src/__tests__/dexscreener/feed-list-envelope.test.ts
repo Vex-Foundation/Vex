@@ -216,7 +216,7 @@ describe("DexScreener feed provenance envelope", () => {
     expect(data.providerWindow.providerCap).toBe(30);
     expect(data.providerWindow.providerCapped).toBe(true);
     expect(data.providerWindow.note).toContain("NO price, liquidity, volume or pool address");
-    expect(data.providerWindow.note).toContain("dexscreener.tokenPairs");
+    expect(data.providerWindow.note).toContain("dexscreener__token_pairs_list");
   });
 
   it("asOfMs exists on every feed, so eventAgeSeconds means something", async () => {
@@ -330,7 +330,7 @@ describe("DexScreener feed provenance envelope", () => {
     const trendingCat = metasTrending().find((meta) => meta.slug === "cat");
     expect(trendingCat?.tokenCount).toBeGreaterThan(detail.pairs.length * 2);
 
-    expect(data.narrativeSubsetNote).toContain("dexscreener.trending");
+    expect(data.narrativeSubsetNote).toContain("dexscreener__narratives_list");
   });
 
   it("meta's liquidity and volume are named as the PROVIDER's aggregate, not a sum of these pairs", async () => {
@@ -409,7 +409,7 @@ describe("DexScreener feed provenance envelope", () => {
     const message = await refuse("dexscreener.boosts", { updatedWithinSeconds: 60 });
     expect(message).toContain("updatedWithinSeconds");
     expect(message).toContain("no timestamp");
-    expect(message).toContain("dexscreener.profiles with feed: recentUpdates");
+    expect(message).toContain("dexscreener__profiles_list with feed: recentUpdates");
   });
 
   it("the wrong spelling of a freshness filter names the right one", async () => {
@@ -420,7 +420,7 @@ describe("DexScreener feed provenance envelope", () => {
   it("a boost threshold on a feed with no boost units is refused by name", async () => {
     const message = await refuse("dexscreener.profiles", { minBoostCountTotal: 10 });
     expect(message).toContain("minBoostCountTotal");
-    expect(message).toContain("dexscreener.boosts");
+    expect(message).toContain("dexscreener__boosts_list");
   });
 
   it("chainIds on the narrative feed is refused, because a narrative has no chain", async () => {

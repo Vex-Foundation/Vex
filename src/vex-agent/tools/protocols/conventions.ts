@@ -89,7 +89,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["slippageBps", "price protection in basis points; type number, unit bps"],
   [
     "minSellPriceSlippageBps",
-    "solana.predict.closeAll's distinct tolerance — a separate knob by necessity, documented in slippage-policy.ts",
+    "solana__predict_close_all's distinct tolerance - a separate knob by necessity, documented in slippage-policy.ts",
   ],
   ["limit", "result cap; description states the default and the maximum"],
   ["page", "1-based FIRST provider page of a windowed read; the reply names the next page to continue from"],

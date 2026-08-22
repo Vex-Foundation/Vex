@@ -192,6 +192,6 @@ export async function executePendleLpAdd(p: Record<string, unknown>, context: Pr
     };
   } catch (err) {
     if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.lp.add", txHash, err);
-    return fail(`Pendle add liquidity failed (${failureDetail("pendle.lp.add", err)})`);
+    return fail(`Pendle add liquidity failed (${failureDetail("pendle__lp_add", err)})`);
   }
 }

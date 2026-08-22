@@ -69,6 +69,7 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
       "memory_id is the chunk id from SessionMemorySearch output. outstanding_item_id is the UUID of the specific item to resolve (shown in the chunk's Outstanding section). resolution_note is a short (≤500-char) explanation persisted for audit and future recall.",
       "Bounded: resolving one item never affects siblings — chunks with multiple outstanding items remain partially open. The chunk's body_md is re-rendered and re-embedded so future SessionMemorySearch reflects the resolved state. Concurrent-resolution-safe (transactional row lock).",
       "Pressure-band rule: still callable at barrier/critical (read_only classification) because closing outstanding work is a sensible pre-compact wrap-up — it actually reduces resume-packet noise.",
+      "It returns one confirmation sentence naming the resolved item and its chunk theme, not a result object. Two variants say the item WAS resolved but its chunk could not be re-embedded, so the durable write stands while future semantic recall still reflects the old text - read those as a partial success, not a failure.",
     ].join(" "),
     parameters: {
       type: "object",

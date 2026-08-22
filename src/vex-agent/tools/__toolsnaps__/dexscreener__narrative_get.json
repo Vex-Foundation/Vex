@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Drill into ONE trending narrative/meta by slug (from dexscreener.trending, e.g. 'knockoff-legends') — returns the narrative's aggregate stats plus the DEX pairs inside it. Each pair's raw priceUsd always prices its base token. The slug is a NARRATIVE slug, never a chain slug. Returns 20 pair rows by default and exposes the rest through hasMore and offset. Every filter, sort and window is applied by Vex to the pairs the provider returns for that narrative — the set can exceed 30 rows (31 observed). No server-side filter, sort, limit or pagination exists. Live but undocumented API surface — may change; if it does the call fails with the real reason (rate limit, transport, or unreadable payload), it does not return an empty success. Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time.",
+      "description": "Drill into ONE trending narrative/meta by slug (from dexscreener__narratives_list, e.g. 'knockoff-legends') — returns the narrative's aggregate stats plus the DEX pairs inside it. Use this when you already have a narrative slug and want the tokens trading inside it. Each pair's raw priceUsd always prices its base token. The slug is a NARRATIVE slug, never a chain slug. Returns 20 pair rows by default and exposes the rest through hasMore and offset. Every filter, sort and window is applied by Vex to the pairs the provider returns for that narrative — the set can exceed 30 rows (31 observed). No server-side filter, sort, limit or pagination exists. Live but undocumented API surface — may change; if it does the call fails with the real reason (rate limit, transport, or unreadable payload), it does not return an empty success. Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time.",
       "name": "dexscreener__narrative_get",
       "parameters": {
         "additionalProperties": false,
@@ -18,7 +18,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated slugs to keep (e.g. ethereum,base,solana), matched case-insensitively and echoed lowercase. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. DexScreener applies no server-side equivalent, so this only subtracts from the at most 30 rows it already chose: an EMPTY RESULT DOES NOT MEAN THERE IS NO POOL THERE. Read droppedByFilter to tell the two apart, then use dexscreener.tokenPairs to ask the question properly."
+            "description": "Comma-separated slugs to keep (e.g. ethereum,base,solana), matched case-insensitively and echoed lowercase. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]) — the two are equivalent. DexScreener applies no server-side equivalent, so this only subtracts from the at most 30 rows it already chose: an EMPTY RESULT DOES NOT MEAN THERE IS NO POOL THERE. Read droppedByFilter to tell the two apart, then use dexscreener__token_pairs_list to ask the question properly."
           },
           "dexIds": {
             "anyOf": [
@@ -155,7 +155,7 @@
             "type": "number"
           },
           "onlyBoosted": {
-            "description": "Keep only rows with an active paid boost. Nearly useless over pair rows — measured on 1 of 489 — use dexscreener.boosts or dexscreener.ads for paid-visibility feeds.",
+            "description": "Keep only rows with an active paid boost. Nearly useless over pair rows — measured on 1 of 489 - use dexscreener__boosts_list or dexscreener__ads_list for paid-visibility feeds.",
             "type": "boolean"
           },
           "quoteSymbols": {
@@ -189,7 +189,7 @@
             "type": "boolean"
           },
           "slug": {
-            "description": "Narrative slug from dexscreener.trending results (e.g. 'ai', 'dog', 'knockoff-legends'). NOT a chain slug.",
+            "description": "Narrative slug from dexscreener__narratives_list results (e.g. 'ai', 'dog', 'knockoff-legends'). NOT a chain slug.",
             "type": "string"
           },
           "sortBy": {

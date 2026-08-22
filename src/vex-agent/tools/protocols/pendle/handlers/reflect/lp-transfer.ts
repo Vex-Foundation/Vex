@@ -98,7 +98,7 @@ export async function executePendleLpTransfer(
     if (!source || !source.market.address) {
       return refuse(
         "route_not_found",
-        "No Pendle market at that fromMarket address — check pendle.yields (includeMatured:true covers expired markets).",
+        "No Pendle market at that fromMarket address - check pendle__markets_discover (includeMatured:true covers expired markets).",
       );
     }
     // DESTINATION — buy-shaped: ACTIVE ONLY; maturity named via the read lane.
@@ -148,7 +148,7 @@ export async function executePendleLpTransfer(
       return refuse("route_not_found", "Pendle returned no transfer-liquidity route between these two markets.");
     }
     if (response.action !== "transfer-liquidity") {
-      return refuse("route_not_found", "Pendle did not return a transfer-liquidity route — to withdraw to a token use pendle.lp.remove.");
+      return refuse("route_not_found", "Pendle did not return a transfer-liquidity route - to withdraw to a token use pendle__lp_remove.");
     }
 
     const intent: PendleReflectIntent = {

@@ -54,7 +54,7 @@ export async function pendleYtQuote(p: Record<string, unknown>, context: Protoco
       return fail("Both tokens are Pendle YTs — trade a YT against a payment token, one leg at a time.");
     }
     if (!marketByOut && !marketByIn) {
-      return fail("Neither token is an active Pendle YT on this chain — find the YT via pendle.yields, or use pendle.pt.quote for PT trades.");
+      return fail("Neither token is an active Pendle YT on this chain - find the YT via pendle__markets_discover, or use pendle__pt_quote for PT trades.");
     }
     const market = (marketByOut ?? marketByIn)!;
     const ytAddress = marketByOut ? tokenOut : tokenIn.address;
@@ -106,6 +106,6 @@ export async function pendleYtQuote(p: Record<string, unknown>, context: Protoco
       decayWarning: YT_DECAY_WARNING,
     });
   } catch (err) {
-    return fail(`Pendle YT quote unavailable (${failureDetail("pendle.yt.quote", err)})`);
+    return fail(`Pendle YT quote unavailable (${failureDetail("pendle__yt_quote", err)})`);
   }
 }

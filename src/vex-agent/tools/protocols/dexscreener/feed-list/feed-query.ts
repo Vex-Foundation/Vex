@@ -219,7 +219,7 @@ export function parseFeedListQuery(
       reason: defaults.eventAgeParam === null
         ? `"${key}" does not apply to this tool — DexScreener's boost feeds carry no timestamp of `
           + "any kind, so nothing here can be filtered or sorted by age. Use "
-          + "dexscreener.profiles with feed: recentUpdates for a time-ordered feed."
+          + "dexscreener__profiles_list with feed: recentUpdates for a time-ordered feed."
         : `"${key}" is not this tool's freshness filter — use "${defaults.eventAgeParam}".`,
     };
   }
@@ -238,8 +238,8 @@ export function parseFeedListQuery(
       ok: false,
       reason:
         '"ctoOnly" does not apply to this tool — only the two token-profile feeds carry the cto '
-        + "flag. Use dexscreener.communityTakeovers for the takeover feed itself, or "
-        + "dexscreener.profiles (either feed) with ctoOnly.",
+        + "flag. Use dexscreener__community_takeovers_list for the takeover feed itself, or "
+        + "dexscreener__profiles_list (either feed) with ctoOnly.",
     };
   }
   if (ctoOnly.value) filtersApplied.ctoOnly = true;
@@ -251,7 +251,7 @@ export function parseFeedListQuery(
       ok: false,
       reason:
         '"minBoostCountTotal" does not apply to this tool — its rows carry no boost units. Use '
-        + "dexscreener.boosts (feed: latest or top) or dexscreener.attention.",
+        + "dexscreener__boosts_list (feed: latest or top) or dexscreener__attention_list.",
     };
   }
   if (minBoostCountTotal.value !== null) {

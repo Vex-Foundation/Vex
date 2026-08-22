@@ -70,7 +70,7 @@ function refuseUntrustworthyRow(market: PendleMarket, expiry: string | null, rea
   throw new VexError(
     ErrorCodes.PENDLE_MARKET_NOT_FOUND,
     `Pendle lists market ${market.address} as inactive, but ${reason} — Vex will not treat it as matured.`,
-    "Nothing was quoted or signed. Confirm the market with pendle.market.get, which reads the full catalogue including matured markets, before retrying.",
+    "Nothing was quoted or signed. Confirm the market with pendle__market_get, which reads the full catalogue including matured markets, before retrying.",
   );
 }
 

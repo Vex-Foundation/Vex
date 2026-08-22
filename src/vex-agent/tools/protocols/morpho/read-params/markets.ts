@@ -244,7 +244,7 @@ export function parseMorphoMarketGetParams(p: Record<string, unknown>): MorphoPa
       "marketId",
       `\`marketId\` must be a 0x-prefixed 64-hex market id. Received "${marketId}"`
       + (looksLikeAddress ? ", which is a 20-byte contract ADDRESS." : ".")
-      + " Read one from morpho.markets.discover.",
+      + " Read one from morpho__markets_discover.",
     );
   }
 

@@ -43,7 +43,7 @@ export async function morphoMarketGet(
       context?.abortSignal,
     );
   } catch (err) {
-    return fail(`morpho.market.get failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__market_get failed ${morphoFailureDetail(err)}`);
   }
 
   const market = projectMarketDetail(detail, q.lookback);
@@ -72,9 +72,9 @@ export async function morphoMarketGet(
         : "Set includeHistory:true with a `lookback` to see whether today's rate is high or low for this market.",
     },
     nextStep:
-      "Compare against siblings with morpho.markets.discover on the same loan asset before committing. "
-      + "To act on this market, quote first with morpho.market.quote (its `operation` selects borrow, repay, "
-      + "supplyCollateral or withdrawCollateral), then execute that quote with the matching morpho.market.borrow, "
+      "Compare against siblings with morpho__markets_discover on the same loan asset before committing. "
+      + "To act on this market, quote first with morpho__market_quote (its `operation` selects borrow, repay, "
+      + "supplyCollateral or withdrawCollateral), then execute that quote with the matching morpho__market_borrow, "
       + ".repay, .supplyCollateral or .withdrawCollateral - those sign and broadcast, and the quote is what the "
       + "approval is given against.",
   });

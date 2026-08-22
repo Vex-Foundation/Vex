@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Hand the launch DECISION to the user: asks them to create the token themselves through the app's launch form, pre-filled with the details you propose. DRAFTS AND ASKS ONLY — it does NOT sign, does NOT spend and does NOT create anything; the user reviews the exact cost and clicks Deploy. Your turn PARKS while the form is open and the runtime resumes it with the outcome when the user deploys, dismisses the form, or it expires — so do not call it again while the form is open, and never assume the launch happened without that resumed outcome. Use this whenever a human should decide the launch. If it is ever invoked outside a tool call there is nothing to resume, and it refuses instead of parking: report that and stop, never improvise a launch by another route.",
+      "description": "Hand the launch DECISION to the user: asks them to create the token themselves through the app's launch form, pre-filled with the details you propose. DRAFTS AND ASKS ONLY — it does NOT sign, does NOT spend and does NOT create anything; the user reviews the exact cost and clicks Deploy. Your turn PARKS while the form is open and the runtime resumes it with the outcome when the user deploys, dismisses the form, or it expires — so do not call it again while the form is open, and never assume the launch happened without that resumed outcome. Use this whenever a human should decide the launch. It returns the parked request itself - its intentId, a status of awaiting_user_form, when it expires, and the chain - and then the runtime answers this same call with the human's real outcome. If it is ever invoked outside a tool call there is nothing to resume, and it refuses instead of parking: report that and stop, never improvise a launch by another route.",
       "name": "trench__launch_request_form",
       "parameters": {
         "additionalProperties": false,
@@ -11,7 +11,7 @@
             "type": "string"
           },
           "imageId": {
-            "description": "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench.images). A token's image is written on-chain at creation and can never be added later, so a launch without one is refused.",
+            "description": "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench__images_list). A token's image is written on-chain at creation and can never be added later, so a launch without one is refused.",
             "type": "string"
           },
           "links": {

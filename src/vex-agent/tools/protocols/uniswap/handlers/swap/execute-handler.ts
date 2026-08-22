@@ -70,7 +70,7 @@ export async function executeUniswapSwap(
   // preview (`RESERVED_RUNTIME_PARAM_KEYS` always accepts `dryRun` regardless
   // of manifest declaration, so the boundary check alone is not sufficient).
   if (p.dryRun === true) {
-    return fail(`${TOOL_ID} does not support dryRun preview — call uniswap.swap.quote instead.`);
+    return fail(`${TOOL_ID} does not support dryRun preview - call uniswap__swap_quote instead.`);
   }
 
   // Vex's fee rate and receiver are product constants — a caller-supplied one
@@ -277,7 +277,7 @@ export async function executeUniswapSwap(
 
     // Unreachable — `createdEvents` always has at least the swap entry, and
     // the loop above returns on every branch. Kept for exhaustiveness.
-    throw new Error("uniswap.swap.execute: staged broadcast loop exited without a result");
+    throw new Error("uniswap__swap_execute: staged broadcast loop exited without a result");
   } catch (err) {
     return postIntentFailureResult({ executionId, refusedRole, slippageBps, error: err });
   }

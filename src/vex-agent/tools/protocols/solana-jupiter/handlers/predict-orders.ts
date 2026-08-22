@@ -106,7 +106,7 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     // own default-20 branch never fires because this rejects first.
     if (num(p, "limit") == null) {
       return fail(
-        "Missing required: limit. solana.predict.trades has no upstream scope (global feed) — an explicit limit (1-100) is required.",
+        "Missing required: limit. solana__predict_trades_list has no upstream scope (global feed) - an explicit limit (1-100) is required.",
       );
     }
     const window = resolvePredictionWindow(p);

@@ -43,7 +43,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "ethereum, base, solana, bsc, arbitrum, robinhood), minLiquidityUsd, limit. "
       + PAIR_DESCRIPTION_WINDOW_CLAUSE
       + " " + SOURCE_OBSERVATION_CLAUSE
-      + " Then use dexscreener.tokenPairs to pick the deepest pool.",
+      + " Then use dexscreener__token_pairs_list to pick the deepest pool.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -82,7 +82,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       "Get concise stats for one specific DEX pool by chain + pair address — identity, base price, "
       + "selected-window price change/volume, liquidity and pair age. FDV, market cap, reserves and "
       + "per-window transaction counts are opt-in through fields. Use "
-      + "when you already have a pool address (e.g. from dexscreener.tokenPairs) and want its "
+      + "when you already have a pool address (e.g. from dexscreener__token_pairs_list) and want its "
       + "numbers. Raw priceUsd always prices the pair's base token. Direct lookup returns only the "
       + "pool(s) you name (a comma-separated address list "
       + "is fetched in one call). Vex applies no filtering here; DexScreener offers no server-side "
@@ -125,8 +125,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "first) - a sort only reorders, it never removes a holding. "
       + "Returns one provider-chosen pair snapshot per resolved address. Raw priceUsd always prices "
       + "the pair's base token. DexScreener's batch endpoint is reconciled strictly against that "
-      + "baseAddress; use dexscreener.tokenPairs for side-aware normalized requested-token prices. Use this tool for "
-      + "portfolio snapshots, comparing several tokens on the same chain, or resolving feed "
+      + "baseAddress; use dexscreener__token_pairs_list for side-aware normalized requested-token prices. Use this when you "
+      + "already hold several token addresses on one chain and want them priced together: "
+      + "portfolio snapshots, comparing tokens side by side, or resolving feed "
       + "candidates in one batch. Optional screeners (requireLiquidityUsd, "
       + "minPairAgeSeconds/maxPairAgeSeconds) drop rows only on request and every drop is counted "
       + "in droppedByFilter - no holding is ever silently filtered out. Pre-graduation "
@@ -150,7 +151,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
           + "requested/resolved/unresolved/unreached address. "
           + `Always inspect unresolvedAddresses and unreachedAddresses. ${STRING_OR_ARRAY_CLAUSE} `
           + "Address casing is preserved on both spellings (Solana base58 is case-sensitive). Each "
-          + "address yields ONE arbitrary pool, often not the deepest; use dexscreener.tokenPairs "
+          + "address yields ONE arbitrary pool, often not the deepest; use dexscreener__token_pairs_list "
           + "for depth.",
       },
       ...TOKENS_BATCH_PARAMS,
@@ -175,7 +176,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       + "pricePoolOutliers, and per-row priceSanity (ok | outlier_vs_pool_median | unknown; "
       + "unknown means the price could not be proven, never that it is wrong). "
       + SOURCE_OBSERVATION_CLAUSE
-      + " Use dexscreener.pairs for a known pool's "
+      + " Use dexscreener__pairs_get for a known pool's "
       + "research metrics. Returns 15 sorted rows by default and exposes the rest through hasMore "
       + "and offset. The provider selects at most 30 pools per token, in unspecified order — "
       + "an observed cap, not a documented one - high-pool-count tokens come back truncated with "

@@ -349,7 +349,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
 
     // Unreachable — `plans` always has at least the swap entry, and the loop
     // above returns on every branch. Kept for exhaustiveness/type-safety.
-    throw new Error("kyberswap.swap.execute: staged broadcast loop exited without a result");
+    throw new Error("kyberswap__swap_execute: staged broadcast loop exited without a result");
   } catch (err) {
     return buildPostIntentFailureResult({
       err,

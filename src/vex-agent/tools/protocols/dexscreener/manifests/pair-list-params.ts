@@ -104,9 +104,9 @@ export const PAIR_LOOKUP_PARAMS: readonly ProtocolParamDef[] = [
  * (`Buffer.byteLength(result.output, "utf8")`) —
  * not the persona scripts' whole-ToolResult count, which was ~2x inflated.
  *
- * Only surfaces measured to exceed the 16,384 B cap carry a number. Copying a
- * figure onto a tool it was not measured on would be the same class of error as
- * asserting a provider cap nobody observed.
+ * Only surfaces measured to run large carry a number. Copying a figure onto a
+ * tool it was not measured on would be the same class of error as asserting a
+ * provider cap nobody observed.
  */
 function withBareCallByteCost(
   params: readonly ProtocolParamDef[],
@@ -142,8 +142,8 @@ export const SEARCH_LIST_PARAMS: readonly ProtocolParamDef[] = withBareCallByteC
     "requireLiquidityUsd",
     "explainDrops",
   ),
-  "MEASURED: one bare pair-notation query with no limit returned 24,139 B against the 16,384 B "
-    + "tool-output cap. The widest queries genuinely overflow, and `limit` is what bounds them.",
+  "MEASURED: one bare pair-notation query with no limit returned 24,139 B. The widest queries "
+    + "are genuinely large, and `limit` is what bounds them.",
 );
 
 /**
@@ -174,7 +174,7 @@ export const PAIR_BATCH_PARAMS: readonly ProtocolParamDef[] = [
 
 export const TOKENS_BATCH_PARAMS: readonly ProtocolParamDef[] = withBareCallByteCost(
   PAIR_BATCH_PARAMS,
-  "MEASURED: 35 resolved addresses at the default lean projection returned 22,378 B against the "
-    + "16,384 B tool-output cap (live batch, 2026-08-17, engine byte measure) - about 23 rows fit "
-    + "one response, so a full 60-address batch needs offset paging regardless of limit.",
+  "MEASURED: 35 resolved addresses at the default lean projection returned 22,378 B (live batch, "
+    + "2026-08-17, engine byte measure) - about 640 B per row, so a full 60-address batch is "
+    + "~38 KB in one response and offset paging is how you bound it.",
 );

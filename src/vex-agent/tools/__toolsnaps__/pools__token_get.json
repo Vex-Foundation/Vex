@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "tokenAddress": {
-            "description": "Contract address of the token to inspect. Resolve a name to an address with pools.search first, since symbols repeat across this launchpad.",
+            "description": "Contract address of the token to inspect. Resolve a name to an address with pools__tokens_search first, since symbols repeat across this launchpad.",
             "type": "string"
           }
         },

@@ -46,7 +46,7 @@ export const MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL: ProtocolToolManifest = {
     + `${MORPHO_HEALTH_FLOOR_SENTENCE} `
     + `${MORPHO_ORACLE_VOUCHING_SENTENCE} `
     + `${MORPHO_NO_COMBO_SENTENCE} `
-    + "To exit a position entirely, repay the debt to zero FIRST with `morpho.market.repay` and `repayFullDebt`, "
+    + "To exit a position entirely, repay the debt to zero FIRST with `morpho__market_repay` and `repayFullDebt`, "
     + "then withdraw the collateral: the two are separate transactions and the repayment must land before the "
     + "withdrawal can take everything. "
     + `${MORPHO_ONE_LEG_SENTENCE} `
@@ -76,7 +76,7 @@ export const MORPHO_MARKET_WITHDRAW_COLLATERAL_TOOL: ProtocolToolManifest = {
       description:
         "How much COLLATERAL to withdraw, in the COLLATERAL token's RAW base units as a whole-number string. THE "
         + "SCALE IS THE COLLATERAL TOKEN'S OWN, not the loan token's: read `collateralAsset.decimals` from "
-        + "`morpho.market.get`. A human decimal amount is refused, not rounded. Another operation's amount key is "
+        + "`morpho__market_get`. A human decimal amount is refused, not rounded. Another operation's amount key is "
         + "refused by name. Quote first: on a position with debt this lowers the health factor.",
     },
     {

@@ -18,11 +18,16 @@ export const PENDLE_MARKET_CANDLES_TOOL: ProtocolToolManifest = {
   lifecycle: "active",
   description:
     "Price candles (open/high/low/close/volume) for ONE Pendle asset — a PT, a YT or an LP token — at hourly, daily " +
-    "or weekly resolution. Use it to see how a PT's price has moved before buying or exiting one. Timestamps are " +
-    "returned as ISO instants. A candle with no recorded trades reports volume null, never 0, and for LP assets " +
-    "Pendle reports volume as 0 on this endpoint regardless — use pendle.market.history with the tradingVolume field " +
-    `for a market's real traded volume. At most ${PENDLE_READ_MAX_SERIES_POINTS} rows are returned and any ` +
-    "truncation is stated explicitly. These are provider price marks, not executable quotes: what you would receive " +
+    "or weekly resolution. Use it to see how a PT's price has moved before buying or exiting one. RETURNS " +
+    "`summary`, `chain`, `asset`, `timeFrame`, `currency`, `requestedWindow` with its `from` and `to`, `count`, " +
+    "`total`, `truncated` and a `truncationNote` when it is true, `firstClose`, `lastClose`, " +
+    "`candlesWithoutVolume` with a `volumeNote`, `asOf`, `nextStep`, and `candles`: one row per candle carrying " +
+    "`time`, `open`, `high`, `low`, `close` and `volume`. Timestamps are ISO instants. A candle with no recorded " +
+    "trades reports volume null, never 0, and for LP assets " +
+    "Pendle reports volume as 0 on this endpoint regardless - use pendle__market_history_get with the tradingVolume field " +
+    `for a market's real traded volume. At most ${PENDLE_READ_MAX_SERIES_POINTS} rows come back and any ` +
+    "truncation is stated in `truncated` rather than paged: narrow the window instead. These are provider price " +
+    "marks, not executable quotes: what you would receive " +
     "depends on the market's depth at your size. Read-only.",
   mutating: false,
   actionKind: "read",
@@ -39,7 +44,7 @@ export const PENDLE_MARKET_CANDLES_TOOL: ProtocolToolManifest = {
       type: "string",
       required: true,
       description:
-        "PT, YT or LP CONTRACT ADDRESS, 0x-prefixed 40-hex. This endpoint covers those three only — it does not price SY or ordinary tokens. pendle.market.get lists a market's legs.",
+        "PT, YT or LP CONTRACT ADDRESS, 0x-prefixed 40-hex. This endpoint covers those three only - it does not price SY or ordinary tokens. pendle__market_get lists a market's legs.",
     },
     {
       key: "timeFrame",

@@ -44,7 +44,7 @@ export const FEED_OMIT_FIELDS_PARAM: ProtocolParamDef = {
     + "issuer-authored text that dominates these payloads (30 descriptions measured at 18,473 "
     + "characters on the recent-profiles feed) and carries the whole untrusted surface. Use it when "
     + "you want the chainId/tokenAddress identities and the feed's signal, and will resolve details "
-    + "with dexscreener.tokenPairs. Identity and signal fields are never omittable; everything else "
+    + "with dexscreener__token_pairs_list. Identity and signal fields are never omittable; everything else "
     + "is already opt-in via \"fields\", so there is nothing there to subtract. Echoed back as "
     + "fieldsOmitted, and externalContentFields reflects what actually remains.",
 };

@@ -33,7 +33,7 @@ export function requireVaultAddress(value: string): string {
       ErrorCodes.INVALID_ADDRESS,
       `Morpho: "${value}" is not a vault address.`
       + (looksLikeMarketId ? " That is a 32-byte MARKET id, not a vault contract address." : ""),
-      "A Morpho vault address is a 0x-prefixed 40-hex contract address - read one from morpho.vaults.discover.",
+      "A Morpho vault address is a 0x-prefixed 40-hex contract address - read one from morpho__vaults_discover.",
     );
   }
   return trimmed.toLowerCase();
@@ -92,7 +92,7 @@ export function requireMarketId(value: string): string {
       ErrorCodes.AGENT_VALIDATION_ERROR,
       `Morpho: "${value}" is not a market id.`
       + (looksLikeAddress ? " That is a 20-byte contract ADDRESS, not a market id." : ""),
-      "A Morpho Blue market id is a 0x-prefixed 64-hex hash - read one from morpho.markets.discover.",
+      "A Morpho Blue market id is a 0x-prefixed 64-hex hash - read one from morpho__markets_discover.",
     );
   }
   return trimmed.toLowerCase();

@@ -80,7 +80,7 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
     // past expiry; anything else is refused by name inside the resolver.
     const resolved = await resolveExitMarketByAddress(chainId, marketAddress);
     if (!resolved || !resolved.market.address) {
-      return refuse("route_not_found", "No Pendle market at this address — check pendle.yields (includeMatured:true covers expired markets).");
+      return refuse("route_not_found", "No Pendle market at this address - check pendle__markets_discover (includeMatured:true covers expired markets).");
     }
     const market = resolved.market;
     const marketAddr = getAddress(market.address);
@@ -200,6 +200,6 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
     };
   } catch (err) {
     if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.lp.remove", txHash, err);
-    return fail(`Pendle remove liquidity failed (${failureDetail("pendle.lp.remove", err)})`);
+    return fail(`Pendle remove liquidity failed (${failureDetail("pendle__lp_remove", err)})`);
   }
 }

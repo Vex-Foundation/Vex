@@ -154,7 +154,7 @@ export async function pendleOrderbook(
         levels: null,
         best: null,
         nextStep:
-          "Nothing is being missed here: quote the trade with pendle.pt.quote / pendle.yt.quote. Use pendle.market.get " +
+          "Nothing is being missed here: quote the trade with pendle__pt_quote / pendle__yt_quote. Use pendle__market_get " +
           "for the market's current AMM rates.",
       });
     }
@@ -188,8 +188,8 @@ export async function pendleOrderbook(
     levels: { longYield: longYield.slice(0, q.limit), shortYield: shortYield.slice(0, q.limit) },
     ...(amountsNote === undefined ? {} : { amountsNote }),
     nextStep:
-      "Depth here is informational. Vex trades this market through the AMM only — call pendle.pt.quote or " +
-      "pendle.yt.quote for a price Vex can actually execute, and pendle.market.get for the market's own rates.",
+      "Depth here is informational. Vex trades this market through the AMM only - call pendle__pt_quote or " +
+      "pendle__yt_quote for a price Vex can actually execute, and pendle__market_get for the market's own rates.",
   });
 }
 

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Get Jupiter Lend EARN (simple lending) yield rates — supply/rewards/total APY as exact percent strings (with raw basis-point *Bps siblings), TVL, total supply per market, and each market's assetDecimals for converting a human amount into solana.lend.deposit/withdraw's raw atomic-unit amount param. Optional asset filter and APY thresholds. Covers Earn yields only — for collateralized-borrowing limits and thresholds use solana.lend.borrowVaults instead.",
+      "description": "Screen Jupiter Lend EARN markets - simple lending, where an asset is supplied for yield and nothing is borrowed against it. Use this when the user asks where to park an asset on Solana or what it would earn, and call it BEFORE a deposit to read the market's decimals. Returns one row per market: id, assetAddress, assetSymbol, assetPriceUsd, the Earn share token (earnTokenAddress, earnTokenSymbol), supplyRate, rewardsRate and totalRate as exact percent strings each with a raw *Bps basis-point sibling, totalAssetsRaw and totalSupplyRaw, and assetDecimals - which is what converts a human amount into the raw atomic-unit amountRaw that solana__lend_earn_deposit and solana__lend_earn_withdraw take. The assets filter and the minSupplyRate/minTotalRate thresholds are applied Vex-side. The rows are the whole answer; there is no continuation. Covers Earn yields only; collateralized-borrowing limits and thresholds are solana__lend_borrow_vaults_list.",
       "name": "solana__lend_earn_rates_list",
       "parameters": {
         "additionalProperties": false,

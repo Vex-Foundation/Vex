@@ -124,10 +124,28 @@ describe("protocol discovery", () => {
 
   // ── Query matching ───────────────────────────────────────────────
 
-  it("matches by toolId substring", async () => {
+  // A name-shaped INFIX ("tokens.search" is inside `khalani.tokens.search`)
+  // has never been a contract: `toolid-pin.ts` pins an exact toolId, an exact
+  // publicName, or a unique prefix, and the lexical scorer has no substring
+  // rule. The old rank-0 assertion here pinned a ranking coincidence, which
+  // Wave 1 broke by giving `trench.tokens` a description that cross-references
+  // `trench__tokens_search` (normalized, that is the phrase "tokens search").
+  // What is guaranteed is presence within the default limit, asserted below;
+  // the exact-name contract is the pin, asserted separately.
+  it("a name-shaped infix query still surfaces the tool whose toolId contains it", async () => {
     const result = await discoverProtocolCapabilities({ query: "tokens.search" });
     expect(result.count).toBeGreaterThan(0);
-    expect(result.tools[0].toolId).toContain("tokens.search");
+    expect(result.tools.map((t) => t.toolId)).toContain("khalani.tokens.search");
+  });
+
+  it("an exact toolId or publicName query is pinned to rank 0 by identity, not by scoring", async () => {
+    const byToolId = await discoverProtocolCapabilities({ query: "khalani.tokens.search" });
+    expect(byToolId.tools[0]?.toolId).toBe("khalani.tokens.search");
+    expect(byToolId.tools[0]?.whyMatched).toContain("toolId");
+
+    const byPublicName = await discoverProtocolCapabilities({ query: "khalani__tokens_search" });
+    expect(byPublicName.tools[0]?.toolId).toBe("khalani.tokens.search");
+    expect(byPublicName.tools[0]?.whyMatched).toContain("publicName");
   });
 
   it("matches by description keyword", async () => {

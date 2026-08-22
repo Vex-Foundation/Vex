@@ -173,11 +173,11 @@ describe("D3: wallet.balance no longer tells the agent the mutators do not exist
     // is the field steering the agent's next move, so the stale claim was worse
     // than silence.
     expect(nextStep).not.toContain("no Morpho mutating tools yet");
-    expect(nextStep).toContain("morpho.vault.quote");
-    expect(nextStep).toContain("morpho.market.quote");
+    expect(nextStep).toContain("morpho__vault_quote");
+    expect(nextStep).toContain("morpho__market_quote");
     // The read itself still claims nothing beyond being a read.
     expect(nextStep).toContain("nothing here is approved, spent or signed");
-    expect(nextStep).toContain("morpho.positions.get");
+    expect(nextStep).toContain("morpho__positions_get");
   });
 });
 

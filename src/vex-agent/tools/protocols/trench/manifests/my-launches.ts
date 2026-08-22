@@ -13,7 +13,7 @@ export const TRENCH_MY_LAUNCHES_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "trench",
     lifecycle: "active",
     description:
-      "List the tokens the user has launched on Trench Express (Robinhood Chain 4663) through Vex: token address, name, symbol, the creation transaction hash, when it launched, and the initial buy made in the same transaction (with its own decimals). Read from Vex's durable local launch index, not the launchpad API — a token created outside this app has no entry. The wallet is the session's selected wallet and cannot be overridden. Read-only.",
+      "List the tokens the user has launched on Trench Express (Robinhood Chain 4663) through Vex. Use this when the user asks about a coin they made, how their own launch is doing, or which launches this wallet owns. Returns `launches` alongside wallet, chainId, count and source; each row carries token, name, symbol, createTx, launchedAt, and prebuy - the initial buy made in the SAME transaction, with its own amount, raw value, decimals and token, or null when the launch bought nothing. Read from Vex's durable local launch index rather than the launchpad API, so a token created outside this app has NO entry here and its absence is never evidence it does not exist. The wallet is resolved from the session and there is no wallet parameter, so this can never be widened to somebody else's history. Page with limit (1-100, default 25), most recent first; there is no cursor. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

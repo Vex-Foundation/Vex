@@ -127,7 +127,7 @@ describe("pendle.market.history", () => {
 
     const result = await pendleMarketHistory(params, NOW);
     expect(result.success).toBe(false);
-    expect(result.output).toContain("pendle.market.get");
+    expect(result.output).toContain("pendle__market_get");
     expect(result.output.toLowerCase()).not.toContain("retry");
   });
 
@@ -175,7 +175,7 @@ describe("pendle.market.candles", () => {
     expect(String(data.volumeNote)).toMatch(/no recorded trades/i);
     // Pendle documents LP volume on this endpoint as always 0 — the agent must be
     // sent to the market series for the real figure rather than concluding "no volume".
-    expect(String(data.volumeNote)).toContain("pendle.market.history");
+    expect(String(data.volumeNote)).toContain("pendle__market_history_get");
   });
 
   it("summarises the window with the first and last close", async () => {
