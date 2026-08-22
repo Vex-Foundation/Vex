@@ -245,3 +245,80 @@ na razie").
    mode and the on-chain spend guard).
 
 The funded wallets stay as they are; nothing is spent before phase 5.
+
+## D15. O3 ruling: ratify the vocabulary, alias the six renames
+
+Recorded 2026-08-22 from the owner's choice on the Batch 4 brief (evidence:
+`batch4/recon.md`).
+
+- The 141 allowlisted keys that have no canonical target are RATIFIED into
+  `CANONICAL_PARAM_KEYS` (`protocols/conventions.ts`), each with its reason,
+  and their 325 `param-key` allowlist entries are deleted. Metadata only:
+  no manifest, handler, snapshot or fingerprint changes.
+- The six true renames, all on READ tools, land WITH input aliases:
+  `wallet` -> `walletFamily` on `BridgeStatus`, `khalani.orders.list`,
+  `khalani.tokens.balances`; `address` -> its canonical spelling on
+  `BridgeStatus`; `search` -> `query` on `morpho.markets.discover` and
+  `morpho.vaults.discover` (the rename D1 created).
+- Alias contract: `ProtocolParamDef.aliases` names retired spellings. Step 0
+  of `validateProtocolParams` rewrites an alias to its canonical key in
+  place, before unknown-key rejection, so the handler, the capture row and
+  every gate see one spelling. A call carrying both spellings is rejected
+  by name. An alias is never emitted in the JSON schema the model sees.
+  Aliases enter the manifest fingerprint (`tool-call-envelope.ts`) because
+  normalization reads them. Each alias carries a `removeAfter` naming D5's
+  owner-acceptance branch.
+
+## D16. O4 ruling: describe what is emitted, make four silent handlers honest
+
+Recorded 2026-08-22 from the owner's choice.
+
+- METADATA: the descriptions of the fifteen tools whose handlers already
+  emit a continuation signal name those fields exactly as emitted.
+- BEHAVIOR, additive: `trench__images_list`, `WalletBalances`,
+  `virtuals__genesis_launches_list` and `solana__predict_events_search`
+  gain the continuation or truncation fields their pagination class
+  requires (`parameter-vocabulary.md` section 4), computed from facts the
+  handler already holds. No new provider call, no extra fetch.
+- Still OPEN (O4 narrowed): the `summary` sweep over the 44 handlers
+  without one (needs a naming rule first: a provider object named
+  `summary` and fourteen `message` / `note` fields exist) and the five
+  handlers whose honesty needs an extra fetch. O5 is deferred to the
+  Studio MCP design (D14 step 4).
+
+## D17. response_format: one module, four states, wallet_balances keeps detailed
+
+Recorded 2026-08-22 from the owner's choice (R2 in `output-envelope.md`
+section 7.3).
+
+- One shared module owns the enum, the manifest param fragment, the Zod
+  fragment, the raw-params reader and the retired-by-name rejection: four
+  states (offers both with default `concise`; offers both with default
+  `detailed`; does not offer the param; retired, rejected by name).
+- `wallet_balances` keeps `detailed` as a ratified exception, because a
+  `concise` default would make `{limit}` without a format start trimming
+  and re-ordering rows on a money-adjacent read. A test pins today's
+  behavior: `{limit: N}` without `response_format` returns every row.
+- Task 0b stays closed: the AgentScan server branch has no pull request
+  and is not in `dev`; the Vex-side switch is two SQL lists plus a
+  readiness arm (`batch4/recon.md`).
+
+## D18. Studio MCP server: github-mcp-server is the reference for code and architecture
+
+Recorded 2026-08-22 from the owner's words ("github-mcp jako wzór dla kodu,
+a także architektury").
+
+- The reference checkout `agents-colab/github-mcp-server` is the quality
+  bar for the Studio MCP server on BOTH axes: the code (how a production
+  first-party server is structured, tested and documented) and the
+  architecture (toolsets and their grouping, dynamic discovery, read-only
+  mode, instructions, minimal output types, pagination reporting, error
+  handling by audience, transports, auth handling). A pattern reference,
+  never code to copy verbatim; repository rules and boundaries win on
+  conflict.
+- Before the Studio MCP design is written, a deep-research pass records
+  what a modern MCP server looks like in 2026 (protocol revision,
+  transports, auth, tool annotations, structured output, elicitation,
+  tasks, dynamic tool lists, tool search and lazy loading, security
+  guidance, how Claude Code and Codex CLI consume servers), with
+  citations, in `tool-surface-spec/studio-mcp/`.
