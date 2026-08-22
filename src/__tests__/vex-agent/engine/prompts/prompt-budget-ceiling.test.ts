@@ -21,12 +21,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 53_795 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 54_496 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 60_218 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 60_237 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 58_834 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 58_649 },
+  { name: "agent / restricted", context: context({}), ceiling: 54_135 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 54_836 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 60_558 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 60_577 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 59_174 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 58_989 },
 ] as const;
 
 beforeAll(() => {

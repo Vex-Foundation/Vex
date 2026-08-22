@@ -43,9 +43,17 @@ function requiredEnvironmentNames(): readonly string[] {
   for (const tool of advertisedTools()) {
     if (tool.lifecycle === "active" && tool.requiresEnv) names.add(tool.requiresEnv);
   }
-  const webResearchEnv = getToolDef("WebResearch")?.requiresEnv;
-  if (webResearchEnv) names.add(webResearchEnv);
+  for (const toolName of ["WebResearch", "TwitterAccount"] as const) {
+    const env = getToolDef(toolName)?.requiresEnv;
+    if (env) names.add(env);
+  }
   return [...names].sort();
+}
+
+/** True when the named internal tool has no env gate or its key is configured. */
+function internalToolAvailable(toolName: "WebResearch" | "TwitterAccount"): boolean {
+  const env = getToolDef(toolName)?.requiresEnv;
+  return env ? Boolean(process.env[env]?.trim()) : true;
 }
 
 export function protocolAvailabilityFingerprint(): string {
@@ -104,11 +112,9 @@ export function buildProtocolsPrompt(): string {
     lines.push(...renderDeclaration(navigation.namespace), "");
   }
 
-  const webResearchEnvironment = getToolDef("WebResearch")?.requiresEnv;
   lines.push(buildTaskShapesPrompt({
-    webResearch: webResearchEnvironment
-      ? Boolean(process.env[webResearchEnvironment]?.trim())
-      : true,
+    webResearch: internalToolAvailable("WebResearch"),
+    twitterAccount: internalToolAvailable("TwitterAccount"),
     solana: namespaceAvailability("solana").availableCount > 0,
   }));
 
