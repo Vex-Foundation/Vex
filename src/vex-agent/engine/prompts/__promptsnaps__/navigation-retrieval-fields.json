@@ -1,0 +1,1114 @@
+{
+  "navigation": {
+    "khalani": {
+      "aliases": [
+        "bridge",
+        "cross chain",
+        "hyperstream",
+        "multi chain token resolver"
+      ],
+      "discoveryHints": [
+        "bridge quote",
+        "cross-chain transfer",
+        "token resolver",
+        "balances across chains",
+        "bridge order status"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"token search\", namespace=\"khalani\")",
+        "ToolSearch(query=\"bridge quote\", namespace=\"khalani\")",
+        "ToolSearch(query=\"cross-chain order status\", namespace=\"khalani\")"
+      ],
+      "facets": [
+        {
+          "label": "Chains and token resolution",
+          "summary": "List supported chains and resolve/search token metadata before any multi-chain or EVM mutation.",
+          "toolPrefixes": [
+            "khalani.chains",
+            "khalani.tokens"
+          ],
+          "hints": [
+            "supported chains",
+            "token search",
+            "token autocomplete",
+            "wallet balances"
+          ]
+        },
+        {
+          "label": "Bridge quotes and orders",
+          "summary": "Quote/execute cross-chain transfers and inspect bridge order lifecycle.",
+          "toolPrefixes": [
+            "khalani.quote",
+            "khalani.orders",
+            "khalani.bridge"
+          ],
+          "hints": [
+            "bridge quote",
+            "bridge usdc",
+            "order status",
+            "cross-chain bridge"
+          ]
+        }
+      ]
+    },
+    "relay": {
+      "aliases": [
+        "relay",
+        "bridge to robinhood",
+        "bridge from robinhood",
+        "fund robinhood"
+      ],
+      "discoveryHints": [
+        "bridge to robinhood",
+        "bridge from robinhood",
+        "relay bridge quote",
+        "fund robinhood wallet"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"bridge to robinhood\", namespace=\"relay\")",
+        "ToolSearch(query=\"bridge quote relay\", namespace=\"relay\")",
+        "ToolSearch(query=\"bridge out of robinhood\", namespace=\"relay\")"
+      ],
+      "facets": [
+        {
+          "label": "Bridge quotes and execution",
+          "summary": "Quote/execute keyless cross-chain bridges to and from Robinhood Chain and Relay's other chains.",
+          "toolPrefixes": [
+            "relay.quote",
+            "relay.bridge"
+          ],
+          "hints": [
+            "bridge quote",
+            "bridge to robinhood",
+            "bridge eth",
+            "cross-chain transfer"
+          ]
+        }
+      ]
+    },
+    "kyberswap": {
+      "aliases": [
+        "kyber",
+        "evm swap",
+        "honeypot check"
+      ],
+      "discoveryHints": [
+        "swap on ethereum",
+        "honeypot check",
+        "fee on transfer"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"swap on base\", namespace=\"kyberswap\")",
+        "ToolSearch(query=\"check token honeypot\", namespace=\"kyberswap\")"
+      ],
+      "facets": [
+        {
+          "label": "Chains and token safety",
+          "summary": "Inspect supported chains, search token metadata, and run honeypot/FOT safety checks.",
+          "toolPrefixes": [
+            "kyberswap.chains",
+            "kyberswap.tokens"
+          ],
+          "hints": [
+            "supported evm chains",
+            "token search",
+            "honeypot",
+            "fee on transfer"
+          ]
+        },
+        {
+          "label": "Swaps",
+          "summary": "Quote or execute routed swaps on EVM chains after token resolution.",
+          "toolPrefixes": [
+            "kyberswap.swap"
+          ],
+          "hints": [
+            "swap quote",
+            "sell token",
+            "buy token",
+            "route build"
+          ]
+        }
+      ]
+    },
+    "uniswap": {
+      "aliases": [
+        "uniswap",
+        "robinhood swap",
+        "v2 v3 swap",
+        "uniswap fallback"
+      ],
+      "discoveryHints": [
+        "swap on robinhood",
+        "uniswap quote",
+        "buy on robinhood",
+        "sell on robinhood",
+        "virtual to vex"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"swap on robinhood\", namespace=\"uniswap\")",
+        "ToolSearch(query=\"uniswap quote\", namespace=\"uniswap\")",
+        "ToolSearch(query=\"buy vex with virtual\", namespace=\"uniswap\")"
+      ],
+      "facets": [
+        {
+          "label": "Swaps",
+          "summary": "Quote or execute best-route V2/V3 swaps after resolving token addresses.",
+          "toolPrefixes": [
+            "uniswap.swap"
+          ],
+          "hints": [
+            "swap quote",
+            "sell token",
+            "buy token",
+            "robinhood swap",
+            "best route v2 v3"
+          ]
+        }
+      ]
+    },
+    "morpho": {
+      "aliases": [
+        "morpho",
+        "lending",
+        "lend",
+        "borrow",
+        "supply apy",
+        "variable rate lending",
+        "money market",
+        "curated vault",
+        "metamorpho",
+        "vault curator",
+        "health factor",
+        "liquidation risk",
+        "my positions",
+        "liquidation history",
+        "claimable rewards",
+        "unclaimed rewards",
+        "token allowance",
+        "unlimited approval",
+        "deposit into a vault",
+        "withdraw from a vault",
+        "redeem vault shares"
+      ],
+      "discoveryHints": [
+        "where to lend usdc",
+        "earn interest on stablecoins",
+        "cheapest borrow rate",
+        "borrow against cbbtc",
+        "lending market liquidity",
+        "liquidation threshold",
+        "is this lending market safe",
+        "morpho bad debt",
+        "best vault for usdc",
+        "curated vault yield",
+        "can I withdraw from this vault",
+        "am I close to liquidation",
+        "what do I owe on morpho",
+        "recent liquidations",
+        "what rewards can I claim",
+        "do I have unclaimed rewards",
+        "claim my morpho rewards",
+        "harvest my incentive tokens",
+        "check my token balance and approvals",
+        "do I have an unlimited allowance",
+        "deposit into this morpho vault",
+        "put my usdc in the vault now",
+        "withdraw from this morpho vault",
+        "take my money out of the vault"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"lend usdc morpho\", namespace=\"morpho\")",
+        "ToolSearch(query=\"cheapest borrow rate\", namespace=\"morpho\")",
+        "ToolSearch(query=\"is this lending market safe\", namespace=\"morpho\")",
+        "ToolSearch(query=\"am I close to liquidation\", namespace=\"morpho\")",
+        "ToolSearch(query=\"deposit into a morpho vault\", namespace=\"morpho\")"
+      ],
+      "facets": [
+        {
+          "label": "Lending market screening",
+          "summary": "Search Morpho Blue markets by chain, asset pair, size, utilization, rate and liquidation threshold to find where to lend or borrow.",
+          "toolPrefixes": [
+            "morpho.markets"
+          ],
+          "hints": [
+            "where to lend usdc",
+            "cheapest borrow rate",
+            "lending markets by collateral",
+            "supply apy ranking"
+          ]
+        },
+        {
+          "label": "Lending market detail",
+          "summary": "Read one Morpho market in full before entering: bad debt, the oracle price liquidations use, free and reallocatable liquidity, supplying vaults, and averaged rate history.",
+          "toolPrefixes": [
+            "morpho.market"
+          ],
+          "hints": [
+            "is this lending market safe",
+            "morpho bad debt",
+            "how much liquidity is left",
+            "average lending rate"
+          ]
+        },
+        {
+          "label": "Curated vault screening",
+          "summary": "Search Morpho V1 and V2 curated vaults by chain, deposit asset, curator, total deposits, net APY and fee to find a managed place to park an asset.",
+          "toolPrefixes": [
+            "morpho.vaults"
+          ],
+          "hints": [
+            "best vault for usdc",
+            "top curated vaults",
+            "which curator charges least",
+            "somewhere passive to park stablecoins"
+          ]
+        },
+        {
+          "label": "Curated vault detail",
+          "summary": "Read one Morpho vault in full before depositing: who runs it, how fast they can change it, what it currently supplies and under what caps, and whether a gate can block a withdrawal.",
+          "toolPrefixes": [
+            "morpho.vault"
+          ],
+          "hints": [
+            "who runs this vault",
+            "can I withdraw from this vault",
+            "where is this vault putting the money",
+            "is this vault gated"
+          ]
+        },
+        {
+          "label": "Preview a vault deposit or withdrawal",
+          "summary": "Price a SPECIFIC amount into or out of one vault before anything is committed: the shares it would mint or burn, the share price the transaction would enforce, what the wallet would have to approve or sign first, the decoded transaction and its gas. A preview only, and the mandatory first step before either executing tool.",
+          "toolPrefixes": [
+            "morpho.vault.quote"
+          ],
+          "hints": [
+            "preview a vault deposit",
+            "how many shares would I get",
+            "what approvals are needed before depositing",
+            "simulate a morpho withdrawal"
+          ]
+        },
+        {
+          "label": "Deposit into or withdraw from a vault",
+          "summary": "MOVE REAL FUNDS on one vault, after a fresh quote of the same operation: deposit assets and receive shares, or withdraw assets by burning shares. A deposit sends two transactions in sequence behind one confirmation, a permission for exactly that amount and then the deposit; a withdrawal is one direct call with no permission. Both support a rehearsal that signs nothing, and both record the result in the activity ledger.",
+          "toolPrefixes": [
+            "morpho.vault.deposit",
+            "morpho.vault.withdraw"
+          ],
+          "hints": [
+            "deposit into this morpho vault",
+            "put my usdc in the vault now",
+            "withdraw from this morpho vault",
+            "take my money out of the vault",
+            "redeem my vault shares"
+          ]
+        },
+        {
+          "label": "Price a borrow or a collateral move before doing it",
+          "summary": "PRICE one operation on one Blue market without performing it: supplying collateral, borrowing against it, repaying debt, taking collateral back out, LENDING the loan asset into the market, or taking what was lent back out. Answers the conditional question - what would this do to my health factor, how close to liquidation would it leave me, can the market fund it, what would I have to permit first. Signs nothing. Mandatory before the matching execute, and a quote of one direction never authorizes another.",
+          "toolPrefixes": [
+            "morpho.market.quote"
+          ],
+          "hints": [
+            "what would borrowing this do to my health factor",
+            "how much can i safely borrow against this collateral",
+            "how close to liquidation would this leave me",
+            "preview supplying collateral on this market",
+            "simulate paying off my morpho loan"
+          ]
+        },
+        {
+          "label": "Borrow, repay and move collateral on a market",
+          "summary": "MOVE REAL FUNDS on one Blue market, after a fresh quote of the same direction. Supplying collateral and repaying RAISE the health factor; borrowing and withdrawing collateral LOWER it, and borrowing is the only one that creates liquidation risk where there was none. Supplying collateral and repaying send two transactions behind one confirmation, a permission then the operation; borrowing and withdrawing collateral are one direct call with no permission at all. Only a full-debt repayment can close a position, and unwinding is repay-then-withdraw as two separate calls. All four support a rehearsal that signs nothing.",
+          "toolPrefixes": [
+            "morpho.market.supplyCollateral",
+            "morpho.market.withdrawCollateral",
+            "morpho.market.borrow",
+            "morpho.market.repay"
+          ],
+          "hints": [
+            "borrow usdc against my collateral",
+            "post more collateral on this market",
+            "repay my morpho loan",
+            "pay off the debt completely and close the position",
+            "withdraw my collateral from this market"
+          ]
+        },
+        {
+          "label": "Lend directly into one market instead of a curated vault",
+          "summary": "LEND REAL FUNDS into ONE Blue market and take them back out, after a fresh quote of the same direction. This is the LENDER'S side and it is not collateral: it earns the market's own borrow rate, it backs no loan, and it moves NO health factor. It is the direct alternative to a curated vault, and the choice is a fee against management: measured on Base, every curated USDC vault earns the same gross 4.13% because they allocate into the same markets, so a 0%-fee curator nets 4.13% while a 25%-fee one nets 3.08%, while supplying this market directly earns 4.13% with no fee at all. What the direct route gives up is diversification and a curator who reallocates when a market degrades. Supplying sends two transactions behind one confirmation, a permission then the supply; withdrawing is one direct call with no permission. A withdrawal is bounded BOTH by the wallet's own supplied position and by the market's free liquidity, and either bound is refused by name rather than quietly reduced.",
+          "toolPrefixes": [
+            "morpho.market.supply",
+            "morpho.market.withdraw"
+          ],
+          "hints": [
+            "lend usdc into this market directly",
+            "supply to this market instead of paying a curator fee",
+            "withdraw what i lent into this market",
+            "stop lending into this market and take the interest",
+            "earn the full rate on this market myself"
+          ]
+        },
+        {
+          "label": "Position and liquidation risk",
+          "summary": "Read one wallet's own Morpho holdings: what it lent, what it put up as collateral, what it owes, the health factor of each borrowing position and how far the collateral price can fall before it is liquidated.",
+          "toolPrefixes": [
+            "morpho.positions"
+          ],
+          "hints": [
+            "show my morpho positions",
+            "am I close to liquidation",
+            "what do I owe",
+            "my lending deposits and loans"
+          ]
+        },
+        {
+          "label": "Market activity and liquidation history",
+          "summary": "Read what has already happened in a Morpho market: supplies, borrows, repayments and every liquidation with what was repaid, what was seized and whether bad debt was left, filterable by market, address, event type and time window.",
+          "toolPrefixes": [
+            "morpho.markets.activity"
+          ],
+          "hints": [
+            "recent liquidations on this market",
+            "market transaction history",
+            "who liquidated me",
+            "is this lending market still being used"
+          ]
+        },
+        {
+          "label": "Reward campaigns, read and claimed",
+          "summary": "Read the incentive tokens a wallet can claim on top of its lending rate, what is still accruing and not yet claimable, and which campaign and protocol produced each one. Then CLAIM them for real: one transaction sweeps every claimable row on one chain and can deliver several reward tokens at different scales, it needs no quote because a claim has no price and no size to choose, and it costs gas, which is worth saying before claiming a dust balance.",
+          "toolPrefixes": [
+            "morpho.rewards"
+          ],
+          "hints": [
+            "what rewards can I claim",
+            "do I have unclaimed rewards",
+            "how much have I earned in incentives",
+            "reward tokens waiting",
+            "claim my morpho rewards",
+            "harvest my incentive tokens"
+          ]
+        },
+        {
+          "label": "Wallet holdings and Morpho approvals",
+          "summary": "Read on-chain what a wallet holds of named token contracts on one chain and which Morpho contracts it has already approved to move them, including whether any approval is the unlimited maximum.",
+          "toolPrefixes": [
+            "morpho.wallet"
+          ],
+          "hints": [
+            "check my token balance and approvals",
+            "do I have an unlimited allowance",
+            "which contracts can move my tokens",
+            "is this token already approved"
+          ]
+        }
+      ]
+    },
+    "pendle": {
+      "aliases": [
+        "pendle",
+        "fixed yield",
+        "variable yield",
+        "principal token",
+        "yield token",
+        "PT",
+        "YT"
+      ],
+      "discoveryHints": [
+        "pendle fixed yield",
+        "buy PT",
+        "buy YT variable yield",
+        "sell YT early",
+        "claim pendle rewards",
+        "implied apy",
+        "roll my PT to a later expiry",
+        "extend my fixed rate",
+        "move my pendle liquidity",
+        "turn my LP into PT"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"pendle fixed yield\", namespace=\"pendle\")",
+        "ToolSearch(query=\"buy YT variable yield\", namespace=\"pendle\")",
+        "ToolSearch(query=\"claim pendle rewards\", namespace=\"pendle\")"
+      ],
+      "facets": [
+        {
+          "label": "Yield markets",
+          "summary": "Browse active Pendle markets ranked by liquidity or implied APY.",
+          "toolPrefixes": [
+            "pendle.yields"
+          ],
+          "hints": [
+            "fixed yield markets",
+            "implied apy",
+            "pendle liquidity",
+            "PT maturities"
+          ]
+        },
+        {
+          "label": "PT trading",
+          "summary": "Quote, buy, early-exit sell, or redeem a Pendle principal token (fixed yield).",
+          "toolPrefixes": [
+            "pendle.pt"
+          ],
+          "hints": [
+            "quote PT",
+            "buy PT",
+            "sell PT early",
+            "redeem matured PT",
+            "lock fixed yield"
+          ]
+        },
+        {
+          "label": "YT trading",
+          "summary": "Quote, buy, or early-exit sell a Pendle yield token (variable yield, decays to zero at expiry).",
+          "toolPrefixes": [
+            "pendle.yt"
+          ],
+          "hints": [
+            "quote YT",
+            "buy YT",
+            "sell YT early",
+            "variable yield",
+            "leveraged yield"
+          ]
+        },
+        {
+          "label": "Mint and redeem (PT + YT)",
+          "summary": "Mint an EQUAL PT+YT pair from one token, or redeem the pair back to a token before expiry.",
+          "toolPrefixes": [
+            "pendle.py"
+          ],
+          "hints": [
+            "mint PT and YT",
+            "split token into PT and YT",
+            "redeem PT and YT before expiry",
+            "unwind PT YT pair"
+          ]
+        },
+        {
+          "label": "Liquidity (LP)",
+          "summary": "Quote, add, or remove single-token Pendle liquidity (earns swap fees until expiry; not a fixed lock). Two-output variants are under Dual-leg liquidity; moving or converting an existing LP is under Move a position.",
+          "toolPrefixes": [
+            "pendle.lp"
+          ],
+          "hints": [
+            "add pendle liquidity",
+            "provide single-token LP",
+            "remove pendle liquidity",
+            "withdraw pendle LP",
+            "pendle pool fees"
+          ]
+        },
+        {
+          "label": "Dual-leg liquidity",
+          "summary": "Liquidity actions that produce TWO instruments instead of one: remove into a plain token AND the market's PT, or add with one token and KEEP the YT the deposit produces. Both deposits are still SINGLE-token — Pendle has no two-token add.",
+          "toolPrefixes": [
+            "pendle.lp.removeDual",
+            "pendle.lp.addKeepYt"
+          ],
+          "hints": [
+            "remove pendle liquidity into a token and PT",
+            "exit pendle LP but keep the principal token",
+            "add pendle liquidity and keep the YT",
+            "provide pendle LP without selling the yield token"
+          ]
+        },
+        {
+          "label": "Move a position (term mobility)",
+          "summary": "Move a Pendle position between maturities or between position types in ONE transaction, without withdrawing to a token first: roll a PT into a later-expiry PT, move LP from one market's pool to another, or convert LP into the SAME market's PT. The source may be matured; the destination may not.",
+          "toolPrefixes": [
+            "pendle.pt.rollover",
+            "pendle.lp.transfer",
+            "pendle.lp.toPt"
+          ],
+          "hints": [
+            "roll my pendle PT into a later expiry",
+            "extend my fixed rate",
+            "move my pendle liquidity to another market",
+            "turn my pendle LP into PT",
+            "my pendle position is about to expire"
+          ]
+        },
+        {
+          "label": "SY wrap and unwrap",
+          "summary": "Wrap a plain token into Pendle SY (the standardised-yield form PT and YT are minted from), or unwrap SY back to a token. This is also the recovery path when a matured PT redeem falls back to paying SY instead of the market's underlying.",
+          "toolPrefixes": [
+            "pendle.sy"
+          ],
+          "hints": [
+            "wrap into pendle SY",
+            "unwrap pendle SY",
+            "standardised yield token",
+            "my pendle redeem paid SY",
+            "turn SY back into a token"
+          ]
+        },
+        {
+          "label": "Market detail and history",
+          "summary": "Inspect ONE market — its legs, expiry, accepted tokens and current rates — plus its APY/TVL history and price candles. Resolves MATURED markets, which the trading tools cannot see.",
+          "toolPrefixes": [
+            "pendle.market"
+          ],
+          "hints": [
+            "pendle market details",
+            "which tokens does this market accept",
+            "implied apy history",
+            "PT price chart",
+            "when does this PT expire"
+          ]
+        },
+        {
+          "label": "Order-book depth",
+          "summary": "See the resting limit orders on a market. Vex quotes through the automated market maker only, so this is the price quality being forgone, not depth Vex can fill.",
+          "toolPrefixes": [
+            "pendle.orderbook"
+          ],
+          "hints": [
+            "pendle order book",
+            "pendle depth",
+            "better price than the quote",
+            "resting pendle orders"
+          ]
+        },
+        {
+          "label": "Asset prices",
+          "summary": "Dollar price marks for Pendle PT, YT, LP and SY assets on one chain, including ones the wallet does not hold. Display marks, not executable quotes.",
+          "toolPrefixes": [
+            "pendle.prices"
+          ],
+          "hints": [
+            "what is this PT worth",
+            "price a pendle token",
+            "pendle asset price"
+          ]
+        },
+        {
+          "label": "Positions and income",
+          "summary": "Value open PT, YT, LP and SY positions, see which are redeemable or removable, claim accrued interest and rewards, and read merkle reward accruals (readable, but claimable only on Pendle's own site).",
+          "toolPrefixes": [
+            "pendle.position",
+            "pendle.claim",
+            "pendle.rewards"
+          ],
+          "hints": [
+            "pendle positions",
+            "PT holdings value",
+            "redeemable PT",
+            "claim rewards",
+            "harvest yield",
+            "pending pendle rewards",
+            "unclaimed incentives"
+          ]
+        }
+      ]
+    },
+    "solana": {
+      "aliases": [
+        "jupiter",
+        "solana swap",
+        "solana lending",
+        "solana prediction"
+      ],
+      "discoveryHints": [
+        "token mint search",
+        "fresh solana launches",
+        "new solana tokens",
+        "solana swap",
+        "jupiter price",
+        "lend rates",
+        "prediction market"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"solana token search\", namespace=\"solana\")",
+        "ToolSearch(query=\"swap on solana\", namespace=\"solana\")",
+        "ToolSearch(query=\"solana prediction markets\", namespace=\"solana\")"
+      ],
+      "facets": [
+        {
+          "label": "Core token and price lookup",
+          "summary": "Search Solana mints and fetch prices/trending token metadata.",
+          "toolPrefixes": [
+            "solana.prices",
+            "solana.tokens"
+          ],
+          "hints": [
+            "token search",
+            "token mint",
+            "trending tokens",
+            "price lookup"
+          ]
+        },
+        {
+          "label": "Swaps and lending",
+          "summary": "Quote/execute swaps and inspect deposit/withdraw lend positions.",
+          "toolPrefixes": [
+            "solana.swap",
+            "solana.lend"
+          ],
+          "hints": [
+            "swap quote",
+            "swap execute",
+            "lend rates",
+            "lend positions"
+          ]
+        },
+        {
+          "label": "Prediction markets",
+          "summary": "Browse, analyze, and trade Jupiter prediction markets on Solana.",
+          "toolPrefixes": [
+            "solana.predict"
+          ],
+          "hints": [
+            "prediction market",
+            "buy yes",
+            "sell shares",
+            "market history"
+          ]
+        }
+      ]
+    },
+    "dexscreener": {
+      "aliases": [
+        "dex screener",
+        "market research",
+        "trending narratives",
+        "cto"
+      ],
+      "discoveryHints": [
+        "token search",
+        "pair analytics",
+        "trending narratives",
+        "boosts",
+        "community takeover",
+        "order verification",
+        "ads"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"trending narratives\", namespace=\"dexscreener\")",
+        "ToolSearch(query=\"community takeover\", namespace=\"dexscreener\")",
+        "ToolSearch(query=\"pair liquidity research\", namespace=\"dexscreener\")"
+      ],
+      "facets": [
+        {
+          "label": "Search and pair analytics",
+          "summary": "Resolve a name/symbol to an exact chain + address, inspect a known pool, list one token's pools, or batch known addresses.",
+          "toolPrefixes": [
+            "dexscreener.search",
+            "dexscreener.pairs",
+            "dexscreener.tokens",
+            "dexscreener.tokenPairs"
+          ],
+          "hints": [
+            "token search",
+            "pair analytics",
+            "price research",
+            "all pools",
+            "liquidity"
+          ]
+        },
+        {
+          "label": "Trending narratives and profiles",
+          "summary": "Browse live undocumented engagement/promotion-influenced narratives and profile metadata updates. Use attention only for an explicit request for Vex's synthetic profile-plus-boost merge.",
+          "toolPrefixes": [
+            "dexscreener.trending",
+            "dexscreener.meta",
+            "dexscreener.attention",
+            "dexscreener.profiles",
+            "dexscreener.boosts"
+          ],
+          "hints": [
+            "trending narratives",
+            "trending metas",
+            "synthetic profile boost merge",
+            "token profiles",
+            "boosts",
+            "top boosts"
+          ]
+        },
+        {
+          "label": "Community takeovers and promotion checks",
+          "summary": "Read DexScreener CTO labels and inspect boosts, ads, and per-token promotion orders without inferring safety or demand.",
+          "toolPrefixes": [
+            "dexscreener.communityTakeovers",
+            "dexscreener.orders",
+            "dexscreener.ads"
+          ],
+          "hints": [
+            "community takeover",
+            "cto",
+            "paid orders",
+            "ads",
+            "promotion"
+          ]
+        }
+      ]
+    },
+    "virtuals": {
+      "aliases": [
+        "virtuals",
+        "agent tokens",
+        "virtuals protocol",
+        "anti-sniper window",
+        "agent token graduations"
+      ],
+      "discoveryHints": [
+        "agent tokens on robinhood",
+        "virtuals agent detail",
+        "anti-sniper buy tax window",
+        "recent graduations",
+        "genesis launch calendar"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"list agent tokens on robinhood\", namespace=\"virtuals\")",
+        "ToolSearch(query=\"virtuals agent detail anti-sniper\", namespace=\"virtuals\")",
+        "ToolSearch(query=\"what just graduated\", namespace=\"virtuals\")"
+      ],
+      "facets": [
+        {
+          "label": "Agent-token screening and detail",
+          "summary": "List/screen agent tokens on a chain and pull one agent's full detail, anti-sniper window, and trading route.",
+          "toolPrefixes": [
+            "virtuals.list",
+            "virtuals.get"
+          ],
+          "hints": [
+            "agent tokens",
+            "virtuals list",
+            "agent detail",
+            "anti-sniper window",
+            "trading route"
+          ]
+        },
+        {
+          "label": "Graduations and launch calendar",
+          "summary": "Watch recently graduated agent tokens and browse the genesis launch calendar.",
+          "toolPrefixes": [
+            "virtuals.graduations",
+            "virtuals.geneses"
+          ],
+          "hints": [
+            "recent graduations",
+            "just graduated",
+            "genesis calendar",
+            "upcoming launches"
+          ]
+        }
+      ]
+    },
+    "trench": {
+      "aliases": [
+        "trench",
+        "trench express",
+        "trench launchpad",
+        "trench token launches",
+        "trench curve trading",
+        "buy trench token"
+      ],
+      "discoveryHints": [
+        "buy a trench bonding curve token",
+        "sell a trench launchpad token for eth",
+        "new token launches on trench",
+        "trench bonding curve tokens",
+        "trench launchpad trade tape",
+        "robinhood launchpad tokens"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"buy a trench bonding curve token with ETH\", namespace=\"trench\")",
+        "ToolSearch(query=\"new token launches on trench\", namespace=\"trench\")",
+        "ToolSearch(query=\"preview a token launch cost\", namespace=\"trench\")"
+      ],
+      "facets": [
+        {
+          "label": "Trench curve trading (buy/sell)",
+          "summary": "Quote then buy a Trench bonding-curve token with ETH, or sell it back for ETH, with a Vex-derived minimum-output floor.",
+          "toolPrefixes": [
+            "trench.trade_quote",
+            "trench.trade_execute"
+          ],
+          "hints": [
+            "buy trench token with eth",
+            "sell trench token for eth",
+            "quote a trench curve trade",
+            "trench bonding curve buy",
+            "trench bonding curve sell"
+          ]
+        },
+        {
+          "label": "Trench launchpad token browsing and search",
+          "summary": "List and screen Trench Express bonding-curve and graduated tokens, or look one up by name or symbol.",
+          "toolPrefixes": [
+            "trench.tokens",
+            "trench.search"
+          ],
+          "hints": [
+            "trench launchpad tokens",
+            "new trench launches",
+            "trench bonding curve",
+            "trench token lookup",
+            "trench token by symbol"
+          ]
+        },
+        {
+          "label": "Trench trade tape and launch preview",
+          "summary": "Read a Trench token's recent trade tape and dry-run a Trench token launch to preview address, fee, and gas cost.",
+          "toolPrefixes": [
+            "trench.trades",
+            "trench.launch_preview"
+          ],
+          "hints": [
+            "trench trade tape",
+            "recent trench trades",
+            "trench launch preview",
+            "create trench token cost",
+            "dry run trench launch"
+          ]
+        },
+        {
+          "label": "Launching a token on Trench",
+          "summary": "Create a token on the Trench bonding curve, and review the ones already launched. A launch REQUIRES an image the user pre-staged in the app; the agent cannot supply one.",
+          "toolPrefixes": [
+            "trench.launch_request_form",
+            "trench.launch_execute",
+            "trench.my_launches",
+            "trench.images"
+          ],
+          "hints": [
+            "launch a token on trench",
+            "create a memecoin",
+            "deploy a token",
+            "my launched tokens",
+            "trench launch images",
+            "pick a launch image"
+          ]
+        }
+      ]
+    },
+    "pools": {
+      "aliases": [
+        "pools",
+        "pools.fun",
+        "pools fun",
+        "bankr",
+        "robinhood launchpad",
+        "sushi launchpad"
+      ],
+      "discoveryHints": [
+        "new pools fun launches",
+        "pools fun tokens",
+        "fresh launches on robinhood",
+        "pools fun price history",
+        "who deployed this pools fun token",
+        "my pools fun launches"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"new pools fun launches\", namespace=\"pools\")",
+        "ToolSearch(query=\"pools fun token price history\", namespace=\"pools\")",
+        "ToolSearch(query=\"who earns fees on this pools fun token\", namespace=\"pools\")"
+      ],
+      "facets": [
+        {
+          "label": "pools.fun browsing and search",
+          "summary": "List and screen pools.fun launches with every server-side filter (age, volume window, trade count, market-cap band, deployer, fee recipient), or resolve one token by name or symbol.",
+          "toolPrefixes": [
+            "pools.tokens",
+            "pools.search"
+          ],
+          "hints": [
+            "pools fun tokens",
+            "new pools fun launches",
+            "fresh robinhood launchpad tokens",
+            "find a pools fun token by name",
+            "pools fun token lookup"
+          ]
+        },
+        {
+          "label": "pools.fun candles and token detail",
+          "summary": "Read one token's OHLCV price history at any candle span, or its full detail joined with the on-chain locker registration, fee split and decimals.",
+          "toolPrefixes": [
+            "pools.candles",
+            "pools.token"
+          ],
+          "hints": [
+            "pools fun price history",
+            "pools fun chart",
+            "pools fun token detail",
+            "pools fun fee split",
+            "which pool does this token trade in"
+          ]
+        },
+        {
+          "label": "Own pools.fun launches",
+          "summary": "Review the tokens the session's own wallet deployed on pools.fun, and claim the creator fees they have earned. Every pool charges 1 percent per trade and the launcher's share accrues in the locker until it is claimed; a claim pays the launched token and the paired asset together.",
+          "toolPrefixes": [
+            "pools.my_launches",
+            "pools.claim_fees"
+          ],
+          "hints": [
+            "my pools fun launches",
+            "tokens I launched on pools fun",
+            "the coin I made on pools fun",
+            "claim my creator fees",
+            "how much has my coin earned"
+          ]
+        },
+        {
+          "label": "Launching a token on pools.fun",
+          "summary": "Price a launch before committing to it, ask the user to confirm one in the app's form, or launch for real. A pools.fun token opens directly into a real SushiSwap V3 pool against WETH or USDG, with no bonding curve and no graduation step. The preview is advisory and the form's submission is what authorizes a launch; only launch_execute signs, and it verifies the launchpad's own transaction against the chain before it does.",
+          "toolPrefixes": [
+            "pools.launch_preview",
+            "pools.launch_request_form",
+            "pools.launch_execute"
+          ],
+          "hints": [
+            "launch a token on pools fun",
+            "what would a pools fun launch cost",
+            "create a coin on pools fun",
+            "confirm a pools fun launch",
+            "pools fun launch form",
+            "launch my pools fun coin now"
+          ]
+        }
+      ]
+    }
+  },
+  "toolDiscoveryDigests": {
+    "khalani.chains.list": "67ead7b03ced0ef364ac766cf26d4ed21bba4590d7ee007bd3f1042d3c408f19",
+    "khalani.tokens.top": "dd3e079f76bba4119ebf71062f57f2a9ab5ece044c1050ed1599e4ba9ac5504f",
+    "khalani.tokens.search": "0f791c15d4f746738de52cd6501f40e4572293e29d70dd82c9f3715a227b7a76",
+    "khalani.tokens.autocomplete": "c89f44513b31c44f4dd8ad63f70a894780bbd8c8e83f8f8e9d03b58109034c73",
+    "khalani.tokens.balances": "ec47c95ad25a2cb9c91d54e2ef8c3b6191fe5aa06e3720ced4dc066711baf4d5",
+    "khalani.quote.get": "fd9706424bebc1b6e6d0d250c3280e1f6a2bf309625fd33ca6b395fc2bff33ee",
+    "khalani.orders.list": "d2acefe98aad899412e7607c24909f3d01fb95661792542f46caf3972f847169",
+    "khalani.orders.get": "8bd88d1c7aa6c7be2fc2623b7a5e27db17350a92092e029655fe6bce71ab15a0",
+    "khalani.bridge": "0bb5d3ed0fd2947a00460daacd895b0549463a154706ec97aeb7d0fa1acec614",
+    "solana.prices": "19a21cb6626c18a079bbe2aaa8a8ca8ae1065d77e1c20d0cbcd89e29c614d6a6",
+    "solana.tokens.search": "8a25bd046ee30f22115515d76d9c022978ab39eafc8ef16cfba2a8c843632014",
+    "solana.tokens.trending": "0ddeee8b4b8f6cb4309d21895d13800ddf6cf9a21247e03574bf2504488bb3c0",
+    "solana.swap.quote": "ba82b6eab56ce2742fbd468df5496c5357d9a4a9e361033074a5c8ce1ec1e296",
+    "solana.swap.execute": "04dc24fe5b289b247b504fb5cfcf24e8f2dbaf84c2f7aa6ce190abdf8e24d305",
+    "solana.predict.events": "979a4c9a0bb97e7aca1dbdae1a5bdffe2a949d2ae051b08d6de8e65a3b89efbc",
+    "solana.predict.search": "ae61036385572c6bd17ffafc8573bd703d46057faa3d2962d49ba8b16b61da0e",
+    "solana.predict.market": "d032154597e31027a51afa86f05233571a430fb94c2518ca6a950f6439362d61",
+    "solana.predict.positions": "e90c3067aec2c555874113d0912a83c0bbdc65f20802dce4cb7b7dfd01202c2a",
+    "solana.predict.history": "6e5857bcc6d894a49a6adfbcd48a709d4c7513993664758eb37dfc35fbc83b39",
+    "solana.predict.buy": "95f8ed623a580ac9ec8d40ab09df0f215d655642b86ad381c4247002577ef128",
+    "solana.predict.sell": "30d25e901c582fa7cd8a44b5b26fc6baa44a8af1cda780079bbb5d092a628010",
+    "solana.predict.claim": "476d65fef9cc56b720416f7cc31783f45c62c65ec62599f7564c9e2cfb3e67c1",
+    "solana.predict.closeAll": "c813782605baa9ff7048d76879f0b63a1f57214a48e3e2631cc2ea8784cc4828",
+    "solana.predict.event": "b01a117fb24ef8770ef6bbdf72ed17cbcc4e54e859777fb9072b49d577ef44e9",
+    "solana.predict.position": "2874fe23b967b05185fb15b1f370f266558abf7cf8275764a53874133f78b401",
+    "solana.predict.orderbook": "9aeab3a62ce9186ab8e2af7529a916e34316b689e527189735157f7c67d46b6f",
+    "solana.predict.tradingStatus": "75f55b17bbb28e1953203d4ef75840ed555bce69be12d91915caa796c97c6329",
+    "solana.predict.orders": "0d5d35fa80fb8d75e0d6aa4b3b7fd13ed2d516edd43f13e5d7d4422eafc17583",
+    "solana.predict.order": "61408c6bb82c5133aaeed50c0c20ec660a070bf5e8d21e9919ef6273ccb2db75",
+    "solana.predict.orderStatus": "f54790885e7f9ccdbe8f96ffb89b38c0de59d6465be730c9c16f18732125898f",
+    "solana.predict.trades": "f06e5e87d98ad7586c2bf0d6a624aba5b9f4ea94f93aae6f9c9c49dffa5575cf",
+    "solana.predict.profile": "f34ced01cf22ff06728fbef5df0c8bbfdcec318253ee77be55da2b856db79c38",
+    "solana.predict.pnlHistory": "f527bb4e11c586661513f1099a1c319e27e91f920bd77cc8a646cdffab7b29a1",
+    "solana.predict.leaderboards": "9650257a8776621e6e68bbe05d0241f8bb3c0f72c2c854b1ce5068c1e6641714",
+    "solana.predict.vaultInfo": "822ad829f232b7a2ccf38f6fdfcc8d06fd9fc00282f26eec793fc0718bf318d7",
+    "solana.predict.suggestedEvents": "074485a4059ed6d07e545cf555fb7f4f69a41ed5499e10eca778d9b00dc55bdf",
+    "solana.lend.rates": "bd07ec23554f432ca1fdf725cf86e964ba32d2e87e2ca65648fccec081fa84db",
+    "solana.lend.positions": "67076f79003baefce736b0e8e6836c96ea782a0968a9ead1f64afcfaa7705325",
+    "solana.lend.deposit": "d76cee83802dfda9ec420a9abae628ba15448810ba619af3a736c44e3dcca531",
+    "solana.lend.withdraw": "00102bd0d042564e4996ad1d72fb9eedde099e5f27a87d04dfaa436877344048",
+    "solana.lend.borrowVaults": "5f2c1420c7d02c3f318c1f0e9ddb3d2920472e9c193037e855562d925d4e3686",
+    "solana.lend.borrowPositions": "00fc819ffaa762848fbc6e9e563482e0b59a8c8d84b58e4e922d8ad93f38bcac",
+    "solana.lend.borrowOperate": "b38ea648c403f68d3cf0e08b91fc2cd027438f25d8a64572f89cdf669bb6c16e",
+    "kyberswap.chains": "9f94c3590898baa00a587d4530b4264ccd941b26af5c4c13991396f5a03d096d",
+    "kyberswap.tokens.check": "e4b877b701a4dd3a51100f64a1efb26b5691a1ba04a2c619ab35bd86253b54b8",
+    "kyberswap.swap.quote": "621b1eda12d7584f6933d74820dff9004aa83833dc09c56b33d25df15b7979b2",
+    "kyberswap.swap.execute": "02fb625fd092112c214e680283647d55b5cd30e119e775e874a48ff465c05abc",
+    "uniswap.swap.quote": "15c95162e9e6d643d154e660f21614e87bafc63831bad2159ad8d99427fa3050",
+    "uniswap.swap.execute": "b9aaeffe942500693a216840b7e45a0fd861c9981a308624a6ed5733ade21e80",
+    "relay.quote.get": "9951bb1aedf1b72b5a4f0f694a7dd25e211faaf0f313843580d26fd263665897",
+    "relay.bridge": "7d9d19e3caa79f0c8be40b1fe57f66932196b8b8bd6dca4c047b1fe0d7e0cfd4",
+    "dexscreener.search": "18860f47631963df4d7151e8dce0d40da718f8f2bd78ba11bc7104d1da544772",
+    "dexscreener.pairs": "4d8840d9704f711603f620826df495d0d179f5bbc360ed014c5e5aeb09324580",
+    "dexscreener.tokens": "c2fd19c6e9088ebec47e13d63a27b121737a7f40bae4b4fd6439710a1d420f01",
+    "dexscreener.tokenPairs": "e5def43bd28e7a5564535c3de80b683d2a7da0484090abb270619886b44257fe",
+    "dexscreener.profiles": "009611790a3a399d59c37507dc592b2aff1ec692f2774991b5af7335452803e1",
+    "dexscreener.boosts": "8866d16ed0c7c7a605cd464355d796e7fe862bd50ffb9dd4284a463dafae4bea",
+    "dexscreener.communityTakeovers": "71e3da1ad9f5f8d601a95a91e26b8198cb5207c835f5e3dafa56b525b7f7fcf1",
+    "dexscreener.attention": "361c166b5b1c41656dbdc88a6c5b61fd3f22a063b8b3d684b85c160752b9071c",
+    "dexscreener.trending": "790bbd00ebfd9b92c88171963a27d51950d0fd8a31cbdd181ba07195ad8967cd",
+    "dexscreener.meta": "c5964614dec9e1aa3268c808bc67ae46d22eeac10de8544cb5ed795535bdc0f9",
+    "dexscreener.orders": "0a2d05fd082d5dc77fb1d2a405a0807dd9b71dbe3d73be4995d9904e56f28acb",
+    "dexscreener.ads": "ba81f1af503662c751f7f3b0ff3253439f77beae252735caf56ca28aa4271cb2",
+    "virtuals.list": "827651cdcace4fd40b8c3cf05147d61e3eba6bb2ea962257482952c78f113e90",
+    "virtuals.get": "26bcb6d71aa60b679becb0bbce98a0b0a75da9dd19dd84cce43f0616252c765c",
+    "virtuals.graduations": "bc197ab90815817bc775c07adfa43fba73fa25894d9432039475b2e539ed0c36",
+    "virtuals.geneses": "7a54634df55374059206cae91d2ac6ee5487e3e63e0ee7290a241a3c210460a3",
+    "pendle.yields": "9681172f6045d1b721f4ab636069ae9767322c1a55291c93ff48250958295d27",
+    "pendle.position.value": "014a5b81cc8d6321564e454bd6ca9d9f987da6d59a9d628555d92e13c4d4f1f2",
+    "pendle.market.get": "853b5c4a9927984549d7c95eea7502af64a863af575d4c6c8ea412187ca7b00d",
+    "pendle.market.history": "7922d3e44cf6d2baf3fddf6c6d421fef1c955a850b2fe97bb63402f2c83e8a66",
+    "pendle.market.candles": "a441f5591f54a81dd20df6af8264fa767f7d2101b5d92745f35f207a52165481",
+    "pendle.orderbook": "abaf94f4338cd7805e40d1a69e6e8544b402b7d582976a09d30d325822b82fcd",
+    "pendle.rewards.merkle": "ee2af46c9125675cbb74a9b56ac1675daeb8286a347bb37d2ba27e960c12a1ba",
+    "pendle.prices.assets": "9e2c23bd364d5d1ca87233219ff1fc1399a968db2e4dbf2e678b7ba70d1d2ece",
+    "pendle.pt.quote": "6cc5395438c29afcf41d00bae3e6a1a6be897b4dee5d5a81ac0a6e7abddb4f28",
+    "pendle.pt.buy": "98e256afe368e981867b99da59037430b2a215ed9a6c5774bb6e9e787d6462db",
+    "pendle.pt.sell": "ff7b66ff83236f21296e48def0655c20e2886486205dc8a491bfe3437317060b",
+    "pendle.pt.redeem": "7cf7c82d285d0cb28e88bdf9a9720347a3407fa056a7ad8b4a3d41e6d6edbf02",
+    "pendle.yt.quote": "7efb63fca0264cc12a29c5687c4551c23bd272fa1987087af24219552ca035e4",
+    "pendle.yt.buy": "e4340b03819685e02634331a4dd242b070a2f36df646aa61791ff2e5e520c74b",
+    "pendle.yt.sell": "21d7ccc5d78cb3b381dc70ae72e0a3de88c9517aa7f714daa290c7067616f55b",
+    "pendle.claim": "87685e21f03e8b9b316dab6dc89fdcad8f069f009cab76cefd4d2500934d7779",
+    "pendle.py.quote": "e25d58c3e65c78bd25153510acbfed3be2dc166640de0523f20e693dcafd4176",
+    "pendle.py.mint": "9c5dc863a14d9cbbc84b9ee0db31b152d3142af8cad8f0b5a124ff4ae2cd9775",
+    "pendle.py.redeem": "90cb4742361854b4d2dd351478ed5e0eb1bbfe16cbfa7fa16b95f436c5c40c9a",
+    "pendle.lp.quote": "abec0a61c15bf7a1921501aaa135fc4590f615138b5e704e9a1293a007b2cef0",
+    "pendle.lp.add": "c06109fc63991bd7e20bf160ede8cc8216f487ee2725fb84fa25627f7a304ac8",
+    "pendle.lp.remove": "5c07b2419719d8bb6bff2875154d58eb7c12c7afd28e0f3f93c857d7361c6608",
+    "pendle.sy.mint": "bd3c114b3ab39ca5ddae79ec9fceb3e1f3f33493ba62f211d2dd3d4689993cdf",
+    "pendle.sy.redeem": "20e886d8577da08c991161f9bd6988a9fe995304ca6dbf9bb53d54263bef2eee",
+    "pendle.lp.removeDual": "faa50f5a32cc047d71b674ce8591a79c98b3835ad5a1fe2c20ba0aa56c0ddbf7",
+    "pendle.lp.addKeepYt": "60febe92d9ad31a36d00ac41b0300bca351db2fd9ceba2cf7cbf38f626f9387a",
+    "pendle.pt.rollover": "16a8b5cabb3432ad7c3c087545f9ed19556922614e9d82df785f2ff2b61d2b0f",
+    "pendle.lp.transfer": "34ef4aeaca5cc4c997c43cb307a8f89344ddc73db413676f5f5c9402483b2c26",
+    "pendle.lp.toPt": "7b2435e501fd2c2d99ad9ca8e5f1084fd6aae8b61f42a25ca4da31cf8f35d7e3",
+    "morpho.markets.discover": "a7817d89bf0dea3a444f8b6371a80e185cefa1a214227f87a07f1aa14e0e4f0c",
+    "morpho.market.get": "7af2b5afe4749082507a41df75cab353186ed5cc889a6982b24fe9a56fb6bddd",
+    "morpho.vaults.discover": "21c3a4e95e02677f7c99a526448144e35a27861c9a9b4b5f77eefdaa4a0321b1",
+    "morpho.vault.get": "12eac0be600a56317d840424666f882cf41114261048898d484e876e70b0cdce",
+    "morpho.positions.get": "97a8624a5221ff2a872a639c26161b8b0e1fc5fa915cf5f25e4f7fd3a07c714b",
+    "morpho.markets.activity": "6ac3671269eb28057f84bd83423d1765a1b457a408bd10a6933b8b344de87216",
+    "morpho.rewards.get": "1b3e46d51a8231add0a31c6fdb1e11adf5aecc15ee6d0f22bf4833207bfeade3",
+    "morpho.wallet.balance": "0c7d986994f078b47f5108a3ddb20db6886ceba6125a7a719f22183a282e48ec",
+    "morpho.vault.quote": "b546f7776c19376611f872aef0bf12c356737d684bb7227ebad86b4b7142ebd3",
+    "morpho.vault.deposit": "8e2010dc0c6a4a07068de7a6985eecc51ddb5d5a6f3037952cae0c586c608aa7",
+    "morpho.vault.withdraw": "4db8bd4c86d4a8fd5786de83b33a93a7c3220b30ce96bcc276133473998a1e15",
+    "morpho.market.quote": "6f1d4e5984fbd60f6f2d7d3eb92c532401e276126833066a461465bdef5c7ef8",
+    "morpho.market.supplyCollateral": "3dd5ca73fb8394eb7f299d790b13bddde0201a26a47bb747f8b47edf7e32933f",
+    "morpho.market.withdrawCollateral": "c3dbf6a4a1f6a20d3dd22917ff0140c8ce89dac384ba872b7487d9b0dbbee995",
+    "morpho.market.borrow": "4b8dbead922901b8ed9314a5b83fb8b911c3ae50def4803544c9ecb9980e8bcd",
+    "morpho.market.repay": "f57508b870383daed354825b8c1da40c7fb030f7cc1859bc0cee83301cf356e5",
+    "morpho.market.supply": "d1ded1635e4627820dbfcec9ffc810585c7edd6e029521b8bc319e108fb5de9f",
+    "morpho.market.withdraw": "5f6810c796570c2bed062f00bcab1551a1f3a6760514d4bd1e0ab4a629b3382b",
+    "morpho.rewards.claim": "8e94e20971b2803f6321585cb306b764dc7834917cae627d87b51772a806988c",
+    "trench.tokens": "221c38e83cbb0a9aff4c27d3136d230c0969a95c6fd06112e7ef479c859f747f",
+    "trench.search": "084e28f482c2b5dda680a973e273d805532e0594720ca64dd10e921a78471b36",
+    "trench.trades": "f39ac7fd397c923937e16c506ea67fde455756e3471cce3d3a7216303a332794",
+    "trench.launch_preview": "bb50a96f8624c5f6e13efb669cea86ab58dd80996d6089f59d796a4e1179e240",
+    "trench.trade_quote": "25e71b425269ec470e2e00920163ccb07492033c6277a10d21115a7c3ad9d139",
+    "trench.trade_execute": "505da5a6d0f8de91298f5843f5eabc66e20a3642ec60dd44fb4bab5b8f499d04",
+    "trench.images": "0a86bd81920dc3f09e29d1bc604c6720ca02e8c495e424a54516f7c7bcd4a79f",
+    "trench.my_launches": "341aedbe05fe1b5b6dd4ff6e56e003ac72d6b557bcad4576a02df6de9a0419dc",
+    "trench.launch_request_form": "feab5717b43a3aaaef3070170b6645c42149c364c75107c483f4f576c8df7209",
+    "trench.launch_execute": "2ad9733abd159dc7fa886196e6fcd97dbde1e11fbdff9933e4fe50f0a29a190b",
+    "pools.tokens": "e9bdeb67dc75a5f03158ece0daf27ea8b8e7aef9a702beacfe23a6e841e26ad1",
+    "pools.search": "6b3b50c93ad60dda20f04cbf86b92863abb1f62e97511505f690b998356fd4dd",
+    "pools.candles": "886a4df8db7f765977458e8d0bb16d9e9e9f01759b2f9a4c40389a5eeee0823c",
+    "pools.token": "4692cf114ba29472d97bd29c3842e5c83e69074d1b6b9a838cbe8170ce2fa8c0",
+    "pools.my_launches": "2209c97ca76ff6fe38184e0b0d869de479d7508cdde186a6b8f44fe17f844bf7",
+    "pools.launch_preview": "c4c122a5e3f401f4c444cb1ba42c3d7648c6d2605b214a737368ee3a945a3a03",
+    "pools.launch_request_form": "97980310773833aba195d4094b44a2567a53877ede8f12a3da7742f76138143b",
+    "pools.launch_execute": "059c49b596aa13a1328999b113ef6f7fc4a1ef67443c59806961662347299a1f",
+    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48"
+  }
+}

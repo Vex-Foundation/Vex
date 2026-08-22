@@ -20,9 +20,11 @@
  * reached the tree: a new, untracked lint module carrying two em-dash lines
  * passed every diff-scoped check.
  *
- * `src/vex-agent/tools/__toolsnaps__` is excluded because it is generated
- * output, not authored content: its text is regenerated from the manifests, so
- * the manifests are where a violation is fixed and where this gate must fail.
+ * `src/vex-agent/tools/__toolsnaps__` and
+ * `src/vex-agent/engine/prompts/__promptsnaps__` are excluded because they
+ * are generated output, not authored content: their text is regenerated from
+ * the manifests and the prompt modules, so those sources are where a violation
+ * is fixed and where this gate must fail.
  */
 
 import { execFileSync } from "node:child_process";
@@ -68,6 +70,7 @@ function runGit(args) {
 function isAuthoredContent(file) {
   if (file.includes("node_modules/")) return false;
   if (file.startsWith("src/vex-agent/tools/__toolsnaps__/")) return false;
+  if (file.startsWith("src/vex-agent/engine/prompts/__promptsnaps__/")) return false;
   return (
     file.startsWith("src/")
     || file.startsWith("vex-app/src/")
