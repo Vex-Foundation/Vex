@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { homedir as getHomedir } from "node:os";
-import { posix } from "node:path";
+import { dockerCliDirectories, resolveEnvKey } from "./locate.js";
 import { withoutManagedSecrets } from "./env-hygiene.js";
 
 export interface BuildDockerPathOptions {
@@ -10,52 +10,55 @@ export interface BuildDockerPathOptions {
   readonly dirExists: (path: string) => boolean;
 }
 
-function dockerPathCandidates(
-  platform: NodeJS.Platform,
-  homedir: string,
-): ReadonlyArray<string> {
-  if (platform === "darwin") {
-    return [
-      "/usr/local/bin",
-      "/opt/homebrew/bin",
-      posix.join(homedir, ".docker/bin"),
-      posix.join(homedir, ".orbstack/bin"),
-      posix.join(homedir, ".rd/bin"),
-      "/Applications/Docker.app/Contents/Resources/bin",
-    ];
-  }
-  if (platform === "linux") {
-    return [
-      "/usr/local/bin",
-      "/usr/bin",
-      "/snap/bin",
-      posix.join(homedir, "bin"),
-    ];
-  }
-  return [];
+function pathDelimiter(platform: NodeJS.Platform): string {
+  return platform === "win32" ? ";" : ":";
+}
+
+function comparableEntry(platform: NodeJS.Platform, entry: string): string {
+  // Windows paths are case-insensitive and a trailing separator is noise.
+  return platform === "win32"
+    ? entry.toLowerCase().replace(/[\\/]+$/, "")
+    : entry;
 }
 
 /**
  * Builds the environment used for Docker CLI processes. Existing PATH entries
  * retain priority; only present, missing candidates are appended.
  *
- * Windows is deliberately returned by identity. Rebuilding its environment
- * can collapse duplicate PATH/Path keys before Node launches the child.
+ * Windows hazard, handled explicitly: Windows environment names are
+ * case-insensitive, so `PATH` and `Path` are the SAME variable. Writing a
+ * literal `PATH` key into an environment that already carries `Path` would
+ * hand `child_process` two entries for one variable. `resolveEnvKey` finds
+ * the spelling the environment already uses and the value is written back to
+ * THAT key, so the object always carries exactly one path variable.
+ *
+ * This function used to return `process.env` by identity on Windows, which
+ * meant Windows augmentation never happened at all. It is not a substitute
+ * for `locate.ts`: augmenting a stale PATH cannot reveal an install the
+ * snapshot never saw, which is why detection resolves the CLI on the
+ * filesystem first and this only shapes the child's environment.
  */
 export function buildDockerPath(
   options: BuildDockerPathOptions,
 ): NodeJS.ProcessEnv {
   const { platform, homedir, env, dirExists } = options;
-  if (platform === "win32") return env;
-
-  const inheritedPath = env.PATH ?? "";
-  const knownEntries = new Set(inheritedPath.split(":").filter(Boolean));
-  const appended = dockerPathCandidates(platform, homedir).filter(
-    (candidate) => !knownEntries.has(candidate) && dirExists(candidate),
+  const delimiter = pathDelimiter(platform);
+  const pathKey = resolveEnvKey(env, "PATH") ?? "PATH";
+  const inheritedPath = env[pathKey] ?? "";
+  const knownEntries = new Set(
+    inheritedPath
+      .split(delimiter)
+      .filter(Boolean)
+      .map((entry) => comparableEntry(platform, entry)),
   );
-  const path = [inheritedPath, ...appended].filter(Boolean).join(":");
+  const appended = dockerCliDirectories({ platform, homedir, env }).filter(
+    (candidate) =>
+      !knownEntries.has(comparableEntry(platform, candidate)) &&
+      dirExists(candidate),
+  );
+  const path = [inheritedPath, ...appended].filter(Boolean).join(delimiter);
 
-  return { ...env, PATH: path };
+  return { ...env, [pathKey]: path };
 }
 
 function directoryExists(path: string): boolean {

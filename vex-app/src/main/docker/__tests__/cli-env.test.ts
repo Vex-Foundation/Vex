@@ -73,9 +73,21 @@ describe("buildDockerPath", () => {
     );
   });
 
-  it("returns the Windows environment object untouched", () => {
-    const env = { Path: "C:\\Windows", PATH: "C:\\Tools", KEEP: "yes" };
-    const dirExists = vi.fn(() => true);
+  // This test previously asserted `expect(result).toBe(env)` and that
+  // `dirExists` was never called on Windows: the Windows branch returned
+  // `process.env` by identity and did no augmentation at all. That
+  // expectation encoded the reported bug, so it is replaced by the two
+  // cases below, which assert augmentation happens AND that it never
+  // creates a second key for the one case-insensitive Windows PATH.
+  it("appends existing Windows Docker CLI directories to the inherited PATH", () => {
+    const env = {
+      Path: "C:\\Windows",
+      LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+      KEEP: "yes",
+    };
+    const perUserBin =
+      "C:\\Users\\test\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin";
+    const dirExists = vi.fn((candidate: string) => candidate === perUserBin);
 
     const result = buildDockerPath({
       platform: "win32",
@@ -84,13 +96,58 @@ describe("buildDockerPath", () => {
       dirExists,
     });
 
-    expect(result).toBe(env);
-    expect(result).toEqual({
+    expect(result).not.toBe(env);
+    expect(result.KEEP).toBe("yes");
+    expect(result.Path).toBe(`C:\\Windows;${perUserBin}`);
+    expect(dirExists).toHaveBeenCalledWith(perUserBin);
+  });
+
+  it("writes back to the existing Windows path key instead of adding a duplicate", () => {
+    const env = {
       Path: "C:\\Windows",
-      PATH: "C:\\Tools",
-      KEEP: "yes",
+      LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+    };
+
+    const result = buildDockerPath({
+      platform: "win32",
+      homedir: "C:\\Users\\test",
+      env,
+      dirExists: () => true,
     });
-    expect(dirExists).not.toHaveBeenCalled();
+
+    const pathKeys = Object.keys(result).filter(
+      (key) => key.toLowerCase() === "path",
+    );
+    expect(pathKeys).toEqual(["Path"]);
+    expect(result.PATH).toBeUndefined();
+  });
+
+  it("does not duplicate a Windows candidate already on PATH, case-insensitively", () => {
+    const perUserBin =
+      "C:\\Users\\test\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin";
+    const result = buildDockerPath({
+      platform: "win32",
+      homedir: "C:\\Users\\test",
+      env: {
+        PATH: `C:\\Windows;${perUserBin.toUpperCase()}`,
+        LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+      },
+      dirExists: (candidate) => candidate === perUserBin,
+    });
+
+    expect(result.PATH).toBe(`C:\\Windows;${perUserBin.toUpperCase()}`);
+  });
+
+  it("keeps working when Windows has no PATH and no install-root variables", () => {
+    const result = buildDockerPath({
+      platform: "win32",
+      homedir: "C:\\Users\\test",
+      env: { KEEP: "yes" },
+      dirExists: () => true,
+    });
+
+    expect(result.KEEP).toBe("yes");
+    expect(result.PATH).toBe("");
   });
 });
 

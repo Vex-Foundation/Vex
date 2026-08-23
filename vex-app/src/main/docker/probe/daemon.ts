@@ -21,6 +21,12 @@ import {
 import { isPortFree, isModelRunnerEndpointReachable } from "./ports.js";
 import { getAvailableDiskGB } from "./disk.js";
 import { dockerSpawnEnv } from "../cli-env.js";
+import { resolveDockerCli } from "../locate.js";
+import { probeDockerEngineEndpoint } from "../engine-endpoint.js";
+import {
+  clearDockerEngineStartWindow,
+  isWithinEngineStartWindow,
+} from "../engine-start-window.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -90,8 +96,69 @@ async function runCmd(
 
 // ── Composite probe ──────────────────────────────────────────────────
 
-import type { DockerStatus } from "@shared/schemas/docker.js";
+import {
+  deriveDockerStatusFlags,
+  type DockerEngineState,
+  type DockerStatus,
+} from "@shared/schemas/docker.js";
+import { homedir as osHomedir } from "node:os";
+import type { DockerEngineReachability } from "../engine-endpoint.js";
+import type { DockerEndpointPolicy } from "../endpoint-policy.js";
 import { inspectDockerEndpointPolicy } from "../endpoint-policy.js";
+
+interface EngineStateInput {
+  readonly cliFound: boolean;
+  readonly versionOk: boolean;
+  readonly version: string | null;
+  readonly versionErrorMessage: string | null;
+  readonly endpoint: DockerEndpointPolicy;
+  readonly daemonRunning: boolean;
+  readonly reachability: DockerEngineReachability;
+  readonly startWindowOpen: boolean;
+}
+
+/**
+ * Resolves the six engine states. Order matters and each branch is a
+ * distinct, actionable outcome - "unavailable", "denied" and "unknown" are
+ * never folded into one failure.
+ *
+ * `reachability` is only ever allowed to SHARPEN a failure the CLI already
+ * reported. It can never contradict a successful `docker info`, because a
+ * user with a custom Docker context has a reachable engine on an endpoint
+ * this probe does not know about.
+ */
+export function classifyEngineState(input: EngineStateInput): DockerEngineState {
+  if (!input.cliFound) return { kind: "not_installed" };
+  if (!input.versionOk || input.version === null) {
+    return {
+      kind: "error",
+      reason: "probe_error",
+      message:
+        input.versionErrorMessage !== null
+          ? "The Docker CLI was found but did not report a usable version."
+          : "The Docker CLI was found but its version output could not be read.",
+    };
+  }
+  if (!input.endpoint.accepted) {
+    return {
+      kind: "error",
+      reason: "endpoint_rejected",
+      message:
+        input.endpoint.message ??
+        "The active Docker endpoint is not a supported local endpoint.",
+    };
+  }
+  if (input.daemonRunning) return { kind: "ready" };
+  if (input.reachability.kind === "permission_denied") {
+    return {
+      kind: "permission_denied",
+      message:
+        "The Docker engine socket refused this process. Add your user to the Docker group (or grant socket access) and retry.",
+    };
+  }
+  if (input.startWindowOpen) return { kind: "engine_starting" };
+  return { kind: "engine_stopped" };
+}
 
 export interface DockerProbeOpts {
   readonly signal?: AbortSignal;
@@ -103,25 +170,53 @@ export interface DockerProbeOpts {
 export async function probeDocker(opts: DockerProbeOpts): Promise<DockerStatus> {
   const { signal, pgPort, modelRunnerBaseUrl, diskTarget } = opts;
 
-  const [versionRes, composeRes, endpoint, pgFree, diskGB] =
+  // Filesystem-first resolution (see `../locate.ts`). This is what makes
+  // "Recheck" work after an install: `process.env` is a launch-time snapshot
+  // and on Windows a running process can never see a later PATH change, so a
+  // PATH-only detector reports "not installed" until Vex restarts.
+  const location = resolveDockerCli();
+  const dockerCommand = location?.executablePath ?? null;
+  const notLocated: RunResult = {
+    ok: false,
+    notFound: true,
+    stdout: "",
+    stderr: "",
+    errorMessage: null,
+  };
+
+  const [versionRes, composeRes, endpoint, reachability, pgFree, diskGB] =
     await Promise.all([
-      runCmd("docker", ["--version"], signal),
-      runCmd("docker", ["compose", "version"], signal),
-      inspectDockerEndpointPolicy(signal),
+      dockerCommand === null
+        ? Promise.resolve(notLocated)
+        : runCmd(dockerCommand, ["--version"], signal),
+      dockerCommand === null
+        ? Promise.resolve(notLocated)
+        : runCmd(dockerCommand, ["compose", "version"], signal),
+      inspectDockerEndpointPolicy(signal, dockerCommand),
+      probeDockerEngineEndpoint({
+        platform: process.platform,
+        homedir: osHomedir(),
+        ...(signal !== undefined ? { signal } : {}),
+      }),
       isPortFree("127.0.0.1", pgPort, signal),
       getAvailableDiskGB(diskTarget),
     ]);
 
-  const engineVersion = versionRes.ok ? parseDockerVersion(versionRes.stdout) : null;
+  // Per the `findGit` pattern: a candidate is only accepted once spawning
+  // its ABSOLUTE path yields a parseable version.
+  const engineVersion = versionRes.ok
+    ? parseDockerVersion(versionRes.stdout)
+    : null;
+  const cliUsable = versionRes.ok && engineVersion !== null;
   const composeVersion = composeRes.ok ? parseComposeVersion(composeRes.stdout) : null;
   let modelStatus: ModelStatusKind = "unsupported";
   let daemonRunning = false;
   let mrTcp = false;
 
-  if (versionRes.ok && endpoint.accepted) {
+  if (dockerCommand !== null && cliUsable && endpoint.accepted) {
     const [modelRes, infoRes, modelRunnerTcp] = await Promise.all([
-      runCmd("docker", ["model", "status"], signal),
-      runCmd("docker", ["info", "--format", "{{json .}}"], signal),
+      runCmd(dockerCommand, ["model", "status"], signal),
+      runCmd(dockerCommand, ["info", "--format", "{{json .}}"], signal),
       isModelRunnerEndpointReachable(modelRunnerBaseUrl, signal),
     ]);
     modelStatus = parseModelStatus(modelRes.stdout, modelRes.errorMessage);
@@ -129,17 +224,30 @@ export async function probeDocker(opts: DockerProbeOpts): Promise<DockerStatus> 
     mrTcp = modelRunnerTcp;
   }
 
+  const state = classifyEngineState({
+    cliFound: dockerCommand !== null,
+    versionOk: versionRes.ok,
+    version: engineVersion,
+    versionErrorMessage: versionRes.errorMessage,
+    endpoint,
+    daemonRunning,
+    reachability,
+    startWindowOpen: isWithinEngineStartWindow(),
+  });
+  // The engine answered, so the "we just started it" window has served its
+  // purpose and must not colour a later stop as "starting".
+  if (state.kind === "ready") clearDockerEngineStartWindow();
+
+  const flags = deriveDockerStatusFlags(state);
+
   return {
     endpoint,
     engine: {
-      present: versionRes.ok,
+      state,
       version: engineVersion,
-      runtimeOK: versionRes.ok && endpoint.accepted && daemonRunning,
-      failure: versionRes.ok
-        ? null
-        : versionRes.notFound
-          ? "cli_not_found"
-          : "probe_error",
+      cliSource: location?.source ?? null,
+      present: flags.present,
+      runtimeOK: flags.runtimeOK,
     },
     compose: {
       present: composeRes.ok,
@@ -151,10 +259,10 @@ export async function probeDocker(opts: DockerProbeOpts): Promise<DockerStatus> 
       tcpReachable: mrTcp,
     },
     daemon: {
-      running: daemonRunning,
+      running: flags.daemonRunning,
       // Startable means Vex can attempt a non-privileged start. Linux Docker
       // Engine may still require user/admin action outside Vex.
-      startable: versionRes.ok,
+      startable: flags.daemonStartable,
     },
     ports: {
       vexPgFree: pgFree,

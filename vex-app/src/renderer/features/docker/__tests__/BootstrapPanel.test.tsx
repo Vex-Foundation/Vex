@@ -34,13 +34,26 @@ vi.mock("../../../lib/api/system.js", () => ({
   useSystemHealth: mockHooks.useSystemHealth,
 }));
 
+import {
+  deriveDockerStatusFlags,
+  type DockerEngineState,
+} from "@shared/schemas/docker.js";
+
 import { BootstrapPanel } from "../BootstrapPanel.js";
 
 function statusResult(opts: {
   enginePresent: boolean;
   daemonRunning: boolean;
-  failure?: "cli_not_found" | "probe_error" | null;
+  state?: DockerEngineState;
 }) {
+  const state: DockerEngineState =
+    opts.state ??
+    (opts.daemonRunning
+      ? { kind: "ready" }
+      : opts.enginePresent
+        ? { kind: "engine_stopped" }
+        : { kind: "not_installed" });
+  const flags = deriveDockerStatusFlags(state);
   return {
     isPending: false,
     isFetching: false,
@@ -55,11 +68,11 @@ function statusResult(opts: {
           message: null,
         },
         engine: {
-          present: opts.enginePresent,
+          state,
           version: opts.enginePresent ? "27.5.1" : null,
-          runtimeOK: opts.daemonRunning,
-          failure:
-            opts.failure ?? (opts.enginePresent ? null : "cli_not_found"),
+          cliSource: opts.enginePresent ? ("install_dir" as const) : null,
+          present: flags.present,
+          runtimeOK: flags.runtimeOK,
         },
         compose: {
           present: opts.enginePresent,
@@ -71,8 +84,8 @@ function statusResult(opts: {
           tcpReachable: true,
         },
         daemon: {
-          running: opts.daemonRunning,
-          startable: opts.enginePresent,
+          running: flags.daemonRunning,
+          startable: flags.daemonStartable,
         },
         ports: { vexPgFree: true },
         disk: { availableGB: 50 },
@@ -261,7 +274,12 @@ describe("BootstrapPanel branch matrix", () => {
       statusResult({
         enginePresent: false,
         daemonRunning: false,
-        failure: "probe_error",
+        state: {
+          kind: "error",
+          reason: "probe_error",
+          message:
+            "The Docker CLI was found but did not report a usable version.",
+        },
       }),
     );
     mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
@@ -381,6 +399,55 @@ describe("BootstrapPanel branch matrix", () => {
     expect(getByText(/Docker IPC probe rejected/)).toBeDefined();
     clickLogs(getByRole);
     expect(getByRole("button", { name: /Recheck/i })).toBeDefined();
+  });
+
+  it("branch D: engine socket permission denial names its real cause", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({
+        enginePresent: true,
+        daemonRunning: false,
+        state: {
+          kind: "permission_denied",
+          message:
+            "The Docker engine socket refused this process. Add your user to the Docker group (or grant socket access) and retry.",
+        },
+      }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+    const { getByText, queryByRole } = render(<BootstrapPanel />);
+    expect(getByText(/^Docker denied access$/i)).toBeDefined();
+    expect(getByText(/refused this process/i)).toBeDefined();
+    // A denial is not an install prompt and not a "start Docker" prompt.
+    expect(queryByRole("button", { name: /Download installer/i })).toBeNull();
+    expect(queryByRole("button", { name: /^Start Docker$/i })).toBeNull();
+  });
+
+  it("branch B: engine_starting renders the daemon branch in its starting state", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({
+        enginePresent: true,
+        daemonRunning: false,
+        state: { kind: "engine_starting" },
+      }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("win32"));
+    const { getByRole } = render(<BootstrapPanel />);
+    const startButton = getByRole("button", { name: /Starting/i });
+    expect(startButton).toBeDefined();
+    expect(startButton.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("branch C-desktop: a Windows install that PATH cannot see is NOT reported as missing", () => {
+    // Regression guard for the reported bug at the branch level: once the
+    // locator finds Docker on disk the state is engine_stopped, so the user
+    // gets "start Docker", never "install Docker" again.
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("win32"));
+    const { getByRole, queryByRole } = render(<BootstrapPanel />);
+    expect(getByRole("button", { name: /^Start Docker$/i })).toBeDefined();
+    expect(queryByRole("button", { name: /Download installer/i })).toBeNull();
   });
 
   it("branch loading: when dockerStatus has no data yet", () => {

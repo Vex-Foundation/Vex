@@ -11,15 +11,26 @@
  * polls `vex.docker.detect()` afterwards to verify daemon comes up.
  */
 
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { runSpawn } from "./spawn-runner.js";
+import { isExistingFile, locateDockerDesktopExe } from "./locate.js";
+import { markDockerEngineStartAttempt } from "./engine-start-window.js";
 import type { StartResult } from "@shared/schemas/docker.js";
 
 export async function performStart(
   signal?: AbortSignal
 ): Promise<StartResult> {
   const platform = process.platform;
+  const result = await runStart(platform, signal);
+  // Opens the bounded window in which the probe may honestly report
+  // `engine_starting` rather than `engine_stopped`.
+  if (result.kind === "started") markDockerEngineStartAttempt();
+  return result;
+}
+
+async function runStart(
+  platform: NodeJS.Platform,
+  signal?: AbortSignal
+): Promise<StartResult> {
   if (platform === "darwin") return startMac(signal);
   if (platform === "win32") return startWindows(signal);
   if (platform === "linux") return startLinux(signal);
@@ -59,30 +70,14 @@ export function escapePowershellSingleQuoted(value: string): string {
 }
 
 /**
- * Resolve the Docker Desktop GUI executable. Per-user install first
- * (Docker's currently recommended mode → `%LOCALAPPDATA%`), then the
- * all-users `%ProgramFiles%` location. Returns null when neither exists.
+ * Resolve the Docker Desktop GUI executable from the SAME install roots the
+ * CLI locator uses (`locate.ts`), so "is Docker installed" has exactly one
+ * answer in this process instead of the probe and the starter disagreeing.
  */
 export function resolveDockerDesktopExe(
   env: NodeJS.ProcessEnv = process.env
 ): string | null {
-  const candidates: string[] = [];
-  const localAppData = env["LOCALAPPDATA"];
-  if (localAppData && localAppData.length > 0) {
-    candidates.push(
-      path.join(localAppData, "Programs", "DockerDesktop", "Docker Desktop.exe")
-    );
-  }
-  const programFiles = env["ProgramFiles"];
-  if (programFiles && programFiles.length > 0) {
-    candidates.push(
-      path.join(programFiles, "Docker", "Docker", "Docker Desktop.exe")
-    );
-  }
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+  return locateDockerDesktopExe({ env, fileExists: isExistingFile });
 }
 
 async function startWindows(signal?: AbortSignal): Promise<StartResult> {
@@ -142,7 +137,7 @@ async function startWindows(signal?: AbortSignal): Promise<StartResult> {
     return {
       kind: "failed",
       message:
-        "Could not locate Docker Desktop.exe (looked under %LOCALAPPDATA%\\Programs\\DockerDesktop and %ProgramFiles%\\Docker\\Docker). Is Docker Desktop installed?",
+        "Could not locate Docker Desktop.exe (looked under %LOCALAPPDATA%\\Programs\\DockerDesktop, %ProgramW6432%\\Docker\\Docker, %ProgramFiles%\\Docker\\Docker and %ProgramFiles(x86)%\\Docker\\Docker). If Docker Desktop was installed to a custom directory, start it from the Start menu and then click Recheck.",
     };
   }
   const psCommand = `Start-Process -FilePath '${escapePowershellSingleQuoted(

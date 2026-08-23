@@ -146,15 +146,87 @@ export const dockerEndpointPolicySchema = z
   .strict();
 export type DockerEndpointPolicy = z.infer<typeof dockerEndpointPolicySchema>;
 
+/**
+ * The authoritative Docker engine state.
+ *
+ * Replaces the old `present` + `daemon.running` + `failure` booleans, which
+ * could not tell "not installed" apart from "installed but the engine is
+ * stopped", had no representation at all for "starting", and collapsed a
+ * permission denial into a generic failure.
+ *
+ * - `not_installed`      no Docker CLI was found in any install directory or on PATH.
+ * - `engine_stopped`     the CLI is usable, the engine is not answering.
+ * - `engine_starting`    the engine is expected to be coming up because Vex
+ *                        just started it. This is NOT inferred from a probe;
+ *                        see `main/docker/engine-start-window.ts`.
+ * - `ready`              the CLI is usable and the daemon answered.
+ * - `permission_denied`  the engine endpoint exists and refused this process.
+ * - `error`              the check itself could not complete.
+ */
+export const dockerEngineStateSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("not_installed") }).strict(),
+  z.object({ kind: z.literal("engine_stopped") }).strict(),
+  z.object({ kind: z.literal("engine_starting") }).strict(),
+  z.object({ kind: z.literal("ready") }).strict(),
+  z
+    .object({ kind: z.literal("permission_denied"), message: z.string() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("error"),
+      reason: z.enum(["probe_error", "endpoint_rejected"]),
+      message: z.string(),
+    })
+    .strict(),
+]);
+export type DockerEngineState = z.infer<typeof dockerEngineStateSchema>;
+
+export const dockerCliSourceSchema = z.enum(["install_dir", "path"]);
+export type DockerCliSource = z.infer<typeof dockerCliSourceSchema>;
+
+export interface DockerStatusFlags {
+  readonly present: boolean;
+  readonly runtimeOK: boolean;
+  readonly daemonRunning: boolean;
+  readonly daemonStartable: boolean;
+}
+
+/**
+ * The one place the legacy booleans are derived from `engine.state`.
+ *
+ * They remain on the wire for consumers that have not migrated yet
+ * (`renderer/features/systemCheck/**`, `renderer/features/setup/
+ * useSetupOrchestrator.ts`) and are removed once those read `state`. New
+ * code must branch on `engine.state`, never on these.
+ */
+export function deriveDockerStatusFlags(
+  state: DockerEngineState,
+): DockerStatusFlags {
+  const installed =
+    state.kind !== "not_installed" && state.kind !== "error";
+  const ready = state.kind === "ready";
+  return {
+    present: installed,
+    runtimeOK: ready,
+    daemonRunning: ready,
+    daemonStartable: installed,
+  };
+}
+
 export const dockerStatusSchema = z
   .object({
     endpoint: dockerEndpointPolicySchema,
     engine: z
       .object({
-        present: z.boolean(),
+        state: dockerEngineStateSchema,
         version: z.string().nullable(),
+        /** Which strategy located the CLI. The path itself never crosses
+         * the process boundary. */
+        cliSource: dockerCliSourceSchema.nullable(),
+        /** Derived from `state` - see `deriveDockerStatusFlags`. */
+        present: z.boolean(),
+        /** Derived from `state` - see `deriveDockerStatusFlags`. */
         runtimeOK: z.boolean(),
-        failure: z.enum(["cli_not_found", "probe_error"]).nullable(),
       })
       .strict(),
     compose: z
@@ -172,7 +244,9 @@ export const dockerStatusSchema = z
       .strict(),
     daemon: z
       .object({
+        /** Derived from `engine.state` - see `deriveDockerStatusFlags`. */
         running: z.boolean(),
+        /** Derived from `engine.state` - see `deriveDockerStatusFlags`. */
         startable: z.boolean(),
       })
       .strict(),

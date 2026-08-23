@@ -10,21 +10,22 @@
  * the body components in `bootstrap/branches/`. Shared visual
  * primitives (SetupStatusCard, DocsLink) live in `components/onboarding/`.
  *
- * State machine (unchanged):
- *   loading     — Docker probe in flight, OR engine missing + platform
+ * State machine, driven by the `engine.state` discriminated union rather
+ * than by collapsed booleans:
+ *   loading     - Docker probe in flight, OR engine missing + platform
  *                 still resolving (data wins when platform irrelevant).
- *   A           — engine + daemon running → ReadyBody + Continue.
- *   B           — engine present + daemon stopped → DaemonStoppedBody;
+ *   A           - state `ready` → ReadyBody + Continue.
+ *   B           - state `engine_stopped` / `engine_starting` → DaemonStoppedBody;
  *                 per-platform copy (Linux shows `sudo systemctl start`
  *                 because the main process only attempts the user-mode
  *                 Docker Desktop unit, never sudo).
- *   C-desktop   — mac/win, Docker CLI missing → DesktopInstallBody (in-app
- *                 installer download via LicenseNotice — the license
+ *   C-desktop   - mac/win, state `not_installed` → DesktopInstallBody (in-app
+ *                 installer download via LicenseNotice - the license
  *                 dialog ALWAYS precedes any download IPC).
- *   C-linux     — linux, engine missing → LinuxInstallBody (auto-fetch
+ *   C-linux     - linux, state `not_installed` → LinuxInstallBody (auto-fetch
  *                 `linux_manual_instructions` IPC).
- *   D           — IPC/Result error, endpoint rejected, or version probe
- *                 failure → FailureBody.
+ *   D           - IPC/Result error, endpoint rejected, engine socket
+ *                 permission denied, or probe error → FailureBody.
  *
  * Recheck (footer, always visible non-A) calls `dockerStatus.refetch()`
  * so the user never has to restart the app after fixing Docker.
@@ -72,6 +73,9 @@ export function BootstrapPanel(): JSX.Element {
 
   const platform = systemHealth.data?.ok
     ? systemHealth.data.data.os.platform
+    : null;
+  const engineState = dockerStatus.data?.ok
+    ? dockerStatus.data.data.engine.state
     : null;
   const branch = decideBranch(
     dockerStatus.data,
@@ -206,7 +210,13 @@ export function BootstrapPanel(): JSX.Element {
           ) : branch === "B" ? (
             <DaemonStoppedBody
               platform={platform}
-              starting={startMutation.isPending}
+              // The engine also counts as starting inside the bounded
+              // window after Vex launched Docker, not only while the start
+              // IPC is still in flight.
+              starting={
+                startMutation.isPending ||
+                engineState?.kind === "engine_starting"
+              }
               startMessage={
                 startMutation.data?.ok
                   ? startMutation.data.data.message ?? null
@@ -264,6 +274,12 @@ export function BootstrapPanel(): JSX.Element {
   );
 }
 
+/**
+ * Maps the authoritative `engine.state` union onto a rendered branch.
+ * Branching on the union (rather than on `present` + `daemon.running`) is
+ * what lets "not installed", "stopped", "starting" and "denied" reach
+ * different screens instead of sharing one.
+ */
 function decideBranch(
   result: ReturnType<typeof useDockerStatus>["data"],
   platform: string | null,
@@ -273,23 +289,30 @@ function decideBranch(
   if (!result.ok) return "D";
   const status = result.data;
   if (!status.endpoint.accepted) return "D";
-  if (!status.engine.present && status.engine.failure === "probe_error") {
-    return "D";
-  }
 
-  // A — data wins when platform irrelevant; don't flicker to loading
-  // while the health probe is pending (codex round 11 SHOULD-FIX #2).
-  if (status.engine.present && status.daemon.running) return "A";
-
-  // Below: platform matters (B copy varies by OS; C dispatches per OS).
-  if (status.engine.present && !status.daemon.running) {
-    if (platformPending) return "loading";
-    return "B";
+  const state = status.engine.state;
+  switch (state.kind) {
+    // A - data wins when platform irrelevant; don't flicker to loading
+    // while the health probe is pending (codex round 11 SHOULD-FIX #2).
+    case "ready":
+      return "A";
+    case "error":
+    case "permission_denied":
+      return "D";
+    // Below: platform matters (B copy varies by OS; C dispatches per OS).
+    case "engine_stopped":
+    case "engine_starting":
+      return platformPending ? "loading" : "B";
+    case "not_installed": {
+      if (platformPending) return "loading";
+      if (platform === "darwin" || platform === "win32") return "C-desktop";
+      if (platform === "linux") return "C-linux";
+      return "D";
+    }
+    default: {
+      const exhaustive: never = state;
+      void exhaustive;
+      return "D";
+    }
   }
-  if (!status.engine.present) {
-    if (platformPending) return "loading";
-    if (platform === "darwin" || platform === "win32") return "C-desktop";
-    if (platform === "linux") return "C-linux";
-  }
-  return "D";
 }
