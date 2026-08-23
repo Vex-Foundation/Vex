@@ -416,6 +416,31 @@ Note that `/token/…`, `/launch`, `/pool-party`, `/leaderboard` and `/search` a
 SPA routes, not API endpoints - calling them on `api.bankr.bot` is what produces
 the HTML 404 the error mapper handles.
 
+## The VEX badge: a proposed endpoint, not a measured one
+
+Everything above was measured against the live API. This one is the opposite:
+an endpoint that DOES NOT EXIST YET and that pools.fun would have to implement
+for a token launched through Vex to carry a VEX badge on their site, the way
+trench.express already does it (`src/tools/trench-express/attribution.ts`).
+
+The partner-facing contract is `attribution-server-spec.md`, in this folder. It
+is written for their engineers, in English, and it is an external commercial
+commitment: the request body, the signed message bytes
+(`VEX-attest:v1:pools.fun:4663:<lowercase token>`), the closed error vocabulary
+and the idempotency and backfill requirements are FROZEN there. Only the path
+`POST /pools-fun/vex/attestations` is offered as a counter-proposal.
+
+The one thing that document exists to prevent: on the GATEWAY path
+`TokenLaunched.creator` and `.deployer` are the gateway contract, never the
+human, so a verifier that checks the attestation signature against
+`TokenLaunched.creator` rejects every Vex launch. Identity binds through
+`GatewayLaunch.launcher`, exactly as it does in
+`src/vex-agent/sync/pools-settlement-decoder.ts`.
+
+The Vex client is being built alongside it and SHIPS DARK: no signature is
+produced and no request is sent until pools.fun confirms the contract in
+writing.
+
 ## Money-path conditions (verbatim force - change any of these by owner decision only)
 
 These are the conditions the launch and claim paths were built under. They are

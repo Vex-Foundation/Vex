@@ -173,6 +173,19 @@ export async function syncTick(): Promise<void> {
           { ...attributionResult, periodic: true },
           attributionResult.attributed,
         );
+      } else if (job.syncType === "pools_attribution") {
+        // pools.fun attribution retry lane - periodic driver, mirroring the
+        // branch above exactly. Omitting it is the silent C1 defect the bridge
+        // sweep hit. Keyless POST only; holds no signer.
+        const { attributePoolsLaunches } = await import("./pools-attribution.js");
+        const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
+        const poolsResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...poolsResult, periodic: true },
+          poolsResult.attributed,
+        );
       } else if (job.syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();

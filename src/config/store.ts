@@ -88,6 +88,14 @@ export interface VexConfig {
     // fully off — dark until the AgentScan domain is decided; the deep-merge in
     // loadConfig() fills the key for existing installs when a default lands.
     agentscanApiUrl: string;
+    // pools.fun VEX-badge attestation base URL. Empty = the lane is fully dark
+    // - the partner endpoint is not live yet, so it ships with no default at
+    // all, exactly like agentscanApiUrl. The URL resolver in
+    // sync/pools-attribution-production-deps.ts refuses an empty, malformed or
+    // insecure value before any row is claimed, and the deep-merge in
+    // loadConfig() fills the key for existing installs when a real default
+    // lands (see dropEmptyPoolsFunAttestApiUrl).
+    poolsFunAttestApiUrl: string;
   };
   solana: {
     cluster: "mainnet-beta" | "devnet" | "testnet" | "custom";
@@ -113,6 +121,31 @@ export interface VexConfig {
   // Absent by default; the bundled default RPC (per the Pendle chain registry)
   // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
   pendleRpcUrls?: Record<string, string> | undefined;
+  /**
+   * Master switch for the pools.fun VEX-badge attestation lane. `false` (the
+   * default) means the launch handler produces NO signature, writes NO
+   * attestation column, sends NO HTTP and logs NOTHING for this lane, and the
+   * sweep claims no rows.
+   *
+   * FAIL CLOSED, STRICTLY. This is the only flag in this file that gates a
+   * SIGNING operation, so it is parsed after the raw config spread and only a
+   * real JSON `true` enables it. A stored string `"true"`, a `1`, or any other
+   * truthy shape leaves it `false` - see `parsePoolsFunAttestationEnabled`.
+   */
+  poolsFunAttestationEnabled: boolean;
+}
+
+/**
+ * Strict boolean parse for the one config flag that authorizes a signature.
+ *
+ * `loadConfig` spreads the parsed file over the defaults, so WITHOUT this the
+ * disk value would reach the flag unvalidated and a hand-edited or migrated
+ * `"true"` string would read as truthy at every call site. The gate is
+ * therefore re-derived from the raw value AFTER the spread: anything that is
+ * not the boolean `true` is `false`.
+ */
+export function parsePoolsFunAttestationEnabled(raw: unknown): boolean {
+  return raw === true;
 }
 
 export function getDefaultConfig(): VexConfig {
@@ -153,7 +186,13 @@ export function getDefaultConfig(): VexConfig {
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
       agentscanApiUrl: "https://agentscan.projectvex.ai",
+      // SHIPS DARK: no partner endpoint exists yet, so there is nothing safe to
+      // point at. The resolver treats "" as "lane off" and claims no rows.
+      poolsFunAttestApiUrl: "",
     },
+    // SHIPS OFF. The lane signs with the launching wallet, so it stays disabled
+    // until it is deliberately turned on.
+    poolsFunAttestationEnabled: false,
   };
 }
 
@@ -188,11 +227,34 @@ function parseChainRpcUrls(raw: unknown): Record<string, string> | undefined {
 export function dropEmptyAgentscanApiUrl(
   services: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
+  return dropEmptyDarkServiceUrl(services, "agentscanApiUrl");
+}
+
+/**
+ * Every ships-dark service URL in this config obeys the same rule as
+ * `agentscanApiUrl` above, so the mechanism lives once and the named wrappers
+ * say which key each lane owns.
+ */
+function dropEmptyDarkServiceUrl(
+  services: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> {
   if (!services) return {};
-  const raw = services.agentscanApiUrl;
+  const raw = services[key];
   if (typeof raw !== "string" || raw.trim().length > 0) return services;
-  const { agentscanApiUrl: _empty, ...rest } = services;
+  const { [key]: _empty, ...rest } = services;
   return rest;
+}
+
+/**
+ * The same rule for the pools.fun attestation base URL: the partner endpoint is
+ * not live yet, so an install that persisted `""` today must not be pinned dark
+ * once a real default ships.
+ */
+export function dropEmptyPoolsFunAttestApiUrl(
+  services: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return dropEmptyDarkServiceUrl(services, "poolsFunAttestApiUrl");
 }
 
 function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
@@ -318,8 +380,16 @@ export function loadConfig(): VexConfig {
       },
       services: {
         ...defaults.services,
-        ...dropEmptyAgentscanApiUrl(parsed.services as Record<string, unknown> | undefined),
+        ...dropEmptyPoolsFunAttestApiUrl(
+          dropEmptyAgentscanApiUrl(parsed.services as Record<string, unknown> | undefined),
+        ),
       },
+      // AFTER the `...parsedWithoutLegacy` spread above, and deliberately so:
+      // that spread would otherwise land the raw disk value on a flag that
+      // authorizes a signature. Only a real boolean `true` enables the lane.
+      poolsFunAttestationEnabled: parsePoolsFunAttestationEnabled(
+        parsed.poolsFunAttestationEnabled,
+      ),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
