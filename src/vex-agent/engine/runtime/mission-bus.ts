@@ -33,7 +33,16 @@ export type MissionUpdateKind =
   /** The host accepted the mission contract — "Start mission" is now live. */
   | "accepted"
   /** An approval intent was enqueued and is now pending a human decision. */
-  | "approval_enqueued";
+  | "approval_enqueued"
+  /**
+   * A mission SETUP turn finished without writing anything to an incomplete
+   * draft. Nothing changed - that is precisely the point. Every other kind means
+   * "refetch, the row moved"; this one means "the row did NOT move and will not
+   * move on its own", which is the only way the host can tell a draft that is
+   * still progressing from one that has stalled. Consumers must NOT refetch the
+   * draft on it.
+   */
+  | "setup_no_progress";
 
 export interface MissionUpdateEvent {
   readonly type: typeof MISSION_UPDATE_EVENT_TYPE;

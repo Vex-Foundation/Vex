@@ -33,6 +33,7 @@ import type {
   MissionGetDraftResult,
   MissionGetRenewableSourceResult,
 } from "@shared/schemas/mission.js";
+import { getMissingDraftFields } from "@vex-agent/engine/mission/validator.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 import {
@@ -121,10 +122,42 @@ const LEGACY_V2_CONTRACT_HASH_VERSION = 2;
 
 function toDraftDto(row: MissionRow): MissionDraftDto {
   const acceptance = projectAcceptance(row);
+  const status = normaliseStatus(row.status);
+  const successCriteria = normaliseStringList(
+    row.success_criteria_json,
+    "success_criteria_json",
+  );
+  const stopConditions = normaliseStringList(
+    row.stop_conditions_json,
+    "stop_conditions_json",
+  );
+  const allowedChains = normalisePgArray(row.allowed_chains, "allowed_chains", 64);
+  const allowedProtocols = normalisePgArray(
+    row.allowed_protocols,
+    "allowed_protocols",
+    64,
+  );
+  const allowedWallets = normalisePgArray(row.allowed_wallets, "allowed_wallets", 128);
+  // THE engine predicate, CALLED - not mirrored. `missions-db-normalize.ts`
+  // hand-copies `DEPLOYED_CAPITAL_BOUNDS` because those values are frozen into
+  // acceptance hashes, where a drift is unfixable. Readiness is the opposite
+  // case: a live decision that must never disagree with the engine's own
+  // `draft → ready` transition, so it is imported rather than restated.
+  const missingFields = getMissingDraftFields({
+    title: row.title,
+    goal: row.goal,
+    capitalSourceJson: (row.capital_source_json ?? null) as Record<string, unknown> | null,
+    allowedWallets,
+    allowedChains,
+    allowedProtocols,
+    riskProfile: row.risk_profile,
+    successCriteria,
+    stopConditions,
+  });
   return {
     missionId: row.id,
     sessionId: row.root_session_id,
-    status: normaliseStatus(row.status),
+    status,
     title: row.title,
     goal: row.goal,
     constraints: normaliseConstraints(row.constraints_json),
@@ -142,26 +175,12 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     ...(acceptance !== null && acceptance.contractHashVersion === LEGACY_V2_CONTRACT_HASH_VERSION
       ? { hyperliquidRisk: normaliseHyperliquidMissionRisk(row.constraints_json) }
       : {}),
-    successCriteria: normaliseStringList(
-      row.success_criteria_json,
-      "success_criteria_json",
-    ),
-    stopConditions: normaliseStringList(
-      row.stop_conditions_json,
-      "stop_conditions_json",
-    ),
+    successCriteria,
+    stopConditions,
     riskProfile: row.risk_profile,
-    allowedChains: normalisePgArray(row.allowed_chains, "allowed_chains", 64),
-    allowedProtocols: normalisePgArray(
-      row.allowed_protocols,
-      "allowed_protocols",
-      64,
-    ),
-    allowedWallets: normalisePgArray(
-      row.allowed_wallets,
-      "allowed_wallets",
-      128,
-    ),
+    allowedChains,
+    allowedProtocols,
+    allowedWallets,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     approvedAt: toIsoOrNull(row.approved_at),
@@ -171,6 +190,13 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     // which is itself meaningful (it is what suppresses measurability warnings).
     deployedCapital: normaliseDeployedCapital(row.capital_source_json),
     renewedFromMissionId: row.renewed_from_mission_id ?? null,
+    missingFields,
+    // The capability answer, decided HERE so no renderer surface re-derives it.
+    // `ready` is exactly the status `commit-start.ts` requires: accepting a
+    // `draft`-status contract is permitted by `engine/mission/acceptance.ts` but
+    // then refused at start with `not_ready`, which would only relocate the dead
+    // end this projection exists to remove.
+    canAcceptContract: status === "ready",
   };
 }
 

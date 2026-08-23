@@ -103,6 +103,8 @@ const READY_DRAFT: MissionDraftDto = {
   approvedAt: null,
   acceptance: null,
   renewedFromMissionId: null,
+  missingFields: [],
+  canAcceptContract: true,
 } as unknown as MissionDraftDto;
 
 function diff(over: Partial<Extract<MissionGetDiffResult, { outcome: "ready" }>> = {}) {
@@ -252,7 +254,7 @@ describe("MissionRail badge derivation", () => {
   it("Mission badge is Preparing while the draft is not ready", () => {
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({
-      data: ok({ ...READY_DRAFT, status: "draft" }),
+      data: ok({ ...READY_DRAFT, status: "draft", canAcceptContract: false, missingFields: ["goal", "stopConditions"] }),
     });
     rail();
     expect(screen.getByText("Preparing")).not.toBeNull();
@@ -348,7 +350,7 @@ describe("MissionRail badge derivation", () => {
     // must derive normally, NOT be masked "accepted" by the stale source.
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({
-      data: ok({ ...READY_DRAFT, status: "draft" }),
+      data: ok({ ...READY_DRAFT, status: "draft", canAcceptContract: false, missingFields: ["goal", "stopConditions"] }),
     });
     mockUseRuntimeState.mockReturnValue({ data: runtime(false) });
     mockUseRenewableMissionSource.mockReturnValue({ data: renewable(MISSION) });

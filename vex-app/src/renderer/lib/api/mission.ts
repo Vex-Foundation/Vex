@@ -208,6 +208,11 @@ export function useMissionUpdateLiveSync(sessionId: string | null): void {
 
     const off = window.vex.engine.onMissionUpdate((event) => {
       if (event.sessionId !== sessionId) return;
+      // `setup_no_progress` reports that NOTHING changed - it exists precisely
+      // so a stalled draft is distinguishable from a progressing one.
+      // Refetching on it would spend IPC round-trips re-reading a row the
+      // engine has just said is unchanged. `useMissionSetupProgress` consumes it.
+      if (event.kind === "setup_no_progress") return;
       if (event.kind === "approval_enqueued") {
         void queryClient.invalidateQueries({
           queryKey: approvalsKeys.pending(sessionId),

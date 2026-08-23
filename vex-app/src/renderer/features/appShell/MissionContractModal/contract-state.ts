@@ -15,33 +15,81 @@ import type {
 import type { CardStateKind } from "../MissionContractCardSections.js";
 import type { PremiumBadgeState } from "../PremiumBadge.js";
 import type { PlanGate } from "./plan-gate.js";
+import { resolveMissionReadiness } from "../mission-readiness.js";
 
 export interface CardState {
   readonly kind: CardStateKind;
   readonly draft: MissionDraftDto;
   readonly currentHash: string | null;
+  /**
+   * The engine's own list of required contract fields still unfilled. Non-empty
+   * only in `setup-needed`, and the footer ENUMERATES it there rather than
+   * summarising - "the contract is incomplete" is not actionable.
+   */
+  readonly missingFields: readonly string[];
 }
 
 type ReadyDiff = Extract<MissionGetDiffResult, { outcome: "ready" }>;
 
+/**
+ * Project THE shared readiness selector onto the modal's card state.
+ *
+ * This used to be its own hand-rolled chain that keyed off `draft.status`, one
+ * of three copies of the same predicate. It is now a projection, so the modal
+ * cannot disagree with the header badge or the controls strip about whether the
+ * contract is acceptable. `awaiting-plan` deliberately collapses into
+ * `awaiting-acceptance` here: the footer owns the plan block itself (`planGate`)
+ * and needs the hash to render its own refusal.
+ */
 export function resolveCardState(
   draft: MissionDraftDto | null,
   diff: ReadyDiff | null,
 ): CardState | null {
   if (draft === null) return null;
-  if (draft.status === "draft") {
-    return { kind: "setup-needed", draft, currentHash: null };
+  const readiness = resolveMissionReadiness({
+    draft,
+    diff,
+    // The footer owns the plan gate; readiness here answers the CONTRACT
+    // question only, so the plan is reported as known-and-absent.
+    plan: null,
+    planKnown: true,
+    setupStalled: false,
+  });
+  switch (readiness.kind) {
+    case "none":
+      return null;
+    case "drafting":
+      return {
+        kind: "setup-needed",
+        draft,
+        currentHash: null,
+        missingFields: readiness.missingFields,
+      };
+    case "contract-loading":
+      return { kind: "setup-needed", draft, currentHash: null, missingFields: [] };
+    case "accepted":
+      return { kind: "accepted", draft, currentHash: null, missingFields: [] };
+    case "dirty-acceptance":
+      return {
+        kind: "dirty-acceptance",
+        draft,
+        currentHash: readiness.currentHash,
+        missingFields: [],
+      };
+    case "awaiting-plan":
+    case "plan-unknown":
+    case "awaiting-acceptance":
+      return {
+        kind: "awaiting-acceptance",
+        draft,
+        // The two plan states are unreachable from this call (it passes
+        // `planKnown: true` with no plan, because the FOOTER owns the plan
+        // gate), but they are handled explicitly so the switch stays exhaustive
+        // and a future widening cannot fall through to `undefined`.
+        currentHash: diff?.currentHash ?? null,
+        missingFields: [],
+      };
   }
-  if (diff === null) {
-    return { kind: "setup-needed", draft, currentHash: null };
-  }
-  if (diff.isAccepted && !diff.isDirty) {
-    return { kind: "accepted", draft, currentHash: null };
-  }
-  if (diff.isAccepted && diff.isDirty) {
-    return { kind: "dirty-acceptance", draft, currentHash: diff.currentHash };
-  }
-  return { kind: "awaiting-acceptance", draft, currentHash: diff.currentHash };
 }
 
 /**

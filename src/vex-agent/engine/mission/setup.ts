@@ -32,7 +32,53 @@ export interface SetupResult {
    * being written.
    */
   warnings: string[];
+  /**
+   * Whether THIS call actually wrote draft fields. False for a read
+   * (`getMissionSetupState`), for a fresh empty draft, and - the case that
+   * matters - for a setup turn whose model output carried no applicable patch.
+   *
+   * `applyMissionPatch` emits a `mission_update` only when something changed, so
+   * without this flag a setup turn that produced nothing is indistinguishable
+   * from one that is progressing. `core/runner/setup-turn.ts` reads it to emit
+   * the `setup_no_progress` signal the host UI needs to tell "still drafting"
+   * from "drafting stalled".
+   */
+  draftWasWritten: boolean;
 }
+
+/**
+ * MISSION SETUP STATE MACHINE (host-visible; see also `MissionControls.tsx`,
+ * which renders exactly these states and no others).
+ *
+ *   absent ──(first mission turn)──> drafting
+ *
+ *   drafting          the row exists, `missingFields` is non-empty, status
+ *                     `draft`. Only the model can leave this state, by calling
+ *                     `MissionDraftUpdate`; `mission.updateDraft` is a stub, so
+ *                     the host CANNOT fill these fields itself.
+ *     ├─(setup turn wrote a patch, still incomplete)──> drafting
+ *     ├─(setup turn wrote NO patch)─────────────────> drafting-stalled
+ *     └─(patch completed every required field)──────> ready
+ *
+ *   drafting-stalled  a setup turn ended without touching the draft. The row is
+ *                     unchanged and nothing will change it unless the user
+ *                     speaks again. Escapes: ask again (a new setup turn) or
+ *                     stop the mission. NOT an error state - the model may
+ *                     simply have asked a clarifying question.
+ *     └─(any later turn writes a patch)─────────────> drafting | ready
+ *
+ *   ready             every required field present, status `ready`. The host
+ *                     may now accept the contract.
+ *     ├─(host accepts)──────────────────────────────> accepted
+ *     └─(a later patch clears a field)──────────────> drafting
+ *
+ *   accepted          `accepted_contract_hash` set and matching the current
+ *                     contract. Start is live. Any contract-field edit clears
+ *                     acceptance and returns to `ready` (dirty).
+ *
+ * Transitions are decided HERE and reported over `mission_update`; the renderer
+ * never infers a transition from prose.
+ */
 
 // Detects prose that implies the mission can start while the DB draft is not
 // ready. Slash commands were removed (host now starts via the Start mission
@@ -76,6 +122,7 @@ export async function createMissionDraft(sessionId: string): Promise<SetupResult
     ],
     ready: false,
     warnings: [],
+    draftWasWritten: false,
   };
 }
 
@@ -185,6 +232,7 @@ export async function applyMissionPatch(
     missingFields: validation.missing,
     ready: validation.valid,
     warnings: assessMissionMeasurability(currentDraft).map((w) => w.message),
+    draftWasWritten,
   };
 }
 
@@ -205,5 +253,7 @@ export async function getMissionSetupState(missionId: string): Promise<SetupResu
     missingFields: validation.missing,
     ready: validation.valid,
     warnings: assessMissionMeasurability(currentDraft).map((w) => w.message),
+    // A read never writes.
+    draftWasWritten: false,
   };
 }

@@ -16,28 +16,66 @@
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import { MISSION_DRAFT_REQUIRED_FIELDS } from "../types.js";
 
-// ── Field mapping: domain field → DB column accessor ────────────
+/**
+ * The draft values the completeness predicate reads, decoupled from ANY
+ * particular row shape.
+ *
+ * Two adapters feed it and there must never be a third predicate: the engine's
+ * `getMissingFields(Mission)` below, and the Electron main process's
+ * `mission.getDraft` mapper (`vex-app/src/main/database/missions-db.ts`), which
+ * projects the same list onto `MissionDraftDto.missingFields` so the renderer
+ * can NAME what is still missing instead of re-deriving readiness. Keeping the
+ * predicate here (rather than mirroring it main-side) is what makes the host UI
+ * structurally unable to contradict the engine's `draft → ready` decision.
+ */
+export interface MissionDraftFieldValues {
+  readonly title: string | null;
+  readonly goal: string | null;
+  /** Raw `capital_source_json` blob; `capitalSource` + `startingCapital` both read it. */
+  readonly capitalSourceJson: Record<string, unknown> | null;
+  readonly allowedWallets: readonly string[];
+  readonly allowedChains: readonly string[];
+  readonly allowedProtocols: readonly string[];
+  readonly riskProfile: string | null;
+  readonly successCriteria: readonly unknown[];
+  readonly stopConditions: readonly unknown[];
+}
 
-type FieldAccessor = (m: Mission) => unknown;
+type FieldAccessor = (v: MissionDraftFieldValues) => unknown;
 
 const FIELD_ACCESSORS: Record<string, FieldAccessor> = {
-  title: m => m.title,
-  goal: m => m.goal,
-  capitalSource: m => {
-    const src = m.capitalSourceJson;
+  title: v => v.title,
+  goal: v => v.goal,
+  capitalSource: v => {
+    const src = v.capitalSourceJson;
     return src && Object.keys(src).length > 0 ? src : null;
   },
-  startingCapital: m => {
-    const src = m.capitalSourceJson;
-    return (src as Record<string, unknown>)?.amount ?? (src as Record<string, unknown>)?.startingCapital ?? null;
+  startingCapital: v => {
+    const src = v.capitalSourceJson;
+    return src?.amount ?? src?.startingCapital ?? null;
   },
-  allowedWallets: m => m.allowedWallets.length > 0 ? m.allowedWallets : null,
-  allowedChains: m => m.allowedChains.length > 0 ? m.allowedChains : null,
-  allowedProtocols: m => m.allowedProtocols.length > 0 ? m.allowedProtocols : null,
-  riskProfile: m => m.riskProfile,
-  successCriteria: m => m.successCriteriaJson.length > 0 ? m.successCriteriaJson : null,
-  stopConditions: m => m.stopConditionsJson.length > 0 ? m.stopConditionsJson : null,
+  allowedWallets: v => v.allowedWallets.length > 0 ? v.allowedWallets : null,
+  allowedChains: v => v.allowedChains.length > 0 ? v.allowedChains : null,
+  allowedProtocols: v => v.allowedProtocols.length > 0 ? v.allowedProtocols : null,
+  riskProfile: v => v.riskProfile,
+  successCriteria: v => v.successCriteria.length > 0 ? v.successCriteria : null,
+  stopConditions: v => v.stopConditions.length > 0 ? v.stopConditions : null,
 };
+
+/** Adapt an engine mission row to the shape-agnostic predicate input. */
+function toFieldValues(mission: Mission): MissionDraftFieldValues {
+  return {
+    title: mission.title,
+    goal: mission.goal,
+    capitalSourceJson: (mission.capitalSourceJson ?? null) as Record<string, unknown> | null,
+    allowedWallets: mission.allowedWallets,
+    allowedChains: mission.allowedChains,
+    allowedProtocols: mission.allowedProtocols,
+    riskProfile: mission.riskProfile,
+    successCriteria: mission.successCriteriaJson,
+    stopConditions: mission.stopConditionsJson,
+  };
+}
 
 // ── Public API ──────────────────────────────────────────────────
 
@@ -57,6 +95,15 @@ export function validateDraft(mission: Mission): ValidationResult {
 
 /** Get list of required fields that are not yet populated. */
 export function getMissingFields(mission: Mission): string[] {
+  return getMissingDraftFields(toFieldValues(mission));
+}
+
+/**
+ * THE completeness predicate, over the row-shape-agnostic view. Everything that
+ * needs to know "what is still missing" - the engine's `draft → ready`
+ * transition and the host's `mission.getDraft` projection - goes through here.
+ */
+export function getMissingDraftFields(values: MissionDraftFieldValues): string[] {
   const missing: string[] = [];
 
   for (const field of MISSION_DRAFT_REQUIRED_FIELDS) {
@@ -66,7 +113,7 @@ export function getMissingFields(mission: Mission): string[] {
       continue;
     }
 
-    const value = accessor(mission);
+    const value = accessor(values);
     if (value === null || value === undefined || value === "") {
       missing.push(field);
     }
