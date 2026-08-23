@@ -18,6 +18,18 @@ const mockSetLastCheckpoint = vi.fn();
 // here: none of these tests exercise compaction, and the real module pulls the
 // archive/messages graph these harnesses deliberately mock. The action's own
 // behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+// The turn loop's structured bound reporting (rule 05) is asserted below, so
+// the logger is a real spy rather than a silent stub.
+const mockLoggerWarn = vi.fn();
+vi.mock("@utils/logger.js", () => ({
+  default: {
+    warn: (...a: unknown[]) => mockLoggerWarn(...a),
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
   createCompactionApplyAction: () => ({
     name: "compaction_apply",
@@ -223,6 +235,9 @@ vi.mock("@vex-agent/tools/registry.js", async (importOriginal) => {
 });
 
 const { runTurnLoop } = await import("../../../../../vex-agent/engine/core/turn-loop.js");
+const { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } = await import(
+  "../../../../../vex-agent/engine/core/runner/unproductive-rounds.js"
+);
 
 describe("turn-loop", () => {
   beforeEach(() => {
@@ -322,6 +337,160 @@ describe("turn-loop", () => {
       );
 
       expect(result.stopReason).toBe("iteration_limit");
+    });
+
+    // The test above never executes the loop BODY (`maxIterations: 0`), so it
+    // proves only the post-loop fallback assignment. This one reaches the limit
+    // by actually consuming iterations: a mission run does not break on text,
+    // so a provider that always answers with text spins until the cap.
+    it("reaches the limit by consuming iterations, not by a zero budget", async () => {
+      const provider = makeProvider([{ content: "Still working..." }]);
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 4 },
+      );
+
+      expect(result.stopReason).toBe("iteration_limit");
+      // Four rounds actually ran, and each was PRODUCTIVE - a working agent
+      // must reach the real budget rather than being cut short by the stall
+      // detector, whose counter every one of these rounds reset.
+      expect(provider.chatCompletion).toHaveBeenCalledTimes(4);
+      expect(result.text).toBe("Still working...");
+    });
+  });
+
+  // ── Unproductive rounds (the v0.2.6 stall) ──────────────────
+  //
+  // Before this bound existed a round with neither text nor tool calls took
+  // NEITHER dispatch branch: nothing was persisted, nothing was logged, and the
+  // `for` loop simply asked the model the identical question again - fifty
+  // times, then apologised about a "tool-use budget" that was never spent.
+  describe("a model that returns nothing stops the turn early", () => {
+    it.each([
+      ["empty string", ""],
+      ["null content", null],
+      ["whitespace only", "   \n  "],
+    ])("stops on no_progress after %s responses, well before the iteration limit", async (_label, content) => {
+      const provider = makeProvider([{ content }]);
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe("no_progress");
+      // The BOUND, not the budget: three rounds, not fifty. Reverting the
+      // detector makes this 50 and the stop reason `iteration_limit`.
+      expect(provider.chatCompletion).toHaveBeenCalledTimes(
+        MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+      );
+      // Nothing was executed and nothing was persisted - the round produced no
+      // assistant row, which is exactly why repeating it could never help.
+      expect(result.toolCallsMade).toBe(0);
+      expect(result.text).toBe(null);
+      expect(mockAddMessage).not.toHaveBeenCalled();
+    });
+
+    it("a productive round RESETS the counter, so a long task is never cut short", async () => {
+      // Two blanks, then real work, then two blanks: five rounds, never three
+      // consecutive blanks, so the stall bound must not fire.
+      const provider = makeProvider([
+        { content: "" },
+        { content: "" },
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "x" } }] },
+        { content: "" },
+        { content: "" },
+        { content: "Finished." },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe(null);
+      expect(result.text).toBe("Finished.");
+      expect(result.toolCallsMade).toBe(1);
+    });
+
+    it("counts CONSECUTIVE blanks only across the whole turn", async () => {
+      // One blank, work, then three blanks in a row: the run of three fires.
+      const provider = makeProvider([
+        { content: "" },
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "x" } }] },
+        { content: "" },
+        { content: "" },
+        { content: "" },
+        { content: "unreachable" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe("no_progress");
+      // 1 blank + 1 tool round + 3 blanks = 5 rounds; the sixth is never asked.
+      expect(provider.chatCompletion).toHaveBeenCalledTimes(5);
+      // Real work DID happen before the stall - the user-facing copy and the
+      // retry gate both depend on this count being truthful.
+      expect(result.toolCallsMade).toBe(1);
+    });
+
+    it("reports what the turn consumed when the stall bound fires", async () => {
+      const provider = makeProvider([{ content: "" }]);
+
+      await runTurnLoop(
+        makeContext({ missionRunId: "run-9" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      // Rule 05: a bound REPORTS what it consumed. Before this the user was
+      // told "I reached my budget" with no way to learn the budget was 50 or
+      // that every one of those rounds produced nothing.
+      const stopLog = mockLoggerWarn.mock.calls.find(
+        (c) => c[0] === "engine.turn.no_progress_stop",
+      );
+      expect(stopLog).toBeDefined();
+      expect(stopLog![1]).toMatchObject({
+        sessionId: "session-1",
+        missionRunId: "run-9",
+        stopReason: "no_progress",
+        iterationsUsed: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        maxIterations: 50,
+        consecutiveUnproductiveRounds: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        toolCallsMade: 0,
+        producedText: false,
+      });
+    });
+
+    it("reports the same counts when the ITERATION budget is what ran out", async () => {
+      const provider = makeProvider([{ content: "Still working..." }]);
+
+      await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 3 },
+      );
+
+      const stopLog = mockLoggerWarn.mock.calls.find(
+        (c) => c[0] === "engine.turn.iteration_limit_stop",
+      );
+      expect(stopLog).toBeDefined();
+      expect(stopLog![1]).toMatchObject({
+        stopReason: "iteration_limit",
+        iterationsUsed: 3,
+        maxIterations: 3,
+        // Productive rounds all the way to the cap - the two bounds are
+        // independent and the log says which one bit.
+        consecutiveUnproductiveRounds: 0,
+        producedText: true,
+      });
     });
   });
 

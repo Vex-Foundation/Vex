@@ -39,6 +39,12 @@ const RUNTIME_PAUSES = new Set<string>([
   // any control resume path, never via a plain user chat message, so ingress
   // must not treat an incoming message as a resume.
   "plan_acceptance_required",
+  // Model stall: a run of rounds that emitted nothing at all. A runtime pause,
+  // and deliberately NOT a RESUMABLE_STOP and NOT a continuable runtime stop -
+  // an unproductive round persists nothing, so an automatic continuation would
+  // re-ask the identical question and stall identically. Only a human deciding
+  // what to do differently (retry, narrow, switch model) breaks it.
+  "no_progress",
 ]);
 
 /**

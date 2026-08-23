@@ -17,24 +17,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { TurnStatsLine } from "../../SessionTranscript/TurnStatsLine.js";
-import type { TurnUsageDto } from "@shared/schemas/usage.js";
+import type { TurnUsageRollupDto } from "@shared/schemas/usage.js";
 
 const useLastTurnUsage = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/usage.js", () => ({ useLastTurnUsage }));
 
-function usage(over: Partial<TurnUsageDto> = {}): TurnUsageDto {
+function usage(over: Partial<TurnUsageRollupDto> = {}): TurnUsageRollupDto {
   return {
-    promptTokens: 88_100,
-    completionTokens: 554,
-    cachedTokens: 0,
-    cost: 0.1493,
+    latestRoundPromptTokens: 88_100,
+    latestRoundCachedTokens: 0,
+    turnCompletionTokens: 554,
+    turnCost: 0.1493,
+    roundCount: 1,
     currency: "USD",
     ...over,
-  } as TurnUsageDto;
+  } as TurnUsageRollupDto;
 }
 
 /** The hook's success envelope; `data: null` = no settled turn to report. */
-function resolved(data: TurnUsageDto | null): unknown {
+function resolved(data: TurnUsageRollupDto | null): unknown {
   return { data: { ok: true, data } };
 }
 
@@ -68,7 +69,7 @@ describe("TurnStatsLine", () => {
   });
 
   it("paints the separator dot in a tier that is actually visible", () => {
-    useLastTurnUsage.mockReturnValue(resolved(usage({ cachedTokens: 44_050 })));
+    useLastTurnUsage.mockReturnValue(resolved(usage({ latestRoundCachedTokens: 44_050 })));
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );

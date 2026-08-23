@@ -1,8 +1,13 @@
 /**
  * The turn-stats line under the tail of a settled turn (gap A17): the last
- * turn's usage — tokens in/out, cache-hit share, cost — in the micro-label
- * micro-stat register. Mounted only while no turn is in flight; an empty or
- * unresolved usage read renders nothing (never an error surface).
+ * TURN's usage - tokens in/out, cache-hit share, cost, and the round count when
+ * the turn ran more than one model round - in the micro-label micro-stat
+ * register. Mounted only while no turn is in flight; an empty or unresolved
+ * usage read renders nothing (never an error surface).
+ *
+ * The figures are a ROLLUP across the turn's rounds, not one `usage_log` row:
+ * input is the last round's snapshot, output and cost are turn sums. See
+ * `turnUsageRollupDtoSchema` for why the two sides are deliberately asymmetric.
  */
 
 import type { JSX } from "react";

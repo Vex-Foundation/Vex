@@ -24,10 +24,23 @@ describe("composer outcome copy", () => {
     ["iteration_limit", "action limit"],
     ["timeout", "timed out"],
     ["system_error", "internal error"],
+    ["no_progress", "only empty responses"],
   ] as const)("marks %s as an incomplete retryable turn", (stopReason, copy) => {
     const notice = submitFailureNotice(outcome({ stopReason }));
     expect(notice?.retryable).toBe(true);
     expect(notice?.text).toContain(copy);
+  });
+
+  // A stall is only the TAIL of a turn: rounds before it can have dispatched
+  // real, money-moving tool calls. The notice must therefore go through the
+  // SAME `toolCallsMade` gate as every other incomplete reason - a blanket
+  // "safe to retry" would blindly replay a turn that already took an action.
+  it("gates one-click retry on a stall exactly like every other incomplete turn", () => {
+    const notice = submitFailureNotice(
+      outcome({ stopReason: "no_progress", toolCallsMade: 3 }),
+    );
+    expect(notice?.retryable).toBe(false);
+    expect(notice?.text).toContain("earlier steps may have completed");
   });
 
   it("blocks blind retry after tool activity and warns that earlier steps may have completed", () => {

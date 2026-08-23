@@ -117,6 +117,7 @@ export const chatStopReasonSchema = z.enum([
   "user_paused",
   "plan_acceptance_required",
   "user_form_required",
+  "no_progress",
 ]);
 export type ChatStopReason = z.infer<typeof chatStopReasonSchema>;
 
