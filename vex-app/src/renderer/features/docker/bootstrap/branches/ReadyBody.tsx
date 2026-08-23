@@ -12,15 +12,16 @@ interface ReadyBodyProps {
 }
 
 export function ReadyBody({ status }: ReadyBodyProps): JSX.Element {
+  const state = status?.engine.state ?? null;
   const engine =
-    status?.engine.present && status.engine.version
+    state !== null && state.kind !== "not_installed" && status?.engine.version
       ? `Engine ${status.engine.version}`
       : "Engine detected";
   const compose =
     status?.compose.present && status.compose.version
       ? `Compose ${status.compose.version}`
       : "Compose plugin present";
-  const daemon = status?.daemon.running ? "Daemon up" : "Daemon idle";
+  const daemon = state?.kind === "ready" ? "Daemon up" : "Daemon idle";
   return (
     <SetupStatusCard
       tone="ok"

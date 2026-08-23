@@ -15,6 +15,7 @@ import { Button } from "../../../components/ui/button.js";
 import { DialogFooter } from "../../../components/ui/dialog.js";
 import type { CardState } from "./contract-state.js";
 import type { PlanGate } from "./plan-gate.js";
+import { MissionMissingFields } from "../MissionMissingFields.js";
 
 export interface FooterActionProps {
   readonly state: CardState | null;
@@ -38,12 +39,35 @@ export function FooterAction({
   notice,
 }: FooterActionProps): JSX.Element | null {
   if (state === null) return null;
-  const { kind, currentHash } = state;
+  const { kind, currentHash, missingFields } = state;
 
   if (kind === "setup-needed") {
+    // THE defect this rewrite fixes: the old copy read "Add a goal,
+    // constraints, and stop conditions to enable Accept." - an imperative aimed
+    // at the user for fields the user CANNOT edit. `mission.updateDraft`
+    // returns `unavailable` (the host-side draft editor is deliberately
+    // stubbed), so only the agent's `MissionDraftUpdate` tool can write them.
+    // Telling the user to do the impossible was the dead end; naming the real
+    // actor, and the exact fields, is the fix. Shape follows VS Code's
+    // Restricted Mode copy: state, consequence, next action.
     return (
-      <DialogFooter className="justify-start border-line-2 text-xs text-ink-tertiary">
-        Add a goal, constraints, and stop conditions to enable Accept.
+      <DialogFooter className="flex-col items-start gap-1 border-line-2 text-xs text-ink-tertiary sm:flex-col sm:items-start">
+        <p data-vex-state="contract-incomplete">
+          Vex is still writing this contract. Accepting unlocks once every
+          required field is set, and Vex sets them from your conversation - they
+          cannot be edited here.
+        </p>
+        {missingFields.length > 0 ? (
+          <>
+            <p>Ask Vex for what is still missing:</p>
+            <MissionMissingFields
+              fields={missingFields}
+              surface="contract-modal"
+            />
+          </>
+        ) : (
+          <p>Reading the current contract state.</p>
+        )}
       </DialogFooter>
     );
   }

@@ -17,6 +17,11 @@
  *      only `iteration_limit`, so a Restricted agent that ran out of wall-clock
  *      returned `text: null` and the user saw an empty turn. Characterised
  *      first, then fixed.
+ *   4. STALL. `no_progress` is a FOURTH bound with different semantics from all
+ *      three above: it is not a budget, it is never continued (not even under
+ *      full autonomy), and it carries its own copy. The v0.2.6 report is the
+ *      reason it exists - fifty rounds that produced nothing, apologised for
+ *      with an "I reached my tool-use budget" paragraph that was false.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -115,7 +120,11 @@ const { processAgentTurn } = await import(
 const {
   ITERATION_LIMIT_REPLY,
   TIMEOUT_REPLY,
+  NO_PROGRESS_REPLY,
 } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
+const { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } = await import(
+  "../../../../../vex-agent/engine/core/runner/unproductive-rounds.js"
+);
 const {
   FULL_AUTONOMY_MAX_ITERATIONS,
   RESTRICTED_MAX_ITERATIONS,
@@ -389,6 +398,89 @@ describe("timeout must not produce a silent turn", () => {
       expect.objectContaining({ content: TIMEOUT_REPLY }),
       expect.anything(),
     );
+  });
+});
+
+// ── 4. Model stall (`no_progress`) ─────────────────────────────
+
+describe("a stalled model is never continued and never silent", () => {
+  it("Restricted agent: persists the stall reply, not the budget apology", async () => {
+    mockRunTurnLoop.mockResolvedValue({
+      text: null, toolCallsMade: 0, pendingApprovals: [], stopReason: "no_progress",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(result.text).toBe(NO_PROGRESS_REPLY);
+    expect(result.stopReason).toBe("no_progress");
+    expect(mockAddMessage).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ role: "assistant", content: NO_PROGRESS_REPLY }),
+      expect.objectContaining({
+        source: "assistant",
+        messageType: "chat",
+        visibility: "user",
+      }),
+    );
+  });
+
+  // THE regression the v0.2.6 report is about. Reusing `ITERATION_LIMIT_REPLY`
+  // here would tell the user a tool-use budget was exhausted when zero tools
+  // ran, and would invite them to say "continue" - buying another run of empty
+  // rounds. Same refusal `TIMEOUT_REPLY` was created for.
+  it("the stall reply is its own copy and never claims a budget was spent", () => {
+    expect(NO_PROGRESS_REPLY).not.toBe(ITERATION_LIMIT_REPLY);
+    expect(NO_PROGRESS_REPLY).not.toBe(TIMEOUT_REPLY);
+    expect(NO_PROGRESS_REPLY).not.toMatch(/budget/i);
+    expect(NO_PROGRESS_REPLY).toMatch(/empty responses/i);
+    // The count is derived from the bound, so the sentence cannot drift.
+    expect(NO_PROGRESS_REPLY).toContain(String(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS));
+  });
+
+  // The reply must not promise a clean slate: the stall is only the TAIL of the
+  // turn, and rounds before it can have moved real funds.
+  it("the stall reply never claims nothing ran", () => {
+    expect(NO_PROGRESS_REPLY).not.toMatch(/nothing was executed/i);
+    expect(NO_PROGRESS_REPLY).toMatch(/transcript/i);
+  });
+
+  it("a FULL-AUTONOMY session schedules NOTHING on a stall", async () => {
+    // The decisive difference from `iteration_limit`. An unproductive round
+    // persists nothing, so a woken slice re-sends the identical request and
+    // stalls identically - a wake loop that spends input tokens forever.
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: null, toolCallsMade: 0, pendingApprovals: [], stopReason: "no_progress",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(mockEnqueueWake).not.toHaveBeenCalled();
+    expect(result.text).toBe(NO_PROGRESS_REPLY);
+  });
+
+  it("a partial reply is preserved on a stall (no synthesis)", async () => {
+    mockRunTurnLoop.mockResolvedValue({
+      text: "Partial progress.", toolCallsMade: 2, pendingApprovals: [], stopReason: "no_progress",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(result.text).toBe("Partial progress.");
+    expect(mockAddMessage).not.toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ content: NO_PROGRESS_REPLY }),
+      expect.anything(),
+    );
+  });
+
+  it("the stall bound is far below the iteration budget it must pre-empt", () => {
+    // If these ever converge the detector stops being a stall detector and
+    // becomes a second budget - the exact conflation this work separated.
+    expect(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS).toBeLessThan(
+      RESTRICTED_MAX_ITERATIONS,
+    );
+    expect(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS).toBe(3);
   });
 });
 

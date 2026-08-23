@@ -81,6 +81,8 @@ function draft(deployedCapital: unknown): Record<string, unknown> {
     acceptance: null,
     deployedCapital,
     renewedFromMissionId: null,
+    missingFields: [],
+    canAcceptContract: true,
   };
 }
 

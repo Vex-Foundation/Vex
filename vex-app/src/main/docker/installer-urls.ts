@@ -17,7 +17,8 @@ export interface InstallerUrlEntry {
 export type DesktopPlatform =
   | "macos-arm64"
   | "macos-x64"
-  | "windows-x64";
+  | "windows-x64"
+  | "windows-arm64";
 
 export const DESKTOP_INSTALLER_URLS: Readonly<
   Record<DesktopPlatform, InstallerUrlEntry>
@@ -32,6 +33,13 @@ export const DESKTOP_INSTALLER_URLS: Readonly<
   },
   "windows-x64": {
     url: "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe",
+    filename: "Docker Desktop Installer.exe",
+  },
+  // Windows on arm64 (Snapdragon-class machines). Docker ships this build
+  // today; the architecture lives ONLY in the URL path segment, the served
+  // basename is identical to the amd64 one.
+  "windows-arm64": {
+    url: "https://desktop.docker.com/win/main/arm64/Docker%20Desktop%20Installer.exe",
     filename: "Docker Desktop Installer.exe",
   },
 };
@@ -49,6 +57,7 @@ export function getInstallerForPlatform(
   if (platform === "darwin" && arch === "arm64") return DESKTOP_INSTALLER_URLS["macos-arm64"];
   if (platform === "darwin" && arch === "x64") return DESKTOP_INSTALLER_URLS["macos-x64"];
   if (platform === "win32" && arch === "x64") return DESKTOP_INSTALLER_URLS["windows-x64"];
+  if (platform === "win32" && arch === "arm64") return DESKTOP_INSTALLER_URLS["windows-arm64"];
   return null;
 }
 

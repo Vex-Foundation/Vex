@@ -12,12 +12,21 @@ import {
 } from "../installer-urls.js";
 
 describe("DESKTOP_INSTALLER_URLS", () => {
-  it("has exactly the three supported installer targets", () => {
+  it("has exactly the four supported installer targets", () => {
     expect(Object.keys(DESKTOP_INSTALLER_URLS).sort()).toEqual([
       "macos-arm64",
       "macos-x64",
+      "windows-arm64",
       "windows-x64",
     ]);
+  });
+
+  it("puts the architecture in the URL path, not the filename", () => {
+    const amd64 = DESKTOP_INSTALLER_URLS["windows-x64"];
+    const arm64 = DESKTOP_INSTALLER_URLS["windows-arm64"];
+    expect(new URL(amd64.url).pathname).toContain("/amd64/");
+    expect(new URL(arm64.url).pathname).toContain("/arm64/");
+    expect(arm64.filename).toBe(amd64.filename);
   });
 
   it("only references desktop.docker.com over https", () => {
@@ -34,6 +43,7 @@ describe("getInstallerForPlatform", () => {
     ["darwin", "arm64", "Docker.dmg"],
     ["darwin", "x64", "Docker.dmg"],
     ["win32", "x64", "Docker Desktop Installer.exe"],
+    ["win32", "arm64", "Docker Desktop Installer.exe"],
   ])("returns entry for %s/%s", (platform, arch, expectedFilename) => {
     const entry = getInstallerForPlatform(platform, arch);
     expect(entry).not.toBeNull();
@@ -46,8 +56,15 @@ describe("getInstallerForPlatform", () => {
   });
 
   it("returns null for unsupported combinations", () => {
-    expect(getInstallerForPlatform("win32", "arm64")).toBeNull();
     expect(getInstallerForPlatform("freebsd", "x64")).toBeNull();
+    expect(getInstallerForPlatform("linux", "x64")).toBeNull();
+  });
+
+  // Previously asserted `getInstallerForPlatform("win32", "arm64")` is null,
+  // which hard-blocked every Snapdragon-class Windows machine. Docker ships
+  // an arm64 Windows installer, so that combination now resolves.
+  it("selects the arm64 Windows installer on Windows on Arm", () => {
+    expect(getInstallerForPlatform("win32", "arm64")?.url).toContain("/arm64/");
   });
 });
 

@@ -9,12 +9,13 @@
  *   - Tier 2 exe resolution precedence (per-user before Program Files)
  *   - PowerShell single-quote escaping
  *
- * `runSpawn` and `node:fs.existsSync` are mocked so nothing spawns and no
- * real filesystem is touched.
+ * `runSpawn` and the locator's `isExistingFile` are mocked so nothing spawns
+ * and no real filesystem is touched. Exe resolution now delegates to
+ * `locate.ts`, which joins Windows paths with `path.win32` rather than the
+ * host's separator, so the expected paths use backslashes.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import path from "node:path";
 import type { SpawnRunnerResult } from "../spawn-runner.js";
 
 const { runSpawnMock, existsSyncMock } = vi.hoisted(() => ({
@@ -23,9 +24,9 @@ const { runSpawnMock, existsSyncMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("../spawn-runner.js", () => ({ runSpawn: runSpawnMock }));
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, existsSync: existsSyncMock };
+vi.mock("../locate.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../locate.js")>();
+  return { ...actual, isExistingFile: existsSyncMock };
 });
 
 const { performStart, escapePowershellSingleQuoted, resolveDockerDesktopExe } =
@@ -80,12 +81,7 @@ describe("resolveDockerDesktopExe", () => {
   it("prefers the per-user LocalAppData install over Program Files", () => {
     existsSyncMock.mockReturnValue(true); // both present
     expect(resolveDockerDesktopExe(env)).toBe(
-      path.join(
-        "C:\\Users\\me\\AppData\\Local",
-        "Programs",
-        "DockerDesktop",
-        "Docker Desktop.exe"
-      )
+      "C:\\Users\\me\\AppData\\Local\\Programs\\DockerDesktop\\Docker Desktop.exe"
     );
   });
 
@@ -94,12 +90,7 @@ describe("resolveDockerDesktopExe", () => {
       String(p).includes("Program Files")
     );
     expect(resolveDockerDesktopExe(env)).toBe(
-      path.join(
-        "C:\\Program Files",
-        "Docker",
-        "Docker",
-        "Docker Desktop.exe"
-      )
+      "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"
     );
   });
 

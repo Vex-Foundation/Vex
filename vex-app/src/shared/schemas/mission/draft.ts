@@ -147,6 +147,32 @@ export const missionDeployedCapitalSchema = z
   .strict();
 export type MissionDeployedCapital = z.infer<typeof missionDeployedCapitalSchema>;
 
+/**
+ * Human labels for the engine's `MISSION_DRAFT_REQUIRED_FIELDS`
+ * (`src/vex-agent/engine/types/mission-draft.ts`). The engine names fields in
+ * its own camelCase vocabulary; the host must never show `allowedProtocols` to
+ * a person. Any field id absent from this map renders verbatim, so a new
+ * required field degrades to an ugly-but-honest label rather than disappearing
+ * from the list the user is told to wait for.
+ */
+export const MISSION_DRAFT_FIELD_LABELS: Readonly<Record<string, string>> = {
+  title: "Mission title",
+  goal: "Goal",
+  capitalSource: "Capital source",
+  startingCapital: "Starting capital",
+  allowedWallets: "Allowed wallets",
+  allowedChains: "Allowed chains",
+  allowedProtocols: "Allowed protocols",
+  riskProfile: "Risk profile",
+  successCriteria: "Success criteria",
+  stopConditions: "Stop conditions",
+};
+
+/** Render one required-field id for a person. */
+export function missionDraftFieldLabel(field: string): string {
+  return MISSION_DRAFT_FIELD_LABELS[field] ?? field;
+}
+
 export const missionDraftDtoSchema = z
   .object({
     missionId: z.string(),
@@ -180,6 +206,33 @@ export const missionDraftDtoSchema = z
     deployedCapital: missionDeployedCapitalSchema.nullable(),
     /** `/mission-renew` lineage — id of the mission this one was renewed from. */
     renewedFromMissionId: z.string().nullable(),
+    /**
+     * Required contract fields the draft still lacks, as the ENGINE's own
+     * completeness predicate reports them
+     * (`engine/mission/validator.ts#getMissingDraftFields`). Empty iff the draft
+     * is complete.
+     *
+     * COMPLETE, never a sample: the host renders the whole list, because the
+     * whole list is what the user is waiting on. Bounded at 32 by the number of
+     * required fields that can exist, not by a display budget.
+     *
+     * Whose problem it is matters: `mission.updateDraft` is a deliberate stub,
+     * so the HOST CANNOT fill these. Only the agent can, via `MissionDraftUpdate`.
+     * Any copy built from this list must name the agent as the actor.
+     */
+    missingFields: z.array(z.string().max(64)).max(32),
+    /**
+     * THE capability answer, decided by the owner (main) rather than re-derived
+     * from `status` by each renderer surface - the same split VS Code draws
+     * between `isWorkspaceTrusted()` and `canSetWorkspaceTrust()`.
+     *
+     * True iff the host may accept this contract right now. It is NOT a grant
+     * and NOT durable permission: acceptance still goes through
+     * `mission.acceptContract`, still binds to the exact contract hash, and is
+     * still revalidated at start. A renderer that shows Accept when this is
+     * false is offering an action the engine will refuse.
+     */
+    canAcceptContract: z.boolean(),
   })
   .strict();
 export type MissionDraftDto = z.infer<typeof missionDraftDtoSchema>;

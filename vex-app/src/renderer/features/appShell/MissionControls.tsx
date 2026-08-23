@@ -24,9 +24,21 @@
  *    one next-step surface shows at a time: while reviewable-and-settled,
  *    this bar REPLACES the standing notice below, never stacks with it.
  *  - NO ACTIVE RUN + a contract pending acceptance (any non-accepted-clean
- *    draft, still in setup or mid-turn) → a standing muted-warn notice:
- *    on-chain actions are blocked by the runtime gate until the user accepts
- *    the contract and starts the run.
+ *    draft, still in setup or mid-turn) → a standing warn notice: on-chain
+ *    actions are blocked by the runtime gate until the user accepts the
+ *    contract and starts the run. The notice is STATE-SPECIFIC and CARRIES A
+ *    CONTROL. Previously a `draft`-status contract landed on a terminal branch
+ *    that rendered the notice ALONE - no button, no link, no next action - and
+ *    the modal the user could reach from the header then told them to "Add a
+ *    goal, constraints, and stop conditions", fields the host cannot edit
+ *    (`mission.updateDraft` is a stub; only the agent's `MissionDraftUpdate`
+ *    writes them). That was a reachable dead end. Every branch now names the
+ *    state, the consequence, the next action and WHO must take it, enumerates
+ *    the engine's own `missingFields`, and offers the contract surface.
+ *
+ * Readiness is NOT derived here. `mission-readiness.ts` owns the single
+ * predicate that this strip, `MissionRail`'s badge and the contract modal all
+ * read, so the three surfaces cannot contradict each other.
  *
  * `useMissionLiveSync` is mounted here (event-driven + 30s-fallback refresh
  * of the draft/diff queries) so a dropped `transcriptAppend` event can never
@@ -74,7 +86,13 @@ import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
 import { MissionErrorAlert } from "./MissionControls/MissionErrorAlert.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
-import { planMissing } from "./MissionRail.js";
+import {
+  resolveMissionReadiness,
+  type MissionReadiness,
+} from "./mission-readiness.js";
+import { requestMissionContract } from "./mission-contract-request.js";
+import { useMissionSetupProgress } from "./MissionSetupProgress.js";
+import { MissionMissingFields } from "./MissionMissingFields.js";
 
 /**
  * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
@@ -234,6 +252,8 @@ export function MissionControls({
   // Keep the draft/diff queries fresh (event-driven + 30s fallback poll) so
   // the review bar below can never be stranded by a dropped transcript event.
   useMissionLiveSync(sessionId);
+  // Setup liveness: distinguishes "still drafting" from "drafting stalled".
+  const { stalled } = useMissionSetupProgress(sessionId);
   // Turn-gate for the review bar's reveal — see the file header comment.
   const chatSubmitting = useIsChatSubmitting(sessionId);
   const setReviewModal = useUiStore((s) => s.setReviewModal);
@@ -326,19 +346,29 @@ export function MissionControls({
   // NO ACTIVE RUN → Start an accepted/ready draft; Start wins over Renew when
   // both could apply (a freshly accepted contract is the more immediate action).
   const diff = readReadyDiff(diffQuery.data);
-  const canStart =
-    draft !== null &&
-    draft.status === "ready" &&
-    diff !== null &&
-    diff.isAccepted &&
-    !diff.isDirty;
+  // THE readiness answer (see `mission-readiness.ts`). The header badge and the
+  // contract modal read the same function, so this strip can no longer disagree
+  // with either about whether the contract is acceptable.
+  const readiness = resolveMissionReadiness({
+    draft,
+    diff,
+    plan,
+    planKnown,
+    setupStalled: stalled,
+  });
+  const canStart = readiness.kind === "accepted";
   // Contract pending acceptance (a draft exists that is not accepted-clean)
   // with no active run: the runtime prequote gate fail-closes EVERY on-chain
   // broadcast (reason `wallet_setup`), so surface that as a standing notice —
   // the user must see the block deterministically, not via a paraphrased (and
-  // possibly confabulated) agent reply to a blocked tool call.
-  const pendingAcceptance = draft !== null && !canStart;
-  if (canStart) {
+  // possibly confabulated) agent reply to a blocked tool call. The notice now
+  // CARRIES the way forward instead of only naming the block.
+  const pendingAcceptance = readiness.kind !== "none" && !canStart;
+  const raiseContract = (): void => {
+    setReviewModal("mission");
+    void requestMissionContract({ sessionId, reason: "user" });
+  };
+  if (canStart && draft !== null) {
     const missionId = draft.missionId;
     return (
       <div data-vex-area="mission-controls" className="mt-3">
@@ -346,7 +376,24 @@ export function MissionControls({
           type="button"
           disabled={disabled}
           onClick={() =>
-            void run(() => start.mutateAsync({ sessionId, missionId }))
+            void run(async () => {
+              const result = await start.mutateAsync({ sessionId, missionId });
+              // Pattern 1 (VS Code `startDebugging` → `requestWorkspaceTrust`):
+              // the blocked capability RAISES the contract surface rather than
+              // reporting a refusal the user then has to act on by guesswork.
+              // Only for refusals the contract surface can actually resolve.
+              if (
+                result.ok &&
+                CONTRACT_BLOCKED_START_OUTCOMES.has(result.data.outcome)
+              ) {
+                setReviewModal("mission");
+                void requestMissionContract({
+                  sessionId,
+                  reason: "start_blocked",
+                });
+              }
+              return result;
+            })
           }
           aria-label="Start mission"
           className={PRIMARY_KEY}
@@ -365,17 +412,16 @@ export function MissionControls({
   // never wedge the bar shut. When not yet settled (or not reviewable), fall
   // through to the pre-existing affordances below unchanged — the standing
   // notice already covers this state, so nothing regresses mid-turn.
-  // `planMissing` is MissionRail's exported readiness gate: with plan-mode on
-  // and no plan body, the rail says Preparing — the bar must agree, not lead.
-  const reviewable =
-    draft !== null && draft.status === "ready" && diff !== null && !diff.isAccepted &&
-    planKnown && !planMissing(plan);
+  // The plan gate lives inside `resolveMissionReadiness`: with legacy plan-mode
+  // on and no plan body the readiness is `awaiting-plan`, so the rail says
+  // Preparing and the bar cannot lead it.
+  const reviewable = readiness.kind === "awaiting-acceptance";
   if (reviewable && !chatSubmitting) {
     return (
       <div data-vex-area="mission-controls" className="mt-3">
         <button
           type="button"
-          onClick={() => setReviewModal("mission")}
+          onClick={raiseContract}
           aria-label="Review & accept contract"
           className={REVIEW_KEY}
         >
@@ -400,7 +446,12 @@ export function MissionControls({
     const previousMissionId = renewSource.missionId;
     return (
       <div data-vex-area="mission-controls" className="mt-3">
-        {pendingAcceptance ? <AcceptancePendingNotice /> : null}
+        {pendingAcceptance ? (
+          <AcceptancePendingNotice
+            readiness={readiness}
+            onOpenContract={raiseContract}
+          />
+        ) : null}
         <button
           type="button"
           disabled={disabled}
@@ -429,11 +480,14 @@ export function MissionControls({
   }
 
   // Contract pending acceptance with nothing else to show → the standing
-  // notice alone, so the block is visible for the whole setup phase.
+  // notice, which carries its own control so this is never a dead end.
   if (pendingAcceptance) {
     return (
       <div data-vex-area="mission-controls" className="mt-3">
-        <AcceptancePendingNotice />
+        <AcceptancePendingNotice
+          readiness={readiness}
+          onOpenContract={raiseContract}
+        />
       </div>
     );
   }
@@ -442,21 +496,120 @@ export function MissionControls({
 }
 
 /**
- * Standing muted-warn notice while a mission session's contract is pending
- * acceptance: mirrors the runtime prequote gate's `wallet_setup` fail-close
- * (no active run → every swap/bridge/send broadcast is refused), so the block
- * is visible in the UI regardless of how the agent narrates it.
+ * `mission.start` refusals the CONTRACT surface can actually resolve. A refusal
+ * outside this set (lease busy, provider unavailable, an already-active run) is
+ * not a contract problem, and raising the contract for it would be a wrong
+ * answer wearing a helpful shape.
  */
-function AcceptancePendingNotice(): JSX.Element {
+const CONTRACT_BLOCKED_START_OUTCOMES: ReadonlySet<string> = new Set([
+  "not_accepted",
+  "stale_acceptance",
+  "not_ready",
+  "plan_not_accepted",
+]);
+
+/**
+ * Standing notice while a mission session's contract is pending acceptance:
+ * mirrors the runtime prequote gate's `wallet_setup` fail-close (no active run
+ * → every swap/bridge/send broadcast is refused), so the block is visible in
+ * the UI regardless of how the agent narrates it.
+ *
+ * Every branch below follows the same shape, taken from VS Code's Restricted
+ * Mode copy: STATE → CONSEQUENCE → NEXT ACTION, with the actor NAMED. The old
+ * copy stopped after the consequence, and the modal it pointed at then told the
+ * user to "Add a goal, constraints, and stop conditions" - fields the host
+ * cannot edit at all, because `mission.updateDraft` is a stub and only the
+ * agent's `MissionDraftUpdate` tool can write them. Naming the wrong actor was
+ * the specific defect; every branch here names the right one.
+ *
+ * The block itself is UNCHANGED. This is presentation over the same fail-closed
+ * gate - nothing here grants, widens or bypasses any authority.
+ */
+function AcceptancePendingNotice({
+  readiness,
+  onOpenContract,
+}: {
+  readonly readiness: MissionReadiness;
+  readonly onOpenContract: () => void;
+}): JSX.Element | null {
+  if (readiness.kind === "none" || readiness.kind === "accepted") return null;
+
+  const blocked =
+    "On-chain actions (swaps, bridges, sends) stay blocked until the contract is accepted and the mission is started.";
+
+  let headline: string;
+  let nextAction: string;
+  let actionLabel = "Show mission contract";
+  let missingFields: readonly string[] = [];
+
+  switch (readiness.kind) {
+    case "drafting":
+      missingFields = readiness.missingFields;
+      if (readiness.stalled) {
+        headline = `Vex's last reply did not add anything to the mission contract. ${blocked}`;
+        nextAction =
+          "Nothing will change until you reply. Answer Vex in the composer below, or ask it to fill what is left:";
+      } else {
+        headline = `Vex is still writing the mission contract. ${blocked}`;
+        nextAction =
+          "Only Vex can fill these fields; you cannot edit them here. Tell Vex what is still missing:";
+      }
+      break;
+    case "contract-loading":
+      headline = `Reading the mission contract. ${blocked}`;
+      nextAction = "Open the contract to see where it stands.";
+      break;
+    case "awaiting-plan":
+      headline = `The mission contract is complete, but this session's legacy plan mode has no action plan yet. ${blocked}`;
+      nextAction =
+        "Ask Vex to write the plan, then accept the contract and the plan together.";
+      break;
+    case "plan-unknown":
+      // NOT "your plan is missing" - we have not read it. Rule 08: unknown and
+      // absent are different states and must not collapse into one message.
+      headline = `The mission contract is complete, but its legacy action-plan status has not been read yet, so accepting is unavailable. ${blocked}`;
+      nextAction = "Open the contract to see the plan status and retry the read.";
+      break;
+    case "awaiting-acceptance":
+      // Reached only MID-TURN: once the turn settles, the dedicated
+      // "Review & accept contract" bar replaces this notice. The label stays
+      // the passive "Show mission contract" on purpose - promoting the accept
+      // CTA here would re-introduce exactly the mid-turn flash the turn-gate
+      // exists to prevent, on a contract the running turn may still change.
+      headline = `The mission contract looks ready. ${blocked}`;
+      nextAction = "Vex is still replying; review and accept once it settles.";
+      break;
+    case "dirty-acceptance":
+      headline = `The mission contract changed after you accepted it. ${blocked}`;
+      nextAction =
+        "Review what changed and accept the new contract to bring the runtime back in sync.";
+      actionLabel = "Review & accept new contract";
+      break;
+  }
+
   return (
-    <p
+    <div
       role="status"
       data-vex-state="acceptance-pending"
-      className="mb-2 w-full text-xs text-warning"
+      data-vex-readiness={readiness.kind}
+      className="mb-2 flex w-full flex-col gap-1.5 text-xs text-warning"
     >
-      Mission contract not accepted - on-chain actions (swaps, bridges, sends)
-      are blocked until you accept the contract and start the mission.
-    </p>
+      <p>{headline}</p>
+      <p className="text-ink-tertiary">{nextAction}</p>
+      <MissionMissingFields fields={missingFields} surface="mission-controls" />
+      {/* The action lives on the notice itself: a standing surface that names a
+          restriction must carry the way out of it (VS Code puts the command on
+          the banner, the status bar entry and the editor alike). This notice is
+          non-dismissible, so the affordance can never be closed away; the
+          header MISSION badge carries the same action independently. */}
+      <button
+        type="button"
+        onClick={onOpenContract}
+        className="mt-0.5 inline-flex h-7 w-fit items-center rounded-full border border-[var(--vex-accent-border-strong)] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
+        {actionLabel}
+      </button>
+    </div>
   );
 }
 

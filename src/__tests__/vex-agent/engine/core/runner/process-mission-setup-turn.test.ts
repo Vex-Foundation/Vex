@@ -155,7 +155,8 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 const runnerModule = await import("../../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
 const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
-const { ITERATION_LIMIT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
+const { ITERATION_LIMIT_REPLY, NO_PROGRESS_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
+const { missionUpdateBus } = await import("../../../../../vex-agent/engine/runtime/mission-bus.js");
 
 function makeProvider() {
   return {
@@ -282,6 +283,69 @@ describe("runner", () => {
   // ── processMissionSetupTurn ────────────────────────────────
 
   describe("processMissionSetupTurn", () => {
+    /**
+     * The silent-stall hole. `applyMissionPatch` emits `mission_update` only
+     * when something actually changed, so a setup turn whose model output
+     * carried no patch produced NO signal at all - the host could not tell a
+     * draft that is still progressing from one that will never progress on its
+     * own, and MISSION PREPARING spun forever. These two pin the reported
+     * absence and its exclusions.
+     */
+    it("emits setup_no_progress when a setup turn writes nothing to an incomplete draft", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission.mockResolvedValue(makeMission());
+      // The model answered in prose: no parseable mission patch at all.
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Which chains should this mission be allowed to touch?",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      const seen: { kind: string; sessionId: string; missionId: string | null }[] = [];
+      const off = missionUpdateBus.subscribe((e) =>
+        seen.push({ kind: e.kind, sessionId: e.sessionId, missionId: e.missionId }),
+      );
+      try {
+        await processMissionSetupTurn("session-1", "trade for me");
+      } finally {
+        off();
+      }
+
+      expect(seen).toContainEqual({
+        kind: "setup_no_progress",
+        sessionId: "session-1",
+        missionId: "mission-1",
+      });
+    });
+
+    it("does NOT call a user-stopped turn stalled - the Stop is its own explanation", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission.mockResolvedValue(makeMission());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "partial",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: "user_stopped",
+      });
+
+      const kinds: string[] = [];
+      const off = missionUpdateBus.subscribe((e) => kinds.push(e.kind));
+      try {
+        await processMissionSetupTurn("session-1", "stop");
+      } finally {
+        off();
+      }
+
+      expect(kinds).not.toContain("setup_no_progress");
+    });
+
     it("threads measurability warnings into runTurnLoop's prompt options", async () => {
       // The renew gap: warnings were computed by getMissionSetupState but
       // never forwarded, so a renewed draft's stale-denominator warning was
@@ -384,6 +448,48 @@ describe("runner", () => {
       );
       // Synthesised text must NOT be parsed/applied as a mission draft patch.
       expect(mockUpdateDraft).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A stalled setup turn must not be silent. `no_progress` is deliberately
+     * NOT continuable, and this path used to ask the continuation question
+     * (`isContinuableRuntimeStop`) to decide whether the user gets a reply at
+     * all. The two questions are different, so the stall fell through both
+     * branches and the turn returned `text: null`.
+     */
+    it("synthesises the stall reply on no_progress instead of returning a silent turn", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission.mockResolvedValue(makeMission());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: null,
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: "no_progress",
+      });
+
+      const seen: string[] = [];
+      const off = missionUpdateBus.subscribe((e) => seen.push(e.kind));
+      let result;
+      try {
+        result = await processMissionSetupTurn("session-1", "trade for me");
+      } finally {
+        off();
+      }
+
+      expect(result.text).toBe(NO_PROGRESS_REPLY);
+      expect(result.stopReason).toBe("no_progress");
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ role: "assistant", content: NO_PROGRESS_REPLY }),
+        expect.objectContaining({ source: "assistant", messageType: "mission_setup", visibility: "user" }),
+      );
+      expect(mockUpdateDraft).not.toHaveBeenCalled();
+      // The stall reply already explains the turn; calling it "stalled" again
+      // would be a second, contradictory account of the same event.
+      expect(seen).not.toContain("setup_no_progress");
     });
 
     it("honours a user Stop during setup — no patch applied, no not-ready notice, faithful stopReason, signal threaded to both turn-loop positions", async () => {

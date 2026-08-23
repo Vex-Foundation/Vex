@@ -429,7 +429,28 @@ export async function runAgentTurnUnderLease(
   // real assistant text itself, so nothing was saved on this path; we persist
   // the synthesised reply as a normal user-visible assistant message.
   let text = result.text;
-  if (isContinuableRuntimeStop(result.stopReason)) {
+
+  /** Persist the deterministic reply for a bound that left the turn silent. */
+  const persistSynthesisedReply = async (body: string): Promise<void> => {
+    text = body;
+    await appendMessage(
+      sessionId,
+      { role: "assistant", content: body, timestamp: new Date().toISOString() },
+      { source: "assistant", messageType: "chat", visibility: "user" },
+    );
+  };
+
+  // ── Model stall ────────────────────────────────────────────────
+  //
+  // Handled BEFORE the continuable-bound branch and deliberately outside it: a
+  // stall is not a slice that ran out of room, so it is never continued, not
+  // even under full autonomy. An unproductive round persists nothing, which
+  // means a woken slice would re-send the identical request and stall again -
+  // a wake loop that spends input tokens forever. Both permissions get the
+  // honest reply and the turn ends.
+  if (result.stopReason === "no_progress") {
+    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply("no_progress"));
+  } else if (isContinuableRuntimeStop(result.stopReason)) {
     // The slice's own cancellation signal (a wake-driven slice carries it in
     // both positions). Handed to the scheduler, which re-reads it INSIDE the
     // scheduling transaction rather than pre-sampling it here.
@@ -443,12 +464,7 @@ export async function runAgentTurnUnderLease(
       : { scheduled: false };
 
     if (!continuation.scheduled && !text) {
-      text = runtimeBoundExhaustedReply(result.stopReason);
-      await appendMessage(
-        sessionId,
-        { role: "assistant", content: text, timestamp: new Date().toISOString() },
-        { source: "assistant", messageType: "chat", visibility: "user" },
-      );
+      await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
     }
   }
 

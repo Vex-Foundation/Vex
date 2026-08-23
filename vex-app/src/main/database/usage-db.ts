@@ -17,6 +17,11 @@
  * surcharge) and can legitimately be NEGATIVE (first request of an
  * explicit-cache prefix writes more than it reads) — mapped via `toCost`,
  * never clamped.
+ *
+ * ONE ROW IS ONE MODEL ROUND, NOT ONE TURN. `runTurnLoop` performs many rounds
+ * per turn and `executeTurn` logs each of them, so any per-turn figure must
+ * aggregate (`getLastTurn`); reading the newest row alone under-reports a
+ * multi-round turn by roughly the round count.
  */
 
 import { Client, type ClientConfig } from "pg";
@@ -26,7 +31,6 @@ import {
   type ContextWindowResult,
   type LastTurnUsageResult,
   type SessionUsageTotalsDto,
-  type TurnUsageDto,
 } from "@shared/schemas/usage.js";
 import { VEX_APP_SESSION_SCOPE } from "@shared/schemas/sessions.js";
 import { buildPoolConfig } from "./db-config.js";
@@ -99,20 +103,24 @@ async function withClient<T>(
   }
 }
 
-interface UsageRow {
-  readonly session_id: string;
-  readonly prompt_tokens: number | string;
-  readonly completion_tokens: number | string;
-  readonly total_tokens: number | string;
-  readonly cached_tokens: number | string | null;
-  readonly reasoning_tokens: number | string | null;
-  readonly cost: number | string | null;
-  readonly cached_savings: number | string | null;
-  readonly cache_write_tokens: number | string | null;
+/**
+ * The single aggregate row `getLastTurn` reads. `latest_*` are correlated
+ * scalars from the newest round in the turn window; the rest are aggregates
+ * over the whole window. `latest_created_at` is `null` exactly when the window
+ * is empty.
+ */
+interface TurnRollupRow {
+  readonly latest_prompt_tokens: number | string | null;
+  readonly latest_cached_tokens: number | string | null;
   readonly provider: string | null;
   readonly model: string | null;
-  readonly currency: string | null;
-  readonly created_at: string | Date;
+  readonly latest_created_at: string | Date | null;
+  readonly turn_completion_tokens: number | string | null;
+  readonly turn_reasoning_tokens: number | string | null;
+  readonly turn_cache_write_tokens: number | string | null;
+  readonly turn_cost: number | string | null;
+  readonly turn_cached_savings: number | string | null;
+  readonly round_count: number | string;
 }
 
 interface UsageTotalsRow {
@@ -153,25 +161,6 @@ function toCost(value: number | string | null | undefined): number | null {
   }
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toTurnDto(row: UsageRow): TurnUsageDto {
-  return {
-    sessionId: row.session_id,
-    promptTokens: toInt(row.prompt_tokens),
-    completionTokens: toInt(row.completion_tokens),
-    totalTokens: toInt(row.total_tokens),
-    cachedTokens: toInt(row.cached_tokens),
-    reasoningTokens: toInt(row.reasoning_tokens),
-    cost: toCost(row.cost),
-    // NET savings — NUMERIC, can be negative; `toCost` preserves the sign.
-    cachedSavings: toCost(row.cached_savings),
-    cacheWriteTokens: toInt(row.cache_write_tokens),
-    currency: row.currency ?? USAGE_DEFAULT_CURRENCY,
-    provider: row.provider,
-    model: row.model,
-    createdAt: toIso(row.created_at),
-  };
 }
 
 export async function getSessionTotals(
@@ -217,7 +206,7 @@ export async function getSessionTotals(
         totalTokens: toInt(row.total_total),
         totalCachedTokens: toInt(row.total_cached_tokens),
         totalCost: toCost(row.total_cost),
-        // NET savings sum — can be negative; sign preserved.
+        // NET savings sum - can be negative; sign preserved.
         totalCachedSavings: toCost(row.total_cached_savings),
         currency,
         requestCount: toInt(row.request_count),
@@ -229,27 +218,103 @@ export async function getSessionTotals(
   });
 }
 
+/**
+ * Usage for the session's most recent TURN - every model round since the user
+ * last spoke, not just the newest `usage_log` row.
+ *
+ * ## The turn boundary
+ *
+ * `usage_log` carries no turn identifier, so the window is derived from the
+ * transcript: rows written at or after the newest message with `source =
+ * 'user'`. That is exactly what a turn is here - `processAgentTurn` appends the
+ * user message as its FIRST state mutation and then runs the whole loop, so
+ * every round of the turn lands after it. `messages_archive` is unioned in
+ * because compaction moves older messages there; without it a fully compacted
+ * session would lose its boundary and the window would silently widen to the
+ * whole session.
+ *
+ * A session with no user-sourced message at all (a mission run driven entirely
+ * by the engine) has no boundary to find; the window then covers the session's
+ * rows, and `roundCount` says so rather than the number pretending to be one
+ * exchange.
+ *
+ * ## Aggregation
+ *
+ * Input is a SNAPSHOT of the newest round, output/cost/savings are SUMS. The
+ * DTO's doc comment carries the full rationale and is the contract; do not
+ * re-derive the split at a call site.
+ */
 export async function getLastTurn(
   sessionId: string,
   currency: string,
 ): Promise<Result<LastTurnUsageResult, VexError>> {
   return withClient(async (client) => {
     try {
-      const result = await client.query<UsageRow>(
-        `SELECT session_id, prompt_tokens, completion_tokens, total_tokens,
-                cached_tokens, reasoning_tokens, cost, cached_savings,
-                cache_write_tokens, provider, model,
-                currency, created_at
-           FROM usage_log
-          WHERE session_id = $1
-            AND currency = $2
-          ORDER BY created_at DESC
-          LIMIT 1`,
+      const result = await client.query<TurnRollupRow>(
+        `WITH turn_start AS (
+            SELECT MAX(created_at) AS at
+              FROM (
+                SELECT created_at FROM messages
+                 WHERE session_id = $1 AND source = 'user'
+                UNION ALL
+                SELECT created_at FROM messages_archive
+                 WHERE session_id = $1 AND source = 'user'
+              ) AS user_messages
+          ),
+          turn_rows AS (
+            SELECT *
+              FROM usage_log
+             WHERE session_id = $1
+               AND currency = $2
+               AND created_at >= COALESCE(
+                     (SELECT at FROM turn_start),
+                     TIMESTAMPTZ '-infinity')
+          ),
+          latest AS (
+            SELECT prompt_tokens, cached_tokens, provider, model, created_at
+              FROM turn_rows
+             ORDER BY created_at DESC
+             LIMIT 1
+          )
+          SELECT
+            (SELECT prompt_tokens FROM latest)      AS latest_prompt_tokens,
+            (SELECT cached_tokens FROM latest)      AS latest_cached_tokens,
+            (SELECT provider      FROM latest)      AS provider,
+            (SELECT model         FROM latest)      AS model,
+            (SELECT created_at    FROM latest)      AS latest_created_at,
+            COALESCE(SUM(completion_tokens), 0)     AS turn_completion_tokens,
+            COALESCE(SUM(reasoning_tokens), 0)      AS turn_reasoning_tokens,
+            COALESCE(SUM(cache_write_tokens), 0)    AS turn_cache_write_tokens,
+            SUM(cost)                               AS turn_cost,
+            SUM(cached_savings)                     AS turn_cached_savings,
+            COUNT(*)                                AS round_count
+           FROM turn_rows`,
         [sessionId, currency],
       );
       const row = result.rows[0];
-      if (!row) return ok(null);
-      return ok(toTurnDto(row));
+      // An aggregate always returns one row; an EMPTY window returns that row
+      // with `round_count = 0` and a null `latest_created_at`. That is "no
+      // usage yet", the same `null` the renderer has always handled - never a
+      // fabricated zero-round turn.
+      if (!row || toInt(row.round_count) === 0 || row.latest_created_at === null) {
+        return ok(null);
+      }
+      return ok({
+        sessionId,
+        latestRoundPromptTokens: toInt(row.latest_prompt_tokens),
+        latestRoundCachedTokens: toInt(row.latest_cached_tokens),
+        turnCompletionTokens: toInt(row.turn_completion_tokens),
+        turnReasoningTokens: toInt(row.turn_reasoning_tokens),
+        turnCacheWriteTokens: toInt(row.turn_cache_write_tokens),
+        turnCost: toCost(row.turn_cost),
+        // NET savings sum - can be negative; sign preserved.
+        turnCachedSavings: toCost(row.turn_cached_savings),
+        roundCount: toInt(row.round_count),
+        currency,
+        provider: row.provider,
+        model: row.model,
+        latestRoundAt: toIso(row.latest_created_at),
+      });
     } catch (cause) {
       return dbError("getLastTurn query failed", cause);
     }

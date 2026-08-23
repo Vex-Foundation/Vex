@@ -126,6 +126,17 @@ export function submitFailureNotice(
         data,
         "Vex stopped before completing the task after reaching this turn's action limit.",
       );
+    case "no_progress":
+      // Routed through `incompleteTurnNotice` like the other incomplete-turn
+      // reasons, and for the same reason: the STALL is only the tail of the
+      // turn. Rounds before it can have dispatched real tool calls, so retry
+      // stays gated on `toolCallsMade` exactly as everywhere else. Only when
+      // the count is zero - the reported v0.2.6 shape - is one-click retry
+      // offered, and there it is genuinely safe: nothing ran.
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped early because the model returned only empty responses.",
+      );
     case "timeout":
       return incompleteTurnNotice(
         data,

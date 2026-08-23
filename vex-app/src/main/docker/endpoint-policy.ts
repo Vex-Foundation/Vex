@@ -105,16 +105,32 @@ export function classifyDockerEndpoint(
   };
 }
 
+/**
+ * @param dockerCommand absolute path to the located Docker CLI, or `null`
+ * when no CLI was found. Passing `null` skips the spawns entirely rather
+ * than spending two ENOENT round-trips to learn what the locator already
+ * established.
+ */
 export async function inspectDockerEndpointPolicy(
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  dockerCommand: string | null = "docker"
 ): Promise<DockerEndpointPolicy> {
+  if (dockerCommand === null) {
+    return classifyDockerEndpoint({
+      dockerHost: normalizeDockerHost(process.env.DOCKER_HOST),
+      currentContext: null,
+      contextHost: null,
+      contextInspectable: false,
+      dockerCliAvailable: false,
+    });
+  }
   const [contextShow, contextHost] = await Promise.all([
-    runSpawn("docker", ["context", "show"], {
+    runSpawn(dockerCommand, ["context", "show"], {
       ...(signal !== undefined ? { signal } : {}),
       timeoutMs: CONTEXT_TIMEOUT_MS,
     }),
     runSpawn(
-      "docker",
+      dockerCommand,
       ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"],
       {
         ...(signal !== undefined ? { signal } : {}),

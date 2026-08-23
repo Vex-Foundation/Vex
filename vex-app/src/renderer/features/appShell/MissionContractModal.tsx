@@ -56,6 +56,10 @@ import {
   type CardState,
 } from "./MissionContractModal/contract-state.js";
 import { FooterAction } from "./MissionContractModal/FooterAction.js";
+import {
+  grantMissionContractRequest,
+  refuseMissionContractRequest,
+} from "./mission-contract-request.js";
 import { LaunchCeilingsSection } from "./MissionContractModal/LaunchCeilingsSection.js";
 import {
   readPlan,
@@ -116,11 +120,21 @@ export function MissionContractModal({
         // A successful accept closes the modal so the Start mission button it
         // points at is actually reachable. Every non-`accepted` outcome (and
         // any transport failure) keeps it open for the in-modal notice.
+        // Settle any pending contract request from the COMMIT, never from the
+        // press: `granted` is reported only once the engine has answered
+        // `accepted`, which is the point the acceptance actually exists. Any
+        // other resolved outcome is a real refusal, and a rejected mutation is
+        // reported as one too. A caller waiting on this must never be told
+        // `granted` for an acceptance that did not commit.
         onSuccess: (result) => {
           if (result.ok && result.data.outcome === "accepted") {
+            grantMissionContractRequest(sessionId);
             onOpenChange(false);
+            return;
           }
+          refuseMissionContractRequest(sessionId);
         },
+        onError: () => refuseMissionContractRequest(sessionId),
       },
     );
   };

@@ -345,13 +345,23 @@ export async function finalizeMissionRunStatus(
   // `updateStatus` is reserved for writes that legitimately move a run TO a
   // terminal state; a park/recovery write must never move one back out. A
   // terminal user stop outranks every other terminal state.
-  if (stopReason === "compact_unable_at_critical") {
+  // `no_progress` shares this arm's shape exactly: a run that cannot make
+  // forward progress on its own, parked for operator review with NO wake.
+  // It must NOT fall through to the `return "running"` at the bottom - that
+  // would leave the run row `running` with no wake and no lease, an orphan the
+  // operator can neither resume nor see the reason for. It is equally not a
+  // continuable stop: an unproductive round persists nothing, so a scheduled
+  // continuation would re-ask the identical question (see `stop-conditions.ts`).
+  if (stopReason === "compact_unable_at_critical" || stopReason === "no_progress") {
     // DURABLE STOP CONSUMER (see `mission-auto-retry.ts` for the full
     // rationale). Parking here reaches `paused_error` with NO wake, so this is
     // the last iteration boundary the run will ever have: a `stop_terminal`
     // request still queued at this point would be stranded until the operator
     // clicked Stop a second time. Gate + park commit together under the
     // session control lock so a Stop cannot slip between them.
+    const defaultSummary = stopReason === "no_progress"
+      ? "The model returned only empty responses - no answer and no tool call - for several consecutive rounds; operator review required."
+      : "Two consecutive forced-fallback noops at critical pressure - operator review required.";
     const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
       "../../runtime/lease-and-status.js"
     );
@@ -368,7 +378,7 @@ export async function finalizeMissionRunStatus(
         "paused_error",
         stopReason,
         {
-          summary: stopPayload?.summary ?? "Two consecutive forced-fallback noops at critical pressure — operator review required.",
+          summary: stopPayload?.summary ?? defaultSummary,
           evidence: stopPayload?.evidence,
         },
         client,
@@ -382,10 +392,11 @@ export async function finalizeMissionRunStatus(
       // THIS arm did to the mission row (nothing, on both branches), which is
       // why it is unchanged; the warn log is the record that the escalation
       // was superseded.
-      logger.warn("engine.mission.compact_unable_at_critical_after_terminal", {
+      logger.warn("engine.mission.operator_review_park_after_terminal", {
         runId,
         missionId,
         sessionId,
+        stopReason,
       });
     }
     return "running";

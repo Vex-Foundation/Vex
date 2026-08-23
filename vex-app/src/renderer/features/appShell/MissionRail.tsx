@@ -64,6 +64,14 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { MissionContractModal } from "./MissionContractModal.js";
 import { PlanDisplayModal } from "./PlanDisplayModal.js";
 import { PremiumBadge, type PremiumBadgeState } from "./PremiumBadge.js";
+import {
+  missionReadinessBadgeState,
+  resolveMissionReadiness,
+} from "./mission-readiness.js";
+import {
+  cancelMissionContractRequest,
+  requestMissionContract,
+} from "./mission-contract-request.js";
 
 export interface MissionRailProps {
   readonly activeSessionId: string | null;
@@ -159,9 +167,21 @@ export function MissionRail({
           state={mission.state}
           shimmer={mission.shimmer}
           expanded={open === "mission"}
-          onClick={() =>
-            setReviewModal(open === "mission" ? "none" : "mission")
-          }
+          // The one NON-DISMISSIBLE surface that always carries the action.
+          // VS Code's trust banner is dismissible and persists that, but its
+          // status-bar entry has no close, so the way in is never gone; the
+          // MISSION badge is our equivalent. It participates in the same
+          // request lifecycle as every other entry point, so a blocked
+          // capability waiting on the contract settles from here too.
+          onClick={() => {
+            if (open === "mission") {
+              setReviewModal("none");
+              cancelMissionContractRequest(sessionId);
+              return;
+            }
+            setReviewModal("mission");
+            void requestMissionContract({ sessionId, reason: "user" });
+          }}
         />
       ) : null}
 
@@ -187,7 +207,13 @@ export function MissionRail({
           sessionId={sessionId}
           permission={session.permission}
           open={open === "mission"}
-          onOpenChange={(next) => setReviewModal(next ? "mission" : "none")}
+          onOpenChange={(next) => {
+            setReviewModal(next ? "mission" : "none");
+            // Dismissal without a decision is `cancelled`, the third outcome,
+            // never a silent false. The accept path settles `granted`/`refused`
+            // itself before this runs, and settle is idempotent.
+            if (!next) cancelMissionContractRequest(sessionId);
+          }}
         />
       ) : null}
       {planEnabled ? (
@@ -260,23 +286,16 @@ function deriveMissionBadge(
   if (hasActiveRun || (draft === null && hasRenewable)) {
     return { state: "accepted", shimmer: false };
   }
-  if (draft === null || draft.status === "draft" || diff === null) {
-    return { state: "preparing", shimmer: false };
-  }
-  if (diff.isAccepted && !diff.isDirty) {
-    return { state: "accepted", shimmer: false };
-  }
-  if (diff.isAccepted && diff.isDirty) {
-    return { state: "stale", shimmer: false };
-  }
-  // awaiting-acceptance. Gate "ready" on the plan when plan-mode is on:
-  // plan_missing → keep preparing; otherwise ready (shimmer).
-  if (!planKnown || planMissing(plan)) {
-    // Unknown (pending/failed read) counts as missing — never flash READY
-    // on a plan state we have not actually seen.
-    return { state: "preparing", shimmer: false };
-  }
-  return { state: "ready", shimmer: true };
+  // Below the run-level overrides, the badge is a pure projection of THE shared
+  // readiness selector, the same one `MissionControls` and the contract modal
+  // read. The previous hand-rolled chain here is what let the three surfaces
+  // drift apart. `setupStalled` is deliberately not fed in: the stall is a
+  // liveness detail of the drafting state, and the badge for drafting is
+  // Preparing either way; the notice and the modal carry the distinction.
+  const state = missionReadinessBadgeState(
+    resolveMissionReadiness({ draft, diff, plan, planKnown, setupStalled: false }),
+  );
+  return { state, shimmer: state === "ready" };
 }
 
 /**
@@ -304,13 +323,11 @@ function derivePlanBadge(
 }
 
 /**
- * Plan-mode on with an empty body → the engine's `plan_missing` block.
- * Exported as THE shared mission-readiness gate: MissionControls' review bar
- * must never claim "ready" while this rail still (correctly) says Preparing.
+ * Plan-mode on with an empty body → the engine's `plan_missing` block. The
+ * definition moved into `mission-readiness.ts` alongside the rest of the
+ * readiness predicate; re-exported here for existing importers.
  */
-export function planMissing(plan: PlanGetResult | null): boolean {
-  return plan !== null && plan.enabled && !plan.accepted && plan.planMd.length === 0;
-}
+export { planMissing } from "./mission-readiness.js";
 
 type ReadyDiff = Extract<MissionGetDiffResult, { outcome: "ready" }>;
 

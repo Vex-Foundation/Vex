@@ -1,10 +1,12 @@
 /**
- * Pure presentation of one turn's usage as micro-label stat groups — boundary seams
- * of the compact formatters and the drop-out rules for absent measurements.
+ * Pure presentation of one turn's usage ROLLUP as micro-label stat groups -
+ * boundary seams of the compact formatters, the drop-out rules for absent
+ * measurements, and the snapshot-input / summed-output asymmetry that makes the
+ * displayed figures describe the whole turn instead of its last round.
  */
 
 import { describe, expect, it } from "vitest";
-import type { TurnUsageDto } from "@shared/schemas/usage.js";
+import type { TurnUsageRollupDto } from "@shared/schemas/usage.js";
 import {
   cacheHitPercent,
   formatCost,
@@ -12,21 +14,21 @@ import {
   turnStatGroups,
 } from "../../SessionTranscript/turnStats.js";
 
-function usage(overrides: Partial<TurnUsageDto> = {}): TurnUsageDto {
+function usage(overrides: Partial<TurnUsageRollupDto> = {}): TurnUsageRollupDto {
   return {
     sessionId: "6b1c1a58-0000-4000-8000-000000000000",
-    promptTokens: 12_400,
-    completionTokens: 830,
-    totalTokens: 13_230,
-    cachedTokens: 9_920,
-    reasoningTokens: 0,
-    cost: 0.0042,
-    cachedSavings: null,
-    cacheWriteTokens: 0,
+    latestRoundPromptTokens: 12_400,
+    latestRoundCachedTokens: 9_920,
+    turnCompletionTokens: 830,
+    turnReasoningTokens: 0,
+    turnCacheWriteTokens: 0,
+    turnCost: 0.0042,
+    turnCachedSavings: null,
+    roundCount: 1,
     currency: "USD",
     provider: null,
     model: null,
-    createdAt: "2026-08-20T12:00:00.000Z",
+    latestRoundAt: "2026-08-20T12:00:00.000Z",
     ...overrides,
   };
 }
@@ -48,13 +50,13 @@ describe("formatTokens compacts counts exactly at the unit seams", () => {
 
 describe("cacheHitPercent refuses a 0/0 read", () => {
   it("is null with zero prompt tokens (a 0/0 read is not 0% cached)", () => {
-    expect(cacheHitPercent(usage({ promptTokens: 0, cachedTokens: 0 }))).toBe(
+    expect(cacheHitPercent(usage({ latestRoundPromptTokens: 0, latestRoundCachedTokens: 0 }))).toBe(
       null,
     );
   });
   it("rounds the share to an integer percent", () => {
     expect(
-      cacheHitPercent(usage({ promptTokens: 12_400, cachedTokens: 9_920 })),
+      cacheHitPercent(usage({ latestRoundPromptTokens: 12_400, latestRoundCachedTokens: 9_920 })),
     ).toBe(80);
   });
 });
@@ -81,13 +83,13 @@ describe("turnStatGroups drops absent measurements out whole", () => {
     ]);
   });
   it("omits the cache group when nothing was cached", () => {
-    expect(turnStatGroups(usage({ cachedTokens: 0 }))).toEqual([
+    expect(turnStatGroups(usage({ latestRoundCachedTokens: 0 }))).toEqual([
       "12.4K in / 830 out",
       "$0.0042",
     ]);
   });
   it("omits the cost group when cost is unknown", () => {
-    expect(turnStatGroups(usage({ cost: null }))).toEqual([
+    expect(turnStatGroups(usage({ turnCost: null }))).toEqual([
       "12.4K in / 830 out",
       "80% cached",
     ]);
@@ -96,13 +98,59 @@ describe("turnStatGroups drops absent measurements out whole", () => {
     expect(
       turnStatGroups(
         usage({
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: 0,
-          cachedTokens: 0,
-          cost: null,
+          latestRoundPromptTokens: 0,
+          latestRoundCachedTokens: 0,
+          turnCompletionTokens: 0,
+          turnCost: null,
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * The regression this pins: the panel used to read ONE `usage_log` row and
+ * label it a turn. The engine writes one row per model round, so a fifty-round
+ * turn displayed the fiftieth round's output and cost - the v0.2.6 report's
+ * `OUT 1 / $0.0405`. `turnStatGroups` must read the SUMMED output and the
+ * SUMMED cost, and must read input from the latest-round snapshot (summing
+ * input would count the resent conversation N times).
+ */
+describe("a multi-round turn reports the turn, not its last round", () => {
+  it("prints summed output and summed cost against the latest-round input", () => {
+    expect(
+      turnStatGroups(
+        usage({
+          // The last round of the turn resent a 38.2K-token conversation and
+          // produced almost nothing; the turn as a whole generated 24.6K
+          // output tokens and cost four cents.
+          latestRoundPromptTokens: 38_200,
+          latestRoundCachedTokens: 0,
+          turnCompletionTokens: 24_600,
+          turnCost: 0.0405,
+          roundCount: 50,
+        }),
+      ),
+    ).toEqual(["38.2K in / 24.6K out", "$0.0405", "50 rounds"]);
+  });
+
+  it("says how many rounds the figures cover, and stays silent for a single round", () => {
+    expect(turnStatGroups(usage({ roundCount: 2 }))).toContain("2 rounds");
+    expect(turnStatGroups(usage({ roundCount: 1 })).join("|")).not.toContain("round");
+  });
+
+  it("cache share divides the SAME round's cached and prompt tokens", () => {
+    // Not the turn's summed cache writes against one round's prompt - that
+    // ratio would exceed 100% on any cached multi-round turn.
+    expect(
+      cacheHitPercent(
+        usage({
+          latestRoundPromptTokens: 1_000,
+          latestRoundCachedTokens: 250,
+          turnCacheWriteTokens: 40_000,
+          roundCount: 40,
+        }),
+      ),
+    ).toBe(25);
   });
 });

@@ -69,6 +69,8 @@ describe("mission schemas", () => {
       acceptance: null,
       deployedCapital: null,
       renewedFromMissionId: null,
+      missingFields: [],
+      canAcceptContract: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -93,6 +95,8 @@ describe("mission schemas", () => {
       acceptance: null,
       deployedCapital: null,
       renewedFromMissionId: null,
+      missingFields: [],
+      canAcceptContract: false,
     });
     expect(parsed.success).toBe(false);
   });
@@ -122,6 +126,8 @@ describe("mission schemas", () => {
       },
       deployedCapital: null,
       renewedFromMissionId: "mission-source",
+      missingFields: [],
+      canAcceptContract: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -197,6 +203,8 @@ describe("mission schemas", () => {
         approvedAt: null,
         acceptance: null,
         renewedFromMissionId: null,
+        missingFields: [],
+        canAcceptContract: false,
       };
       expect(
         missionDraftDtoSchema.safeParse({ ...base, deployedCapital: VALID })
