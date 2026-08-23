@@ -142,11 +142,14 @@ export async function attributePoolsLaunches(
       }
 
       if (outcome.kind === "rejected") {
-        rejected++;
         const landed = await markPoolsAttributionRejected({
           id: candidate.id,
           code: outcome.code,
         });
+        // Counted AFTER the awaited write: a throwing writer falls to the
+        // per-row catch and counts as retryable, so one row can never be
+        // tallied as both rejected and retryable in the same run.
+        rejected++;
         // The validated CODE and the HTTP status, and nothing else. The
         // partner's free text is never consumed or retained (rule 09): an
         // untrusted string must not be what an operator reads as the cause.

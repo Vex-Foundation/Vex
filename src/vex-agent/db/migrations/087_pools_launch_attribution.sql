@@ -100,11 +100,17 @@ ALTER TABLE launched_tokens
 -- cannot drift. Widening the vocabulary means a new migration restating this
 -- list in full plus the module plus the lockstep test, in one change.
 --
---   invalid_signature  - pools.fun rejected the proof itself.
---   validation_failed  - the request was well-formed and the proof valid, but
---                        pools.fun refused the claim on its own rules.
---   not_pools_launch   - pools.fun does not recognise the token as one of its
---                        launches. No retry can change that.
+--   invalid_signature  - the recovered signer is not the launch's
+--                        GatewayLaunch.launcher.
+--   validation_failed  - the request itself was malformed (address, signature
+--                        or field shape). May indicate a Vex-side encoding
+--                        defect; re-queueing such rows is a deliberate
+--                        maintenance action (clearing the rejection stamp),
+--                        never automatic.
+--   not_pools_launch   - a FINALIZED receipt proves the pinned gateway/factory
+--                        relationship absent or mismatched. Never returned for
+--                        indexing or finality lag (that is launch_not_ready,
+--                        which is retryable).
 ALTER TABLE launched_tokens DROP CONSTRAINT IF EXISTS launched_tokens_pools_rejection_code_valid;
 ALTER TABLE launched_tokens
   ADD CONSTRAINT launched_tokens_pools_rejection_code_valid

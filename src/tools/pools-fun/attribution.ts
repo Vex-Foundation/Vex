@@ -53,6 +53,32 @@ import {
 
 /** Relative on purpose: a configured base that carries a path keeps it. */
 const ATTEST_PATH = "pools-fun/vex/attestations";
+
+/**
+ * HTTPS-only base-URL policy for the attestation endpoint, enforced AT the HTTP
+ * boundary. The request body is a bearer proof, so a plaintext URL would expose
+ * the launcher's signature to the network path; `http:` is admitted only for
+ * localhost stubs. Accepts `unknown` because the value ultimately comes from a
+ * hand-editable config file: a non-string fails closed instead of throwing.
+ *
+ * Returns `null` for empty, malformed, non-string, or insecure. Every caller
+ * that gets `null` sends nothing.
+ */
+export function resolvePoolsAttestBaseUrl(rawUrl: unknown): string | null {
+  if (typeof rawUrl !== "string") return null;
+  const trimmed = rawUrl.trim();
+  if (trimmed.length === 0) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol === "https:") return trimmed;
+  const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  if (parsed.protocol === "http:" && isLocalhost) return trimmed;
+  return null;
+}
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LEN = 120;
 
@@ -131,12 +157,24 @@ export async function attributePoolsLaunch(
     return { kind: "rejected", status: 0, code: "validation_failed" };
   }
 
+  const base = resolvePoolsAttestBaseUrl(loadConfig().services.poolsFunAttestApiUrl);
+  if (base === null) {
+    // Defense in depth at the boundary itself: the sweep's own gate normally
+    // stops earlier, but ANY caller reaching this function with an
+    // unconfigured or policy-refused URL must send nothing.
+    return { kind: "transport_failed", detail: "attest URL not configured or refused (https only)" };
+  }
+
   let response: Response;
   try {
-    response = await fetchWithTimeout(attestUrl(), {
+    response = await fetchWithTimeout(attestUrl(base), {
       method: "POST",
       timeoutMs: REQUEST_TIMEOUT_MS,
       headers: { "Content-Type": "application/json" },
+      // The body is a bearer proof. A 307/308 would replay it verbatim at
+      // whatever origin the server names, so redirects are refused outright
+      // and surface as a transport failure.
+      redirect: "error",
       body: JSON.stringify({
         chainId: POOLS_CHAIN_ID,
         tokenAddress: input.tokenAddress.toLowerCase(),
@@ -162,19 +200,31 @@ export async function attributePoolsLaunch(
   }
 
   const code = readErrorCode(body);
+
+  // STATUS PRECEDENCE, per the frozen taxonomy: 429 and every 5xx are
+  // retryable REGARDLESS of any code in the body. An overloaded or erroring
+  // server must never be able to terminalize a row by echoing a terminal code
+  // mid-outage - a refusal only counts when the server answered in order.
+  if (response.status === 429 || response.status >= 500) {
+    return {
+      kind: "retryable",
+      status: response.status,
+      code: isPoolsAttestRetryableCode(code) ? code : null,
+    };
+  }
+
   if (isPoolsAttestTerminalCode(code)) {
     return { kind: "rejected", status: response.status, code };
   }
   if (isPoolsAttestRetryableCode(code)) {
     return { kind: "retryable", status: response.status, code };
   }
-  // Unknown or missing code - including every 429 and 5xx, which carry no code
-  // at all. A refusal we cannot name is not a refusal we may act on.
+  // Unknown or missing code. A refusal we cannot name is not a refusal we may
+  // act on.
   return { kind: "retryable", status: response.status, code: null };
 }
 
-function attestUrl(): string {
-  const base = loadConfig().services.poolsFunAttestApiUrl;
+function attestUrl(base: string): string {
   return new URL(ATTEST_PATH, base.endsWith("/") ? base : `${base}/`).toString();
 }
 
@@ -183,14 +233,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The partner's machine-readable code, if it sent one in a field we read.
- * Returns the raw value; the CLOSED-set predicates above decide whether it
- * means anything. Nothing else in the body is looked at, and no free text is
- * retained.
+ * The partner's machine-readable code. The wire contract pins it to the flat
+ * `code` field and NOWHERE else - a value under any other key is free text,
+ * and free text must never be able to terminalize a row. Returns the raw
+ * value; the CLOSED-set predicates above decide whether it means anything.
  */
 function readErrorCode(body: unknown): unknown {
   if (!isRecord(body)) return undefined;
-  return body.code ?? body.error;
+  return body.code;
 }
 
 function safeDetail(err: unknown): string {

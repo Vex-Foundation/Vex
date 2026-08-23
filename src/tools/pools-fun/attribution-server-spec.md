@@ -50,9 +50,10 @@ built against it.
   slower cadence than one attempt per 600 seconds per token, say so and the
   constant changes on the Vex side.
 - Content type: `application/json` in both directions.
-- Free-text error messages are never consumed by the client. Only the closed
-  code vocabulary in section 3 changes client behavior. Human-readable text is
-  welcome in the body for operators, but it is logged, not interpreted.
+- Free-text error messages are never consumed by the client - not interpreted,
+  not logged, not retained. Only the closed code vocabulary in section 3
+  changes client behavior. Human-readable text in the body is welcome for
+  operators reading their own responses; to the Vex client it does not exist.
 
 ## 2. The verification algorithm
 
@@ -172,10 +173,17 @@ named `code`:
 
 These five are the only codes. A code outside the list, a missing `code`
 field, or an unreadable body is treated as an unreadable refusal and retried.
-Classification is BY CODE, not by status: the client reads `code` from any
-non-2xx response and the HTTP status itself is informational (4xx is
-recommended for the coded refusals). Extra fields, including human-readable
-text for operators, are welcome and ignored.
+
+Classification precedence, exactly as the client implements it:
+
+1. HTTP 429 and every 5xx are RETRYABLE regardless of any code in the body.
+   An overloaded or erroring server can never terminalize a token by echoing
+   a terminal code mid-outage, so put terminal codes on 4xx statuses.
+2. For every other non-2xx status, classification is by the `code` field
+   alone; the exact status is informational (4xx recommended).
+
+Extra fields, including human-readable text for operators, are welcome and
+ignored.
 
 | code | meaning | client behavior |
 |---|---|---|
@@ -307,3 +315,8 @@ Named here so the pools.fun team is not surprised by them:
   investigating if it is not.
 - **Only launches performed by Vex are attested.** Vex holds no signature for a
   pools.fun token launched anywhere else, and cannot produce one after the fact.
+- **A terminal `validation_failed` can be re-delivered later.** If such a
+  rejection was caused by a Vex-side encoding defect, the fix ships as a new
+  client and re-queueing the affected rows is a deliberate maintenance action
+  on the Vex side (clearing the rejection stamp). The server sees ordinary
+  backfill traffic and needs no special handling beyond section 4.

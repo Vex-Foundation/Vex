@@ -16,13 +16,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** Mutable so individual tests can point the client at a bad or empty URL. */
+const configuredUrl = vi.hoisted(() => ({ value: "https://attest.pools.test" as unknown }));
+
 vi.mock("@config/store.js", () => ({
   loadConfig: () => ({
-    services: { poolsFunAttestApiUrl: "https://attest.pools.test" },
+    services: { poolsFunAttestApiUrl: configuredUrl.value },
   }),
 }));
 
-const { attributePoolsLaunch, buildPoolsAttestMessage } = await import(
+const { attributePoolsLaunch, buildPoolsAttestMessage, resolvePoolsAttestBaseUrl } = await import(
   "@tools/pools-fun/attribution.js"
 );
 const { POOLS_ATTEST_TERMINAL_CODES, POOLS_ATTEST_RETRYABLE_CODES } = await import(
@@ -46,6 +49,7 @@ function jsonResponse(status: number, body: unknown): Response {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  configuredUrl.value = "https://attest.pools.test";
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -101,6 +105,9 @@ describe("attributePoolsLaunch - the wire contract", () => {
     const [url, init] = firstCall;
     expect(url).toBe(ENDPOINT);
     expect(init.method).toBe("POST");
+    // The body is a bearer proof: a 307/308 would replay it verbatim at
+    // whatever origin the server names, so redirects must be refused outright.
+    expect(init.redirect).toBe("error");
     expect(JSON.parse(init.body as string)).toEqual({
       chainId: 4663,
       tokenAddress: TOKEN_LOWER,
@@ -163,6 +170,29 @@ describe("attributePoolsLaunch - the classification table", () => {
     expect(await attribute()).toEqual({ kind: "retryable", status: 403, code: null });
   });
 
+  it.each(POOLS_ATTEST_TERMINAL_CODES.map((code) => [code] as const))(
+    "STATUS PRECEDENCE: a 5xx carrying the terminal code %s stays retryable",
+    async (code) => {
+      // An erroring server must never be able to terminalize a row by echoing
+      // a terminal code mid-outage - the frozen taxonomy puts every 5xx and
+      // 429 above code classification.
+      fetchMock.mockResolvedValue(jsonResponse(500, { code }));
+      expect(await attribute()).toEqual({ kind: "retryable", status: 500, code: null });
+    },
+  );
+
+  it("STATUS PRECEDENCE: a 429 carrying a terminal code stays retryable", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(429, { code: "invalid_signature" }));
+    expect(await attribute()).toEqual({ kind: "retryable", status: 429, code: null });
+  });
+
+  it("reads the code from the flat `code` field ONLY - `error` is free text", async () => {
+    // The wire contract pins the field. A terminal literal under any other key
+    // is partner free text, and free text must never terminalize a row.
+    fetchMock.mockResolvedValue(jsonResponse(400, { error: "invalid_signature" }));
+    expect(await attribute()).toEqual({ kind: "retryable", status: 400, code: null });
+  });
+
   it("classifies a MISSING code the same way", async () => {
     fetchMock.mockResolvedValue(jsonResponse(400, {}));
     expect(await attribute()).toEqual({ kind: "retryable", status: 400, code: null });
@@ -216,6 +246,34 @@ describe("attributePoolsLaunch - transport and refusal to send", () => {
     for (const body of ["not json at all", "", "null", "[]", "42"]) {
       fetchMock.mockResolvedValue(new Response(body, { status: 500 }));
       await expect(attribute()).resolves.toBeTruthy();
+    }
+  });
+});
+
+describe("the URL policy is enforced AT the HTTP boundary", () => {
+  it.each([
+    ["an empty URL", ""],
+    ["whitespace", "   "],
+    ["a malformed URL", "not a url"],
+    ["plaintext HTTP off localhost", "http://attest.pools.example"],
+    ["a non-string value", 42],
+    ["a null value", null],
+  ])("sends NOTHING for %s and reports transport_failed", async (_label, raw) => {
+    configuredUrl.value = raw;
+    const outcome = await attribute();
+    expect(outcome.kind).toBe("transport_failed");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("admits plaintext HTTP for localhost stubs only", () => {
+    expect(resolvePoolsAttestBaseUrl("http://localhost:9999")).toBe("http://localhost:9999");
+    expect(resolvePoolsAttestBaseUrl("http://127.0.0.1:9999")).toBe("http://127.0.0.1:9999");
+    expect(resolvePoolsAttestBaseUrl("http://attest.pools.example")).toBeNull();
+  });
+
+  it("fails closed on every non-string shape instead of throwing", () => {
+    for (const raw of [undefined, null, 42, true, { url: "https://x" }, ["https://x"]]) {
+      expect(resolvePoolsAttestBaseUrl(raw)).toBeNull();
     }
   });
 });

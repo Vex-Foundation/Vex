@@ -156,3 +156,59 @@ describe("the disabled leg does nothing at all - no signature, no write, no HTTP
     },
   );
 });
+
+describe("the SWEEP is gated by the same strict boolean - a configured URL alone never turns delivery on", () => {
+  function writeFlagAndUrl(value: unknown): void {
+    if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
+    const base = getDefaultConfig();
+    writeFileSync(
+      testConfigFile,
+      JSON.stringify({
+        ...base,
+        poolsFunAttestationEnabled: value,
+        services: { ...base.services, poolsFunAttestApiUrl: "https://attest.pools.test" },
+      }),
+    );
+  }
+
+  it.each(NON_BOOLEAN_TRUTHY)(
+    "claims ZERO rows with a live URL while the file stores %s",
+    async (_label, value) => {
+      writeFlagAndUrl(value);
+
+      const launchedTokens = await import("@vex-agent/db/repos/launched-tokens.js");
+      const claim = vi
+        .spyOn(launchedTokens, "claimPoolsAttributionCandidates")
+        .mockImplementation(async () => []);
+
+      const { attributePoolsLaunches } = await import("@vex-agent/sync/pools-attribution.js");
+      const { buildProductionPoolsAttributionDeps } = await import(
+        "@vex-agent/sync/pools-attribution-production-deps.js"
+      );
+
+      const result = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+      expect(result.skipped).toBe(true);
+      expect(result.checked).toBe(0);
+      expect(claim).not.toHaveBeenCalled();
+    },
+  );
+
+  it("claims once the flag is a real boolean `true` and the URL resolves", async () => {
+    writeFlagAndUrl(true);
+
+    const launchedTokens = await import("@vex-agent/db/repos/launched-tokens.js");
+    const claim = vi
+      .spyOn(launchedTokens, "claimPoolsAttributionCandidates")
+      .mockImplementation(async () => []);
+    vi.spyOn(launchedTokens, "countPoolsUnsignedAttributionGap").mockImplementation(async () => 0);
+
+    const { attributePoolsLaunches } = await import("@vex-agent/sync/pools-attribution.js");
+    const { buildProductionPoolsAttributionDeps } = await import(
+      "@vex-agent/sync/pools-attribution-production-deps.js"
+    );
+
+    const result = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+    expect(result.skipped).toBe(false);
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+});

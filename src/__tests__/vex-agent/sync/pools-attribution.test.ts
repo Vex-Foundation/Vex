@@ -126,6 +126,19 @@ describe("terminal versus retry - the only two durable dispositions", () => {
     expect(result).toMatchObject({ rejected: 1, attributed: 0 });
   });
 
+  it("counts a THROWING rejection writer as retryable, never as rejected too", async () => {
+    // The increment sits after the awaited write: if the write throws, the row
+    // falls to the per-row catch and is retried. One row tallied as both
+    // rejected and retryable would make the run's totals lie.
+    vi.mocked(launchedTokens.markPoolsAttributionRejected).mockImplementation(async () => {
+      throw new Error("db down");
+    });
+    const result = await attributePoolsLaunches(
+      deps(answering({ kind: "rejected", status: 400, code: "invalid_signature" })),
+    );
+    expect(result).toMatchObject({ checked: 1, rejected: 0, retryable: 1, attributed: 0 });
+  });
+
   it.each([
     ["a 429", { kind: "retryable", status: 429, code: null }],
     ["a 503", { kind: "retryable", status: 503, code: null }],

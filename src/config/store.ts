@@ -148,6 +148,15 @@ export function parsePoolsFunAttestationEnabled(raw: unknown): boolean {
   return raw === true;
 }
 
+/**
+ * The runtime gate every pools-attestation call site asks. Lives HERE, next to
+ * the strict parse, so the signing leg and the delivery sweep cannot drift to
+ * different answers about whether the lane is on.
+ */
+export function poolsAttestationEnabled(): boolean {
+  return loadConfig().poolsFunAttestationEnabled === true;
+}
+
 export function getDefaultConfig(): VexConfig {
   return {
     version: 1,

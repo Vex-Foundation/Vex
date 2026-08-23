@@ -38,6 +38,10 @@
  */
 
 import { query, queryOne } from "../client.js";
+// Type-only: the vocabulary's single owner. No runtime dependency crosses from
+// the repo layer into a tool module, and the terminal set cannot drift from
+// the module the client and the sweep already import.
+import type { PoolsAttestTerminalCode } from "@tools/pools-fun/attribution-codes.js";
 
 export interface LaunchedToken {
   id: number;
@@ -507,18 +511,18 @@ export async function markPoolsAttributed(input: { id: number }): Promise<boolea
  * so the retry window picks the row up again. Collapsing the two would burn a
  * launch's badge on a transient network failure.
  *
- * The code vocabulary is FROZEN and mirrored in three places that must move
- * together: migration 087's `launched_tokens_pools_rejection_code_valid` CHECK,
- * `src/tools/pools-fun/attribution-codes.ts`, and this union. It is inlined here
- * rather than imported so the repo layer keeps no dependency on a tool module;
- * a lockstep test guards the drift.
+ * The code vocabulary is FROZEN and owned by
+ * `src/tools/pools-fun/attribution-codes.ts`; this signature imports the type
+ * (type-only, so no runtime dependency crosses the layer) and migration 087's
+ * `launched_tokens_pools_rejection_code_valid` CHECK restates the same three
+ * literals. A lockstep test guards the module-to-SQL half of that pairing.
  *
  * Same both-columns CAS as `markPoolsAttributed`, for the mirror-image reason:
  * a refusal arriving after the badge already landed must not overwrite it.
  */
 export async function markPoolsAttributionRejected(input: {
   id: number;
-  code: "invalid_signature" | "validation_failed" | "not_pools_launch";
+  code: PoolsAttestTerminalCode;
 }): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE launched_tokens

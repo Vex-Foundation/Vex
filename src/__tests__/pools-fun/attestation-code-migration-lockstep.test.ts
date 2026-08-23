@@ -110,9 +110,13 @@ describe("the pools attestation code vocabulary is internally coherent", () => {
   });
 });
 
-describe.skipIf(!migrationExists)(
+describe(
   "migration 087's CHECK and POOLS_ATTEST_TERMINAL_CODES are the same set",
   () => {
+    it("the migration file exists - 087 is REQUIRED, a missing file is a red test not a skip", () => {
+      expect(migrationExists, `expected ${MIGRATION_FILE} to exist`).toBe(true);
+    });
+
     it("finds a terminal-code CHECK in the migration at all", () => {
       expect(
         parseTerminalCodeCheck(readFileSync(MIGRATION_FILE, "utf-8")),

@@ -33,18 +33,13 @@
  * that depends on a caller remembering to ask is not an authorization.
  */
 
-import { loadConfig } from "@config/store.js";
+import { loadConfig, poolsAttestationEnabled } from "@config/store.js";
 import { buildPoolsAttestMessage } from "@tools/pools-fun/attribution.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { POOLS_ATTEST_LANE_MISCONFIG_CODE } from "@tools/pools-fun/attribution-codes.js";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
-
-/** Strictly-parsed at the config boundary; re-read here so a live toggle applies. */
-export function poolsAttestationEnabled(): boolean {
-  return loadConfig().poolsFunAttestationEnabled === true;
-}
 
 /**
  * The ONE capability this leg needs from the launch's wallet client. A viem
@@ -122,7 +117,15 @@ export async function postPoolsLaunchAttribution(
   if (attestSignature === null) return;
 
   try {
-    const { attributePoolsLaunch } = await import("@tools/pools-fun/attribution.js");
+    const { attributePoolsLaunch, resolvePoolsAttestBaseUrl } = await import(
+      "@tools/pools-fun/attribution.js"
+    );
+    if (resolvePoolsAttestBaseUrl(loadConfig().services.poolsFunAttestApiUrl) === null) {
+      // Enabled but no deliverable endpoint yet: the signature is already
+      // stored, so the sweep delivers it once the URL is configured. Skipping
+      // quietly here keeps a healthy launch free of per-launch delivery noise.
+      return;
+    }
     const outcome = await attributePoolsLaunch({ tokenAddress, attestSignature, txHash });
 
     if (outcome.kind === "attributed") {
