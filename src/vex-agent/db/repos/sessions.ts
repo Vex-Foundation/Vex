@@ -266,6 +266,48 @@ export async function isSessionResumable(id: string): Promise<boolean> {
   return row !== null && row.deleted_at === null;
 }
 
+/**
+ * The AUTHORITATIVE wallet selection and permission of one session, read inside
+ * the CALLER's transaction.
+ *
+ * The authority-fence read, and client-bound for the reason the whole fence
+ * exists: `updateProjectScope` mirrors a Studio project's wallet selection and
+ * permission onto its backing session INSIDE a transaction that takes the
+ * session control lock first. A reader that takes the same lock in the same
+ * transaction therefore sees either the pre-edit or the post-edit values and
+ * never a value the edit is midway through replacing - which a pool-level read
+ * on another connection could not promise.
+ *
+ * `null` means the session row is gone, which fails every comparison closed.
+ */
+export interface SessionWalletAuthority {
+  readonly selectedEvmWalletAddress: string | null;
+  readonly selectedSolanaWalletAddress: string | null;
+  readonly permission: string | null;
+}
+
+export async function readSessionWalletAuthorityWith(
+  client: PoolClient,
+  id: string,
+): Promise<SessionWalletAuthority | null> {
+  const row = await queryOneWith<{
+    selected_evm_wallet_address: string | null;
+    selected_solana_wallet_address: string | null;
+    permission: string | null;
+  }>(
+    client,
+    `SELECT selected_evm_wallet_address, selected_solana_wallet_address, permission
+       FROM sessions WHERE id = $1`,
+    [id],
+  );
+  if (row === null) return null;
+  return {
+    selectedEvmWalletAddress: row.selected_evm_wallet_address,
+    selectedSolanaWalletAddress: row.selected_solana_wallet_address,
+    permission: row.permission,
+  };
+}
+
 export async function setScope(id: string, scope: string): Promise<void> {
   await executeWith(getPool(), "UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
 }

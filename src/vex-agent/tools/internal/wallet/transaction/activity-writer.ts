@@ -48,17 +48,14 @@
 import type { PoolClient } from "pg";
 
 import {
-  confirmActivityEvent,
   createPendingActivityEvent,
-  failActivityEvent,
   markActivityBroadcast,
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   type AgentActivityEventRole,
-  type AgentActivityFailureCode,
   type BridgeChainFamily,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { completeExecutionIntentWith, createExecutionIntent } from "@vex-agent/db/repos/executions.js";
+import { createExecutionIntent } from "@vex-agent/db/repos/executions.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionRole } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
@@ -67,6 +64,7 @@ import logger from "@utils/logger.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
 
 import { summarizeWalletError } from "../send-types.js";
+import type { TransactionOutcome, TransactionRefusal } from "./refusal.js";
 
 /**
  * DURABLE tool identity for these rows, written into `agent_activity.tool_id`
@@ -91,16 +89,11 @@ const ROLE_BY_EFFECT: Readonly<Record<WalletTransactionRole, AgentActivityEventR
   spl_instruction_set: "tx_spl_instruction_set",
 };
 
-/** How the TOOL ATTEMPT ended. `confirmation_unknown` is a real member: see T3d. */
-export type TransactionSettlement =
-  | { readonly kind: "confirmed"; readonly txHash: string }
-  | { readonly kind: "reverted"; readonly txHash: string }
-  | { readonly kind: "confirmation_unknown"; readonly txHash: string }
-  | { readonly kind: "failed_before_broadcast" };
-
 export interface TransactionActivity {
   readonly executionId: number;
   readonly activityId: number;
+  /** When the tool attempt began, for the execution row's `duration_ms`. */
+  readonly startedAtMs: number;
   /** EVM staging. THROWS on a CAS miss - the caller must abort before submitting. */
   stageEvm(handles: {
     readonly txHash: string;
@@ -116,20 +109,12 @@ export interface TransactionActivity {
   }): Promise<void>;
   /** Best-effort `broadcast_at` bookkeeping once the RPC accepted the submission. */
   noteAccepted(): Promise<void>;
-  /**
-   * CAS-finalize `confirmed` from a DEFINITIVE receipt. Best-effort.
-   *
-   * Takes NO amounts and accepts none: this kind has no asset leg, so there is
-   * nothing a receipt could fill in that the row claims to hold.
-   */
-  confirm(): Promise<void>;
-  /** CAS-finalize `definitively_failed`. Best-effort. NEVER called for an ambiguous outcome. */
-  fail(input: {
-    readonly failureCode: AgentActivityFailureCode;
-    readonly failureReason: string;
-  }): Promise<void>;
-  /** Settle `protocol_executions` - called on EVERY normal return, T3d included. */
-  completeExecution(settlement: TransactionSettlement): Promise<void>;
+  // The three TERMINAL writes are NOT methods here. They move together, in ONE
+  // transaction under the session control lock, and that transaction is owned by
+  // `./terminal-settlement.ts`: three independently best-effort methods are
+  // exactly how the unrepairable partial states arose. This handle carries the
+  // row identities that transaction needs and the staging writes, which happen
+  // before the outcome exists and therefore cannot be part of it.
 }
 
 /** The claim either happened or it did not, and the two are different answers. */
@@ -151,6 +136,17 @@ export type TransactionClaim =
        */
       readonly reason: "race_lost" | "write_failed";
       readonly detail: string;
+    }
+  | {
+      readonly ok: false;
+      /**
+       * The AUTHORITY FENCE refused before the claim CAS ran. Its own member,
+       * not a lost race: the intent is untouched and the reason is a revoked
+       * authority, which is a different sentence for the user and a different
+       * remedy. The refusal travels whole so the caller does not re-word it.
+       */
+      readonly reason: "fence_refused";
+      readonly refusal: TransactionRefusal;
     };
 
 function chainIdentityOf(intent: WalletTransactionIntent): {
@@ -207,12 +203,22 @@ function intentParamsOf(intent: WalletTransactionIntent): Record<string, unknown
 export async function claimTransactionIntent(
   intent: WalletTransactionIntent,
   approvedProposalDigest: string,
+  fence: (client: PoolClient) => Promise<TransactionOutcome<void>>,
 ): Promise<TransactionClaim> {
   const startedAtMs = Date.now();
   const chain = chainIdentityOf(intent);
 
   try {
     return await withSessionControlLock(intent.sessionId, async (client: PoolClient) => {
+      // FENCE POINT (a), the FIRST statement after the lock. Inside this
+      // transaction, so the fence and the claim commit or roll back together:
+      // there is no instant in which the fence passed and the claim then
+      // committed under an authority the user had already replaced.
+      const fenced = await fence(client);
+      if (!fenced.ok) {
+        return { ok: false as const, reason: "fence_refused" as const, refusal: fenced.refusal };
+      }
+
       const claimed = await intentsRepo.claimIfPendingWith(
         client,
         intent.intentId,
@@ -302,6 +308,7 @@ function makeHandle(
   return {
     executionId,
     activityId,
+    startedAtMs,
 
     async stageEvm(handles) {
       const res = await markActivityBroadcast(activityId, {
@@ -342,54 +349,5 @@ function makeHandle(
       }
     },
 
-    async confirm() {
-      try {
-        // No executed amounts: this kind has no asset leg to fill, and
-        // `confirmActivityEvent`'s strict both-legs guard covers only
-        // swap/wrap/unwrap/token_launch.
-        await confirmActivityEvent(activityId, {});
-      } catch (err) {
-        logger.warn("wallet.transaction.activity_confirm_failed", {
-          activityId,
-          ...summarizeWalletError(err),
-        });
-      }
-    },
-
-    async fail(input) {
-      try {
-        await failActivityEvent(activityId, input);
-      } catch (err) {
-        logger.warn("wallet.transaction.activity_fail_failed", {
-          activityId,
-          ...summarizeWalletError(err),
-        });
-      }
-    },
-
-    async completeExecution(settlement) {
-      try {
-        await withSessionControlLock(sessionId, (client) =>
-          completeExecutionIntentWith(client, {
-            executionId,
-            // Structural only: no provider text, no calldata, no key material.
-            result: {
-              status: settlement.kind,
-              ...("txHash" in settlement ? { txHash: settlement.txHash } : {}),
-            },
-            success: settlement.kind === "confirmed",
-            tradeCapture: null,
-            externalRefs: "txHash" in settlement ? { txHash: settlement.txHash } : {},
-            durationMs: Date.now() - startedAtMs,
-          }),
-        );
-      } catch (err) {
-        logger.warn("wallet.transaction.execution_complete_failed", {
-          executionId,
-          activityId,
-          ...summarizeWalletError(err),
-        });
-      }
-    },
   };
 }

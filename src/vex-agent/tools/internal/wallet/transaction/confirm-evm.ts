@@ -30,6 +30,7 @@ import { createHash } from "node:crypto";
 import {
   signStageBroadcast,
   StagedFeeBoundsExceededError,
+  type DeferredEvmSigner,
   type StagedBroadcastOutcome,
   type StagedFeeBounds,
 } from "@tools/evm-chains/staged-broadcast.js";
@@ -46,12 +47,15 @@ import type { InternalToolContext } from "../../types.js";
 import { summarizeWalletError } from "../send-types.js";
 
 import type { TransactionActivity } from "./activity-writer.js";
+import { recheckAuthority, type AuthorityAnchor } from "./authority-fence.js";
 import {
   claimOrRefuse,
   gateConfirm,
   settleExecution,
+  type SignerLoad,
   type TransactionExecution,
 } from "./confirm-shared.js";
+import type { TransactionRefusal } from "./refusal.js";
 import {
   defaultEvmPrepareChainFactory,
   type EvmPrepareChain,
@@ -62,22 +66,35 @@ import { refusalToResult } from "./tool-io.js";
 import { revalidateDecodedEffects, revalidateEvmChainIdentity } from "./revalidate.js";
 
 /**
- * The account-bound clients the staged primitive needs, behind a seam so the
- * whole confirm path is provable without a chain. It is the ONLY place in this
- * module that sees key material, and it receives it from the caller's already
- * resolved signing wallet rather than resolving one of its own.
+ * The clients the staged primitive needs, behind a seam so the whole confirm
+ * path is provable without a chain.
+ *
+ * KEYLESS BY CONSTRUCTION. The factory builds the read client and the chain
+ * identity from the chain name alone; the key-bearing wallet client is produced
+ * later by `createWalletClient`, which the staged primitive calls only after its
+ * pre-sign hook has passed. Nothing in this module holds key material across a
+ * network round trip.
  */
 export interface EvmSignerClients {
   readonly publicClient: Parameters<typeof signStageBroadcast>[0];
-  readonly walletClient: Parameters<typeof signStageBroadcast>[1];
+  /** The chain the request is prepared and signed for. */
+  readonly chain: EvmChainDescriptor;
+  /** Build the account-bound signing client from an already-decrypted wallet. */
+  readonly createWalletClient: (wallet: EvmWallet) => EvmWalletClient;
   /** Human-readable chain name, for the explorer ref. */
   readonly chainName: string;
 }
 
-export type EvmSignerClientsFactory = (
-  chainInput: string,
-  wallet: EvmWallet,
-) => Promise<EvmSignerClients>;
+/** The account-bound client shape `signStageBroadcast`'s eager arm accepts. */
+type EvmWalletClient = Extract<
+  Parameters<typeof signStageBroadcast>[1],
+  { signTransaction: unknown }
+>;
+
+/** The viem chain object the deferred signer contract compares against. */
+type EvmChainDescriptor = DeferredEvmSigner["chain"];
+
+export type EvmSignerClientsFactory = (chainInput: string) => Promise<EvmSignerClients>;
 
 export interface EvmConfirmDeps {
   readonly chainFactory: EvmPrepareChainFactory;
@@ -88,34 +105,41 @@ export interface EvmConfirmDeps {
  * The real adapter. Same inclusive resolver the transfer executor uses, so a
  * Khalani-registered chain and a local-registry chain both work.
  */
-export const defaultEvmSignerClientsFactory: EvmSignerClientsFactory = async (
-  chainInput,
-  wallet,
-) => {
+export const defaultEvmSignerClientsFactory: EvmSignerClientsFactory = async (chainInput) => {
   const { resolveInclusiveEvmChain } = await import("@tools/evm-chains/resolver.js");
   const resolved = await resolveInclusiveEvmChain(chainInput);
   if (resolved.source === "khalani") {
     const { createDynamicPublicClient, createDynamicWalletClient } = await import(
       "@tools/khalani/evm-client.js"
     );
+    const publicClient = createDynamicPublicClient(
+      resolved.khalaniChain,
+      resolved.khalaniChains,
+    ) as unknown as EvmSignerClients["publicClient"];
     return {
-      publicClient: createDynamicPublicClient(
-        resolved.khalaniChain,
-        resolved.khalaniChains,
-      ) as unknown as EvmSignerClients["publicClient"],
-      walletClient: createDynamicWalletClient(
-        resolved.khalaniChain,
-        resolved.khalaniChains,
-        wallet.privateKey as `0x${string}`,
-      ) as unknown as EvmSignerClients["walletClient"],
+      publicClient,
+      chain: publicClient.chain,
+      createWalletClient: (wallet) =>
+        createDynamicWalletClient(
+          resolved.khalaniChain,
+          resolved.khalaniChains,
+          wallet.privateKey as `0x${string}`,
+        ) as unknown as EvmWalletClient,
       chainName: resolved.khalaniChain.name || chainInput,
     };
   }
-  const { getLocalEvmClients } = await import("@tools/evm-chains/evm-client.js");
-  const clients = getLocalEvmClients(resolved.config, wallet.privateKey as `0x${string}`);
+  const { getLocalEvmClients, getLocalPublicClient } = await import(
+    "@tools/evm-chains/evm-client.js"
+  );
+  const publicClient = getLocalPublicClient(
+    resolved.config,
+  ) as unknown as EvmSignerClients["publicClient"];
   return {
-    publicClient: clients.publicClient as unknown as EvmSignerClients["publicClient"],
-    walletClient: clients.walletClient as unknown as EvmSignerClients["walletClient"],
+    publicClient,
+    chain: publicClient.chain,
+    createWalletClient: (wallet) =>
+      getLocalEvmClients(resolved.config, wallet.privateKey as `0x${string}`)
+        .walletClient as unknown as EvmWalletClient,
     chainName: resolved.config.name || chainInput,
   };
 };
@@ -148,9 +172,9 @@ export async function handleWalletEvmTransactionConfirm(
 ): Promise<ToolResult> {
   const gate = await gateConfirm(params, context, "eip155");
   if (gate.kind === "return") return gate.result;
-  const { intent, signer } = gate;
-  if (signer.family !== "eip155" || intent.payload.family !== "eip155") {
-    // Unreachable: the gate proved both. Stated rather than asserted, because a
+  const { intent, loadSigner, anchor } = gate;
+  if (intent.payload.family !== "eip155") {
+    // Unreachable: the gate proved it. Stated rather than asserted, because a
     // non-null assertion on the money path is exactly what this repository does
     // not do.
     return refusalToResult({
@@ -177,13 +201,14 @@ export async function handleWalletEvmTransactionConfirm(
   const revalidated = await revalidateEvmAtCommit(intent, payload, chain);
   if (revalidated !== null) return revalidated;
 
-  const claimed = await claimOrRefuse(intent);
+  const claimed = await claimOrRefuse(intent, anchor);
   if (claimed.kind === "return") return claimed.result;
 
   const execution = await executeEvmTransaction({
     intent,
     payload,
-    wallet: signer,
+    loadSigner,
+    anchor,
     bounds,
     activity: claimed.claim.activity,
     deps,
@@ -238,16 +263,17 @@ async function revalidateEvmAtCommit(
 async function executeEvmTransaction(args: {
   readonly intent: WalletTransactionIntent;
   readonly payload: EvmTransactionPayload;
-  readonly wallet: EvmWallet;
+  readonly loadSigner: () => SignerLoad;
+  readonly anchor: AuthorityAnchor;
   readonly bounds: StagedFeeBounds;
   readonly activity: TransactionActivity;
   readonly deps: EvmConfirmDeps;
 }): Promise<TransactionExecution> {
-  const { intent, payload, wallet, bounds, activity, deps } = args;
+  const { intent, payload, loadSigner, anchor, bounds, activity, deps } = args;
 
   let clients: EvmSignerClients;
   try {
-    clients = await deps.signerClientsFactory(intent.chainAlias ?? "", wallet);
+    clients = await deps.signerClientsFactory(intent.chainAlias ?? "");
   } catch (cause) {
     return preBroadcast(
       cause,
@@ -260,12 +286,57 @@ async function executeEvmTransaction(args: {
   // other pre-broadcast throw: it means the durable evidence write failed while
   // the intent was already `consuming`, which is the `audit_failed` status.
   let stagingFailed = false;
+  // A refused AUTHORITY FENCE is told apart from BOTH: it is not our audit
+  // breaking and not the chain refusing, it is the user having replaced the
+  // authority this dispatch was approved under.
+  let fenceRefusal: TransactionRefusal | null = null;
+
+  const deferredSigner: DeferredEvmSigner = {
+    kind: "deferred",
+    address: intent.walletAddress as `0x${string}`,
+    chain: clients.chain,
+    // FENCE POINT (b). Runs after the estimate, the request preparation and the
+    // fee-bound check, and before any key exists. A refusal here means NOTHING
+    // was decrypted, signed, staged or broadcast.
+    onBeforeSign: async () => {
+      const fenced = await recheckAuthority(anchor, "pre_sign");
+      if (!fenced.ok) {
+        fenceRefusal = fenced.refusal;
+        throw new FenceRefused("authority fence refused before signing");
+      }
+    },
+    // The key is decrypted HERE and nowhere earlier, immediately before the
+    // signature, with no provider call in between.
+    createSigner: async () => {
+      const loaded = loadSigner();
+      if (loaded.kind === "return") {
+        fenceRefusal = {
+          code: "forbidden_field",
+          message:
+            "Refusing to sign: the wallet this transaction was approved for could not be resolved "
+            + "for signing. Nothing was signed and no funds moved.",
+          details: { intentId: intent.intentId },
+        };
+        throw new FenceRefused("signer could not be loaded");
+      }
+      if (loaded.signer.family !== "eip155") {
+        fenceRefusal = {
+          code: "invalid_input",
+          message:
+            `Refusing to sign: intent ${intent.intentId} is not an EVM intent. Nothing was signed.`,
+          details: { intentId: intent.intentId },
+        };
+        throw new FenceRefused("signer family mismatch");
+      }
+      return clients.createWalletClient(loaded.signer);
+    },
+  };
 
   let outcome: StagedBroadcastOutcome;
   try {
     outcome = await signStageBroadcast(
       clients.publicClient,
-      clients.walletClient,
+      deferredSigner,
       { to: payload.to as `0x${string}`, data: payload.data as `0x${string}`, value: BigInt(payload.valueWei) },
       {
         onHashStaged: async (handles) => {
@@ -279,6 +350,15 @@ async function executeEvmTransaction(args: {
             stagingFailed = true;
             throw cause;
           }
+          // FENCE POINT (c), DELIBERATELY OUTSIDE the catch above. A refusal
+          // here is a fence refusal, never `audit_failed`: our audit write
+          // succeeded, and what stopped the broadcast is that the authority was
+          // revoked while it was being written. Nothing has been submitted.
+          const fenced = await recheckAuthority(anchor, "pre_submit");
+          if (!fenced.ok) {
+            fenceRefusal = fenced.refusal;
+            throw new FenceRefused("authority fence refused before submission");
+          }
         },
         onAccepted: () => activity.noteAccepted(),
       },
@@ -287,6 +367,22 @@ async function executeEvmTransaction(args: {
       bounds,
     );
   } catch (cause) {
+    // Checked FIRST, and before `stagingFailed`: at the post-stage point BOTH
+    // flags are reachable, and a fence refusal must never be classified as an
+    // audit failure. `instanceof` rather than the flag alone, so the branch is
+    // about the error that actually propagated.
+    if (cause instanceof FenceRefused && fenceRefusal !== null) {
+      const refusal: TransactionRefusal = fenceRefusal;
+      return {
+        kind: "pre_broadcast_failed",
+        errorKind: "AuthorityFenceRefused",
+        errorHash: createHash("sha256")
+          .update(`evm-fence:${intent.intentId}:${refusal.details?.fencePoint ?? "unknown"}`)
+          .digest("hex")
+          .slice(0, 16),
+        message: refusal.message,
+      };
+    }
     // EVERY throw out of `signStageBroadcast` is PRE-SUBMISSION: the estimate,
     // the bounds check, the preparation, the signature, or the staging hook.
     // Nothing reached the network on any of them.
@@ -360,6 +456,13 @@ async function executeEvmTransaction(args: {
     },
   };
 }
+
+/**
+ * Thrown out of a `signStageBroadcast` hook so the primitive aborts, while the
+ * REFUSAL that caused it travels back on `fenceRefusal`. The error itself
+ * carries no message worth reading: the refusal is the sentence the user gets.
+ */
+class FenceRefused extends Error {}
 
 /** A pre-broadcast outcome whose cause is reduced to a structural fingerprint. */
 function preBroadcast(cause: unknown, message: string): Extract<

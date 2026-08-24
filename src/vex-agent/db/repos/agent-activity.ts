@@ -169,12 +169,16 @@ export {
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   confirmActivityEvent,
+  // Client-bound twins (same CAS, same fence, same {applied,row}) for a caller
+  // that terminalizes several coupled rows inside ONE transaction.
+  confirmActivityEventWith,
   // The repair sweeps' status-only finalizer — a terminal confirm that writes
   // no executed amounts, for rows whose settlement evidence could not be
   // decoded. Exported from the facade so the sweeps never reach into the
   // implementation module. See its doc in `./agent-activity/swap-lifecycle.ts`.
   confirmActivityEventStatusOnly,
   failActivityEvent,
+  failActivityEventWith,
   abortPlannedEvents,
   touchLastChecked,
   clearVerificationStall,
@@ -183,6 +187,9 @@ export {
   // `./agent-activity/swap-lifecycle/verification-bookkeeping.ts`.
   notePendingReason,
   getActivityEventById,
+  // Client-bound twin: a caller settling several coupled rows in ONE
+  // transaction must read them through its own connection.
+  getActivityEventByIdWith,
   listPendingOlderThan,
   // Wave P: the fast lane's by-id candidate read, and the group-wide pending
   // predicate `fullBalanceSync` consults before it may take a snapshot.

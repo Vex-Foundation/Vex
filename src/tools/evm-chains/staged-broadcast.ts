@@ -37,6 +37,7 @@ import type {
   WalletClient,
 } from "viem";
 import { keccak256 } from "viem";
+import { parseAccount } from "viem/accounts";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
@@ -169,6 +170,73 @@ function assertWithinFeeBounds(
   }
 }
 
+/**
+ * THE DEFERRED SIGNER ARM - key material is resolved only after every awaited
+ * preparation call has finished and the caller's own pre-sign gate has passed.
+ *
+ * WHY IT EXISTS. The eager arm takes a key-bearing `walletClient`, so the key is
+ * materialized before the gas estimate, before the request preparation and
+ * before the fee-bound check - a window of several network round trips in which
+ * a revocation cannot stop the signature that follows. The generic signing path
+ * has an authority that the user can change mid-flight (a project wallet-scope
+ * edit, or locking Vex), so it needs the key to appear as late as the design
+ * allows.
+ *
+ * THE ORDER IS THE CONTRACT, and it is what the tests assert:
+ *
+ *   1. KEYLESS PREPARATION. `address` + `chain` are the preparation identity -
+ *      enough for `eth_estimateGas`, for `prepareTransactionRequest` (nonce and
+ *      fees) and for the fee-bound refusal, and never enough to sign.
+ *   2. `onBeforeSign` runs EXACTLY ONCE, after every awaited preparation
+ *      operation and before any key is loaded. A throw from it signs, stages and
+ *      submits NOTHING.
+ *   3. `createSigner` resolves and decrypts the CURRENTLY authorized wallet.
+ *   4. The resulting signer's account and chain must EXACTLY match the prepared
+ *      request; a mismatch throws before signing.
+ *   5. NO ADDITIONAL PROVIDER CALL happens between the signer being created and
+ *      `signTransaction`. The request was already prepared in step 1, so there
+ *      is nothing left to ask the node, and nothing that could widen the window
+ *      the deferred arm exists to narrow.
+ */
+export interface DeferredEvmSigner {
+  readonly kind: "deferred";
+  /** The keyless preparation identity: the address the transaction is prepared for. */
+  readonly address: Address;
+  /** The chain the request is prepared and signed for. */
+  readonly chain: Chain;
+  /**
+   * The caller's pre-sign gate. Runs EXACTLY ONCE, after all preparation and
+   * before `createSigner`. Throwing aborts with nothing signed.
+   */
+  readonly onBeforeSign: () => Promise<void>;
+  /** Resolve and decrypt the currently authorized wallet. Throwing aborts. */
+  readonly createSigner: () => Promise<WalletClient<Transport, Chain, Account>>;
+}
+
+/**
+ * Who signs. The EAGER arm is the account-bound `WalletClient` every existing
+ * venue passes and its behaviour is unchanged in every respect; the DEFERRED arm
+ * is used only by the generic wallet-transaction confirm.
+ */
+export type StagedSigner = WalletClient<Transport, Chain, Account> | DeferredEvmSigner;
+
+function isDeferred(signer: StagedSigner): signer is DeferredEvmSigner {
+  // viem clients carry `type`/`key`/`uid`, never `kind`, so this discriminates
+  // structurally without a cast and without touching the eager path.
+  return "kind" in signer && signer.kind === "deferred";
+}
+
+/** A deferred signer resolved to a wallet that is not the one the request was prepared for. */
+export class DeferredSignerIdentityError extends Error {
+  constructor(field: "account" | "chain") {
+    super(
+      `Refusing to sign: the wallet resolved for signing does not match the ${field} the `
+      + "transaction was prepared for. Nothing was signed and nothing was broadcast.",
+    );
+    this.name = "DeferredSignerIdentityError";
+  }
+}
+
 export interface StagedBroadcastHooks {
   /**
    * Called AFTER the transaction is signed and its hash computed, BEFORE it
@@ -212,14 +280,23 @@ export interface StagedBroadcastHooks {
  */
 export async function signStageBroadcast(
   publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain, Account>,
+  signer: StagedSigner,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
   bounds?: StagedFeeBounds,
 ): Promise<StagedBroadcastOutcome> {
-  const account = walletClient.account;
+  const deferred = isDeferred(signer) ? signer : null;
+  const eager: WalletClient<Transport, Chain, Account> | null =
+    deferred === null ? (signer as WalletClient<Transport, Chain, Account>) : null;
+  // The preparation identity. On the eager arm it IS the wallet client's own
+  // account, exactly as before; on the deferred arm it is an address-only
+  // account that cannot sign.
+  const account: Account = eager === null
+    ? parseAccount((deferred as DeferredEvmSigner).address)
+    : eager.account;
+  const chain: Chain = eager === null ? (deferred as DeferredEvmSigner).chain : eager.chain;
   const value = txParams.value ?? 0n;
 
   // Estimated explicitly rather than left to `prepareTransactionRequest`,
@@ -246,9 +323,12 @@ export async function signStageBroadcast(
   // nothing above it. The assertion after it is the fail-closed half - viem may
   // still route preparation through the node, and only the request that is
   // actually serialized proves what would be signed.
-  const request = await walletClient.prepareTransactionRequest({
+  // Prepared on the WALLET client when one exists (byte-identical to the prior
+  // behaviour) and on the PUBLIC client otherwise - the same viem action, and
+  // nonce/fee filling needs no key.
+  const prepareArgs = {
     account,
-    chain: walletClient.chain,
+    chain,
     to: txParams.to,
     data: txParams.data,
     value,
@@ -261,7 +341,10 @@ export async function signStageBroadcast(
             maxPriorityFeePerGas: bounds.maxPriorityFeePerGasWei,
           }
         : { gasPrice: bounds.gasPriceWei }),
-  });
+  } as const;
+  const request = eager === null
+    ? await publicClient.prepareTransactionRequest(prepareArgs)
+    : await eager.prepareTransactionRequest(prepareArgs);
   if (bounds !== undefined) {
     assertWithinFeeBounds({ ...request, gas: gasLimit }, bounds);
   }
@@ -270,6 +353,14 @@ export async function signStageBroadcast(
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
+  // THE PRE-SIGN GATE, then the key, then the signature - with nothing awaited
+  // in between that could reach a provider. See `DeferredEvmSigner`.
+  const walletClient = eager ?? await resolveDeferredSigner(
+    deferred as DeferredEvmSigner,
+    account,
+    chain,
+  );
+
   const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
   const nonce = request.nonce;
@@ -310,4 +401,24 @@ export async function signStageBroadcast(
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "confirm", reason: describeFailureForLog(err) };
   }
+}
+
+/**
+ * Steps 2 to 4 of the deferred contract: the caller's gate, then the key, then
+ * the identity proof. Kept in one function so no call site can reorder them.
+ */
+async function resolveDeferredSigner(
+  deferred: DeferredEvmSigner,
+  preparedAccount: Account,
+  preparedChain: Chain,
+): Promise<WalletClient<Transport, Chain, Account>> {
+  await deferred.onBeforeSign();
+  const walletClient = await deferred.createSigner();
+  if (walletClient.account.address.toLowerCase() !== preparedAccount.address.toLowerCase()) {
+    throw new DeferredSignerIdentityError("account");
+  }
+  if (walletClient.chain.id !== preparedChain.id) {
+    throw new DeferredSignerIdentityError("chain");
+  }
+  return walletClient;
 }

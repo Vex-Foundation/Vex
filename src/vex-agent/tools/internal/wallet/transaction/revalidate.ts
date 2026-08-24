@@ -176,6 +176,32 @@ export function revalidateIntentRow(
  * confirm, or cancel. Signing from a different address is the one thing that
  * must never happen quietly.
  */
+/**
+ * The ADDRESS half of the signer check, provable WITHOUT decrypting anything.
+ *
+ * Split out so the gate can prove "this session's selection is the approved
+ * wallet" before any key material exists, and `revalidateSigner` can re-prove
+ * the same fact about the key it actually loaded. Both call it, so the two can
+ * never state different rules.
+ */
+export function revalidateSignerAddress(
+  intent: WalletTransactionIntent,
+  address: string,
+): TransactionOutcome<void> {
+  const inventoryFamily = intent.family === "solana" ? "solana" : "evm";
+  if (!walletAddressesEqual(inventoryFamily, address, intent.walletAddress)) {
+    return refuse(
+      "forbidden_field",
+      "Refusing to sign: the wallet selected for this session is not the wallet this transaction was "
+      + "prepared for, so signing it would send the transaction from an address the user never "
+      + "approved. Nothing was signed and no funds moved. Select the original wallet and confirm "
+      + "again, or prepare the transaction anew.",
+      { intentId: intent.intentId, preparedFor: intent.walletAddress },
+    );
+  }
+  return accept(undefined);
+}
+
 export function revalidateSigner(
   intent: WalletTransactionIntent,
   signer: ChainWallet,
@@ -188,18 +214,7 @@ export function revalidateSigner(
       { intentId: intent.intentId, expectedFamily: intent.family },
     );
   }
-  const inventoryFamily = intent.family === "solana" ? "solana" : "evm";
-  if (!walletAddressesEqual(inventoryFamily, signer.address, intent.walletAddress)) {
-    return refuse(
-      "forbidden_field",
-      "Refusing to sign: the wallet selected for this session is not the wallet this transaction was "
-      + "prepared for, so signing it would send the transaction from an address the user never "
-      + "approved. Nothing was signed and no funds moved. Select the original wallet and confirm "
-      + "again, or prepare the transaction anew.",
-      { intentId: intent.intentId, preparedFor: intent.walletAddress },
-    );
-  }
-  return accept(undefined);
+  return revalidateSignerAddress(intent, signer.address);
 }
 
 // ── Step 6/7: chain identity and the fresh decode ──────────────────────

@@ -22,6 +22,8 @@
  * the user already approved requires.
  */
 
+import { createHash } from "node:crypto";
+
 import { Keypair, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 
 import type { SolanaWallet } from "@tools/wallet/multi-auth.js";
@@ -40,12 +42,15 @@ import {
   type SolanaPrepareChain,
   type SolanaPrepareChainFactory,
 } from "./chain-seams.js";
+import { recheckAuthority, type AuthorityAnchor } from "./authority-fence.js";
 import {
   claimOrRefuse,
   gateConfirm,
   settleExecution,
+  type SignerLoad,
   type TransactionExecution,
 } from "./confirm-shared.js";
+import type { TransactionRefusal } from "./refusal.js";
 import { decodeSolanaTransaction } from "./decode-solana.js";
 import { assertQueriedSolanaMessageFee } from "./fee-bounds.js";
 import {
@@ -186,8 +191,8 @@ export async function handleWalletSolanaTransactionConfirm(
 ): Promise<ToolResult> {
   const gate = await gateConfirm(params, context, "solana");
   if (gate.kind === "return") return gate.result;
-  const { intent, signer } = gate;
-  if (signer.family !== "solana" || intent.payload.family !== "solana") {
+  const { intent, loadSigner, anchor } = gate;
+  if (intent.payload.family !== "solana") {
     return refusalToResult({
       code: "invalid_input",
       message:
@@ -211,13 +216,15 @@ export async function handleWalletSolanaTransactionConfirm(
   const revalidated = await revalidateSolanaAtCommit(intent, payload, chain);
   if (revalidated !== null) return revalidated;
 
-  const claimed = await claimOrRefuse(intent);
+  const claimed = await claimOrRefuse(intent, anchor);
   if (claimed.kind === "return") return claimed.result;
 
   const execution = await executeSolanaTransaction({
     intent,
     payload,
-    wallet: signer,
+    loadSigner,
+    anchor,
+    chain,
     activity: claimed.claim.activity,
     deps,
   });
@@ -284,11 +291,68 @@ async function revalidateSolanaAtCommit(
 async function executeSolanaTransaction(args: {
   readonly intent: WalletTransactionIntent;
   readonly payload: SolanaTransactionPayload;
-  readonly wallet: SolanaWallet;
+  readonly loadSigner: () => SignerLoad;
+  readonly anchor: AuthorityAnchor;
+  readonly chain: SolanaPrepareChain;
   readonly activity: TransactionActivity;
   readonly deps: SolanaConfirmDeps;
 }): Promise<TransactionExecution> {
-  const { intent, payload, wallet, activity, deps } = args;
+  const { intent, payload, loadSigner, anchor, chain, activity, deps } = args;
+
+  // THE BLOCK HEIGHT, re-asked immediately before signing. Height is this
+  // family's real expiry, and the gate's earlier read is now several round
+  // trips old: a message whose window closed while we were preparing must not
+  // be signed, because signing it creates bytes that can still land if a node's
+  // view lags. Asked BEFORE the fence so the fence is the LAST thing that
+  // happens before the key appears - nothing awaited stands between them.
+  let currentHeight: number;
+  try {
+    currentHeight = await chain.getBlockHeight();
+  } catch (cause) {
+    return preBroadcast(
+      cause,
+      "Vex could not re-check the Solana block height immediately before signing, so it refused to "
+      + "sign. Nothing reached the network and no funds moved.",
+    );
+  }
+  const heightCheck = revalidateSolanaBlockHeight(intent, currentHeight);
+  if (!heightCheck.ok) {
+    return {
+      kind: "pre_broadcast_failed",
+      errorKind: "BlockHeightExpired",
+      errorHash: "0000000000000000",
+      message: heightCheck.refusal.message,
+    };
+  }
+
+  // FENCE POINT (b), the LAST check before any key exists. A refusal here means
+  // nothing was decrypted and nothing was signed.
+  const preSign = await recheckAuthority(anchor, "pre_sign");
+  if (!preSign.ok) return fenceRefused(intent, preSign.refusal, "pre_sign");
+
+  // The key is decrypted HERE, after the fence passed and immediately before
+  // the signature.
+  const loaded = loadSigner();
+  if (loaded.kind === "return") {
+    return {
+      kind: "pre_broadcast_failed",
+      errorKind: "SignerUnavailable",
+      errorHash: "0000000000000000",
+      message:
+        "Refusing to sign: the wallet this transaction was approved for could not be resolved for "
+        + "signing. Nothing was signed and no funds moved.",
+    };
+  }
+  if (loaded.signer.family !== "solana") {
+    return {
+      kind: "pre_broadcast_failed",
+      errorKind: "SignerFamilyMismatch",
+      errorHash: "0000000000000000",
+      message:
+        `Refusing to sign: intent ${intent.intentId} is not a Solana intent. Nothing was signed.`,
+    };
+  }
+  const wallet: SolanaWallet = loaded.signer;
 
   // SIGN ONLY. Nothing has reached the network yet.
   let signed: SignedSolanaTransaction;
@@ -341,6 +405,15 @@ async function executeSolanaTransaction(args: {
       auditFailed: true,
     };
   }
+
+  // FENCE POINT (c), between the staged evidence and the submission, and its
+  // own step rather than part of the staging try: a refusal here is NOT
+  // `audit_failed` - the audit write succeeded, and what stops the broadcast is
+  // that the authority was revoked while it was being written. The signed bytes
+  // are discarded unsent; a submission already invoked would have won the
+  // ordering, and this one was never invoked.
+  const preSubmit = await recheckAuthority(anchor, "pre_submit");
+  if (!preSubmit.ok) return fenceRefused(intent, preSubmit.refusal, "pre_submit");
 
   const submitted = await deps.signing.submit(signed);
 
@@ -414,6 +487,23 @@ async function executeSolanaTransaction(args: {
       _executionId: activity.executionId,
       _explorerRefs: [{ chain: SOLANA_CHAIN_SLUG, txRef: signed.signature }],
     },
+  };
+}
+
+/** A refused authority fence, as the pre-broadcast outcome the settlement writes. */
+function fenceRefused(
+  intent: WalletTransactionIntent,
+  refusal: TransactionRefusal,
+  point: string,
+): Extract<TransactionExecution, { kind: "pre_broadcast_failed" }> {
+  return {
+    kind: "pre_broadcast_failed",
+    errorKind: "AuthorityFenceRefused",
+    errorHash: createHash("sha256")
+      .update(`solana-fence:${intent.intentId}:${point}`)
+      .digest("hex")
+      .slice(0, 16),
+    message: refusal.message,
   };
 }
 

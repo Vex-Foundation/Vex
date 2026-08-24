@@ -116,10 +116,21 @@ async function prepareIntent(
   return row;
 }
 
-/** T2, through the real claim transaction. */
+/** An always-clear authority fence. See the `claim` helper below. */
+const CLEAR_FENCE = async (): Promise<{ ok: true; value: undefined }> => ({
+  ok: true,
+  value: undefined,
+});
+
+/**
+ * T2, through the real claim transaction. The fence argument is REQUIRED by the
+ * signature so no caller can forget it; this matrix is about the row coupling,
+ * so it passes an always-clear fence and the fence's own barriers are proved in
+ * `../wallet/transaction-authority-fence.int.test.ts`.
+ */
 async function claim(intent: intentsRepo.WalletTransactionIntent) {
-  const claimed = await claimTransactionIntent(intent, intent.proposalDigest);
-  if (!claimed.ok) throw new Error(`claim failed: ${claimed.reason} ${claimed.detail}`);
+  const claimed = await claimTransactionIntent(intent, intent.proposalDigest, CLEAR_FENCE);
+  if (!claimed.ok) throw new Error(`claim failed: ${claimed.reason}`);
   return claimed;
 }
 
@@ -179,7 +190,7 @@ describe("wallet_transaction_intents lifecycle T1-T8, three coupled rows", () =>
     const intent = await prepareIntent(sessionId);
     await claim(intent);
 
-    const second = await claimTransactionIntent(intent, intent.proposalDigest);
+    const second = await claimTransactionIntent(intent, intent.proposalDigest, CLEAR_FENCE);
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.reason).toBe("race_lost");
 
@@ -194,7 +205,11 @@ describe("wallet_transaction_intents lifecycle T1-T8, three coupled rows", () =>
     const sessionId = await makeSession();
     const intent = await prepareIntent(sessionId);
 
-    const claimed = await claimTransactionIntent(intent, "digest-that-was-never-approved");
+    const claimed = await claimTransactionIntent(
+      intent,
+      "digest-that-was-never-approved",
+      CLEAR_FENCE,
+    );
     expect(claimed.ok).toBe(false);
 
     const rows = await readThreeRows(intent.intentId);
@@ -443,7 +458,7 @@ describe("wallet_transaction_intents lifecycle T1-T8, three coupled rows", () =>
     );
     expect(cancelled?.status).toBe("cancelled");
 
-    const claimed = await claimTransactionIntent(intent, intent.proposalDigest);
+    const claimed = await claimTransactionIntent(intent, intent.proposalDigest, CLEAR_FENCE);
     expect(claimed.ok).toBe(false);
 
     const rows = await readThreeRows(intent.intentId);
@@ -460,6 +475,7 @@ describe("wallet_transaction_intents lifecycle T1-T8, three coupled rows", () =>
     const claimed = await claimTransactionIntent(
       { ...intent, sessionId: stranger },
       intent.proposalDigest,
+      CLEAR_FENCE,
     );
     expect(claimed.ok).toBe(false);
 

@@ -31,12 +31,11 @@ import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js"
 import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionFamily } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 import { readApprovalProposalBinding } from "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import logger from "@utils/logger.js";
 
 import type { ToolResult } from "../../../types.js";
 import type { InternalToolContext } from "../../types.js";
-import { resolveSigningWallet, walletScopeErrorToResult } from "../resolve.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "../resolve.js";
 import { summarizeWalletError } from "../send-types.js";
 import { failWith, ok } from "../send/results.js";
 
@@ -45,40 +44,16 @@ import type { TransactionActivity, TransactionClaim } from "./activity-writer.js
 import { claimTransactionIntent } from "./activity-writer.js";
 import { WALLET_TRANSACTION_INTENTS_RESOURCE } from "./proposal-digest.js";
 import { accept, refuse, type TransactionOutcome } from "./refusal.js";
-import { revalidateIntentRow, revalidateSigner } from "./revalidate.js";
+import { revalidateIntentRow, revalidateSigner, revalidateSignerAddress } from "./revalidate.js";
+import { captureAuthorityAnchor, recheckAuthorityWith, type AuthorityAnchor } from "./authority-fence.js";
+import {
+  settleTerminalRows,
+  TerminalSettlementConflictError,
+} from "./terminal-settlement.js";
 import { refusalToResult, requireString } from "./tool-io.js";
 
-/** What the family handler produced. The vocabulary of the T3 rows. */
-export type TransactionExecution =
-  | { readonly kind: "confirmed"; readonly txHash: string; readonly data: Record<string, unknown> }
-  | {
-      readonly kind: "chain_failed";
-      readonly txHash: string;
-      readonly chain: string;
-      readonly errorKind: string;
-      readonly errorHash: string;
-    }
-  | {
-      readonly kind: "confirmation_unknown";
-      readonly txHash: string;
-      readonly chain: string;
-      readonly errorKind: string;
-      readonly errorHash: string;
-    }
-  | {
-      readonly kind: "pre_broadcast_failed";
-      readonly errorKind: string;
-      readonly errorHash: string;
-      /** The sentence the caller reads. Never raw provider text. */
-      readonly message: string;
-      /**
-       * TRUE when the failure was the STAGED-EVIDENCE write, which happens
-       * after the claim committed and before anything reached the network. It
-       * is its own durable status (`audit_failed`) so investigation tooling can
-       * find "our audit write broke" without trawling every failure.
-       */
-      readonly auditFailed?: true;
-    };
+export type { TransactionExecution } from "./execution-outcome.js";
+import type { TransactionExecution } from "./execution-outcome.js";
 
 // ── Step 4: the approval-bound digest ──────────────────────────────────
 
@@ -152,13 +127,32 @@ export async function resolveApprovalBoundDigest(
 
 // ── Steps 1 to 7: everything before the family's own chain work ────────
 
+/** The DECRYPTED signer, or the `ToolResult` explaining why nothing was decrypted. */
+export type SignerLoad =
+  | { readonly kind: "signer"; readonly signer: ChainWallet }
+  | { readonly kind: "return"; readonly result: ToolResult };
+
 export type GateOutcome =
   /** A `ToolResult` the handler must return as-is: a refusal, or the approval stop. */
   | { readonly kind: "return"; readonly result: ToolResult }
   | {
       readonly kind: "proceed";
       readonly intent: WalletTransactionIntent;
-      readonly signer: ChainWallet;
+      /**
+       * The selected wallet ADDRESS, proven to be the approved one. Resolved
+       * WITHOUT decrypting anything, so every check between here and the
+       * signature runs with no key material in the process.
+       */
+      readonly signerAddress: string;
+      /**
+       * DECRYPT THE KEY. Called as LATE as the design allows - after the claim,
+       * after every remote preparation call, and immediately after the pre-sign
+       * authority fence has passed. It re-proves the wallet is the approved one,
+       * because the address check above happened at gate time.
+       */
+      readonly loadSigner: () => SignerLoad;
+      /** The authority this dispatch was authorized under. See `./authority-fence.ts`. */
+      readonly anchor: AuthorityAnchor;
       readonly binding: PreparedApprovalBinding;
     };
 
@@ -242,28 +236,73 @@ export async function gateConfirm(
     };
   }
 
-  // The key is decrypted HERE - after the approval gate, and only to prove and
-  // then use the authority the approval was granted for.
-  let signer: ChainWallet;
+  // ADDRESS ONLY, and deliberately: this proves the session's selection is the
+  // approved wallet WITHOUT decrypting anything. The key is loaded later, by
+  // `loadSigner`, once the authority fence has been re-asked immediately before
+  // the signature - so a scope edit or a lock arriving in between finds no
+  // materialized key to have to revoke.
+  let signerAddress: string;
   try {
-    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, intent.family);
+    signerAddress = resolveSelectedAddress(
+      context.walletResolution,
+      context.walletPolicy,
+      intent.family,
+    );
   } catch (err) {
     return { kind: "return", result: walletScopeErrorToResult(err) };
   }
-  const signerCheck = revalidateSigner(intent, signer);
-  if (!signerCheck.ok) return { kind: "return", result: refusalToResult(signerCheck.refusal) };
+  const addressCheck = revalidateSignerAddress(intent, signerAddress);
+  if (!addressCheck.ok) return { kind: "return", result: refusalToResult(addressCheck.refusal) };
 
-  return { kind: "proceed", intent, signer, binding: binding.value };
+  // The ANCHOR: the authority as it stands now, captured before any key
+  // material exists and compared at the claim, before signing, and before
+  // submission.
+  const anchor = await captureAuthorityAnchor({
+    sessionId: intent.sessionId,
+    family: intent.family,
+    walletAddress: signerAddress,
+    intentId: intent.intentId,
+  });
+
+  const loadSigner = (): SignerLoad => {
+    let signer: ChainWallet;
+    try {
+      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, intent.family);
+    } catch (err) {
+      return { kind: "return", result: walletScopeErrorToResult(err) };
+    }
+    const signerCheck = revalidateSigner(intent, signer);
+    if (!signerCheck.ok) {
+      return { kind: "return", result: refusalToResult(signerCheck.refusal) };
+    }
+    return { kind: "signer", signer };
+  };
+
+  return { kind: "proceed", intent, signerAddress, loadSigner, anchor, binding: binding.value };
 }
 
 // ── Step 9: T2 ─────────────────────────────────────────────────────────
 
-/** Claim, or the `ToolResult` explaining why nothing was claimed. */
+/**
+ * Claim, or the `ToolResult` explaining why nothing was claimed.
+ *
+ * FENCE POINT (a). The authority recheck runs as the first statement of the
+ * claim transaction, so the fence and the claim commit or roll back together: a
+ * lock or a scope edit that won before this transaction took the session
+ * control lock leaves the intent `pending`, with nothing claimed and nothing
+ * decrypted. A fence refusal is reported as ITSELF, never as a lost race, so
+ * the caller can say which of the two happened.
+ */
 export async function claimOrRefuse(
   intent: WalletTransactionIntent,
+  anchor: AuthorityAnchor,
 ): Promise<{ kind: "claimed"; claim: Extract<TransactionClaim, { ok: true }> } | { kind: "return"; result: ToolResult }> {
-  const claim = await claimTransactionIntent(intent, intent.proposalDigest);
+  const claim = await claimTransactionIntent(intent, intent.proposalDigest, (client) =>
+    recheckAuthorityWith(client, anchor, "claim"));
   if (claim.ok) return { kind: "claimed", claim };
+  if (claim.reason === "fence_refused") {
+    return { kind: "return", result: refusalToResult(claim.refusal) };
+  }
   return {
     kind: "return",
     result: refusalToResult({
@@ -287,16 +326,20 @@ function explorerRefsData(chain: string, txHash: string): Record<string, unknown
  * Settle the intent, the activity row and the execution row for one execution
  * outcome, then produce the `ToolResult`.
  *
- * THE EXECUTION ROW IS COMPLETED ON EVERY ARM, ambiguity included (T3d): the
- * tool attempt is over the moment this returns, and the compaction money-state
- * gate selects an `execution_status = 'intent'` row on its own, so leaving it
- * open would block compaction forever - even after a repair lane settled the
- * activity row and the intent.
+ * ALL THREE ROWS MOVE IN ONE TRANSACTION under the session control lock
+ * (`./terminal-settlement.js`), so the partial states that had no repair owner -
+ * a terminal activity row beside a stranded intent, a completed intent beside an
+ * open execution row - cannot exist. THE EXECUTION ROW IS COMPLETED ON EVERY
+ * ARM, ambiguity included (T3d): the tool attempt is over the moment this
+ * returns, and the compaction money-state gate selects an
+ * `execution_status = 'intent'` row on its own, so leaving it open would block
+ * compaction forever even after a repair lane settled the rest.
  *
- * An intent CAS miss here is audit drift, not a different outcome: the
- * transaction is already real on chain and the `ToolResult` must say so. It is
- * logged structurally and never converted into a claim that the transaction
- * failed.
+ * A SETTLEMENT FAILURE NEVER CHANGES THE ANSWER. The transaction is already
+ * whatever the chain made of it; a conflicting durable winner or an unavailable
+ * database is audit drift, logged structurally, and the caller still receives
+ * the honest chain outcome. It is never converted into a claim that the
+ * transaction failed.
  */
 export async function settleExecution(
   intent: WalletTransactionIntent,
@@ -304,18 +347,11 @@ export async function settleExecution(
   execution: TransactionExecution,
   echo: Record<string, unknown>,
 ): Promise<ToolResult> {
-  const { intentId, sessionId } = intent;
+  const { intentId } = intent;
+  await terminalize(intent, activity, execution);
 
   switch (execution.kind) {
     case "confirmed": {
-      await intentCas(
-        intentId,
-        sessionId,
-        "executed",
-        (client) => intentsRepo.markExecutedWith(client, intentId, sessionId, execution.txHash),
-      );
-      await activity.confirm();
-      await activity.completeExecution({ kind: "confirmed", txHash: execution.txHash });
       return ok({
         intentId,
         status: "executed",
@@ -327,24 +363,6 @@ export async function settleExecution(
     }
 
     case "chain_failed": {
-      await intentCas(
-        intentId,
-        sessionId,
-        "failed",
-        (client) =>
-          intentsRepo.markChainFailedWith(
-            client,
-            intentId,
-            sessionId,
-            execution.txHash,
-            `${execution.errorKind}:${execution.errorHash}`,
-          ),
-      );
-      await activity.fail({
-        failureCode: "mined_revert",
-        failureReason: "the transaction reverted on-chain",
-      });
-      await activity.completeExecution({ kind: "reverted", txHash: execution.txHash });
       return failWith(
         `The transaction was broadcast and FAILED on-chain. It is real and the network fee was paid. `
         + `Tx hash: ${execution.txHash}. Error hash: ${execution.errorHash}. Intent ${intentId} is `
@@ -363,17 +381,6 @@ export async function settleExecution(
       // T3d. A NORMAL return, and never `failed`-with-a-hash: that shape cannot
       // be told apart from a revert, and a caller who reads "failed" retries.
       // The activity row stays staged-with-hash for the repair lane.
-      await intentCas(
-        intentId,
-        sessionId,
-        "broadcast_unconfirmed",
-        (client) =>
-          intentsRepo.markBroadcastUnconfirmedWith(client, intentId, sessionId, execution.txHash),
-      );
-      await activity.completeExecution({
-        kind: "confirmation_unknown",
-        txHash: execution.txHash,
-      });
       return failWith(
         "The transaction was BROADCAST and its outcome is not yet known. It may be settling right "
         + `now. Tx hash: ${execution.txHash}. DO NOT send it again: Vex is tracking it and a repair `
@@ -389,29 +396,6 @@ export async function settleExecution(
     }
 
     case "pre_broadcast_failed": {
-      const reason = `${execution.errorKind}:${execution.errorHash}`;
-      if (execution.auditFailed === true) {
-        await intentCas(
-          intentId,
-          sessionId,
-          "audit_failed",
-          (client) => intentsRepo.markAuditFailedWith(client, intentId, sessionId, reason),
-        );
-      } else {
-        await intentCas(
-          intentId,
-          sessionId,
-          "failed",
-          (client) => intentsRepo.markPreBroadcastFailedWith(client, intentId, sessionId, reason),
-        );
-      }
-      await activity.fail({
-        failureCode: "broadcast_error",
-        failureReason: execution.auditFailed === true
-          ? `AuditWriteFailed:${reason}`
-          : `PreBroadcast:${reason}`,
-      });
-      await activity.completeExecution({ kind: "failed_before_broadcast" });
       return failWith(execution.message, {
         outcome: "pre_broadcast_failed",
         intentId,
@@ -423,31 +407,46 @@ export async function settleExecution(
 }
 
 /**
- * Run one intent CAS under the session control lock and log a miss structurally.
+ * Run the ONE terminalizing transaction and report a failure structurally.
  *
- * A miss means the row was not `consuming` at write time - operator action, or
- * a process-restart recovery that got there first. The transaction is already
- * whatever the chain made of it, so this never changes the answer the caller
- * receives; it changes only what an auditor can see.
+ * A conflict means a durable winner - operator action, or a recovery lane that
+ * got there first under the same lock - already wrote an INCOMPATIBLE outcome,
+ * so this attempt rolled back rather than stamp a second account of the same
+ * transaction over part of it. Either way the chain fact is unchanged, so this
+ * never alters the answer the caller receives; it changes only what an auditor
+ * can see, and the scheduled recovery still owns any row left behind.
  */
-async function intentCas(
-  intentId: string,
-  sessionId: string,
-  target: string,
-  write: (client: Parameters<Parameters<typeof withSessionControlLock>[1]>[0]) => Promise<
-    WalletTransactionIntent | null
-  >,
+async function terminalize(
+  intent: WalletTransactionIntent,
+  activity: TransactionActivity,
+  execution: TransactionExecution,
 ): Promise<void> {
   try {
-    const row = await withSessionControlLock(sessionId, write);
-    if (row === null) {
-      logger.warn("wallet.transaction.intent_status_mismatch", { intentId, sessionId, target });
-    }
+    await settleTerminalRows(
+      {
+        intentId: intent.intentId,
+        sessionId: intent.sessionId,
+        activityId: activity.activityId,
+        executionId: activity.executionId,
+        startedAtMs: activity.startedAtMs,
+      },
+      execution,
+    );
   } catch (err) {
-    logger.warn("wallet.transaction.intent_write_failed", {
-      intentId,
-      sessionId,
-      target,
+    if (err instanceof TerminalSettlementConflictError) {
+      logger.warn("wallet.transaction.terminal_settlement_conflict", {
+        intentId: intent.intentId,
+        sessionId: intent.sessionId,
+        row: err.row,
+        detail: err.detail,
+        outcome: execution.kind,
+      });
+      return;
+    }
+    logger.warn("wallet.transaction.terminal_settlement_failed", {
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+      outcome: execution.kind,
       ...summarizeWalletError(err),
     });
   }
