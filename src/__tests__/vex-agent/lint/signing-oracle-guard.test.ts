@@ -9,15 +9,15 @@
  * module) or an entirely new message shape (needs its own blast-radius
  * review, not a silent addition here). This is checked from three angles,
  * because any one alone is evadable:
- *   1. call-site scan — every raw signing call (`signMessage`, ed25519
+ *   1. call-site scan - every raw signing call (`signMessage`, ed25519
  *      `sign`/`sign.detached`, `signTypedData`, `signTransaction`,
- *      `SigningKey`, …) must live in one of the two owning modules, or be a
- *      documented, named transaction-signing site (see
- *      `KNOWN_TRANSACTION_SIGNING_SITES` — a real transaction signature is
+ *      `SigningKey`, ...) must live in one of the three owning modules, or be
+ *      a documented, named transaction-signing site (see
+ *      `KNOWN_TRANSACTION_SIGNING_SITES` - a real transaction signature is
  *      not a signing-oracle concern; a text-message signature is);
- *   2. import exclusivity — only the owning module may import the other
- *      module's signing entry point, so a third module cannot produce one of
- *      these two signatures by calling through the owner instead of raw;
+ *   2. import exclusivity - only an owning module may import another owning
+ *      module's signing entry point, so a fourth module cannot produce one of
+ *      these signatures by calling through an owner instead of raw;
  *   3. reserved-string exclusivity — the literal wire-format strings
  *      themselves may not be duplicated into a second module, which would
  *      let that module build a byte-identical signable payload without ever
@@ -25,11 +25,13 @@
  *
  * Scans the whole `src/` tree (not just `src/vex-agent/`, unlike the sibling
  * tests in this directory), INCLUDING `scripts/`/`e2e/` subtrees (dropped
- * from the exclusion list — `src/vex-agent/scripts` alone ships 24 real
- * files that are as capable of holding a signing call as anything else) —
- * because the two allowed modules live on either side of the
- * `vex-agent`/`tools` boundary: `src/tools/wallet/handshake-signing.ts` and
- * `src/vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts`.
+ * from the exclusion list - `src/vex-agent/scripts` alone ships 24 real
+ * files that are as capable of holding a signing call as anything else) -
+ * because the three allowed modules live on both sides of the
+ * `vex-agent`/`tools` boundary: `src/tools/wallet/handshake-signing.ts`,
+ * `src/vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts`
+ * and
+ * `src/vex-agent/tools/protocols/pools/handlers/launch/execute/attribute.ts`.
  *
  * Uses a recursive readdir walk, NOT `git ls-files`: on this machine the repo
  * path contains a space, which breaks the `git ls-files`-based scanners the

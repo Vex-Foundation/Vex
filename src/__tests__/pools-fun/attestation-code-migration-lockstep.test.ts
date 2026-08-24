@@ -17,15 +17,15 @@
  *
  * WHY A LOCAL PARSER. `memory/schema/_lockstep.ts` already parses CHECK value
  * lists, but it pins `MIGRATION_SQL` to two specific memory migrations and is
- * owned by that lane. This file needs one different migration and no constraint
- * name (the name is Builder A's to choose), so it reads the file and extracts
- * the quoted literals from the CHECK that mentions the codes.
+ * owned by that lane. This file needs one different migration and stays
+ * constraint-name agnostic (the name belongs to the migration; the VALUE SET
+ * is the shared contract), so it reads the file and extracts the quoted
+ * literals from the CHECK that mentions the codes.
  *
- * MIGRATION 087 IS IN FLIGHT at the time of writing (it belongs to a parallel
- * lane on this branch). The lockstep assertions are therefore gated on the file
- * existing - `describe.skipIf` per repo convention, mirroring the fork- and
- * key-gated suites - and they turn on by themselves the moment 087 lands. The
- * vocabulary's own invariants below are NOT gated: they run always.
+ * MIGRATION 087 IS REQUIRED. A missing migration file is a red test, never a
+ * skip: the vocabulary module and the CHECK ship as one contract, and a build
+ * that has one without the other is exactly the drift this file exists to
+ * catch.
  */
 
 import { describe, expect, it } from "vitest";
