@@ -69,6 +69,7 @@ describe("isAllowedExternalUrl", () => {
     "docs.docker.com",
     "explorer.solana.com",
     "dexscreener.com",
+    "www.tradingview.com",
     "etherscan.io",
     "basescan.org",
     "arbiscan.io",
@@ -104,6 +105,7 @@ describe("isAllowedExternalUrl", () => {
     "https://github.com/electron/electron/releases",
     "https://github.com/electron/electron/releases/tag/v42.0.0",
     "https://dexscreener.com/solana/8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj",
+    "https://www.tradingview.com/",
     "https://explorer.solana.com/tx/3xY2",
     "https://etherscan.io/tx/0xabc123",
     "https://basescan.org/tx/0xabc123",
@@ -156,6 +158,8 @@ describe("isAllowedExternalUrl", () => {
     // Solana explorer / DexScreener — exact-host pollution / near-miss deny
     "https://dexscreener.com.evil.com/",
     "https://notdexscreener.com/",
+    "https://www.tradingview.com.evil.com/",
+    "http://www.tradingview.com/",
     "https://explorer.solana.com.evil.com/",
     "http://dexscreener.com/", // wrong scheme
     // EVM explorers — exact-host pollution / subdomain / lookalike / scheme

@@ -175,6 +175,9 @@ describe("preload bridge surface", () => {
       "CH.updater.openReleaseNotes",
       // T1 — read-only live VEX market snapshot bridge.
       "CH.market.getVexSnapshot",
+      // Light it up — read-only Lighter market list + analysis snapshot.
+      "CH.lighterTrading.listMarkets",
+      "CH.lighterTrading.getSnapshot",
       // "Vex setup" user profile (DB-backed, replaces persona.md).
       "CH.settings.getUserProfile",
       "CH.settings.setUserProfile",

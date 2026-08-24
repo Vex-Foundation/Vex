@@ -27,6 +27,7 @@ export type {
   DatabaseBridge,
   DockerBridge,
   MarketBridge,
+  LighterTradingBridge,
   OnboardingBridge,
   SecretsBridge,
   SettingsBridge,

@@ -59,6 +59,9 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // entry is safe — `isAllowedExternalUrl` matches `url.hostname === entry`, so
   // `dexscreener.com.evil.com` / `notdexscreener.com` do not match.
   "dexscreener.com",
+  // Lightweight Charts attribution link in the Light it up trading workspace.
+  // Exact host only; the renderer links to the vendor homepage with no query.
+  "www.tradingview.com",
   // Block-explorer hosts (user-clicked MOVES tx / account deep links). Single
   // source of truth in `@shared/explorer-links` so the chain→URL mapper and
   // this allowlist can never drift. Pre-existing hosts stay host-wide; the new

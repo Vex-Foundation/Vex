@@ -19,6 +19,7 @@ import { capabilities } from "./capabilities.js";
 import { database } from "./database.js";
 import { docker } from "./docker.js";
 import { market } from "./market.js";
+import { lighterTrading } from "./lighter-trading.js";
 import { onboarding } from "./onboarding.js";
 import { secrets } from "./secrets.js";
 import { settings } from "./settings.js";
@@ -41,4 +42,5 @@ export const shellBridge = {
   support,
   updater,
   market,
+  lighterTrading,
 } satisfies VexShellBridge;

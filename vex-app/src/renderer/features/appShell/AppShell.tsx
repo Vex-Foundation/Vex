@@ -43,6 +43,7 @@ import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
+import { LighterTradingHost } from "./lighterTrading/LighterTradingHost.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -254,6 +255,7 @@ function ShellFrame({
             {/* Session-LESS failures (memory maintenance) surface here: they
              * belong to no conversation. Renders null when idle. */}
             <GlobalErrorBanner />
+            <LighterTradingHost activeSessionId={activeSessionId} />
             <GlobalApprovals />
             <SessionExportControl activeSessionId={activeSessionId} />
           </div>

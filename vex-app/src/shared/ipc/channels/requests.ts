@@ -315,6 +315,14 @@ export const CH = {
     getVexSnapshot: "vex:market:getVexSnapshot",
   },
 
+  // Light it up — bounded public Lighter market reads. Main owns every
+  // provider request; renderer inputs select only environment, market and
+  // candle resolution. No auth, signer, nonce or submission channel exists.
+  lighterTrading: {
+    listMarkets: "vex:lighterTrading:listMarkets",
+    getSnapshot: "vex:lighterTrading:getSnapshot",
+  },
+
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)
   settings: {
     getPreferences: "vex:settings:getPreferences",
