@@ -37,6 +37,7 @@ import { computeRequestDigest } from "@vex-agent/engine/core/approval-runtime/to
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { handleWalletEvmTransactionConfirm } from "@vex-agent/tools/internal/wallet/transaction/confirm-evm.js";
 import { digestOfIntent } from "@vex-agent/tools/internal/wallet/transaction/revalidate.js";
+import { canonicalTransactionPreview } from "@vex-agent/tools/internal/wallet/transaction/preview.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 
@@ -87,6 +88,38 @@ function approvedContext(sessionId: string, approvalId: string): InternalToolCon
  * this build computes over the row, so the confirm handler's own recompute
  * matches rather than being satisfied by a fixture constant.
  */
+const DECODED = {
+  family: "eip155" as const,
+  role: "approve" as const,
+  standard: "erc20" as const,
+  functionName: "approve",
+  contract: TOKEN,
+  criticalArgs: { spender: SPENDER, token: TOKEN, amountRaw: "1000000" },
+  unlimitedApproval: false,
+  warnings: [] as string[],
+};
+
+const FEE_BOUNDS = {
+  mode: "eip1559" as const,
+  gasLimit: "60000",
+  maxFeePerGasWei: "1000000000",
+  maxPriorityFeePerGasWei: "1000000",
+  maxTotalFeeWei: "60000000000000",
+};
+
+/**
+ * The CANONICAL card for the fixture row. Derived, never hand-written: V2 folds
+ * it into the digest and the binding refuses a row whose stored card is not the
+ * one its own bound fields render, so a hand-written approximation would be
+ * indistinguishable from the edit the refusal exists to catch.
+ */
+const CANONICAL_PREVIEW = canonicalTransactionPreview({
+  family: "eip155",
+  chainAlias: "base",
+  decoded: DECODED,
+  feeBounds: FEE_BOUNDS,
+});
+
 async function prepareApprovalIntent(sessionId: string): Promise<intentsRepo.WalletTransactionIntent> {
   const intentId = `wtx-${randomUUID()}`;
   const expiresAt = new Date(Date.now() + 600_000).toISOString();
@@ -99,27 +132,9 @@ async function prepareApprovalIntent(sessionId: string): Promise<intentsRepo.Wal
       chainAlias: "base",
       chainId: 8453,
       payload: { family: "eip155", evm: { to: TOKEN, data: "0x095ea7b3", valueWei: "0" } },
-      decoded: {
-        family: "eip155",
-        role: "approve",
-        standard: "erc20",
-        functionName: "approve",
-        contract: TOKEN,
-        criticalArgs: { spender: SPENDER, token: TOKEN, amountRaw: "1000000" },
-        unlimitedApproval: false,
-        warnings: [],
-      },
-      preview: {
-        label: `approve: let ${SPENDER} spend 1000000 (raw) of ${TOKEN}`,
-        criticalArgs: { chain: "base", spender: SPENDER, token: TOKEN, amountRaw: "1000000" },
-      },
-      feeBounds: {
-        mode: "eip1559",
-        gasLimit: "60000",
-        maxFeePerGasWei: "1000000000",
-        maxPriorityFeePerGasWei: "1000000",
-        maxTotalFeeWei: "60000000000000",
-      },
+      decoded: DECODED,
+      preview: CANONICAL_PREVIEW,
+      feeBounds: FEE_BOUNDS,
       // Any valid 64-char hex; the real digest is written by the UPDATE below.
       proposalDigest: "0".repeat(64),
       proposalDigestVersion: PROPOSAL_DIGEST_VERSION,
@@ -299,6 +314,170 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
     expect(resumed.success).toBe(false);
     expect(resumed.output).toContain("different prepared action");
     const still = await intentsRepo.getById(other.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
+  // ── V2: the CARD is bound, and both durable copies of it are checked ──
+
+  it("refuses at the approval gate when preview_json was edited BEFORE enqueue", async () => {
+    const sessionId = await makeSession();
+    const intent = await prepareApprovalIntent(sessionId);
+
+    // The row's own digest still recomputes correctly under V1 rules: nothing
+    // the old preimage covered has moved. Only the SENTENCE a human would read
+    // has, which is exactly what V2 exists to catch.
+    await execute(
+      "UPDATE wallet_transaction_intents SET preview_json = $2 WHERE intent_id = $1",
+      [
+        intent.intentId,
+        JSON.stringify({
+          label: `approve: let ${SPENDER} spend 1 (raw) of ${TOKEN}`,
+          criticalArgs: { ...CANONICAL_PREVIEW.criticalArgs },
+        }),
+      ],
+    );
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).toBeFalsy();
+    expect(result.preparedApprovalBinding).toBeUndefined();
+    expect(result.output).toContain("was changed after the transaction was prepared");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
+  it("refuses the dispatch when the approval ENVELOPE's preview was edited after enqueue", async () => {
+    const sessionId = await makeSession();
+    const projectId = await makeProject(sessionId);
+    const intent = await prepareApprovalIntent(sessionId);
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+    const outcome = await enqueueThroughStudio(projectId, sessionId, result);
+    if (outcome.kind !== "enqueued") throw new Error("expected an enqueue");
+
+    const queue = await queryOne<{ tool_call: Record<string, unknown> }>(
+      "SELECT tool_call FROM approval_queue WHERE id = $1",
+      [outcome.approvalId],
+    );
+    const stored = queue?.tool_call ?? {};
+    const bound = stored.proposalBinding as Record<string, unknown>;
+    const preview = bound.preview as { label: string; criticalArgs: Record<string, unknown> };
+    await execute("UPDATE approval_queue SET tool_call = $2 WHERE id = $1", [
+      outcome.approvalId,
+      JSON.stringify({
+        ...stored,
+        proposalBinding: {
+          ...bound,
+          preview: { ...preview, label: "Send 1 wei to a friendly address" },
+        },
+      }),
+    ]);
+
+    const resumed = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      approvedContext(sessionId, outcome.approvalId),
+    );
+
+    expect(resumed.success).toBe(false);
+    expect(resumed.output).toContain("is not the description this transaction produces");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
+  it("refuses the dispatch when the durable approval CARD was edited after enqueue", async () => {
+    const sessionId = await makeSession();
+    const projectId = await makeProject(sessionId);
+    const intent = await prepareApprovalIntent(sessionId);
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+    const outcome = await enqueueThroughStudio(projectId, sessionId, result);
+    if (outcome.kind !== "enqueued") throw new Error("expected an enqueue");
+
+    const cardRow = await queryOne<{ preview_json: Record<string, unknown> }>(
+      "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
+      [outcome.approvalId],
+    );
+    const card = cardRow?.preview_json as { toolName: string; criticalArgs: Record<string, unknown> };
+    await execute("UPDATE approval_intents SET preview_json = $2 WHERE approval_id = $1", [
+      outcome.approvalId,
+      JSON.stringify({
+        ...card,
+        criticalArgs: { ...card.criticalArgs, amountRaw: "1" },
+      }),
+    ]);
+
+    const resumed = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      approvedContext(sessionId, outcome.approvalId),
+    );
+
+    expect(resumed.success).toBe(false);
+    expect(resumed.output).toContain("is not the card this transaction produces");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
+  it("carries the CANONICAL card in the envelope, so the request digest covers the sentence", async () => {
+    const sessionId = await makeSession();
+    const projectId = await makeProject(sessionId);
+    const intent = await prepareApprovalIntent(sessionId);
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+    const outcome = await enqueueThroughStudio(projectId, sessionId, result);
+    if (outcome.kind !== "enqueued") throw new Error("expected an enqueue");
+
+    const queue = await queryOne<{ tool_call: Record<string, unknown> }>(
+      "SELECT tool_call FROM approval_queue WHERE id = $1",
+      [outcome.approvalId],
+    );
+    const stored = queue?.tool_call ?? {};
+    const bound = stored.proposalBinding as {
+      preview: { label: string; criticalArgs: Record<string, unknown> };
+      proposalDigestVersion: string;
+    };
+    expect(bound.proposalDigestVersion).toBe("v2");
+    expect(bound.preview.label).toBe(CANONICAL_PREVIEW.label);
+    expect(bound.preview.criticalArgs).toEqual(CANONICAL_PREVIEW.criticalArgs);
+
+    // Changing the sentence changes the digest the dispatch recomputes.
+    const withOtherLabel = {
+      ...stored,
+      proposalBinding: { ...bound, preview: { ...bound.preview, label: "something else" } },
+    };
+    expect(computeRequestDigest(withOtherLabel)).not.toBe(computeRequestDigest(stored));
+  });
+
+  it("refuses a v1 digest row BY NAME rather than reporting proposal drift", async () => {
+    const sessionId = await makeSession();
+    const intent = await prepareApprovalIntent(sessionId);
+    await execute(
+      "UPDATE wallet_transaction_intents SET proposal_digest_version = 'v1' WHERE intent_id = $1",
+      [intent.intentId],
+    );
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('carries proposal digest version "v1"');
+    expect(result.output).toContain('this build computes "v2"');
+    expect(result.output).toContain("rather than reported as proposal drift");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
     expect(still?.status).toBe("pending");
   });
 

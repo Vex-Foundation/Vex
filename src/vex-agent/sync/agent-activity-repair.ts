@@ -93,10 +93,7 @@ export {
   resolveReadOnlyReceiptClient,
 } from "./agent-activity-repair/chain-sources.js";
 import { REPAIR_CANDIDATE_AGE_MS, isPastHandlerWindow } from "./handler-window.js";
-import {
-  recoverStrandedTransactionIntents,
-  settleLinkedTransactionIntent,
-} from "./wallet-transaction-intent-settlement.js";
+import { settleLinkedTransactionIntent } from "./wallet-transaction-intent-settlement.js";
 
 // The gate's own leaf module owns both, so the lane and the fast lane can share
 // them without importing each other. Re-exported here because every existing
@@ -177,14 +174,11 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
   // Solana activity sweep (`solana-activity-repair.ts`) owns every
   // chain_family='solana' staged row via its own disjoint candidate query. The
   // claim's own predicate enforces the family.
-  // CRASH RECOVERY FIRST (T4a/T4b), before any observation. It holds no chain
-  // access and takes no claim: it reads linked `consuming` transaction intents
-  // whose handler is provably gone and splits them on whether a signed hash was
-  // ever staged. Running it here rather than as its own scheduled job is the
-  // same choice the Solana lane makes for stale hashless intents - one tick,
-  // one owner, no second scheduler.
-  await recoverStrandedTransactionIntents();
-
+  // CRASH RECOVERY (T4a/T4b) IS NOT RUN HERE. It used to be, and that made a
+  // family-agnostic recovery depend on the EVM lane being enabled: a deployment
+  // with only the Solana lane running would never recover a stranded Solana
+  // intent. Its owner is now `syncTick` (`sync/index.ts`), the one tick that
+  // runs unconditionally on every cycle - see the note there.
   const claim = await claimDuePendingEvm(REPAIR_BATCH_LIMIT);
   reportClaimOverflow(claim);
 

@@ -18,7 +18,22 @@
  *    shown invalidates the approval instead of silently re-describing it;
  *  - the mandatory fee bounds;
  *  - the Solana blockhash evidence;
- *  - the intent expiry.
+ *  - the intent expiry;
+ *  - the CANONICAL PREVIEW: the exact sentence and argument panel a human is
+ *    shown. It is not an extra input - it is RENDERED HERE from the fields
+ *    above, by the one renderer the prepare path uses, so it cannot carry a
+ *    fact the digest does not already bind. Covering it is what makes a
+ *    hand-edited `preview_json` detectable: without it, the row could describe
+ *    the transaction as something else entirely and every digest check would
+ *    still pass, because nothing the digest covered had moved.
+ *
+ * ## Versioning history
+ *
+ * v2 (2026-08-24) added the canonical preview to the preimage. A v1 digest was
+ * computed over a serialization that never saw it, so it CANNOT be re-verified
+ * on this build; v1 is refused BY NAME wherever a digest is compared. This is a
+ * deliberate pre-release wire-format change with no migration: an in-flight
+ * intent expires in minutes, and re-preparing is both cheap and safe.
  *
  * ## Canonical serialization
  *
@@ -43,6 +58,8 @@ import {
   type WalletTransactionFamily,
   type WalletTransactionFeeBounds,
 } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
+
+import { canonicalTransactionPreview } from "./preview.js";
 
 /** The durable table the digest is bound to. Part of the preimage. */
 export const WALLET_TRANSACTION_INTENTS_RESOURCE = "wallet_transaction_intents" as const;
@@ -118,6 +135,14 @@ function canonicalDecoded(decoded: DecodedWalletTransaction): Canonical {
 
 /** The exact bytes hashed. Exported so a test can assert the preimage, not just the hash. */
 export function proposalDigestPreimage(input: ProposalDigestInput): string {
+  // Rendered, never accepted. See the header: a caller-supplied preview would
+  // let the caller choose the sentence the digest attests to.
+  const preview = canonicalTransactionPreview({
+    family: input.family,
+    chainAlias: input.chainAlias,
+    decoded: input.decoded,
+    feeBounds: input.feeBounds,
+  });
   const body: Canonical = {
     digestVersion: PROPOSAL_DIGEST_VERSION,
     resourceTable: WALLET_TRANSACTION_INTENTS_RESOURCE,
@@ -138,6 +163,7 @@ export function proposalDigestPreimage(input: ProposalDigestInput): string {
     lastValidBlockHeight:
       input.lastValidBlockHeight === null ? null : String(input.lastValidBlockHeight),
     expiresAt: input.expiresAt,
+    preview: { label: preview.label, criticalArgs: { ...preview.criticalArgs } },
   };
   return canonicalize(body);
 }

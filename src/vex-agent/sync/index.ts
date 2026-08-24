@@ -73,10 +73,41 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
 /**
  * Periodic sync tick — called by engine every ~60s.
  *
+ * 0. Recover stranded wallet-transaction intents (lane-independent)
  * 1. Drain any pending post-mutation runs
  * 2. Check if periodic jobs are due (balances, prediction_settlement, etc.)
  */
 export async function syncTick(): Promise<void> {
+  // 0. CRASH RECOVERY for stranded wallet-transaction intents (T4a/T4b).
+  //
+  // OWNED HERE, not by a lane. It used to run inside the EVM activity sweep,
+  // which made a FAMILY-AGNOSTIC recovery conditional on the EVM lane being
+  // enabled: with only the Solana lane running, a Solana intent left
+  // `consuming` by a dead handler was never recovered. It qualifies for the
+  // always-on tick precisely because it is lane-independent - no chain access,
+  // no claim, no family predicate; it reads linked `consuming` intents whose
+  // handler is provably gone and splits them on whether a signed hash was ever
+  // staged, under the session control lock and a status CAS, so running it once
+  // per tick is idempotent and safe beside any lane.
+  //
+  // It is deliberately NOT a new `sync_jobs` row: a periodic job type needs a
+  // seed row to fire at all, and a recovery that silently does nothing because
+  // its row was never seeded is the exact failure this change removes.
+  //
+  // Its own scan failures are already swallowed and logged inside; this guard
+  // covers the pool being unavailable, so a recovery outage never stops the
+  // rest of the tick.
+  try {
+    const { recoverStrandedTransactionIntents } = await import(
+      "./wallet-transaction-intent-settlement.js"
+    );
+    await recoverStrandedTransactionIntents();
+  } catch (err) {
+    logger.warn("sync.tick.stranded_intent_recovery_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // 1. Drain post-mutation runs
   const drain = await drainPendingRuns();
 

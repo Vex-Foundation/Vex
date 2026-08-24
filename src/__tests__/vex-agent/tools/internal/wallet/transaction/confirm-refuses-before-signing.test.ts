@@ -47,6 +47,9 @@ const { handleWalletSolanaTransactionConfirm } = await import(
 const { digestOfIntent } = await import(
   "@vex-agent/tools/internal/wallet/transaction/revalidate.js"
 );
+const { canonicalTransactionPreview } = await import(
+  "@vex-agent/tools/internal/wallet/transaction/preview.js"
+);
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const TO = "0x2222222222222222222222222222222222222222";
@@ -88,7 +91,10 @@ function intent(overrides: Partial<WalletTransactionIntent> = {}): WalletTransac
       unlimitedApproval: false,
       warnings: [],
     },
-    preview: { label: "Send 1000 wei", criticalArgs: {} },
+    // Placeholder; replaced below by the CANONICAL card unless a case
+    // deliberately supplies its own (V2 binds the card into the digest and
+    // refuses a row whose stored card is not the one its fields render).
+    preview: { label: "placeholder", criticalArgs: {} },
     feeBounds: {
       mode: "eip1559",
       gasLimit: "21000",
@@ -111,7 +117,19 @@ function intent(overrides: Partial<WalletTransactionIntent> = {}): WalletTransac
     createdAt: new Date().toISOString(),
     ...overrides,
   };
-  return { ...base, proposalDigest: base.proposalDigest || digestOfIntent(base) };
+  const carded: WalletTransactionIntent =
+    overrides.preview === undefined
+      ? {
+          ...base,
+          preview: canonicalTransactionPreview({
+            family: base.family,
+            chainAlias: base.chainAlias,
+            decoded: base.decoded,
+            feeBounds: base.feeBounds,
+          }),
+        }
+      : base;
+  return { ...carded, proposalDigest: carded.proposalDigest || digestOfIntent(carded) };
 }
 
 function expectNothingHappened(): void {
@@ -223,6 +241,9 @@ describe("the approval gate", () => {
         command: "WalletEvmTransactionConfirm",
         args: { intentId: "wtx-other" },
         proposalBinding: {
+          // A well-formed V2 block: the resource check must be what refuses,
+          // not a binding that failed to parse.
+          preview: { label: "Send 1 wei", criticalArgs: { chain: "base" } },
           proposalDigest: "some-other-digest",
           proposalDigestVersion: PROPOSAL_DIGEST_VERSION,
           resource: { table: "wallet_transaction_intents", intentId: "wtx-other" },

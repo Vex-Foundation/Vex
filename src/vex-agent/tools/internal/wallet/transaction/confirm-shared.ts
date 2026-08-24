@@ -27,6 +27,7 @@
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
+import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionFamily } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
@@ -39,7 +40,12 @@ import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult 
 import { summarizeWalletError } from "../send-types.js";
 import { failWith, ok } from "../send/results.js";
 
-import { bindingFromDurableIntent, type PreparedApprovalBinding } from "./approval-binding.js";
+import {
+  approvalPreviewsEqual,
+  bindingFromDurableIntent,
+  canonicalPreviewOfIntent,
+  type PreparedApprovalBinding,
+} from "./approval-binding.js";
 import type { TransactionActivity, TransactionClaim } from "./activity-writer.js";
 import { claimTransactionIntent } from "./activity-writer.js";
 import { WALLET_TRANSACTION_INTENTS_RESOURCE } from "./proposal-digest.js";
@@ -122,7 +128,92 @@ export async function resolveApprovalBoundDigest(
     );
   }
 
+  // THE CARD, RE-DERIVED AND COMPARED. Steps 3 and 5 prove the row and the
+  // digest; this proves the SENTENCE. The approval was granted against a
+  // specific description, so the description this build renders from the intent
+  // right now must be that one - in the envelope the digest covers AND in the
+  // durable card row the human actually read. They are two different rows and
+  // an edit to either is a different attack, so both are checked.
+  const canonicalPreview = canonicalPreviewOfIntent(intent);
+  if (!approvalPreviewsEqual(bound.preview, canonicalPreview)) {
+    return refuse(
+      "invalid_input",
+      "Refusing to sign: the description recorded on this approval is not the description this "
+      + `transaction produces, so intent ${intent.intentId} is not the action the user authorized. `
+      + "Nothing was signed and no funds moved. Prepare the transaction again and request a fresh "
+      + "approval.",
+      { intentId: intent.intentId },
+    );
+  }
+
+  const cardCheck = await revalidateDurableApprovalCard(approvalId, intent, canonicalPreview);
+  if (!cardCheck.ok) return cardCheck;
+
   return accept<string | null>(bound.proposalDigest);
+}
+
+/**
+ * The DURABLE approval card (`approval_intents.preview_json`) re-derived from
+ * the intent and compared field for field.
+ *
+ * This is the row the approval UI renders, and it is written at enqueue by
+ * `previewFromBinding`, so it is reproducible here from bound fields alone: the
+ * canonical preview's own arguments, plus the three the enqueue path adds - the
+ * label under `effect`, the intent id, and the intent's own expiry.
+ * `toolName` is deliberately NOT compared: it is the enqueue path's record of
+ * WHICH tool asked, not part of what the transaction does, and the confirm
+ * handler has no authoritative copy of it to compare against.
+ *
+ * A MISSING card row refuses. An approved resume whose card cannot be read
+ * cannot be shown to describe this proposal, and on the money path that is a
+ * refusal rather than a skipped check.
+ */
+async function revalidateDurableApprovalCard(
+  approvalId: string,
+  intent: WalletTransactionIntent,
+  canonicalPreview: PreparedApprovalBinding["preview"],
+): Promise<TransactionOutcome<void>> {
+  const card = await approvalIntentsRepo.getByApprovalId(approvalId);
+  if (card === null) {
+    return refuse(
+      "invalid_input",
+      "Refusing to sign: the approval this call names has no recorded card, so what the user was "
+      + `shown before approving intent ${intent.intentId} cannot be checked. Nothing was signed and `
+      + "no funds moved. Prepare the transaction again and request a fresh approval.",
+      { intentId: intent.intentId },
+    );
+  }
+
+  const expected: Record<string, string | number | boolean | null> = {
+    ...canonicalPreview.criticalArgs,
+    effect: canonicalPreview.label,
+    intentId: intent.intentId,
+    expiresAt: intent.expiresAt,
+  };
+  const storedArgs = card.previewJson.criticalArgs;
+  const stored =
+    typeof storedArgs === "object" && storedArgs !== null && !Array.isArray(storedArgs)
+      ? (storedArgs as Record<string, unknown>)
+      : null;
+
+  const expectedKeys = Object.keys(expected).sort();
+  const storedKeys = stored === null ? [] : Object.keys(stored).sort();
+  const identical =
+    stored !== null
+    && expectedKeys.length === storedKeys.length
+    && expectedKeys.every((key, index) => key === storedKeys[index] && stored[key] === expected[key]);
+
+  if (!identical) {
+    return refuse(
+      "invalid_input",
+      "Refusing to sign: the approval card stored for this decision is not the card this "
+      + `transaction produces, so what the user read is not what intent ${intent.intentId} would do. `
+      + "Nothing was signed and no funds moved. Prepare the transaction again and request a fresh "
+      + "approval.",
+      { intentId: intent.intentId },
+    );
+  }
+  return accept(undefined);
 }
 
 // ── Steps 1 to 7: everything before the family's own chain work ────────

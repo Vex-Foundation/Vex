@@ -113,6 +113,9 @@ const { handleWalletSolanaTransactionConfirm } = await import(
 const { digestOfIntent } = await import(
   "@vex-agent/tools/internal/wallet/transaction/revalidate.js"
 );
+const { canonicalTransactionPreview } = await import(
+  "@vex-agent/tools/internal/wallet/transaction/preview.js"
+);
 const { decodeSolanaTransaction } = await import(
   "@vex-agent/tools/internal/wallet/transaction/decode-solana.js"
 );
@@ -215,7 +218,29 @@ function evmRow(sessionId: string, intentId: string): intentsRepo.CreateWalletTr
       unlimitedApproval: false,
       warnings: [],
     },
-    preview: { label: "Send 1000 wei", criticalArgs: { chain: "base" } },
+    // V2: the card is bound into the digest and the binding refuses a row whose
+    // stored card is not the one its own fields render, so it is DERIVED here.
+    preview: canonicalTransactionPreview({
+      family: "eip155",
+      chainAlias: "base",
+      decoded: {
+        family: "eip155",
+        role: "native_transfer",
+        standard: "native",
+        functionName: "nativeTransfer",
+        contract: null,
+        criticalArgs: { recipient: TO, valueWei: "1000" },
+        unlimitedApproval: false,
+        warnings: [],
+      },
+      feeBounds: {
+        mode: "eip1559",
+        gasLimit: "60000",
+        maxFeePerGasWei: "1000000000",
+        maxPriorityFeePerGasWei: "1000000",
+        maxTotalFeeWei: "60000000000000",
+      },
+    }),
     feeBounds: {
       mode: "eip1559" as const,
       gasLimit: "60000",
@@ -247,7 +272,19 @@ function solanaRow(
       solana: { messageBase64: SOL_MESSAGE_BASE64, feePayer: SOL_WALLET },
     },
     decoded: SOL_DECODED,
-    preview: { label: "One instruction", criticalArgs: {} },
+    preview: canonicalTransactionPreview({
+      family: "solana",
+      chainAlias: null,
+      decoded: SOL_DECODED,
+      feeBounds: {
+        mode: "solana",
+        computeUnitLimit: "200000",
+        computeUnitPriceMicroLamports: "1000",
+        baseFeeLamports: "5000",
+        maxPriorityFeeLamports: "200",
+        maxTotalFeeLamports: "10000",
+      },
+    }),
     feeBounds: {
       mode: "solana" as const,
       computeUnitLimit: "200000",

@@ -14,6 +14,7 @@
 
 import type {
   DecodedWalletTransaction,
+  WalletTransactionFamily,
   WalletTransactionFeeBounds,
   WalletTransactionPreview,
 } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
@@ -116,4 +117,45 @@ export function buildTransactionPreview(
     label: decoded.family === "eip155" ? evmLabel(decoded) : solanaLabel(decoded),
     criticalArgs,
   };
+}
+
+/**
+ * The fields the canonical preview is allowed to read. Nothing else.
+ *
+ * Every one of them is ALREADY BOUND by the proposal digest, which is the whole
+ * point: the sentence a human authorizes has to be a pure function of the facts
+ * the digest covers, or the card and the digest are two sources of truth and
+ * only one of them is checked at commit time.
+ *
+ * `tokenIdentityVerified` is READ from `decoded.criticalArgs`, never re-derived
+ * here. The decoder is the one owner of that judgement (V6); a second derivation
+ * at card time could disagree with the flag the digest bound, and the
+ * disagreement would show up as an "UNVERIFIED TOKEN" prefix appearing or
+ * disappearing without the digest changing.
+ */
+export interface CanonicalPreviewInput {
+  readonly family: WalletTransactionFamily;
+  readonly chainAlias: string | null;
+  readonly decoded: DecodedWalletTransaction;
+  readonly feeBounds: WalletTransactionFeeBounds;
+}
+
+/**
+ * THE canonical preview: the human-visible card rendered from bound fields
+ * alone, deterministically, by the same renderer the prepare path uses.
+ *
+ * One producer, three consumers - the durable `preview_json`, the digest
+ * preimage, and the approval binding - so a stored card that disagrees with
+ * this function is provably an edit rather than a rendering difference.
+ *
+ * The chain LABEL is derived rather than passed: on `eip155` it is the intent's
+ * own `chainAlias`, and on Solana it is the constant the family renders under.
+ * Accepting it as a parameter would put a free-form string on the card that the
+ * digest could not tie to anything.
+ */
+export function canonicalTransactionPreview(
+  input: CanonicalPreviewInput,
+): WalletTransactionPreview {
+  const chainLabel = input.family === "solana" ? "solana" : (input.chainAlias ?? "");
+  return buildTransactionPreview(input.decoded, input.feeBounds, chainLabel);
 }

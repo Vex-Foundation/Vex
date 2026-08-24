@@ -229,6 +229,13 @@ export type WalletTransactionPreview = z.infer<typeof WalletTransactionPreviewSc
  * The ONE digest scheme this build writes and accepts. Confirm refuses an
  * unknown version by name rather than comparing a `v1` digest against a `v2`
  * serialization and calling the mismatch a drift.
+ *
+ * v2 folded the CANONICAL PREVIEW - the sentence and argument panel the human
+ * reads - into the preimage, so a hand-edited `preview_json` no longer passes
+ * every digest check untouched. A v1 digest was taken over a serialization that
+ * never saw the preview and therefore cannot be re-verified here; it is refused
+ * by name, with no migration, because an in-flight intent expires in minutes
+ * and preparing again is the honest and cheap answer.
  */
-export const PROPOSAL_DIGEST_VERSION = "v1" as const;
+export const PROPOSAL_DIGEST_VERSION = "v2" as const;
 export type ProposalDigestVersion = typeof PROPOSAL_DIGEST_VERSION;

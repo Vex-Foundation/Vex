@@ -31,7 +31,49 @@ import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transac
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 
 import { WALLET_TRANSACTION_INTENTS_RESOURCE } from "./proposal-digest.js";
+import { canonicalTransactionPreview } from "./preview.js";
 import { accept, refuse, type TransactionOutcome } from "./refusal.js";
+
+/**
+ * The canonical card for a durable row: rendered from the row's OWN bound
+ * fields, by the same function the digest preimage and the prepare path use.
+ *
+ * The stored `preview_json` is never read to produce it. That is the point: the
+ * stored value is a CACHE of this computation, and the only useful thing to do
+ * with a cache on the money path is to check it.
+ */
+export function canonicalPreviewOfIntent(
+  intent: WalletTransactionIntent,
+): WalletIntentPreview {
+  const preview = canonicalTransactionPreview({
+    family: intent.family,
+    chainAlias: intent.chainAlias,
+    decoded: intent.decoded,
+    feeBounds: intent.feeBounds,
+  });
+  return { label: preview.label, criticalArgs: { ...preview.criticalArgs } };
+}
+
+/**
+ * Whole-card equality: the sentence AND every argument, with no key allowed to
+ * appear or vanish on either side.
+ *
+ * A subset comparison would let an added key through, and an added key is
+ * exactly the shape a misleading card takes - the true facts still present,
+ * with one more line the user reads as authoritative.
+ */
+export function approvalPreviewsEqual(
+  a: WalletIntentPreview,
+  b: WalletIntentPreview,
+): boolean {
+  if (a.label !== b.label) return false;
+  const aKeys = Object.keys(a.criticalArgs).sort();
+  const bKeys = Object.keys(b.criticalArgs).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every(
+    (key, index) => key === bKeys[index] && a.criticalArgs[key] === b.criticalArgs[key],
+  );
+}
 
 /**
  * What an approval for a prepared proposal is bound to.
@@ -79,11 +121,30 @@ export function bindingFromDurableIntent(
       },
     );
   }
+  // THE CARD IS RE-DERIVED, and the stored one is checked against it. The
+  // digest covers the canonical preview, so a row whose `preview_json` was
+  // edited still recomputes its digest correctly - what changed is the sentence
+  // a human would be shown, and only this comparison sees it. Refusing here
+  // means the edit is caught BEFORE the approval is enqueued, so no card
+  // describing a transaction incorrectly ever reaches a person.
+  const canonicalPreview = canonicalPreviewOfIntent(intent);
+  const storedPreview: WalletIntentPreview = {
+    label: intent.preview.label,
+    criticalArgs: { ...intent.preview.criticalArgs },
+  };
+  if (!approvalPreviewsEqual(storedPreview, canonicalPreview)) {
+    return refuse(
+      "invalid_input",
+      `Refusing to bind an approval: the stored preview on intent ${intent.intentId} is not the `
+      + "preview its own decoded effects, fee bounds and chain produce, so the description a user "
+      + "would read was changed after the transaction was prepared. Nothing was signed and no funds "
+      + "moved. Prepare the transaction again.",
+      { intentId: intent.intentId },
+    );
+  }
+
   return accept<PreparedApprovalBinding>({
-    preview: {
-      label: intent.preview.label,
-      criticalArgs: { ...intent.preview.criticalArgs },
-    },
+    preview: canonicalPreview,
     intentExpiresAt: intent.expiresAt,
     proposalDigest: intent.proposalDigest,
     proposalDigestVersion: intent.proposalDigestVersion,

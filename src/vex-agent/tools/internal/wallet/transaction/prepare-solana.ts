@@ -49,7 +49,7 @@ import {
   forbiddenRedirectFieldRefusal,
   parseSolanaFeeBounds,
 } from "./fee-bounds.js";
-import { buildTransactionPreview } from "./preview.js";
+import { canonicalTransactionPreview } from "./preview.js";
 import { computeProposalDigest } from "./proposal-digest.js";
 import { refusalToResult, requireString } from "./tool-io.js";
 
@@ -110,7 +110,12 @@ export async function handleWalletSolanaTransactionPrepare(
 
   const intentId = `wtx-${randomUUID()}`;
   const expiresAt = new Date(Date.now() + SOLANA_INTENT_DISPLAY_TTL_MS).toISOString();
-  const preview = buildTransactionPreview(decoded.value, feeBounds.value, "solana");
+  const preview = canonicalTransactionPreview({
+    family: "solana",
+    chainAlias: null,
+    decoded: decoded.value,
+    feeBounds: feeBounds.value,
+  });
 
   const digest = computeProposalDigest({
     intentId,

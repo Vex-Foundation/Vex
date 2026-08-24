@@ -39,7 +39,7 @@ import {
   type EvmSimulationCall,
 } from "./chain-seams.js";
 import { forbiddenRedirectFieldRefusal, parseEvmFeeBounds } from "./fee-bounds.js";
-import { buildTransactionPreview } from "./preview.js";
+import { canonicalTransactionPreview } from "./preview.js";
 import { computeProposalDigest } from "./proposal-digest.js";
 import { refusalToResult, requireHexData, requireString } from "./tool-io.js";
 
@@ -113,7 +113,15 @@ export async function handleWalletEvmTransactionPrepare(
 
   const intentId = `wtx-${randomUUID()}`;
   const expiresAt = new Date(Date.now() + WALLET_INTENT_TTL_MS).toISOString();
-  const preview = buildTransactionPreview(decoded.value, feeBounds.value, chain.chainAlias);
+  // THE canonical card, rendered from bound fields only. The digest below
+  // renders the identical value from the identical fields, so the stored
+  // preview and the digested preview cannot start out disagreeing.
+  const preview = canonicalTransactionPreview({
+    family: "eip155",
+    chainAlias: chain.chainAlias,
+    decoded: decoded.value,
+    feeBounds: feeBounds.value,
+  });
 
   // 6. The digest covers the payload AND the authority fields around it.
   const digest = computeProposalDigest({

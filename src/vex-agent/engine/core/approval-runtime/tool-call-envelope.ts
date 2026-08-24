@@ -133,12 +133,34 @@ export function buildApprovalToolCall(
  * whatever digest currently sits beside the row.
  */
 export interface ApprovalProposalBinding {
+  /**
+   * The CANONICAL card the human was shown, carried whole.
+   *
+   * It is stored because the card the user read is part of what the approval
+   * authorizes, and the durable card row (`approval_intents.preview_json`) is
+   * rendered FROM this value: keeping the canonical form here lets a resume
+   * re-derive it from the intent and compare both, so an edit to either the
+   * envelope or the card is caught before anything is signed. It also rides
+   * into `computeRequestDigest` for free, which is what binds the sentence to
+   * the Studio dispatch check rather than only to the confirm handler.
+   */
+  readonly preview: {
+    readonly label: string;
+    readonly criticalArgs: Record<string, string | number | boolean | null>;
+  };
   readonly proposalDigest: string;
   readonly proposalDigestVersion: string;
   readonly resource: { readonly table: string; readonly intentId: string };
 }
 
 const proposalBindingSchema = z.object({
+  preview: z.object({
+    label: z.string().min(1),
+    criticalArgs: z.record(
+      z.string(),
+      z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    ),
+  }),
   proposalDigest: z.string().min(1),
   proposalDigestVersion: z.string().min(1),
   resource: z.object({ table: z.string().min(1), intentId: z.string().min(1) }),
@@ -146,6 +168,10 @@ const proposalBindingSchema = z.object({
 
 function proposalBindingBlock(binding: ApprovalProposalBinding): Record<string, unknown> {
   return {
+    preview: {
+      label: binding.preview.label,
+      criticalArgs: { ...binding.preview.criticalArgs },
+    },
     proposalDigest: binding.proposalDigest,
     proposalDigestVersion: binding.proposalDigestVersion,
     resource: { table: binding.resource.table, intentId: binding.resource.intentId },

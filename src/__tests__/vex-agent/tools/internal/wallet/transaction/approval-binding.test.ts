@@ -12,6 +12,8 @@ import { describe, it, expect } from "vitest";
 
 import { bindingFromDurableIntent } from
   "@vex-agent/tools/internal/wallet/transaction/approval-binding.js";
+import { canonicalTransactionPreview } from
+  "@vex-agent/tools/internal/wallet/transaction/preview.js";
 import { WALLET_TRANSACTION_INTENTS_RESOURCE } from
   "@vex-agent/tools/internal/wallet/transaction/proposal-digest.js";
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
@@ -38,10 +40,29 @@ const INTENT: WalletTransactionIntent = {
     unlimitedApproval: false,
     warnings: [],
   },
-  preview: {
-    label: "Send 1 wei to 0x2222222222...222222",
-    criticalArgs: { chain: "base", valueWei: "1" },
-  },
+  // THE CANONICAL card. V2 folds it into the digest and the binding refuses a
+  // row whose stored card is not the one its own bound fields render, so a
+  // hand-written fixture preview would now be indistinguishable from an edit.
+  preview: canonicalTransactionPreview({
+    family: "eip155",
+    chainAlias: "base",
+    decoded: {
+      family: "eip155",
+      role: "native_transfer",
+      standard: "native",
+      functionName: "nativeTransfer",
+      contract: null,
+      criticalArgs: { recipient: "0x2222222222222222222222222222222222222222", valueWei: "1" },
+      unlimitedApproval: false,
+      warnings: [],
+    },
+    feeBounds: {
+      mode: "legacy",
+      gasLimit: "21000",
+      gasPriceWei: "1000000000",
+      maxTotalFeeWei: "21000000000000",
+    },
+  }),
   feeBounds: {
     mode: "legacy",
     gasLimit: "21000",
@@ -98,14 +119,40 @@ describe("bindingFromDurableIntent", () => {
     expect(INTENT.preview.criticalArgs.valueWei).toBe("1");
   });
 
+  it("REFUSES a row whose stored card is not the card its bound fields render", () => {
+    const edited: WalletTransactionIntent = {
+      ...INTENT,
+      preview: {
+        label: "Send 1 wei to 0x9999999999...999999",
+        criticalArgs: { ...INTENT.preview.criticalArgs },
+      },
+    };
+    const result = bindingFromDurableIntent(edited);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.message).toContain("was changed after the transaction was prepared");
+  });
+
+  it("REFUSES an ADDED card argument, not only a changed one", () => {
+    const edited: WalletTransactionIntent = {
+      ...INTENT,
+      preview: {
+        label: INTENT.preview.label,
+        // The true facts, plus one more line a user would read as authoritative.
+        criticalArgs: { ...INTENT.preview.criticalArgs, note: "reviewed and safe" },
+      },
+    };
+    expect(bindingFromDurableIntent(edited).ok).toBe(false);
+  });
+
   it("refuses an UNKNOWN digest version by name, not as proposal drift", () => {
-    const result = bindingFromDurableIntent({ ...INTENT, proposalDigestVersion: "v2" });
+    const result = bindingFromDurableIntent({ ...INTENT, proposalDigestVersion: "v1" });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.refusal.code).toBe("invalid_input");
     expect(result.refusal.details).toEqual({
       intentId: "wtx-1",
-      storedVersion: "v2",
+      storedVersion: "v1",
       supportedVersion: PROPOSAL_DIGEST_VERSION,
     });
     // The distinction matters operationally: "the proposal changed" sends

@@ -27,6 +27,8 @@
 
 import { createHash } from "node:crypto";
 
+import type { Account, Chain, PublicClient, Transport, WalletClient } from "viem";
+
 import {
   signStageBroadcast,
   StagedFeeBoundsExceededError,
@@ -76,7 +78,7 @@ import { revalidateDecodedEffects, revalidateEvmChainIdentity } from "./revalida
  * network round trip.
  */
 export interface EvmSignerClients {
-  readonly publicClient: Parameters<typeof signStageBroadcast>[0];
+  readonly publicClient: EvmReadClient;
   /** The chain the request is prepared and signed for. */
   readonly chain: EvmChainDescriptor;
   /** Build the account-bound signing client from an already-decrypted wallet. */
@@ -85,11 +87,25 @@ export interface EvmSignerClients {
   readonly chainName: string;
 }
 
+/**
+ * The two viem client shapes NAMED DIRECTLY rather than projected out of
+ * `Parameters<typeof signStageBroadcast>`.
+ *
+ * The projection is what forced the `as unknown as` casts below: TypeScript
+ * cannot name the anonymous positional parameter type at this module's
+ * boundary, so every factory return had to be laundered through `unknown` to
+ * reach it. Both real factories (`@tools/khalani/evm-client.js`,
+ * `@tools/evm-chains/evm-client.js`) already DECLARE these exact viem types, so
+ * naming them here makes the seam assignable with no cast at all - and the
+ * signature is still checked against the primitive, because
+ * `signStageBroadcast` takes `PublicClient<Transport, Chain>` and
+ * `WalletClient<Transport, Chain, Account>` and a drift in either would fail
+ * the call site.
+ */
+type EvmReadClient = PublicClient<Transport, Chain>;
+
 /** The account-bound client shape `signStageBroadcast`'s eager arm accepts. */
-type EvmWalletClient = Extract<
-  Parameters<typeof signStageBroadcast>[1],
-  { signTransaction: unknown }
->;
+type EvmWalletClient = WalletClient<Transport, Chain, Account>;
 
 /** The viem chain object the deferred signer contract compares against. */
 type EvmChainDescriptor = DeferredEvmSigner["chain"];
@@ -115,7 +131,7 @@ export const defaultEvmSignerClientsFactory: EvmSignerClientsFactory = async (ch
     const publicClient = createDynamicPublicClient(
       resolved.khalaniChain,
       resolved.khalaniChains,
-    ) as unknown as EvmSignerClients["publicClient"];
+    );
     return {
       publicClient,
       chain: publicClient.chain,
@@ -124,22 +140,19 @@ export const defaultEvmSignerClientsFactory: EvmSignerClientsFactory = async (ch
           resolved.khalaniChain,
           resolved.khalaniChains,
           wallet.privateKey as `0x${string}`,
-        ) as unknown as EvmWalletClient,
+        ),
       chainName: resolved.khalaniChain.name || chainInput,
     };
   }
   const { getLocalEvmClients, getLocalPublicClient } = await import(
     "@tools/evm-chains/evm-client.js"
   );
-  const publicClient = getLocalPublicClient(
-    resolved.config,
-  ) as unknown as EvmSignerClients["publicClient"];
+  const publicClient = getLocalPublicClient(resolved.config);
   return {
     publicClient,
     chain: publicClient.chain,
     createWalletClient: (wallet) =>
-      getLocalEvmClients(resolved.config, wallet.privateKey as `0x${string}`)
-        .walletClient as unknown as EvmWalletClient,
+      getLocalEvmClients(resolved.config, wallet.privateKey as `0x${string}`).walletClient,
     chainName: resolved.config.name || chainInput,
   };
 };

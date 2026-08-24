@@ -17,6 +17,7 @@
 
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
+import type { Chain, PublicClient, Transport } from "viem";
 
 import { extractDecodedRevertReason } from "@tools/evm-chains/router-revert-reason.js";
 
@@ -57,13 +58,10 @@ export const defaultEvmPrepareChainFactory: EvmPrepareChainFactory = async (chai
   const { resolveInclusiveEvmChain } = await import("@tools/evm-chains/resolver.js");
   const resolved = await resolveInclusiveEvmChain(chainInput);
 
-  let publicClient: {
-    getCode: (args: { address: `0x${string}` }) => Promise<string | undefined>;
-    call: (args: Record<string, unknown>) => Promise<unknown>;
-    estimateGas: (args: Record<string, unknown>) => Promise<bigint>;
-    estimateFeesPerGas: () => Promise<{ maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint }>;
-    getGasPrice: () => Promise<bigint>;
-  };
+  // The NAMED viem type both factories actually return, instead of a loose
+  // structural seam that forced `as unknown as` at both call sites (same
+  // no-any fix as confirm-evm.ts).
+  let publicClient: PublicClient<Transport, Chain>;
   let chainAlias: string;
   let nativeSymbol: string;
   let nativeDecimals: number;
@@ -73,13 +71,13 @@ export const defaultEvmPrepareChainFactory: EvmPrepareChainFactory = async (chai
     publicClient = createDynamicPublicClient(
       resolved.khalaniChain,
       resolved.khalaniChains,
-    ) as unknown as typeof publicClient;
+    );
     chainAlias = resolved.khalaniChain.name || chainInput;
     nativeSymbol = resolved.khalaniChain.nativeCurrency.symbol;
     nativeDecimals = resolved.khalaniChain.nativeCurrency.decimals;
   } else {
     const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
-    publicClient = getLocalPublicClient(resolved.config) as unknown as typeof publicClient;
+    publicClient = getLocalPublicClient(resolved.config);
     chainAlias = resolved.config.name || chainInput;
     nativeSymbol = resolved.config.nativeCurrency.symbol;
     nativeDecimals = resolved.config.nativeCurrency.decimals;

@@ -164,8 +164,10 @@ export interface StrandedRecoveryResult {
 /**
  * T4a / T4b. Recover linked `consuming` intents whose confirm handler is gone.
  *
- * Called from the EVM lane's tick, which is the sweep that already runs on
- * every cycle. It performs NO chain access: the split is decided entirely by
+ * Called from `syncTick` (`sync/index.ts`), the tick that runs unconditionally
+ * on every cycle. It is NOT owned by a lane: it is family-agnostic, and hanging
+ * it off the EVM sweep made Solana recovery depend on the EVM lane being
+ * enabled. It performs NO chain access: the split is decided entirely by
  * whether the linked activity row carries the hash the handler stages before it
  * broadcasts.
  */
