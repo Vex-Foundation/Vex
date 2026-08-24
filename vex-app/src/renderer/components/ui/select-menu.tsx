@@ -27,7 +27,7 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { ChevronDownIcon, VexIcon } from "../icons/index.js";
+import { IconChevronDown } from "../icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 export interface SelectMenuOption {
@@ -197,9 +197,9 @@ export function SelectMenu({
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={handleKeyDown}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.08] bg-white/[0.035] px-2 text-left text-sm text-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent,var(--color-accent-primary))]",
-          "disabled:cursor-not-allowed disabled:opacity-60",
+          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-line-input bg-transparent px-2 text-left text-sm text-ink-primary",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+          "disabled:cursor-not-allowed disabled:opacity-40",
           className,
         )}
       >
@@ -207,21 +207,18 @@ export function SelectMenu({
           className={cn(
             "min-w-0 truncate",
             shimmerLabels && "vex-preview-shimmer",
-            selectedIndex < 0 && "text-[var(--color-text-muted)]",
+            selectedIndex < 0 && "text-ink-tertiary",
           )}
           data-shimmer-text={shimmerLabels ? selectedLabel : undefined}
         >
           {selectedLabel}
         </span>
-        <VexIcon
-          icon={ChevronDownIcon}
+        <IconChevronDown
           size={15}
-          aria-hidden
           className={cn(
-            "shrink-0 text-[var(--color-text-muted)] transition-transform",
+            "shrink-0 text-ink-tertiary transition-transform",
             open && "rotate-180",
-          )}
-        />
+          )} />
       </button>
 
       {open ? (
@@ -230,14 +227,13 @@ export function SelectMenu({
           role="listbox"
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledBy}
-          // Solid semantic popover surface (A6) — depth from luminance + a
-          // hairline, never backdrop blur or a resting glow. `placement`
-          // flips the anchor edge (down vs up); everything else is shared.
-          // The listbox FLOATS (absolute + z-30 + its own max-h scroll): it
-          // overlays whatever follows the trigger and never pushes layout —
-          // the Personalize dialog's chip rows sit under it while open.
+          // Solid layer-2 popover: hairline + lv3 elevation, never blur or
+          // glow; its scrollbar rebinds to the elevated (l2) pair.
+          // `placement` flips the anchor edge (down vs up). The listbox
+          // FLOATS (absolute + z-30 + its own max-h scroll): it overlays
+          // whatever follows the trigger and never pushes layout.
           className={cn(
-            "absolute left-0 right-0 z-30 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground",
+            "vex-scroll-elevated absolute left-0 right-0 z-30 max-h-56 overflow-y-auto rounded-xl border border-line-1 bg-surface-2 p-1 text-ink-primary shadow-lv3",
             placement === "top" ? "bottom-full mb-1" : "top-full mt-1",
           )}
         >
@@ -255,9 +251,9 @@ export function SelectMenu({
                 className={cn(
                   "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm",
                   active
-                    ? "bg-[var(--vex-accent-fill-12,color-mix(in_oklab,var(--color-accent-primary)_12%,transparent))] text-foreground"
-                    : "text-[var(--color-text-secondary)]",
-                  selected && !active && "text-foreground",
+                    ? "bg-interactive-hover text-ink-primary"
+                    : "text-ink-secondary",
+                  selected && !active && "text-ink-primary",
                 )}
               >
                 <span
@@ -269,7 +265,7 @@ export function SelectMenu({
                 {selected ? (
                   <span
                     aria-hidden
-                    className="ml-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent,var(--color-accent-primary))]"
+                    className="ml-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-primary"
                   />
                 ) : null}
               </li>

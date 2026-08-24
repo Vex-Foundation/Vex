@@ -1,5 +1,5 @@
 /**
- * `units_convert` — the agent's deterministic unit/percentage calculator.
+ * `UnitsConvert` — the agent's deterministic unit/percentage calculator.
  *
  * WHY IT EXISTS. Every money mistake this repo has recorded is an arithmetic
  * one the model did in its head: `22518000` wei read as 22.5 gwei instead of
@@ -189,7 +189,7 @@ function unitExponent(unit: UnitName, decimals: number | undefined): number {
   if (spec.exponent !== null) return spec.exponent;
   if (decimals === undefined) {
     refuse(
-      `decimals is required when \`from\` or \`to\` is "human" or "raw" — a raw token amount is unreadable without the token's decimals (get them from token_find).`,
+      `decimals is required when \`from\` or \`to\` is "human" or "raw" — a raw token amount is unreadable without the token's decimals (get them from TokenFind).`,
     );
   }
   return decimals;
@@ -387,13 +387,13 @@ export async function handleUnitsConvert(params: Record<string, unknown>): Promi
   // union's own "invalid op" message names the legal ops, "missing op" does not.
   const parsed = UnitsConvertArgs.safeParse(dropEmptyModelValues(params, { preserveKeys: ["op"] }));
   if (!parsed.success) {
-    return fail(`units_convert: ${formatZodIssuesForModel(parsed.error.issues, params)}`);
+    return fail(`UnitsConvert: ${formatZodIssuesForModel(parsed.error.issues, params)}`);
   }
 
   try {
     return ok(computeUnitsConvert(parsed.data));
   } catch (error) {
-    if (error instanceof UnitsInputError) return fail(`units_convert: ${error.message}`);
+    if (error instanceof UnitsInputError) return fail(`UnitsConvert: ${error.message}`);
     throw error;
   }
 }

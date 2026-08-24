@@ -46,7 +46,7 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
   try {
     knobs = resolveJupiterSwapKnobs(p);
   } catch (err) {
-    return fail(`solana.swap.quote failed: ${swapFailureMessage(err)}`);
+    return fail(`solana__swap_quote failed: ${swapFailureMessage(err)}`);
   }
 
   const [{ token: inputToken, safety: inputSafety }, { token: outputToken, safety: outputSafety }] = await Promise.all([
@@ -54,7 +54,7 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
     requireJupiterResolvedTokenWithSafety(outputRaw),
   ]);
   const converted = humanAmountToAtomic("amountIn", amountInRaw, inputToken.decimals, inputToken.symbol);
-  if (!converted.ok) return fail(`solana.swap.quote failed: ${converted.reason}`);
+  if (!converted.ok) return fail(`solana__swap_quote failed: ${converted.reason}`);
   const amountRaw = converted.amountRaw;
 
   let prepared;
@@ -69,7 +69,7 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
       inputDecimals: inputToken.decimals,
     });
   } catch (err) {
-    return fail(`solana.swap.quote failed: ${swapFailureMessage(err)}`);
+    return fail(`solana__swap_quote failed: ${swapFailureMessage(err)}`);
   }
 
   const safety = inputSafety || outputSafety

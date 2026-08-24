@@ -22,14 +22,14 @@ export function PhaseNote({
   if (phase.kind === "re_review") {
     return (
       <div className="flex flex-col items-start gap-2" role="alert">
-        <p className="text-sm text-[var(--vex-warn-text)]">{phase.message}</p>
-        <p className="text-[12px] leading-relaxed text-[var(--vex-text-2)]">
+        <p className="text-sm text-warning">{phase.message}</p>
+        <p className="text-[12px] leading-relaxed text-ink-secondary">
           {RE_REVIEW_NOTE}
         </p>
         <button
           type="button"
           onClick={onRePrice}
-          className="rounded-full border border-[var(--vex-line-strong)] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="rounded-full border border-line-3 px-3 py-1 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           Review new price
         </button>
@@ -38,7 +38,7 @@ export function PhaseNote({
   }
   if (phase.kind === "refused") {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-sm text-danger" role="alert">
         {phase.message}
       </p>
     );
@@ -48,15 +48,15 @@ export function PhaseNote({
     // and created nothing — painting it as a success is the lie this splits.
     if (phase.tone === "failure") {
       return (
-        <p className="text-sm break-all text-destructive" role="alert">
+        <p className="text-sm break-all text-danger" role="alert">
           {phase.message}
         </p>
       );
     }
     const className =
       phase.tone === "caution"
-        ? "text-sm break-all text-[var(--vex-warn-text)]"
-        : "text-sm break-all text-[var(--color-success)]";
+        ? "text-sm break-all text-warning"
+        : "text-sm break-all text-success";
     return (
       <p className={className} role="status">
         {phase.message}

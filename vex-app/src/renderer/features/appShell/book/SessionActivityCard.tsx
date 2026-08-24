@@ -26,9 +26,8 @@ import { useMemo, type JSX, type MouseEvent } from "react";
 import type { AgentScanDto, AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
-  ChevronRightIcon,
-  ArrowUpRightIcon,
-  VexIcon,
+  IconChevronRight,
+  IconArrowUpRight,
 } from "../../../components/icons/index.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -91,7 +90,7 @@ export function SessionActivityCard({
     // Timeout degradation must NEVER read as "the agent has done nothing".
     body = (
       <CardStateNote>
-        Activity is unavailable right now — try again shortly.
+        Activity is unavailable right now - try again shortly.
       </CardStateNote>
     );
   } else if (entries.length === 0) {
@@ -116,10 +115,10 @@ export function SessionActivityCard({
       <button
         type="button"
         onClick={openAgentScan}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
       >
         View all activity
-        <VexIcon icon={ChevronRightIcon} size={13} aria-hidden />
+        <IconChevronRight size={13} />
       </button>
     </PortfolioCard>
   );
@@ -132,7 +131,7 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
   const clock = entryClockText(entry.createdAt);
 
   return (
-    <li className="flex flex-col gap-0.5 border-b border-[var(--vex-line)] py-1.5 last:border-b-0 last:pb-0.5">
+    <li className="flex flex-col gap-0.5 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
       <div className="flex items-center gap-1.5">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <ProtocolMark mark={mark} size={13} />
@@ -144,30 +143,29 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
           statusTitle={entry.failureCode ?? undefined}
         />
       </div>
-      {/* REGISTER (C2): the dense numeric line is Instrument Sans with
-        * `tabular-nums`, NOT mono — mono is reserved for technical artifacts
-        * (code, raw JSON, addresses, tx hashes). The figures still align in a
-        * column because the tabular figure set, not the face, is what does
-        * that work. */}
-      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-[var(--vex-text-2)]">
+      {/* The dense numeric line is Inter Tight with `tabular-nums`, NOT mono
+        * — mono is reserved for technical artifacts (code, raw JSON,
+        * addresses, tx hashes). The tabular figure set, not the face, keeps
+        * the column aligned. */}
+      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-ink-secondary">
         <Leg
           amount={legAmountText(entry.input)}
           symbol={legSymbolText(entry.input)}
           estimated={estimated}
         />
-        <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
+        <span className="shrink-0 text-ink-tertiary">→</span>
         <Leg
           amount={legAmountText(entry.output)}
           symbol={legSymbolText(entry.output)}
           estimated={estimated}
         />
         {estimated ? (
-          <span className="shrink-0 uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <span className="shrink-0 uppercase tracking-[0.14em] text-ink-tertiary">
             est.
           </span>
         ) : null}
         {clock !== null ? (
-          <span className="ml-auto shrink-0 text-[var(--vex-text-3)]">{clock}</span>
+          <span className="ml-auto shrink-0 text-ink-tertiary">{clock}</span>
         ) : null}
         {entry.explorerUrl !== null ? (
           <a
@@ -175,10 +173,10 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Open transaction on block explorer"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             TX
-            <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
+            <IconArrowUpRight size={10} />
           </a>
         ) : null}
       </div>

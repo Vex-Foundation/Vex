@@ -78,7 +78,7 @@ describe("PositionChains token-symbol trust boundary", () => {
     expect(screen.queryByText("\u0405OL")).toBeNull();
     expect(screen.queryByText("SOL")).toBeNull();
     // ...and falls back to the existing unresolved-symbol placeholder.
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 
   it("drops a symbol carrying zero-width/bidi-control spoofing characters", () => {
@@ -95,7 +95,7 @@ describe("PositionChains token-symbol trust boundary", () => {
       />,
     );
     expect(screen.queryByText("ETH")).toBeNull();
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 
   it("drops a symbol containing control characters", () => {
@@ -111,7 +111,7 @@ describe("PositionChains token-symbol trust boundary", () => {
       />,
     );
     expect(screen.queryByText(/SYMBOL/)).toBeNull();
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 
   it("never renders duplicate/unsanitized rows for a null symbol", () => {
@@ -127,7 +127,7 @@ describe("PositionChains token-symbol trust boundary", () => {
       />,
     );
     expect(container.querySelectorAll("li")).toHaveLength(1);
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 });
 
@@ -159,7 +159,7 @@ describe("PositionChains chain-aware verified-mark resolver", () => {
     expect(container.innerHTML).toContain(USDC_BRAND_FILL);
   });
 
-  it("withholds the Usdc brand mark for a fake 'USDC' at an unverified address — shows the Ethereum FAMILY mark instead", () => {
+  it("withholds the Usdc brand mark for a fake 'USDC' at an unverified address - shows the Ethereum FAMILY mark instead", () => {
     const { container } = render(
       <PositionChains
         chains={[
@@ -223,7 +223,7 @@ describe("PositionChains chain-aware verified-mark resolver", () => {
     expect(container.innerHTML).toContain(ETHEREUM_FILL);
   });
 
-  it("withholds the Usdc brand mark for a fake Solana 'USDC' at an unverified mint — shows the Solana FAMILY mark instead", () => {
+  it("withholds the Usdc brand mark for a fake Solana 'USDC' at an unverified mint - shows the Solana FAMILY mark instead", () => {
     const { container } = render(
       <PositionChains
         chains={[

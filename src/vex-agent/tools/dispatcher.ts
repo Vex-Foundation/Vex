@@ -20,6 +20,7 @@
 import type { ToolCallRequest, ToolResult } from "./types.js";
 import type { InternalToolContext } from "./internal/types.js";
 import { getActionKind } from "./registry.js";
+import { resolveToolName } from "./registry/name-resolution.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
@@ -39,15 +40,21 @@ export { dispatchTargetIsMutating } from "./dispatcher/mutating-targets.js";
 export { INTERNAL_TOOL_LOADERS } from "./dispatcher/internal-loaders.js";
 
 /**
- * What the model is told when it calls `execute_tool` anyway. Names the real
- * cause and the ONE way forward (rule 04) — the model's next move must be
- * `discover_tools`, whose ranked rows come back as callable functions.
+ * What the model is told when it emits `execute_tool` anyway. Names the real
+ * cause and the ONE way forward (rule 04) — the model's next move is
+ * `ToolSearch`, whose rows come back as callable functions.
+ *
+ * THIS REFUSAL IS LOAD-BEARING, not a leftover of the retired ToolDef. The
+ * envelope's dispatch route is still live for approval resume
+ * (`dispatcher/protocol-route.ts`), so a model-emitted `execute_tool` would
+ * otherwise EXECUTE a protocol tool with model-chosen arguments and no injected
+ * schema to validate them against. Deleting the registration removed the tool
+ * from the catalog; this gate is what keeps the route closed.
  */
 const MODEL_EXECUTE_TOOL_REFUSAL =
   "execute_tool is not callable. Protocol tools are called DIRECTLY by their " +
-  "own name: run discover_tools with a query describing what you need, and " +
-  "every tool it returns is added to your tool list as a real function " +
-  "(dotted id with `.` written as `__`, e.g. `kyberswap__swap__execute`) whose " +
+  "own name: run ToolSearch with a query describing what you need, and " +
+  "every tool it returns is added to your tool list as a real function whose " +
   "arguments ARE its parameters — no toolId, no params wrapper.";
 
 /**
@@ -75,17 +82,41 @@ function withActionKindFallback(result: ToolResult, toolName: string): ToolResul
  * Never throws — errors are caught and returned as failed results.
  */
 export async function dispatchTool(
-  call: ToolCallRequest,
+  request: ToolCallRequest,
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const startTime = Date.now();
 
-  // `execute_tool` is closed to the MODEL. Discovered manifests are injected as
-  // real functions the model calls by their own name, so the two-level envelope
-  // is now an internal calling convention with exactly one live caller: the
-  // cold approval resume, whose stored call is canonicalized to `execute_tool`
-  // so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
-  // That caller is host-built and never carries `modelOriginated`.
+  // ── Deprecation-alias resolution, BEFORE every gate ──
+  // A retired INTERNAL tool name is mapped to its canonical name here so the
+  // `execute_tool` refusal, the pressure band, the plan-acceptance gate, the
+  // mutating/auto-retry classification, routing and the `actionKind` fallback
+  // all see ONE name, the identity, and can never disagree about which tool
+  // this call is. This is also what makes a COLD APPROVAL RESUME safe across a
+  // rename: `dispatch-approved.ts` re-enters here with the name stored in
+  // `approval_queue.tool_call`, which may predate the rename.
+  //
+  // A retired PROTOCOL name is deliberately NOT rewritten here. Its identity is
+  // the immutable dotted toolId, not a name, and it is resolved to its manifest
+  // by the shared catalog resolver that every gate below already consults
+  // (`registry/injected-protocol-tools.ts`). See `registry/name-resolution.ts`
+  // for why the two identity spaces have separate lookups.
+  //
+  // The request object is passed through UNCHANGED when nothing resolves, so
+  // under the Batch 1 empty table this line is byte-for-byte inert. Resolution
+  // is single-hop and idempotent, so the boundaries downstream that resolve
+  // again are consistent with this one.
+  const resolvedName = resolveToolName(request.name);
+  const call: ToolCallRequest =
+    resolvedName === request.name ? request : { ...request, name: resolvedName };
+
+  // `execute_tool` is closed to the MODEL and no longer registered at all
+  // (`registry/protocol.ts`). Selected manifests are injected as real functions
+  // the model calls by their own name, so the two-level envelope is now an
+  // internal calling convention with exactly one live caller: the cold approval
+  // resume, whose stored call is canonicalized to `execute_tool` so it survives
+  // a process restart (`approval-runtime/tool-call-envelope.ts`). That caller is
+  // host-built and never carries `modelOriginated`.
   //
   // THE PLACEMENT IS THE POINT: this refusal runs BEFORE the plan-acceptance
   // gate below and therefore before `routeToolCall`'s mission auto-retry-unsafe

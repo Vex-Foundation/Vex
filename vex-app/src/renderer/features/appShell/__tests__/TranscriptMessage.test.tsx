@@ -127,10 +127,10 @@ describe("TranscriptMessage tool acts (S5)", () => {
     ).not.toBeNull();
     const btn = screen.getByRole("button", { name: /Wallet read/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
-    expect(screen.queryByText('{"chain":"base"}')).toBeNull();
+    expect(document.querySelector("[data-vex-json-tree]")).toBeNull();
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText('{"chain":"base"}')).not.toBeNull(); // params on expand
+    expect(document.querySelector("[data-vex-json-tree]")).not.toBeNull(); // params on expand (C9 tree)
     expect(screen.getByText("Args")).not.toBeNull(); // S5 section heading
     // No result merged → the quiet row shows no Output section.
     expect(screen.queryByText("Output")).toBeNull();
@@ -313,15 +313,16 @@ describe("TranscriptMessage persisted reasoning", () => {
       createElement(TranscriptMessage, {
         row: {
           ...row({ variant: "assistant", content: "Done." }),
-          reasoning: "I checked the balances first.",
+          reasoning: "I checked the balances first.\nThen I priced the route.",
         },
       }),
     );
     const block = container.querySelector('[data-vex-reasoning="persisted"]');
     expect(block).not.toBeNull();
     expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
-    // Collapsed: the answer stays the first thing read.
-    expect(container.textContent).not.toContain("I checked the balances first.");
+    // Collapsed: only the trace's FIRST line rides beside the stamp, so the
+    // answer stays the first substantial thing read.
+    expect(container.textContent).not.toContain("Then I priced the route.");
   });
 
   it("renders the block on a stopped assistant row too", () => {
@@ -422,48 +423,84 @@ describe("TranscriptMessage persisted reasoning", () => {
 // ── C2 typographic register: human captions are NOT mono ────────────────────
 
 describe("TranscriptMessage caption register (contract C2)", () => {
-  it("stamps both speaker captions with the sans small-caps class, never font-mono", () => {
-    const { container: assistant } = render(
-      createElement(TranscriptMessage, {
-        row: row({ variant: "assistant", content: "Done." }),
-      }),
-    );
-    const { container: user } = render(
+  it("stamps the user caption with the sans small-caps class, never font-mono", () => {
+    const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "user", content: "hi" }),
       }),
     );
-    for (const [name, container] of [
-      // The assistant caption is literally "VEX": the shimmer overlay
-      // duplicates the text through `data-shimmer-text`, and CSS
-      // `text-transform` does not change the DOM string, so the DOM has to
-      // carry the cased form or the two layers would sweep different glyphs.
-      ["VEX", assistant],
-      ["You", user],
-    ] as const) {
-      const caption = container.querySelector(".vex-micro");
-      expect(caption, `${name} caption`).not.toBeNull();
-      expect(caption?.className).not.toContain("font-mono");
-      expect(caption?.textContent).toContain(name);
-    }
+    const caption = container.querySelector(".vex-micro");
+    expect(caption).not.toBeNull();
+    expect(caption?.className).not.toContain("font-mono");
+    expect(caption?.textContent).toContain("You");
   });
 
-  /**
-   * THE NAME SHIMMERS (owner visual round 2026-07-30). It must be the SAME
-   * sanctioned class family the reasoning-effort selector uses, and the
-   * overlay's `data-shimmer-text` must equal the rendered string exactly — a
-   * mismatch sweeps a band across glyphs that are not there.
-   */
-  it("wears the sanctioned shimmer on the VEX speaker name, with a matching overlay string", () => {
+  it("puts the assistant clock and actions in a TAIL row, in the same register", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Done." }),
       }),
     );
-    const name = container.querySelector(".vex-preview-shimmer");
-    expect(name).not.toBeNull();
-    expect(name?.textContent).toBe("VEX");
-    expect(name?.getAttribute("data-shimmer-text")).toBe(name?.textContent);
+    const tail = container.querySelector("[data-vex-message-tail]");
+    expect(tail).not.toBeNull();
+    expect(tail?.className).toContain("vex-micro");
+    expect(tail?.className).not.toContain("font-mono");
+    // The tail is the LAST thing in the row: the body has to start level with
+    // the mark, not below a band of chrome.
+    expect(container.querySelector('[data-vex-message-role="assistant"]')?.lastElementChild)
+      .toBe(tail);
+  });
+});
+
+// ── Assistant identity: the mark, never a wordmark (owner QA round 2) ───────
+
+describe("TranscriptMessage assistant identity", () => {
+  /**
+   * Same precedent as `SidebarHomeSigil.test.tsx`: the brand mark alone.
+   * The anime portrait and the visual "VEX" name are both retired; a screen
+   * reader still has to be told whose turn this is, so the sr-only speaker
+   * label is the text equivalent that replaces them.
+   */
+  it("signs an assistant turn with the VexMark and NO visible wordmark", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    const avatar = container.querySelector("[data-vex-agent-avatar]");
+    expect(avatar).not.toBeNull();
+    expect(avatar?.querySelector("svg path")).not.toBeNull();
+    // No raster portrait anywhere, and no wordmark of any casing.
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.queryByText("VEX")).toBeNull();
+    expect(screen.queryByText("Vex", { selector: ":not(.sr-only)" })).toBeNull();
+    // The shimmer overlay went with the name it swept.
+    expect(container.querySelector(".vex-preview-shimmer")).toBeNull();
+    // The accessible speaker label survives.
+    const label = container.querySelector(".sr-only");
+    expect(label?.textContent).toBe("Vex");
+  });
+
+  it("spins the working ring only for the active turn's mark", () => {
+    for (const working of [true, false] as const) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: row({ variant: "assistant", content: "Done." }),
+          agentWorking: working,
+        }),
+      );
+      const avatar = container.querySelector("[data-vex-agent-avatar]");
+      expect(avatar?.getAttribute("data-vex-agent-avatar-state")).toBe(
+        working ? "working" : "settled",
+      );
+      const spinner = container.querySelector("[data-vex-agent-spinner]");
+      expect(spinner === null).toBe(!working);
+      // Reduced motion stills it: the ring is decoration, never the only
+      // signal that a turn is live.
+      if (working) {
+        expect(spinner?.className).toContain("motion-reduce:animate-none");
+      }
+    }
   });
 });
 
@@ -495,7 +532,7 @@ describe("TranscriptMessage tool card duration", () => {
     ).toBe("2.3 s");
   });
 
-  it("shows NO chip for a call that never ran — null must not read as 0 s", () => {
+  it("shows NO chip for a call that never ran - null must not read as 0 s", () => {
     for (const value of [null, undefined]) {
       const view = render(
         createElement(TranscriptMessage, { row: toolRowWith(value) }),

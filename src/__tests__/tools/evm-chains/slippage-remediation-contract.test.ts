@@ -146,7 +146,7 @@ describe("a calldata price-floor refusal is NOT a market-slippage refusal", () =
       path.resolve(__dirname, "../../../vex-agent/tools/protocols/kyberswap/handlers/swap/execute-plan.ts"),
       "utf8",
     );
-    expect(source).toContain('"Nothing was signed. Get a fresh kyberswap.swap.quote."');
+    expect(source).toContain('"Nothing was signed. Get a fresh kyberswap__swap_quote."');
     expect(source).not.toMatch(/slippageRemediation/);
   });
 

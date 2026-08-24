@@ -3,7 +3,7 @@
  *
  * Cross-session recall is intentionally NOT supported: memories represent
  * per-session narrative and would degrade quickly if mixed across missions.
- * For cross-session durable facts, the agent uses `long_memory_search` instead.
+ * For cross-session durable facts, the agent uses `MemorySearch` instead.
  *
  * The model+dim filter is MANDATORY (mixed-dim `<=>` crashes pgvector and
  * cross-model similarity is meaningless).

@@ -44,6 +44,9 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
  */
 export const messageKindSchema = z.enum([
   "text",
+  // A33: a user message steered into a LIVE turn (`operator_interrupt`) -
+  // renders as a user row wearing a "steered" register mark.
+  "steering",
   "tool_call",
   "tool_result",
   "runtime_notice",

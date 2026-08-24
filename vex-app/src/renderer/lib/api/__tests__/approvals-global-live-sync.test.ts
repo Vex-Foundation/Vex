@@ -112,7 +112,7 @@ describe("useGlobalApprovalsLiveSync", () => {
     );
   });
 
-  it("does not filter by session — the active session works too", () => {
+  it("does not filter by session - the active session works too", () => {
     const { invalidate } = setup();
     act(() => missionListener?.(event({ sessionId: ACTIVE_SESSION })));
 
@@ -122,7 +122,7 @@ describe("useGlobalApprovalsLiveSync", () => {
   });
 
   it.each(["accepted", "draft_updated", "readiness_changed"] as const)(
-    "ignores %s — a draft change is not an approval",
+    "ignores %s - a draft change is not an approval",
     (kind) => {
       const { invalidate } = setup();
       act(() => missionListener?.(event({ kind })));

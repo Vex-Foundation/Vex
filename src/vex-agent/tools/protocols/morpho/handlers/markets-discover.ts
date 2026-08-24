@@ -44,7 +44,7 @@ export async function morphoMarketsDiscover(
       context?.abortSignal,
     );
   } catch (err) {
-    return fail(`morpho.markets.discover failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__markets_discover failed ${morphoFailureDetail(err)}`);
   }
 
   const rows = page.markets.map(projectMarketRow);
@@ -83,7 +83,7 @@ export async function morphoMarketsDiscover(
         + "could add and is not committed.",
     },
     nextStep:
-      "Read one market in full with morpho.market.get (it needs both `marketId` and `chain`) before acting on it - "
+      "Read one market in full with morpho__market_get (it needs both `marketId` and `chain`) before acting on it - "
       + "that call adds bad debt, the oracle price liquidations use, and the vaults supplying the market.",
   });
 }

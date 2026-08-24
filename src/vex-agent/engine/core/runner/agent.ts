@@ -4,7 +4,7 @@
  * "Agent" is the one-shot conversational session kind (post-M12 rename
  * from "chat"). The model may emit tool calls, dispatch transactions
  * subject to session permission, and respond with text. No loop — when
- * a final text reply lands the turn ends. Wake / `loop_defer` are
+ * a final text reply lands the turn ends. Wake / `LoopDefer` are
  * mission-mode only.
  */
 
@@ -126,7 +126,7 @@ export async function processAgentTurn(
   } finally {
     // COMMITTED-WAKE CLEANUP. A foreground Stop is request-local by contract,
     // but the turn it stopped may already have COMMITTED a session-scoped park
-    // (`loop_defer`). Cancelling it here is what makes the foreground Stop mean
+    // (`LoopDefer`). Cancelling it here is what makes the foreground Stop mean
     // "the agent stops", instead of "this response stops and the agent wakes up
     // again in thirty seconds". Best-effort: a failure here must never mask the
     // turn's own outcome, and the durable Stop path remains available.
@@ -429,7 +429,28 @@ export async function runAgentTurnUnderLease(
   // real assistant text itself, so nothing was saved on this path; we persist
   // the synthesised reply as a normal user-visible assistant message.
   let text = result.text;
-  if (isContinuableRuntimeStop(result.stopReason)) {
+
+  /** Persist the deterministic reply for a bound that left the turn silent. */
+  const persistSynthesisedReply = async (body: string): Promise<void> => {
+    text = body;
+    await appendMessage(
+      sessionId,
+      { role: "assistant", content: body, timestamp: new Date().toISOString() },
+      { source: "assistant", messageType: "chat", visibility: "user" },
+    );
+  };
+
+  // ── Model stall ────────────────────────────────────────────────
+  //
+  // Handled BEFORE the continuable-bound branch and deliberately outside it: a
+  // stall is not a slice that ran out of room, so it is never continued, not
+  // even under full autonomy. An unproductive round persists nothing, which
+  // means a woken slice would re-send the identical request and stall again -
+  // a wake loop that spends input tokens forever. Both permissions get the
+  // honest reply and the turn ends.
+  if (result.stopReason === "no_progress") {
+    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply("no_progress"));
+  } else if (isContinuableRuntimeStop(result.stopReason)) {
     // The slice's own cancellation signal (a wake-driven slice carries it in
     // both positions). Handed to the scheduler, which re-reads it INSIDE the
     // scheduling transaction rather than pre-sampling it here.
@@ -443,12 +464,7 @@ export async function runAgentTurnUnderLease(
       : { scheduled: false };
 
     if (!continuation.scheduled && !text) {
-      text = runtimeBoundExhaustedReply(result.stopReason);
-      await appendMessage(
-        sessionId,
-        { role: "assistant", content: text, timestamp: new Date().toISOString() },
-        { source: "assistant", messageType: "chat", visibility: "user" },
-      );
+      await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
     }
   }
 

@@ -2,7 +2,7 @@
  * Long-term memory tools (memory v2) — the agent-facing write-door into
  * cross-session candidate memory.
  *
- * `long_memory_suggest` is the ONLY agent-facing write tool in the v2 memory
+ * `MemorySuggest` is the ONLY agent-facing write tool in the v2 memory
  * system (S2). It STAGES a candidate — it does NOT write memory directly — and
  * an async manager (S4) reviews, dedupes, and decides promotion. Namespaced
  * `long_memory_*` to stay distinct from per-session `memory_*` and the legacy
@@ -18,21 +18,22 @@
  * - `actionKind: "local_write"` — a Vex-local DB write (candidate staging).
  * - `visibility: {}` — always visible in every session context.
  *
- * The three READ tools (S3) — `long_memory_search` / `long_memory_get` /
- * `long_memory_history` — are the cross-session RECALL door. All are
+ * The three READ tools (S3) — `MemorySearch` / `MemoryGet` /
+ * `MemoryHistory` — are the cross-session RECALL door. All are
  * `mutating:false`, `pressureSafety:"read_only"`, `actionKind:"read"`,
  * `visibility:{}` (always visible — unlike session memory's
- * `requiresSessionMemory` gate). `long_memory_search` hides its strategy
+ * `requiresSessionMemory` gate). `MemorySearch` hides its strategy
  * (vector + dual-trace + rerank); fresh un-consolidated candidates surface as
  * de-weighted soft signals (`notConsolidated:true`), never as fact.
  */
 
 import type { ToolDef } from "../types.js";
 import { formatKindExamples } from "@vex-agent/memory/kind-catalog.js";
+import { responseFormatParam } from "@vex-agent/response-format.js";
 
 export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
   {
-    name: "long_memory_suggest",
+    name: "MemorySuggest",
     kind: "internal",
     mutating: false,
     pressureSafety: "mutating",
@@ -41,6 +42,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     description: [
       // WHAT
       "Propose a durable, cross-session LESSON for long-term memory — a trading insight, a strategy/risk lesson, a stable user preference, or a project fact or constraint. Write title and summary in English (embedding retrieval is significantly stronger on English).",
+      "Use this when something just learned would change how a LATER session acts: a strategy that worked or failed for a stated reason, a risk rule the user set, a preference they expressed, or a protocol constraint you had to discover the hard way. A fact that only matters for the rest of this conversation does not belong here.",
       // HOW IT WORKS
       "This does NOT write memory directly. It STAGES a candidate; an async manager later reviews it, dedupes it, and decides whether to promote it into long-term memory. You get back a candidateId and status, not a stored memory.",
       // DO NOT (steering — reject policy advertised so you rarely trip it)
@@ -117,18 +119,19 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
           type: "string",
           description: "Optional ISO 8601 timestamp of when you observed the lesson.",
         },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → id + status; detailed → adds redaction counts, source tier, dual-trace window.",
-        },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds redaction counts, source tier and the dual-trace window to the id and "
+            + "status 'concise' returns",
+        }),
       },
       required: ["kind", "title", "summary"],
       additionalProperties: false,
     },
   },
   {
-    name: "long_memory_search",
+    name: "MemorySearch",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
@@ -137,12 +140,13 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     description: [
       // WHAT
       "Semantic recall over LONG-TERM, cross-session memory — durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out.",
+      "Use this when the user refers to something settled earlier that is not in this transcript, before committing to a strategy or a risk size they may already have ruled on, and before repeating an approach an earlier session may already have tried. For what happened earlier in THIS session, use `SessionMemorySearch` instead.",
       // HOW IT WORKS (strategy hidden on purpose)
       "Hides its retrieval strategy: it blends promoted long-term entries (source:'long_memory') with FRESH un-consolidated signals from this and recent sessions (source:'memory_candidate', notConsolidated:true). A confirmed long-term lesson always outranks a fresh candidate at equal relevance; a much stronger fresh match can still surface. Treat notConsolidated results as soft hints, never as established fact.",
       // QUERY GUIDANCE
       "Write SEMANTIC INTENT in English, not keywords (embedding retrieval is significantly stronger on English; translate the user's intent first). ✓ 'user trading risk preferences and position sizing rules' ✗ 'risk'. Returns only active, non-expired memory.",
       // RESPONSE
-      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use long_memory_get on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
+      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use MemoryGet on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -161,11 +165,12 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
           // Intentional change: 2 → 4 examples, catalog order (D-KINDS).
           description: `Optional exact kind filter (free-form snake_case, e.g. ${formatKindExamples()}). Omit to search across all kinds.`,
         },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → id/title/scores; detailed → adds summary, content, tags, maturity, source tier, evidence.",
-        },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds summary, content, tags, maturity, source tier and evidence to the "
+            + "id, title and scores 'concise' returns",
+        }),
         include_candidates: {
           type: "boolean",
           description: "Include fresh un-consolidated dual-trace signals (default true). Set false to see only promoted long-term entries.",
@@ -181,33 +186,35 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "long_memory_get",
+    name: "MemoryGet",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     visibility: {},
     description: [
-      "Fetch a single long-term memory entry by id (the numeric id returned by long_memory_search results with source:'long_memory'). Loads its full content into context.",
-      "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use long_memory_search to find a current id, long_memory_history to trace the version chain.",
+      "Fetch a single long-term memory entry by id (the numeric id returned by MemorySearch results with source:'long_memory'). Loads its full content into context.",
+      "Use this when a MemorySearch row looks decisive but arrived without inline content - a via_graph(entity) lead, or a concise row whose title alone is not enough to act on - and when you are following a lineage pointer to the entry that superseded or preceded another.",
+      "If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use MemorySearch to find a current id, MemoryHistory to trace the version chain.",
       "response_format: 'concise' (default) returns id/kind/title/summary/status + lineage links (the full body is still loaded into context); 'detailed' additionally inlines content_md, tags, source refs, confidence, and lifecycle metadata. Does not require the embeddings service.",
     ].join(" "),
     parameters: {
       type: "object",
       properties: {
-        id: { type: "number", description: "Long-term memory entry id (from a long_memory_search 'long_memory' result)." },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "concise (default) → metadata + lineage links (body still loaded into context); detailed → also inlines content_md + lifecycle metadata.",
-        },
+        id: { type: "number", description: "Long-term memory entry id (from a MemorySearch 'long_memory' result)." },
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "also inlines content_md and lifecycle metadata on top of the metadata and "
+            + "lineage links 'concise' returns (the body is loaded into context either way)",
+        }),
       },
       required: ["id"],
       additionalProperties: false,
     },
   },
   {
-    name: "long_memory_history",
+    name: "MemoryHistory",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
@@ -215,18 +222,23 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version).",
-      "Use this when you have a historical id (e.g. from long_memory_get's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use long_memory_get for that).",
+      "Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use MemoryGet for that).",
       "Read-only. Does not require the embeddings service.",
     ].join(" "),
     parameters: {
       type: "object",
       properties: {
         id: { type: "number", description: "Any long-term memory entry id in the chain (root, middle, or head)." },
-        response_format: {
-          type: "string",
-          enum: ["concise", "detailed"],
-          description: "Reserved — the chain + reinforcement timeline are returned the same way for both.",
-        },
+        // Accepted for symmetry with the other memory tools, and it genuinely
+        // changes nothing here: the handler returns the same chain and
+        // reinforcement timeline for both values. Said plainly rather than as
+        // "reserved", so the model does not spend a turn trying the other one.
+        response_format: responseFormatParam({
+          default: "concise",
+          whatDetailedAdds:
+            "adds nothing on this tool: the version chain and reinforcement timeline "
+            + "are returned exactly the same way for both values",
+        }),
       },
       required: ["id"],
       additionalProperties: false,

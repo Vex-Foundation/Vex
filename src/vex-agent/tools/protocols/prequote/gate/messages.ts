@@ -34,15 +34,15 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Bridge blocked: could not verify a fresh bridge quote. Re-run bridge_quote and retry.",
+    "Bridge blocked: could not verify a fresh bridge quote. Re-run BridgeQuote and retry.",
   no_session:
-    "Bridge blocked: could not verify a fresh bridge quote (no session). Re-run bridge_quote and retry.",
+    "Bridge blocked: could not verify a fresh bridge quote (no session). Re-run BridgeQuote and retry.",
   // A bridge execute has no bare-symbol leg (addresses are passed through), so
   // this reason is unreachable on the bridge path; keep a coherent message.
   unresolved_token:
     "Bridge blocked: unresolved bridge token — pass the exact token addresses the quote returned, then retry.",
   no_quote:
-    "Bridge blocked: no fresh bridge quote for these exact params. Call bridge_quote first, then retry.",
+    "Bridge blocked: no fresh bridge quote for these exact params. Call BridgeQuote first, then retry.",
   safety_fail:
     "Bridge blocked: the quoted route was flagged unsafe. Aborting.",
   wallet_setup:
@@ -57,13 +57,13 @@ const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Redeem blocked: could not verify a fresh redeem quote. Re-run pendle.pt.quote for this PT and retry.",
+    "Redeem blocked: could not verify a fresh redeem quote. Re-run pendle__pt_quote for this PT and retry.",
   no_session:
-    "Redeem blocked: could not verify a fresh redeem quote (no session). Re-run pendle.pt.quote and retry.",
+    "Redeem blocked: could not verify a fresh redeem quote (no session). Re-run pendle__pt_quote and retry.",
   unresolved_token:
     "Redeem blocked: the PT could not be resolved to an active Pendle market. Re-check the PT address, then retry.",
   no_quote:
-    "Redeem blocked: no fresh redeem quote for this exact PT/amount. Call pendle.pt.quote first, then retry.",
+    "Redeem blocked: no fresh redeem quote for this exact PT/amount. Call pendle__pt_quote first, then retry.",
   safety_fail:
     "Redeem blocked: the quoted redemption was flagged unsafe. Aborting.",
   wallet_setup:
@@ -80,13 +80,13 @@ const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Mint blocked: could not verify a fresh mint quote. Re-run pendle.py.quote (direction mint) for this PT and retry.",
+    "Mint blocked: could not verify a fresh mint quote. Re-run pendle__py_quote (direction mint) for this PT and retry.",
   no_session:
-    "Mint blocked: could not verify a fresh mint quote (no session). Re-run pendle.py.quote and retry.",
+    "Mint blocked: could not verify a fresh mint quote (no session). Re-run pendle__py_quote and retry.",
   unresolved_token:
     "Mint blocked: the PT could not be resolved to an active Pendle market. Re-check the PT address, then retry.",
   no_quote:
-    "Mint blocked: no fresh mint quote for this exact PT/token/amount. Call pendle.py.quote (direction mint) first, then retry.",
+    "Mint blocked: no fresh mint quote for this exact PT/token/amount. Call pendle__py_quote (direction mint) first, then retry.",
   safety_fail:
     "Mint blocked: the quoted mint was flagged unsafe. Aborting.",
   wallet_setup:
@@ -101,13 +101,13 @@ const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Redeem blocked: could not verify a fresh redeem quote. Re-run pendle.py.quote (direction redeem) for this PT and retry.",
+    "Redeem blocked: could not verify a fresh redeem quote. Re-run pendle__py_quote (direction redeem) for this PT and retry.",
   no_session:
-    "Redeem blocked: could not verify a fresh redeem quote (no session). Re-run pendle.py.quote and retry.",
+    "Redeem blocked: could not verify a fresh redeem quote (no session). Re-run pendle__py_quote and retry.",
   unresolved_token:
     "Redeem blocked: the PT could not be resolved to an active Pendle market. Re-check the PT address, then retry.",
   no_quote:
-    "Redeem blocked: no fresh redeem quote for this exact PT/output/amount. Call pendle.py.quote (direction redeem) first, then retry. A MATURED PT (PT only, no YT) uses pendle.pt.redeem instead.",
+    "Redeem blocked: no fresh redeem quote for this exact PT/output/amount. Call pendle__py_quote (direction redeem) first, then retry. A MATURED PT (PT only, no YT) uses pendle__pt_redeem instead.",
   safety_fail:
     "Redeem blocked: the quoted redemption was flagged unsafe. Aborting.",
   wallet_setup:
@@ -122,13 +122,13 @@ const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Add liquidity blocked: could not verify a fresh LP quote. Re-run pendle.lp.quote (direction add) for this market and retry.",
+    "Add liquidity blocked: could not verify a fresh LP quote. Re-run pendle__lp_quote (direction add) for this market and retry.",
   no_session:
-    "Add liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle.lp.quote and retry.",
+    "Add liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle__lp_quote and retry.",
   unresolved_token:
     "Add liquidity blocked: the market could not be resolved to an active Pendle market. Re-check the market address, then retry.",
   no_quote:
-    "Add liquidity blocked: no fresh add quote for this exact market/token/amount. Call pendle.lp.quote (direction add) first, then retry.",
+    "Add liquidity blocked: no fresh add quote for this exact market/token/amount. Call pendle__lp_quote (direction add) first, then retry.",
   safety_fail:
     "Add liquidity blocked: the quoted add was flagged unsafe. Aborting.",
   wallet_setup:
@@ -143,13 +143,13 @@ const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 
 const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Remove liquidity blocked: could not verify a fresh LP quote. Re-run pendle.lp.quote (direction remove) for this market and retry.",
+    "Remove liquidity blocked: could not verify a fresh LP quote. Re-run pendle__lp_quote (direction remove) for this market and retry.",
   no_session:
-    "Remove liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle.lp.quote and retry.",
+    "Remove liquidity blocked: could not verify a fresh LP quote (no session). Re-run pendle__lp_quote and retry.",
   unresolved_token:
     "Remove liquidity blocked: the market could not be resolved to an active Pendle market. Re-check the market address, then retry.",
   no_quote:
-    "Remove liquidity blocked: no fresh remove quote for this exact market/output/amount. Call pendle.lp.quote (direction remove) first, then retry.",
+    "Remove liquidity blocked: no fresh remove quote for this exact market/output/amount. Call pendle__lp_quote (direction remove) first, then retry.",
   safety_fail:
     "Remove liquidity blocked: the quoted removal was flagged unsafe. Aborting.",
   wallet_setup:
@@ -173,13 +173,13 @@ const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
  */
 const LEND_DEPOSIT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Vault deposit blocked: could not verify a fresh vault quote. Re-run morpho.vault.quote (direction deposit) for this vault and retry.",
+    "Vault deposit blocked: could not verify a fresh vault quote. Re-run morpho__vault_quote (direction deposit) for this vault and retry.",
   no_session:
-    "Vault deposit blocked: could not verify a fresh vault quote (no session). Re-run morpho.vault.quote and retry.",
+    "Vault deposit blocked: could not verify a fresh vault quote (no session). Re-run morpho__vault_quote and retry.",
   unresolved_token:
     "Vault deposit blocked: the vault address could not be resolved on this chain. Re-check the vault address and the chain, then retry.",
   no_quote:
-    "Vault deposit blocked: no fresh quote for these exact params. The deposit must use EXACTLY the params the quote used, including the vault, the chain, depositAmountRaw and slippageBps (same value, or omitted on both sides). Call morpho.vault.quote (direction deposit) with those params first, then retry.",
+    "Vault deposit blocked: no fresh quote for these exact params. The deposit must use EXACTLY the params the quote used, including the vault, the chain, depositAmountRaw and slippageBps (same value, or omitted on both sides). Call morpho__vault_quote (direction deposit) with those params first, then retry.",
   safety_fail:
     "Vault deposit blocked: the quoted vault was flagged unsafe by the pre-quote check. Do not retry; report it and pick a different vault.",
   wallet_setup:
@@ -195,13 +195,13 @@ const LEND_DEPOSIT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 /** Morpho vault WITHDRAW (E3b-2). The mirror map; see the deposit map above. */
 const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Vault withdrawal blocked: could not verify a fresh vault quote. Re-run morpho.vault.quote (direction withdraw) for this vault and retry.",
+    "Vault withdrawal blocked: could not verify a fresh vault quote. Re-run morpho__vault_quote (direction withdraw) for this vault and retry.",
   no_session:
-    "Vault withdrawal blocked: could not verify a fresh vault quote (no session). Re-run morpho.vault.quote and retry.",
+    "Vault withdrawal blocked: could not verify a fresh vault quote (no session). Re-run morpho__vault_quote and retry.",
   unresolved_token:
     "Vault withdrawal blocked: the vault address could not be resolved on this chain. Re-check the vault address and the chain, then retry.",
   no_quote:
-    "Vault withdrawal blocked: no fresh quote for these exact params. The withdrawal must use EXACTLY the params the quote used, including the vault, the chain, withdrawAmountRaw and slippageBps (same value, or omitted on both sides). A DEPOSIT quote does not authorize a withdrawal. Call morpho.vault.quote (direction withdraw) with those params first, then retry.",
+    "Vault withdrawal blocked: no fresh quote for these exact params. The withdrawal must use EXACTLY the params the quote used, including the vault, the chain, withdrawAmountRaw and slippageBps (same value, or omitted on both sides). A DEPOSIT quote does not authorize a withdrawal. Call morpho__vault_quote (direction withdraw) with those params first, then retry.",
   safety_fail:
     "Vault withdrawal blocked: the quoted vault was flagged unsafe by the pre-quote check. This block is not protecting a wallet that is trying to EXIT: report it and stop rather than retrying.",
   wallet_setup:
@@ -233,13 +233,13 @@ const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
  */
 const LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Collateral supply blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction supplyCollateral) for this market, then retry.",
+    "Collateral supply blocked: could not verify a fresh quote. Re-run morpho__market_quote (direction supplyCollateral) for this market, then retry.",
   no_session:
-    "Collateral supply blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction supplyCollateral) and retry.",
+    "Collateral supply blocked: could not verify a fresh quote (no session). Re-run morpho__market_quote (direction supplyCollateral) and retry.",
   unresolved_token:
     "Collateral supply blocked: the market or its collateral token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
   no_quote:
-    "Collateral supply blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho.market.quote (direction supplyCollateral) with those params first, then retry. A borrow or repay quote does NOT authorize a collateral supply.",
+    "Collateral supply blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho__market_quote (direction supplyCollateral) with those params first, then retry. A borrow or repay quote does NOT authorize a collateral supply.",
   safety_fail:
     "Collateral supply blocked: the market failed the pre-quote check (it is outside the allowed oracle/IRM set, or its collateral was flagged). Do not retry; pick a different market and report it.",
   wallet_setup:
@@ -255,13 +255,13 @@ const LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 /** Morpho Blue collateral WITHDRAW. Reduces the wallet's safety margin. */
 const LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Collateral withdrawal blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction withdrawCollateral) for this market, then retry.",
+    "Collateral withdrawal blocked: could not verify a fresh quote. Re-run morpho__market_quote (direction withdrawCollateral) for this market, then retry.",
   no_session:
-    "Collateral withdrawal blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction withdrawCollateral) and retry.",
+    "Collateral withdrawal blocked: could not verify a fresh quote (no session). Re-run morpho__market_quote (direction withdrawCollateral) and retry.",
   unresolved_token:
     "Collateral withdrawal blocked: the market or its collateral token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
   no_quote:
-    "Collateral withdrawal blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho.market.quote (direction withdrawCollateral) with those params first, then retry. A supplyCollateral quote does NOT authorize a withdrawal, and withdrawing collateral LOWERS the health factor while a supply raises it.",
+    "Collateral withdrawal blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw collateral amount and slippageBps. Call morpho__market_quote (direction withdrawCollateral) with those params first, then retry. A supplyCollateral quote does NOT authorize a withdrawal, and withdrawing collateral LOWERS the health factor while a supply raises it.",
   safety_fail:
     "Collateral withdrawal blocked: the market failed the pre-quote check. This block is not protecting a wallet that is trying to REDUCE its position: report it and stop rather than retrying.",
   wallet_setup:
@@ -277,13 +277,13 @@ const LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> =
 /** Morpho Blue BORROW: the operation that takes on debt. */
 const LEND_BORROW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Borrow blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction borrow) for this market, then retry.",
+    "Borrow blocked: could not verify a fresh quote. Re-run morpho__market_quote (direction borrow) for this market, then retry.",
   no_session:
-    "Borrow blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction borrow) and retry.",
+    "Borrow blocked: could not verify a fresh quote (no session). Re-run morpho__market_quote (direction borrow) and retry.",
   unresolved_token:
     "Borrow blocked: the market or its loan token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
   no_quote:
-    "Borrow blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw loan-token amount and slippageBps. Call morpho.market.quote (direction borrow) with those params first, then retry. A collateral quote does NOT authorize a borrow: putting collateral in and drawing debt out are different operations, and only the borrow quote checks the resulting health factor.",
+    "Borrow blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw loan-token amount and slippageBps. Call morpho__market_quote (direction borrow) with those params first, then retry. A collateral quote does NOT authorize a borrow: putting collateral in and drawing debt out are different operations, and only the borrow quote checks the resulting health factor.",
   safety_fail:
     "Borrow blocked: the market failed the pre-quote check (outside the allowed oracle/IRM set, insufficient liquidity, or the resulting health factor is below the policy floor). Do not retry the same size; borrow less or add collateral first.",
   wallet_setup:
@@ -299,13 +299,13 @@ const LEND_BORROW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
 /** Morpho Blue REPAY: the operation that reduces debt. */
 const LEND_REPAY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
-    "Repay blocked: could not verify a fresh quote. Re-run morpho.market.quote (direction repay) for this market, then retry.",
+    "Repay blocked: could not verify a fresh quote. Re-run morpho__market_quote (direction repay) for this market, then retry.",
   no_session:
-    "Repay blocked: could not verify a fresh quote (no session). Re-run morpho.market.quote (direction repay) and retry.",
+    "Repay blocked: could not verify a fresh quote (no session). Re-run morpho__market_quote (direction repay) and retry.",
   unresolved_token:
     "Repay blocked: the market or its loan token could not be resolved on this chain. Re-check the market id and the chain, then retry.",
   no_quote:
-    "Repay blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw amount (or repayFullDebt) and slippageBps. Call morpho.market.quote (direction repay) with those params first, then retry. A borrow quote does NOT authorize a repay, and repaying the wrong amount leaves dust debt behind.",
+    "Repay blocked: no fresh quote for these exact params. The execute must use EXACTLY the params the quote used, including the market id, the chain, the raw amount (or repayFullDebt) and slippageBps. Call morpho__market_quote (direction repay) with those params first, then retry. A borrow quote does NOT authorize a repay, and repaying the wrong amount leaves dust debt behind.",
   safety_fail:
     "Repay blocked: the market failed the pre-quote check. A repay REDUCES risk, so this block is not protecting the wallet: report it and stop rather than retrying.",
   wallet_setup:

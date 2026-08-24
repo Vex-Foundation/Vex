@@ -24,11 +24,14 @@
  * side to pick, because the answer depends on how the user prices concentration
  * risk, and that is not a fact this tool holds.
  *
- * A POINTER IS CHECKED BEFORE IT IS PRINTED. Every option names the tool it is
- * acted on with and the params that tool already knows. The tool ids are
- * verified against the namespace's own manifest, so a build in which the direct
- * execute tool is not present says so rather than sending the agent at a name
- * that does not resolve.
+ * A POINTER IS CHECKED BEFORE IT IS PRINTED, AND IT PRINTS A CALLABLE NAME.
+ * Every option names the tool it is acted on with and the params that tool
+ * already knows. The name emitted is the model-visible `publicName`, resolved
+ * through the namespace's own manifest: a dotted `toolId` is the internal and
+ * audit identity and the catalog rejects it as a call, so printing one would
+ * send the agent at a guaranteed rejection. Resolution doubles as the presence
+ * check, so a build in which the direct execute tool is not present says so
+ * rather than naming something that does not resolve.
  */
 
 import type { ProjectedMarketRow } from "./markets.js";
@@ -45,7 +48,7 @@ export const MORPHO_ROUTE_COMPARISON_NOTE =
 /** What a curated option's market count would take to establish, said plainly. */
 const CURATED_DIVERSIFICATION_BASIS =
   "A vault spreads deposits across several markets, but the allocation table is not on a screening page. Read "
-  + "morpho.vault.get with `includeAllocations` for the exact market count and the cap on each.";
+  + "`morpho__vault_get` with `includeAllocations` for the exact market count and the cap on each.";
 
 const DIRECT_DIVERSIFICATION_BASIS =
   "Exactly one market: one collateral asset, one oracle and one LLTV. There is no curator to reallocate out of it "
@@ -59,8 +62,31 @@ const CURATED_EXIT_BASIS =
   "A vault's exit is bounded by its own liquidity and, on V2 vaults only, by a gate contract that can refuse a "
   + "withdrawal outright. Read `gating` before assuming an exit is available.";
 
+/**
+ * The catalog's `toolId -> publicName` projection, for the tools this projector
+ * can route to.
+ *
+ * A MAP rather than the former set of ids, because the pointer has to emit a
+ * CALLABLE name and the two identities are not derivable from each other by
+ * string surgery (`protocols/types.ts`). Membership still answers "does this
+ * build ship the tool", so the map subsumes what the set proved.
+ */
+export type MorphoCallableNames = ReadonlyMap<string, string>;
+
 /** One step the agent takes next, with the params this call can already fill. */
 export interface MorphoRoutePointer {
+  /**
+   * The MODEL-VISIBLE callable name, and the one the agent must emit.
+   *
+   * The route pointer is prose-adjacent: the manifest tells the model to act on
+   * the option with the tool named here, so this field has to be callable. A
+   * dotted `toolId` is the internal and audit identity only and the catalog
+   * rejects it as a call, so naming one here would route the agent at a
+   * guaranteed rejection. Null only when this build does not ship the tool, in
+   * which case `available` is false and there is no name to call.
+   */
+  publicName: string | null;
+  /** The durable internal identity, retained for audit and telemetry correlation. */
   toolId: string;
   /** False when this build does not ship that tool; the agent must not call it. */
   available: boolean;
@@ -99,11 +125,12 @@ export interface MorphoRouteOption {
 
 function pointer(
   toolId: string,
-  knownToolIds: ReadonlySet<string>,
+  callableNames: MorphoCallableNames,
   params: Record<string, unknown>,
   stillNeeded: readonly string[],
 ): MorphoRoutePointer {
-  return { toolId, available: knownToolIds.has(toolId), params, stillNeeded };
+  const publicName = callableNames.get(toolId) ?? null;
+  return { publicName, toolId, available: publicName !== null, params, stillNeeded };
 }
 
 function subtract(left: number | null, right: number | null): number | null {
@@ -113,7 +140,7 @@ function subtract(left: number | null, right: number | null): number | null {
 /** One curated vault row as a comparable option. */
 export function curatedRouteOption(
   row: ProjectedVaultRow,
-  knownToolIds: ReadonlySet<string>,
+  callableNames: MorphoCallableNames,
 ): MorphoRouteOption {
   const target = { vaultAddress: row.address, chain: row.chain };
   return {
@@ -144,10 +171,10 @@ export function curatedRouteOption(
       listed: row.listed,
     },
     routing: {
-      quote: pointer("morpho.vault.quote", knownToolIds, { ...target, direction: "deposit" }, ["depositAmountRaw"]),
-      execute: pointer("morpho.vault.deposit", knownToolIds, target, ["depositAmountRaw"]),
+      quote: pointer("morpho.vault.quote", callableNames, { ...target, direction: "deposit" }, ["depositAmountRaw"]),
+      execute: pointer("morpho.vault.deposit", callableNames, target, ["depositAmountRaw"]),
       note:
-        "Price the deposit with morpho.vault.quote first; morpho.vault.deposit is gated on a fresh matching quote. "
+        "Price the deposit with morpho__vault_quote first; morpho__vault_deposit is gated on a fresh matching quote. "
         + "`depositAmountRaw` is in the vault ASSET's base units.",
     },
   };
@@ -156,7 +183,7 @@ export function curatedRouteOption(
 /** One Blue market row as a comparable direct-supply option. */
 export function directRouteOption(
   row: ProjectedMarketRow,
-  knownToolIds: ReadonlySet<string>,
+  callableNames: MorphoCallableNames,
 ): MorphoRouteOption {
   const collateral = row.collateralAsset?.symbol ?? (row.idle ? "IDLE (no collateral)" : "unknown collateral");
   const target = { marketId: row.marketId, chain: row.chain };
@@ -193,10 +220,10 @@ export function directRouteOption(
       listed: row.listed,
     },
     routing: {
-      quote: pointer("morpho.market.quote", knownToolIds, { ...target, direction: "supply" }, ["depositAmountRaw"]),
-      execute: pointer("morpho.market.supply", knownToolIds, target, ["depositAmountRaw"]),
+      quote: pointer("morpho.market.quote", callableNames, { ...target, direction: "supply" }, ["depositAmountRaw"]),
+      execute: pointer("morpho.market.supply", callableNames, target, ["depositAmountRaw"]),
       note:
-        "Price the supply with morpho.market.quote first; morpho.market.supply is gated on a fresh matching quote. "
+        "Price the supply with morpho__market_quote first; morpho__market_supply is gated on a fresh matching quote. "
         + "`depositAmountRaw` is in the market's LOAN asset base units.",
     },
   };

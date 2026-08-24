@@ -52,17 +52,23 @@ async function run(
   return { ok: result.success, output: result.output };
 }
 
-/** The tools whose whole param surface this card introduced. */
-const NEW_PARAM_TOOLS = [
-  "dexscreener.profiles",
-  "dexscreener.profiles.recent",
-  "dexscreener.boosts",
-  "dexscreener.boosts.top",
-  "dexscreener.communityTakeovers",
-  "dexscreener.attention",
-  "dexscreener.ads",
-  "dexscreener.trending",
-] as const;
+/**
+ * The CALLS whose whole param surface this card introduced.
+ *
+ * A call, not a tool: the Batch 2 merges (owner decision D7) put the retired
+ * `profiles.recent` and `boosts.top` endpoints behind their siblings' `feed`
+ * param, and both endpoints of each pair still face every rule below.
+ */
+const NEW_PARAM_CALLS = [
+  ["dexscreener.profiles", {}],
+  ["dexscreener.profiles", { feed: "recentUpdates" }],
+  ["dexscreener.boosts", {}],
+  ["dexscreener.boosts", { feed: "top" }],
+  ["dexscreener.communityTakeovers", {}],
+  ["dexscreener.attention", {}],
+  ["dexscreener.ads", {}],
+  ["dexscreener.trending", {}],
+] as const satisfies readonly (readonly [string, Record<string, unknown>])[];
 
 describe("DexScreener feed + narrative param validation", () => {
   beforeEach(() => {
@@ -85,17 +91,17 @@ describe("DexScreener feed + narrative param validation", () => {
   // ── limit: the value that meant two opposite things ─────────────
 
   it("limit: 0 is rejected on every tool, because it cannot mean both none and all", async () => {
-    for (const toolId of NEW_PARAM_TOOLS) {
-      const result = await run(toolId, { limit: 0 });
-      expect(result.ok, `${toolId} accepted limit: 0`).toBe(false);
+    for (const [toolId, params] of NEW_PARAM_CALLS) {
+      const result = await run(toolId, { ...params, limit: 0 });
+      expect(result.ok, `${toolId} ${JSON.stringify(params)} accepted limit: 0`).toBe(false);
       expect(result.output).toContain("limit");
     }
   });
 
   it("a negative limit is rejected by name, not swallowed into a default", async () => {
-    for (const toolId of NEW_PARAM_TOOLS) {
-      const result = await run(toolId, { limit: -5 });
-      expect(result.ok, `${toolId} accepted limit: -5`).toBe(false);
+    for (const [toolId, params] of NEW_PARAM_CALLS) {
+      const result = await run(toolId, { ...params, limit: -5 });
+      expect(result.ok, `${toolId} ${JSON.stringify(params)} accepted limit: -5`).toBe(false);
       expect(result.output).toContain("limit");
     }
   });
@@ -216,9 +222,9 @@ describe("DexScreener feed + narrative param validation", () => {
   });
 
   it("fields=full is accepted everywhere as the discovery escape hatch", async () => {
-    for (const toolId of NEW_PARAM_TOOLS) {
-      const result = await run(toolId, { fields: "full" });
-      expect(result.ok, `${toolId} rejected fields: full`).toBe(true);
+    for (const [toolId, params] of NEW_PARAM_CALLS) {
+      const result = await run(toolId, { ...params, fields: "full" });
+      expect(result.ok, `${toolId} ${JSON.stringify(params)} rejected fields: full`).toBe(true);
     }
   });
 
@@ -282,6 +288,8 @@ describe("DexScreener feed + narrative param validation", () => {
 
   it("a rejection names the tool, so the agent knows which call to fix", async () => {
     const result = await run("dexscreener.communityTakeovers", { limit: 0 });
-    expect(result.output).toContain("dexscreener.communityTakeovers");
+    // The dotted id stays the internal catalog key; the message names the callable
+    // publicName, which is the name the agent has to fix in its next call.
+    expect(result.output).toContain("dexscreener__community_takeovers_list");
   });
 });

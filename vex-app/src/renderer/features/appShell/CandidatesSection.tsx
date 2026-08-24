@@ -49,9 +49,9 @@ export function CandidatesSection(): JSX.Element {
     <section data-vex-section="memory-candidates" className={SECTION}>
       <div>
         <h2 className="vex-eyebrow">Memory candidates</h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           What the agent proposed for long-term memory. The memory manager
-          decides each candidate&apos;s fate automatically — this view is
+          decides each candidate&apos;s fate automatically - this view is
           inspection only.
         </p>
       </div>
@@ -63,10 +63,10 @@ export function CandidatesSection(): JSX.Element {
             type="button"
             onClick={() => setStatus(f.value)}
             data-active={status === f.value}
-            className={`rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] ${
+            className={`rounded-[3px] px-2 py-1 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
               status === f.value
-                ? "bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]"
-                : "text-[var(--vex-text-2)] hover:bg-white/[0.04] hover:text-foreground"
+                ? "bg-accent-wash text-accent-primary"
+                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             }`}
           >
             {f.label}
@@ -116,10 +116,10 @@ function CandidateRow({
     <li
       data-vex-candidate-id={candidate.id}
       data-status={candidate.status}
-      className="border-b border-[var(--vex-line)] px-1 py-2 last:border-b-0"
+      className="border-b border-line-2 px-1 py-2 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-foreground">
+        <span className="truncate text-xs font-medium text-ink-primary">
           {candidate.title}
         </span>
         <span className={PILL}>{candidate.kind}</span>
@@ -136,13 +136,13 @@ function CandidateRow({
         <span
           data-vex-recorded
           title={candidate.recordedAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
         >
           {fmtDate(candidate.recordedAt)}
         </span>
       </div>
       {candidate.summary.length > 0 ? (
-        <p className="mt-1 line-clamp-2 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 line-clamp-2 text-xs text-ink-secondary">
           {candidate.summary}
         </p>
       ) : null}

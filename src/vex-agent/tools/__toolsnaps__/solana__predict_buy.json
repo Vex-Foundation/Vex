@@ -1,0 +1,42 @@
+{
+  "definition": {
+    "function": {
+      "description": "Buy YES or NO shares in a Jupiter prediction market, opening or adding to a position. SPENDS REAL FUNDS: it signs and broadcasts a USDC order from the session's Solana wallet and is approval-gated. Call solana__predict_trading_status_get first to confirm trading is open, and solana__predict_market_get or solana__predict_orderbook_get to price the side before sizing amountUsdc, which is a HUMAN USDC amount (10 = $10), never raw units. Returns TRUTHFUL-PENDING and never a confirmation: on a successful broadcast the reply names the order, its market and side, the transaction signature and an explorer link, and says confirmation is tracked automatically and must not be retried. A landing service that refuses answers \"rejected before broadcast - nothing went on-chain\" with the reason; a failure after the attempt was recorded names the execution id and says not to retry blindly. Exit later with solana__predict_sell before resolution, or solana__predict_claim after it.",
+      "name": "solana__predict_buy",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountUsdc": {
+            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Market ID (from solana__predict_events_discover or solana__predict_events_search).",
+            "type": "string"
+          },
+          "side": {
+            "description": "Side: yes or no.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "side",
+          "amountUsdc"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.buy"
+  }
+}

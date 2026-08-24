@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Hand the launch DECISION to the user: asks them to create the token themselves through the app's launch form, pre-filled with the details you propose. DRAFTS AND ASKS ONLY — it does NOT sign, does NOT spend and does NOT create anything; the user reviews the exact cost and clicks Deploy. Your turn PARKS while the form is open and the runtime resumes it with the outcome when the user deploys, dismisses the form, or it expires — so do not call it again while the form is open, and never assume the launch happened without that resumed outcome. Use this whenever a human should decide the launch. It returns the parked request itself - its intentId, a status of awaiting_user_form, when it expires, and the chain - and then the runtime answers this same call with the human's real outcome. If it is ever invoked outside a tool call there is nothing to resume, and it refuses instead of parking: report that and stop, never improvise a launch by another route.",
+      "name": "trench__launch_request_form",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "Optional token description (max 512 chars).",
+            "type": "string"
+          },
+          "imageId": {
+            "description": "REQUIRED. The id of an image already uploaded to the Trench Photos locker (list them with trench__images_list). A token's image is written on-chain at creation and can never be added later, so a launch without one is refused.",
+            "type": "string"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Optional 0-4 social links, each an https URL (comma-separated or array)."
+          },
+          "name": {
+            "description": "Token name (1-18 chars) — the chain reverts a longer one.",
+            "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional amount of ETH to spend buying the new token on its own curve in the SAME transaction, as a plain decimal (for example \"0.0003\"). Omit or \"0\" for no prebuy.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Token symbol/ticker (1-16 chars).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "symbol",
+          "imageId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "trench",
+    "requiresEnv": null,
+    "toolId": "trench.launch_request_form"
+  }
+}

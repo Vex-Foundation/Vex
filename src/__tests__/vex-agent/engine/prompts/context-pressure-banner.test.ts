@@ -6,7 +6,7 @@
  *
  *   1. no output names a tool that no longer exists;
  *   2. the bypass shape does not claim the agent is blocked, because it is not;
- *   3. `compact_apply` is named only when it is actually in the catalog.
+ *   3. `CompactApply` is named only when it is actually in the catalog.
  *
  * The harness eval note (`agents_dm/runtime-harness/scenarios/`) covers the
  * qualitative side; this is the regression guard.
@@ -83,14 +83,14 @@ describe("context-pressure banner — truthfulness", () => {
     expect(banner).toContain("Mutating tools are unavailable");
   });
 
-  it("compact_apply is named ONLY when a summary is ready", () => {
+  it("CompactApply is named ONLY when a summary is ready", () => {
     for (const band of BANDS) {
       for (const state of STATES) {
         const banner = buildContextPressureBanner(band, 0.9, state);
         if (state === READY && band !== "normal" && band !== "critical") {
-          expect(banner).toContain("compact_apply");
+          expect(banner).toContain("CompactApply");
         } else {
-          expect(banner, `${band}/${state.kind}`).not.toContain("compact_apply");
+          expect(banner, `${band}/${state.kind}`).not.toContain("CompactApply");
         }
       }
     }

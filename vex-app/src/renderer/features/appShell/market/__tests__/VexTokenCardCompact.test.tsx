@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe("VexTokenCardCompact", () => {
-  it("renders the slim data card: price, borderless shimmer delta, filled sparkline — NO stat grid", async () => {
+  it("renders the slim data card: price, borderless shimmer delta, filled sparkline - NO stat grid", async () => {
     setMarket(vi.fn().mockResolvedValue({ ok: true, data: snapshot() }));
     const { container } = render(createElement(VexTokenCardCompact), {
       wrapper: makeWrapper(freshClient()),
@@ -93,7 +93,7 @@ describe("VexTokenCardCompact", () => {
     expect(delta).not.toBeNull();
     expect(delta?.classList.contains("vex-delta-shimmer")).toBe(true);
     expect(delta?.getAttribute("data-shimmer-text")).toBe("+113.00%");
-    expect(delta?.className).toContain("text-[var(--color-success)]");
+    expect(delta?.className).toContain("text-success");
     expect(delta?.className).not.toContain("border");
     expect(
       container.querySelector(
@@ -176,7 +176,7 @@ describe("VexTokenCardCompact", () => {
     expect(container.textContent).toContain("Market data unavailable.");
   });
 
-  it("surfaces the stale marker on a delayed snapshot (the shimmer stays — decorative)", async () => {
+  it("surfaces the stale marker on a delayed snapshot (the shimmer stays - decorative)", async () => {
     setMarket(
       vi.fn().mockResolvedValue({ ok: true, data: snapshot({ stale: true }) }),
     );

@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get Jupiter Prediction event recommendations PERSONALIZED to one wallet's trading, for ANY Solana address and not only the session's own. Use this when the user wants ideas shaped by what a wallet already trades; solana__predict_events_discover browses the venue with no personalization and solana__predict_events_search finds a named topic. Returns `data`, one row per recommended event: eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets keeps each event's curated markets in the view. The provider decides how many rows come back and offers no window, so the result is what it offers, with no continuation to page through.",
+      "name": "solana__predict_suggested_events_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "includeMarkets": {
+            "description": "Include each recommended event's nested markets array (default false — lean).",
+            "type": "boolean"
+          },
+          "provider": {
+            "description": "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet ACCOUNT to base recommendations on, as a Solana address — any wallet, not only your own.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "walletAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.suggestedEvents"
+  }
+}

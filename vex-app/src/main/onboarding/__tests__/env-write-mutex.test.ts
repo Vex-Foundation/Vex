@@ -93,7 +93,7 @@ describe("withEnvWriteLock", () => {
     expect(events).toEqual(["A:start", "A:end", "B:start"]);
   });
 
-  it("a failed op does NOT poison the chain — subsequent ops run", async () => {
+  it("a failed op does NOT poison the chain - subsequent ops run", async () => {
     const fail = withEnvWriteLock(async () => {
       throw new Error("boom");
     });

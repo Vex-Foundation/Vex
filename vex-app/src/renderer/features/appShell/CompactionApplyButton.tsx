@@ -39,7 +39,7 @@ import { useRequestCompactionApply } from "../../lib/api/compaction-preparation.
  * filled button would break it.
  */
 const APPLY_BUTTON =
-  "rounded-[3px] border border-[var(--vex-accent-border)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)]";
+  "rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-micro-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary";
 
 const APPLY_LABEL =
   "Apply prepared compaction: replaces older messages with a summary";
@@ -87,7 +87,7 @@ export function CompactionApplyButton({
         role="status"
         className={[
           stack ? "flex w-full items-center py-1.5" : "inline-flex items-center",
-          "font-mono text-[10px] text-[var(--vex-warn-text)]",
+          "font-mono text-[10px] text-warning-label",
         ].join(" ")}
       >
         Preparation failed
@@ -102,10 +102,10 @@ export function CompactionApplyButton({
       : status === "applying"
         ? "Compacting…"
         : lastOutcome === "queued"
-          ? "Queued — applies at the next step"
+          ? "Queued - applies at the next step"
           : // Default for a request we did not issue (Full-Autonomous
             // auto-apply, the agent's own tool) — truthful either way.
-            "Queued — will apply when the agent next runs";
+            "Queued - will apply when the agent next runs";
 
   return (
     <span

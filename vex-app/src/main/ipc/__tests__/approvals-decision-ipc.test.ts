@@ -807,7 +807,7 @@ describe("scheduled TTL sweep", () => {
     expect(sweepDispatches.length).toBe(2);
   });
 
-  it("the reconciler runs in the SAME cycle — no second timer", async () => {
+  it("the reconciler runs in the SAME cycle - no second timer", async () => {
     await flushMicrotasks();
 
     expect(mocks.sweepExpiredApprovals).toHaveBeenCalled();

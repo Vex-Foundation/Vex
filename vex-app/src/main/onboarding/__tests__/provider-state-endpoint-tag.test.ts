@@ -119,7 +119,7 @@ describe("probeProvider endpoint pin", () => {
 });
 
 describe("provider status never carries key material", () => {
-  it("exposes presence only — no value, length, prefix or tail", async () => {
+  it("exposes presence only - no value, length, prefix or tail", async () => {
     writeEnv(
       [
         `OPENROUTER_API_KEY="${VAULT_KEY}"`,

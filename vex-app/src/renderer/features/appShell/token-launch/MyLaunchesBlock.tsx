@@ -30,11 +30,11 @@ export function MyLaunchesBlock(): JSX.Element {
   const rows = result !== undefined && result.ok ? result.data.launches : [];
 
   return (
-    <section className="flex flex-col gap-2 border-t border-[var(--vex-line)] pt-4">
+    <section className="flex flex-col gap-2 border-t border-line-2 pt-4">
       <header className="flex items-baseline justify-between gap-2">
         <h3 className="vex-eyebrow">My launches</h3>
         {rows.length > 0 ? (
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+          <span className="font-mono text-[10px] tabular-nums text-ink-tertiary">
             {rows.length}
           </span>
         ) : null}
@@ -64,28 +64,28 @@ function Body({
   // NOT the empty state, and NOT phrased as a failure of theirs — see header.
   if (unavailable) {
     return (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
-        Your launches are unavailable right now — try again shortly.
+      <p className="text-[12.5px] leading-relaxed text-ink-secondary">
+        Your launches are unavailable right now - try again shortly.
       </p>
     );
   }
   if (loading) {
     return (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
   }
   if (errored) {
     return (
-      <p className="text-[12.5px] text-[var(--vex-warn-text)]">
+      <p className="text-[12.5px] text-warning">
         Couldn&apos;t load your launches.
       </p>
     );
   }
   if (rows.length === 0) {
     return (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
         You haven&apos;t launched a token yet.
       </p>
     );
@@ -102,19 +102,19 @@ function Body({
 function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
   const clock = formatClock(row.createdAt);
   return (
-    <li className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-2 last:border-b-0">
+    <li className="flex items-center justify-between gap-3 border-b border-line-2 py-2 last:border-b-0">
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate text-[13px] text-[var(--vex-text)]">
+          <span className="truncate text-[13px] text-ink-primary">
             {row.name}
           </span>
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]">
+          <span className="shrink-0 vex-micro-label uppercase text-ink-secondary">
             {row.symbol}
           </span>
         </div>
         {/*
           A launch whose token identity is NOT proven yet (OD-3) renders as what
-          it is — a broadcast still in flight — and NEVER as a token: there is no
+          it is - a broadcast still in flight - and NEVER as a token: there is no
           address to show, and an empty one would read as a token with a missing
           name rather than a launch that has not landed.
 
@@ -132,17 +132,17 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
               unproven. The token may exist.
             */
             <span
-              className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+              className="vex-micro-label uppercase text-ink-secondary"
               title="No longer tracked - Vex stopped checking this transaction and what actually happened was never established. The token may or may not exist; do not launch again without checking."
             >
               no longer tracked - outcome unproven
             </span>
           ) : (
             <span
-              className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
-              title="Broadcast — Vex is still checking whether this launch was included on-chain. No token address is proven yet."
+              className="vex-micro-label uppercase text-ink-secondary"
+              title="Broadcast - Vex is still checking whether this launch was included on-chain. No token address is proven yet."
             >
-              in flight — no token address yet
+              in flight - no token address yet
             </span>
           )
         ) : (
@@ -150,7 +150,7 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
         )}
       </div>
       {clock !== null ? (
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-ink-tertiary">
           {clock}
         </span>
       ) : null}

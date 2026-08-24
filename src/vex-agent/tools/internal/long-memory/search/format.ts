@@ -1,5 +1,5 @@
 /**
- * `long_memory_search` inline cap and output formatting (steps 6 and 8 of the
+ * `MemorySearch` inline cap and output formatting (steps 6 and 8 of the
  * handler, split out in 0R.15, refactor-only): the inline-only cap with
  * truncate-with-steering (no silent drop — R1-#3) and the concise/detailed
  * projections, including the `via_graph(<entity>)` marker that keeps

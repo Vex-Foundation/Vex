@@ -3,7 +3,7 @@
  *
  * Loads session, messages, mission (if any), active run, summary.
  * loadedDocuments starts empty and is populated at tool-dispatch time
- * (e.g. long_memory_get injects fetched entry content under a `long_memory:{id}` key).
+ * (e.g. MemoryGet injects fetched entry content under a `long_memory:{id}` key).
  */
 
 import { z } from "zod";
@@ -30,7 +30,7 @@ export interface HydratedSession {
  * Returns null if session doesn't exist.
  *
  * `loadedDocuments` is left empty — it is populated at tool-dispatch time
- * (e.g. long_memory_get injects fetched entry content).
+ * (e.g. MemoryGet injects fetched entry content).
  *
  * `sessionKind` and `sessionPermission` are immutable per session.
  * `sessionKind` defaults to `session.mode` from DB; if an active mission

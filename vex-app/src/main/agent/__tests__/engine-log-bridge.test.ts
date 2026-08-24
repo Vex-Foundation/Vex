@@ -114,7 +114,7 @@ describe("installEngineLogBridge", () => {
     expect(line).toContain("[REDACTED]");
   });
 
-  it("install is idempotent — double install adds exactly one transport", () => {
+  it("install is idempotent - double install adds exactly one transport", () => {
     const before = engineLogger.transports.length;
     installEngineLogBridge();
     installEngineLogBridge();

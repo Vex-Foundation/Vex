@@ -5,9 +5,8 @@
  *
  * Measured on live windows (2026-07-27), the payloads these six tools emitted
  * before this card: `profiles.recent` 40,089 B · `communityTakeovers` 23,122 B ·
- * `boosts.top` 21,612 B · `profiles` 21,205 B · `boosts` 20,493 B against a
- * 16,384 B context cap — and NONE of the six had a single parameter, so the agent
- * could not shrink any of them.
+ * `boosts.top` 21,612 B · `profiles` 21,205 B · `boosts` 20,493 B - and NONE of
+ * the six had a single parameter, so the agent could not shrink any of them.
  *
  * Dropping `icon` and `header` from the default row is what fixes that. They are
  * `cdn.dexscreener.com/cms/images/<opaque-id>?width=…` URLs: the model cannot see
@@ -63,7 +62,7 @@ export const ALL_FEED_FIELDS: readonly string[] = [...LEAN_FEED_FIELDS, ...RICH_
 export const OMITTABLE_FEED_FIELDS: readonly string[] = ["description"];
 
 export const OMIT_FEED_FIELDS_NOTE =
-  "chainId and tokenAddress are the identity you carry into dexscreener.tokenPairs, and each "
+  "chainId and tokenAddress are the identity you carry into dexscreener__token_pairs_list, and each "
   + "feed's signal fields (boost counts, updatedAt, claimedAt, ad placement) are why the feed was "
   + "called — neither can be omitted. Everything else is already opt-in via \"fields\".";
 

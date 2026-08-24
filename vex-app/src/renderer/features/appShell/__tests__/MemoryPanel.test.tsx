@@ -142,7 +142,7 @@ describe("MemoryPanel", () => {
     expect(screen.queryByText("SECRET_MEMORY_ENTRY_BODY")).toBeNull();
   });
 
-  it("exposes NO mutation affordances — lifecycle is manager-owned (S9/S10)", async () => {
+  it("exposes NO mutation affordances - lifecycle is manager-owned (S9/S10)", async () => {
     longMemoryListMock.mockResolvedValue(
       ok([
         {

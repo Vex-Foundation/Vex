@@ -1,5 +1,5 @@
 /**
- * Post-batch handling for the `plan_pause` engine signal — a `plan_write` in an
+ * Post-batch handling for the `plan_pause` engine signal — a `PlanWrite` in an
  * active mission run created/changed a plan that is not user-accepted.
  *
  * Flips the mission run to `paused_plan_acceptance` with the

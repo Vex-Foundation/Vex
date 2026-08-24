@@ -1,7 +1,7 @@
 /**
- * wallet_balances tests.
+ * WalletBalances tests.
  *
- * Puzzle 5 phase 4: `wallet_send_prepare` / `wallet_send_confirm` are
+ * Puzzle 5 phase 4: `WalletSendPrepare` / `WalletSendConfirm` are
  * covered by `src/__tests__/vex-agent/tools/internal/wallet/send.test.ts`
  * (orchestrator + ExecuteOutcome paths) +
  * `src/__tests__/vex-agent/db/repos/wallet-intents.test.ts` (repo CAS
@@ -18,7 +18,7 @@ vi.mock("@tools/wallet/multi-auth.js", () => ({
   requireSolanaWallet: () => ({ family: "solana", address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", secretKey: new Uint8Array(64) }),
 }));
 
-// Phase 5B: wallet_balances resolves the address via the engine read resolver
+// Phase 5B: WalletBalances resolves the address via the engine read resolver
 // (resolveSelectedAddressForRead — a genuine READ; mission setup may read its own
 // wallet). Mock it to return the test wallet addresses for the session's default
 // resolution.
@@ -92,7 +92,7 @@ import { makeTestContext } from "./_test-context.js";
 
 const baseContext = makeTestContext();
 
-describe("wallet_balances", () => {
+describe("WalletBalances", () => {
   // ── live snapshots ─────────────────────────────────────────────
 
   it("returns live snapshots for all configured wallets by default", async () => {
@@ -230,6 +230,6 @@ describe("wallet_balances", () => {
   it("fails on invalid wallet parameter", async () => {
     const result = await handleWalletBalances({ walletFamily: "bitcoin" }, baseContext);
     expect(result.success).toBe(false);
-    expect(result.output).toContain("wallet_balances");
+    expect(result.output).toContain("WalletBalances");
   });
 });

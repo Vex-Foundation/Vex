@@ -11,11 +11,47 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
     "Use when the user asks Vex to set up Lighter, trade Lighter perps, inspect markets or their account, place an order, or withdraw Core USDC or RHC USDG to their selected wallet. Managed onboarding and withdrawals resolve wallet, account, credential, nonce, and fixed destination internally. Fund movement is always approval-gated.",
   preferInstead:
     "Use `dexscreener` for broad multi-chain DEX pair research. Lighter order execution never happens directly from a chat request: it requires a fresh preview, an approval preparation, and the user approving the card in the host UI.",
+  declaration: {
+    identity:
+      "Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.",
+    read:
+      "Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.",
+    quote:
+      "Preview exact Lighter orders from live market and account data before any approval. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.",
+    act:
+      "Prepare approvals for deposits, key registration, order create/cancel/modify/cancel-all, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.",
+    whenItApplies:
+      "Use it when the user wants to set up Lighter, trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw Lighter collateral to the selected wallet.",
+    characteristicAndLimits:
+      "The environment stays explicit once selected, normal users never paste trading keys, account/API-key indexes are resolved internally for managed setup, previews are read-only, and every fund-moving or exchange-state-changing action remains approval-gated.",
+    coverageNote:
+      "Covers Lighter Core and Lighter on Robinhood Chain with environment-specific settlement assets: Ethereum USDC for Core and Robinhood Chain USDG for RHC.",
+    retrievalTerms: [
+      "set up my lighter account",
+      "trade perps on lighter",
+      "lighter markets",
+      "lighter order preview",
+      "prepare trade approval",
+      "withdraw from lighter",
+      "rhc usdg",
+      "core usdc",
+    ],
+    facets: [
+      "Get ready to trade",
+      "Markets and system",
+      "Depth and trade tape",
+      "Candles",
+      "Accounts and positions",
+      "My orders and fills",
+      "Order preview and approval-gated create",
+      "Secure withdrawals and claims",
+    ],
+  },
   exampleQueries: [
-    'discover_tools(query="set up my lighter account", namespace="lighter")',
-    'discover_tools(query="I want to trade perps on lighter", namespace="lighter")',
-    'discover_tools(query="withdraw USDG from lighter rhc", namespace="lighter")',
-    'discover_tools(query="rhc order book depth", namespace="lighter")',
+    'ToolSearch(query="set up my lighter account", namespace="lighter")',
+    'ToolSearch(query="I want to trade perps on lighter", namespace="lighter")',
+    'ToolSearch(query="withdraw USDG from lighter rhc", namespace="lighter")',
+    'ToolSearch(query="rhc order book depth", namespace="lighter")',
   ],
   aliases: ["lighter", "rhc lighter", "lighter core", "lighter market data", "lighter order book"],
   discoveryHints: [

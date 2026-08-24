@@ -34,7 +34,7 @@ function fullPrompt(): string {
       missionRunContext: { missionPromptContext: "# Mission: X", iterationCount: 3 },
       contextPressureBanner: buildContextPressureBanner("barrier", 0.9),
       memorySection: "# Memory\n\n[Session memories: 0 chunks, 0 compact(s) done.]",
-      toolCatalogPrompt: "# Available Tool Map\n\n- wallet_balances",
+      toolCatalogPrompt: "# Available Tool Map\n\n- WalletBalances",
     },
   );
   return [...stack.staticLayers, ...stack.turnLayers].join("\n\n");
@@ -70,7 +70,7 @@ describe("prompt unambiguity (A1)", () => {
 
   describe("one call notation", () => {
     it("no layer teaches the JS-object call form", () => {
-      // `web_research({ query: "..." })` taught a wire format the tools API does
+      // `WebResearch({ query: "..." })` taught a wire format the tools API does
       // not use; weaker models mirror whatever notation they were shown.
       expect(fullPrompt()).not.toMatch(/[a-z_]+\(\{/);
     });
@@ -95,9 +95,9 @@ describe("prompt unambiguity (A1)", () => {
       expect(toolModel).toContain("Shortcuts are the same engines");
       expect(toolModel).toContain("PREFER the shortcut");
       for (const [alias, target] of [
-        ["token_find", "khalani.tokens.search"],
-        ["token_check", "kyberswap.tokens.check"],
-        ["bridge_status", "khalani.orders.get"],
+        ["TokenFind", "khalani__tokens_search"],
+        ["TokenCheck", "kyberswap__token_safety_check"],
+        ["BridgeStatus", "khalani__order_get"],
       ] as const) {
         expect(toolModel).toContain(alias);
         expect(toolModel).toContain(target);
@@ -107,8 +107,8 @@ describe("prompt unambiguity (A1)", () => {
     it("every shortcut named in the table is a registered tool", () => {
       const toolModel = buildToolModelPrompt();
       for (const alias of [
-        "token_find", "token_check", "swap_quote", "swap_execute", "bridge_quote",
-        "bridge", "bridge_status",
+        "TokenFind", "TokenCheck", "SwapQuote", "SwapExecute", "BridgeQuote",
+        "BridgeExecute", "BridgeStatus",
       ]) {
         expect(toolModel, `alias missing from the table: ${alias}`).toContain(`\`${alias}\``);
         expect(getToolDef(alias), `alias not registered: ${alias}`).toBeDefined();
@@ -117,9 +117,9 @@ describe("prompt unambiguity (A1)", () => {
 
     it("the Safety Contract routes through the shortcuts, not past them", () => {
       const prompt = fullPrompt();
-      expect(prompt).toContain('token_find(query="SYMBOL"');
-      expect(prompt).toContain('token_check(chain="...", tokenAddress="...")');
-      expect(prompt).not.toContain("khalani.tokens.search(query, chainIds)");
+      expect(prompt).toContain('TokenFind(query="SYMBOL"');
+      expect(prompt).toContain('TokenCheck(chain="...", tokenAddress="...")');
+      expect(prompt).not.toContain("khalani__tokens_search(query, chainIds)");
     });
   });
 
@@ -127,11 +127,11 @@ describe("prompt unambiguity (A1)", () => {
     it("says the toolIds are real but their schemas are not in the prompt", () => {
       const toolModel = buildToolModelPrompt();
       expect(toolModel).toContain("their parameter schemas are NOT shown anywhere in it");
-      expect(toolModel).toContain("Never call a protocol tool without a `discover_tools` result from THIS session");
+      expect(toolModel).toContain("Never call a protocol tool without a `ToolSearch` result from THIS session");
     });
 
-    it("discover_tools no longer hard-codes a stale 4-namespace list", () => {
-      const def = getToolDef("discover_tools");
+    it("ToolSearch no longer hard-codes a stale 4-namespace list", () => {
+      const def = getToolDef("ToolSearch");
       expect(def).toBeDefined();
       expect(def?.description).not.toContain("khalani, kyberswap, solana, dexscreener");
       // The generated `namespace` param description stays the single source.
@@ -185,8 +185,8 @@ describe("prompt unambiguity (A1)", () => {
   describe("retired fossils", () => {
     it("no longer names a tool that does not exist", () => {
       expect(buildResponseFormatPrompt()).not.toContain("hl_positions");
-      expect(buildResponseFormatPrompt()).toContain("wallet_balances");
-      expect(getToolDef("wallet_balances")).toBeDefined();
+      expect(buildResponseFormatPrompt()).toContain("WalletBalances");
+      expect(getToolDef("WalletBalances")).toBeDefined();
     });
 
     it("the wallet fail-soft banner names a recovery the session actually has", () => {

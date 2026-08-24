@@ -4,7 +4,7 @@ import {
   contextWindowResultSchema,
   lastTurnUsageResultSchema,
   sessionUsageTotalsDtoSchema,
-  turnUsageDtoSchema,
+  turnUsageRollupDtoSchema,
   usageInputSchema,
   USAGE_DEFAULT_CURRENCY,
 } from "../usage.js";
@@ -17,18 +17,18 @@ describe("usage schemas", () => {
   function turnFixture(overrides: Record<string, unknown> = {}) {
     return {
       sessionId: SESSION,
-      promptTokens: 100,
-      completionTokens: 50,
-      totalTokens: 150,
-      cachedTokens: 10,
-      reasoningTokens: 5,
-      cost: 0.001,
-      cachedSavings: 0.0004,
-      cacheWriteTokens: 12,
+      latestRoundPromptTokens: 100,
+      latestRoundCachedTokens: 10,
+      turnCompletionTokens: 50,
+      turnReasoningTokens: 5,
+      turnCacheWriteTokens: 12,
+      turnCost: 0.001,
+      turnCachedSavings: 0.0004,
+      roundCount: 3,
       currency: "USD",
       provider: "openrouter",
       model: "anthropic/claude-opus-4.7",
-      createdAt: ISO,
+      latestRoundAt: ISO,
       ...overrides,
     };
   }
@@ -49,62 +49,55 @@ describe("usage schemas", () => {
     };
   }
 
-  it("turnUsageDtoSchema accepts a typical row with USD currency", () => {
-    const parsed = turnUsageDtoSchema.safeParse(turnFixture());
-    expect(parsed.success).toBe(true);
+  it("turnUsageRollupDtoSchema accepts a typical multi-round rollup", () => {
+    expect(turnUsageRollupDtoSchema.safeParse(turnFixture()).success).toBe(true);
   });
 
-  it("turnUsageDtoSchema requires the cache fields (missing cachedSavings/cacheWriteTokens fails)", () => {
-    const { cachedSavings: _s, cacheWriteTokens: _w, ...withoutCacheFields } = turnFixture();
-    expect(turnUsageDtoSchema.safeParse(withoutCacheFields).success).toBe(false);
+  it("turnUsageRollupDtoSchema requires the cache fields", () => {
+    const { turnCachedSavings: _s, turnCacheWriteTokens: _w, ...without } = turnFixture();
+    expect(turnUsageRollupDtoSchema.safeParse(without).success).toBe(false);
   });
 
-  it("turnUsageDtoSchema accepts NEGATIVE cachedSavings (net cache overhead is real — no .min(0))", () => {
-    const parsed = turnUsageDtoSchema.safeParse(
-      turnFixture({ cachedSavings: -0.0021, cacheWriteTokens: 8000 }),
+  it("turnUsageRollupDtoSchema accepts NEGATIVE turnCachedSavings (net cache overhead is real - no .min(0))", () => {
+    const parsed = turnUsageRollupDtoSchema.safeParse(
+      turnFixture({ turnCachedSavings: -0.0021, turnCacheWriteTokens: 8000 }),
     );
     expect(parsed.success).toBe(true);
   });
 
-  it("turnUsageDtoSchema rejects negative cacheWriteTokens (int ≥ 0)", () => {
+  it("turnUsageRollupDtoSchema rejects negative turnCacheWriteTokens (int >= 0)", () => {
     expect(
-      turnUsageDtoSchema.safeParse(turnFixture({ cacheWriteTokens: -1 })).success,
+      turnUsageRollupDtoSchema.safeParse(turnFixture({ turnCacheWriteTokens: -1 })).success,
     ).toBe(false);
   });
 
-  it("turnUsageDtoSchema rejects unknown keys (strict)", () => {
+  it("turnUsageRollupDtoSchema rejects unknown keys (strict)", () => {
     expect(
-      turnUsageDtoSchema.safeParse(turnFixture({ extraKey: true })).success,
+      turnUsageRollupDtoSchema.safeParse(turnFixture({ extraKey: true })).success,
     ).toBe(false);
   });
 
-  it("turnUsageDtoSchema rejects negative token counts", () => {
-    const parsed = turnUsageDtoSchema.safeParse(
-      turnFixture({
-        promptTokens: -1,
-        completionTokens: 0,
-        totalTokens: 0,
-        cachedTokens: 0,
-        reasoningTokens: 0,
-        cost: null,
-        provider: null,
-        model: null,
-      }),
-    );
-    expect(parsed.success).toBe(false);
+  it("turnUsageRollupDtoSchema rejects negative token counts", () => {
+    expect(
+      turnUsageRollupDtoSchema.safeParse(turnFixture({ latestRoundPromptTokens: -1 })).success,
+    ).toBe(false);
+    expect(
+      turnUsageRollupDtoSchema.safeParse(turnFixture({ turnCompletionTokens: -1 })).success,
+    ).toBe(false);
   });
 
-  it("turnUsageDtoSchema permits nullable provider/model/cost/cachedSavings for legacy rows", () => {
-    const parsed = turnUsageDtoSchema.safeParse(
+  // A rollup describes at least one model round by construction: `getLastTurn`
+  // returns `null`, never a zero-round DTO, for an empty window. Pinning
+  // `min(1)` keeps "no usage yet" from being expressible as a fake turn.
+  it("turnUsageRollupDtoSchema rejects roundCount below 1", () => {
+    expect(turnUsageRollupDtoSchema.safeParse(turnFixture({ roundCount: 0 })).success).toBe(false);
+  });
+
+  it("turnUsageRollupDtoSchema permits nullable provider/model/cost/savings for legacy rows", () => {
+    const parsed = turnUsageRollupDtoSchema.safeParse(
       turnFixture({
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-        cachedTokens: 0,
-        reasoningTokens: 0,
-        cost: null,
-        cachedSavings: null,
-        cacheWriteTokens: 0,
+        turnCost: null,
+        turnCachedSavings: null,
         provider: null,
         model: null,
       }),
@@ -152,23 +145,10 @@ describe("usage schemas", () => {
     if (parsed.success) expect(parsed.data.currency).toBe(USAGE_DEFAULT_CURRENCY);
   });
 
-  it("lastTurnUsageResultSchema accepts null (empty session) and a turn DTO", () => {
+  it("lastTurnUsageResultSchema accepts null (empty session) and a turn rollup", () => {
     expect(lastTurnUsageResultSchema.safeParse(null).success).toBe(true);
     expect(
-      lastTurnUsageResultSchema.safeParse(
-        turnFixture({
-          promptTokens: 1,
-          completionTokens: 1,
-          totalTokens: 2,
-          cachedTokens: 0,
-          reasoningTokens: 0,
-          cost: 0,
-          cachedSavings: 0,
-          cacheWriteTokens: 0,
-          provider: null,
-          model: null,
-        }),
-      ).success,
+      lastTurnUsageResultSchema.safeParse(turnFixture({ roundCount: 1 })).success,
     ).toBe(true);
   });
 
@@ -229,7 +209,7 @@ describe("usage schemas", () => {
  * gates compaction. The fields are OPTIONAL so a payload minted by an older
  * main still parses (both sides validate this DTO).
  */
-describe("contextWindowDtoSchema — pressure bands (additive)", () => {
+describe("contextWindowDtoSchema - pressure bands (additive)", () => {
   const BASE = { sessionId: SESSION, tokensUsed: 100, contextLimit: 200_000 };
 
   it("accepts a payload WITHOUT the fractions (older main, backward compatible)", () => {
@@ -248,7 +228,7 @@ describe("contextWindowDtoSchema — pressure bands (additive)", () => {
     expect(parsed.data.pressureBarrierFraction).toBe(0.88);
   });
 
-  it("rejects out-of-range fractions — a marker outside the bar is meaningless", () => {
+  it("rejects out-of-range fractions - a marker outside the bar is meaningless", () => {
     for (const bad of [0, -0.1, 1.5]) {
       expect(
         contextWindowDtoSchema.safeParse({

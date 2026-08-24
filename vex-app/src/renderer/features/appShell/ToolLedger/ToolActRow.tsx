@@ -5,11 +5,18 @@
  * The card's header reads as a fact about the world rather than a symbol dump:
  * the protocol mark (contract C5 — venue logo when provenance is proven, the
  * category glyph otherwise), a human title ("Swap · KyberSwap", "Memory
- * recall"), the swap/bridge leg line when one can be parsed fail-closed, and
- * the measured duration chip when — and ONLY when — a duration was actually
- * measured (`null` is not zero; a call that never ran must never read "0 s").
- * The raw tool name stays available as the header's `title` tooltip so nothing
- * the ledger knew is lost.
+ * recall"), one summary slot, and the measured duration chip when - and ONLY
+ * when - a duration was actually measured (`null` is not zero; a call that
+ * never ran must never read "0 s"). The raw tool name stays available as the
+ * header's `title` tooltip so nothing the ledger knew is lost.
+ *
+ * THE COLLAPSED HEADER IS ALWAYS ONE LINE (deepseek ToolRow): every fixed
+ * member is `flex-none` and the summary is the only thing that fills and
+ * truncates, so a wide leg line or a long failure message clips instead of
+ * folding the row. The summary slot holds, in precedence order, the proven leg
+ * line or the failure's first line in the error tone (see `summary` below for
+ * why that order is not deepseek's). Explorer refs and the expanded body are
+ * SIBLING lines below the header, never inside it.
  *
  * Two deterministic stamps survive unchanged: "Awaiting signature" from the
  * approval queue, and "Confirmed" when the engine persisted `success: true`
@@ -19,18 +26,19 @@
  * Collapsed by default (today's disclosure contract). The expanded body is a
  * recessed well; args/output are sanitized strings rendered as INERT TEXT
  * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
- * ability to read them. CSP-safe: the one-shot reveal uses the stylesheet
- * `.vex-entry-settle` keyframes (180ms, collapsed to its final frame under
- * prefers-reduced-motion by the global rule).
+ * ability to read them. The reveal is the shared `ExpandRegion` primitive:
+ * build-time CSS height interpolation, collapsed to a hard cut under
+ * prefers-reduced-motion.
  */
 
-import { useId, useMemo, useState, type JSX } from "react";
+import { useId, useMemo, useRef, useState, type JSX } from "react";
 import {
-  ChevronRightIcon,
-  CircleCheckIcon,
-  VexIcon,
+  IconChevronRight,
+  IconCircleCheck,
 } from "../../../components/icons/index.js";
+import { JsonTree } from "../../../components/ui/json-tree.js";
 import { cn } from "../../../lib/utils.js";
+import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
@@ -89,55 +97,101 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <VexIcon icon={CircleCheckIcon} size={12} aria-hidden />
+      <IconCircleCheck size={12} />
       Confirmed
     </span>
   );
 }
 
 /**
- * Measured-duration chip. Rendered ONLY for a real measurement — the caller
- * passes `null` through for every never-executed / synthetic / legacy act and
- * this returns nothing at all.
+ * The 2x2 separator dot of the one-line header grammar. `line-3`, not the
+ * caption tier: caption is the disabled/decoration step and a 2px dot painted
+ * in it is invisible in both themes.
  */
-function DurationChip({
-  durationMs,
-}: {
-  readonly durationMs: number | null | undefined;
-}): JSX.Element | null {
-  const text = formatToolDuration(durationMs ?? null);
-  if (text === null) return null;
+function SeparatorDot(): JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className="mx-2 h-[2px] w-[2px] flex-none rounded-[1px] bg-line-3"
+    />
+  );
+}
+
+/**
+ * Measured-duration chip. The caller resolves the text first and renders this
+ * only for a real measurement - `formatToolDuration` returns `null` for every
+ * never-executed / synthetic / legacy act, and `null` is not zero: a call that
+ * never ran must never read "0 s".
+ *
+ * `flex-none` so it survives a narrow row: a duration clipped to "2" would be
+ * a wrong number, whereas a clipped summary is still honest prose.
+ */
+function DurationChip({ text }: { readonly text: string }): JSX.Element {
   return (
     <span
       data-vex-tool-duration=""
-      className="shrink-0 tabular-nums text-[11px] text-[var(--vex-text-3)]"
+      className="flex-none tabular-nums text-[11px] text-[var(--vex-text-3)]"
     >
       {text}
     </span>
   );
 }
 
-/** Section label inside the expanded well — mono microtype (10px floor). */
+/**
+ * A failed act's collapsed summary: the first line of its output, in the error
+ * tone, REPLACING the leg line (deepseek ToolRow's error grammar). A number
+ * beside a failed call reads as money that moved, so the leg line - which is
+ * where amounts live - must not survive here.
+ *
+ * `displayStatus === "pending"` is deliberately excluded: an ambiguous
+ * broadcast is unresolved, not failed, and `ToolLegLine` already labels it.
+ */
+function errorSummaryLine(act: ToolCallActView): string | null {
+  if (act.success !== false) return null;
+  if (act.displayStatus === "pending") return null;
+  if (act.output === null) return null;
+  const newline = act.output.indexOf("\n");
+  const first = (newline === -1 ? act.output : act.output.slice(0, newline)).trim();
+  return first.length === 0 ? null : first;
+}
+
+/** Section label inside the expanded well — mono microtype (10px floor).
+ * Sticky against the section's own scroll so the label stays readable while
+ * its payload scrolls underneath. */
 function SectionHeading({
   children,
-  topGap = false,
 }: {
   readonly children: string;
-  readonly topGap?: boolean;
 }): JSX.Element {
   return (
-    <span
-      className={cn(
-        "block font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]",
-        topGap && "mt-2",
-      )}
-    >
+    <span className="sticky top-0 block bg-[var(--vex-surface-down)] font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
       {children}
     </span>
   );
 }
 
-/** Pre-wrapped TEXT body for sanitized args/output; hint when empty. */
+/**
+ * Bounded JSON read for the payload viewer (C9): the same 20k gate the
+ * confirm-stamp reader applies — a multi-megabyte payload must never cost a
+ * synchronous parse per visible card. Non-JSON, oversized, or primitive
+ * payloads return null and render as inert text.
+ */
+function parseJsonPayload(text: string): object | readonly unknown[] | null {
+  if (text.length > MAX_PARSE_CHARS) return null;
+  const first = text.trimStart()[0];
+  if (first !== "{" && first !== "[") return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Section body: a JSON payload renders as the collapsible inspector tree
+ * (copy-raw included); anything else stays pre-wrapped inert text.
+ */
 function SectionBody({
   text,
   emptyHint,
@@ -145,6 +199,10 @@ function SectionBody({
   readonly text: string | null;
   readonly emptyHint: string;
 }): JSX.Element {
+  const json = useMemo(
+    () => (text === null ? null : parseJsonPayload(text)),
+    [text],
+  );
   if (text === null || text.length === 0) {
     return (
       <span className="font-mono text-[11px] leading-relaxed text-[var(--vex-text-3)]">
@@ -152,8 +210,11 @@ function SectionBody({
       </span>
     );
   }
+  if (json !== null) {
+    return <JsonTree data={json} />;
+  }
   return (
-    <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
+    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
       {text}
     </pre>
   );
@@ -169,6 +230,7 @@ export function ToolActRow({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const confirmed = isConfirmedWalletTransfer(act);
   const identity = useMemo(
     () => resolveToolIdentity(act.toolName, act.toolArgs),
@@ -216,73 +278,136 @@ export function ToolActRow({
           ),
     [operation, legs, act.toolArgs, act.output, act.success, act.displayStatus],
   );
+  const durationText = formatToolDuration(act.durationMs ?? null);
+  // The header's ONE summary slot. Whatever lands here fills and truncates;
+  // the title and the duration flank it and never shrink.
+  //
+  // PRECEDENCE IS INVERTED FROM deepseek's ToolRow, deliberately. There the
+  // failure line outranks the summary because that summary is args-derived and
+  // stale once the call failed. Vex's leg line is not an args summary: it is a
+  // proven money assertion that ALREADY reports the failure honestly ("Failed"
+  // outcome label, every amount suppressed, rules/90). Dropping it for prose
+  // would delete a fail-closed money-path affordance, so a proven leg line
+  // wins and the failure line takes the slot on every other row - which is
+  // where deepseek's argument actually bites, since a bare title told the
+  // reader nothing about what went wrong.
+  const failureLine = errorSummaryLine(act);
+  const summary =
+    legs !== null ? (
+      <ToolLegLine legs={legs} />
+    ) : singleLeg !== null ? (
+      <ToolSingleLegLine leg={singleLeg} />
+    ) : failureLine !== null ? (
+      <span
+        data-vex-tool-error-summary=""
+        className="min-w-0 flex-1 truncate text-[12px] text-destructive"
+      >
+        {failureLine}
+      </span>
+    ) : null;
   return (
+    // §7 row anatomy: a quiet 24px header line (no boxed card), the expanded
+    // body a SIBLING ioCard below it. `group` scopes the leading crossfade.
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
       data-vex-tool-category={identity.category}
-      className="overflow-hidden rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
+      className="group flex flex-col"
     >
-      <div className="flex items-center gap-2 pr-2">
+      <div className="flex min-h-6 items-center gap-2">
         <button
+          ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
           // The raw symbol stays reachable even though the card shows prose.
           title={act.toolName}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:rounded-[4px] focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <ProtocolMark
-            protocol={identity.protocol}
-            fallbackGlyph={toolGlyph(act.toolName)}
-            size={16}
-          />
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="min-w-0 truncate text-[12.5px] text-foreground">
+          {/* DisclosureRow house pattern: the 16px leading box crossfades the
+              tool mark to a chevron on hover/focus - "this row expands"
+              without a resting chevron. 100ms opacity, no layout shift. */}
+          <span className="relative mr-1.5 inline-grid h-4 w-4 flex-none place-items-center">
+            <span className="col-start-1 row-start-1 inline-flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
+              <ProtocolMark
+                protocol={identity.protocol}
+                fallbackGlyph={toolGlyph(act.toolName)}
+                size={16}
+              />
+            </span>
+            <span
+              aria-hidden
+              className={cn(
+                "col-start-1 row-start-1 inline-flex items-center justify-center text-[var(--vex-text-2)] opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
+                open && "rotate-90",
+              )}
+            >
+              <IconChevronRight size={12} />
+            </span>
+          </span>
+          {/* ONE LINE, always (deepseek ToolRow): title, separator dot, the
+              FILL-truncating summary, then the measurement. `flex-nowrap` and
+              `flex-none` on every fixed member are what stop a long summary or
+              a wide leg line from folding the header into two rows - the
+              defect the QA screenshot caught. */}
+          <span className="flex min-w-0 flex-1 flex-nowrap items-center">
+            <span className="flex-none truncate text-[14px] leading-6 text-[var(--vex-text-2)]">
               {identity.title}
             </span>
-            {legs !== null ? <ToolLegLine legs={legs} /> : null}
-            {singleLeg !== null ? <ToolSingleLegLine leg={singleLeg} /> : null}
+            {summary !== null ? (
+              <>
+                <SeparatorDot />
+                {summary}
+              </>
+            ) : null}
+            {durationText !== null ? (
+              <>
+                <SeparatorDot />
+                <DurationChip text={durationText} />
+              </>
+            ) : null}
           </span>
-          <DurationChip durationMs={act.durationMs} />
-          {/* Chevron stays even when stamped — it is the expand affordance. */}
-          <VexIcon
-            icon={ChevronRightIcon}
-            size={12}
-            aria-hidden
-            className={cn(
-              "shrink-0 text-[var(--vex-text-3)] transition-transform",
-              open && "rotate-90",
-            )}
-          />
         </button>
-        {/* Explorer links are SIBLINGS of the disclosure button — anchors must
-            never nest inside a button (invalid HTML). Rendered only when a
-            paired result deposited resolvable refs; inert otherwise. */}
-        <ExplorerRefLinks refs={act.explorerRefs} />
         {confirmed ? (
           <ConfirmedStamp />
         ) : pendingApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={pendingApprovalId} />
         ) : null}
       </div>
-      {open ? (
-        <div
-          id={bodyId}
-          className="vex-entry-settle border-t border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-2.5 py-2"
-        >
+      {/* Explorer links get their OWN line under the header. They are anchors,
+          so they can never nest inside the disclosure button (invalid HTML),
+          and as a wrapping sibling INSIDE the header row they used to crush
+          the `min-w-0 flex-1` title and wrap off on their own - the "row of
+          chips with no owner" in the QA screenshot. Inert when nothing
+          resolves. */}
+      <ExplorerRefLinks refs={act.explorerRefs} />
+      {/* ioCard: l1 hairline, r12, the recessed code surface; each section
+          caps and scrolls alone so a long input never buries a short output.
+          It rides the shared expand primitive - the card is the INNER box, so
+          the animated outer box carries none of its margin or border, and the
+          entrance keyframe is gone (an expand is not also a mount). */}
+      <ExpandRegion
+        id={bodyId}
+        open={open}
+        triggerRef={triggerRef}
+        className="ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-[var(--vex-surface-down)]"
+      >
+        <div className="max-h-[150px] overflow-y-auto px-4 py-3">
           <SectionHeading>Args</SectionHeading>
           <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
-          {/* Output renders ONLY when a result actually merged (null = none). */}
-          {act.output !== null ? (
-            <>
-              <SectionHeading topGap>Output</SectionHeading>
-              <SectionBody text={act.output} emptyHint="(no output)" />
-            </>
-          ) : null}
         </div>
-      ) : null}
+        {/* Output renders ONLY when a result actually merged (null = none). */}
+        {act.output !== null ? (
+          <>
+            <div aria-hidden className="h-px flex-none bg-line-2" />
+            <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+              <SectionHeading>Output</SectionHeading>
+              <SectionBody text={act.output} emptyHint="(no output)" />
+            </div>
+          </>
+        ) : null}
+      </ExpandRegion>
     </div>
   );
 }

@@ -473,7 +473,7 @@ describe("cancel", () => {
     expect(result).toEqual({ ok: true, data: { cancelled: false, resumedAgentTurn: false } });
   });
 
-  it("cannot be asked to cancel across sessions — the session id is required", async () => {
+  it("cannot be asked to cancel across sessions - the session id is required", async () => {
     const result = await call(CH.tokenLaunch.cancel, { intentId: "int_1" });
     expectError(result, "validation.invalid_input");
     expect(cancelLaunch).not.toHaveBeenCalled();

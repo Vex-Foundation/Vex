@@ -1,5 +1,5 @@
 /**
- * long_memory_suggest handler — the agent's ONLY write-door into long-term
+ * MemorySuggest handler — the agent's ONLY write-door into long-term
  * memory (memory-system/s2-plan.md §2). It STAGES a candidate + enqueues a
  * consolidate job; it never writes long-term memory directly. The async manager
  * (S4) reviews, dedupes, and decides promotion.
@@ -54,12 +54,8 @@ import {
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { str, num, enumField, ok, fail } from "../types.js";
-
-// ── Response format (tool-only — NOT a candidate field) ──────────
-
-const RESPONSE_FORMATS = ["concise", "detailed"] as const;
-type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
+import { str, num, ok, fail } from "../types.js";
+import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 
 // ── Steering messages (D-A — advertised, agent-facing) ───────────
 
@@ -186,12 +182,11 @@ export async function handleLongMemorySuggest(
 ): Promise<ToolResult> {
   // 1. Read + map + validate. response_format is tool-only — read separately and
   // never forwarded to the candidate schema.
-  const responseFormat: ResponseFormat =
-    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
+  const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
 
   const mapResult = mapAndValidate(params);
   if (!mapResult.ok) {
-    return fail(`long_memory_suggest rejected the input — ${firstIssueMessage(mapResult.error)}`);
+    return fail(`MemorySuggest rejected the input — ${firstIssueMessage(mapResult.error)}`);
   }
   const input = mapResult.input;
 
@@ -267,7 +262,7 @@ export async function handleLongMemorySuggest(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return fail(`long_memory_suggest failed: ${msg}`);
+    return fail(`MemorySuggest failed: ${msg}`);
   }
 
   const latestCandidate = await findLatestCandidateByContentHash(contentHash);
@@ -362,7 +357,7 @@ export async function handleLongMemorySuggest(
     inserted = result.inserted;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return fail(`long_memory_suggest failed: ${msg}`);
+    return fail(`MemorySuggest failed: ${msg}`);
   }
 
   // memLog accepted — ONLY allowlisted keys (NOT `sensitivity`; the logger has

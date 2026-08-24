@@ -85,7 +85,7 @@ afterEach(() => {
 });
 
 describe("usage.getContextWindow limit source", () => {
-  it("uses the engine's CLAMPED limit — 128k model at the 256k default", async () => {
+  it("uses the engine's CLAMPED limit - 128k model at the 256k default", async () => {
     mocks.resolveProvider.mockResolvedValue({
       loadConfig: async () => ({ contextLimit: 131_072 }),
     });

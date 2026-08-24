@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Withdraw tokens from a Jupiter Lend EARN vault - simple lending, not a Borrow collateral withdrawal (for that, use solana__lend_borrow_operate's withdrawAmountRaw/withdrawAll instead). Pass exactly one of amountRaw (partial withdrawal) or withdrawAll: true (full exit - redeems the position's entire share balance, so no dust is left behind; an amountRaw-based \"everything\" withdrawal always strands a few units because the vault accrues interest between reading the balance and executing). SPENDS REAL FUNDS in the sense that it signs and broadcasts an irreversible on-chain withdrawal with the session's Solana wallet, and it is approval-gated. Use this when the user wants some or all of a Solana Earn position back; read solana__lend_earn_positions_list BEFORE calling, for the raw atomic-unit balance actually available. Returns TRUTHFUL-PENDING and never a confirmation: on a successful broadcast the reply carries the transaction signature and an explorer link, names the asset and amount, and says confirmation is tracked automatically and must not be resubmitted. Every refusal is named - withdrawAll: false, both params, neither param, no position for that asset, more than one matching position, or a share balance that cannot be redeemed - and each says nothing went on-chain. Provide exactly one of: amountRaw, withdrawAll.",
+      "name": "solana__lend_earn_withdraw",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to withdraw, in RAW atomic units of the asset as an integer string, never human decimals (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\") - see solana__lend_earn_positions_list for your current balance and the asset's decimals. Mutually exclusive with withdrawAll - provide exactly one, never both and never neither.",
+            "type": "string"
+          },
+          "asset": {
+            "description": "Token address to withdraw.",
+            "type": "string"
+          },
+          "withdrawAll": {
+            "description": "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw — provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.lend.withdraw"
+  }
+}

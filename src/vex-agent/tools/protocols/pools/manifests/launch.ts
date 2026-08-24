@@ -11,6 +11,7 @@ import { POOLS_LAUNCH_EXECUTE_PARAMS, POOLS_LAUNCH_FIELD_PARAMS } from "./launch
 export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.launch_preview",
+    publicName: "pools__launch_preview",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -26,6 +27,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pools.launch_request_form",
+    publicName: "pools__launch_request_form",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -38,6 +40,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pools.launch_execute",
+    publicName: "pools__launch_execute",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -47,24 +50,26 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "buys that much of the new token in the same transaction at the exact simulated fill. The token opens "
       + "immediately into a real SushiSwap V3 pool against ETH or USDG - there is no bonding curve and no graduation. "
       + "Vex also charges 25 bps of the ETH the launch sends (deployment fee + any ETH prebuy) as a SEPARATE transfer "
-      + "that runs only after the launch confirms; price a launch with pools.launch_preview first, which shows every "
+      + "that runs only after the launch confirms; price a launch with pools__launch_preview first, which shows every "
       + "leg. Before signing, Vex DECODES the launchpad's transaction and proves 13 things about it against the chain "
       + "- the gateway's identity and version, its live fee and bounds, the pair's on-chain allowlist, the opening "
       + "tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's "
       + "balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own "
       + "session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the "
-      + "imageId of a picture the user staged in the image locker (list them with trench.images, which reads the "
+      + "imageId of a picture the user staged in the image locker (list them with trench__images_list, which reads the "
       + "locker both launchpads share), because a token launched without one renders blank on pools.fun forever and "
       + "that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a "
       + "FULL-permission chat session the user's permission is the authority and this executes directly; in a "
-      + "RESTRICTED session it refuses BY NAME and you must call pools.launch_request_form instead - that form is this "
+      + "RESTRICTED session it refuses BY NAME and you must call pools__launch_request_form instead - that form is this "
       + "tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the "
       + "contract's HOST-authored launch ceilings, which you cannot write, and while a contract carries none this tool "
       + "REFUSES BY NAME. Returns the new token address, its pool address, the transaction hash, the paired asset and "
       + "its address, the resolved creator-fee recipient, the pinned metadata link, the ETH sent with its deployment-fee "
       + "and prebuy legs as raw amounts with their decimals, the tokens the prebuy actually bought, the Vex fee's own "
-      + "outcome, and a status of confirmed, reverted or pending. A launch that confirmed but whose token could not be "
-      + "PROVEN from the receipt says so and stays pending - it never guesses an address, and you must not launch again.",
+      + "outcome, and a status of confirmed, reverted, pending or confirmed_pending_identity. `reverted` means no token "
+      + "was created and no Vex fee was charged; `pending` means the outcome is UNKNOWN and already recorded; and "
+      + "`confirmed_pending_identity` means the launch confirmed on-chain but its token could not be PROVEN from the "
+      + "receipt. In both unproven cases it never guesses an address, and you must not launch again.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [...POOLS_LAUNCH_EXECUTE_PARAMS],

@@ -26,7 +26,7 @@ export function UnhealthyBody({
         title="Service started but health probe failed"
         detail={message}
       />
-      <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <p className="text-xs leading-relaxed text-ink-secondary">
         This usually clears after a short wait while the container
         warms up. Click Try again to re-probe the stack.
       </p>

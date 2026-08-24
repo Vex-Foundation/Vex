@@ -38,7 +38,7 @@ import { tryGetWrappedNativeAddress } from "./chain-native.js";
 import { kyberFailureMessage } from "./error-output.js";
 import { buildPostIntentFailureResult } from "./execute-failure.js";
 import type { PreparedSwapExecution } from "./execute-plan.js";
-import { revealOnSwapMinedRevert } from "./reveal-messaging.js";
+import { venueFallbackNoteOnMinedRevert } from "./fallback-messaging.js";
 import { safetyDisclosureSentence, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapBroadcastInput {
@@ -127,7 +127,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
           // second half gives the agent a READ it can perform itself instead
           // of waiting on the sweep — the alternative to waiting must never
           // be a re-broadcast.
-          output: `${toolId}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chain=${chainId}, txHash=${outcome.txHash}).${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,
+          output: `${toolId}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${chainId}, txHash=${outcome.txHash}).${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,
           data: {
             _executionId: executionId,
             txHash: outcome.txHash,
@@ -151,10 +151,10 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         });
         await abortRemainingPlans(executionId, i + 1, `earlier ${plan.eventRole} reverted`);
         // REVISION 1 R1: reveal ONLY for the swap leg (never allowance/allowance_reset).
-        const revealSuffix = revealOnSwapMinedRevert(plan.eventRole, sessionId);
+        const fallbackNote = venueFallbackNoteOnMinedRevert(plan.eventRole, sessionId);
         return {
           success: false,
-          output: `${toolId}: the ${plan.eventRole} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted.${revealSuffix}`,
+          output: `${toolId}: the ${plan.eventRole} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted.${fallbackNote}`,
           data: { _executionId: executionId, txHash: outcome.txHash, status: "reverted" },
         };
       }
@@ -349,7 +349,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
 
     // Unreachable — `plans` always has at least the swap entry, and the loop
     // above returns on every branch. Kept for exhaustiveness/type-safety.
-    throw new Error("kyberswap.swap.execute: staged broadcast loop exited without a result");
+    throw new Error("kyberswap__swap_execute: staged broadcast loop exited without a result");
   } catch (err) {
     return buildPostIntentFailureResult({
       err,

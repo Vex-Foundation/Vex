@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "Browse the Virtuals GENESIS calendar - the points-sale events that precede an agent-token launch, mostly on Base, newest first. Use this when the user asks what is launching soon on Virtuals, or wants the history of a sale; a token that already trades is virtuals__agents_discover instead. Returns `geneses` alongside count, total, page and pageSize, one row per event: id, genesisId, status, startsAt, endsAt, totalParticipants, totalVirtuals, and the linked `agent` (id, name, symbol, chain, status, tokenAddress, isVerified) or null when none is linked. Unlike the agent feeds this reads ONE provider page per call and reports it back as page/pageSize with no window scan, so ask for an older page explicitly. CONTINUATION COMES IN TWO PARTS. Within the page: `returned` (rows you got), `fetched` (rows the provider page actually held) and `truncated`, true when `limit` dropped rows off the page that was already fetched - with the defaults (limit 20, pageSize 100) that is 80 rows - and a `truncationNote` then names the knob that brings them back. Across pages: `hasMore` with `nextPage`, present only when hasMore is true; pass nextPage back rather than computing it. The exception worth knowing: the provider may omit its own total, page or pageSize, and without all three there is no honest hasMore, so the reply OMITS hasMore and nextPage and carries a `continuationNote` naming the missing number instead. Read that as UNKNOWN, never as the end of the calendar - request the next page to find out. `filtersApplied` is always `{}`: this read has no filters. Read a suspicious far-future date as spam rather than as a scheduled launch. Read-only.",
+      "name": "virtuals__genesis_launches_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Max geneses to return (default 20, max 100). Out of range is rejected, not clamped.",
+            "type": "number"
+          },
+          "page": {
+            "description": "1-based page for older genesis events (default 1).",
+            "type": "number"
+          },
+          "pageSize": {
+            "description": "Rows fetched from the provider for this page (default 100, max 200).",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.geneses"
+  }
+}

@@ -41,7 +41,7 @@ function chainKeyForLeg(chainId: number, family: BridgeChainFamily): string {
   return family === "solana" ? "solana" : String(chainId);
 }
 
-describe("bridge explorer resolution — curated allowlist only", () => {
+describe("bridge explorer resolution - curated allowlist only", () => {
   it.each([
     ["base", 8453],
     ["arbitrum", 42161],
@@ -70,7 +70,7 @@ describe("bridge explorer resolution — curated allowlist only", () => {
     expect(isAllowedExternalUrl(url as string, EXPLORER_EXTERNAL_ALLOW)).toBe(true);
   });
 
-  it("REJECTS an uncurated Khalani chain — no link, never a raw provider URL", () => {
+  it("REJECTS an uncurated Khalani chain - no link, never a raw provider URL", () => {
     // Abstract (2741) is a live Khalani chain with no verified explorer host in
     // the repo/dossier → fail closed to a non-interactive row.
     expect(explorerTxUrl(chainKeyForLeg(2741, "eip155"), HASH)).toBeNull();

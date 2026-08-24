@@ -1,91 +1,92 @@
 /**
- * Protocol meta-tools — discover_tools + execute_tool.
+ * The protocol meta-tool - `ToolSearch`.
  *
- * The two tools through which the LLM reaches all protocol capabilities
- * (everything not declared as an internal `kind: "internal"` tool here).
+ * ONE registration, three modes (search / select / namespace listing), always
+ * visible. It is the only entry point to the protocol surface, which is why it
+ * carries no visibility gate at all: owner decision D2 retires the manifest-
+ * fetch reveal, because select is now a MODE of a tool the model is already
+ * using rather than a second tool that appears from nowhere.
+ *
+ * WHAT DIED HERE, AND WHERE IT WENT.
+ *  - The two retired discovery tools merged into this one ToolDef
+ *    (`tool-surface-spec/toolsearch-design.md`). Both old spellings resolve
+ *    through the alias table (`./name-resolution.ts`).
+ *  - `execute_tool`'s ToolDef is RETIRED. The `{toolId, params}` envelope is
+ *    not a registered tool any more; it is internal machinery with exactly one
+ *    live producer, the approval envelope
+ *    (`engine/core/approval-runtime/tool-call-envelope.ts`), and its dispatch
+ *    route stays alive in `dispatcher/protocol-route.ts` so a cold approval
+ *    resume still runs. Its doctrine moved to `engine/prompts/safety-contract.ts`
+ *    and `engine/prompts/execution-policy.ts` first, per
+ *    `toolsearch-design.md` §6 - that relocation was the prerequisite for the
+ *    deletion, not a follow-up.
+ *
+ * DESCRIPTION BUDGET. The old search tool's description was roughly 4 KB, most
+ * of it protocol doctrine rather than a statement of what searching does. The
+ * schema-reading rules, the name mapping and the do-not-invent-ids rule live in
+ * `engine/prompts/tool-model.ts`; the pressure advisory in
+ * `engine/prompts/context-pressure.ts`. Do not bring them back here.
  */
 
-import type { ToolDef, JsonSchema } from "../types.js";
+import type { ToolDef } from "../types.js";
 import { buildDiscoverNamespaceDescription } from "../protocols/descriptions.js";
 import {
   DEFAULT_DISCOVERY_LIMIT,
-  MAX_DESCRIBE_TOOL_IDS,
   MAX_DISCOVERY_LIMIT,
+  MAX_SELECT_TOOL_NAMES,
 } from "../protocols/discovery.js";
 
-const EXECUTE_TOOL_PARAMS: JsonSchema = {
-  type: "object",
-  properties: {
-    toolId: { type: "string", description: "Protocol tool ID from discover_tools (e.g. 'dexscreener.trending', 'kyberswap.swap.execute'). Must come from a discover_tools result in this session — never from memory, examples, or guesswork." },
-    params: { type: "object", description: "Parameters matching the tool's manifest (fields, types). Build the call from the `params` schema returned by discover_tools." },
-  },
-  required: ["toolId", "params"],
-};
+/**
+ * The reserved prefix that turns the free-text `query` field into select mode.
+ *
+ * ONE string field carries both the intent phrase and the explicit selection
+ * (the Claude Code core form the owner selected). The cost is a small grammar
+ * at a model-facing boundary; it is paid for by having exactly one parser own
+ * it (`dispatcher/tool-search-args.ts`) with by-name rejection on every
+ * malformed spelling.
+ */
+export const TOOL_SEARCH_SELECT_PREFIX = "select:";
 
-const EXECUTE_TOOL_DESCRIPTION = [
-  "Execute a discovered protocol tool.",
-  // The literal envelope shape appeared nowhere the model could read it; one
-  // worked example is the cheapest correction available and ships every request.
-  'Example: {"toolId":"dexscreener.search","params":{"query":"VEX","chainIds":"base"}}',
-  "Contract:",
-  "- `toolId` must come from `discover_tools` (same session). Long-memory recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover.",
-  "- `params` must match the tool's manifest schema — types, required fields, and value formats as returned by discover (build the call from the `params` schema).",
-  "- Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes. A preview / dryRun variant is a READ: it needs no approval and is safe for iterative planning. Everything mutating needs approval — there is no approval-free mutation.",
-  "- On error, diagnose and adapt — do not retry the same call in a tight loop. Present the error and next step to the user or the mission loop.",
+const TOOL_SEARCH_DESCRIPTION = [
+  "Search the protocol tool catalog and make the tools you pick callable.",
+  "Three modes:",
+  `(1) SEARCH - \`query\` is a short English intent phrase describing what you want to do, with assets, chains, or venue names (Khalani, KyberSwap, Jupiter, DexScreener) as hints. Returns the ${DEFAULT_DISCOVERY_LIMIT} best-ranked matches by default; raise \`limit\` up to ${MAX_DISCOVERY_LIMIT} when the job needs a bigger working set. Optional \`namespace\` narrows the ranking to one protocol.`,
+  `(2) SELECT - \`query: "${TOOL_SEARCH_SELECT_PREFIX}Name1,Name2"\` makes tools you already know the name of callable, 1 to ${MAX_SELECT_TOOL_NAMES} public names per call. Use it after a namespace listing, and to recover a tool whose schema the conversation compacted away.`,
+  "(3) NAMESPACE LISTING - `namespace` alone, with no `query`, returns EVERY tool of that protocol as one-line rows carrying its required parameter keys. A listing is a menu: it changes nothing until you select from it.",
+  "SEARCH answers with names, one-line summaries and match evidence. SELECT answers with acknowledgement rows only - the name and whether it is now callable - because you already know what you asked for. Neither returns parameter schemas: each tool they return is added to your tool list as a real function carrying its full schema, callable FROM YOUR NEXT MESSAGE and not from this one.",
+  `SEARCH also answers with \`count\`, \`totalCount\` and \`hasMore\`: hasMore is true when more capabilities matched than the rows you were shown, and the only way to reach them is a higher \`limit\` (maximum ${MAX_DISCOVERY_LIMIT}) or a narrower query - there is no cursor, page or offset on this tool. A namespace listing always answers hasMore false, because a listing is the whole namespace.`,
+  "For a curated internal tool, read the Tool Map instead of searching. For a name that is already callable this session, call it directly rather than selecting it again.",
 ].join(" ");
 
 export const PROTOCOL_TOOLS: readonly ToolDef[] = [
   {
-    name: "discover_tools", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
-    description: [
-      "Search advertised protocol tools by short English intent. Write what the user wants to do, including assets, chains, venue, or product hints when useful.",
-      "Protocol/product names are allowed in the query as hints: Khalani, KyberSwap, Jupiter, DexScreener. Passing an exact toolId you already saw is fine — it returns that tool first. Do not invent dotted toolIds or internal implementation names; execute only toolIds returned by this response.",
-      "list:true with namespace returns EVERY tool of that protocol as one-line rows (no param schemas) — the listing's `nextStep` field tells you how to fetch the full parameter schemas of the ones you picked.",
-      "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show trending meme coins on Solana'.",
-      "Optional namespace narrows search to one advertised namespace — the `namespace` parameter's own description lists them. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
-      "Results include toolId, mutating, actionKind, score, whyMatched, params, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Every advertised tool is active and executable; build the call from the `params` schema and call the tool DIRECTLY by its function name in the same session — the returned toolId with every dot replaced by a double underscore, e.g. `kyberswap.swap.quote` becomes the tool `kyberswap__swap__quote`, whose parameters are exactly this row's `params`.",
-      "Reading the `params` schema: each entry is {key, type, description} plus, when they apply, `required: true`, `unit`, and `enum`. A param is REQUIRED only when it carries `required: true` — a param with no `required` key at all is OPTIONAL, and so is an explicit `required: false`. `unit` names the domain unit of a numeric param when the bare type is too weak (\"bps\" means basis points, where 100 = 1%); when a param has no `unit`, its description states the unit and you must follow it exactly — an amount is either raw base units or human decimals and the two differ by orders of magnitude. Defaults, value formats, and anything else the schema cannot express are stated in the param's own `description`: read every description of every param you intend to send, and of every param you intend to omit. Each row also carries `required` (the required keys as a list), `exampleParams` (a working call), and `constraints` when params are mutually exclusive. Types and units are literal: a `type: \"number\"` param must be a JSON number, not a string, and an amount param is raw base units or human decimals exactly as its name and description say. Do not convert, round, or guess a unit — resolve decimals with token_find first. Never invent a param the schema does not list; an unknown param is rejected by name, not ignored.",
-      "Pressure advisory: when context usage is at barrier or critical (≥ 88%), mutating result rows are tagged `unavailable_at_pressure: true`. The dispatcher will hard-deny a direct call to those tools — stay on read-only / preview variants in the same namespace while the runtime compacts. Absent flag means available at the current band.",
-    ].join(" "),
-    parameters: { type: "object", properties: {
-      query: { type: "string", description: "Short English intent/capability phrase. Include protocol/product names when useful (Khalani, KyberSwap, Jupiter, DexScreener). An exact toolId you already saw is also accepted and is returned first; do not invent dotted tool IDs or internal implementation names." },
-      namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
-      limit: { type: "number", description: `Max tools to return (default: ${DEFAULT_DISCOVERY_LIMIT}, max ${MAX_DISCOVERY_LIMIT}). Ask for as many as the job needs, up to the max; a higher value is rejected, not clamped. Ignored in list mode.` },
-      list: { type: "boolean", description: "List mode: with `namespace`, return EVERY tool of that protocol as one-line rows (toolId, mutating, actionKind, description, requiredParams — no param schemas), unranked and untruncated. The result's `nextStep` field, at the very top, tells you how to fetch the full schemas of the rows you want before calling them. Requires `namespace`." },
-    } },
-  },
-  {
-    // The follow-up half of the listing flow (R5, owner directive D2). HIDDEN
-    // until this session produced a successful, non-empty `discover_tools`
-    // result — `requiresDescribeToolsReveal`, enforced again inside the handler.
-    //
-    // Read-only in every sense that matters: it resolves manifests and records
-    // ids. It cannot execute anything; every execution gate still keys off the
-    // manifest resolved at dispatch.
-    name: "describe_tools", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
-    visibility: { requiresDescribeToolsReveal: true },
-    description: [
-      `Get the FULL manifest of up to ${MAX_DESCRIBE_TOOL_IDS} protocol tools you already know the toolId of — the complete parameter schema you build a call from, plus a worked example.`,
-      "Use it after `discover_tools(namespace=..., list=true)`: the listing gives you every toolId of a protocol with a one-line description; this returns the full manifests of the ones you picked, and makes them callable by name for the rest of the session.",
-      "Also use it to recover a schema you have lost — after a long conversation, or when a prior discovery result was compacted away.",
-      "Each returned row carries: `toolId`, `namespace`, `description`, `mutating`, `actionKind`, `params` (each with key, type, description and — when they apply — `required: true`, `unit`, `enum`), `required` (the required keys as a list), `exampleParams` (a working call), `constraints` when params are mutually exclusive, and `unavailable_at_pressure` when context pressure will make the dispatcher refuse it right now.",
-      "Every returned tool becomes a real callable function for the rest of the session: call it by the toolId with every dot replaced by a double underscore, e.g. `dexscreener.search` becomes the tool `dexscreener__search`, whose parameters are exactly this row's `params`.",
-      `Contract: pass 1-${MAX_DESCRIBE_TOOL_IDS} exact dotted toolIds — a whole namespace at once is fine. More than ${MAX_DESCRIBE_TOOL_IDS} is rejected by name and NOTHING runs; an unknown, unavailable, or non-advertised toolId is rejected by name with the real reason, not silently dropped. The result reports \`sessionCapacity\` (how many tools stay callable) and names any earlier tool this call displaced, so nothing goes missing in silence.`,
-    ].join(" "),
-    parameters: { type: "object", properties: {
-      toolIds: { type: "array", items: { type: "string" }, description: `Exact dotted toolIds from a discover_tools result, e.g. ["dexscreener.search","dexscreener.tokenPairs"]. 1-${MAX_DESCRIBE_TOOL_IDS} per call. Do not invent or guess a toolId — an unknown id is rejected by name.` },
-    // `additionalProperties: false` mirrors the handler's strict Zod boundary:
-    // the provider refuses an unknown argument up front instead of the model
-    // learning about it only from a rejection.
-    }, required: ["toolIds"], additionalProperties: false },
-  },
-  {
-    // Wrapper itself is read-only; runtime stamps the TARGET protocol tool's
-    // derived actionKind via `executeProtocolTool::deriveProtocolActionKind`,
-    // so consumers of `ToolResult.actionKind` see the target classification.
-    // See `protocols/runtime.ts` + `taxonomy.ts`.
-    name: "execute_tool", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
-    description: EXECUTE_TOOL_DESCRIPTION,
-    parameters: EXECUTE_TOOL_PARAMS,
+    name: "ToolSearch", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
+    description: TOOL_SEARCH_DESCRIPTION,
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Either a short English intent phrase to rank the catalog against, or the reserved form "
+            + `\`${TOOL_SEARCH_SELECT_PREFIX}Name1,Name2\` to make tools you already know callable. `
+            + "An exact tool name you have already seen is also accepted as a phrase and is returned first, "
+            + "as is an unambiguous prefix of one.",
+        },
+        namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
+        limit: {
+          type: "number",
+          description:
+            `Search mode only. Ranked rows to return (default ${DEFAULT_DISCOVERY_LIMIT}, max ${MAX_DISCOVERY_LIMIT}). `
+            + "Ask for as many as the job needs, up to the max; a value above it is rejected by name, not clamped.",
+        },
+      },
+      // Mirrors the handler's strict boundary: the provider refuses an unknown
+      // argument up front instead of the model learning about it from a
+      // rejection. There is deliberately NO `required` array - a bare
+      // `namespace` is the listing, a bare `query` is the search, and a call
+      // with neither is rejected by name with all three modes stated.
+      additionalProperties: false,
+    },
   },
 ];

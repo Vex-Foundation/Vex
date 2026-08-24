@@ -49,13 +49,13 @@ export function DaemonStoppedBody({
         />
 
         <div className="flex flex-col gap-2">
-          <p className="vex-micro text-[var(--color-text-secondary)]">
+          <p className="vex-micro text-ink-secondary">
             Run this in a terminal
           </p>
-          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[var(--color-text-primary)]">
+          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
             <code>sudo systemctl start docker</code>
           </pre>
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-ink-secondary">
             Then click Recheck below.
           </p>
         </div>
@@ -64,12 +64,12 @@ export function DaemonStoppedBody({
           variant="ghost"
           disabled={starting}
           onClick={onStart}
-          className="self-start text-[var(--color-text-secondary)]"
+          className="self-start text-ink-secondary"
         >
           {starting ? "Starting…" : "Try Start Docker Desktop"}
         </Button>
         {startMessage ? (
-          <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+          <p className="text-xs leading-relaxed text-ink-secondary">
             {startMessage}
           </p>
         ) : null}
@@ -104,7 +104,7 @@ export function DaemonStoppedBody({
       />
 
       {isDesktopPlatform ? (
-        <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+        <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-ink-secondary">
           <li>Click Start Docker (launches Docker Desktop).</li>
           <li>Wait ~30s for the daemon to answer.</li>
           <li>Click Recheck below.</li>
@@ -120,7 +120,7 @@ export function DaemonStoppedBody({
         {starting ? "Starting…" : "Start Docker"}
       </Button>
       {startMessage ? (
-        <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="text-xs leading-relaxed text-ink-secondary">
           {startMessage}
         </p>
       ) : null}

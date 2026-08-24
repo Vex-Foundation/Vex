@@ -99,7 +99,7 @@ export function PoolsLaunchForm({
             hides which asset it actually selects. The group is named by the
             legend and the `aria-label` below. */}
         <legend className="sr-only">Paired asset</legend>
-        <span className="text-sm font-medium text-[var(--vex-text)]">Paired with</span>
+        <span className="text-sm font-medium text-ink-primary">Paired with</span>
         <div role="radiogroup" aria-label="Paired asset" className="flex gap-1.5">
           {PAIRED_ASSETS.map((asset) => (
             <button
@@ -111,17 +111,17 @@ export function PoolsLaunchForm({
               disabled={disabled}
               onClick={() => set("pairedAsset", asset)}
               className={
-                "rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50 "
+                "rounded-full border px-3 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
                 + (values.pairedAsset === asset
-                  ? "border-[var(--vex-line-strong)] text-[var(--vex-text)]"
-                  : "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]")
+                  ? "border-line-3 text-ink-primary"
+                  : "border-line-2 text-ink-tertiary hover:text-ink-secondary")
               }
             >
               {PAIRED_ASSET_LABEL[asset]}
             </button>
           ))}
         </div>
-        <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+        <p className="text-[11px] leading-relaxed text-ink-tertiary">
           The asset your token trades against. Tokenised stocks are not offered:
           the launchpad&apos;s factory does not accept them today.
         </p>
@@ -142,16 +142,16 @@ export function PoolsLaunchForm({
         />
         {values.feeRecipient.trim().length > 0
         && !isAcceptableFeeRecipient(values.feeRecipient) ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm text-danger" role="alert">
             Enter a wallet address starting 0x, or an X username.
           </p>
         ) : feeRecipientNeedsResolution(values.feeRecipient) ? (
-          <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+          <p className="text-[11px] leading-relaxed text-ink-tertiary">
             Vex will look this username up and show you the address it resolves
             to before you deploy. This is where the token&apos;s trading fees go.
           </p>
         ) : (
-          <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+          <p className="text-[11px] leading-relaxed text-ink-tertiary">
             Where this token&apos;s trading fees are paid, permanently.
           </p>
         )}
@@ -169,11 +169,11 @@ export function PoolsLaunchForm({
           className="font-mono tabular-nums"
         />
         {!prebuyIsAmount ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm text-danger" role="alert">
             Enter a plain {pairLabel} amount, like 0.05.
           </p>
         ) : (
-          <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+          <p className="text-[11px] leading-relaxed text-ink-tertiary">
             Bought for you in the same transaction that creates the token. Leave
             it at 0 to launch without buying.
           </p>
@@ -233,10 +233,10 @@ function ImageField({
             disabled={disabled}
             onClick={() => onSet("imageSource", source as PoolsImageSource)}
             className={
-              "rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50 "
+              "rounded-full border px-3 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
               + (values.imageSource === source
-                ? "border-[var(--vex-line-strong)] text-[var(--vex-text)]"
-                : "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]")
+                ? "border-line-3 text-ink-primary"
+                : "border-line-2 text-ink-tertiary hover:text-ink-secondary")
             }
           >
             {source === "locker" ? "From locker" : "From URL"}
@@ -261,7 +261,7 @@ function ImageField({
             placeholder="https://"
           />
           {urlInvalid ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-danger" role="alert">
               Only https:// links are accepted.
             </p>
           ) : null}
@@ -295,7 +295,7 @@ function OptionalLink({
         placeholder="https://"
       />
       {!isAcceptableLaunchLink(value) ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="text-sm text-danger" role="alert">
           Only https:// links are accepted.
         </p>
       ) : null}
@@ -307,7 +307,7 @@ function OptionalLink({
 function ForbiddenTextWarning({ value }: { readonly value: string }): JSX.Element | null {
   if (!hasForbiddenTokenMetadataText(value)) return null;
   return (
-    <p className="text-sm text-destructive" role="alert">
+    <p className="text-sm text-danger" role="alert">
       Remove control characters, including line breaks and tabs, and double
       quotes. This text is written on-chain permanently and cannot be edited
       later.

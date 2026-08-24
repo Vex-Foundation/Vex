@@ -1,0 +1,551 @@
+{
+  "version": "solana-v1",
+  "namespace": "solana",
+  "description": "Retrieval-verification dataset for the `solana` namespace (Jupiter's Solana surface: token identity and prices, swap quote/execute, Lend Earn and collateralized Borrow, and Jupiter Prediction markets). Two rows per live tool: one blind row naming only the chain and the outcome a user wants, and one protocol-aware row naming Jupiter. Queries were written from the manifests and the navigation entry only, never from the retrieval index text, so a hit measures retrieval rather than an echo of the embedded copy.",
+  "queries": [
+    {
+      "query": "current USD price of SOL and BONK on Solana",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.prices"],
+      "expectedCoverageGroups": [["solana.prices"]]
+    },
+    {
+      "query": "Jupiter price feed for a handful of Solana mint addresses I already have",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.prices"],
+      "expectedCoverageGroups": [["solana.prices"]]
+    },
+    {
+      "query": "look up the WIF token on Solana, is it verified and what is its liquidity",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.tokens.search"],
+      "expectedCoverageGroups": [["solana.tokens.search"]]
+    },
+    {
+      "query": "Jupiter token lookup by symbol with organic score, holder data and audit flags",
+      "awareness": "protocol-aware",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.tokens.search"],
+      "expectedCoverageGroups": [["solana.tokens.search"]]
+    },
+    {
+      "query": "which tokens launched on Solana in the last few minutes",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.tokens.trending"],
+      "expectedCoverageGroups": [["solana.tokens.trending"]]
+    },
+    {
+      "query": "Jupiter feed of top traded and trending Solana tokens over the last hour",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.tokens.trending"],
+      "expectedCoverageGroups": [["solana.tokens.trending"]]
+    },
+    {
+      "query": "price check for turning 2 SOL into USDC on Solana before I commit",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.swap.quote"],
+      "expectedCoverageGroups": [["solana.swap.quote"]]
+    },
+    {
+      "query": "Jupiter routed quote for SOL to JUP with price impact and the full fee breakdown",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.swap.quote"],
+      "expectedCoverageGroups": [["solana.swap.quote"]]
+    },
+    {
+      "query": "swap 1.5 SOL for USDC on Solana now",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.swap.execute"],
+      "expectedCoverageGroups": [["solana.swap.execute"]]
+    },
+    {
+      "query": "sign and broadcast the Jupiter swap I just priced, 300 USDC into JitoSOL",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.swap.execute"],
+      "expectedCoverageGroups": [["solana.swap.execute"]]
+    },
+    {
+      "query": "where can I park idle USDC on Solana for yield and what APY does it pay",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.rates"],
+      "expectedCoverageGroups": [["solana.lend.rates"]]
+    },
+    {
+      "query": "compare Jupiter Lend earn supply APYs for USDC and SOL including rewards",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.rates"],
+      "expectedCoverageGroups": [["solana.lend.rates"]]
+    },
+    {
+      "query": "how much have I lent out on Solana and how much yield has it accrued",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.positions"],
+      "expectedCoverageGroups": [["solana.lend.positions"]]
+    },
+    {
+      "query": "read my open Jupiter Lend earn balances so I know what is available to pull out",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.positions"],
+      "expectedCoverageGroups": [["solana.lend.positions"]]
+    },
+    {
+      "query": "supply 500 USDC into a Solana lending vault so it starts earning",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.deposit"],
+      "expectedCoverageGroups": [["solana.lend.deposit"]]
+    },
+    {
+      "query": "deposit 2 SOL into Jupiter Lend earn",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.deposit"],
+      "expectedCoverageGroups": [["solana.lend.deposit"]]
+    },
+    {
+      "query": "take my whole USDC lending position back out on Solana, leave no dust",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.withdraw"],
+      "expectedCoverageGroups": [["solana.lend.withdraw"]]
+    },
+    {
+      "query": "withdraw 100 USDC of what I supplied to Jupiter Lend earn",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.withdraw"],
+      "expectedCoverageGroups": [["solana.lend.withdraw"]]
+    },
+    {
+      "query": "which Solana vaults let me post SOL as collateral to borrow USDC, and at what loan to value",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowVaults"],
+      "expectedCoverageGroups": [["solana.lend.borrowVaults"]]
+    },
+    {
+      "query": "Jupiter Lend borrow vaults with their max LTV, liquidation thresholds and available liquidity",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowVaults"],
+      "expectedCoverageGroups": [["solana.lend.borrowVaults"]]
+    },
+    {
+      "query": "what collateral and debt do I have open on Solana and how close am I to liquidation",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowPositions"],
+      "expectedCoverageGroups": [["solana.lend.borrowPositions"]]
+    },
+    {
+      "query": "read my Jupiter Lend borrow positions and the health of each loan",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowPositions"],
+      "expectedCoverageGroups": [["solana.lend.borrowPositions"]]
+    },
+    {
+      "query": "post 10 SOL as collateral on Solana and draw 500 USDC of debt against it",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowOperate"],
+      "expectedCoverageGroups": [["solana.lend.borrowOperate"]]
+    },
+    {
+      "query": "repay all the debt on my Jupiter Lend borrow position and take the collateral back",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.lend.borrowOperate"],
+      "expectedCoverageGroups": [["solana.lend.borrowOperate"]]
+    },
+    {
+      "query": "show me what prediction questions are trending in crypto right now",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.events"],
+      "expectedCoverageGroups": [["solana.predict.events"]]
+    },
+    {
+      "query": "browse Jupiter prediction events in the politics category sorted by volume",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.events"],
+      "expectedCoverageGroups": [["solana.predict.events"]]
+    },
+    {
+      "query": "find prediction markets about the super bowl",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.search"],
+      "expectedCoverageGroups": [["solana.predict.search"]]
+    },
+    {
+      "query": "keyword search across Jupiter prediction events for bitcoin",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.search"],
+      "expectedCoverageGroups": [["solana.predict.search"]]
+    },
+    {
+      "query": "what are the yes and no prices on this one prediction contract right now",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.market"],
+      "expectedCoverageGroups": [["solana.predict.market"]]
+    },
+    {
+      "query": "read one Jupiter prediction contract in full by its market id before I size a bet",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.market"],
+      "expectedCoverageGroups": [["solana.predict.market"]]
+    },
+    {
+      "query": "which prediction bets am I holding right now and what are they worth",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.positions"],
+      "expectedCoverageGroups": [["solana.predict.positions"]]
+    },
+    {
+      "query": "list my open Jupiter prediction positions with unrealized pnl and whether they are claimable",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.positions"],
+      "expectedCoverageGroups": [["solana.predict.positions"]]
+    },
+    {
+      "query": "show my past prediction bets and what I actually made or lost on them",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.history"],
+      "expectedCoverageGroups": [["solana.predict.history"]]
+    },
+    {
+      "query": "settled Jupiter prediction activity for my wallet, buys sells claims and realized pnl",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.history"],
+      "expectedCoverageGroups": [["solana.predict.history"]]
+    },
+    {
+      "query": "put 25 dollars on yes for this prediction question",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.buy"],
+      "expectedCoverageGroups": [["solana.predict.buy"]]
+    },
+    {
+      "query": "buy 50 USDC of NO shares on a Jupiter prediction market",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.buy"],
+      "expectedCoverageGroups": [["solana.predict.buy"]]
+    },
+    {
+      "query": "close out one of my prediction bets before the question resolves",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.sell"],
+      "expectedCoverageGroups": [["solana.predict.sell"]]
+    },
+    {
+      "query": "sell a single open Jupiter prediction position at whatever the book offers",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.sell"],
+      "expectedCoverageGroups": [["solana.predict.sell"]]
+    },
+    {
+      "query": "my prediction bet won, collect the winnings",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.claim"],
+      "expectedCoverageGroups": [["solana.predict.claim"]]
+    },
+    {
+      "query": "claim the payout on a resolved winning Jupiter prediction position",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.claim"],
+      "expectedCoverageGroups": [["solana.predict.claim"]]
+    },
+    {
+      "query": "get me out of every prediction bet I have open, all of them at once",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.closeAll"],
+      "expectedCoverageGroups": [["solana.predict.closeAll"]]
+    },
+    {
+      "query": "exit all my Jupiter prediction positions in one batch with a 1 percent slippage cap",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.closeAll"],
+      "expectedCoverageGroups": [["solana.predict.closeAll"]]
+    },
+    {
+      "query": "pull up this prediction question and every tradable contract underneath it",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.event"],
+      "expectedCoverageGroups": [["solana.predict.event"]]
+    },
+    {
+      "query": "fetch one Jupiter prediction event by the event id I already have, including its nested markets",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.event"],
+      "expectedCoverageGroups": [["solana.predict.event"]]
+    },
+    {
+      "query": "check what this one bet of mine is worth and whether it can be cashed out yet",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.position"],
+      "expectedCoverageGroups": [["solana.predict.position"]]
+    },
+    {
+      "query": "read a single Jupiter prediction position in detail from its position public key",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.position"],
+      "expectedCoverageGroups": [["solana.predict.position"]]
+    },
+    {
+      "query": "how deep is the book on this prediction contract, I want to place a large bet without moving the price",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orderbook"],
+      "expectedCoverageGroups": [["solana.predict.orderbook"]]
+    },
+    {
+      "query": "bid and ask levels with resting size for a Jupiter prediction market",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orderbook"],
+      "expectedCoverageGroups": [["solana.predict.orderbook"]]
+    },
+    {
+      "query": "is prediction trading open at the moment or is the venue halted",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.tradingStatus"],
+      "expectedCoverageGroups": [["solana.predict.tradingStatus"]]
+    },
+    {
+      "query": "confirm the Jupiter prediction venue is accepting orders before I place one",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.tradingStatus"],
+      "expectedCoverageGroups": [["solana.predict.tradingStatus"]]
+    },
+    {
+      "query": "what happened to the prediction orders I placed, did any of them fill",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orders"],
+      "expectedCoverageGroups": [["solana.predict.orders"]]
+    },
+    {
+      "query": "list my Jupiter prediction orders with their fill prices and pending or failed state",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orders"],
+      "expectedCoverageGroups": [["solana.predict.orders"]]
+    },
+    {
+      "query": "look up one prediction order that is still open, by its key",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.order"],
+      "expectedCoverageGroups": [["solana.predict.order"]]
+    },
+    {
+      "query": "read a live Jupiter prediction order straight from its on-chain account",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.order"],
+      "expectedCoverageGroups": [["solana.predict.order"]]
+    },
+    {
+      "query": "did my prediction order actually go through after it filled or got cancelled",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orderStatus"],
+      "expectedCoverageGroups": [["solana.predict.orderStatus"]]
+    },
+    {
+      "query": "durable status and fill events for a Jupiter prediction order whose account has already closed",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.orderStatus"],
+      "expectedCoverageGroups": [["solana.predict.orderStatus"]]
+    },
+    {
+      "query": "what is everyone else betting on right now across the whole prediction venue",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.trades"],
+      "expectedCoverageGroups": [["solana.predict.trades"]]
+    },
+    {
+      "query": "latest 50 trades from the global Jupiter Prediction feed across all traders and markets",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.trades"],
+      "expectedCoverageGroups": [["solana.predict.trades"]]
+    },
+    {
+      "query": "how has my prediction betting gone overall, lifetime profit and how often I was right",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.profile"],
+      "expectedCoverageGroups": [["solana.predict.profile"]]
+    },
+    {
+      "query": "my aggregate Jupiter Prediction trader record, lifetime realized pnl and total volume",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.profile"],
+      "expectedCoverageGroups": [["solana.predict.profile"]]
+    },
+    {
+      "query": "chart how my betting profit moved week by week over the last month",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.pnlHistory"],
+      "expectedCoverageGroups": [["solana.predict.pnlHistory"]]
+    },
+    {
+      "query": "realized pnl time series on Jupiter Prediction bucketed over a 1w interval",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.pnlHistory"],
+      "expectedCoverageGroups": [["solana.predict.pnlHistory"]]
+    },
+    {
+      "query": "who are the most profitable prediction traders this week",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.leaderboards"],
+      "expectedCoverageGroups": [["solana.predict.leaderboards"]]
+    },
+    {
+      "query": "Jupiter Prediction leaderboard ranked by monthly volume, top 10",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.leaderboards"],
+      "expectedCoverageGroups": [["solana.predict.leaderboards"]]
+    },
+    {
+      "query": "how much does the prediction protocol's own treasury account hold on Solana",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.vaultInfo"],
+      "expectedCoverageGroups": [["solana.predict.vaultInfo"]]
+    },
+    {
+      "query": "read the Jupiter Prediction protocol vault account and its balance",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.vaultInfo"],
+      "expectedCoverageGroups": [["solana.predict.vaultInfo"]]
+    },
+    {
+      "query": "recommend prediction questions based on what this Solana wallet already trades",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.suggestedEvents"],
+      "expectedCoverageGroups": [["solana.predict.suggestedEvents"]]
+    },
+    {
+      "query": "personalized Jupiter prediction event suggestions for a given wallet address",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": ["solana.predict.suggestedEvents"],
+      "expectedCoverageGroups": [["solana.predict.suggestedEvents"]]
+    }
+  ]
+}

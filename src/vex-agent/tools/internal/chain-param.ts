@@ -15,7 +15,7 @@ import { z } from "zod";
 
 /**
  * A chain as the model can actually supply it: a slug/alias (`"base"`, `"eth"`)
- * or a chain ID in either JSON type (`"8453"`, `8453`). `token_find`
+ * or a chain ID in either JSON type (`"8453"`, `8453`). `TokenFind`
  * (khalani.tokens.search) projects `chainId` as a NUMBER, so the numeric form
  * arrives constantly; a bare `z.string()` answered it with Zod's "expected
  * string, received number", which says nothing about chains and left the agent

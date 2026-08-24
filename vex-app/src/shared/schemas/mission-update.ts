@@ -33,6 +33,15 @@ export const missionUpdateKindSchema = z.enum([
   "readiness_changed",
   "accepted",
   "approval_enqueued",
+  /**
+   * A mission SETUP turn finished without writing anything to an incomplete
+   * draft. The ONLY kind that reports an ABSENCE of change: every other kind
+   * means "refetch, the row moved", this one means "the row did NOT move and
+   * will not move on its own". `useMissionUpdateLiveSync` therefore does not
+   * invalidate on it; `useMissionSetupProgress` records it so the mission
+   * surface can escalate from "still drafting" to "drafting stalled".
+   */
+  "setup_no_progress",
 ]);
 export type MissionUpdateKind = z.infer<typeof missionUpdateKindSchema>;
 

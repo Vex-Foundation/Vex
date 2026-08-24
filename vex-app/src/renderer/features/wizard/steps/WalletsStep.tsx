@@ -185,7 +185,7 @@ export function WalletsStep({
           ) : null
         }
       >
-        <p className="text-sm text-[var(--color-danger)]" role="alert">
+        <p className="text-sm text-danger" role="alert">
           Couldn&apos;t load your wallets. Close and reopen settings, or retry.
         </p>
       </WizardStepPanel>
@@ -216,14 +216,14 @@ export function WalletsStep({
             <div className="border-b border-[var(--color-border)] pb-3">
               <div className="flex items-center gap-2">
                 <Ethereum width={14} height={14} aria-hidden />
-                <p className="vex-micro text-[var(--color-text-muted)]">
+                <p className="vex-micro text-ink-tertiary">
                   EVM
                 </p>
               </div>
               {evmAddress !== null ? (
                 <AddressDisplay address={evmAddress} className="mt-1" />
               ) : (
-                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                <p className="mt-1 text-sm text-ink-secondary">
                   Wallet present (address loaded from config).
                 </p>
               )}
@@ -231,14 +231,14 @@ export function WalletsStep({
             <div>
               <div className="flex items-center gap-2">
                 <Solana width={14} height={14} aria-hidden />
-                <p className="vex-micro text-[var(--color-text-muted)]">
+                <p className="vex-micro text-ink-tertiary">
                   Solana
                 </p>
               </div>
               {solanaAddress !== null ? (
                 <AddressDisplay address={solanaAddress} className="mt-1" />
               ) : (
-                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                <p className="mt-1 text-sm text-ink-secondary">
                   Wallet present (address loaded from config).
                 </p>
               )}
@@ -249,7 +249,7 @@ export function WalletsStep({
             <RestoreFromArchive />
           </div>
           {advanceError !== null ? (
-            <p className="text-sm text-[var(--color-danger)]" role="alert">
+            <p className="text-sm text-danger" role="alert">
               {advanceError}
             </p>
           ) : null}
@@ -274,7 +274,7 @@ export function WalletsStep({
       icon={meta.icon}
       flowMode={flowMode}
       title={flowMode === "back-edit" ? "Manage wallets" : "Set up wallets"}
-      description="Vex is self-custodial: wallet keys are generated and encrypted on this machine, under your master password, and never leave it. Add an EVM wallet (Ethereum + L2s), a Solana wallet, or both — generate fresh keys, import existing ones, or restore a backup. Wallets are optional; you can come back to this any time."
+      description="Vex is self-custodial: wallet keys are generated and encrypted on this machine, under your master password, and never leave it. Add an EVM wallet (Ethereum + L2s), a Solana wallet, or both - generate fresh keys, import existing ones, or restore a backup. Wallets are optional; you can come back to this any time."
       footer={
         flowMode === "back-edit" ? (
           <Button
@@ -304,7 +304,7 @@ export function WalletsStep({
           role="status"
           data-vex-wallets-configure-later-alert
           className={cn(
-            "mb-4 py-0.5 text-sm text-[var(--color-warning)]",
+            "mb-4 py-0.5 text-sm text-warning",
             RAIL_WARNING_CHROME,
           )}
         >
@@ -347,7 +347,7 @@ export function WalletsStep({
         <RestoreFromArchive />
       </div>
       {advanceError !== null ? (
-        <p className="mt-3 text-sm text-[var(--color-danger)]" role="alert">
+        <p className="mt-3 text-sm text-danger" role="alert">
           {advanceError}
         </p>
       ) : null}

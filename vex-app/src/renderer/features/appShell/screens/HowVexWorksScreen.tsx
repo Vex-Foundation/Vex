@@ -22,7 +22,7 @@ export function HowVexWorksScreen({
   return (
     <ShellScreen title="How Vex works" origin={origin} onClose={onClose}>
       {/* Editorial reading measure: ~72ch column, generous line-height. */}
-      <article className="mx-auto w-full max-w-[72ch] pb-6 text-[15px] leading-[1.75] text-[var(--vex-text-2)]">
+      <article className="mx-auto w-full max-w-[72ch] pb-6 text-[15px] leading-[1.75] text-ink-secondary">
         <MarkdownContent text={howVexWorksMd} variant="article" />
       </article>
     </ShellScreen>

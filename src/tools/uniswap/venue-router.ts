@@ -3,7 +3,7 @@
  *
  * Given a chain, returns the ordered list of swap venues Vex should use, primary
  * first. This is the ONE place the priority policy lives so the mutating
- * `swap_execute` alias router, the read-only `swap_quote` router, and the
+ * `SwapExecute` alias router, the read-only `SwapQuote` router, and the
  * agent-facing routing guidance can never drift apart. Flipping priority (or
  * adding a venue) is a change HERE and nowhere else.
  *
@@ -20,12 +20,12 @@
  * "Fallback option" is now CLASSIFICATION only (plan §11.2): `classifySwapFamily`
  * reads `resolveSwapVenues` to pick venue=kyberswap when Kyber covers the
  * chain, else venue=uniswap when ONLY Uniswap does (the "chain has no Kyber
- * support at all" reveal-eligible case). The RUNTIME retry this file used to
+ * support at all" fallback-eligible case). The RUNTIME retry this file used to
  * own — silently re-quoting on Uniswap after a Kyber quote FAILED — is REMOVED
- * (Agent Scan plan §4.2/§11.2): a failed Kyber quote/execute now reveals the
- * hidden Uniswap pair for the session (`tools/registry/uniswap-reveal.ts`) and
- * tells the agent to call `swap_quote_uniswap` itself, rather than silently
- * substituting a different venue's quote under the same tool call.
+ * (Agent Scan plan §4.2/§11.2): a failed Kyber quote/execute tells the agent to
+ * call `SwapQuoteUniswap` itself, rather than silently substituting a different
+ * venue's quote under the same tool call. Since owner decision D4 that pair is
+ * always visible, so there is nothing to reveal first.
  */
 
 import { resolveChainSlug, chainSupportsFeature } from "@tools/kyberswap/chains.js";

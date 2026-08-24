@@ -1,5 +1,5 @@
 /**
- * `units_convert` — the deterministic unit/percentage calculator.
+ * `UnitsConvert` — the deterministic unit/percentage calculator.
  *
  * Always visible, read-only, no provider and no wallet. It exists because the
  * model doing this arithmetic in its head is how gas prices become thousandfold
@@ -17,7 +17,7 @@ import type { ToolDef } from "../types.js";
  * learns one reading rule instead of five.
  */
 const AMOUNT_SHAPE_SENTENCE =
-  "Every amount comes back as { raw, decimals, human }: `raw` is the exact integer in base units, `decimals` says how to read it, `human` is that same number already rendered. `remainder` appears ONLY when flooring discarded value, and each op below names what its remainder counts.";
+  "It returns every amount as { raw, decimals, human }: `raw` is the exact integer in base units, `decimals` says how to read it, `human` is that same number already rendered. `remainder` appears ONLY when flooring discarded value, and each op below names what its remainder counts.";
 
 const OP_DESCRIPTION = [
   "Which calculation to run.",
@@ -31,13 +31,13 @@ const OP_DESCRIPTION = [
 const WORKED_EXAMPLES = [
   "Examples.",
   "(1) THE GWEI TRAP: {op:'unit_convert', value:'22518000', from:'wei', to:'gwei'} -> human '0.022518'. A gas price of 22518000 wei is 0.0225 gwei, NOT 22.5 — never read a bare wei figure as gwei.",
-  "(2) RAW vs HUMAN: {op:'unit_convert', value:'1047061', from:'raw', to:'human', decimals:6} -> human '1.047061'. The same raw number at decimals 9 is 0.001047061, so always pass the token's real decimals (from token_find).",
+  "(2) RAW vs HUMAN: {op:'unit_convert', value:'1047061', from:'raw', to:'human', decimals:6} -> human '1.047061'. The same raw number at decimals 9 is 0.001047061, so always pass the token's real decimals (from TokenFind).",
   "(3) FEE: {op:'apply_bps', amountRaw:'1000000000', bps:25, decimals:9} -> fee.raw '2500000' (human '0.0025'), net.raw '997500000'.",
 ].join(" ");
 
 export const UNITS_TOOLS: readonly ToolDef[] = [
   {
-    name: "units_convert",
+    name: "UnitsConvert",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
@@ -78,7 +78,7 @@ export const UNITS_TOOLS: readonly ToolDef[] = [
         decimals: {
           type: "number",
           description:
-            "The token's decimals, 0 to 36 (get them from token_find — 6 for USDC, 18 for most ERC-20s). Required for apply_bps, usd_to_token_amount and token_amount_to_usd, and for unit_convert whenever `from` or `to` is 'raw' or 'human'.",
+            "The token's decimals, 0 to 36 (get them from TokenFind — 6 for USDC, 18 for most ERC-20s). Required for apply_bps, usd_to_token_amount and token_amount_to_usd, and for unit_convert whenever `from` or `to` is 'raw' or 'human'.",
         },
         gasUnits: {
           type: "string",

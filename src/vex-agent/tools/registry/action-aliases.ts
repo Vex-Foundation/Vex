@@ -4,17 +4,17 @@
  *
  * These present the model with an obvious, action-named menu that routes to
  * existing protocol tools. They are ADDITIVE — the underlying protocol tools
- * stay reachable via discover_tools / execute_tool.
+ * stay reachable through ToolSearch.
  *
- *   swap_quote          → family router: EVM → KyberSwap ONLY, Solana → solana.swap.quote
- *   swap_execute         → family router: EVM → KyberSwap ONLY, Solana → solana.swap.execute
+ *   SwapQuote          → family router: EVM → KyberSwap ONLY, Solana → solana.swap.quote
+ *   SwapExecute         → family router: EVM → KyberSwap ONLY, Solana → solana.swap.execute
  *                          (renamed from `swap` in place — Agent Scan plan §11.2)
- *   swap_quote_uniswap   → uniswap.swap.quote (HIDDEN — session-scoped reveal)
- *   swap_execute_uniswap → uniswap.swap.execute (HIDDEN — session-scoped reveal)
- *   token_check          → kyberswap.tokens.check   (EVM honeypot / fee-on-transfer; { chain, tokenAddress })
- *   bridge_status        → khalani.orders.get (with id) / khalani.orders.list (without)
- *   bridge_quote         → khalani.quote.get        (read-only bridge preview)
- *   bridge               → MUTATING router (Stage 8c): → khalani.bridge (cross-chain)
+ *   SwapQuoteUniswap   → uniswap.swap.quote     (alternative swap venue)
+ *   SwapExecuteUniswap → uniswap.swap.execute   (alternative swap venue)
+ *   TokenCheck          → kyberswap.tokens.check   (EVM honeypot / fee-on-transfer; { chain, tokenAddress })
+ *   BridgeStatus        → khalani.orders.get (with id) / khalani.orders.list (without)
+ *   BridgeQuote         → khalani.quote.get        (read-only bridge preview)
+ *   BridgeExecute        → MUTATING router (Stage 8c): → khalani.bridge (cross-chain)
  *
  * Param convention (SPEC §1.3): the bridge legs take `amountRaw` — RAW base
  * units — and the swap legs take `amountIn` — HUMAN decimals. The bare `amount`
@@ -22,30 +22,32 @@
  * menu.
  *
  * EVM branch is KyberSwap-only — the previous silent Kyber→Uniswap runtime
- * quote fallback is REMOVED. `swap_quote_uniswap`/`swap_execute_uniswap` are
- * the ONLY path to Uniswap now, and are hidden from the default tool list
- * (`visibility.ts`'s `requiresUniswapReveal`) until an eligible KyberSwap
- * route-not-found failure reveals them for the session
- * (`registry/uniswap-reveal.js`). Public schema for all four swap tools:
+ * quote fallback is REMOVED. `SwapQuoteUniswap`/`SwapExecuteUniswap` are the
+ * ONLY path to Uniswap, and since owner decision D4 they are ALWAYS VISIBLE
+ * alongside the routers rather than unlocked by a session reveal. Preference is
+ * stated to the model in the prompt stack (KyberSwap is the primary swap route),
+ * never enforced by hiding: the approval gate is what protects the money, and a
+ * venue the model cannot see is a venue it cannot fall back to when the primary
+ * one refuses the pair. Public schema for all four swap tools:
  * `{ chain, tokenIn, tokenOut, amountIn, slippageBps? }` — `side` and
  * `recipient` are REMOVED (no lot-direction/PnL tracking survives Agent Scan;
  * wallet-delta receipt decoding is the truth invariant, so a redirected
  * output is out of scope this phase).
  *
  * The read-only quote aliases are non-mutating, so dispatching them through
- * `executeProtocolTool` fires no approval gate. `swap_execute` /
- * `swap_execute_uniswap` / `bridge` ARE mutating: each is dispatched through a
+ * `executeProtocolTool` fires no approval gate. `SwapExecute` /
+ * `SwapExecuteUniswap` / `BridgeExecute` ARE mutating: each is dispatched through a
  * DEDICATED dispatcher branch (`mutating-aliases.ts`) that resolves the target
  * and calls `executeProtocolTool` directly — letting that function SOLELY own
  * the ordering (prequote gate → approval gate → capture). A mutating alias
  * MUST NOT travel through the dispatcher's internal mutating-approval gate
- * (that would enqueue approval BEFORE the prequote gate). `bridge` REQUIRES a
- * fresh `bridge_quote` first — the bridge prequote (kind 'bridge', verdict
+ * (that would enqueue approval BEFORE the prequote gate). `BridgeExecute` REQUIRES a
+ * fresh `BridgeQuote` first — the bridge prequote (kind 'bridge', verdict
  * always 'unknown') seeds the gate; the two swap executes REQUIRE their own
  * matching quote on the SAME venue (provider-bound prequote identity — a
  * KyberSwap quote can never authorize a Uniswap execute and vice versa).
  *
- * `swap_quote` / `swap_quote_uniswap` route to quote toolIds that already
+ * `SwapQuote` / `SwapQuoteUniswap` route to quote toolIds that already
  * record a Stage-6c prequote via the hook in `executeProtocolTool` — calling a
  * quote before an execute naturally seeds the Stage-7 execute gate. No
  * prequote wiring lives here.
@@ -60,19 +62,19 @@
 import type { ToolDef } from "../types.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
-/** Shared JSON-schema properties for the Kyber/Jupiter-routed pair (swap_quote/swap_execute — unified §11.2 contract). */
+/** Shared JSON-schema properties for the Kyber/Jupiter-routed pair (SwapQuote/SwapExecute — unified §11.2 contract). */
 const SWAP_SCHEMA_PROPERTIES = {
   chain: {
     type: "string" as const,
-    description: "Chain to swap on. EVM slugs/aliases route to KyberSwap (ethereum, base, arbitrum, robinhood, …); the literal \"solana\" routes to Jupiter. Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453).",
+    description: "Chain to swap on. EVM slugs/aliases route to KyberSwap (ethereum, base, arbitrum, robinhood, …); the literal \"solana\" routes to Jupiter. Accepts a chain slug/alias or the numeric chain id TokenFind returns (e.g. base or 8453).",
   },
   tokenIn: {
     type: "string" as const,
-    description: "Input token. EVM: the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Solana: symbol or mint.",
+    description: "Input token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
   },
   tokenOut: {
     type: "string" as const,
-    description: "Output token. EVM: the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Solana: symbol or mint.",
+    description: "Output token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
   },
   amountIn: {
     type: "string" as const,
@@ -99,11 +101,11 @@ const UNISWAP_SWAP_SCHEMA_PROPERTIES = {
   },
   tokenIn: {
     type: "string" as const,
-    description: "Input token — the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native.",
+    description: "Input token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
   },
   tokenOut: {
     type: "string" as const,
-    description: "Output token — the token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native.",
+    description: "Output token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
   },
   amountIn: {
     type: "string" as const,
@@ -117,13 +119,13 @@ const UNISWAP_SWAP_SCHEMA_PROPERTIES = {
 
 export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
   {
-    name: "swap_quote",
+    name: "SwapQuote",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Preview a token swap WITHOUT executing — best route, expected output, price impact, and token-safety signals. EVM chains route to KyberSwap ONLY; chain \"solana\" → Jupiter. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled here to avoid wrong-contract matches; Solana accepts a symbol or mint. `amountIn` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Call this BEFORE swap_execute: a fresh matching quote (same venue) is what unlocks execution. If KyberSwap cannot route this chain/token, the failure message offers a backup automatically when one is available — just follow what it says.",
+      "Preview a token swap WITHOUT executing - best route, expected output, price impact, and token-safety signals. EVM chains route to KyberSwap ONLY; chain \"solana\" → Jupiter. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native - EVM symbol resolution is disabled here to avoid wrong-contract matches; Solana accepts a symbol or mint. `amountIn` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Call this BEFORE SwapExecute: a fresh matching quote (same venue) is what unlocks execution. RETURNS on EVM a summary, chain, chainId, tokenIn/tokenOut with address, symbol and decimals, routerAddress, a routeSummary (amountIn/amountOut raw, amountInUsd/amountOutUsd, gasUsd, l1FeeUsd, priceImpact as a fraction, extraFee, routeHops, routePaths) and a safety verdict per leg carrying isHoneypot, isFOT and tax. On Solana it returns a summary, inputToken/outputToken metadata, inputAmountRaw, outputAmountRaw, otherAmountThreshold, slippageBps, priceImpactFraction, routePlan and feePreview - no USD figures at all on that side, and safety is present only when the provider has a verdict. KyberSwap is the primary swap venue. If it cannot route this chain or token pair, quote SwapQuoteUniswap instead; the failure message says when switching venue is the right move.",
     parameters: {
       type: "object",
       properties: SWAP_SCHEMA_PROPERTIES,
@@ -131,7 +133,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "swap_execute",
+    name: "SwapExecute",
     kind: "internal",
     mutating: true,
     // Mirrors the TARGET swap-execute manifests (kyberswap.swap.execute,
@@ -144,7 +146,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // result already carries the target's actionKind from executeProtocolTool.
     actionKind: "user_wallet_broadcast",
     description:
-      "Execute a REAL on-chain token swap (spends funds, broadcasts a signed transaction). EVM chains route to KyberSwap ONLY; chain \"solana\" → Jupiter. REQUIRES a fresh matching swap_quote FIRST on the SAME venue — the execute gate blocks a swap that has no fresh matching quote, so always preview with swap_quote before calling this. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled to avoid wrong-contract matches; Solana accepts a symbol or mint. `amountIn` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+      "Execute a REAL on-chain token swap (spends funds, broadcasts a signed transaction). EVM chains route to KyberSwap ONLY; chain \"solana\" → Jupiter. REQUIRES a fresh matching SwapQuote FIRST on the SAME venue - the execute gate blocks a swap that has no fresh matching quote, so always preview with SwapQuote before calling this. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native - EVM symbol resolution is disabled to avoid wrong-contract matches; Solana accepts a symbol or mint. `amountIn` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). It requires approval before it runs in a restricted session; in a full-permission session the user's standing permission is the authority. RETURNS, on a confirmed EVM swap, a summary with chain, chainId, txHash, tokenIn, tokenOut, the DECODED amountIn and amountOut in human units, a status of confirmed or confirmed_unrecorded, and a deliveryCheck when one was made. Every other EVM outcome is a sentence, and they differ: reverted on-chain, confirmed but the amounts could not be decoded yet, refused before signing, and broadcast but NOT yet confirmed - that last one says do not retry and names the ChainRead tx_receipt call you can make yourself. On Solana there is no JSON success arm at all: a broadcast answers \"Swap broadcast (signature ...) - confirmation pending, tracked automatically. Do not retry.\", and terminality is settled by a background sweep, so never read that sentence as a completed swap. Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
     parameters: {
       type: "object",
       properties: SWAP_SCHEMA_PROPERTIES,
@@ -152,19 +154,13 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "swap_quote_uniswap",
+    name: "SwapQuoteUniswap",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
-    // Hidden by default — visibility.ts's requiresUniswapReveal gate only shows
-    // this once an eligible KyberSwap route-not-found failure (or a swap-role
-    // mined revert, REVISION 1) revealed it for the session
-    // (registry/uniswap-reveal.js). discover_tools can still find it by
-    // toolId/description regardless of catalog visibility.
-    visibility: { requiresUniswapReveal: true },
     description:
-      "Preview a token swap on Uniswap WITHOUT executing — the KyberSwap fallback venue. Only usable after a KyberSwap swap_quote/swap_execute failure revealed it for this session (a route-not-found class failure, an unsafe or pre-sign-refused build, the Kyber swap transaction reverting on-chain, or KyberSwap being unavailable to us at all). EVM ONLY (chain must NOT be \"solana\"). Tokens must be a CONTRACT ADDRESS or native ETH/native. `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE swap_execute_uniswap: a fresh matching quote unlocks execution, and only on THIS venue (a KyberSwap quote cannot authorize a Uniswap execute).",
+      "Preview a token swap on Uniswap WITHOUT executing. Returns the expected output amount, price impact, the route Uniswap would take, and the fees. EVM ONLY (chain must NOT be \"solana\") and only on the EVM chains with a verified Vex Uniswap deployment. Tokens must be a CONTRACT ADDRESS or native ETH/native; `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE SwapExecuteUniswap: an execute is authorized only by a fresh matching quote on the SAME venue, so a KyberSwap quote cannot authorize a Uniswap execute. KyberSwap is the primary swap route — reach for this one when KyberSwap cannot serve the pair or its quote failed for a routing reason.",
     parameters: {
       type: "object",
       properties: UNISWAP_SWAP_SCHEMA_PROPERTIES,
@@ -172,14 +168,13 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "swap_execute_uniswap",
+    name: "SwapExecuteUniswap",
     kind: "internal",
     mutating: true,
     pressureSafety: "mutating",
     actionKind: "user_wallet_broadcast",
-    visibility: { requiresUniswapReveal: true },
     description:
-      "Execute a REAL on-chain token swap on Uniswap (spends funds, broadcasts a signed transaction) — the KyberSwap fallback venue. Only usable after a KyberSwap failure revealed it for this session. REQUIRES a fresh matching swap_quote_uniswap FIRST on the SAME venue. EVM ONLY. `amountIn` is the HUMAN decimal of tokenIn. Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+      "Execute a REAL on-chain token swap on Uniswap. SPENDS FUNDS: it signs and broadcasts a transaction from your wallet, and it requires approval before it runs. REQUIRES a fresh matching SwapQuoteUniswap FIRST on the SAME venue — a KyberSwap quote cannot authorize it. EVM ONLY, and only on the EVM chains with a verified Vex Uniswap deployment. `amountIn` is the HUMAN decimal of tokenIn. Returns the transaction hash and the resulting wallet deltas; failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones. KyberSwap is the primary swap route — reach for this one when KyberSwap cannot serve the pair or its quote failed for a routing reason.",
     parameters: {
       type: "object",
       properties: UNISWAP_SWAP_SCHEMA_PROPERTIES,
@@ -187,7 +182,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "bridge",
+    name: "BridgeExecute",
     kind: "internal",
     mutating: true,
     // Mirrors the TARGET khalani.bridge manifest (mutating). At context pressure
@@ -200,7 +195,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // actionKind from executeProtocolTool.
     actionKind: "user_wallet_broadcast",
     description:
-      "Execute a REAL cross-chain bridge (spends funds, signs + broadcasts on the source chain). Auto-routes by chain: Khalani between its supported chains; Relay to/from Robinhood Chain (which Khalani does NOT cover). REQUIRES a fresh matching bridge_quote FIRST on the SAME provider — the execute gate blocks a bridge with no fresh matching quote, so always preview with bridge_quote before calling this. Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports), matching the bridge quote.",
+      "Execute a REAL cross-chain bridge. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it signs and broadcasts a deposit from the user's wallet on the source chain. APPROVAL: in a RESTRICTED session it signs nothing - it comes back asking for approval and runs only after the user confirms; in a FULL-permission session the user's standing permission is the authority and it executes directly. Use this when the user has seen a BridgeQuote and wants the funds actually moved. PRECONDITIONS, each refused BY NAME: a fresh matching BridgeQuote on the SAME provider, with identical params, within 15 minutes, or the call is blocked with \"no fresh bridge quote for these exact params\"; fromToken/toToken resolved to addresses with TokenFind; and `amountRaw` in RAW base units read together with that token's decimals. `refundTo`, `referrer`, `referrerFeeBps`, `routeId` and `depositMethod` are NOT parameters and a caller-supplied value is rejected by name - the route is auto-selected and the refund address is derived from the source wallet, so neither the fee nor the destination can be redirected. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Vex charges 25 bps of the input token as a SEPARATE transfer that runs only after the deposit lands, so a bridge that does not happen is never charged. RETURNS status, summary, message, fromChain, toChain, legs (role, chain, txHash, status) and vexFee; on the Khalani route also orderId, depositTxHash, route, etaSeconds, amountIn/amountOut and nativeCost, and on the Relay route requestId, providerStatus, amounts and inTxHashes. IT NEVER REPORTS SUCCESS: a deposit that broadcast is not a delivered bridge. `status` is pending, filled_unverified, failed or refunded, delivery is verified by a background tracker, and every arm says the same thing - do NOT re-bridge. Follow the order with BridgeStatus.",
     parameters: {
       type: "object",
       properties: {
@@ -208,7 +203,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address." },
-        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
@@ -228,37 +223,37 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         // EXECUTE-ONLY (the bridge quote has no counterpart), so they can never be
         // bound to a quote — the bridge auto-selects the best route. The execute
         // gate fail-closes (block "unbindable_param") if they reach khalani.bridge
-        // via the direct execute_tool path, so dropping them here is the menu half
+        // via the protocol-call path, so dropping them here is the menu half
         // of a defense-in-depth pair (8c security fix).
       },
       required: ["fromChain", "fromToken", "toChain", "toToken", "amountRaw"],
     },
   },
   {
-    name: "token_check",
+    name: "TokenCheck",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the token contract `tokenAddress` (resolve it with token_find first). The former key `address` is retired and is rejected by name. Read-only.",
+      "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the token contract `tokenAddress` (resolve it with TokenFind first). The former key `address` is retired and is rejected by name. Read-only. RETURNS chain, chainId, tokenAddress, isHoneypot, isFOT and tax - a closed, validated shape, never a raw provider payload. A clean verdict here is not proof the token is safe: it answers only the honeypot and transfer-tax question, and says nothing about the contract's other risks.",
     parameters: {
       type: "object",
       properties: {
-        chain: { type: "string", description: "EVM chain slug or alias (ethereum, base, arbitrum, …). Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453)." },
-        tokenAddress: { type: "string", description: "Token contract address to inspect (0x… on the named chain). Resolve it with token_find first — a symbol is not accepted. The former key `address` is retired and is rejected by name." },
+        chain: { type: "string", description: "EVM chain slug or alias (ethereum, base, arbitrum, …). Accepts a chain slug/alias or the numeric chain id TokenFind returns (e.g. base or 8453)." },
+        tokenAddress: { type: "string", description: "Token contract address to inspect (0x… on the named chain). Resolve it with TokenFind first — a symbol is not accepted. The former key `address` is retired and is rejected by name." },
       },
       required: ["chain", "tokenAddress"],
     },
   },
   {
-    name: "bridge_status",
+    name: "BridgeStatus",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Check cross-chain bridge order status via Khalani. Pass `orderId` to fetch one order's full lifecycle; omit it to list your recent bridge orders (with optional filters/pagination). Read-only.",
+      "Check cross-chain bridge order status via Khalani. Use this when a bridge execute returned an orderId and you need to know whether the destination amount actually arrived, or when the user asks what happened to a recent bridge - it is the read that settles an unresolved bridge, and the reason a bridge execute never has to be repeated. Pass `orderId` to fetch one order's full lifecycle; omit it to list your recent bridge orders with optional filters. Mixing `orderId` with the list filters is refused by name. Read-only. RETURNS, in id mode, `order` (id, type, quoteId, routeId, fromChainId/toChainId, fromToken/toToken, srcAmount, destAmount, status, recipient, refundTo, fillerAddress, depositTxHash, createdAt, updatedAt, stepsCompleted, transactions and token metadata) plus `vex`, Vex's own correlation carrying vexStatus, lastRecordedProviderStatus, legs and vexFeeCollection, or null with a note when the order is not correlated. Provider `status` is one of created, deposited, published, filled, refund_pending, refunded or failed - a different vocabulary from the status the execute returned, and `vex.note` says which view is authoritative when they disagree. In list mode it returns count, cursor and orders; `cursor` is the only continuation, so do not expect hasMore or nextCursor.",
     parameters: {
       type: "object",
       properties: {
@@ -266,10 +261,10 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
           type: "string",
           description: "Khalani order ID. Provide to fetch a single order; omit to list your orders.",
         },
-        address: { type: "string", description: "List mode: wallet address (optional — uses your configured wallet)." },
-        wallet: { type: "string", description: "List mode: wallet family — eip155 or solana." },
+        walletAddress: { type: "string", description: "List mode: the ACCOUNT address whose orders to list (optional - omit to use your configured wallet)." },
+        walletFamily: { type: "string", description: "List mode: wallet FAMILY, never a chain - eip155 or solana." },
         limit: { type: "number", description: "List mode: max results." },
-        cursor: { type: "number", description: "List mode: pagination cursor for the next page." },
+        cursor: { type: "number", description: "List mode: the provider's own opaque continuation value, echoed back as `cursor` on the previous reply. Send back exactly what that reply returned; a reply with no `cursor` is the end of the list." },
         fromChain: { type: "string", description: "List mode: source chain filter (ID or alias)." },
         toChain: { type: "string", description: "List mode: destination chain filter (ID or alias)." },
         orderIds: { type: "string", description: "List mode: comma-separated order IDs to filter." },
@@ -278,13 +273,13 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    name: "bridge_quote",
+    name: "BridgeQuote",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Preview a cross-chain bridge WITHOUT executing — routes, pricing, fees, and ETA. Auto-routes by chain: Khalani between its supported chains; Relay to/from Robinhood Chain (which Khalani doesn't cover). Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports), matching the underlying bridge quote. Read-only.",
+      "Preview a cross-chain bridge WITHOUT executing - routes, pricing, fees, and ETA. Use this when the user asks what moving an amount between two chains would cost or how long it would take, and before every BridgeExecute: the execute is authorized only by a fresh matching quote on the SAME provider, within 15 minutes and with identical params. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Resolve fromToken/toToken addresses via TokenFind first. `amountRaw` is in RAW base units (wei/lamports), matching the underlying bridge quote. Read-only, and the quoted output is already net of Vex's 25 bps input-token fee. RETURNS, on the Khalani route, quoteId, routeCount, routes (each routeId, type, amountIn, amountOut, etaSeconds and its expiry fields), vexFee and expiryNote. On the Relay route it returns a summary, serviceable, fromChain/toChain, fromToken/toToken, amounts (in and out, each with token, amountRaw, human amount and a nullable usd estimate), vexFee, estimatedTimeSeconds, minimumAmountOutRaw, totalImpactPercent, appliedSlippagePercent, steps and requestId. `vexFee` is a union: the fee amount and receiver fields exist only when it is actually charged.",
     parameters: {
       type: "object",
       properties: {
@@ -292,7 +287,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address." },
-        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override." },
@@ -302,7 +297,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         // taught the model a call that always fails. Same policy as the
         // `khalani.bridge` / `khalani.quote.get` manifests.
         // referrer / referrerFeeBps intentionally NOT exposed — see the note on
-        // the `bridge` alias above. A fee-bearing quote is what would later let
+        // the `BridgeExecute` alias above. A fee-bearing quote is what would later let
         // a matching fee-bearing execute through the prequote gate.
         filler: { type: "string", description: "Restrict quotes to a specific filler." },
       },
@@ -310,20 +305,16 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    // HIDDEN Relay-fallback bridge PREVIEW (bridge factory W5; plan R7). Hidden
-    // from the default tool list until the session has an active route reveal —
-    // `registry/visibility.ts` filters `RELAY_REVEAL_GATED_ALIAS_NAMES` out of
-    // `getVisibleToolDefs` (a route-bound reveal has no route context at
-    // visibility time, so this is the session-level predicate; the EXACT-route
-    // enforcement is at dispatch). Unlike generic `bridge_quote` (Khalani except
-    // the local-chain exception), this ALWAYS targets Relay.
-    name: "bridge_quote_relay",
+    // Relay bridge PREVIEW. ALWAYS VISIBLE since owner decision D4 retired the
+    // route-bound reveal; unlike generic `BridgeQuote` (Khalani except the
+    // local-chain exception), this ALWAYS targets Relay.
+    name: "BridgeQuoteRelay",
     kind: "internal",
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Preview a cross-chain bridge via Relay WITHOUT executing — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route, or the Khalani deposit transaction reverting on-chain for this exact route (or for a Robinhood-Chain route, always available). Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports). Call this BEFORE bridge_execute_relay: a fresh matching quote on Relay is what unlocks execution.",
+      "Preview a cross-chain bridge via Relay WITHOUT executing. Returns the route, the expected destination amount, fees, and the ETA. Resolve fromToken/toToken addresses via TokenFind first; `amountRaw` is in RAW base units (wei/lamports). Call this BEFORE BridgeExecuteRelay: an execute is authorized only by a fresh matching quote on the SAME venue, so a Khalani quote cannot authorize a Relay execute. Khalani is the primary bridge route — reach for Relay when Khalani does not cover the route (it is the only venue for Robinhood Chain) or its quote failed for a routing reason.",
     parameters: {
       type: "object",
       properties: {
@@ -331,7 +322,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address, or native ETH/native." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address, or native ETH/native." },
-        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
         // NOTE: refundTo is intentionally NOT exposed — the Relay handler
@@ -346,12 +337,11 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     },
   },
   {
-    // HIDDEN Relay-fallback bridge EXECUTE (bridge factory W5; plan R7/R8).
-    // Hidden pre-reveal exactly like bridge_quote_relay above. Dispatched via the
-    // dedicated mutating-alias branch (`MUTATING_PROTOCOL_ALIAS_ROUTERS`), so it
-    // needs NO INTERNAL_TOOL_LOADERS entry. The route-bound reveal is enforced by
-    // the router AND by `executeProtocolTool`'s gate on `relay.bridge`.
-    name: "bridge_execute_relay",
+    // Relay bridge EXECUTE. ALWAYS VISIBLE since owner decision D4, exactly like
+    // BridgeQuoteRelay above. Dispatched via the dedicated mutating-alias branch
+    // (`MUTATING_PROTOCOL_ALIAS_ROUTERS`), so it needs NO INTERNAL_TOOL_LOADERS
+    // entry; the prequote gate and the approval gate own authorization.
+    name: "BridgeExecuteRelay",
     kind: "internal",
     mutating: true,
     pressureSafety: "mutating",
@@ -360,7 +350,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // target's actionKind from executeProtocolTool.
     actionKind: "user_wallet_broadcast",
     description:
-      "Execute a REAL cross-chain bridge via Relay (spends funds, signs + broadcasts on the source chain) — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route, or the Khalani deposit transaction reverting on-chain for this exact route (or for a Robinhood-Chain route, always available). REQUIRES a fresh matching bridge_quote_relay FIRST on Relay. Resolve fromToken/toToken addresses via token_find first. `amountRaw` is in RAW base units (wei/lamports). Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+      "Execute a REAL cross-chain bridge via Relay. SPENDS FUNDS: it signs and broadcasts on the source chain, and it requires approval before it runs. REQUIRES a fresh matching BridgeQuoteRelay FIRST on Relay — a Khalani quote cannot authorize it. Resolve fromToken/toToken addresses via TokenFind first; `amountRaw` is in RAW base units (wei/lamports). Returns the source transaction hash and the order id to follow with BridgeStatus; failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones. Khalani is the primary bridge route — reach for Relay when Khalani does not cover the route (it is the only venue for Robinhood Chain) or its quote failed for a routing reason.",
     parameters: {
       type: "object",
       properties: {
@@ -368,7 +358,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address, or native ETH/native." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address, or native ETH/native." },
-        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+        amountRaw: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
         // NOTE: refundTo is intentionally NOT exposed — the Relay handler

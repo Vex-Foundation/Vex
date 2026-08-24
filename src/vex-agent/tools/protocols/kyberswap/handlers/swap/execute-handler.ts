@@ -33,7 +33,7 @@ import { kyberFailureMessage } from "./error-output.js";
 import { runStagedSwapBroadcast } from "./execute-broadcast.js";
 import { prepareSwapExecution } from "./execute-plan.js";
 import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./safety-disclosure.js";
-import { revealOnEligibleFailure } from "./reveal-messaging.js";
+import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
 
@@ -45,7 +45,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // still passes `dryRun` must NEVER reach a real broadcast just because
   // the runtime treated the call as a preview.
   if (p.dryRun === true) {
-    return fail(`${toolId} does not support dryRun preview — call kyberswap.swap.quote instead.`);
+    return fail(`${toolId} does not support dryRun preview - call kyberswap__swap_quote instead.`);
   }
 
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
@@ -75,8 +75,8 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
     requireFeature(slug, "aggregator");
     chainId = slugToChainId(slug);
   } catch (err) {
-    const revealSuffix = revealOnEligibleFailure(err, sessionId, false);
-    return fail(`${toolId} failed: ${kyberFailureMessage(toolId, err)}.${revealSuffix}`);
+    const fallbackNote = venueFallbackNoteOnFailure(err, sessionId, false);
+    return fail(`${toolId} failed: ${kyberFailureMessage(toolId, err)}.${fallbackNote}`);
   }
 
   let tokenIn: ResolvedKyberTokenMetadata;

@@ -41,7 +41,7 @@ export function TokenLaunchButton({
         onClick={() => setOpen(true)}
         className={
           className ??
-          "w-full rounded-full border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          "w-full rounded-full border border-line-2 py-1.5 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         }
       >
         Launch a token

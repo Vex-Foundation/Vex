@@ -88,10 +88,6 @@ vi.mock("../SessionDeleteDialog.js", () => ({
   SessionDeleteDialog: () => null,
 }));
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 const { SessionsLibrary } = await import("../SessionsLibrary.js");
 
 describe("SessionsLibrary search and filters", () => {

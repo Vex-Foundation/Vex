@@ -1,5 +1,5 @@
 /**
- * What happens once the swap leg is CONFIRMED on-chain: clear the reveal,
+ * What happens once the swap leg is CONFIRMED on-chain:
  * auto-pin the acquired token, decode the executed amounts from the receipt,
  * and record them.
  *
@@ -18,7 +18,6 @@ import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
 import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
 import { confirmActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
-import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import logger from "@utils/logger.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
@@ -55,11 +54,6 @@ export interface FinalizeConfirmedSwapOutcome {
 
 export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Promise<FinalizeConfirmedSwapOutcome> {
   const { deployment, tokenIn, tokenOut, executionId, txHash } = x;
-
-  // Cleared ONLY on a successful broadcast — never on a quote, never on a
-  // failed execute (plan §11.2). The swap DID confirm on-chain at this
-  // point regardless of whether we can decode its executed amounts below.
-  clearUniswapPairReveal(x.sessionId);
 
   // Auto-pin (fail-soft) — Codex final-review round 4, finding 3: runs
   // IMMEDIATELY after on-chain confirmation, BEFORE decoding, so a

@@ -183,7 +183,7 @@ describe("listInspectorCandidates", () => {
     }
   });
 
-  it("maps a missing table (42P01) to the retryable dbUnavailable error — never ok([])", async () => {
+  it("maps a missing table (42P01) to the retryable dbUnavailable error - never ok([])", async () => {
     connectMock.mockResolvedValue(undefined);
     queryMock.mockRejectedValueOnce(undefinedTableError());
     endMock.mockResolvedValue(undefined);
@@ -361,7 +361,7 @@ describe("getJobsSummary", () => {
     expect(jobsParams).toEqual([20]);
   });
 
-  it("maps a missing table (42P01) to the retryable dbUnavailable error — never an empty summary", async () => {
+  it("maps a missing table (42P01) to the retryable dbUnavailable error - never an empty summary", async () => {
     connectMock.mockResolvedValue(undefined);
     queryMock.mockRejectedValueOnce(undefinedTableError());
     endMock.mockResolvedValue(undefined);

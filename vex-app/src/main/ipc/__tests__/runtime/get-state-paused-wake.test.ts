@@ -229,7 +229,7 @@ describe("runtime.getState stoppable", () => {
     };
   }
 
-  it("is TRUE for an agent session parked on a pending wake — no run, no lease", async () => {
+  it("is TRUE for an agent session parked on a pending wake - no run, no lease", async () => {
     mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: true,
       data: idleFacts({ hasPendingWake: true }),
@@ -278,7 +278,7 @@ describe("runtime.getState stoppable", () => {
    * facts; a `{ ...facts }` assembly would carry them across a `.strict()`
    * cross-process contract the day one is added.
    */
-  it("projects an EXACT key set — the private facts never cross IPC", async () => {
+  it("projects an EXACT key set - the private facts never cross IPC", async () => {
     mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: true,
       data: idleFacts({ hasPendingWake: true, hasPendingApproval: true }),

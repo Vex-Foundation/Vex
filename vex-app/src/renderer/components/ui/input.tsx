@@ -1,8 +1,13 @@
 /**
- * shadcn-pattern Input primitive — owned source per skill §2.
- * Pure CSS, no Radix. Uses semantic Tailwind tokens (border-input,
- * bg-background, ring-ring) so the Vex paletka tokens defined in
- * `globals.css` flow through automatically.
+ * Input primitive on tokens v2: r-md, input-tier stroke (one step thinner
+ * in dark), accent caret. Deliberately NO focus RING - but the stroke has
+ * to carry the state on its own, so `focus-visible` re-points the border to
+ * the accent (the deepseek `:focus-within { border-color: brand }`
+ * convention). Caret + resting stroke alone left near-no visible focus on
+ * light surfaces, where `border-line-input` is rgba(10,13,24,0.1).
+ *
+ * Disabled pins an ink tier instead of stacking opacity on the text
+ * (design-language §2), so a disabled field's value stays readable.
  *
  * Forwarded ref is the plumbing the wizard's password fields need
  * (uncontrolled `<input type="password">` with React Hook Form's
@@ -20,13 +25,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       ref={ref}
       type={type}
       className={cn(
-        // Landing .wl-form input grammar: transparent field, hairline border,
-        // focus lights the border with the accent (no shadow depth).
-        "flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors",
+        "flex h-9 w-full rounded-md border border-line-input bg-transparent px-3 py-1 text-sm text-ink-primary caret-accent-primary",
         "file:border-0 file:bg-transparent file:text-sm file:font-medium",
-        "placeholder:text-muted-foreground",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-[var(--color-ring)]",
-        "disabled:cursor-not-allowed disabled:opacity-50",
+        "placeholder:text-ink-tertiary",
+        "focus-visible:outline-none focus-visible:border-accent-primary",
+        "disabled:cursor-not-allowed disabled:border-line-1 disabled:text-ink-tertiary disabled:placeholder:text-ink-caption",
         className
       )}
       {...props}

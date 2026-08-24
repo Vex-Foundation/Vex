@@ -5,7 +5,7 @@
  * THE crux of Stage 8c: the bridge QUOTE recorder (`khalani.quote.get`) and the
  * bridge EXECUTE gate (`khalani.bridge`) MUST compute an IDENTICAL bridge
  * identity so their match-hashes collide. Both tools receive the SAME
- * alias-translated params (the `bridge_quote` and `bridge` aliases translate to
+ * alias-translated params (the `BridgeQuote` and `bridge` aliases translate to
  * the same khalani param keys), so this builder is purely params- + context-
  * driven and is the SINGLE source of bridge identity — neither side reimplements
  * the field extraction or the defaults.
@@ -159,7 +159,7 @@ export async function buildBridgeIdentity(
     // Khalani has NO slippage surface — `khalani.bridge` accepts no
     // `slippageBps` and forwards none, so the identity binds the stable empty
     // on BOTH sides and Khalani quote↔execute pairs collide exactly as before.
-    // (The generic `bridge`/`bridge_quote` aliases declare a `slippageBps` arg
+    // (The generic `bridge`/`BridgeQuote` aliases declare a `slippageBps` arg
     // for their Relay branch; on the Khalani branch it is REJECTED BY NAME —
     // Khalani is filler-bound and the param would have had no effect, so
     // accepting it silently told the agent it had bought price protection it

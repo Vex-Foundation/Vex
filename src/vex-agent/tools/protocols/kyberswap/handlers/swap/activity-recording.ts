@@ -19,7 +19,7 @@ import { mapKyberFailureToActivityCode } from "../../failure-mapping.js";
 import type { ToolResult } from "../../../../types.js";
 import { kyberFailureMessage } from "./error-output.js";
 import { PROTOCOL } from "./protocol-id.js";
-import { revealOnEligibleFailure } from "./reveal-messaging.js";
+import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 
 /** A route/validation failure before anything could be signed — hashless `definitively_failed` row. */
 export async function failPreBroadcast(
@@ -55,10 +55,10 @@ export async function failPreBroadcast(
       failureReason,
     },
   });
-  const revealSuffix = revealOnEligibleFailure(err, sessionId, tokenInputsValidated);
+  const fallbackNote = venueFallbackNoteOnFailure(err, sessionId, tokenInputsValidated);
   return {
     success: false,
-    output: `${toolId} failed: ${failureReason}.${revealSuffix}`,
+    output: `${toolId} failed: ${failureReason}.${fallbackNote}`,
     data: { _executionId: executionId },
   };
 }

@@ -75,7 +75,7 @@ describe("the migrations-applied gate", () => {
     expect(migrationsApplied()).toBe(true);
   });
 
-  it("opens on a no-op run too — nothing left to apply means the schema is current", async () => {
+  it("opens on a no-op run too - nothing left to apply means the schema is current", async () => {
     const { runMigrationsForIpc, migrationsApplied } = await freshModules();
     mockRunMigrationsWithProgress.mockResolvedValue({ applied: 0, files: [] });
 
@@ -84,7 +84,7 @@ describe("the migrations-applied gate", () => {
     expect(migrationsApplied()).toBe(true);
   });
 
-  it("stays SHUT when the run fails — the workers keep waiting and say so", async () => {
+  it("stays SHUT when the run fails - the workers keep waiting and say so", async () => {
     const { runMigrationsForIpc, migrationsApplied } = await freshModules();
     mockRunMigrationsWithProgress.mockRejectedValue(new Error("relation does not exist"));
 

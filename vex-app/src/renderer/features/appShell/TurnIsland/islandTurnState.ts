@@ -39,6 +39,8 @@ export interface TurnIslandView {
   readonly tone: "neutral" | "accent" | "pin" | "error";
   /** Classified error explanation (error state only) — fixed copy, never the trace. */
   readonly errorBody?: string;
+  /** Sanitized real cause from the stream error delta (error state only). */
+  readonly errorDetail?: string;
   /** Whether any in-island motion may run at all (the freeze kills it). */
   readonly animated: boolean;
   /** Whether the elapsed m:ss counter is mounted. */
@@ -46,49 +48,16 @@ export interface TurnIslandView {
 }
 
 /**
- * The compact inline register for a `working` round — the same word the
- * centred scene captions itself with, at island scale. The legacy "Working"
+ * The compact inline register for a `working` round. The legacy "Working"
  * label is retired from the UI entirely (owner brief §7): a mid-turn round, a
  * resumed mission and a wake turn all get this instead, so "vexing" means one
  * thing everywhere and never appears twice on screen at once.
  */
 const VEXING_LABEL = "vexing…";
 
-/**
- * May the CENTRED particle scene own the chat column right now?
- *
- * `centredSceneEligible` is the transcript-evidence latch owned by
- * `SessionTranscript/turnPreview.ts` — this predicate only adds the conditions
- * that are visible in the preview itself. Kept pure and separate so the mount
- * decision is unit-testable without rendering a canvas.
- *
- * `awaitingApproval` is a FIRST-CLASS argument, not an afterthought: a pending
- * signature freezes this surface (see the precedence note at the top of this
- * file). A looping scene while we wait for the user's pen would read as
- * progress that is not happening — trust is stillness.
- */
-export function showsCentredScene(
-  preview: StreamPreview,
-  centredSceneEligible: boolean,
-  awaitingApproval: boolean,
-): boolean {
-  return (
-    centredSceneEligible &&
-    !awaitingApproval &&
-    preview.phase === "streaming" &&
-    preview.status === "working" &&
-    preview.text.length === 0 &&
-    preview.reasoningText.length === 0 &&
-    preview.reasoningSegments.length === 0
-  );
-}
-
 export function resolveTurnIslandView(
   preview: StreamPreview,
   awaitingApproval: boolean,
-  /** The centred scene is mounted — the island must not state the same fact
-   * a second time, so its `working` pill stands down. */
-  centredSceneUp = false,
 ): TurnIslandView {
   // Reasoning is TURN-scoped: a turn that thought, called a tool, and is now
   // writing has an empty ACTIVE buffer but a settled segment behind it. Both
@@ -112,6 +81,9 @@ export function resolveTurnIslandView(
       size: "row",
       label: copy.title,
       errorBody: copy.body,
+      // The sanitized REAL cause (decree 2026-08-02) rides beside the fixed
+      // copy - already stripped of secrets at the main bridge.
+      ...(preview.errorDetail !== null ? { errorDetail: preview.errorDetail } : {}),
       tone: "error",
       animated: false,
       showElapsed: false,
@@ -186,13 +158,17 @@ export function resolveTurnIslandView(
         showElapsed: true,
       };
     case "working":
+      // The in-flow tail status: this pill IS the pending surface now. The
+      // centred viewport scene it used to stand down for is retired - its
+      // viewport-tall child inflated the scrollport's scrollable overflow and
+      // lifted the sticky composer seat off the floor.
       return {
         state: "working",
-        size: centredSceneUp ? "hidden" : "pill",
-        label: centredSceneUp ? "" : VEXING_LABEL,
+        size: "pill",
+        label: VEXING_LABEL,
         tone: "neutral",
         animated: true,
-        showElapsed: !centredSceneUp,
+        showElapsed: true,
       };
     default: {
       const exhaustive: never = preview.status;

@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -23,64 +24,6 @@ import {
   makeHealthReport,
   localIsoDaysAgo,
 } from "./_appshell-render.js";
-
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  AnalyticsUpIcon: "AnalyticsUpIcon",
-  DownloadIcon: "DownloadIcon",
-  MessageSquareIcon: "MessageSquareIcon",
-  // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
-  GlobeIcon: "GlobeIcon",
-  FileIcon: "FileIcon",
-  TerminalIcon: "TerminalIcon",
-  WrenchIcon: "WrenchIcon",
-  CircleAlertIcon: "CircleAlertIcon",
-  ArchiveIcon: "ArchiveIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  // Chronos screens redesign — ShellScreen (close) + TokenHistoryScreen
-  // (entry-kind glyphs), both statically imported via AppShell → ShellScreens.
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  XIcon: "XIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-  BridgeIcon: "BridgeIcon",
-  BubbleChatSparkIcon: "BubbleChatSparkIcon",
-  BugIcon: "BugIcon",
-  ChartCandlestickIcon: "ChartCandlestickIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  Clock03Icon: "Clock03Icon",
-  DatabaseLightningIcon: "DatabaseLightningIcon",
-  Trash2Icon: "Trash2Icon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  FilterHorizontalIcon: "FilterHorizontalIcon",
-  BrainIcon: "BrainIcon",
-  MapPinIcon: "MapPinIcon",
-  PanelLeftCloseIcon: "PanelLeftCloseIcon",
-  PanelLeftOpenIcon: "PanelLeftOpenIcon",
-  PanelRightCloseIcon: "PanelRightCloseIcon",
-  PanelRightOpenIcon: "PanelRightOpenIcon",
-  SearchIcon: "SearchIcon",
-  RadarIcon: "RadarIcon",
-  Settings2Icon: "Settings2Icon",
-  Shield02Icon: "Shield02Icon",
-  SparklesIcon: "SparklesIcon",
-  StarIcon: "StarIcon",
-  CircleStopIcon: "CircleStopIcon",
-  TargetIcon: "TargetIcon",
-  PercentIcon: "PercentIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  ZapIcon: "ZapIcon",
-}));
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -368,17 +311,23 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("shows the PREVIEW build badge on the no-session welcome stage", async () => {
+  it("shows the rebrand hero headline on the no-session welcome stage", async () => {
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
     useUiStore.setState({ activeSessionId: null });
     renderShell();
 
-    // The PREVIEW wordmark badge is the welcome sentinel now — the H1
-    // display statement is deleted (owner decree 2026-07-21).
-    await screen.findByText("PREVIEW · v0.0.0-test");
-    expect(
-      screen.queryByRole("heading", { name: /What should I execute/i }),
-    ).toBeNull();
+    // The headline is the welcome sentinel again (accepted mockup,
+    // 2026-08-20, greeting form): a time-of-day greeting, personalized only
+    // when a displayName is set. The PREVIEW wordmark retired with the Grok
+    // logo row.
+    await screen.findByRole("heading", {
+      name: (accessibleName: string) =>
+        greetingPoolForHour(new Date().getHours()).some(
+          (variant) =>
+            !variant.withName && variant.text === accessibleName,
+        ),
+    });
+    expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
   it("welcome composer Send opens the creator with the draft carried + name pre-filled (welcome→create)", async () => {

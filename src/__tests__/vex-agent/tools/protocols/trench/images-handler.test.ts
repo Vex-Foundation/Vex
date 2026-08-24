@@ -129,6 +129,46 @@ describe("limit", () => {
     const data = parsed((await trenchImagesHandler({ limit: 1 })).output);
     expect(data.count).toBe(1);
   });
+});
+
+// ── The dropped rows are stated, not silent (O4, owner ruling D16) ──
+//
+// This read is `bounded_non_pageable` (parameter-vocabulary.md 4.1): it drops
+// rows and offers NO continuation, so the reply has to say that it dropped
+// them and name the one knob that brings them back. The boundary is what
+// matters here: exactly `limit` rows is not truncation, one more row is.
+describe("truncation disclosure", () => {
+  it("reports truncated:false when the locker holds exactly `limit` rows", async () => {
+    listLaunchImages.mockResolvedValue([NEWER, OLDER]);
+    const data = parsed((await trenchImagesHandler({ limit: 2 })).output);
+    expect(data.truncated).toBe(false);
+    expect(data.truncationNote).toBeUndefined();
+  });
+
+  it("reports truncated:true with the dropped count and the narrowing action one row later", async () => {
+    listLaunchImages.mockResolvedValue([NEWER, OLDER]);
+    const data = parsed((await trenchImagesHandler({ limit: 1 })).output);
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("1 more image exists");
+    expect(String(data.truncationNote)).toMatch(/no continuation/i);
+    expect(String(data.truncationNote)).toContain("raise `limit` (maximum 50)");
+  });
+
+  it("says the rest are unreachable when `limit` is already at its maximum", async () => {
+    listLaunchImages.mockResolvedValue(
+      Array.from({ length: 51 }, (_, i) => row(`img_${String(i).padStart(32, "0")}`, `x${i}.png`, NEWER.uploadedAt)),
+    );
+    const data = parsed((await trenchImagesHandler({ limit: 50 })).output);
+    expect(data.truncated).toBe(true);
+    expect(String(data.truncationNote)).toContain("unreachable here");
+    expect(String(data.truncationNote)).not.toContain("raise `limit`");
+  });
+
+  it("an empty locker is not truncated", async () => {
+    listLaunchImages.mockResolvedValue([]);
+    const data = parsed((await trenchImagesHandler({})).output);
+    expect(data.truncated).toBe(false);
+  });
 
   it.each([0, -1, 51, 1.5])("rejects limit=%s BY NAME rather than clamping", async (limit) => {
     listLaunchImages.mockResolvedValue([NEWER]);

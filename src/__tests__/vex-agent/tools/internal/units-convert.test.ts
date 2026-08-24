@@ -1,5 +1,5 @@
 /**
- * `units_convert` — the money-math contract.
+ * `UnitsConvert` — the money-math contract.
  *
  * Everything asserted here is a number the agent would otherwise compute in its
  * head, plus the refusals that keep a confused call from becoming a wrong
@@ -40,7 +40,7 @@ async function refusal(params: Record<string, unknown>): Promise<string> {
   return result.output;
 }
 
-describe("units_convert — unit_convert", () => {
+describe("UnitsConvert — unit_convert", () => {
   it("THE GWEI TRAP: 22518000 wei is 0.022518 gwei, not 22.5", async () => {
     const body = await succeed({ op: "unit_convert", value: "22518000", from: "wei", to: "gwei" });
     expect(body.result).toEqual({ raw: "22518000", decimals: 9, human: "0.022518" });
@@ -114,7 +114,7 @@ describe("units_convert — unit_convert", () => {
   it("refuses raw/human without decimals BY NAME", async () => {
     const message = await refusal({ op: "unit_convert", value: "1047061", from: "raw", to: "human" });
     expect(message).toContain("decimals is required");
-    expect(message).toContain("token_find");
+    expect(message).toContain("TokenFind");
   });
 
   it("refuses a negative value and a malformed value BY NAME", async () => {
@@ -138,7 +138,7 @@ describe("units_convert — unit_convert", () => {
   });
 });
 
-describe("units_convert — gas_cost", () => {
+describe("UnitsConvert — gas_cost", () => {
   it("multiplies units by price and answers in wei, gwei and eth", async () => {
     const body = await succeed({
       op: "gas_cost", gasUnits: "1000000", gasPriceWei: "22518000",
@@ -156,7 +156,7 @@ describe("units_convert — gas_cost", () => {
   });
 });
 
-describe("units_convert — apply_bps", () => {
+describe("UnitsConvert — apply_bps", () => {
   it("splits an amount at 25 bps with human twins on both legs", async () => {
     const body = await succeed({
       op: "apply_bps", amountRaw: "1000000000", bps: 25, decimals: 9,
@@ -197,7 +197,7 @@ describe("units_convert — apply_bps", () => {
   });
 });
 
-describe("units_convert — USD round trips", () => {
+describe("UnitsConvert — USD round trips", () => {
   it("buys the exact number of base units at 6 decimals", async () => {
     const body = await succeed({
       op: "usd_to_token_amount", usd: "250.75", priceUsd: "1", decimals: 6,
@@ -257,7 +257,7 @@ describe("units_convert — USD round trips", () => {
   });
 });
 
-describe("units_convert — argument boundary", () => {
+describe("UnitsConvert — argument boundary", () => {
   it("names the legal ops when `op` is unknown or missing", async () => {
     expect(await refusal({ op: "convert", value: "1", from: "wei", to: "gwei" }))
       .toContain("op");
@@ -286,15 +286,15 @@ describe("units_convert — argument boundary", () => {
   });
 });
 
-describe("units_convert — registration", () => {
+describe("UnitsConvert — registration", () => {
   it("is registered, read-only, and reachable by the dispatcher", () => {
-    const def = getToolDef("units_convert");
+    const def = getToolDef("UnitsConvert");
     expect(def).toBeDefined();
     expect(def?.kind).toBe("internal");
     expect(def?.mutating).toBe(false);
     expect(def?.pressureSafety).toBe("read_only");
-    expect(Object.keys(INTERNAL_TOOL_LOADERS)).toContain("units_convert");
-    expect(TOOL_MAP_CATEGORIES.flatMap(c => c.toolNames)).toContain("units_convert");
+    expect(Object.keys(INTERNAL_TOOL_LOADERS)).toContain("UnitsConvert");
+    expect(TOOL_MAP_CATEGORIES.flatMap(c => c.toolNames)).toContain("UnitsConvert");
   });
 
   it("carries no visibility gate — it must be available in every session", () => {
@@ -310,6 +310,6 @@ describe("units_convert — registration", () => {
     expect(description).toContain("0.0225");
     expect(description).toContain("NOT 22.5");
     expect(description).toContain("1.047061");
-    expect(description).toContain("token_find");
+    expect(description).toContain("TokenFind");
   });
 });

@@ -1,7 +1,7 @@
 /**
- * Mission internal tool handlers — mission draft updates and mission_stop.
+ * Mission internal tool handlers — mission draft updates and MissionStop.
  *
- * mission_stop is the only model-driven way to stop a mission.
+ * MissionStop is the only model-driven way to stop a mission.
  * Returns an engineSignal that the turn-loop uses to finalize the run.
  * Replaces text-parsed [STOP: reason] markers.
  */
@@ -10,7 +10,8 @@ import { z } from "zod";
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
-import { str, enumField, fail } from "./types.js";
+import { str, fail } from "./types.js";
+import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 import { dropEmptyModelValues, formatZodIssueForModel } from "./arg-validation.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
@@ -25,9 +26,6 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 const MAX_STRING_LENGTH = 2_000;
 const MAX_ARRAY_ITEMS = 50;
 const MAX_ARRAY_ITEM_LENGTH = 500;
-
-const RESPONSE_FORMATS = ["concise", "detailed"] as const;
-type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
 
 const MissionDraftUpdateArgs = z
   .object({
@@ -66,17 +64,16 @@ export async function handleMissionDraftUpdate(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   if (context.sessionKind !== "mission" || context.missionRunId !== null) {
-    return fail("mission_draft_update is only valid during mission setup or edit");
+    return fail("MissionDraftUpdate is only valid during mission setup or edit");
   }
   if (!context.missionId) {
-    return fail("mission_draft_update requires an existing mission draft");
+    return fail("MissionDraftUpdate requires an existing mission draft");
   }
 
   // response_format is a tool-only param read off RAW params — MissionDraftUpdateArgs
   // is .strict() and must not see it. Default to 'concise' server-side because LLMs
   // frequently omit the knob even when the schema declares a default.
-  const responseFormat: ResponseFormat =
-    enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
+  const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
   const { response_format: _ignored, ...patchParams } = params;
 
   // Empty means ABSENT here too — eleven nullable-optional fields make this the
@@ -88,7 +85,7 @@ export async function handleMissionDraftUpdate(
   const parsed = MissionDraftUpdateArgs.safeParse(normalizedPatch);
   if (!parsed.success) {
     return fail(
-      `mission_draft_update: ${formatZodIssueForModel(parsed.error.issues[0], patchParams)}`,
+      `MissionDraftUpdate: ${formatZodIssueForModel(parsed.error.issues[0], patchParams)}`,
     );
   }
 
@@ -139,9 +136,9 @@ export async function handleMissionStop(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  // Guard: mission_stop only valid during an active mission run
+  // Guard: MissionStop only valid during an active mission run
   if (!context.missionRunId) {
-    return fail("mission_stop is only valid during an active mission run");
+    return fail("MissionStop is only valid during an active mission run");
   }
 
   const reason = str(params, "reason");
@@ -156,17 +153,17 @@ export async function handleMissionStop(
 
   if (reason !== "goal_reached" && reason !== "emergency_stop") {
     if (!context.missionId) {
-      return fail("mission_stop requires an active mission contract");
+      return fail("MissionStop requires an active mission contract");
     }
 
     const mission = await missionsRepo.getMission(context.missionId);
     if (!mission) {
-      return fail(`mission_stop could not load mission contract ${context.missionId}`);
+      return fail(`MissionStop could not load mission contract ${context.missionId}`);
     }
 
     const authorization = authorizeMissionStopReason(mission, reason as BusinessStopReason);
     if (!authorization.allowed) {
-      return fail(`mission_stop rejected: ${authorization.message ?? "reason is not allowed by the mission contract"}`);
+      return fail(`MissionStop rejected: ${authorization.message ?? "reason is not allowed by the mission contract"}`);
     }
   }
 

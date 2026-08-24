@@ -34,7 +34,17 @@ export type AgentActivityKind =
    * it under `launch` would put a payout inside every launch feed, filter and
    * count. `pools_fee` stays on `launch`, because it IS the fee leg of one.
    */
-  | "claim";
+  | "claim"
+  /**
+   * An agent WALLET SEND (migration 084) - `WalletSendPrepare` /
+   * `WalletSendConfirm`. Its own kind rather than a `swap` role: a send has no
+   * route, no price, no slippage and no counterparty, only the one leg that left
+   * the wallet, so the `swap` arm's assertions would all describe a trade that
+   * never happened. The name matches the on-wire ERC-20 `Transfer` semantics and
+   * the display kind the deprecated `proj_activity` lane already derived for a
+   * legacy send.
+   */
+  | "transfer";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -132,7 +142,15 @@ export type AgentActivityEventRole =
   // launched token and the paired asset that `collectAndClaim` returns
   // together, and it rides the `claim` KIND rather than `launch`.
   | "pools_fee"
-  | "pools_claim";
+  | "pools_claim"
+  /**
+   * Migration 084 - the whole of an agent wallet send, on either chain family.
+   * ONE role for the transaction, carrying the INPUT leg only - the asset the
+   * wallet spent. There is no output leg, because nothing comes back, and no
+   * second leg. An NFT send rides this same role with the CONTRACT address as
+   * the token identity, `tokenDecimals: 0`, and the token id in the symbol.
+   */
+  | "wallet_transfer";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

@@ -6,7 +6,7 @@
  * read. The balance half is the cheap half; the answer this tool exists for is
  * the APPROVAL half, and that is Morpho-specific: the spender set is Morpho
  * Blue, Bundler3, GeneralAdapter1 and Permit2, pinned per chain from Morpho's
- * own registry. `wallet_balances` and `chain_read erc20_balance` remain the right
+ * own registry. `WalletBalances` and `ChainRead erc20_balance` remain the right
  * tools for a plain "how much do I have" question, and the description says so.
  *
  * IT READS ANY ADDRESS. No key is touched, no vault is unlocked, nothing is
@@ -40,7 +40,7 @@ export async function morphoWalletBalance(
   try {
     snapshot = await readMorphoWalletSnapshot(q.chainId, q.walletAddress, q.tokenAddresses);
   } catch (err) {
-    return fail(`morpho.wallet.balance failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__wallet_balance_get failed ${morphoFailureDetail(err)}`);
   }
 
   const wallet = projectWalletSnapshot(snapshot, q.chainSlug);
@@ -71,9 +71,9 @@ export async function morphoWalletBalance(
         + "transaction on this chain at all, whatever its approvals say.",
     },
     nextStep:
-      "This is a balance read only: nothing here is approved, spent or signed. Use morpho.positions.get for what "
+      "This is a balance read only: nothing here is approved, spent or signed. Use morpho__positions_get for what "
       + "the wallet already holds inside Morpho. To PUT any of this balance to work, quote first with "
-      + "morpho.vault.quote or morpho.market.quote and then execute that quote with the matching tool - the vault "
+      + "morpho__vault_quote or morpho__market_quote and then execute that quote with the matching tool - the vault "
       + "and Blue market mutators do exist, and each one prices, gates and discloses its own approval before it "
       + "signs anything.",
   });

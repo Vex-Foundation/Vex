@@ -11,41 +11,44 @@ import { embeddingText } from "../../_embedding-text.js";
 import { DEXSCREENER_CHAINS } from "../../dexscreener/discovery-text.js";
 
 export const DEXSCREENER_TRENDING_DISCOVERY = {
+  // ONE entry for both profile endpoints since the Batch 2 merge: the
+  // change-feed intents below used to reach `dexscreener.profiles.recent` and
+  // now reach this tool's `feed: recentUpdates` value, so they are carried here
+  // rather than retired with the tool.
   "dexscreener.profiles": {
     embeddingText: embeddingText(
-      `Read the latest token PROFILE METADATA published on DexScreener — descriptions, websites, socials, and profile update information. This is not a token-creation, launch, or newly listed pair feed. ` +
-      `Use this when the user asks to browse DexScreener profile metadata or project links. Treat every field as a provider label, not verified identity or contract-safety evidence. ` +
-      `Example queries: latest token profile metadata, project websites on dexscreener, browse token descriptions, token profile links, recent profile information.`,
+      `Read DexScreener token PROFILE METADATA - descriptions, websites, socials, the community-takeover label - from either the latest-profiles window or the recently-updated change feed, selected with the feed parameter. This is not a token-creation, launch, or newly listed pair feed, and it does not show when a token or pair was created. ` +
+      `Use this when the user asks to browse profile metadata or project links, or wants a change feed of what projects just refreshed. Every field is a provider label, not verified identity or contract-safety evidence. ` +
+      `Example queries: latest token profile metadata, project websites on dexscreener, browse token descriptions, recently updated profiles, who refreshed their dexscreener profile.`,
     ),
-    chains: DEXSCREENER_CHAINS,
-  },
-  "dexscreener.profiles.recent": {
-    embeddingText: embeddingText(
-      `Read RECENTLY UPDATED DexScreener token-profile metadata, including updatedAt and DexScreener's community-takeover label. It does not show when a token or pair was created. ` +
-      `Use this when the user wants a change feed of profile metadata rather than the plain latest-profiles list. This endpoint is live but undocumented; provider behavior may change, and its labels are not verified identity or safety evidence. ` +
-      `Example queries: recently updated profiles, what profile metadata changed on base, who refreshed their dexscreener profile, latest profile changes, recent project-link updates.`,
-    ),
-    chains: DEXSCREENER_CHAINS,
-  },
-  "dexscreener.boosts": {
-    embeddingText: embeddingText(
-      `Get the latest tokens that received paid boosts on DEX Screener across all chains — Ethereum, Solana, BNB, Base, Arbitrum and others. ` +
-      `Use this when the user wants to see DexScreener paid-visibility labels, newly boosted tokens, or recent boost activity. A boost is promotion, never organic demand, legitimacy, or contract safety. Follow with dexscreener.orders for one exact token. ` +
-      `Example queries: latest boosted tokens, what's being promoted, recent paid boosts, new memecoin boosts, who's buying visibility, fresh boost activity, who's paying for promo.`,
-    ),
-    aliases: ["latest paid token boosts", "recent boost activity", "newly boosted tokens"],
+    aliases: ["token profiles", "recently updated profiles", "profile change feed"],
     exampleIntents: [
-      "show the latest paid token boosts across dexscreener",
-      "browse tokens that most recently received a paid boost",
+      "browse dexscreener token profile metadata",
+      "show profiles that were just updated",
     ],
     chains: DEXSCREENER_CHAINS,
   },
-  "dexscreener.boosts.top": {
+  // ONE entry for both boost endpoints since the Batch 2 merge: the
+  // top-promoted intents below used to reach `dexscreener.boosts.top` and now
+  // reach this tool's `feed: top` value.
+  "dexscreener.boosts": {
     embeddingText: embeddingText(
-      `Tokens with the most active boosts on DEX Screener, ranked by total boost amount — heaviest paid attention spend right now. ` +
-      `Use this when the user wants the top-promoted tokens or most active paid visibility. Boost totals are provider promotion units, not token demand, money spent, legitimacy, or safety. ` +
-      `Example queries: top boosted tokens, most promoted coins, highest paid visibility, biggest boost spenders, top promo tokens by amount.`,
+      `Get tokens receiving paid boosts on DEX Screener across all chains - either the latest boost purchases or the tokens holding the most active boosts, selected with the feed parameter. Boost figures are provider promotion units, never money spent. ` +
+      `Use this when the user wants newly boosted tokens, recent boost activity, or the most promoted tokens by cumulative boost units. A boost is promotion, never organic demand, legitimacy, or contract safety. Follow with dexscreener.orders for one exact token. ` +
+      `Example queries: latest boosted tokens, what's being promoted, recent paid boosts, who's buying visibility, top boosted tokens, most promoted coins, biggest boost spenders.`,
     ),
+    aliases: [
+      "latest paid token boosts",
+      "recent boost activity",
+      "newly boosted tokens",
+      "top boosted tokens",
+      "most promoted tokens",
+    ],
+    exampleIntents: [
+      "show the latest paid token boosts across dexscreener",
+      "browse tokens that most recently received a paid boost",
+      "show the most boosted tokens right now",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.communityTakeovers": {
@@ -96,7 +99,7 @@ export const DEXSCREENER_TRENDING_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 8;
+const EXPECTED_COUNT = 6;
 if (Object.keys(DEXSCREENER_TRENDING_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `DEXSCREENER_TRENDING_DISCOVERY has ${Object.keys(DEXSCREENER_TRENDING_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

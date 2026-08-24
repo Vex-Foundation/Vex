@@ -291,7 +291,7 @@ export function mapRow(r: KnowledgeRow): KnowledgeEntry {
 
 /**
  * Long-memory recall candidate (S3) — a `RecallCandidate` PLUS the provenance
- * `source` tier and `maturityState`, so `long_memory_search` can apply
+ * `source` tier and `maturityState`, so `MemorySearch` can apply
  * source-tier ranking (de-weight inferred/hypothesis) WITHOUT excluding them
  * (genesis §951). Only the dedicated `recallLongMemoryTopK` returns this shape.
  */
@@ -370,7 +370,7 @@ export function toIsoOrNull(d: Date | undefined): string | null {
 /**
  * Compact lineage node — one entry in a version chain. Excludes embedding,
  * content_md, content_hash and source_refs because lineage browse must stay
- * cheap even for long chains. Use `getById` (or `long_memory_get`) when you
+ * cheap even for long chains. Use `getById` (or `MemoryGet`) when you
  * need the full entry.
  */
 export interface KnowledgeLineageItem {

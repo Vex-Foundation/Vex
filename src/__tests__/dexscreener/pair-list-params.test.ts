@@ -210,7 +210,7 @@ describe("pair-list param validation", () => {
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
       expect(parsed.reason).toContain("chainIds");
-      expect(parsed.reason).toContain("dexscreener.search");
+      expect(parsed.reason).toContain("dexscreener__pairs_search");
     }
   });
 

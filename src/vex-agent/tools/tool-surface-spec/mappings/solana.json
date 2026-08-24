@@ -1,0 +1,175 @@
+{
+  "namespace": "solana",
+  "entries": [
+    {
+      "toolId": "solana.prices",
+      "publicName": "solana__token_prices_get",
+      "rationale": "Adds the `token_` qualifier because the bare word `prices` is ambiguous inside a namespace that also carries prediction-market prices (solana.predict.market's buy/sell price fields). Verb `get`: the tool answers a lookup for named ids (mints or resolvable queries), not a screen."
+    },
+    {
+      "toolId": "solana.tokens.search",
+      "publicName": "solana__tokens_search",
+      "rationale": "Mechanical; `search` is already the canonical free-text verb and the description states the tool is for tokens you can already name."
+    },
+    {
+      "toolId": "solana.tokens.trending",
+      "publicName": "solana__tokens_discover",
+      "rationale": "Semantic rename. The toolId says `trending` but the tool serves seven categories (recent, toptrending, toptraded, toporganicscore, verified, lst, stocks) plus liquidity/organic-score/verification filters, and its own first sentence is 'Discover Solana tokens without already knowing a name'. `discover` is the canonical filtered-screening verb and stops the name under-describing the surface."
+    },
+    {
+      "toolId": "solana.swap.quote",
+      "publicName": "solana__swap_quote",
+      "rationale": "mechanical snake_case conversion; matches the plan's kyberswap__swap_quote exemplar"
+    },
+    {
+      "toolId": "solana.swap.execute",
+      "publicName": "solana__swap_execute",
+      "rationale": "mechanical snake_case conversion"
+    },
+    {
+      "toolId": "solana.predict.events",
+      "publicName": "solana__predict_events_discover",
+      "rationale": "Verb added and chosen against its sibling: this tool filters by category/status/provider/tags and sorts and pages, which is screening, so `discover`. Its own description routes keyword lookups to solana.predict.search, so the two verbs must differ."
+    },
+    {
+      "toolId": "solana.predict.search",
+      "publicName": "solana__predict_events_search",
+      "rationale": "Resource made explicit: the tool searches EVENTS, not markets, and returns eventIds the caller then feeds to the event/market getters. `search` is the canonical free-text verb."
+    },
+    {
+      "toolId": "solana.predict.event",
+      "publicName": "solana__predict_event_get",
+      "rationale": "Verb added; singular resource preserved because the tool takes exactly one eventId."
+    },
+    {
+      "toolId": "solana.predict.market",
+      "publicName": "solana__predict_market_get",
+      "rationale": "Verb added; detail-by-id lookup on one marketId."
+    },
+    {
+      "toolId": "solana.predict.orderbook",
+      "publicName": "solana__predict_orderbook_get",
+      "rationale": "Verb added; one market's book, addressed by marketId."
+    },
+    {
+      "toolId": "solana.predict.tradingStatus",
+      "publicName": "solana__predict_trading_status_get",
+      "rationale": "camelCase split to snake_case plus an explicit `get`; the tool takes no parameters and reads one global flag."
+    },
+    {
+      "toolId": "solana.predict.positions",
+      "publicName": "solana__predict_positions_list",
+      "rationale": "Verb added. `list` rather than `discover`: the scope is one wallet's own open positions with a bounded limit/offset window, not a market screen."
+    },
+    {
+      "toolId": "solana.predict.position",
+      "publicName": "solana__predict_position_get",
+      "rationale": "Verb added; singular kept, addressed by positionPubkey. The singular/plural pair now differs by verb as well as by number, which the bare toolIds did not."
+    },
+    {
+      "toolId": "solana.predict.history",
+      "publicName": "solana__predict_trade_history_list",
+      "rationale": "Resource named. `history` alone collides with two other histories in the same family (solana.predict.pnlHistory, solana.predict.orderStatus's fill-event history); this one is the wallet's PAST closed/settled trades, so `trade_history`."
+    },
+    {
+      "toolId": "solana.predict.orders",
+      "publicName": "solana__predict_orders_list",
+      "rationale": "Verb added; bounded owner-scoped page, no server-side filters exist upstream."
+    },
+    {
+      "toolId": "solana.predict.order",
+      "publicName": "solana__predict_order_get",
+      "rationale": "Verb added; one order by pubkey."
+    },
+    {
+      "toolId": "solana.predict.orderStatus",
+      "publicName": "solana__predict_order_status_get",
+      "rationale": "camelCase split plus `get`. Kept as its own name rather than folded into order_get because the two differ in a load-bearing way: order_get errors once the order account closes post-fill, this one survives closure."
+    },
+    {
+      "toolId": "solana.predict.trades",
+      "publicName": "solana__predict_trades_list",
+      "rationale": "Verb added. `list` and not `discover`: the feed is global with no upstream owner/market scope and only a client-side limit/offset window, so there is nothing to filter on."
+    },
+    {
+      "toolId": "solana.predict.profile",
+      "publicName": "solana__predict_profile_get",
+      "rationale": "Verb added; single lifetime snapshot for one wallet, session-scoped."
+    },
+    {
+      "toolId": "solana.predict.pnlHistory",
+      "publicName": "solana__predict_pnl_history_get",
+      "rationale": "camelCase split plus `get`; one wallet's PnL time series over a named interval."
+    },
+    {
+      "toolId": "solana.predict.leaderboards",
+      "publicName": "solana__predict_leaderboard_list",
+      "rationale": "Singular/plural normalization: one call returns ONE leaderboard (period + metric are both required), so the plural resource was wrong. The plurality lives in the verb."
+    },
+    {
+      "toolId": "solana.predict.vaultInfo",
+      "publicName": "solana__predict_vault_get",
+      "rationale": "`Info` dropped as a noise suffix (the verb now carries it) and camelCase split. Reads the protocol vault's pubkey and balance; takes no parameters."
+    },
+    {
+      "toolId": "solana.predict.suggestedEvents",
+      "publicName": "solana__predict_suggested_events_list",
+      "rationale": "camelCase split plus `list`. Not `discover`, because the only inputs are a wallet address and a provider, and the ranking is the provider's personalization, not a filter the caller applies."
+    },
+    {
+      "toolId": "solana.predict.buy",
+      "publicName": "solana__predict_buy",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "solana.predict.sell",
+      "publicName": "solana__predict_sell",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "solana.predict.claim",
+      "publicName": "solana__predict_claim",
+      "rationale": "mechanical snake_case conversion; mutation kept atomic"
+    },
+    {
+      "toolId": "solana.predict.closeAll",
+      "publicName": "solana__predict_close_all",
+      "rationale": "mechanical snake_case conversion of the camelCase segment"
+    },
+    {
+      "toolId": "solana.lend.rates",
+      "publicName": "solana__lend_earn_rates_list",
+      "rationale": "Family qualifier added. `solana.lend.*` holds two distinct Jupiter programs, EARN and BORROW, and four of the seven descriptions spend a sentence correcting the confusion the shared prefix creates. Putting `earn` in the name makes the split visible before the description is read."
+    },
+    {
+      "toolId": "solana.lend.positions",
+      "publicName": "solana__lend_earn_positions_list",
+      "rationale": "Same EARN qualifier; without it this name and solana.lend.borrowPositions read as siblings when they are different programs with different position shapes."
+    },
+    {
+      "toolId": "solana.lend.deposit",
+      "publicName": "solana__lend_earn_deposit",
+      "rationale": "EARN qualifier added; its own description has to say 'not collateral for borrowing' precisely because the toolId does not."
+    },
+    {
+      "toolId": "solana.lend.withdraw",
+      "publicName": "solana__lend_earn_withdraw",
+      "rationale": "EARN qualifier added; distinguishes it from the collateral withdrawal inside solana.lend.borrowOperate."
+    },
+    {
+      "toolId": "solana.lend.borrowVaults",
+      "publicName": "solana__lend_borrow_vaults_list",
+      "rationale": "camelCase split plus `list`; the vault-config read that borrowOperate depends on for decimals and risk thresholds."
+    },
+    {
+      "toolId": "solana.lend.borrowPositions",
+      "publicName": "solana__lend_borrow_positions_list",
+      "rationale": "camelCase split plus `list`."
+    },
+    {
+      "toolId": "solana.lend.borrowOperate",
+      "publicName": "solana__lend_borrow_operate",
+      "rationale": "camelCase split only. `operate` is kept as the action because the tool really is one multi-leg lifecycle call (deposit/withdraw collateral and/or borrow/repay debt in one transaction); splitting it into four verbs would misrepresent the single approval and the single ledger entry."
+    }
+  ]
+}

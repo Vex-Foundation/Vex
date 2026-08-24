@@ -8,7 +8,7 @@
  * auto-retry, there is no `permission === "full"` gate; plan-mode is advisory
  * style/behaviour and never widens permissions — the dispatcher execution gate,
  * not this writer, enforces acceptance.) Read-then-write for accept runs inside
- * one transaction so it serialises against a concurrent `plan_write` upsert.
+ * one transaction so it serialises against a concurrent `PlanWrite` upsert.
  *
  * NEVER resumes a run — the IPC layer composes acceptance with the existing
  * `runResumeDispatch` primitive after this writer sets `accepted_at`.
@@ -42,7 +42,7 @@ export async function setSessionPlanEnabled(
 /**
  * Mark the current plan as user-accepted (unblocks the execution gate) — ONLY
  * if the stored plan still matches `expectedPlanMd` (the content the user
- * reviewed). A concurrent `plan_write` that changed the content yields `stale`,
+ * reviewed). A concurrent `PlanWrite` that changed the content yields `stale`,
  * so an unreviewed version is never accepted (optimistic-concurrency guard).
  */
 export async function disableSessionPlanForActiveRun(
@@ -52,7 +52,7 @@ export async function disableSessionPlanForActiveRun(
     const session = await getSession(sessionId);
     if (!session) return { outcome: "not_found" };
     // Atomic strand-guard lives in the repo UPDATE: refuses if an enabled,
-    // non-empty, UNACCEPTED plan exists at update time (race-safe vs plan_write).
+    // non-empty, UNACCEPTED plan exists at update time (race-safe vs PlanWrite).
     const plan = await sessionPlansRepo.disableForActiveRun(sessionId, client);
     if (!plan) return { outcome: "blocked_pending_acceptance" };
     return { outcome: "ok", plan };

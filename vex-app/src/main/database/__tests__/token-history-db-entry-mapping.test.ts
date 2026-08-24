@@ -239,7 +239,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — entry mapping", () => {
+describe("getTokenHistory - entry mapping", () => {
   it("maps a matched spot activity row to a swap entry with tagged amounts", async () => {
     scriptTransaction({ page: [activityRow()] });
     const result = await getTokenHistory({
@@ -309,7 +309,7 @@ describe("getTokenHistory — entry mapping", () => {
     }
   });
 
-  it("tags a bare atomic-integer amount as unknown, never human (unit-guessing heuristic retired — Agent Scan §4.7)", async () => {
+  it("tags a bare atomic-integer amount as unknown, never human (unit-guessing heuristic retired - Agent Scan §4.7)", async () => {
     scriptTransaction({ page: [activityRow({ input_amount: "1500000000000000000" })] });
     const result = await getTokenHistory({
       chainId: BASE_CHAIN_ID,

@@ -1,0 +1,59 @@
+{
+  "definition": {
+    "function": {
+      "description": "Preview a Pendle single-token LP add or remove - add deposits ONE token into a market's LP; remove burns LP back to one token. Call this before every pendle__lp_add and pendle__lp_remove. RETURNS `action` (add-liquidity or remove-liquidity), `direction`, `chainId`, `tokenIn` and `tokenOut`, the resolved `market`, `receiver` (always the session wallet), `expiry`, `liquidityUsd`, `priceImpact`, `feeUsdEstimate` (Pendle's own estimated route fee in USD), `amountIn`, `amountOut`, `aggregator` and `slippageBps`. LP is NOT a fixed-rate lock: after expiry it stops earning swap fees and rewards. Quotes route through Pendle's AMM only - limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT - it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
+      "name": "pendle__lp_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Human-readable amount — add: the payment token amount; remove: the LP token amount to burn.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "type": "string"
+          },
+          "direction": {
+            "description": "'add' (token → LP) or 'remove' (LP → token).",
+            "type": "string"
+          },
+          "market": {
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (default 100 = 1%).",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "ADD only: the payment token CONTRACT ADDRESS to deposit (ERC-20; use WETH for ETH).",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "REMOVE only: the output token CONTRACT ADDRESS. Defaults to the market's underlying asset.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "direction",
+          "market",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.lp.quote"
+  }
+}

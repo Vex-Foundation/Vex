@@ -1,7 +1,7 @@
 /**
- * Memory v2 — `long_memory_search` Zod boundary schema (S3).
+ * Memory v2 — `MemorySearch` Zod boundary schema (S3).
  *
- * Validates the agent-facing `long_memory_search` payload. The tool HIDES its
+ * Validates the agent-facing `MemorySearch` payload. The tool HIDES its
  * strategy (vector + dual-trace + rerank), so the agent input is deliberately
  * small: a semantic `query`, an optional result count `k`, an optional exact
  * `kind` filter, the response shape, and the dual-trace / graph-expansion
@@ -28,13 +28,22 @@ import {
   LONG_MEMORY_DEFAULT_K,
   LONG_MEMORY_MAX_K,
 } from "@vex-agent/memory/long-memory-retrieval-policy.js";
+import {
+  responseFormatSchema,
+  type ResponseFormat,
+} from "@vex-agent/response-format.js";
 
 /** Min/max query length accepted at the search boundary. */
 export const LONG_MEMORY_QUERY_MIN = 1;
 export const LONG_MEMORY_QUERY_MAX = 512;
 
-const responseFormatSchema = z.enum(["concise", "detailed"]);
-export type LongMemorySearchResponseFormat = z.infer<typeof responseFormatSchema>;
+/**
+ * The shape knob comes from the one shared vocabulary
+ * (`@vex-agent/response-format.js`, owner ruling D17). That module is
+ * deliberately dependency-free and lives at the `vex-agent` root, so this
+ * memory schema consumes it without importing anything from `tools/`.
+ */
+export type LongMemorySearchResponseFormat = ResponseFormat;
 
 export const longMemorySearchInputSchema = z
   .object({
@@ -57,7 +66,7 @@ export const longMemorySearchInputSchema = z
         message: "kind must be snake_case ASCII starting with a letter",
       })
       .optional(),
-    responseFormat: responseFormatSchema.default("concise"),
+    responseFormat: responseFormatSchema("concise"),
     includeCandidates: z.boolean().default(true),
     // S8 (F3): graph expansion is ON by default — 1-hop neighbors fill the
     // remaining inline slots, bounded + marked; the agent can opt out.

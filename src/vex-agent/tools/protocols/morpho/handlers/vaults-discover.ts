@@ -55,16 +55,22 @@ import {
   curatedRouteOption,
   directRouteOption,
   rankRouteOptions,
+  type MorphoCallableNames,
   type MorphoRouteOption,
 } from "../projectors/vault-routes.js";
 import { MORPHO_TOOLS } from "../manifest.js";
 import { morphoFailureDetail } from "./shared.js";
 
 /**
- * The tool ids this namespace actually ships, so a routing pointer can say
- * `available: false` instead of naming a tool that does not resolve.
+ * The `toolId -> publicName` projection for the tools this namespace ships, so
+ * a routing pointer can emit a CALLABLE name and can say `available: false`
+ * instead of naming a tool that does not resolve. Built from the namespace
+ * manifest, which is the same source the catalog registers, so the pointer can
+ * never name a tool this build does not carry.
  */
-const MORPHO_TOOL_IDS: ReadonlySet<string> = new Set(MORPHO_TOOLS.map((tool) => tool.toolId));
+const MORPHO_CALLABLE_NAMES: MorphoCallableNames = new Map(
+  MORPHO_TOOLS.map((tool) => [tool.toolId, tool.publicName]),
+);
 
 /** The value the merged ranking compares. `name` is V1-only and never merged. */
 function sortValue(vault: MorphoVault, sort: string): number | null {
@@ -121,7 +127,7 @@ async function fetchDirectOptions(
     signal,
   );
   return {
-    options: page.markets.map((market) => directRouteOption(projectMarketRow(market), MORPHO_TOOL_IDS)),
+    options: page.markets.map((market) => directRouteOption(projectMarketRow(market), MORPHO_CALLABLE_NAMES)),
     matched: page.countTotal,
     dropped: page.droppedRows,
   };
@@ -131,8 +137,9 @@ async function fetchDirectOptions(
 const DIRECT_ROUTE_NOTES = {
   comparison: MORPHO_ROUTE_COMPARISON_NOTE,
   routing:
-    "Every option names the tool it is acted on with under `routing`, with the params that tool already knows. "
-    + "Check `routing.execute.available` before calling it: false means this build does not ship that tool.",
+    "Every option names the tool it is acted on with under `routing`, as a callable `publicName` plus the params "
+    + "that tool already knows. Emit that `publicName` verbatim. Check `routing.execute.available` before calling "
+    + "it: false means this build does not ship that tool, and `publicName` is then null.",
   concentration:
     "A direct supply concentrates the whole position in ONE market: one collateral asset, one oracle and one LLTV, "
     + "with no curator able to reallocate out of it. A vault spreads the same deposit across several markets and can "
@@ -154,7 +161,7 @@ export async function morphoVaultsDiscover(
     try {
       direct = await fetchDirectOptions(q.direct, q, context?.abortSignal);
     } catch (err) {
-      return fail(`morpho.vaults.discover failed reading the direct-supply markets ${morphoFailureDetail(err)}`);
+      return fail(`morpho__vaults_discover failed reading the direct-supply markets ${morphoFailureDetail(err)}`);
     }
   }
 
@@ -175,7 +182,7 @@ export async function morphoVaultsDiscover(
       options: ranked.options,
       notes: { ...DIRECT_ROUTE_NOTES, usd: MORPHO_USD_DISCLAIMER },
       nextStep:
-        "Read one market in full with morpho.market.get (it needs both `marketId` and `chain`) before supplying - "
+        "Read one market in full with morpho__market_get (it needs both `marketId` and `chain`) before supplying - "
         + "that call adds bad debt, the oracle price liquidations are decided against, and the vaults already "
         + "supplying it. Then follow the option's own `routing`. Set `route: \"both\"` to see the curated vaults "
         + "holding the same asset beside these markets.",
@@ -205,7 +212,7 @@ export async function morphoVaultsDiscover(
       dropped += page.droppedRows;
     }
   } catch (err) {
-    return fail(`morpho.vaults.discover failed ${morphoFailureDetail(err)}`);
+    return fail(`morpho__vaults_discover failed ${morphoFailureDetail(err)}`);
   }
 
   const window = merged ? mergeSorted(vaults, q.sort, q.order).slice(q.offset, q.offset + q.limit) : vaults;
@@ -221,7 +228,7 @@ export async function morphoVaultsDiscover(
   const comparison =
     direct === null
       ? null
-      : rankRouteOptions([...rows.map((row) => curatedRouteOption(row, MORPHO_TOOL_IDS)), ...direct.options]);
+      : rankRouteOptions([...rows.map((row) => curatedRouteOption(row, MORPHO_CALLABLE_NAMES)), ...direct.options]);
 
   return ok({
     summary:
@@ -268,7 +275,7 @@ export async function morphoVaultsDiscover(
       versions:
         "V1 (MetaMorpho) vaults have one global timelock and no gating, so `timelockSeconds` is populated and "
         + "`gating` is null. V2 vaults have a per-function timelock table instead, so `timelockSeconds` is null and "
-        + "the per-function durations are on morpho.vault.get; only V2 vaults can be gated.",
+        + "the per-function durations are on morpho__vault_get; only V2 vaults can be gated.",
       listed: q.listedOnly
         ? "Only vaults Morpho curates are shown. Set listedOnly:false to also see uncurated deployments - Morpho's "
           + "own unordered vault list surfaces deploy tests holding a few dollars before it surfaces real vaults."
@@ -277,14 +284,15 @@ export async function morphoVaultsDiscover(
       ...(direct === null ? {} : DIRECT_ROUTE_NOTES),
     },
     nextStep:
-      "Read one vault in full with morpho.vault.get (it needs both `vaultAddress` and `chain`) before depositing - "
+      "Read one vault in full with morpho__vault_get (it needs both `vaultAddress` and `chain`) before depositing - "
       + "that call adds the role and timelock configuration, the per-market allocations with their caps, and the "
-      + "queued governance changes. Depositing goes through morpho.vault.quote and then morpho.vault.deposit, "
+      + "queued governance changes. Depositing goes through morpho__vault_quote and then morpho__vault_deposit, "
       + "never straight from a discover row."
       + (direct === null
         ? ""
-        : " Each entry in `options` carries its OWN `routing`: a curated option is acted on with morpho.vault.quote "
-          + "then morpho.vault.deposit, a direct option with morpho.market.quote then morpho.market.supply. Take the "
-          + "tool ids from there rather than from this sentence."),
+        : " Each entry in `options` carries its OWN `routing`: a curated option is acted on with morpho__vault_quote "
+          + "then morpho__vault_deposit, a direct option with morpho__market_quote then morpho__market_supply. Take the "
+          + "tool NAMES from each option's own `routing.quote.publicName` and "
+          + "`routing.execute.publicName` rather than from this sentence."),
   });
 }

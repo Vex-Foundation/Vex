@@ -18,6 +18,9 @@ export {
 export {
   signAndSubmitVersionedTxStaged,
   signAndSubmitLegacyTxStaged,
+  prepareLegacyTx,
+  submitPreparedLegacyTxStaged,
+  confirmStagedSignature,
   type StagedSubmissionPhase,
   type StagedSubmissionResult,
 } from "./solana-transaction/staged.js";

@@ -115,14 +115,14 @@ export function barrierBypassAllowed(state: PreparationPressureState): boolean {
 /**
  * Is a validated summary available to apply right now?
  *
- * Gates `compact_apply`'s visibility and the UI's apply affordance. Derived
+ * Gates `CompactApply`'s visibility and the UI's apply affordance. Derived
  * from the SAME snapshot as `barrierBypassAllowed` — never a second read.
  */
 export function hasCompactionSummaryReady(state: PreparationPressureState): boolean {
   switch (state.kind) {
     case "summary_ready":
       return true;
-    // Already being applied — offering `compact_apply` or the UI button would
+    // Already being applied — offering `CompactApply` or the UI button would
     // invite a second request for a cutover that is mid-flight.
     case "applying":
     case "none":

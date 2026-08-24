@@ -122,7 +122,7 @@ export const APPROVAL_RESOLVED_EXECUTED_CUE =
   "as the tool result for the tool call that was awaiting approval; other " +
   "messages may have been recorded after it. The transaction has already " +
   "happened — do not repeat it. You can verify the resulting on-chain / " +
-  "portfolio state with the `agent_scan` tool if it is available to you. " +
+  "portfolio state with the `AgentScan` tool if it is available to you. " +
   "Continue.]";
 
 /**

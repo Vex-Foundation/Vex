@@ -144,13 +144,13 @@ export function AgentCoreStep({
           aria-live="polite"
           className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3"
         >
-          <span className="vex-micro text-[var(--color-text-muted)]">
+          <span className="vex-micro text-ink-tertiary">
             Pending ·{" "}
-            <strong className="text-[var(--color-text-primary)]">
+            <strong className="text-ink-primary">
               {summary.sets}
             </strong>{" "}
             set ·{" "}
-            <strong className="text-[var(--color-text-primary)]">
+            <strong className="text-ink-primary">
               {summary.clears}
             </strong>{" "}
             cleared
@@ -171,7 +171,7 @@ export function AgentCoreStep({
           label="Agent context limit"
           envName="AGENT_CONTEXT_LIMIT"
           placeholder={`${AGENT_CONTEXT_LIMIT.default ?? ""}`}
-          hint={`How much conversation the agent keeps in view — higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min}–${AGENT_CONTEXT_LIMIT.max}.`}
+          hint={`How much conversation the agent keeps in view - higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min}–${AGENT_CONTEXT_LIMIT.max}.`}
           defaultLabel={String(AGENT_CONTEXT_LIMIT.default ?? "engine default")}
           state={form.contextLimit}
           onChange={(next) => setForm({ ...form, contextLimit: next })}
@@ -200,7 +200,7 @@ export function AgentCoreStep({
         />
 
         {clientError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {clientError}
           </p>
         ) : null}
@@ -209,7 +209,7 @@ export function AgentCoreStep({
           <div
             role="alert"
             className={cn(
-              "py-1 text-sm text-[var(--color-danger)]",
+              "py-1 text-sm text-danger",
               RAIL_DANGER_CHROME,
             )}
           >
@@ -223,7 +223,7 @@ export function AgentCoreStep({
         ) : null}
 
         {advanceError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {advanceError}
           </p>
         ) : null}

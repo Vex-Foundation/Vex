@@ -68,7 +68,7 @@ describe("SetupTour", () => {
       expect(screen.getByRole("button", { name: view })).not.toBeNull();
     }
     expect(screen.getByRole("button", { name: "Reload boot" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Replay prologue" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Replay gate" })).not.toBeNull();
   });
 
   it("a view key dismisses the boot gate and flips currentView (view-routing only)", async () => {
@@ -81,7 +81,7 @@ describe("SetupTour", () => {
     expect(store.getState().setupGateActive).toBe(false);
   });
 
-  it("Replay prologue re-arms the gate and bumps the replay nonce each click", async () => {
+  it("Replay gate re-arms the gate and bumps the replay nonce each click", async () => {
     const { SetupTour, store } = await importFresh("1");
     render(<SetupTour />);
 
@@ -90,20 +90,20 @@ describe("SetupTour", () => {
     store.setState({ setupGateActive: false });
     const before = store.getState().prologueReplayNonce;
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replay gate" }));
     expect(store.getState().setupGateActive).toBe(true);
     expect(store.getState().prologueReplayNonce).toBe(before + 1);
 
     // Repeatable: the nonce is the gate's remount key, so a second click
     // must produce a NEW value or the replay would silently no-op.
-    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replay gate" }));
     expect(store.getState().prologueReplayNonce).toBe(before + 2);
   });
 
-  it("does not persist the prologue version key — the preview stays repeatable", async () => {
+  it("does not persist the prologue version key - the preview stays repeatable", async () => {
     const { SetupTour } = await importFresh("1");
     render(<SetupTour />);
-    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replay gate" }));
     expect(window.localStorage.getItem("vex-prologue-version")).toBeNull();
   });
 });

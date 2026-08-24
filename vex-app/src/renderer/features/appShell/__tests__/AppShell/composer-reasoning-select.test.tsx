@@ -28,28 +28,6 @@ import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  DownloadIcon: "DownloadIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  PercentIcon: "PercentIcon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  BrainCircuitIcon: "BrainCircuitIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  MapPinIcon: "MapPinIcon",
-  CircleStopIcon: "CircleStopIcon",
-}));
-
 // Brand-icon lib mocked per sibling suites — keeps this suite immune to
 // transitive TokenIcon/ModelBrandIcon imports reaching "@thesvg/react".
 vi.mock("@thesvg/react", () => ({
@@ -98,6 +76,10 @@ const mockSubmitChat = {
 };
 vi.mock("../../../../lib/api/chat.js", () => ({
   useSubmitChat: () => mockSubmitChat,
+  // Session-filtered pending: the resident composer reads this, not the
+  // hook-wide `isPending`. The fixture drives one session, so the two
+  // answers coincide here.
+  useIsChatSubmitting: () => mockSubmitChat.isPending,
 }));
 vi.mock("../../../../lib/api/messages.js", () => ({
   useTranscriptInfinite: () => ({ data: undefined, isSuccess: false }),
@@ -111,6 +93,23 @@ vi.mock("../../../../lib/api/runtime.js", () => ({
 const mockUseAvailableModels = vi.fn();
 vi.mock("../../../../lib/api/models.js", () => ({
   useAvailableModels: (...a: unknown[]) => mockUseAvailableModels(...a),
+}));
+
+// Capsule seats (F3): the plan/export/context queries and their heavy leaf
+// surfaces are out of scope for the reasoning contract - stub them so the
+// composer mounts without a QueryClient.
+vi.mock("../../../../lib/api/usage.js", () => ({
+  useContextWindow: () => ({ data: undefined }),
+}));
+vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionPlan: () => ({ data: { ok: true, data: null } }),
+  useExportSessionMarkdown: () => ({ isPending: false, mutate: vi.fn() }),
+}));
+vi.mock("../../PlanDisplayModal.js", () => ({
+  PlanDisplayModal: () => null,
+}));
+vi.mock("../../SessionExportDialog.js", () => ({
+  SessionExportDialog: () => null,
 }));
 
 const { SessionComposer } = await import("../../SessionComposer.js");
@@ -210,7 +209,7 @@ beforeEach(() => {
   });
 });
 
-describe("SessionComposer reasoning selector — mount gate", () => {
+describe("SessionComposer reasoning selector - mount gate", () => {
   it("mounts for an agent session whose model reports a capability", () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     // Preselect (no upstream default, "medium" in set) → Medium.
@@ -275,7 +274,7 @@ describe("SessionComposer reasoning selector — mount gate", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — options", () => {
+describe("SessionComposer reasoning selector - options", () => {
   it("lists supportedEfforts VERBATIM in DTO order with none labelled Off", () => {
     mockUseAvailableModels.mockReturnValue(
       modelsState(
@@ -304,7 +303,7 @@ describe("SessionComposer reasoning selector — options", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — preselect (selectDefaultReasoningEffort)", () => {
+describe("SessionComposer reasoning selector - preselect (selectDefaultReasoningEffort)", () => {
   it("preselects the upstream defaultEffort when it is in the final set", () => {
     mockUseAvailableModels.mockReturnValue(
       modelsState(capability({ defaultEffort: "high" })),
@@ -332,7 +331,7 @@ describe("SessionComposer reasoning selector — preselect (selectDefaultReasoni
   });
 });
 
-describe("SessionComposer reasoning selector — D5 submit contract", () => {
+describe("SessionComposer reasoning selector - D5 submit contract", () => {
   it("a pick updates the per-session store and rides the next submit", async () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     pick("Low");
@@ -388,7 +387,7 @@ describe("SessionComposer reasoning selector — D5 submit contract", () => {
     });
   });
 
-  it("OMITS reasoningEffort entirely when reasoning is null — even over a stale store value", async () => {
+  it("OMITS reasoningEffort entirely when reasoning is null - even over a stale store value", async () => {
     mockUseAvailableModels.mockReturnValue(modelsState(null));
     useUiStore.setState({ reasoningEffortBySession: { [SESSION]: "high" } });
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
@@ -402,7 +401,7 @@ describe("SessionComposer reasoning selector — D5 submit contract", () => {
   });
 });
 
-describe("SessionComposer reasoning selector — retry preserves the ridden effort", () => {
+describe("SessionComposer reasoning selector - retry preserves the ridden effort", () => {
   it("Retry resends the exact value that rode the failed submit, even after the selector changes", async () => {
     mockSubmitChat.mutateAsync.mockResolvedValueOnce({
       ok: false,
@@ -445,7 +444,7 @@ describe("SessionComposer reasoning selector — retry preserves the ridden effo
   });
 });
 
-describe("SessionComposer reasoning selector — a11y (SelectMenu contract)", () => {
+describe("SessionComposer reasoning selector - a11y (SelectMenu contract)", () => {
   it("is a combobox that toggles aria-expanded and lists options with aria-selected", () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     const trigger = screen.getByRole("combobox", { name: "Reasoning effort" });

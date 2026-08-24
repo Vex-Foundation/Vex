@@ -76,13 +76,13 @@ describe("a matured market is named as matured, not as absent", () => {
   });
 
   it.each([
-    ["pt.buy", /pendle\.pt\.redeem/],
+    ["pt.buy", /pendle__pt_redeem/],
     ["yt.buy", /matured/i],
-    ["py.mint", /pendle\.pt\.redeem/],
-    ["lp.add", /pendle\.lp\.remove/],
-    ["pt.sell", /pendle\.pt\.redeem/],
+    ["py.mint", /pendle__pt_redeem/],
+    ["lp.add", /pendle__lp_remove/],
+    ["pt.sell", /pendle__pt_redeem/],
     ["yt.sell", /matured/i],
-    ["py.redeem", /pendle\.pt\.redeem/],
+    ["py.redeem", /pendle__pt_redeem/],
   ] as const)("%s points at the tool that CAN act on a matured position", async (action, expected) => {
     const text = await explainUnresolvedPendleMarket(
       CHAIN_ID, "ethereum", MATURED_PT, { action, leg: "PT" }, NOW_MS,
@@ -95,7 +95,7 @@ describe("a matured market is named as matured, not as absent", () => {
       CHAIN_ID, "ethereum", MATURED_PT, { action: "pt.sell", leg: "PT" }, NOW_MS,
     );
     expect(text).toMatch(/sell/i);
-    expect(text).toMatch(/pendle\.pt\.redeem/);
+    expect(text).toMatch(/pendle__pt_redeem/);
   });
 });
 

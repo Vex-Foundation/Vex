@@ -21,10 +21,11 @@ const validStatus: DockerStatus = {
     message: null,
   },
   engine: {
-    present: true,
+    state: { kind: "ready" },
     version: "27.5.1",
+    cliSource: "install_dir",
+    present: true,
     runtimeOK: true,
-    failure: null,
   },
   compose: { present: true, version: "v2.32.4" },
   modelRunner: { present: true, status: "active", tcpReachable: true },
@@ -42,10 +43,11 @@ describe("dockerStatusSchema", () => {
     const status: DockerStatus = {
       ...validStatus,
       engine: {
-        present: false,
+        state: { kind: "not_installed" },
         version: null,
+        cliSource: null,
+        present: false,
         runtimeOK: false,
-        failure: "cli_not_found",
       },
     };
     expect(dockerStatusSchema.safeParse(status).success).toBe(true);

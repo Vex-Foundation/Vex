@@ -48,6 +48,6 @@ export interface TurnLoopResult {
   toolCallsMade: number;
   pendingApprovals: string[];
   stopReason: StopReason | null;
-  /** Structured stop payload — summary/evidence from mission_stop. */
+  /** Structured stop payload — summary/evidence from MissionStop. */
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> };
 }

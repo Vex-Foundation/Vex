@@ -6,6 +6,7 @@ import {
   isAdvertisedProtocolNamespace,
 } from "../../vex-agent/tools/protocols/catalog.js";
 import { discoverProtocolCapabilities } from "../../vex-agent/tools/protocols/runtime.js";
+import type { ProtocolToolManifest } from "../../vex-agent/tools/protocols/types.js";
 
 export const AWARENESS_NAMES = ["blind", "protocol-aware"] as const;
 export const INTENT_SHAPES = ["single", "cross", "compare", "workflow"] as const;
@@ -25,8 +26,25 @@ export const SCENARIOS = [
   "workflow",
 ] as const;
 
-const PROTOCOL_NAME_RE = /\b(Khalani|KyberSwap|Jupiter|Polymarket|DexScreener)\b/i;
-const INTERNAL_TOOL_RE = /\b(gamma|clob|tokenpairs|zap)\b|[a-z]+\.[a-z]+/i;
+/**
+ * Brands a "protocol-aware" query may name, and a "blind" query may not.
+ *
+ * Solana is deliberately ABSENT: it is a chain word, used as such by twelve
+ * frozen blind seed rows, and Jupiter is the protocol-aware term for the
+ * `solana` namespace. Polymarket is gone with the retired namespace.
+ */
+const PROTOCOL_NAME_RE =
+  /\b(Khalani|KyberSwap|Jupiter|DexScreener|Morpho|Pendle|Relay|Virtuals|Trench|Uniswap)\b|\bpools\.fun\b/i;
+
+/**
+ * Retired or internal vocabulary that must never reach a dataset query.
+ *
+ * This used to also reject EVERY dotted token, which cannot distinguish an
+ * internal function name from the brand `pools.fun`. Tool-identity leakage is
+ * now checked against the live catalog itself
+ * ({@link findCatalogIdentityLeaks}), which is exact rather than shaped.
+ */
+const INTERNAL_TOOL_RE = /\b(gamma|clob|tokenpairs|zap)\b/i;
 
 const SeedQuerySchema = z.object({
   query: z.string().min(1),
@@ -61,6 +79,12 @@ export interface QueryResult {
   groupMrr5: number;
   denseFailed: boolean;
   retrievalMethod: string | undefined;
+  /**
+   * Candidates the retrieval leg scored for THIS row, as the discovery result
+   * reported it. Recorded per row because a shrunken catalog (an unset
+   * `requiresEnv`) is otherwise invisible in the metrics.
+   */
+  candidateCount: number | undefined;
 }
 
 export interface Metrics {
@@ -93,11 +117,47 @@ export function loadDataset(): readonly SeedQuery[] {
   return parsed.queries;
 }
 
-export function validateDatasetExpectedTools(queries: readonly SeedQuery[]): string[] {
-  const activeToolIds = PROTOCOL_TOOLS
+/**
+ * The tools an eval dataset may reference: active lifecycle, advertised
+ * namespace.
+ *
+ * Availability (`requiresEnv`) is deliberately NOT applied here. A dataset is a
+ * contract over the catalog, not over one machine's environment; the runner is
+ * what has to prove the candidate set it measured (see
+ * `dense-measurement.ts`).
+ */
+export function liveProtocolManifests(): readonly ProtocolToolManifest[] {
+  return PROTOCOL_TOOLS
     .filter((manifest) => manifest.lifecycle === "active")
-    .filter((manifest) => isAdvertisedProtocolNamespace(manifest.namespace))
-    .map((manifest) => manifest.toolId);
+    .filter((manifest) => isAdvertisedProtocolNamespace(manifest.namespace));
+}
+
+/**
+ * Live tool identities (`toolId` AND `publicName`) appearing verbatim in a
+ * query.
+ *
+ * Both identities matter: `toolid-pin.ts` pins an exact or uniquely prefixing
+ * name at rank 0, so a query carrying one measures the pin, not retrieval.
+ * Matching is whole-token and case-insensitive; surrounding punctuation and
+ * sentence-final dots are stripped so "use morpho.markets.discover." is caught.
+ */
+export function findCatalogIdentityLeaks(query: string): string[] {
+  const identities = new Set<string>();
+  for (const manifest of liveProtocolManifests()) {
+    identities.add(manifest.toolId.toLowerCase());
+    identities.add(manifest.publicName.toLowerCase());
+  }
+
+  const leaks: string[] = [];
+  for (const rawToken of query.toLowerCase().split(/[^a-z0-9_.]+/)) {
+    const token = rawToken.replace(/^\.+/, "").replace(/\.+$/, "");
+    if (token.length > 0 && identities.has(token) && !leaks.includes(token)) leaks.push(token);
+  }
+  return leaks;
+}
+
+export function validateDatasetExpectedTools(queries: readonly SeedQuery[]): string[] {
+  const activeToolIds = liveProtocolManifests().map((manifest) => manifest.toolId);
   const problems: string[] = [];
 
   for (const query of queries) {
@@ -127,6 +187,10 @@ export function validateDatasetPrompts(queries: readonly SeedQuery[]): string[] 
     }
     if (query.awareness === "protocol-aware" && INTERNAL_TOOL_RE.test(query.query)) {
       problems.push(`Protocol-aware query leaks internal function/tool naming: "${query.query}"`);
+    }
+    const leaks = findCatalogIdentityLeaks(query.query);
+    if (leaks.length > 0) {
+      problems.push(`Query names live tool identities (${leaks.join(", ")}): "${query.query}"`);
     }
   }
 
@@ -264,6 +328,7 @@ async function evaluateDiscoverQuery(query: SeedQuery, limit: number): Promise<Q
     groupMrr5: groupMrr5(topIds, query.expectedCoverageGroups),
     denseFailed: result.retrieval?.denseFailed ?? false,
     retrievalMethod: result.retrieval?.method,
+    candidateCount: result.retrieval?.candidateCount,
   };
 }
 

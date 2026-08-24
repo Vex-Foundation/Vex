@@ -1,0 +1,51 @@
+{
+  "definition": {
+    "function": {
+      "description": "Swap tokens FOR REAL through the KyberSwap aggregator: signs and broadcasts an exact-input trade with the session's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE. Use this once the user has agreed to a trade you already priced; KyberSwap is the PRIMARY EVM swap route and `SwapExecuteUniswap` is the alternative when KyberSwap has no aggregator support for the chain or cannot route the pair. APPROVAL: in a RESTRICTED session this does not execute, it returns pending approval and a human sees the trade with the matched quote's safety verdict before anything is signed; in a FULL-permission session it executes directly. PRECONDITIONS, each refused BY NAME rather than worked around: a fresh `kyberswap__swap_quote` with IDENTICAL params including `slippageBps` must already exist, and there is no preview here, so a `dryRun` call is refused and pointed at the quote; both token params must be CONTRACT ADDRESSES (resolve a symbol with TokenFind first) or the native keyword; a leg CONFIRMED as a honeypot aborts before anything is signed, while a fee-on-transfer tax only warns; a `slippageBps` above 1000 (10%) is rejected, never clamped; and the router this route names is verified against the known aggregator router before signing. UNITS: `amountIn` is HUMAN decimals and is converted with the resolved token's own decimals; every amount returned as `amountIn`/`amountOut` is HUMAN and is the amount DECODED FROM THE RECEIPT, which can differ from what was requested. Vex also takes an integrator fee inside the route itself, disclosed on the quote as `routeSummary.extraFee`. RETURNS `summary`, `chain`, `chainId`, `txHash`, `tokenIn`, `tokenOut`, `amountIn`, `amountOut`, `status`, `_executionId`, `_explorerRefs`, and, when they apply, `additionalCostUsd` with `additionalCostMessage`, `deliveryCheck`, and `safetyCheckUnavailable` naming any leg whose honeypot audit could not run. READ `status` BEFORE CONCLUDING ANYTHING: `confirmed` is settled and recorded; `confirmed_unrecorded` settled on-chain but Vex's own record did not persist; `confirmed_pending_amounts` settled but the executed amounts were not decodable yet and finalize automatically; `reverted` mined and failed, and the gas WAS spent; `not_attempted` was refused before signing, spent nothing, and carries `retryable` and a `failureCode`; and `pending` means the outcome is UNKNOWN and may still settle, so DO NOT retry or re-broadcast, the attempt is recorded and resolves automatically, and the reply names the read you can perform yourself to check it.",
+      "name": "kyberswap__swap_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount in human-readable units.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug or alias.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Must match the kyberswap__swap_quote value exactly (or be omitted on both) - a mismatch blocks execution. It is the ONLY price protection on the trade. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, this call returns status \"not_attempted\" with retryable true and failureCode slippage, and the message names the price guard. LESS OFTEN the pool moves after that estimate passes: the transaction broadcasts, then REVERTS, this call returns status \"reverted\", the activity row records mined_revert, and the gas IS spent. Read either as \"this pair needs more tolerance\", not as \"this pair is untradeable\": re-quote with a higher slippageBps and pass the same value here. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps, starting tight since the usual failure costs nothing - no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Symbols are rejected here.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Symbols are rejected here.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "kyberswap",
+    "requiresEnv": null,
+    "toolId": "kyberswap.swap.execute"
+  }
+}

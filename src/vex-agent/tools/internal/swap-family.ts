@@ -1,5 +1,5 @@
 /**
- * Swap family + venue classifier — shared between the READ-ONLY `swap_quote`
+ * Swap family + venue classifier — shared between the READ-ONLY `SwapQuote`
  * alias and the MUTATING `swap` alias router.
  *
  * One classifier, one source of truth: both aliases route by `chain` to the same
@@ -60,7 +60,7 @@ export function classifySwapFamily(chain: string): SwapFamily {
  * True when an EVM swap token input is acceptable WITHOUT DEX symbol search: a
  * contract address (`isAddress`) OR the native token. A bare symbol is rejected
  * by callers (symbol search can match the wrong contract). Shared by the EVM
- * branches of `swap_quote` and `swap` so both reject a symbol identically.
+ * branches of `SwapQuote` and `swap` so both reject a symbol identically.
  */
 export function isEvmSwapTokenInput(input: string): boolean {
   return isNativeTokenInput(input) || isAddress(input);

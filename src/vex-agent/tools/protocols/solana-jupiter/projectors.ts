@@ -4,8 +4,8 @@
  * Jupiter's Tokens API V2 returns a ~40-field `JupiterMintInformation` per token
  * (icon/social URLs, raw mint/freeze authority pubkeys, an open passthrough bag,
  * and four verbose per-interval stat blocks). On `solana.tokens.search` /
- * `solana.tokens.trending` (default limit 20) that routinely blows the 16 KiB
- * overflow threshold for fields a trading agent never acts on.
+ * `solana.tokens.trending` (default limit 20) that routinely runs to tens of KB
+ * for fields a trading agent never acts on.
  *
  * This pure projector strips that noise at the handler seam — BEFORE `ok()` — so
  * the model sees a lean, decision-relevant row: identity, price/market-cap/
@@ -23,8 +23,8 @@
  * `options.statsInterval` (W1-G) is the one shaping knob this projector does
  * expose: the raw shape always carries all four stats windows regardless of
  * what the caller asked for, and at the manifest's default `limit:20` that
- * alone pushes `solana.tokens.trending` ~67% over the 16 KiB overflow
- * threshold (recon-impl-tokens.md §3). Defaulting to `"all"` when omitted
+ * alone inflates `solana.tokens.trending` to roughly 27 KB
+ * (recon-impl-tokens.md §3). Defaulting to `"all"` when omitted
  * keeps every existing caller's behaviour unchanged; handlers opt into a
  * single window to shrink the common case.
  *

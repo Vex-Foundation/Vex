@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get a single Khalani bridge order by ID with full lifecycle details, MERGED with Vex's own record of it: `order` is the provider's view, `vex` carries the execution id, Vex's logical status, every Vex leg (deposit, fee, expected fill) and the Vex fee collection outcome, and `vexNote` says why there is no Vex record when there is none. The two views can legitimately disagree, because Khalani may report a fill before Vex has verified it on-chain, so read `vex.note` before concluding anything about the funds. RETURNS `order` (the provider's own order record), `vex` (`_executionId`, `vexStatus`, `lastRecordedProviderStatus`, `legs` each with `role`, `status`, `chainSlug`, `txHash` and `failureReason`, `vexFeeCollection`, and `note`), `vexNote` when there is no Vex record to correlate, and `_executionId` mirrored at the top level. `vex` is null when Vex has no record of this order, which is normal for a bridge Vex did not itself execute. One order per call; there is no pagination.",
+      "name": "khalani__order_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "description": "Khalani order ID.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.orders.get"
+  }
+}

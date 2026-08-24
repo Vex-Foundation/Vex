@@ -37,6 +37,11 @@ const EXPECTED_FUNCTION_EXPORTS = [
   "softDeleteSession",
   "setSessionPinnedWithClient",
   "setSessionPinned",
+  "renameSessionWithClient",
+  "renameSession",
+  // A14 branching: the prefix-copy fork vertical.
+  "branchSessionWithClient",
+  "branchSession",
 ] as const;
 
 describe("sessions-db façade surface", () => {

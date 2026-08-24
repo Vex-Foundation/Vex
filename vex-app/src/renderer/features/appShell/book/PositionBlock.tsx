@@ -1,7 +1,7 @@
 /**
  * POSITION — the wallet portfolio card. Card-system grammar (`PortfolioCard`,
- * C3) since the book became one card stack: the serif display total from
- * `PortfolioOverviewCard`'s hero convention, the snapshot/PnL line, and the
+ * C3) since the book became one card stack: the display total from
+ * `PortfolioOverviewCard`'s hero convention (Inter Tight 600 tabular), the snapshot/PnL line, and the
  * resolved wallet COUNT in the card's trailing slot.
  *
  * Dual-scope, driven purely by `activeSessionId`:
@@ -24,7 +24,7 @@
  * cross-wallet aggregate — selecting one wallet in the switcher never changes
  * it; the wallet-scoped body shows that wallet's own total separately.
  *
- * Signal Tape language: serif display figure, semantic up/down on the PnL,
+ * Signal Tape language: one display figure, semantic up/down on the PnL,
  * `tabular-nums` on every figure.
  */
 
@@ -164,15 +164,16 @@ function TotalFigure({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[10.5px] text-[var(--vex-text-3)]">Total value</span>
+        <span className="text-[10.5px] text-ink-tertiary">Total value</span>
         <PortfolioRefreshButton />
       </div>
-      {/* Serif is rationed to this ONE display figure (typography law, C2). */}
-      <span className="font-serif text-[34px] leading-none tracking-[-0.01em] tabular-nums text-foreground">
+      {/* Display figure: Inter Tight 600 tabular — the serif retired to the
+        * gate voice (tokens v2 typography law). */}
+      <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
         {formatUsd(liveTotalUsd)}
       </span>
       {snapshotTotalUsd !== null ? (
-        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-[var(--vex-text-3)]">
+        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-ink-tertiary">
           <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
           {pnlVsPrev !== null ? (
             <span
@@ -190,7 +191,7 @@ function TotalFigure({
 
 /** Up = success, down = warn, flat/zero = muted. No glow, token colours only. */
 function pnlToneClass(pnl: number): string {
-  if (pnl > 0) return "text-[var(--color-success)]";
-  if (pnl < 0) return "text-[var(--vex-warn-text)]";
-  return "text-[var(--vex-text-3)]";
+  if (pnl > 0) return "text-success";
+  if (pnl < 0) return "text-warning-label";
+  return "text-ink-tertiary";
 }

@@ -1,32 +1,17 @@
 /**
- * ComposerQuickActions — the starter chips detached below the Signal Console.
- * Pins the redesign contract: each chip carries a small INTENT ICON, the 01–03
- * numbering is GONE (parallel starters, not an ordered sequence), and picking a
- * chip seeds the draft with its full prompt.
- *
- * VexIcon is stubbed to a span that surfaces the icon reference as a
- * `data-icon` attribute so the per-chip glyph is assertable in jsdom.
+ * ComposerQuickActions - the starter chips detached below the Signal Console.
+ * Pins the round-2 contract: a chip is its LABEL AND NOTHING ELSE (owner QA
+ * removed the leading intent glyphs), the 01-03 numbering is GONE (parallel
+ * starters, not an ordered sequence), and picking a chip seeds the draft with
+ * its full prompt.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: ({ icon }: { icon: unknown }) => (
-    <span data-icon={String(icon)} />
-  ),
-}));
-
-vi.mock("../../../components/icons/icon-glyphs.js", () => ({
-  FlameIcon: "FlameIcon",
-  PercentIcon: "PercentIcon",
-  RocketIcon: "RocketIcon",
-}));
-
-const { ComposerQuickActions } = await import("../ComposerQuickActions.js");
+import { ComposerQuickActions } from "../ComposerQuickActions.js";
 
 describe("ComposerQuickActions", () => {
-  it("renders the intent chips with icons, no 01–03 numbering", () => {
+  it("renders three text-only chips - no leading glyph, no 01-03 numbering", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
     // Three starter chips (memecoins / Pendle yields / Trench launchpad),
@@ -34,34 +19,30 @@ describe("ComposerQuickActions", () => {
     const chips = screen.getAllByRole("button");
     expect(chips).toHaveLength(3);
 
-    // Each intent icon is present (flame / percent square / rocket).
-    expect(container.querySelector('[data-icon="FlameIcon"]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-icon="PercentIcon"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('[data-icon="RocketIcon"]')).not.toBeNull();
+    // A chip renders its label and no glyph beside it.
+    for (const chip of chips) {
+      expect(chip.querySelector("svg")).toBeNull();
+      expect(chip.childElementCount).toBe(1);
+    }
 
-    // The numbering was dropped — no 01/02/03 marks in the chip text.
+    // The numbering was dropped - no 01/02/03 marks in the chip text.
     for (const n of ["01", "02", "03"]) {
       expect(screen.queryByText(n)).toBeNull();
     }
-    // Sanity: the icon refs are attributes, never rendered text.
     expect(container.textContent).not.toMatch(/\b0[123]\b/);
   });
 
-  it("wears a SOLID ink band on its root — no glass (composer rebuild)", () => {
+  it("renders bare capsule chips - no band, no glass behind the row (tokens v2)", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // The row's own root (not a new wrapper) carries the surface. It is now
-    // OPAQUE ink + a hairline border, matching the rebuilt console above it.
-    // The translucent-glass legibility assist is retired, and this file's
-    // shell-design-guard exemption was deleted with it — so the ABSENCE of a
-    // backdrop filter here is a contract, not an omission.
+    // The row root carries NO surface of its own: the chips are the surface
+    // (capsule geometry, hairline border). No backdrop filter anywhere.
     const root = container.firstElementChild;
     expect(root).not.toBeNull();
-    expect(root?.className).toContain("bg-[var(--vex-surface-1)]");
-    expect(root?.className).not.toMatch(/backdrop-blur/);
-    expect(root?.className).toContain("border-[var(--vex-line)]");
+    expect(root?.className).not.toMatch(/bg-|backdrop-blur/);
+    const chip = root?.querySelector("button");
+    expect(chip?.className).toContain("rounded-capsule");
+    expect(chip?.className).toContain("border-line-2");
   });
 
   it("seeds the draft with the chip's full prompt", () => {
@@ -71,7 +52,7 @@ describe("ComposerQuickActions", () => {
       screen.getByRole("button", { name: /hunt trending memecoins/i }),
     );
     expect(onPick).toHaveBeenCalledWith(
-      "Hunt the trendiest memecoins right now — combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
+      "Hunt the trendiest memecoins right now - combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
     );
   });
 });

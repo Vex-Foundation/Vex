@@ -70,6 +70,20 @@ const REVIEWED_NON_CHARGING_SITES = new Map<string, string>([
     "protocol:pools.tokens :: feeRecipientAddress",
     "read-only launchpad screening filter; sets no fee and directs no payment",
   ],
+  // The two DexScreener endpoint selectors added by the Batch 2 merges. `feed`
+  // matches /fee/i by SPELLING only: its closed enum picks which read-only
+  // provider URL fills the rows (latest | recentUpdates, latest | top) on read
+  // tools that reach no signing path, charge nothing, and carry no recipient of
+  // any kind. A future MUTATING tool spelling a param `feed` is NOT covered by
+  // these entries and must face this sweep on its own.
+  [
+    "protocol:dexscreener.profiles :: feed",
+    "read-only provider endpoint selector, closed enum; sets no fee and directs no payment",
+  ],
+  [
+    "protocol:dexscreener.boosts :: feed",
+    "read-only provider endpoint selector, closed enum; sets no fee and directs no payment",
+  ],
 ]);
 
 interface ParamSite {
@@ -196,8 +210,8 @@ describe("no fee-bearing field originates from tool params", () => {
     }
   });
 
-  it("the bridge and bridge_quote aliases carry no referrer knobs", () => {
-    for (const aliasName of ["bridge", "bridge_quote"]) {
+  it("the bridge and BridgeQuote aliases carry no referrer knobs", () => {
+    for (const aliasName of ["BridgeExecute", "BridgeQuote"]) {
       const alias = ACTION_ALIAS_TOOLS.find((a) => a.name === aliasName);
       expect(alias, `${aliasName} alias must exist`).toBeDefined();
       const properties = (alias?.parameters as { properties?: Record<string, unknown> })?.properties ?? {};

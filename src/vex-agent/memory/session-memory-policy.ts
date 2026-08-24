@@ -1,7 +1,7 @@
 /**
  * Session memory policy — pure TS constants and helpers for the per-session
  * narrative memory system (`session_memories` table + Track 2 chunking
- * pipeline + `session_memory_search` tool).
+ * pipeline + `SessionMemorySearch` tool).
  *
  * No DB, no embeddings, no I/O. Tested as plain unit tests.
  *
@@ -42,10 +42,10 @@ export const OUTSTANDING_ITEM_TEXT_MAX = 500;
 
 // ── Recall limits ───────────────────────────────────────────────
 
-/** Default `k` for `session_memory_search` when caller omits it. */
+/** Default `k` for `SessionMemorySearch` when caller omits it. */
 export const MEMORY_RECALL_DEFAULT_K = 5;
 
-/** Hard upper bound on `k` for `session_memory_search`. */
+/** Hard upper bound on `k` for `SessionMemorySearch`. */
 export const MEMORY_RECALL_MAX_K = 5;
 
 /** Minimum cosine similarity for a chunk to be included in recall results. */
@@ -92,7 +92,7 @@ export const EXCLUSION_REJECT_THRESHOLD = 0.30;
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-/** Clamp a caller-supplied `k` for `session_memory_search` to the allowed range. */
+/** Clamp a caller-supplied `k` for `SessionMemorySearch` to the allowed range. */
 export function clampMemoryRecallK(k: number | undefined): number {
   if (k === undefined || !Number.isFinite(k) || k <= 0) return MEMORY_RECALL_DEFAULT_K;
   if (k > MEMORY_RECALL_MAX_K) return MEMORY_RECALL_MAX_K;

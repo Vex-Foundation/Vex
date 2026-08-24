@@ -1,0 +1,117 @@
+{
+  "definition": {
+    "function": {
+      "description": "Browse and screen pools.fun launchpad tokens on Robinhood Chain (4663). Use when the task is finding or ranking tokens on this launchpad: what launched in the last few hours, what is trading heaviest right now, everything one wallet deployed, or a market-cap band. Returns rows carrying token address, name, symbol, the Sushi V3 pool address, the paired asset (weth, usdg or a tokenised stock), display-grade price in USD and ETH, market cap, volume over five windows, 24h trade count, price change over five windows, launch and last-trade times, age in hours, deployer and fee recipient (with their X handles when known), and image, website and tweet links, plus isOwnLaunch when it can be determined (true means the SESSION's own wallet deployed that token, false a different known deployer, and an ABSENT field means undetermined, never not-yours) - plus a filter echo, a row count and a nextCursor for the following page. There is no hasMore field: a nextCursor is the only continuation signal, and its absence is the end. pools.fun has NO bonding curve and NO graduation: a token trades in a real SushiSwap V3 pool from its first block, every pool charges a 1 percent fee, and total supply is always one billion. Two launchers share this chain and the platform parameter selects between them. Identity is the token ADDRESS - symbols are not unique and copycats are routinely live. Every price and volume here is display-grade; quote and trade these tokens with kyberswap, which routes them, and research their pools with dexscreener. Read-only.",
+      "name": "pools__tokens_discover",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Opaque pagination token: pass back the nextCursor from a previous reply to fetch the following page. Keep every other filter identical between pages or the cursor walks a different result set.",
+            "type": "string"
+          },
+          "deployerAddress": {
+            "description": "Keep only tokens deployed by this wallet address, matched server-side. Use it to see everything one launcher has created.",
+            "type": "string"
+          },
+          "feeRecipientAddress": {
+            "description": "Keep only tokens whose creator fee stream is directed at this wallet address, matched server-side. On pools.fun the fee recipient can differ from the deployer, so this answers who EARNS from a token rather than who deployed it.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum rows returned, 1-100 (the provider's own cap). Omitting it leaves the page size to the provider. Use the returned cursor to walk further rather than asking for more than the cap.",
+            "type": "number"
+          },
+          "live": {
+            "description": "When true, restrict the list to the provider's live feed of recently active tokens instead of the whole market. Default false, which lists everything matching the other filters.",
+            "type": "boolean"
+          },
+          "maxAgeHours": {
+            "description": "Keep only tokens launched within this many hours. This is the fresh-launch filter on pools.fun: there is no bonding curve or graduation stage to filter on, so age is what separates a brand new token from an established one.",
+            "type": "number"
+          },
+          "maxMarketCapUsd": {
+            "description": "Keep only tokens whose market capitalisation in US dollars is at most this. Pair with minMarketCapUsd to bracket a size band; the figure is display-grade.",
+            "type": "number"
+          },
+          "minMarketCapUsd": {
+            "description": "Keep only tokens whose market capitalisation in US dollars is at least this. The figure is the provider's own display-grade estimate, not an executable valuation.",
+            "type": "number"
+          },
+          "minTxCount24h": {
+            "description": "Keep only tokens with at least this many trades in the last 24 hours. A whole number; useful for separating tokens with real flow from ones whose market cap moved on a single fill.",
+            "type": "number"
+          },
+          "minVolUsd": {
+            "description": "Keep only tokens whose traded volume in US dollars over volTimeframe is at least this. It REQUIRES volTimeframe - a volume floor without a window has no meaning and is rejected by name rather than silently applied to some default window.",
+            "type": "number"
+          },
+          "order": {
+            "description": "Ranking direction: desc (default, biggest or newest first) or asc. Pair it with sortBy - asc on deployedAt walks the oldest launches, desc gives the freshest.",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "type": "string"
+          },
+          "platform": {
+            "description": "Which launcher to list, poolsfun (default, the pools.fun PartyFactory), sushi (the older SushiLaunchpad on the same chain), or all. These are two different launchers whose tokens sit side by side on Robinhood Chain; the row echoes which one produced it.",
+            "enum": [
+              "poolsfun",
+              "sushi",
+              "all"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Free-text match against token names and symbols, applied by the launchpad alongside every other filter here. Reach for it when a name has to be combined with filters - a name plus an age or volume floor, say. When the name is all you have, the dedicated pools name-lookup tool is the shorter path.",
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "Server-side ranking key. Accepts marketCapUsd (default), vol1m, vol5m, vol1h, vol6h, vol24h, txCount24h, priceChange1m, priceChange5m, priceChange1h, priceChange6h, priceChange24h, lastTradeAt, deployedAt. Sort by deployedAt for the newest launches and by vol1h or txCount24h for what is actually being traded right now.",
+            "enum": [
+              "marketCapUsd",
+              "vol1m",
+              "vol5m",
+              "vol1h",
+              "vol6h",
+              "vol24h",
+              "txCount24h",
+              "priceChange1m",
+              "priceChange5m",
+              "priceChange1h",
+              "priceChange6h",
+              "priceChange24h",
+              "lastTradeAt",
+              "deployedAt"
+            ],
+            "type": "string"
+          },
+          "volTimeframe": {
+            "description": "The window the minVolUsd floor is measured over: 1m, 5m, 1h, 6h or 24h. Supply it together with minVolUsd; on its own it filters nothing and is rejected.",
+            "enum": [
+              "1m",
+              "5m",
+              "1h",
+              "6h",
+              "24h"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.tokens"
+  }
+}

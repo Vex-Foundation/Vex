@@ -57,7 +57,7 @@ const { errorClassName, registerPortfolioRefreshHandler, resetPortfolioRefreshRa
 /** Every shape that must never survive into a log line, in one string. */
 const CANARY_MESSAGE =
   "request to https://api.provider.example/v1/balances?apiKey=sk_live_CANARYKEY123 failed: " +
-  "Authorization: Bearer CANARYTOKEN456 — " +
+  "Authorization: Bearer CANARYTOKEN456 - " +
   'SELECT secret FROM vault WHERE address = \'0xCANARYWALLET789\'';
 
 /** A trusted app frame, the shape `registerHandler` validates the sender against. */

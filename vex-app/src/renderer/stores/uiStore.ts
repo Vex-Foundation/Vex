@@ -8,12 +8,11 @@
  *  - logBuffer is bounded to MAX_RENDER_LOGS to honor skill §11 (no
  *    unbounded buffers).
  *
- * Shell theme (`theme`) IS persisted (partialize whitelist below): today the
- * union holds only "chronos" (the dark Eclipse desk), but the slot and its
- * persistence survive so the planned "celeris" light theme lands without
- * another storage migration. It drives the `data-vex-theme` attribute on the
- * shell root. Everything else here stays UI-only per skill §5 (domain/IPC
- * data belongs in TanStack Query).
+ * Theme: the persisted slot is `themePreference` ("chronos" | "celeris" |
+ * "system"); `theme` is the RESOLVED value driving `data-vex-theme` on
+ * documentElement (runtime logic in uiStore/theme.ts; pre-paint twin in
+ * public/theme-boot.js). Everything else here stays UI-only per skill §5
+ * (domain/IPC data belongs in TanStack Query).
  */
 
 import { create } from "zustand";
@@ -22,19 +21,40 @@ import type { ReasoningEffort } from "@shared/schemas/chat.js";
 
 export const MAX_RENDER_LOGS = 500;
 
-/** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
-const MAX_BOOK_SECTION_ENTRIES = 32;
-const MAX_BOOK_SECTION_ID_LENGTH = 32;
-
 /**
- * Shell colour theme. `chronos` = the dark Eclipse desk (Focused · Quiet ·
- * Precise) — currently the only theme; the planned light `celeris` (Bright ·
- * Clear · Fast, Aurora backdrop) will widen this union. App-wide by
- * construction — the value rides on the shell root's `data-vex-theme`
- * attribute. (The retired `vex`/`robinhood` pair coerces to `chronos` on
- * rehydrate.)
+ * Theme runtime types + logic live in the same-named sibling module
+ * (`uiStore/theme.ts`); re-exported so the store stays the single public
+ * entry point. `theme` is the RESOLVED value that rides on documentElement's
+ * `data-vex-theme`; `themePreference` is the persisted user choice
+ * ("system" tracks the OS scheme live).
  */
-export type VexTheme = "chronos";
+export type { VexTheme, VexThemePreference } from "./uiStore/theme.js";
+export type { RuntimeMode } from "./uiStore/runtime-mode.js";
+
+import {
+  applyThemeToDocument,
+  bindSystemThemeListener,
+  DEFAULT_THEME_PREFERENCE,
+  resolveTheme,
+  systemPrefersDark,
+  type VexTheme,
+  type VexThemePreference,
+} from "./uiStore/theme.js";
+import {
+  clampBookWidth,
+  clampSidebarWidth,
+  DEFAULT_BOOK_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+} from "./uiStore/layout.js";
+import {
+  mergeUiState,
+  migrateUiState,
+  partializeUiState,
+} from "./uiStore/persistence.js";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type RuntimeMode,
+} from "./uiStore/runtime-mode.js";
 
 /**
  * Which mission/plan review dialog (if any) the DESK RULE header cluster
@@ -104,14 +124,27 @@ export interface CreateSessionInitialTurn {
   readonly reasoningEffort: ReasoningEffort | null;
 }
 
-interface UiState {
-  /**
-   * Shell colour theme, persisted (see the VexTheme doc — the slot outlives
-   * the single-value union so the planned `celeris` lands migration-free).
-   * Defaults to `chronos`.
-   */
+export interface UiState {
+  /** Resolved shell theme = f(themePreference, OS scheme). NOT persisted. */
   readonly theme: VexTheme;
+  /** Persisted theme choice; "system" re-resolves on OS scheme changes. */
+  readonly themePreference: VexThemePreference;
+  /** vex-studio seam: no UI logic reads this yet. NOT persisted. */
+  readonly runtimeMode: RuntimeMode;
   readonly sidebarOpen: boolean;
+  /**
+   * Persisted sidebar drag width (px, clamped 264-420). The rendered track is
+   * solved by `lib/shell-columns.ts`; this is only the preference input.
+   */
+  readonly sidebarWidth: number;
+  /** Persisted BOOK drag width (px, clamped 300-520). See `sidebarWidth`. */
+  readonly bookWidth: number;
+  /**
+   * Below the auto-collapse breakpoint the sidebar renders the rail unless
+   * the user manually re-expands it; this is that override. NOT persisted —
+   * a relaunch under a narrow window starts back at the rail.
+   */
+  readonly sidebarNarrowExpanded: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
    * RUNTIME / SESSION / POSITION). Defaults CLOSED — unlike sidebarOpen — and is
@@ -127,10 +160,8 @@ interface UiState {
   readonly setupGateActive: boolean;
   /**
    * Bumped by the dev Setup Tour to replay the gate's cinematic prologue on
-   * demand. Any value > 0 means "this gate mount is a tour replay": it forces
-   * the FULL variant regardless of the play policy and does NOT persist the
-   * version key, so the preview stays repeatable. It is also the remount key
-   * for the gate, which is what makes a second click replay rather than no-op.
+   * demand. It is the remount key for `ChronosGate` in App, which is what
+   * makes a second click replay from the first frame rather than no-op.
    * Dev-only in practice (the tour is build-flag gated). NOT persisted.
    */
   readonly prologueReplayNonce: number;
@@ -204,24 +235,29 @@ interface UiState {
    */
   readonly hideDustBalances: boolean;
   /**
-   * Build version whose gate prologue last COMPLETED (or was skipped), or
-   * null if never. COSMETIC — `gate-prologue/prologue-policy.ts` condenses
-   * the cinematic on a repeat launch of the same version. Persisted (see
-   * partialize) via this store's Zustand persist — the only sanctioned
-   * renderer localStorage path (`check-build-artifacts.mjs`); coerced on
-   * every rehydrate in `merge` below because the payload is user-writable.
+   * OS-native turn-complete notifications (A34). TRUE by default; the
+   * settings surface owns the toggle. Persisted (see partialize) and coerced
+   * on every rehydrate - the payload is user-writable localStorage.
    */
-  readonly prologueVersion: string | null;
+  readonly notificationsEnabled: boolean;
   /**
    * User's custom order for the session-stage BOOK rail sections. `[]` means
    * "no custom order — use the default". Stored as an ID LIST, never component
    * references, so a renamed component cannot invalidate a saved layout, and an
    * unknown id from an older/newer build is simply dropped by
    * `resolveBookSectionOrder`. COSMETIC, so it stays in the renderer's persist
-   * whitelist and never crosses IPC (the `prologueVersion` doctrine).
+   * whitelist and never crosses IPC (this store's Zustand persist is the only
+   * sanctioned renderer localStorage path — `check-build-artifacts.mjs`).
    */
   readonly bookSectionOrder: readonly string[];
+  /** Set the theme choice: resolves + writes documentElement in one step. */
+  readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
+  /** Live drag write: clamps into the sidebar contract range. */
+  readonly setSidebarWidth: (px: number) => void;
+  /** Live drag write: clamps into the BOOK contract range. */
+  readonly setBookWidth: (px: number) => void;
+  readonly setSidebarNarrowExpanded: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
@@ -230,8 +266,6 @@ interface UiState {
   readonly dismissSetupGate: () => void;
   /** Re-arm the boot gate and replay its full prologue (dev Setup Tour). */
   readonly replayPrologue: () => void;
-  /** Record the version whose prologue just finished (or was skipped). */
-  readonly setPrologueVersion: (version: string) => void;
   /** Arm the unlock-success curtain — called ONLY after the unlock IPC succeeds. */
   readonly beginUnlockCurtain: () => void;
   /** The curtain finished its reveal and unmounts. */
@@ -289,6 +323,7 @@ interface UiState {
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setHideDustBalances: (value: boolean) => void;
+  readonly setNotificationsEnabled: (value: boolean) => void;
   readonly setBookSectionOrder: (order: readonly string[]) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
@@ -297,8 +332,18 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      theme: "chronos",
+      theme: resolveTheme(DEFAULT_THEME_PREFERENCE, systemPrefersDark()),
+      themePreference: DEFAULT_THEME_PREFERENCE,
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      setThemePreference: (themePreference) => {
+        const theme = resolveTheme(themePreference, systemPrefersDark());
+        applyThemeToDocument(theme);
+        set({ themePreference, theme });
+      },
       sidebarOpen: true,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      bookWidth: DEFAULT_BOOK_WIDTH,
+      sidebarNarrowExpanded: false,
       bookOpen: true,
       currentView: "splash",
       setupGateActive: true,
@@ -316,9 +361,13 @@ export const useUiStore = create<UiState>()(
       reasoningEffortBySession: {},
       reviewModal: "none",
       hideDustBalances: true,
-      prologueVersion: null,
+      notificationsEnabled: true,
       bookSectionOrder: [],
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
+      setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
+      setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
+        set({ sidebarNarrowExpanded }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
@@ -329,7 +378,6 @@ export const useUiStore = create<UiState>()(
           setupGateActive: true,
           prologueReplayNonce: state.prologueReplayNonce + 1,
         })),
-      setPrologueVersion: (prologueVersion) => set({ prologueVersion }),
       beginUnlockCurtain: () => set({ unlockCurtainActive: true }),
       dismissUnlockCurtain: () => set({ unlockCurtainActive: false }),
       openWizard: (wizardEntryMode) =>
@@ -370,6 +418,7 @@ export const useUiStore = create<UiState>()(
       setSigningState: (signingState) => set({ signingState }),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
+      setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
       appendLog: (entry) =>
         set((state) => ({
@@ -379,112 +428,33 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 8,
+      version: 13,
+      // Re-stamp the document root once the coerced, resolved theme is
+      // known - theme-boot.js painted the pre-bundle frame from the RAW
+      // payload, and a tampered value must not survive on <html>.
+      onRehydrateStorage: () => (state) => {
+        if (state !== undefined) applyThemeToDocument(state.theme);
+      },
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        theme: state.theme,
-        sidebarOpen: state.sidebarOpen,
-        bookOpen: state.bookOpen,
-        hideDustBalances: state.hideDustBalances,
-        prologueVersion: state.prologueVersion,
-        bookSectionOrder: state.bookSectionOrder,
-      }),
-      // Expand-only migrations, oldest first:
-      //   v2: BOOK now opens by default — force it open once on upgrade from v1
-      //       so existing installs pick up the new default (later toggles
-      //       persist normally).
-      //   v3: `theme` added — seed the then-default so a pre-theme install
-      //       hydrates into a defined value, not `undefined`.
-      //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
-      //       Removed by the Hyperliquid deletion: the field no longer exists
-      //       on `UiState`, so a leftover `hlFavorites` key in an old payload
-      //       is simply ignored by `merge` below, never seeded again.
-      //   v5: Chronos rebrand — the retired `vex`/`robinhood` theme pair
-      //       collapses to `chronos` (the merge coercion below also enforces
-      //       this on every rehydrate).
-      //   v6: `hideDustBalances` added (Portfolio tab dust filter) — seed
-      //       the same TRUE default a fresh install gets, so an upgrading
-      //       install's dust airdrops hide immediately instead of the field
-      //       hydrating `undefined`.
-      //   v7: `prologueVersion` added (gate-prologue play policy, moved here
-      //       from a direct localStorage adapter so the renderer keeps ONE
-      //       sanctioned storage path) — seed null: an upgrading install has
-      //       never recorded a completed prologue under this key, and null
-      //       resolves to the full play, the same first-impression a fresh
-      //       install gets.
-      //   v8: `bookSectionOrder` added (BOOK rail drag-to-reorder) — seed []
-      //       so an upgrading install hydrates into the DEFAULT order rather
-      //       than `undefined`. Expand-only; no existing key is read or
-      //       rewritten.
-      migrate: (persisted, version) => {
-        if (persisted === null || typeof persisted !== "object") {
-          return persisted;
-        }
-        let next = persisted as Record<string, unknown>;
-        if (version < 2) next = { ...next, bookOpen: true };
-        if (version < 5) next = { ...next, theme: "chronos" };
-        if (version < 6 && !("hideDustBalances" in next)) {
-          next = { ...next, hideDustBalances: true };
-        }
-        if (version < 7 && !("prologueVersion" in next)) {
-          next = { ...next, prologueVersion: null };
-        }
-        if (version < 8 && !("bookSectionOrder" in next)) {
-          next = { ...next, bookSectionOrder: [] };
-        }
-        return next;
-      },
-      // localStorage is user-writable (untrusted input), and `migrate` only
-      // runs on version hops — a hand-edited current-version payload skips it.
-      // Coerce on EVERY rehydrate: any off-union `theme` (including the
-      // retired "vex"/"robinhood" values) degrades to "chronos" instead of
-      // reaching `data-vex-theme` with an unknown value.
-      merge: (persisted, current) => {
-        const incoming =
-          persisted !== null && typeof persisted === "object"
-            ? (persisted as Partial<UiState>)
-            : undefined;
-        const theme: VexTheme = "chronos";
-        // Same coercion for the dust filter: anything that is not a boolean
-        // degrades to the TRUE default, never a crash or a stray non-boolean
-        // reaching the checkbox's `checked` prop.
-        const hideDustBalances: boolean =
-          typeof incoming?.hideDustBalances === "boolean"
-            ? incoming.hideDustBalances
-            : true;
-        // Same posture for the prologue flag: a non-string, empty or
-        // absurdly long hand-edited value degrades to null — which the play
-        // policy resolves to the FULL prologue, never a crash.
-        const prologueVersion: string | null =
-          typeof incoming?.prologueVersion === "string" &&
-          incoming.prologueVersion.length > 0 &&
-          incoming.prologueVersion.length <= 64
-            ? incoming.prologueVersion
-            : null;
-        // Same posture for the rail order, with a HARD BOUND on both the list
-        // and each entry so a hand-written payload cannot make the resolver
-        // walk an unbounded array. Anything off-shape degrades to [] — the
-        // default order, never a crash and never a blank rail.
-        const bookSectionOrder: readonly string[] =
-          Array.isArray(incoming?.bookSectionOrder) &&
-          incoming.bookSectionOrder.length <= MAX_BOOK_SECTION_ENTRIES &&
-          incoming.bookSectionOrder.every(
-            (value) =>
-              typeof value === "string" &&
-              value.length > 0 &&
-              value.length <= MAX_BOOK_SECTION_ID_LENGTH,
-          )
-            ? incoming.bookSectionOrder
-            : [];
-        return {
-          ...current,
-          ...incoming,
-          theme,
-          hideDustBalances,
-          prologueVersion,
-          bookSectionOrder,
-        };
-      },
+      // Whitelist + migrations + rehydrate coercion live in
+      // uiStore/persistence.ts (same-named sibling folder).
+      partialize: partializeUiState,
+      migrate: migrateUiState,
+      merge: mergeUiState,
     }
   )
 );
+
+// Keep the document root current: theme-boot.js painted the pre-bundle
+// frame from raw localStorage; once the store has rehydrated (synchronous
+// with localStorage), its coerced resolution is authoritative. The system
+// listener re-resolves a "system" preference live; an explicit preference
+// ignores OS changes by construction (resolveTheme). Both are no-ops in
+// environments without a DOM/matchMedia (tests).
+applyThemeToDocument(useUiStore.getState().theme);
+bindSystemThemeListener((prefersDark) => {
+  const { themePreference } = useUiStore.getState();
+  const theme = resolveTheme(themePreference, prefersDark);
+  applyThemeToDocument(theme);
+  useUiStore.setState({ theme });
+});

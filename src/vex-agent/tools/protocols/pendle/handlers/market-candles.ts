@@ -72,7 +72,7 @@ export async function pendleMarketCandles(
     if (err instanceof VexError && err.httpStatus === 404) {
       return fail(
         `Pendle serves no candles for ${q.asset} on ${chain} (it answered 404). This endpoint covers PT, YT and LP ` +
-          "assets only — confirm the address with pendle.market.get, which lists a market's legs.",
+          "assets only - confirm the address with pendle__market_get, which lists a market's legs.",
       );
     }
     return fail(`Pendle candles unavailable (${failureDetail(TOOL_ID, err)})`);
@@ -108,15 +108,15 @@ export async function pendleMarketCandles(
           volumeNote:
             `${withoutVolume} candle(s) carry no volume: Pendle leaves the column empty when there were no recorded ` +
             "trades in that bucket, and for LP assets it reports 0 here regardless. A null is NOT a measured zero. " +
-            "For a market's real traded volume use pendle.market.history with the tradingVolume field.",
+            "For a market's real traded volume use pendle__market_history_get with the tradingVolume field.",
         }
       : {}),
     candles,
     asOf: new Date(nowMs).toISOString(),
     nextStep:
       "These are provider price marks for one asset, not executable quotes — a PT's price is what it last traded at, " +
-      "not what you would receive. For the current rate call pendle.market.get, and for the APY/TVL series behind " +
-      "these prices call pendle.market.history.",
+      "not what you would receive. For the current rate call pendle__market_get, and for the APY/TVL series behind " +
+      "these prices call pendle__market_history_get.",
   });
 }
 

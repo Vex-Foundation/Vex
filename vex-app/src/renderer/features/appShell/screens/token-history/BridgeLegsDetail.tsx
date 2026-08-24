@@ -12,13 +12,11 @@
  * or on an uncurated chain, renders non-interactive rather than guessing.
  */
 
-import { useState, type JSX } from "react";
-import {
-  ArrowUpRightIcon,
-  VexIcon,
-} from "../../../../components/icons/index.js";
+import { useId, useRef, useState, type JSX } from "react";
+import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
+import { ExpandRegion } from "../../../../components/ui/expand-region.js";
 
 /** Short leg-role label for the expandable per-leg audit list. */
 export function legRoleLabel(role: BridgeLegRole): string {
@@ -61,18 +59,22 @@ export function BridgeLegs({
   readonly legs: readonly BridgeLeg[];
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   if (legs.length === 0) return null;
   return (
     <div className="mt-1 pl-[22px]">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        aria-controls={bodyId}
+        className="vex-micro-label uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
         {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
       </button>
-      {open ? (
+      <ExpandRegion id={bodyId} open={open} triggerRef={triggerRef}>
         <ul className="mt-1 flex flex-col gap-1">
           {legs.map((leg, index) => {
             const url = bridgeLegUrl(leg);
@@ -80,9 +82,9 @@ export function BridgeLegs({
             return (
               <li
                 key={`${leg.role}:${index}:${leg.txHash ?? "none"}`}
-                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-ink-tertiary"
               >
-                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-[var(--vex-line)] px-1 uppercase tracking-[0.14em]">
+                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-line-2 px-1 uppercase tracking-[0.14em]">
                   {legRoleLabel(leg.role)}
                 </span>
                 <span className="shrink-0">{leg.chainFamily === "solana" ? "solana" : leg.chainId}</span>
@@ -93,17 +95,17 @@ export function BridgeLegs({
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`Open ${legRoleLabel(leg.role)} leg on block explorer`}
-                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
                   >
                     TX
-                    <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
+                    <IconArrowUpRight size={10} />
                   </a>
                 ) : null}
               </li>
             );
           })}
         </ul>
-      ) : null}
+      </ExpandRegion>
     </div>
   );
 }

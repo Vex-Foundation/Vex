@@ -123,7 +123,7 @@ function rowWithoutIntent(overrides: Record<string, unknown> = {}): Record<strin
 
 // ── LEFT JOIN — companion intent populated ───────────────────────────
 
-describe("DTO projection — companion intent present", () => {
+describe("DTO projection - companion intent present", () => {
   it("surfaces all companion intent fields when JOIN finds an intent row", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [rowWithIntent()] });
     const result = await listPendingForSession(SESSION);
@@ -159,7 +159,7 @@ describe("DTO projection — companion intent present", () => {
       rows: [
         rowWithIntent({
           intent_decision: "rejected",
-          intent_decision_reason: "user clicked reject — wallet not authorized",
+          intent_decision_reason: "user clicked reject - wallet not authorized",
           intent_execution_status: "failed",
         }),
       ],
@@ -168,14 +168,14 @@ describe("DTO projection — companion intent present", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data[0]!.decision).toBe("rejected");
-    expect(result.data[0]!.decisionReason).toBe("user clicked reject — wallet not authorized");
+    expect(result.data[0]!.decisionReason).toBe("user clicked reject - wallet not authorized");
     expect(result.data[0]!.executionStatus).toBe("failed");
   });
 });
 
 // ── LEFT JOIN — companion intent missing (back-compat) ───────────────
 
-describe("DTO projection — back-compat with rows predating migration 024", () => {
+describe("DTO projection - back-compat with rows predating migration 024", () => {
   it("returns null for all companion fields when LEFT JOIN found no intent", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [rowWithoutIntent()] });
     const result = await listPendingForSession(SESSION);
@@ -204,7 +204,7 @@ describe("DTO projection — back-compat with rows predating migration 024", () 
 
 // ── Preview JSONB allow-listing — drift / leak defense ───────────────
 
-describe("DTO projection — preview JSONB allow-list", () => {
+describe("DTO projection - preview JSONB allow-list", () => {
   it("returns null preview when intent_preview_json is malformed (missing toolName)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
@@ -255,7 +255,7 @@ describe("DTO projection — preview JSONB allow-list", () => {
 
 // ── SQL inspection — LEFT JOIN wired across all 3 read paths ─────────
 
-describe("SQL — every read path includes the LEFT JOIN approval_intents", () => {
+describe("SQL - every read path includes the LEFT JOIN approval_intents", () => {
   it("listPendingForSession uses LEFT JOIN approval_intents", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [] });
     await listPendingForSession(SESSION);
@@ -289,7 +289,7 @@ describe("SQL — every read path includes the LEFT JOIN approval_intents", () =
 
 // ── App-wide inbox reuses the companion projection unchanged ─────────────
 
-describe("listPendingAllApprovals — companion intent projection", () => {
+describe("listPendingAllApprovals - companion intent projection", () => {
   // Re-type the shared `QueryFn` mock as a Mock (same instance) so the mock
   // helpers are typed without adding to the type-error baseline.
   const queryMock = vi.mocked(mocks.query);

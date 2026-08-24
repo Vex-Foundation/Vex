@@ -8,8 +8,8 @@
  *
  * Branch-nullability is the contract: `null` means the FETCH FAILED, which
  * is NOT the same as an empty database. The memory section OMITS the lines
- * fed by a failed branch; empty-state guidance ("Use long_memory_suggest…",
- * "Skip session_memory_search…") renders ONLY on a successful fetch with true zero
+ * fed by a failed branch; empty-state guidance ("Use MemorySuggest…",
+ * "Skip SessionMemorySearch…") renders ONLY on a successful fetch with true zero
  * counts. Two independent try/catch blocks preserve today's failure
  * granularity (one for the three knowledge queries, one for session stats)
  * and today's warn keys.

@@ -121,7 +121,7 @@ export async function poolsTokenHandler(
   if (!EVM_ADDRESS.test(tokenAddress)) {
     return fail(
       `"tokenAddress" must be a contract address (0x followed by 40 hex characters), received "${tokenAddress}". `
-        + "Resolve a name or symbol to an address with pools.search first.",
+        + "Resolve a name or symbol to an address with pools__tokens_search first.",
     );
   }
 
@@ -139,7 +139,7 @@ export async function poolsTokenHandler(
     );
     apiRow = match ? projectToken(match, now) : null;
   } catch (err) {
-    return fail(`pools.fun token detail unavailable (${poolsFailureDetail("pools.token", err)})`);
+    return fail(`pools.fun token detail unavailable (${poolsFailureDetail("pools__token_get", err)})`);
   }
 
   // The chain half. Guarded separately so a node problem costs one group, not
@@ -150,7 +150,7 @@ export async function poolsTokenHandler(
   } catch (err) {
     onchain = {
       source: "onchain",
-      unavailable: `The on-chain read failed: ${poolsFailureDetail("pools.token", err)}. `
+      unavailable: `The on-chain read failed: ${poolsFailureDetail("pools__token_get", err)}. `
         + "Nothing about the pool, creator, fee split or decimals was proven either way.",
     };
   }

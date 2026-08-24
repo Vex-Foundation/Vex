@@ -8,23 +8,28 @@
  * classifier (`shared/engine-error-classification.ts`) — validates it here,
  * and broadcasts it on `EV.engine.error`.
  *
- * BOUNDED CODES, NEVER PROSE. There is no message field, by construction. The
- * repo's pinned doctrine is that provider free text does not cross to the
- * renderer: `memory_jobs.last_error` is excluded from every DTO with a test
- * asserting the omission, and `mission_runs.stop_summary` is a 4096-char
- * provider message that is only length-capped, never redacted. Everything here
- * is an enum, an id, a small integer, or a timestamp — safe to render, safe to
- * log, and impossible to leak a prompt or a key through.
+ * BOUNDED CODES, PLUS ONE SANITIZED DETAIL. Everything here is an enum, an
+ * id, a small integer, or a timestamp - except `detail`, the single prose
+ * field admitted by owner decree 2026-08-02 (a failed operation states what
+ * actually happened). It crosses ONLY through `sanitizeEngineErrorDetail`
+ * (URLs, bearer tokens, sk- keys and long hex stripped, length capped) at the
+ * main-side bridge. Raw provider free text still never reaches the renderer:
+ * `memory_jobs.last_error` stays excluded from every DTO and
+ * `mission_runs.stop_summary` stays server-side.
  *
  * `errorType` is the one field carried VERBATIM rather than as a closed enum:
  * `ApiErrorType` is an OPEN enum in the installed SDK, so an unrecognized
  * member is a legal provider response and must survive as data. It is bounded
  * by length + shape instead, and the renderer must never branch on it without
- * a total default — that is what `category` is for.
+ * a total default - that is what `category` is for.
  */
 
 import { z } from "zod";
-import { ENGINE_ERROR_CATEGORIES } from "../engine-error-classification.js";
+import {
+  ENGINE_ERROR_CATEGORIES,
+  ENGINE_ERROR_REMEDIES,
+} from "../engine-error-classification.js";
+import { ENGINE_ERROR_DETAIL_MAX_LENGTH } from "../engine-error-sanitizer.js";
 import { missionRunIdField, sessionIdField } from "./mission/_common.js";
 
 /** Literal kept in sync with the engine `ENGINE_ERROR_EVENT_TYPE`. */
@@ -37,7 +42,7 @@ export const engineErrorScopeSchema = z.enum([
   "wake",
   "compact",
   /**
-   * Memory-manager maintenance. ALWAYS arrives with `sessionId: null` —
+   * Memory-manager maintenance. ALWAYS arrives with `sessionId: null` -
    * `memory_jobs` has no `session_id` column because consolidation and
    * reconcile are global work over `knowledge_entries`.
    */
@@ -47,7 +52,7 @@ export const engineErrorScopeSchema = z.enum([
 export type EngineErrorScope = z.infer<typeof engineErrorScopeSchema>;
 
 /**
- * The user-facing category. A closed enum on purpose — this is the field the
+ * The user-facing category. A closed enum on purpose - this is the field the
  * renderer switches on for copy, so drift must fail at the boundary.
  */
 export const engineErrorCategorySchema = z.enum(ENGINE_ERROR_CATEGORIES);
@@ -145,6 +150,27 @@ export const engineErrorEventSchema = z
     retryAfterSeconds: z.number().int().min(1).max(86_400).nullable(),
     occurredAt: z.string().datetime({ offset: true }),
     correlationId: z.string().nullable(),
+    /**
+     * SANITIZED real cause (owner decree 2026-08-02). The one prose field, and
+     * it only ever enters through `sanitizeEngineErrorDetail` at the bridge:
+     * URLs, bearer tokens, sk- keys and >=16-digit hex blobs are stripped and
+     * the length is capped before this schema ever sees the string. `null`
+     * means the failure carried no usable message. Defaulted so an event from
+     * an older emitter still validates.
+     */
+    detail: z
+      .string()
+      .min(1)
+      .max(ENGINE_ERROR_DETAIL_MAX_LENGTH)
+      .nullable()
+      .default(null),
+    /**
+     * The one user action that clears the failure, when one exists. Closed
+     * vocabulary from the same classifier module as `category`; `null` is the
+     * honest "nothing you can do but retry or report". Defaulted for the same
+     * backward-compat reason as `detail`.
+     */
+    remedy: z.enum(ENGINE_ERROR_REMEDIES).nullable().default(null),
   })
   .strict();
 export type EngineErrorEvent = z.infer<typeof engineErrorEventSchema>;

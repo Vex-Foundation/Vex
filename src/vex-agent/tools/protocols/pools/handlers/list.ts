@@ -173,6 +173,6 @@ export async function poolsTokensHandler(
       tokens: rows,
     });
   } catch (err) {
-    return fail(`pools.fun tokens unavailable (${poolsFailureDetail("pools.tokens", err)})`);
+    return fail(`pools.fun tokens unavailable (${poolsFailureDetail("pools__tokens_discover", err)})`);
   }
 }

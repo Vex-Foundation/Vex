@@ -34,6 +34,7 @@ function resetStoreToDefaults(): void {
     createSessionInitialTurn: null,
     reviewModal: "none",
     hideDustBalances: true,
+      notificationsEnabled: true,
     bookSectionOrder: [],
   });
 }
@@ -85,12 +86,16 @@ describe("uiStore", () => {
     expect(parsed.state.reviewModal).toBeUndefined();
   });
 
-  it("theme defaults to 'chronos' and stays in the persist whitelist", () => {
+  it("theme preference defaults to 'system'; the persisted slot is themePreference", () => {
+    // Ratified 2026-08-21: no explicit choice = follow the OS. jsdom has no
+    // matchMedia, so systemPrefersDark() takes its safe-fail DARK branch and
+    // `system` RESOLVES to chronos - the persisted PREFERENCE is what
+    // changed, not the resolved theme here.
     expect(useUiStore.getState().theme).toBe("chronos");
-    // The slot persists (so the planned `celeris` lands migration-free).
     useUiStore.getState().setSidebarOpen(false);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
-    expect(parsed.state.theme).toBe("chronos");
+    expect(parsed.state.themePreference).toBe("system");
+    expect("theme" in parsed.state).toBe(false);
   });
 
   it("migrate v2→v5 collapses the retired theme pair to 'chronos' without disturbing v2 fields", async () => {
@@ -118,6 +123,42 @@ describe("uiStore", () => {
     );
     await useUiStore.persist.rehydrate();
     expect(useUiStore.getState().hideDustBalances).toBe(true);
+  });
+
+  it("migrate v10→v11 seeds notificationsEnabled TRUE for a pre-v11 install (no field yet)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { sidebarOpen: true, bookOpen: true, themePreference: "chronos" },
+        version: 10,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(true);
+  });
+
+  it("coerces a non-boolean persisted notificationsEnabled to true on rehydrate (a tampered payload can never reach the notify path)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { notificationsEnabled: "yes please" },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(true);
+  });
+
+  it("a persisted notificationsEnabled FALSE survives rehydrate - the opt-out sticks", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { notificationsEnabled: false },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
   });
 
   it("coerces a non-boolean persisted hideDustBalances to true on rehydrate (tampered localStorage must not crash the shell)", async () => {
@@ -234,11 +275,13 @@ describe("uiStore", () => {
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed.state).toEqual({
-      theme: "chronos",
+      themePreference: "system",
       sidebarOpen: true,
+      sidebarWidth: 280,
+      bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
-      prologueVersion: null,
+      notificationsEnabled: true,
       bookSectionOrder: [],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
@@ -379,7 +422,36 @@ describe("uiStore", () => {
     expect(state.sidebarOpen).toBe(false);
     expect(state.bookOpen).toBe(false);
     expect(state.hideDustBalances).toBe(false);
-    expect(state.prologueVersion).toBe("0.1.9");
+    // v12 drops the retired `prologueVersion` key on the way through.
+    expect("prologueVersion" in state).toBe(false);
+  });
+
+  it("migrate v11→v12 drops the retired prologueVersion key and preserves every other pref", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: {
+          themePreference: "chronos",
+          sidebarOpen: false,
+          bookOpen: false,
+          sidebarWidth: 280,
+          bookWidth: 360,
+          hideDustBalances: false,
+          notificationsEnabled: false,
+          prologueVersion: "0.2.5",
+          bookSectionOrder: ["position"],
+        },
+        version: 11,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    const state = useUiStore.getState();
+    expect("prologueVersion" in state).toBe(false);
+    expect(state.sidebarOpen).toBe(false);
+    expect(state.bookOpen).toBe(false);
+    expect(state.hideDustBalances).toBe(false);
+    expect(state.notificationsEnabled).toBe(false);
+    expect(state.bookSectionOrder).toEqual(["position"]);
   });
 
   it("coerces every off-shape persisted bookSectionOrder back to [] (a tampered payload must not blank the rail)", async () => {
@@ -478,11 +550,13 @@ describe("uiStore", () => {
     const parsed = JSON.parse(raw!);
 
     expect(parsed.state).toEqual({
-      theme: "chronos",
+      themePreference: "system",
       sidebarOpen: false,
+      sidebarWidth: 280,
+      bookWidth: 360,
       bookOpen: true,
       hideDustBalances: true,
-      prologueVersion: null,
+      notificationsEnabled: true,
       bookSectionOrder: [],
     });
     expect(parsed.state.logBuffer).toBeUndefined();

@@ -6,8 +6,8 @@
  * 2. Handlers — async functions that call TS clients directly
  *
  * The LLM interacts via two meta-tools:
- * - discover_tools → search manifests by query/namespace
- * - execute_tool → call handler by toolId with params
+ * - ToolSearch → search / select / list manifests by query or namespace
+ * - executeProtocolTool → call handler by toolId with params
  */
 
 import type { ToolResult } from "../types.js";
@@ -66,6 +66,29 @@ export interface ToolDiscoveryMetadata {
 }
 
 // ── Manifest (declarative tool definition) ───────────────────────
+
+/**
+ * One RETIRED input spelling of a param, accepted for a bounded migration.
+ *
+ * An alias exists so a rename does not cost every in-flight session one burnt
+ * call. It is INPUT-ONLY: the model-visible schema, the discovery row and every
+ * description advertise {@link ProtocolParamDef.key} alone.
+ */
+export interface ProtocolParamAlias {
+  /**
+   * The retired spelling. It must be a key of `conventions.ts`'s
+   * `BANNED_PARAM_KEYS` (the only durable record of a retired spelling once the
+   * lint allowlist rows are deleted) and must collide with no declared key or
+   * alias of the same tool. Enforced by the `param-alias` lint rule.
+   */
+  readonly key: string;
+  /**
+   * The condition under which this alias is DELETED, in prose, so a compatibility
+   * shim can never become a permanent second vocabulary (rule 03). Never hashed
+   * into the approval fingerprint and never model-visible.
+   */
+  readonly removeAfter: string;
+}
 
 export interface ProtocolParamDef {
   key: string;
@@ -134,11 +157,66 @@ export interface ProtocolParamDef {
    * {@link ProtocolParamDef.acceptsStringArray}, EVERY member must be on the list.
    */
   enum?: readonly string[];
+  /**
+   * RETIRED input spellings of {@link ProtocolParamDef.key}, accepted for a
+   * bounded migration and rewritten to the canonical key before anything reads
+   * the call.
+   *
+   * Read in exactly three places, and NOWHERE else:
+   *  - `runtime/param-aliases.ts::normalizeParamAliases`, called first thing in
+   *    `executeProtocolTool`, rewrites the retired key IN PLACE on the original
+   *    arguments object and refuses BY NAME when both spellings arrive. It runs
+   *    before the string-array and numeric-string coercers, before the preview
+   *    reader, before `validateProtocolParams` and before the approval enqueue,
+   *    so the handler, the capture row, the fingerprint check and the queued
+   *    approval all see ONE spelling;
+   *  - `computeManifestFingerprint` hashes the sorted alias KEYS when any are
+   *    declared, because an alias widens what a queued approval would admit; a
+   *    manifest with no alias hashes exactly as it did before this field existed;
+   *  - the `param-alias` lint rule, which refuses an alias that is not a retired
+   *    spelling, collides with another key of the same tool, or has no
+   *    {@link ProtocolParamAlias.removeAfter}.
+   *
+   * It is deliberately NOT read by `paramsToJsonSchema` or by discovery: the
+   * schema advertises the canonical key alone, so a model reading the manifest
+   * today never learns the retired spelling.
+   */
+  aliases?: readonly ProtocolParamAlias[];
 }
 
 export interface ProtocolToolManifest {
-  /** Canonical tool ID, e.g. "khalani.bridge" */
+  /**
+   * Canonical tool ID, e.g. "khalani.bridge".
+   *
+   * The IMMUTABLE internal and audit identity. `protocol_executions`,
+   * `tool_embeddings`, `MUTATION_MATRIX`, `protocol_sync_jobs.read_tool_id`, the
+   * failure classifiers, and every stored approval envelope key on it. It is
+   * NEVER renamed and NEVER derived from {@link ProtocolToolManifest.publicName}.
+   */
   toolId: string;
+  /**
+   * The MODEL-VISIBLE callable name, e.g. `khalani__bridge_execute`.
+   *
+   * The second of the two identities (`tool-surface-spec/identity-and-migration.md`
+   * section 1). `toolId` is durable and internal; `publicName` is what the model
+   * reads in discovery and emits in a tool call, and it is the only name that
+   * reaches a provider `tools` array (`registry/injected-protocol-tools.ts`).
+   *
+   * Grammar `<namespace>__<resource_action>`, enforced in production by
+   * `./public-name-gate.ts`: lowercase `[a-z0-9_]`, at most 64 characters,
+   * EXACTLY ONE double underscore, marking the namespace boundary. The
+   * projection is therefore a TABLE, not a string transform — the old
+   * dot-to-double-underscore mangling is not invertible under this grammar
+   * (`kyberswap__swap_quote` would invert to `kyberswap.SwapQuote`, not to the
+   * real `kyberswap.swap.quote`), so no code may derive either identity from the
+   * other by string surgery.
+   *
+   * The authored value comes from the naming spec's mapping artifacts
+   * (`tool-surface-spec/mappings/<namespace>.json`); the gate asserts manifest
+   * and artifact agree exactly, in both directions, over the whole catalog.
+   * Renaming one means editing both in the same change.
+   */
+  publicName: string;
   /** Protocol namespace */
   namespace: ProtocolNamespace;
   /** Lifecycle state — see {@link ToolLifecycle}. */
@@ -371,5 +449,8 @@ export type {
   ProtocolDiscoveryRequest,
   ProtocolDiscoveryResult,
   ProtocolDiscoveryRetrievalMeta,
-  ProtocolManifestResult,
+  ToolSearchNamespaceRow,
+  ToolSearchQueryRow,
+  ToolSearchSelectResult,
+  ToolSearchSelectRow,
 } from "./types/discovery.js";

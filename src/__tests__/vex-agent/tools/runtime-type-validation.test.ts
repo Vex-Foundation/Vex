@@ -66,6 +66,7 @@ beforeAll(() => {
   registerTestTool(
     {
       toolId: "test.type_validation.strict",
+      publicName: "test__type_validation_strict",
       namespace: "dexscreener", // non-mutating namespace, non-advertised at test level is fine
       lifecycle: "active",
       description: "Test tool for runtime type validation",

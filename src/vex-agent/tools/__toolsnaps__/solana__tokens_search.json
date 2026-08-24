@@ -1,0 +1,55 @@
+{
+  "definition": {
+    "function": {
+      "description": "Look up SPECIFIC Solana tokens you can already name - by symbol, name, or up to 100 comma-separated mint addresses for a batch lookup. Use this when the user names a token and you need to know what it is and whether it is safe to touch; solana__tokens_discover is the surface when there is no name yet and the user wants what is new, popular or top-moving. Returns one projected row per matching token: identity, price, market cap and liquidity, holder and organic-trading signals, the safety-audit flags, tags and launchpad, and age - the ~40-field provider payload narrowed to what a trading decision uses, with every matching row kept. minOrganicScore, verifiedOnly and minLiquidity filter the result and an out-of-range value is rejected rather than clamped. The rows are the whole answer; there is no continuation to page through.",
+      "name": "solana__tokens_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "minLiquidity": {
+            "description": "Only include tokens with liquidity (USD) >= this value. Rejected if negative.",
+            "type": "number"
+          },
+          "minOrganicScore": {
+            "description": "Only include tokens with organicScore >= this value (0-100). Rejected if out of range.",
+            "type": "number"
+          },
+          "query": {
+            "description": "Token name, symbol, or mint address. Accepts a comma-separated list of mint addresses (up to 100) for batch lookup.",
+            "type": "string"
+          },
+          "statsInterval": {
+            "description": "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: 1h).",
+            "enum": [
+              "5m",
+              "1h",
+              "6h",
+              "24h",
+              "all"
+            ],
+            "type": "string"
+          },
+          "verifiedOnly": {
+            "description": "Only include Jupiter-verified tokens.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.tokens.search"
+  }
+}

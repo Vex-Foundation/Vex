@@ -19,13 +19,13 @@ export function ApiKeysCard({
   const status = k.jupiterConfigured ? "ok" : "warning";
   const items: string[] = [];
   items.push(
-    `Jupiter: ${k.jupiterConfigured ? "set" : "not set — Solana swaps unavailable"}`,
+    `Jupiter: ${k.jupiterConfigured ? "set" : "not set - Solana swaps unavailable"}`,
   );
-  items.push(`Tavily: ${k.tavilyConfigured ? "set" : "—"}`);
-  items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "—"}`);
-  items.push(`Relay: ${k.relayConfigured ? "set" : "—"}`);
-  items.push(`Lighter RHC: ${k.lighterRhcTradingConfigured ? "set" : "—"}`);
-  items.push(`Lighter Core: ${k.lighterCoreTradingConfigured ? "set" : "—"}`);
+  items.push(`Tavily: ${k.tavilyConfigured ? "set" : "-"}`);
+  items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "-"}`);
+  items.push(`Relay: ${k.relayConfigured ? "set" : "-"}`);
+  items.push(`Lighter RHC: ${k.lighterRhcTradingConfigured ? "set" : "-"}`);
+  items.push(`Lighter Core: ${k.lighterCoreTradingConfigured ? "set" : "-"}`);
   return (
     <SummaryCard
       title="API keys"

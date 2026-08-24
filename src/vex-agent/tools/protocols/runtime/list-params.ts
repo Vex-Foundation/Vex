@@ -7,7 +7,7 @@
  * symbols through a re-export facade at the old path, so no dexscreener call site
  * changed.
  *
- * `execute_tool` params come straight from the model, so these readers convert an
+ * Protocol call params come straight from the model, so these readers convert an
  * open `Record<string, unknown>` into typed values or an explicit rejection.
  * Extracted from `../pair-list/list-query.ts` unchanged when the feed and
  * narrative tools gained the same vocabulary: three families reading `limit` with

@@ -67,7 +67,7 @@ export function ApprovalLinkStamp({
     <button
       type="button"
       data-vex-approval-link={approvalId}
-      aria-label="Awaiting signature — go to approval"
+      aria-label="Awaiting signature - go to approval"
       onClick={(event) => jumpToApproval(approvalId, event.currentTarget)}
       className="shrink-0 rounded-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
     >

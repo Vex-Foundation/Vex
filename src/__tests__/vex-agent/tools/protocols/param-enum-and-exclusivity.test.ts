@@ -23,6 +23,7 @@ import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 function manifest(overrides: Partial<ProtocolToolManifest>): ProtocolToolManifest {
   return {
     toolId: "test.tool",
+    publicName: "test__tool",
     namespace: "dexscreener",
     lifecycle: "active",
     description: "test manifest",

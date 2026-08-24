@@ -174,8 +174,8 @@ afterEach(() => {
   cleanupTasks.clear();
 });
 
-describe("docker:composeUp — cancellation (PR3)", () => {
-  it("initiator cancel — composeUp resolves after signal.aborted → handler returns internal.cancelled", async () => {
+describe("docker:composeUp - cancellation (PR3)", () => {
+  it("initiator cancel - composeUp resolves after signal.aborted → handler returns internal.cancelled", async () => {
     const composeUpFn = await loadHandler();
     const { getCancelController } = await import("../register-handler.js");
 
@@ -220,7 +220,7 @@ describe("docker:composeUp — cancellation (PR3)", () => {
     expect(result.error.correlationId).toBe(UUID_INITIATOR);
   });
 
-  it("joined caller cancel detaches THAT caller only — shared work continues for initiator", async () => {
+  it("joined caller cancel detaches THAT caller only - shared work continues for initiator", async () => {
     const composeUpFn = await loadHandler();
     const { getCancelController } = await import("../register-handler.js");
 

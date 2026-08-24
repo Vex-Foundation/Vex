@@ -1,0 +1,50 @@
+{
+  "definition": {
+    "function": {
+      "description": "SUPPLY COLLATERAL to one Morpho Blue market: move the wallet's own token onto the market to back a loan. This SPENDS real funds, signs and broadcasts on-chain transactions from the user's wallet, and cannot be undone. COLLATERAL IS NOT A DEPOSIT AND EARNS NOTHING: it sits on the market to support borrowing and to hold the position away from liquidation. A user who wants to EARN on an asset wants `morpho__vault_deposit` instead. This is the only one of the four market operations that can never make a position less safe, because adding collateral only ever raises the health factor. QUOTE FIRST: REFUSED without a fresh `morpho__market_quote` of THIS direction for exactly these params. A quote of any other direction does not authorize it. WHAT GETS SIGNED: TWO transactions behind ONE consent - an exact-amount ERC-20 `approve()` to the chain's pinned GeneralAdapter1, then the operation through Bundler3. Never an unlimited approval and never a signature of any kind. They are not atomic, so a failure after the approval lands leaves a standing allowance capped at this amount, named in the failure output; retrying consumes it, or approve zero to revoke it. REFUSED on any market whose oracle and IRM Vex cannot vouch for, by name, before anything is built. The gate is strict: only 9 of 100 Base markets sampled passed it. REFUSED below a health factor of 1.25, projected fresh and re-checked immediately before signing. That floor is a PRE-SIGNATURE BUFFER, not an on-chain guarantee: the signed call carries no floor, so an oracle move before inclusion can settle the position below 1.25 while still above Morpho's liquidation threshold of 1. A `null` health factor means NO DEBT, not a failed read. NOT ATOMIC with any other operation: Vex grants no standing authorization, so a supply-then-borrow is two separately quoted and separately consented OPERATIONS, and either can fail with the other landed. What makes the in-between state safe is ORDERING - collateral in before debt out, debt down before collateral out - so a second leg that never lands leaves the position safer than it started. ONE LEG: the result carries one of `tokenIn` (wallet sends) or `tokenOut` (wallet receives), never both. The market's two tokens rarely share a decimal scale, so never compare a collateral raw amount with a loan one. RECORDED before anything is signed, and the amount reported back is PROVEN from the receipt rather than copied from the quote. Four endings: confirmed, refused (nothing signed, no gas), reverted (gas spent, position untouched), and unproven - on unproven DO NOT RETRY, the funds may already have moved. RETURNS on success the transaction hash and the collateral amount PROVEN from the receipt's own event, at the collateral token's own decimals. On any non-success it returns the REAL cause and what to do about it, never a generic error.",
+      "name": "morpho__market_supply_collateral",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The chain the market lives on. Required: a market id is chain-scoped. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Set true to get the FULL preview and sign nothing: the vouching verdict, the health factor before and after, the free liquidity, the allowance plan, the decoded transaction, the gas bound and the simulation verdict.",
+            "type": "boolean"
+          },
+          "marketId": {
+            "description": "The market's 0x-prefixed 64-hex id, from `morpho__markets_discover` or `morpho__positions_get`. A 40-hex value is a CONTRACT ADDRESS and is rejected by name. Chain-scoped.",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Price protection in basis points (1 bps = 0.01%). Default 100, capped at 1000, and a higher value is REJECTED rather than clamped. It bounds a full-debt repayment's per-share price of the TWO operations that move shares: a market supply and a repayment. On each, Vex derives a `maxSharePrice` ceiling from it that the CHAIN enforces, so a worse price cannot mine; on a full-debt (shares-mode) repayment it also caps the approval. The other four - supply_collateral, withdraw, withdraw_collateral and borrow - are direct calls naming their own exact token amount, carry NO on-chain price guard, and are unaffected by this value.",
+            "type": "number"
+          },
+          "supplyCollateralAmountRaw": {
+            "description": "How much COLLATERAL to supply, in the COLLATERAL token's RAW base units as a whole-number string. THE SCALE IS THE COLLATERAL TOKEN'S OWN, which is usually NOT the loan token's: read `collateralAsset.decimals` from `morpho__market_get`. A market pairing 8-decimal cbBTC against 6-decimal USDC will silently accept a loan-scaled number as a hundredfold wrong amount, so read the scale rather than assuming it. A human decimal amount is refused, not rounded. Another operation's amount key is refused by name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "chain",
+          "supplyCollateralAmountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "morpho",
+    "requiresEnv": null,
+    "toolId": "morpho.market.supplyCollateral"
+  }
+}

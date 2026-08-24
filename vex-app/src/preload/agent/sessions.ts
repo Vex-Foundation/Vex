@@ -1,18 +1,22 @@
 import { CH } from "../../shared/ipc/channels.js";
 import {
+  sessionBranchInputSchema,
   sessionCreateInputSchema,
   sessionDeleteInputSchema,
   sessionExportMarkdownInputSchema,
   sessionGetInputSchema,
   sessionGetModelInputSchema,
+  sessionRenameInputSchema,
   sessionSetPinnedInputSchema,
 } from "../../shared/schemas/sessions.js";
 import type {
+  SessionBranchInput,
   SessionCreateInput,
   SessionDeleteInput,
   SessionExportMarkdownInput,
   SessionGetInput,
   SessionGetModelInput,
+  SessionRenameInput,
   SessionSetPinnedInput,
 } from "../../shared/schemas/sessions.js";
 import {
@@ -43,6 +47,20 @@ export const sessions = {
       CH.sessions.setPinned,
       input,
       sessionSetPinnedInputSchema
+    );
+  },
+  rename(input: SessionRenameInput) {
+    return invokeWithSchema(
+      CH.sessions.rename,
+      input,
+      sessionRenameInputSchema
+    );
+  },
+  branch(input: SessionBranchInput) {
+    return invokeWithSchema(
+      CH.sessions.branch,
+      input,
+      sessionBranchInputSchema
     );
   },
   delete(input: SessionDeleteInput) {

@@ -31,7 +31,7 @@ describe("selectResumeCue", () => {
   it("the executed cue states execution and points at verification", () => {
     expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("executed successfully");
     expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("do not repeat it");
-    expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("agent_scan");
+    expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("AgentScan");
   });
 
   it("the neutral cue never claims the action ran", () => {

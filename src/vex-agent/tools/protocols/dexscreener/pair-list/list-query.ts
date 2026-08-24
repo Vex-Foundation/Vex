@@ -222,7 +222,7 @@ export function parsePairListQuery(
       ok: false,
       reason:
         '"chainIds" does not apply to this tool — every row it returns is already on the '
-        + '"chain" you supplied. Use dexscreener.search when you need to compare chains.',
+        + '"chain" you supplied. Use dexscreener__pairs_search when you need to compare chains.',
     };
   }
 

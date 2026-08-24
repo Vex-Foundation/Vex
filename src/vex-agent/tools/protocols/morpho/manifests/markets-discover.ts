@@ -34,6 +34,7 @@ import { MORPHO_MARKET_FIELD_GROUPS } from "../read-params.js";
  */
 export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
   toolId: "morpho.markets.discover",
+  publicName: "morpho__markets_discover",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -42,14 +43,18 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "A Morpho market is ONE loan asset borrowed against ONE collateral asset at a fixed liquidation threshold; "
     + "rates float with utilization and there is no maturity. Use this when the user asks where to lend or deposit an "
     + "asset, what a deposit would earn, where the cheapest borrow rate is, which markets accept a given collateral, or "
-    + "how deep a lending market is; use `pendle.yields` instead when they want a FIXED rate locked to an expiry date, "
-    + "and `solana.lend.*` for Solana. Filter by chain, free-text search, loan token, collateral token, Morpho's own "
+    + "how deep a lending market is; use `pendle__markets_discover` instead when they want a FIXED rate locked to an expiry date, "
+    + "and the `solana__lend_*` tools for Solana. Filter by chain, free-text `query`, loan token, collateral token, Morpho's own "
     + "asset TAGS on either side, a set of known market ids, oracle contract, "
     + "interest-rate-model contract, whether the market is IDLE, supplied USD, "
     + "borrowed USD, utilization percent, net supply APY percent, net borrow APY percent and liquidation-threshold "
     + `percent; sort by any of ${MORPHO_MARKET_SORT_KEYS.join(", ")}; page with `
     + `offset/limit (max ${MORPHO_MAX_PAGE_LIMIT}). Every filter is applied SERVER-SIDE and echoed back in `
     + "`filtersApplied`; an off-enum or out-of-range value is REJECTED BY NAME, never clamped or dropped. "
+    + "PAGING IS EXPLICIT: every reply carries `matched` (the total that matched server-side), `returned`, "
+    + "`offset`, `limit`, `hasMore`, `nextOffset` (the offset to send next when `hasMore` is true, and `null` "
+    + "when it is false), `droppedRows` and `filtersApplied` (every filter that actually ran). Continue by "
+    + "sending back `nextOffset`, never by computing an offset yourself. "
     + "RETURNS one row per market: marketId (a 64-hex id, not an address) plus chain, loan and collateral asset each "
     + "with address, symbol and decimals, lltvPercent, utilizationPercent, supply/borrow/collateral and liquidity each "
     + "as {raw, decimals, symbol, human, usd}, oracle address and type, irmAddress, the listed flag, Morpho's own "
@@ -75,11 +80,21 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
         + "not operate on is rejected by name, so a coverage gap is never reported as an absence of markets.",
     },
     {
-      key: "search",
+      key: "query",
+      aliases: [
+        {
+          key: "search",
+          removeAfter:
+            "D5 owner acceptance: a stale call carrying `search` is rewritten to `query`; the alias goes when "
+            + "the owner accepts that such a call should instead receive the unknown-parameter answer naming "
+            + "`query`.",
+        },
+      ],
       type: "string",
       description:
         "Free-text substring match on the market's asset symbols and name (for example 'usdc', 'wsteth'). Use it when "
-        + "the user names an asset informally instead of by contract address.",
+        + "the user names an asset informally instead of by contract address. It is a FILTER, not a ranker: it "
+        + "narrows the set and `sort` decides the order.",
     },
     {
       key: "loanTokenAddress",
@@ -122,7 +137,7 @@ export const MORPHO_MARKETS_DISCOVER_TOOL: ProtocolToolManifest = {
       acceptsStringArray: true,
       description:
         "Comma list or array of up to 20 known 64-hex market ids, to re-read a specific set in ONE call instead of "
-        + "one morpho.market.get per market. Use it to refresh markets you already hold or already shortlisted. A "
+        + "one morpho__market_get per market. Use it to refresh markets you already hold or already shortlisted. A "
         + "40-hex contract address here is rejected by name as an address.",
     },
     {

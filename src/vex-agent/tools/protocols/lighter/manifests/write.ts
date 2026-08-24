@@ -14,7 +14,7 @@ const PREVIEW_ID_PARAM: ProtocolParamDef = {
   key: "previewId",
   type: "string",
   description:
-    "Optional session-scoped Lighter order preview id returned by lighter.order.preview. Omit for normal 'prepare that order' requests; Vex uses the latest fresh preview in this session and environment.",
+    "Optional session-scoped Lighter order preview id returned by lighter__order_preview. Omit for normal 'prepare that order' requests; Vex uses the latest fresh preview in this session and environment.",
 };
 
 const INTENT_ID_PARAM: ProtocolParamDef = {
@@ -22,7 +22,7 @@ const INTENT_ID_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Session-scoped Lighter order execution intent id produced by lighter.order.create.prepare. The approved create path refuses ids from other sessions.",
+    "Session-scoped Lighter order execution intent id produced by lighter__order_create_prepare. The approved create path refuses ids from other sessions.",
 };
 
 const LIFECYCLE_INTENT_ID_PARAM: ProtocolParamDef = {
@@ -87,7 +87,7 @@ const DEPOSIT_INTENT_ID_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Session-scoped Lighter deposit intent id produced by lighter.deposit.prepare. The approved deposit path refuses ids from other sessions.",
+    "Session-scoped Lighter deposit intent id produced by lighter__deposit_prepare. The approved deposit path refuses ids from other sessions.",
 };
 
 const KEY_REGISTRATION_INTENT_ID_PARAM: ProtocolParamDef = {
@@ -95,7 +95,7 @@ const KEY_REGISTRATION_INTENT_ID_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Session-scoped Lighter key-registration intent id produced by lighter.key.register.prepare.",
+    "Session-scoped Lighter key-registration intent id produced by lighter__key_register_prepare.",
 };
 
 const WITHDRAW_AMOUNT_PARAM: ProtocolParamDef = {
@@ -110,19 +110,20 @@ const WITHDRAW_INTENT_ID_PARAM: ProtocolParamDef = {
   key: "intentId",
   type: "string",
   required: true,
-  description: "Session-scoped environment-bound withdrawal intent produced by lighter.withdraw.prepare.",
+  description: "Session-scoped environment-bound withdrawal intent produced by lighter__withdraw_prepare.",
 };
 
 const WITHDRAW_CLAIM_ID_PARAM: ProtocolParamDef = {
   key: "claimId",
   type: "string",
   required: true,
-  description: "Session-scoped environment-bound manual settlement claim id produced by lighter.withdraw.claim.prepare.",
+  description: "Session-scoped environment-bound manual settlement claim id produced by lighter__withdraw_claim_prepare.",
 };
 
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "lighter.order.cancel.prepare",
+    publicName: "lighter__order_cancel_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -135,6 +136,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.cancel",
+    publicName: "lighter__order_cancel",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -147,6 +149,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.modify.prepare",
+    publicName: "lighter__order_modify_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -159,6 +162,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.modify",
+    publicName: "lighter__order_modify",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -171,6 +175,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.cancelAll.prepare",
+    publicName: "lighter__order_cancel_all_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -183,6 +188,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.cancelAll",
+    publicName: "lighter__order_cancel_all",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -195,6 +201,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.position.close.prepare",
+    publicName: "lighter__position_close_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -207,6 +214,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.position.close",
+    publicName: "lighter__position_close",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -219,6 +227,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.withdraw.claim.prepare",
+    publicName: "lighter__withdraw_claim_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -231,10 +240,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.withdraw.claim",
+    publicName: "lighter__withdraw_claim",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact separately approved Lighter manual settlement claim for Core USDC or RHC USDG. Use when the trusted host approval from lighter.withdraw.claim.prepare resumes. It refuses direct, cross-session, stale, changed-amount, changed-contract, insufficient-ETH, or over-ceiling execution. The local wallet signs only the fixed-owner asset-3 claim with value zero; Vex persists hash, sender, and nonce before one broadcast, accepts only exact fee-only replacements, and never retries ambiguity. Returns the claim id, transaction hash, confirming or ambiguous state, receipt status when known, and reconciliation guidance. Real funds move only to the fixed owner after approval.",
+      "Execute one exact separately approved Lighter manual settlement claim for Core USDC or RHC USDG. Use when the trusted host approval from lighter__withdraw_claim_prepare resumes. It refuses direct, cross-session, stale, changed-amount, changed-contract, insufficient-ETH, or over-ceiling execution. The local wallet signs only the fixed-owner asset-3 claim with value zero; Vex persists hash, sender, and nonce before one broadcast, accepts only exact fee-only replacements, and never retries ambiguity. Returns the claim id, transaction hash, confirming or ambiguous state, receipt status when known, and reconciliation guidance. Real funds move only to the fixed owner after approval.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [WITHDRAW_CLAIM_ID_PARAM],
@@ -243,6 +253,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.withdraw.prepare",
+    publicName: "lighter__withdraw_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -255,10 +266,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.withdraw",
+    publicName: "lighter__withdraw",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter.withdraw.prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval; API acceptance is not final delivery.",
+      "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter__withdraw_prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval; API acceptance is not final delivery.",
     mutating: true,
     actionKind: "external_post",
     params: [WITHDRAW_INTENT_ID_PARAM],
@@ -267,6 +279,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.key.register.prepare",
+    publicName: "lighter__key_register_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -279,6 +292,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.key.register",
+    publicName: "lighter__key_register",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -291,6 +305,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.deposit.prepare",
+    publicName: "lighter__deposit_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -303,6 +318,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.deposit",
+    publicName: "lighter__deposit",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -315,10 +331,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.create.prepare",
+    publicName: "lighter__order_create_prepare",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare an approval-gated Lighter order create from a fresh persisted lighter.order.preview. Use this directly when the user says to prepare that Lighter order for approval after previewing it; no user-facing vault id or preview id is required for the normal latest-preview flow. Creates a local durable execution intent and asks the engine to enqueue the approval card for lighter.order.create. Returns the intent id, preview identity, approval status, expiry, and user guidance pointing at the approval card. This is a preparation step only: no signer, API private key read, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Prepare an approval-gated Lighter order create from a fresh persisted lighter__order_preview. Use this directly when the user says to prepare that Lighter order for approval after previewing it; no user-facing vault id or preview id is required for the normal latest-preview flow. Creates a local durable execution intent and asks the engine to enqueue the approval card for lighter__order_create. Returns the intent id, preview identity, approval status, expiry, and user guidance pointing at the approval card. This is a preparation step only: no signer, API private key read, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, PREVIEW_ID_PARAM],
@@ -329,10 +346,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.create",
+    publicName: "lighter__order_create",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter.order.create.prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
+      "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
     mutating: true,
     actionKind: "external_post",
     params: [INTENT_ID_PARAM],

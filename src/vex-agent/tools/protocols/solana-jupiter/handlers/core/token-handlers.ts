@@ -150,12 +150,12 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (filterError) return fail(filterError);
 
     // Every return path maps the raw token array through the concise projector
-    // (P0-3c) so default-limit trending stays under the overflow threshold.
+    // (P0-3c) so a default-limit trending call stays small.
     //
     // The recent and tag endpoints take NO server-side limit, so `limit` is
     // applied here as a VISIBLE window: the pre-fix recent branch ignored the
-    // advertised `limit` entirely and a bare live call measured 27,970 B
-    // against the 16,384 B tool-output cap. Windowing is accounted, never
+    // advertised `limit` entirely and a bare live call measured 27,970 B.
+    // Windowing is accounted, never
     // silent — `totalMatched`/`hasMore` expose what the window holds back.
     const windowed = (tokens: readonly unknown[]): {
       returned: number;

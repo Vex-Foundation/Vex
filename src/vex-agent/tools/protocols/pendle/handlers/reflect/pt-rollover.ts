@@ -105,7 +105,7 @@ export async function executePendlePtRollover(
     if (!source || !source.market.address) {
       return refuse(
         "route_not_found",
-        "No Pendle market on this chain has that fromPt — check pendle.yields (includeMatured:true covers expired markets).",
+        "No Pendle market on this chain has that fromPt - check pendle__markets_discover (includeMatured:true covers expired markets).",
       );
     }
     // DESTINATION — buy-shaped: ACTIVE ONLY, and maturity is named as the reason.
@@ -159,7 +159,7 @@ export async function executePendlePtRollover(
       return refuse("route_not_found", "Pendle returned no roll-over route between these two PTs.");
     }
     if (response.action !== "roll-over-pt") {
-      return refuse("route_not_found", "Pendle did not return a roll-over-pt route — for a plain PT buy use pendle.pt.buy.");
+      return refuse("route_not_found", "Pendle did not return a roll-over-pt route - for a plain PT buy use pendle__pt_buy.");
     }
 
     const intent: PendleReflectIntent = {

@@ -78,7 +78,7 @@ export function morphoVaultNotFound(detail: string): VexError {
     ErrorCodes.MORPHO_VAULT_NOT_FOUND,
     `Morpho has no vault at that address on that chain: ${detail}`,
     "Vault addresses are chain-scoped, and a V1 vault address is not readable as a V2 vault or the reverse. "
-    + "Confirm both the address and the chain with morpho.vaults.discover before reading one.",
+    + "Confirm both the address and the chain with `morpho__vaults_discover` before reading one.",
   );
 }
 

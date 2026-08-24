@@ -1,9 +1,8 @@
 /**
  * Sidebar brand + home control — a small STATIC logo mark crowns the rail
- * header as the sole brand (no "VEX" wordmark). The particle-constellation
- * sigil broke down at rail size, so this is the clean mark the rail carried
- * originally: the script monogram (`/logo_clean.png`) — a plain <img>, no
- * canvas, no animation.
+ * header as the sole brand (no "VEX" wordmark): the vx script monogram as
+ * inline SVG on currentColor, so it reads in both themes. No canvas, no
+ * animation.
  *
  * Doubles as the "Back to welcome" control. When a session is open the mark
  * is a real button that clears the active session and returns the panel to
@@ -15,11 +14,9 @@
  */
 
 import type { JSX } from "react";
+import { VexMark } from "../../components/common/VexMark.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
-
-/** Vex script monogram (square PNG). */
-const VEX_LOGO_SRC = "/logo_clean.png";
 
 export function SidebarHomeSigil({
   sidebarOpen,
@@ -32,19 +29,12 @@ export function SidebarHomeSigil({
   // Already on the welcome stage → the mark is inert, not a button.
   const onWelcome = activeSessionId === null;
 
-  // Height-driven size; width flows from each mark's own aspect. A light rail
-  // crown (~24px open / ~20px collapsed), not a billboard.
-  const sizeClass = sidebarOpen ? "h-6" : "h-5";
-  const src = VEX_LOGO_SRC;
-
+  // Height-driven size; width flows from the mark's native aspect. A light
+  // rail crown (24px open / 20px collapsed), not a billboard.
   const mark = (
-    <img
-      src={src}
-      alt=""
-      aria-hidden
-      data-vex-home-mark
-      className={cn("w-auto select-none object-contain", sizeClass)}
-    />
+    <span data-vex-home-mark className="select-none text-brand-mark">
+      <VexMark size={sidebarOpen ? 24 : 20} />
+    </span>
   );
 
   if (onWelcome) {
@@ -58,7 +48,7 @@ export function SidebarHomeSigil({
       onClick={() => setActiveSessionId(null)}
       className={cn(
         "flex items-center justify-center rounded-xl p-1 transition-colors",
-        "hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
+        "hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
       )}
     >
       {mark}

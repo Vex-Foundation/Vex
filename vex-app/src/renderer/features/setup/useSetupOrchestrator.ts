@@ -62,7 +62,7 @@ export type SetupHandoff =
     }
   | { readonly kind: "unlock"; readonly returnView: UnlockReturnView };
 
-/** Mono status line under the sigil — honest, bound to the real stage. */
+/** Gate status line — honest, bound to the real pipeline stage. */
 export interface SetupStatusLine {
   readonly key: "probing" | "services" | "schema" | "ledger" | "ready";
   readonly label: string;

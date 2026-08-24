@@ -34,7 +34,7 @@ vi.mock("electron", () => ({
     },
   },
   app: {
-    isPackaged: true, // simulate prod — only app://vex/ origin is trusted
+    isPackaged: true, // simulate prod - only app://vex/ origin is trusted
   },
 }));
 

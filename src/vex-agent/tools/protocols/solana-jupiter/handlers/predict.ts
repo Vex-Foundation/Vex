@@ -18,7 +18,7 @@ import { walletAddress } from "./core.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { toPredictView, projectMarketPricing } from "../predict-projector.js";
 import { convertPredictionHistoryEventMoney } from "../predict-money.js";
-import { resolvePredictionWindow, resolveSearchWindow, strictEnumField } from "../predict-params.js";
+import { SEARCH_MAX_LIMIT, resolvePredictionWindow, resolveSearchWindow, strictEnumField } from "../predict-params.js";
 import { wrapPredictionRead } from "../predict-region-block.js";
 import { executePredictBuy, executePredictSell, executePredictClaim } from "../predict-execute.js";
 import { executePredictCloseAll } from "../predict-execute-close-all.js";
@@ -100,7 +100,28 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     // up-to-10-row) response — still a legitimate, honored agent contract,
     // just enforced client-side instead of upstream (see resolveSearchWindow).
     const windowed = result.data.slice(0, window.limit);
-    return ok({ data: windowed.map((item) => toPredictView(item, { includeMarkets })) });
+    // Pagination class `bounded_non_pageable` (parameter-vocabulary.md 4.1):
+    // `/events/search` has no cursor, offset or page of its own, and the slice
+    // above is a real Vex-side drop. Both counts are already in hand, so the
+    // reply states them rather than letting the drop be invisible.
+    const totalMatched = result.data.length;
+    const returned = windowed.length;
+    const truncated = totalMatched > returned;
+    return ok({
+      data: windowed.map((item) => toPredictView(item, { includeMarkets })),
+      returned,
+      totalMatched,
+      truncated,
+      ...(truncated
+        ? {
+          truncationNote:
+              `${totalMatched - returned} of the ${totalMatched} matching events the provider returned were `
+              + `dropped by \`limit\` (${window.limit}). This search has NO continuation - no cursor, no page `
+              + `- so ask a more specific \`query\``
+              + (window.limit < SEARCH_MAX_LIMIT ? `, or raise \`limit\` (maximum ${SEARCH_MAX_LIMIT}).` : "."),
+        }
+        : {}),
+    });
   },
   "solana.predict.market": async (p) => {
     const id = str(p, "marketId");

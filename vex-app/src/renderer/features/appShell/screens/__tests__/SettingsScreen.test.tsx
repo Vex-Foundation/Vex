@@ -42,15 +42,6 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 const { useUiStore } = await import("../../../../stores/uiStore.js");
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  XIcon: "XIcon",
-}));
-
 // Sibling screens pull heavy registers; only the settings branch is under test.
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));

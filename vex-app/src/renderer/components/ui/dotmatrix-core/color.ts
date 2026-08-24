@@ -11,12 +11,12 @@ const DOT_MATRIX_COLOR_PRESETS: Record<
     fill: "var(--color-dot-on)",
     glow: "var(--color-dot-on)"
   },
-  // The brand gradient — the landing cobalt family (#7d92ff periwinkle on
-  // dark → #1f44ff accent → #0a23b8 deep). The ONLY gradient preset in the
-  // single-accent design language; everything in-brand loads in cobalt.
+  // The brand gradient - hover -> primary -> deep steps of the accent
+  // family (tokens.css aliases, so it re-points per theme). The ONLY
+  // gradient preset in the single-accent design language.
   "grad-cobalt": {
-    fill: "linear-gradient(140deg, #7d92ff 0%, #1f44ff 48%, #0a23b8 100%)",
-    glow: "#1f44ff"
+    fill: "linear-gradient(140deg, var(--color-accent-hover) 0%, var(--color-accent-primary) 48%, var(--color-accent-brand) 100%)",
+    glow: "var(--color-accent-primary)"
   }
 };
 

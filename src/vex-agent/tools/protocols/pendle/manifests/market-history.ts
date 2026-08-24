@@ -14,6 +14,7 @@ import { PENDLE_HISTORY_DEFAULT_FIELDS, PENDLE_READ_MAX_SERIES_POINTS } from "..
  */
 export const PENDLE_MARKET_HISTORY_TOOL: ProtocolToolManifest = {
   toolId: "pendle.market.history",
+  publicName: "pendle__market_history_get",
   namespace: "pendle",
   lifecycle: "active",
   description:
@@ -39,7 +40,7 @@ export const PENDLE_MARKET_HISTORY_TOOL: ProtocolToolManifest = {
       type: "string",
       required: true,
       description:
-        "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT — resolve those to their market with pendle.market.get first.",
+        "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Not the PT or YT - resolve those to their market with pendle__market_get first.",
     },
     {
       key: "timeFrame",

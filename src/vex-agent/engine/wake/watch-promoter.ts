@@ -1,5 +1,5 @@
 /**
- * Wake watch promoter — the PUSH half of `loop_defer`'s `watch` parameter.
+ * Wake watch promoter — the PUSH half of `LoopDefer`'s `watch` parameter.
  *
  * Subscribes to the pending-activity bus and, when a watched row terminalizes,
  * moves the matching pending wake's deadline to now so the wake executor picks

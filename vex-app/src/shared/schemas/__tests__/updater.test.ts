@@ -100,7 +100,7 @@ describe("updateStatusSchema", () => {
     ).toBe(false);
   });
 
-  it("rejects an extra key — a leaked artifact path must not pass", () => {
+  it("rejects an extra key - a leaked artifact path must not pass", () => {
     expect(
       updateStatusSchema.safeParse({
         kind: "downloaded",

@@ -98,11 +98,11 @@ describe("W5b — the retired `amount` key is rejected by name on every bridge t
     }
   });
 
-  it.each(BRIDGE_TOOL_IDS)("%s names token_find as the decimals source on amountRaw", (toolId) => {
+  it.each(BRIDGE_TOOL_IDS)("%s names TokenFind as the decimals source on amountRaw", (toolId) => {
     const amountRaw = param(toolId, "amountRaw");
     expect(amountRaw.type).toBe("string");
     expect(amountRaw.required).toBe(true);
-    expect(amountRaw.description).toContain("token_find");
+    expect(amountRaw.description).toContain("TokenFind");
   });
 });
 
@@ -177,9 +177,9 @@ describe("Khalani — slippageBps is refused BY NAME, not dropped", () => {
   const KHALANI_ROUTE = { fromChain: "base", toChain: "arbitrum" };
 
   it("refuses a Khalani-routed slippageBps and says no protection applies", async () => {
-    const refusal = await khalaniSlippageRejection("bridge_quote", { ...KHALANI_ROUTE, slippageBps: 100 });
+    const refusal = await khalaniSlippageRejection("BridgeQuote", { ...KHALANI_ROUTE, slippageBps: 100 });
     expect(refusal).not.toBeNull();
-    expect(refusal).toContain("bridge_quote");
+    expect(refusal).toContain("BridgeQuote");
     expect(refusal).toContain(KHALANI_SLIPPAGE_UNSUPPORTED_REASON);
     expect(refusal).toMatch(/NO slippage protection applies/);
   });
@@ -189,7 +189,7 @@ describe("Khalani — slippageBps is refused BY NAME, not dropped", () => {
   });
 
   it("says nothing when no slippage was supplied", async () => {
-    expect(await khalaniSlippageRejection("bridge_quote", KHALANI_ROUTE)).toBeNull();
+    expect(await khalaniSlippageRejection("BridgeQuote", KHALANI_ROUTE)).toBeNull();
   });
 
   it("leaves a RELAY-routed slippage alone (Relay does forward it)", async () => {

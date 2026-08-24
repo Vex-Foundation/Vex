@@ -255,7 +255,7 @@ export function ProviderStep({
       icon={meta.icon}
       flowMode={flowMode}
       title="Inference provider"
-      description="OpenRouter is the model backend the agent thinks with. The key buys inference only — your wallet keys and vault contents are never sent to the model provider. Optional here, but the agent cannot run until one is configured."
+      description="OpenRouter is the model backend the agent thinks with. The key buys inference only - your wallet keys and vault contents are never sent to the model provider. Optional here, but the agent cannot run until one is configured."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);
@@ -295,9 +295,9 @@ export function ProviderStep({
           <p
             role="status"
             data-vex-provider-configure-later-alert
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-[var(--color-warning)]"
+            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
           >
-            The agent cannot run any inference without a provider — it will
+            The agent cannot run any inference without a provider - it will
             stay idle until you add an OpenRouter key and model. You can do
             this later from Settings, but nothing will run until then.
           </p>
@@ -310,13 +310,13 @@ export function ProviderStep({
             placeholder="sk-or-..."
             autoFocus
           />
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             Create or copy your key at{" "}
             <a
               href="https://openrouter.ai/keys"
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
             >
               openrouter.ai/keys
             </a>
@@ -345,14 +345,14 @@ export function ProviderStep({
               void providerModels.refetch();
             }}
           />
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className="text-xs text-ink-tertiary">
             Browse tool-capable models or enter any OpenRouter model id. View
             the full catalogue at{" "}
             <a
               href="https://openrouter.ai/models"
               target="_blank"
               rel="noreferrer"
-              className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
             >
               openrouter.ai/models
             </a>
@@ -377,7 +377,7 @@ export function ProviderStep({
         ) : null}
 
         {clientError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {clientError}
           </p>
         ) : null}
@@ -393,7 +393,7 @@ export function ProviderStep({
           <div
             role="status"
             data-vex-provider-success="true"
-            className="text-sm text-[var(--color-success)]"
+            className="text-sm text-success"
           >
             OpenRouter verified ({successLatencyMs}ms). Changes apply the
             next time the agent starts.

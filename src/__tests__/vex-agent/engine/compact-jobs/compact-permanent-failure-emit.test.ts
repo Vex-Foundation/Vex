@@ -139,7 +139,7 @@ describe("compact permanent failure -> engine.error", () => {
     expect(emitCompactWorkerPermanentlyFailedBug).not.toHaveBeenCalled();
   });
 
-  it("never carries the exception message — that stays in the bug report", async () => {
+  it("carries the sanitized cause with the secret stripped - the raw text stays in the bug report", async () => {
     loadArchivedPrefix.mockRejectedValue(
       new Error("chunker blew up with sk-secret123 in the payload"),
     );
@@ -148,6 +148,8 @@ describe("compact permanent failure -> engine.error", () => {
     await runOneTick();
 
     expect(seen).toHaveLength(1);
+    // Decree 2026-08-02: sanitized prose crosses, secrets never do.
+    expect(seen[0]?.detail).toBe("chunker blew up with [key] in the payload");
     expect(JSON.stringify(seen[0])).not.toContain("sk-secret123");
     expect(Object.keys(seen[0] ?? {})).not.toContain("message");
     // The raw text still reaches the internal diagnostics channel.

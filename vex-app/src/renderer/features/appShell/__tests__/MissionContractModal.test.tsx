@@ -10,9 +10,6 @@
  *
  * Setup mirrors `MissionContractCard.test.tsx`: real QueryClient + a window.vex
  * bridge. The native <dialog> is polyfilled (jsdom has no showModal/close).
- *
- * VexIcon is mocked to render nothing so the PremiumBadge header marker
- * (and CardBody/AutoRetry icons) don't pull the ESM icon lib.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,11 +18,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 const { MissionContractModal } = await import("../MissionContractModal.js");
+const {
+  cancelMissionContractRequest,
+  grantMissionContractRequest,
+  requestMissionContract,
+  resetMissionContractRequests,
+} = await import("../mission-contract-request.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000cccc";
 const MISSION = "mission-1";
@@ -59,6 +58,8 @@ const SAMPLE_DRAFT = {
   acceptance: null,
   deployedCapital: null,
   renewedFromMissionId: null,
+  missingFields: [],
+  canAcceptContract: true,
 };
 
 const READY_DIFF = {
@@ -285,7 +286,7 @@ describe("MissionContractModal", () => {
     const callsBeforeAccept = mockPlanGet.mock.calls.length;
     fireEvent.click(accept);
     await waitFor(() => {
-      expect(screen.queryByText(/Plan changed — review again/i)).not.toBeNull();
+      expect(screen.queryByText(/Plan changed - review again/i)).not.toBeNull();
     });
     // Accept button stays in place for re-review.
     expect(
@@ -358,7 +359,7 @@ describe("MissionContractModal", () => {
     );
     await waitFor(() => {
       expect(
-        screen.queryByText(/Couldn't accept the contract — something went wrong/i),
+        screen.queryByText(/Couldn't accept the contract - something went wrong/i),
       ).not.toBeNull();
     });
   });
@@ -446,7 +447,7 @@ describe("MissionContractModal", () => {
     ).not.toBeNull();
   });
 
-  it("a REJECTED plan.get promise (ipc failure) shows the Retry path — never an infinite Loading", async () => {
+  it("a REJECTED plan.get promise (ipc failure) shows the Retry path - never an infinite Loading", async () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
     mockPlanGet.mockRejectedValueOnce(new Error("ipc channel died"));
@@ -478,5 +479,178 @@ describe("MissionContractModal", () => {
     });
     expect(screen.queryByText(/Mission ready/i)).toBeNull();
     expect(screen.getByText(/Preparing/i)).not.toBeNull();
+  });
+
+  /**
+   * `kind === "setup-needed"` had NO coverage before this, which is how its
+   * footer copy stayed wrong: it read "Add a goal, constraints, and stop
+   * conditions to enable Accept." - an imperative aimed at the user for fields
+   * only the agent can write (`mission.updateDraft` returns `unavailable`).
+   */
+  describe("incomplete contract (setup-needed)", () => {
+    const SETUP_DRAFT = {
+      ...SAMPLE_DRAFT,
+      status: "draft" as const,
+      canAcceptContract: false,
+      missingFields: ["goal", "riskProfile", "stopConditions"],
+    };
+
+    it("names the AGENT as the actor and enumerates the missing fields, with no Accept offered", async () => {
+      mockBridge.getDraft.mockResolvedValue({ ok: true, data: SETUP_DRAFT });
+      mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+      renderModal();
+
+      const footerNote = await screen.findByText(/Vex is still writing this contract/i);
+      // The actor. This is the regression this test exists to catch: if the
+      // copy ever tells the USER to fill the fields again, this fails.
+      expect(footerNote.textContent).toMatch(/Vex sets them from your conversation/i);
+      expect(footerNote.textContent).toMatch(/cannot be edited here/i);
+      expect(
+        screen.queryByText(/Add a goal, constraints, and stop conditions/i),
+      ).toBeNull();
+
+      // Enumerated, complete, human-labelled.
+      const list = document.querySelector(
+        '[data-vex-state="mission-missing-fields"][data-vex-surface="contract-modal"]',
+      );
+      expect(list).not.toBeNull();
+      expect(list?.querySelectorAll("li")).toHaveLength(3);
+      expect(list?.textContent).toMatch(/Goal/);
+      expect(list?.textContent).toMatch(/Risk profile/);
+      expect(list?.textContent).toMatch(/Stop conditions/);
+
+      // Accept is still correctly withheld: the engine refuses the START of a
+      // `draft`-status contract with `not_ready`, so offering Accept here would
+      // only move the dead end downstream.
+      expect(screen.queryByRole("button", { name: /Accept contract/i })).toBeNull();
+    });
+
+    it("falls back honestly when the contract state is not readable yet", async () => {
+      mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+      // No usable diff → contract-loading, which must NOT claim fields are
+      // missing (we have not read them), only that the state is being read.
+      mockBridge.getDiff.mockResolvedValue({
+        ok: true,
+        data: { outcome: "not_found" },
+      });
+      renderModal();
+
+      await screen.findByText(/Reading the current contract state/i);
+      expect(
+        document.querySelector('[data-vex-state="mission-missing-fields"]'),
+      ).toBeNull();
+    });
+  });
+
+  /**
+   * WP3: the request a blocked capability raises. Single-flight, joinable,
+   * tri-state, and NEVER resolved ahead of the commit.
+   */
+  describe("contract request lifecycle", () => {
+    afterEach(() => resetMissionContractRequests());
+
+    it("resolves granted ONLY after the acceptance commits", async () => {
+      mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+      mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+      let settleAccept!: (v: unknown) => void;
+      mockBridge.acceptContract.mockReturnValue(
+        new Promise((resolve) => {
+          settleAccept = resolve;
+        }),
+      );
+      let outcome: string | null = null;
+      void requestMissionContract({
+        sessionId: SESSION,
+        reason: "start_blocked",
+      }).then((o) => {
+        outcome = o;
+      });
+      renderModal();
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Accept contract$/i }),
+      );
+      // In flight: the engine has not committed, so nothing may be reported.
+      await Promise.resolve();
+      expect(outcome).toBeNull();
+
+      settleAccept({ ok: true, data: { outcome: "accepted" } });
+      await waitFor(() => expect(outcome).toBe("granted"));
+    });
+
+    it("resolves refused when the engine rejects the acceptance", async () => {
+      mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+      mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+      mockBridge.acceptContract.mockResolvedValue({
+        ok: true,
+        data: { outcome: "hash_mismatch" },
+      });
+      const pending = requestMissionContract({
+        sessionId: SESSION,
+        reason: "start_blocked",
+      });
+      renderModal();
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Accept contract$/i }),
+      );
+      await expect(pending).resolves.toBe("refused");
+    });
+
+    it("resolves refused when the accept call itself fails", async () => {
+      mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+      mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+      mockBridge.acceptContract.mockRejectedValue(new Error("transport down"));
+      const pending = requestMissionContract({
+        sessionId: SESSION,
+        reason: "start_blocked",
+      });
+      renderModal();
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Accept contract$/i }),
+      );
+      await expect(pending).resolves.toBe("refused");
+    });
+
+    it("resolves cancelled when the surface is dismissed without a decision", async () => {
+      const pending = requestMissionContract({
+        sessionId: SESSION,
+        reason: "start_blocked",
+      });
+      cancelMissionContractRequest(SESSION);
+      await expect(pending).resolves.toBe("cancelled");
+    });
+
+    it("is single-flight and joinable: a second request settles with the first", async () => {
+      const a = requestMissionContract({ sessionId: SESSION, reason: "user" });
+      const b = requestMissionContract({
+        sessionId: SESSION,
+        reason: "start_blocked",
+      });
+      grantMissionContractRequest(SESSION);
+      await expect(a).resolves.toBe("granted");
+      await expect(b).resolves.toBe("granted");
+    });
+
+    it("cancels a stale request when a different session raises one", async () => {
+      const OTHER = "00000000-0000-4000-8000-0000000000ff";
+      const stale = requestMissionContract({ sessionId: SESSION, reason: "user" });
+      const fresh = requestMissionContract({ sessionId: OTHER, reason: "user" });
+      await expect(stale).resolves.toBe("cancelled");
+      grantMissionContractRequest(OTHER);
+      await expect(fresh).resolves.toBe("granted");
+    });
+
+    it("ignores a settle aimed at a session that is not the pending one", async () => {
+      const pending = requestMissionContract({ sessionId: SESSION, reason: "user" });
+      grantMissionContractRequest("00000000-0000-4000-8000-0000000000ee");
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      cancelMissionContractRequest(SESSION);
+      await expect(pending).resolves.toBe("cancelled");
+    });
   });
 });

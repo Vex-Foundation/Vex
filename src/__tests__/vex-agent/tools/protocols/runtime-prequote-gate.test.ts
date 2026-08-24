@@ -73,6 +73,7 @@ const captureValidator = await import("@vex-agent/tools/protocols/capture-valida
 function swapManifest(): ProtocolToolManifest {
   return {
     toolId: "kyberswap.swap.execute",
+    publicName: "kyberswap__swap_execute",
     namespace: "kyberswap",
     lifecycle: "active",
     description: "sell",

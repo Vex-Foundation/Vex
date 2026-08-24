@@ -24,7 +24,7 @@ const { enqueueApprovalIntent } = await import(
 
 const PREPARED_EXPIRY = "2026-07-12T10:10:00.000Z";
 const TRUSTED_PREVIEW = {
-  toolName: "wallet_send_confirm",
+  toolName: "WalletSendConfirm",
   criticalArgs: {
     network: "solana",
     chain: null,
@@ -53,7 +53,7 @@ function baseArgs(overrides: Record<string, unknown> = {}) {
     } as any,
     toolCall: {
       id: "confirm-call",
-      name: "wallet_send_confirm",
+      name: "WalletSendConfirm",
       arguments: {
         network: "solana",
         intentId: "intent-00000000-0000-4000-8000-000000000001",
@@ -164,6 +164,6 @@ describe("prepared-action approval intent", () => {
     // The default (non-handoff) path derives the preview from the tool's own
     // args via the allow-listed builder — model-visible fields only, still
     // never the raw untouched args object.
-    expect(stored.previewJson.toolName).toBe("wallet_send_confirm");
+    expect(stored.previewJson.toolName).toBe("WalletSendConfirm");
   });
 });

@@ -376,7 +376,7 @@ describe("morpho.vault.quote governance, which the on-chain preview cannot see",
     const result = await morphoVaultQuote(goodParams());
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("morpho.vault.quote failed");
+    expect(result.output).toContain("morpho__vault_quote failed");
   });
 });
 
@@ -388,7 +388,7 @@ describe("morpho.vault.quote reply contract", () => {
     expect(payload.notes.preview).toContain("commits nothing");
     // The quote still commits nothing, but it is no longer a dead end: it
     // AUTHORIZES the matching execute, and the reply has to say which one.
-    expect(payload.nextStep).toContain("morpho.vault.deposit");
+    expect(payload.nextStep).toContain("morpho__vault_deposit");
     expect(payload.nextStep).toContain("spends real funds");
   });
 

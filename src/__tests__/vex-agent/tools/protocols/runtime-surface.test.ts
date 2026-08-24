@@ -96,6 +96,7 @@ const catalog = await import("@vex-agent/tools/protocols/catalog.js");
 function mutatingManifest(): ProtocolToolManifest {
   return {
     toolId: "test.capture.mutate",
+    publicName: "test__capture_mutate",
     namespace: "khalani",
     lifecycle: "active",
     description: "successful mutating tool with failing capture",

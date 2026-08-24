@@ -1,0 +1,71 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a REAL cross-chain bridge via Relay. SPENDS FUNDS: it signs and broadcasts on the source chain, and it requires approval before it runs. REQUIRES a fresh matching BridgeQuoteRelay FIRST on Relay — a Khalani quote cannot authorize it. Resolve fromToken/toToken addresses via TokenFind first; `amountRaw` is in RAW base units (wei/lamports). Returns the source transaction hash and the order id to follow with BridgeStatus; failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones. Khalani is the primary bridge route — reach for Relay when Khalani does not cover the route (it is the only venue for Robinhood Chain) or its quote failed for a routing reason.",
+      "name": "BridgeExecuteRelay",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "type": "string"
+          },
+          "fromChain": {
+            "description": "Source chain ID or alias.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address, or native ETH/native.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient override (defaults to your dest-chain wallet).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points for the destination-side fill (1 bps = 0.01%). Higher tolerance widens the worst-case received amount on the destination chain. When a bridge quote fails or fills keep expiring, re-quote with a higher value rather than retrying the same one. Vex caps it at 1000 (10%) and rejects anything above rather than clamping.",
+            "type": "number"
+          },
+          "toChain": {
+            "description": "Destination chain ID or alias.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address, or native ETH/native.",
+            "type": "string"
+          },
+          "tradeType": {
+            "description": "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

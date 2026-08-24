@@ -8,13 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type QueryFn = (
-  text: string,
-  params?: readonly unknown[],
-) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>;
-
 const mocks = vi.hoisted(() => ({
-  query: vi.fn() as QueryFn,
+  query: vi.fn(),
   connect: vi.fn(),
   end: vi.fn(),
   buildPoolConfig: vi.fn(),
@@ -144,7 +139,7 @@ describe("usage-db mapper", () => {
     expect(result.data.requestCount).toBe(5);
   });
 
-  it("preserves a NEGATIVE cached-savings sum (write-heavy session — never clamped)", async () => {
+  it("preserves a NEGATIVE cached-savings sum (write-heavy session - never clamped)", async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
@@ -187,6 +182,30 @@ describe("usage-db mapper", () => {
     expect(result.data.totalCachedSavings).toBeNull();
   });
 
+  /**
+   * `getLastTurn` reads ONE aggregate row over the turn's window. It is not a
+   * `usage_log` row mapper any more, and that is the whole point: the engine
+   * writes one row per MODEL ROUND, `runTurnLoop` runs many rounds per turn, so
+   * the old `ORDER BY created_at DESC LIMIT 1` described the last round while
+   * the panel labelled it a turn (v0.2.6: `OUT 1 / $0.0405` for fifty rounds).
+   */
+  function rollupRow(over: Record<string, unknown> = {}) {
+    return {
+      latest_prompt_tokens: "38200",
+      latest_cached_tokens: "0",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4-flash",
+      latest_created_at: "2026-05-21T10:00:00.000Z",
+      turn_completion_tokens: "24600",
+      turn_reasoning_tokens: "1200",
+      turn_cache_write_tokens: "0",
+      turn_cost: "0.0405",
+      turn_cached_savings: "0.0004",
+      round_count: "50",
+      ...over,
+    };
+  }
+
   it("getLastTurn returns null for empty session, never an error", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [] });
     const result = await getLastTurn(SESSION, "USD");
@@ -195,64 +214,69 @@ describe("usage-db mapper", () => {
     expect(result.data).toBeNull();
   });
 
-  it("getLastTurn maps a row with mixed string/number fields", async () => {
+  // An aggregate ALWAYS returns a row; an empty window returns it with
+  // `round_count = 0`. That is "no usage yet", not a zero-round turn - the DTO
+  // cannot even express `roundCount: 0`.
+  it("getLastTurn returns null for a zero-round window, never a fabricated turn", async () => {
     mocks.query.mockResolvedValueOnce({
-      rows: [
-        {
-          session_id: SESSION,
-          prompt_tokens: "100",
-          completion_tokens: 50,
-          total_tokens: "150",
-          cached_tokens: null,
-          reasoning_tokens: "5",
-          cost: "0.001",
-          cached_savings: "0.0004",
-          cache_write_tokens: "12",
-          provider: "openrouter",
-          model: "anthropic/claude-opus-4.7",
-          currency: "USD",
-          created_at: "2026-05-21T10:00:00.000Z",
-        },
-      ],
+      rows: [rollupRow({ round_count: "0", latest_created_at: null })],
     });
     const result = await getLastTurn(SESSION, "USD");
     expect(result.ok).toBe(true);
-    if (!result.ok || result.data === null) return;
-    expect(result.data.promptTokens).toBe(100);
-    expect(result.data.completionTokens).toBe(50);
-    expect(result.data.totalTokens).toBe(150);
-    expect(result.data.cachedTokens).toBe(0);
-    expect(result.data.reasoningTokens).toBe(5);
-    expect(result.data.cost).toBeCloseTo(0.001, 6);
-    expect(result.data.cachedSavings).toBeCloseTo(0.0004, 6);
-    expect(result.data.cacheWriteTokens).toBe(12);
+    if (!result.ok) return;
+    expect(result.data).toBeNull();
   });
 
-  it("getLastTurn preserves NEGATIVE cached_savings (cache overhead) via toCost", async () => {
+  it("getLastTurn reports SUMMED output and cost against the LATEST round's input", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [rollupRow()] });
+    const result = await getLastTurn(SESSION, "USD");
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) return;
+    // Input is a snapshot: every round re-sends the whole conversation, so
+    // summing would count the same tokens fifty times.
+    expect(result.data.latestRoundPromptTokens).toBe(38_200);
+    // Output and cost are the TURN's sums - the figures the old single-row
+    // read under-reported by roughly the round count.
+    expect(result.data.turnCompletionTokens).toBe(24_600);
+    expect(result.data.turnCost).toBeCloseTo(0.0405, 6);
+    expect(result.data.turnReasoningTokens).toBe(1_200);
+    expect(result.data.roundCount).toBe(50);
+    expect(result.data.provider).toBe("openrouter");
+  });
+
+  it("getLastTurn scopes the window to the transcript, not the whole session", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [rollupRow()] });
+    await getLastTurn(SESSION, "USD");
+    const [sql, params] = mocks.query.mock.calls[0] as [string, readonly unknown[]];
+    // The turn boundary is the newest user-sourced message. `messages_archive`
+    // is unioned in because compaction moves older messages there; without it a
+    // compacted session would lose its boundary and silently widen the window
+    // to every round the session ever ran.
+    expect(sql).toContain("source = 'user'");
+    expect(sql).toContain("messages_archive");
+    expect(sql).toContain("created_at >= COALESCE");
+    expect(params).toEqual([SESSION, "USD"]);
+  });
+
+  it("getLastTurn preserves NEGATIVE summed cached_savings (cache overhead) via toCost", async () => {
     mocks.query.mockResolvedValueOnce({
-      rows: [
-        {
-          session_id: SESSION,
-          prompt_tokens: "100",
-          completion_tokens: 50,
-          total_tokens: "150",
-          cached_tokens: "20",
-          reasoning_tokens: "0",
-          cost: "0.001",
-          cached_savings: "-0.0021",
-          cache_write_tokens: "8000",
-          provider: "openrouter",
-          model: "anthropic/claude-opus-4.7",
-          currency: "USD",
-          created_at: "2026-05-21T10:00:00.000Z",
-        },
-      ],
+      rows: [rollupRow({ turn_cached_savings: "-0.0021", turn_cache_write_tokens: "8000" })],
     });
     const result = await getLastTurn(SESSION, "USD");
     expect(result.ok).toBe(true);
     if (!result.ok || result.data === null) return;
-    expect(result.data.cachedSavings).toBeCloseTo(-0.0021, 6);
-    expect(result.data.cacheWriteTokens).toBe(8000);
+    expect(result.data.turnCachedSavings).toBeCloseTo(-0.0021, 6);
+    expect(result.data.turnCacheWriteTokens).toBe(8000);
+  });
+
+  it("getLastTurn keeps an uncoercible NUMERIC cost null, never $0", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [rollupRow({ turn_cost: "not-a-number" })],
+    });
+    const result = await getLastTurn(SESSION, "USD");
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) return;
+    expect(result.data.turnCost).toBeNull();
   });
 
   it("getContextWindow returns null when the session row is missing/deleted/out-of-scope", async () => {

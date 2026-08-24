@@ -1,0 +1,25 @@
+{
+  "namespace": "kyberswap",
+  "entries": [
+    {
+      "toolId": "kyberswap.swap.quote",
+      "publicName": "kyberswap__swap_quote",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "kyberswap.swap.execute",
+      "publicName": "kyberswap__swap_execute",
+      "rationale": "mechanical"
+    },
+    {
+      "toolId": "kyberswap.tokens.check",
+      "publicName": "kyberswap__token_safety_check",
+      "rationale": "Names the subject and the question. `tokens.check` says neither what is checked nor what a pass means; this tool inspects ONE token for honeypot and fee-on-transfer behavior (manifests/tokens.ts:9). Singular `token` marks the by-address read; `safety` is the discriminator the model needs when scanning the namespace."
+    },
+    {
+      "toolId": "kyberswap.chains",
+      "publicName": "kyberswap__chains_list",
+      "rationale": "Adds the missing canonical verb to a verbless toolId. The local chain registry read (slug, chainId, name, aggregator), now with the live Common Service state joined on by chainId behind `liveStatus` (handlers/swap/chain-token-handlers.ts). Batch 2 (owner decision D7) retired `kyberswap.chains.supported` into this tool; its row is gone from this artifact and no alias replaces the retired name (D5)."
+    }
+  ]
+}

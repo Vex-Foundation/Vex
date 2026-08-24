@@ -7,16 +7,16 @@
  * fourth of an ALREADY-CLASSIFIED pre-sign estimate revert:
  *   - `mapKyberFailureToActivityCode` — the closed 11-member `agent_activity`
  *     `failure_code` enum (`db/repos/agent-activity.ts`), for recording.
- *   - `deriveKyberRevealFailure` — the coordinator-fixed reveal-eligible input
- *     shape (`tools/registry/uniswap-reveal-eligibility.ts`'s
- *     `KyberRevealFailure`), for deciding whether to reveal the hidden
- *     `swap_quote_uniswap`/`swap_execute_uniswap` pair from a caught
+ *   - `deriveKyberFallbackSignal` — the coordinator-fixed fallback-eligible input
+ *     shape (`tools/registry/venue-fallback-eligibility.ts`'s
+ *     `KyberFallbackSignal`), for deciding whether to point the agent at the
+ *     `SwapQuoteUniswap`/`SwapExecuteUniswap` venue from a caught
  *     PRE-BROADCAST VexError.
- *   - `deriveKyberMinedRevertRevealFailure` — the same reveal-eligible input
+ *   - `deriveKyberMinedRevertFallbackSignal` — the same fallback-eligible input
  *     shape, but derived from the staged broadcast loop's `outcome.kind ===
  *     "reverted"` (a MINED revert has no caught error to read). Role-scoped
  *     (REVISION 1 R1): produces the signal ONLY for the `swap` leg role.
- *   - `deriveKyberPreSignRevertRevealFailure` — the same reveal-eligible input
+ *   - `deriveKyberPreSignRevertFallbackSignal` — the same fallback-eligible input
  *     shape for a PRE-SIGN `eth_estimateGas` revert already classified by
  *     `evm-chains/pre-sign-revert-refusal.ts`. Role-scoped like the mined
  *     revert, and additionally gated on nothing having been broadcast.
@@ -24,7 +24,7 @@
  * Neither of the first two re-derives `mapAggregatorError`'s VexError mapping
  * (`tools/kyberswap/aggregator/errors.ts`) — both read the ALREADY-MAPPED
  * VexError's `code` + the raw numeric Kyber code carried in `externalName`
- * (set by `withMeta` at the mapping site). `deriveKyberRevealFailure` now also
+ * (set by `withMeta` at the mapping site). `deriveKyberFallbackSignal` now also
  * reads `httpStatus`, because the status is the one field the error contract
  * classifies on before it reads any prose.
  */
@@ -32,7 +32,7 @@
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import type { AgentActivityFailureCode, AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
-import type { KyberRevealFailure, KyberVenueUnavailableReason } from "../../registry/uniswap-reveal-eligibility.js";
+import type { KyberFallbackSignal, KyberVenueUnavailableReason } from "../../registry/venue-fallback-eligibility.js";
 
 /** The raw numeric Kyber error code, when the caught error carries one (`mapAggregatorError`'s `externalName`). */
 function rawKyberCode(err: unknown): number | undefined {
@@ -78,7 +78,7 @@ function unavailableReasonForStatus(status: number): KyberVenueUnavailableReason
  * `KYBER_UNREACHABLE` exists precisely so the genuine transport case does not
  * have to be identified by that ambiguous absence.
  */
-function deriveVenueUnavailable(err: VexError): KyberRevealFailure | null {
+function deriveVenueUnavailable(err: VexError): KyberFallbackSignal | null {
   if (err.code === ErrorCodes.KYBER_UNREACHABLE) return { kind: "venue_unavailable", reason: "unreachable" };
   if (err.code === ErrorCodes.KYBER_TIMEOUT) return { kind: "venue_unavailable", reason: "timeout" };
   if (err.code === ErrorCodes.KYBER_RATE_LIMITED) return { kind: "venue_unavailable", reason: "rate_limited" };
@@ -133,7 +133,7 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
 }
 
 /**
- * Derive the `isRevealEligibleKyberFailure` input from a caught error, or
+ * Derive the `isVenueFallbackWorthwhile` input from a caught error, or
  * `null` when the error is not a Kyber-route-class failure at all (e.g. a
  * wallet-resolution error) — callers must treat `null` as "not eligible"
  * without needing a second branch.
@@ -143,10 +143,10 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
  * BEFORE the Kyber call) — this module never guesses it. It does not gate the
  * locally-derived kinds, which can only be reached after both tokens resolved.
  */
-export function deriveKyberRevealFailure(
+export function deriveKyberFallbackSignal(
   err: unknown,
   tokenInputsValidated: boolean,
-): KyberRevealFailure | null {
+): KyberFallbackSignal | null {
   if (!(err instanceof VexError)) return null;
   if (err.code === ErrorCodes.KYBER_UNSUPPORTED_CHAIN) {
     return { kind: "chain_unsupported" };
@@ -175,7 +175,7 @@ export function deriveKyberRevealFailure(
  * Derive the `swap_mined_revert` reveal signal for a MINED on-chain revert of
  * the staged broadcast loop (`outcome.kind === "reverted"` in
  * `kyberswap.swap.execute`) — a structurally different signal from
- * `deriveKyberRevealFailure` above (which reads a caught PRE-BROADCAST
+ * `deriveKyberFallbackSignal` above (which reads a caught PRE-BROADCAST
  * VexError; a mined revert is a `StagedBroadcastOutcome`, never thrown).
  *
  * Produced ONLY for the `swap` leg role (REVISION 1 R1 — the shared-branch
@@ -184,9 +184,9 @@ export function deriveKyberRevealFailure(
  * reveal. The role is encoded in this function's input (coordinator-fixed),
  * not left to an informal caller check at the call site.
  */
-export function deriveKyberMinedRevertRevealFailure(
+export function deriveKyberMinedRevertFallbackSignal(
   eventRole: AgentActivityEventRole,
-): KyberRevealFailure | null {
+): KyberFallbackSignal | null {
   return eventRole === "swap" ? { kind: "swap_mined_revert" } : null;
 }
 
@@ -204,14 +204,14 @@ export function deriveKyberMinedRevertRevealFailure(
  *     bytes went to the wire and the refusal is no longer a pre-sign one — the
  *     same discriminator the refusal wording itself turns on.
  * Which failure codes such a refusal may reveal on is the classifier's own
- * closed set (`uniswap-reveal-eligibility.ts`); this function does not filter
+ * closed set (`venue-fallback-eligibility.ts`); this function does not filter
  * it, so the two decisions cannot drift apart in only one of them.
  */
-export function deriveKyberPreSignRevertRevealFailure(input: {
+export function deriveKyberPreSignRevertFallbackSignal(input: {
   readonly eventRole: AgentActivityEventRole;
   readonly legBroadcastAttempted: boolean;
   readonly failureCode: EvmRouterRevertFailureCode;
-}): KyberRevealFailure | null {
+}): KyberFallbackSignal | null {
   if (input.eventRole !== "swap") return null;
   if (input.legBroadcastAttempted) return null;
   return { kind: "pre_sign_revert", failureCode: input.failureCode };

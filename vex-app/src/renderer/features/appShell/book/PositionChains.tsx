@@ -92,7 +92,7 @@ export function PositionChains({
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           <ChainIcon chainId={selectedChainId} size={14} />
-          <span className="truncate text-[11px] text-[var(--vex-text-2)]">
+          <span className="truncate text-[11px] text-ink-secondary">
             {chainName(selectedChainId)}
           </span>
         </span>
@@ -114,10 +114,10 @@ export function PositionChains({
               // A faint plinth behind every mark keeps dark-inked brand icons
               // visible on the ink canvas (owner report: "Base was
               // invisible"); the native title names the network on hover.
-              "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/[0.05] transition-colors",
+              "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-interactive-hover transition-colors",
               id === selectedChainId
-                ? "border-[var(--vex-accent-border-strong)]"
-                : "border-transparent hover:border-[var(--vex-line-strong)]",
+                ? "border-accent-primary"
+                : "border-transparent hover:border-line-3",
             )}
           >
             <ChainIcon chainId={id} size={13} />
@@ -129,7 +129,7 @@ export function PositionChains({
           type="button"
           aria-haspopup="dialog"
           onClick={() => setMoreOpen(true)}
-          className="inline-flex h-6 items-center rounded-full border border-transparent px-1.5 text-[10.5px] text-[var(--vex-text-3)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]"
+          className="inline-flex h-6 items-center rounded-full border border-transparent px-1.5 text-[10.5px] text-ink-tertiary transition-colors hover:border-line-3 hover:text-ink-secondary"
         >
           more
         </button>
@@ -143,7 +143,7 @@ export function PositionChains({
       {moreOpen ? (
         <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
           <DialogContent className="max-w-sm">
-            <DialogHeader className="gap-1.5 border-[var(--vex-line)] py-4">
+            <DialogHeader className="gap-1.5 border-line-2 py-4">
               <DialogTitle>Networks</DialogTitle>
               <DialogDescription>
                 Every network holding a balance in this position.
@@ -162,11 +162,11 @@ export function PositionChains({
                           setSelectedChainId(c.chainId);
                           setMoreOpen(false);
                         }}
-                        className="flex w-full items-center justify-between gap-3 border-b border-[var(--vex-line)] py-2 text-left transition-colors last:border-b-0 hover:text-[var(--vex-text)]"
+                        className="flex w-full items-center justify-between gap-3 border-b border-line-1 py-2 text-left transition-colors last:border-b-0 hover:text-ink-primary"
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <ChainIcon chainId={c.chainId} size={14} />
-                          <span className="truncate text-[12px] text-[var(--vex-text-2)]">
+                          <span className="truncate text-[12px] text-ink-secondary">
                             {chainName(c.chainId)}
                           </span>
                         </span>
@@ -176,7 +176,7 @@ export function PositionChains({
                   ))}
                 </ul>
               ) : (
-                <p className="text-[11px] text-[var(--vex-text-3)]">
+                <p className="text-[11px] text-ink-tertiary">
                   No funded networks yet.
                 </p>
               )}
@@ -202,11 +202,11 @@ function ChainTotalFigure({
   return (
     <span
       className={cn(
-        "shrink-0 text-[11px] tabular-nums",
-        unpriced ? "text-[var(--vex-text-3)]" : "text-[var(--vex-text)]",
+        "shrink-0 text-[11px] font-semibold tabular-nums",
+        unpriced ? "text-ink-tertiary" : "text-ink-primary",
       )}
     >
-      {unpriced ? "—" : formatUsd(totalUsd)}
+      {unpriced ? "-" : formatUsd(totalUsd)}
     </span>
   );
 }
@@ -247,7 +247,7 @@ function ChainTokenList({
   );
   if (displayable.length === 0) {
     return (
-      <p className="text-[11px] text-[var(--vex-text-3)]">
+      <p className="text-[11px] text-ink-tertiary">
         No assets on {chainName(chainId)}
       </p>
     );
@@ -261,24 +261,24 @@ function ChainTokenList({
         const mark = resolveTokenMark(chainId, tokenAddress, symbol);
         return (
           <li
-            key={`${chainId}:${tokenAddress ?? "x"}:${symbol ?? "—"}:${index}`}
-            className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
+            key={`${chainId}:${tokenAddress ?? "x"}:${symbol ?? "-"}:${index}`}
+            className="flex items-center justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0"
           >
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <TokenMark mark={mark} size={13} />
-              <span className="truncate text-[11.5px] text-[var(--vex-text-2)]">
-                {symbol !== null && symbol.length > 0 ? symbol : "—"}
+              <span className="truncate text-[11.5px] text-ink-secondary">
+                {symbol !== null && symbol.length > 0 ? symbol : "-"}
               </span>
             </span>
-            <span className="flex shrink-0 items-baseline gap-2 text-[11px] tabular-nums">
+            <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
               {quantity !== null ? (
-                <span className="text-[var(--vex-text-3)]">{quantity}</span>
+                <span className="text-ink-tertiary">{quantity}</span>
               ) : null}
               <span
                 className={
                   token.balanceUsd === null
-                    ? "text-[var(--vex-text-3)]"
-                    : "text-[var(--vex-text)]"
+                    ? "text-ink-tertiary"
+                    : "text-ink-primary"
                 }
               >
                 {formatUsd(token.balanceUsd)}

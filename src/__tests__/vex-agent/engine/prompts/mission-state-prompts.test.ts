@@ -27,19 +27,19 @@ describe("mission state prompts", () => {
     // Setup is Capability Orientation: identify which tools/venues fit + read
     // live wallet/chain state to ground the draft, then propose/refine it.
     expect(prompt).toContain("Capability Orientation");
-    expect(prompt).toContain("`discover_tools`");
-    expect(prompt).toContain("`wallet_balances`");
-    expect(prompt).toContain("`agent_scan`");
+    expect(prompt).toContain("`ToolSearch`");
+    expect(prompt).toContain("`WalletBalances`");
+    expect(prompt).toContain("`AgentScan`");
     // Research-category pointer + venue-only recording rule are part of the
     // coherent orientation vocabulary.
-    expect(prompt).toContain("`web_research`");
-    expect(prompt).toContain("`twitter_account`");
+    expect(prompt).toContain("`WebResearch`");
+    expect(prompt).toContain("`TwitterAccount`");
     expect(prompt).toContain("`allowedProtocols`");
     expect(prompt).toContain("venue/protocol names only");
     // Grounded, not open-ended — the draft discipline + mutation ban stay.
     expect(prompt).toContain("do not spiral into open-ended market analysis before the draft is ready");
     expect(prompt).toContain("Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
-    expect(prompt).toContain("`mission_draft_update` is the source of truth for readiness");
+    expect(prompt).toContain("`MissionDraftUpdate` is the source of truth for readiness");
     // Standing execution lock — the proactive counterpart to the prequote
     // gate's `wallet_setup` fail-close: the model must know every on-chain
     // mutation is refused pre-acceptance so it never invents workarounds
@@ -59,9 +59,9 @@ describe("mission state prompts", () => {
     expect(prompt).not.toMatch(/markets\/social/);
 
     // Plan-mode OFF (default): the plan-authoring subsection MUST NOT render —
-    // no `plan_write` pointer, no "Action Plan" heading. Plan-mode off leaves
+    // no `PlanWrite` pointer, no "Action Plan" heading. Plan-mode off leaves
     // the setup prompt byte-identical to before plan-mode existed.
-    expect(prompt).not.toContain("`plan_write`");
+    expect(prompt).not.toContain("`PlanWrite`");
     expect(prompt).not.toContain("Action Plan (plan mode is ON)");
   });
 
@@ -69,10 +69,10 @@ describe("mission state prompts", () => {
     const prompt = buildMissionSetupPrompt(makeMissionContext({ planMode: true }));
 
     // The plan-mode-ON subsection appears (Stage 4): it instructs the model to
-    // co-author the action plan via `plan_write` and that the single host
+    // co-author the action plan via `PlanWrite` and that the single host
     // Accept step accepts BOTH the contract and the plan together.
     expect(prompt).toContain("Action Plan (plan mode is ON)");
-    expect(prompt).toContain("`plan_write`");
+    expect(prompt).toContain("`PlanWrite`");
     expect(prompt).toContain("single Accept contract step accepts both");
     // Plan-mode has only the short delta: record the intended capabilities,
     // then defer operational research until after acceptance.
@@ -82,11 +82,11 @@ describe("mission state prompts", () => {
     // define it; the activation sequence above owns the full ordering.
     expect(prompt).toContain("mission.acceptContract");
 
-    // The OFF-only invariants (Capability Orientation framing, discover_tools,
+    // The OFF-only invariants (Capability Orientation framing, ToolSearch,
     // wallet/chain grounding) still hold with plan-mode on — the subsection is
     // additive, not a replacement.
-    expect(prompt).toContain("`discover_tools`");
-    expect(prompt).toContain("`wallet_balances`");
+    expect(prompt).toContain("`ToolSearch`");
+    expect(prompt).toContain("`WalletBalances`");
   });
 
   it("treats partial meme-token mission ideas as draft input grounded by focused research", () => {
@@ -173,7 +173,7 @@ describe("mission state prompts", () => {
 
     expect(prompt).toContain("started the run from the host UI (the Start or Continue control); the run is active");
     expect(prompt).toContain("Treat earlier setup messages asking the operator to start the mission as historical context only");
-    expect(prompt).toContain("do not call `loop_defer` because you are waiting for mission activation");
+    expect(prompt).toContain("do not call `LoopDefer` because you are waiting for mission activation");
     expect(prompt).toContain("each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
     // Fresh-token steering: prefer Jupiter's recent feed over the free DexScreener feed.
     expect(prompt).toContain("category=recent");
@@ -197,7 +197,7 @@ describe("mission state prompts", () => {
 
     it("tells the model what the warnings list means in the setup prompt", () => {
       const prompt = buildMissionSetupPrompt(makeMissionContext());
-      expect(prompt).toContain("mission_draft_update returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
+      expect(prompt).toContain("MissionDraftUpdate returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
     });
 
     it("points the run prompt at the Mission Capital section instead of the transcript", () => {

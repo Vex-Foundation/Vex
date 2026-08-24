@@ -176,7 +176,7 @@ async function callUntrusted(channel: string, payload: unknown): Promise<ResultS
 }
 
 describe("DB helper errors preserve intended VexError shape", () => {
-  it("DB helper error (internal.unexpected, no correlationId) survives registerHandler — code preserved, correlationId stamped", async () => {
+  it("DB helper error (internal.unexpected, no correlationId) survives registerHandler - code preserved, correlationId stamped", async () => {
     // Helpers must omit `correlationId` from error literals. An empty-string
     // correlationId is rejected by
     // `isValidVexErrorShape` (length === 0) and downgrades the public

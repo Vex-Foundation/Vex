@@ -7,7 +7,7 @@
  * schemas so the alias lane cannot drift away from the protocol lane again).
  *
  * The convention itself lives in `conventions.ts`; this module only measures
- * distance from it. Eleven rules, each with a stable id so a violation can be
+ * distance from it. Twelve rules, each with a stable id so a violation can be
  * pointed at, allowlisted, and later deleted:
  *
  *   param-key               every key is canonical; a banned key names its replacement
@@ -23,6 +23,8 @@
  *   enum-declaration        a prose "one of X, Y, Z" is backed by a declared enum
  *   enum-case-uniqueness    no two enum members differ only by case (the later one is
  *                           unreachable under case-insensitive normalization)
+ *   param-alias             a declared retired input spelling is banned, unique across the
+ *                           tool, and names its removal condition
  *
  * TODAY'S VIOLATIONS ARE ALLOWLISTED, not fixed (see `_manifest-lint/allowlist.ts`).
  * The suite is green on the current tree; every migration wave DELETES the
@@ -44,6 +46,7 @@ import {
   lintEnumDeclaration,
   lintEnumCaseUniqueness,
   lintExclusiveParamGroups,
+  lintParamAliases,
   lintToolDescription,
   lintExampleParamsRequired,
   readDeclaredEnum,
@@ -59,9 +62,12 @@ export {
   isLinterOwnSource,
   lintGenericErrorLiterals,
   lintSlippageDefaultHome,
+  lintStaleOutputCapClaims,
   SLIPPAGE_DEFAULT_OWNER,
 } from "./_manifest-lint/source-rules.js";
 export type { SourceFile } from "./_manifest-lint/source-rules.js";
+export { lintDottedToolIdReferences } from "./_manifest-lint/dotted-toolid-rules.js";
+export type { DottedReferenceSubject } from "./_manifest-lint/dotted-toolid-rules.js";
 
 /** A tool surface reduced to what the convention rules actually read. */
 export interface LintSubject {
@@ -101,6 +107,7 @@ export function toLintSubject(manifest: ProtocolToolManifest): LintSubject {
         required: param.required === true,
         ...(param.unit ? { unit: param.unit } : {}),
         ...(declaredEnum ? { enum: declaredEnum } : {}),
+        ...(param.aliases ? { aliases: param.aliases } : {}),
       };
     }),
   };
@@ -157,6 +164,8 @@ function readSchemaParams(parameters: unknown): LintParam[] {
 export function lintToolSubject(subject: LintSubject): ManifestLintIssue[] {
   const issues: ManifestLintIssue[] = [
     ...lintToolDescription(subject.subject, subject.description, subject.mutating),
+    // Tool-level, not per-param: alias uniqueness is a fact about the whole call.
+    ...lintParamAliases(subject.subject, subject.params),
   ];
   for (const param of subject.params) {
     issues.push(

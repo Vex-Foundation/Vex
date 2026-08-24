@@ -203,12 +203,10 @@ describe("W4 sweep — official-shaped Relay success (txHashes/inTxHashes)", () 
     const seed = await seedBridge("relay");
     const primary = freshHash();
     const extra = freshHash();
-    const revealCleared: Array<[string, string]> = [];
 
     const deps = depsWith({
       fetchRelayStatus: async () => relayStatusFor(seed, "success", [primary, extra]),
       verifyFill: async () => ({ verified: true }),
-      clearRelayReveal: (sessionId, routeKey) => revealCleared.push([sessionId, routeKey]),
     });
 
     const result = await repairPendingBridges(deps);
@@ -225,7 +223,6 @@ describe("W4 sweep — official-shaped Relay success (txHashes/inTxHashes)", () 
     expect(observedFills[0]?.status).toBe("confirmed");
 
     expect(await balanceRunCount(seed.executionId)).toBe(1);
-    expect(revealCleared).toEqual([[seed.sessionId, seed.normalizedRoute]]);
   });
 
   it("only txHashes present, no extras → confirms with no observed rows", async () => {
@@ -234,7 +231,6 @@ describe("W4 sweep — official-shaped Relay success (txHashes/inTxHashes)", () 
     const deps = depsWith({
       fetchRelayStatus: async () => relayStatusFor(seed, "success", [primary]),
       verifyFill: async () => ({ verified: true }),
-      clearRelayReveal: () => {},
     });
     await repairPendingBridges(deps);
     expect((await repo.getActivityEventById(seed.logicalId))?.status).toBe("confirmed");
@@ -379,11 +375,9 @@ describe("W4 sweep — confirm→enqueue failure recovery (C3)", () => {
     const primary = freshHash();
 
     // Pass 1: confirm succeeds but the enqueue throws — row confirmed, NO run.
-    const revealPass1: Array<[string, string]> = [];
     const crashingDeps = depsWith({
       fetchRelayStatus: async () => relayStatusFor(seed, "success", [primary]),
       verifyFill: async () => ({ verified: true }),
-      clearRelayReveal: (s, r) => revealPass1.push([s, r]),
       enqueueBalanceRefresh: async () => {
         throw new Error("enqueue down");
       },
@@ -395,22 +389,18 @@ describe("W4 sweep — confirm→enqueue failure recovery (C3)", () => {
     // The reveal is cleared BEFORE the failing enqueue (confirm path), and the
     // same-sweep reconcile clears it again — idempotent, and the row is left
     // recoverable (confirmed, reveal cleared, no run).
-    expect(revealPass1).toContainEqual([seed.sessionId, seed.normalizedRoute]);
 
     // Pass 2: no pending candidate now; the recovery path finds the confirmed row,
     // enqueues (real) AND re-clears the reveal.
-    const revealPass2: Array<[string, string]> = [];
     const recoveryDeps = depsWith({
       fetchRelayStatus: async () => null,
-      clearRelayReveal: (s, r) => revealPass2.push([s, r]),
     });
     const second = await repairPendingBridges(recoveryDeps);
     expect(second.balanceReconciled).toBe(1);
     expect(await balanceRunCount(seed.executionId)).toBe(1);
-    expect(revealPass2).toEqual([[seed.sessionId, seed.normalizedRoute]]);
 
     // Pass 3: fully settled — nothing left to reconcile.
-    const third = await repairPendingBridges(depsWith({ fetchRelayStatus: async () => null, clearRelayReveal: () => {} }));
+    const third = await repairPendingBridges(depsWith({ fetchRelayStatus: async () => null }));
     expect(third.balanceReconciled).toBe(0);
   });
 });

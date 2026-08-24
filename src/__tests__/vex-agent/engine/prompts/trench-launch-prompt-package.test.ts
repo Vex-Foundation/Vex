@@ -6,7 +6,7 @@
  * Three independent prompt audits found the same defect class: the tools
  * existed in the catalog, the navigation entries authored rich `facets` and
  * `exampleQueries`, and none of it reached the built prompt — so the model
- * could see `trench.launch_execute` only by guessing to search for it.
+ * could see `trench__launch_execute` only by guessing to search for it.
  *
  * Every assertion here is behaviour a regression would silently remove.
  */
@@ -30,87 +30,60 @@ describe("trench prompt package", () => {
   });
 
   // ── P1: the authored navigation data actually renders ──────────
-  describe("P1 — facets and example queries reach the prompt", () => {
-    it("renders every advertised namespace's facets as one line each", () => {
+  describe("P1 - declarations replace capsule scaffolding", () => {
+    it("keeps frozen facets in declaration metadata without rendering facet rows", () => {
       const prompt = buildProtocolsPrompt();
+      // Wave 2 migration row T846.
       for (const metadata of getAdvertisedProtocolNavigation()) {
-        const section = prompt.split(`### ${metadata.namespace} `)[1]?.split("\n### ")[0] ?? "";
-        // A namespace with no callable action in this install renders the
-        // key-missing notice instead — facets would be an invitation to call.
-        if (section.includes("· 0 actions")) continue;
-        for (const facet of metadata.facets) {
-          expect(section, `facet missing for ${metadata.namespace}: ${facet.label}`)
-            .toContain(`- ${facet.label} — ${facet.summary}`);
-        }
+        const section = prompt.split(`### ${metadata.namespace}\n`)[1]?.split("\n### ")[0] ?? "";
+        expect(metadata.declaration.facets).toEqual(metadata.facets.map((facet) => facet.label));
+        for (const facet of metadata.facets) expect(section).not.toContain(`- ${facet.label}`);
       }
     });
 
     it("renders each namespace's authored example queries on one `Try:` line", () => {
       const prompt = buildProtocolsPrompt();
-      const trench = prompt.split("### trench ")[1]?.split("\n### ")[0] ?? "";
-      expect(trench).toContain("Try: ");
-      const tryLine = trench.split("Try: ")[1]?.split("\n")[0] ?? "";
-      for (const query of ['discover_tools(query="preview a token launch cost", namespace="trench")']) {
-        expect(tryLine).toContain(query);
-      }
+      const trench = prompt.split("### trench\n")[1]?.split("\n### ")[0] ?? "";
+      // Wave 2 migration row T676.
+      expect(trench).not.toContain("Try: ");
+      expect(getAdvertisedProtocolNavigation().find((entry) => entry.namespace === "trench")?.exampleQueries)
+        .toContain('ToolSearch(query="preview a token launch cost", namespace="trench")');
     });
 
     it("surfaces the launch capability by name, not only by guessable search", () => {
-      const trench = buildProtocolsPrompt().split("### trench ")[1]?.split("\n### ")[0] ?? "";
-      expect(trench).toContain("Launching a token on Trench");
-      expect(trench).toContain("REQUIRES an image the user pre-staged");
+      const trench = buildProtocolsPrompt().split("### trench\n")[1]?.split("\n### ")[0] ?? "";
+      // Wave 2 migration rows T677 and T678.
+      expect(trench).toContain("deploy the token");
+      expect(trench).toContain("staged images cannot be created by the agent");
     });
   });
 
   // ── P2: the swap-venue routing exception ───────────────────────
   it("P2 — teaches that a bonding-curve Trench token trades only on its own ETH curve", () => {
     const prompt = buildProtocolsPrompt();
-    const section = prompt.split("## Swap Venue Routing")[1]?.split("\n## ")[0] ?? "";
-    expect(section).toContain("`trench.trade_quote`");
-    expect(section).toContain("`trench.trade_execute`");
-    expect(section).toContain("`kyberswap.*` has no route for a curve token");
-    expect(section).toContain("GRADUATES");
+    const section = prompt.split("### Swap\n")[1]?.split("\n### ")[0] ?? "";
+    // Wave 2 migration rows T679-T682.
+    expect(section).toContain("Trench token still on its curve trades only against ETH");
+    expect(section).toContain("after graduation it moves to a WETH-paired pool");
   });
 
   // ── P3: the launch doctrine block ──────────────────────────────
   describe("P3 — `## Trench Launch` doctrine", () => {
     it("names the four tools of the launch path in order, with what each one costs", () => {
       const prompt = buildProtocolsPrompt();
-      expect(prompt).toContain("## Trench Launch");
-      const section = prompt.split("## Trench Launch")[1]?.split("\n## ")[0] ?? "";
-      const order = [
-        "`trench.images`",
-        "`trench.launch_preview`",
-        "`trench.launch_request_form`",
-        "`trench.launch_execute`",
-      ];
-      let lastIdx = -1;
-      for (const marker of order) {
-        const idx = section.indexOf(marker);
-        expect(idx, `launch-path tool missing or out of order: ${marker}`).toBeGreaterThan(lastIdx);
-        lastIdx = idx;
-      }
-      // The image comes from the human; the agent can never invent one.
-      expect(section).toContain("you can never supply one");
-      // The preview sits under the Safety Contract's fresh-quote rule.
-      expect(section).toContain("`# Safety Contract`");
-      // HONESTY GATE, FLIPPED (Fala B, 2026-08-02). These were NEGATIVE pins
-      // while the form surface was unwired — the doctrine was forbidden from
-      // promising parking/resume. That wiring has now LANDED
-      // (`ProtocolExecutionContext.toolCallId` → `request-form.ts` drafts and
-      // parks → `launch-form-resume.ts` appends the outcome as this call's
-      // result on every terminal branch), so the honest doctrine is the
-      // opposite: the model MUST be told the turn parks and resumes, or it
-      // re-calls the tool while the form is open, or narrates a launch that has
-      // not happened. The pins invert with the reality rather than being
-      // deleted, so a regression that unwires the resume fails here.
-      expect(section).toContain("hand the launch DECISION to the human");
-      expect(section).toContain("spends nothing");
-      expect(section).toContain("parks the turn");
-      expect(section).toContain("The runtime resumes you with the outcome");
-      expect(section).toContain("do not call it again while the form is open");
-      expect(section).toContain("never assume the launch happened");
-      expect(section).toContain("Never improvise a launch another way");
+      expect(prompt).toContain("### Launches");
+      const section = prompt.split("### Launches\n")[1] ?? "";
+      // Wave 2 migration rows T683-T701. Tool descriptions keep local call
+      // mechanics; the task shape keeps procedure and exact authority prose.
+      expect(section).toContain("Both agent paths start from a user-staged image");
+      expect(section).toContain("Preview current costs immediately before execution");
+      // The park-and-resume mechanics of the form (drafts, spends nothing, the
+      // turn parks, the runtime resumes it with the outcome, never re-call it
+      // while the form is open) now live in the `trench__launch_request_form`
+      // description (ledger rows L288-L291); the task shape keeps only the
+      // procedural rule that a drafted or pending launch is not a launch.
+      expect(section).toContain("keep a human form separate from direct execution");
+      expect(section).toContain("never infer that a drafted or pending launch happened");
       // Only the execute signs, and only under authority. The AUTHORITY PIN
       // was "an approval for this launch, or a mission ..." — updated 2026-08-02
       // with the owner decrees, because that text was WRONG in both directions:
@@ -124,14 +97,15 @@ describe("trench prompt package", () => {
       expect(section).toContain("FULL-permission chat session");
       expect(section).toContain("execute directly");
       expect(section).toContain("RESTRICTED session it refuses by name");
-      expect(section).toContain("`trench.launch_request_form` instead");
+      expect(section).toContain("`trench__launch_request_form` instead");
       expect(section).toContain("this tool's consent surface");
       expect(section).toContain("MISSION run the authority is the contract's host-authored launch ceilings");
       expect(section).toContain("max launch value and max launch count on the contract card");
     });
 
     it("renders in the STATIC prefix (imperative doctrine, no live data)", () => {
-      expect(buildProtocolsPrompt()).toContain("## Trench Launch");
+      // Wave 2 migration row T702.
+      expect(buildProtocolsPrompt()).toContain("### Launches");
     });
   });
 
@@ -140,10 +114,10 @@ describe("trench prompt package", () => {
     const prompt = buildMissionSetupPrompt(makeContext({ sessionKind: "mission" }));
     expect(prompt).toContain("**launch ceilings**");
     expect(prompt).toContain("HOST-authored");
-    expect(prompt).toContain("`mission_draft_update` cannot write them");
+    expect(prompt).toContain("`MissionDraftUpdate` cannot write them");
     expect(prompt).toContain("contract card before accepting the contract");
     // The image check is a STATE read during setup, not banned market research.
-    expect(prompt).toContain("`trench.images`");
+    expect(prompt).toContain("`trench__images_list`");
     expect(prompt).toContain("state read");
     expect(prompt).toContain("Trench Photos card");
   });
@@ -157,7 +131,8 @@ describe("trench prompt package", () => {
 
     it("points at the Token Research Map instead of a hard-coded tool list", () => {
       const prompt = runPrompt();
-      expect(prompt).toContain("`## Token Research Map`");
+      // Wave 2 migration rows T710-T712.
+      expect(prompt).toContain("`### Research` task shape");
       // The must-end-in-a-decision clause survives the rewrite.
       expect(prompt).toContain("a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
       // The stale hard-coded list is gone (it also named Solana unconditionally,
@@ -170,7 +145,7 @@ describe("trench prompt package", () => {
       expect(prompt).toContain("## Token launches");
       expect(prompt).toContain("irreversible and spends real ETH");
       expect(prompt).toContain("max launch value, max launch count");
-      expect(prompt).toContain("`trench.launch_preview`");
+      expect(prompt).toContain("`trench__launch_preview`");
       expect(prompt).toContain("hands the launch DECISION to the user");
       // Honesty gate: a refusal from deferred host wiring is a report-and-move-on,
       // never an improvised alternative route or a retry loop.
@@ -193,7 +168,7 @@ describe("trench prompt package", () => {
     // was gone whenever a namespace was absent from the Map.
     expect(prompt).toContain("Protocol tools are NOT listed there individually");
     expect(prompt).toContain("not evidence its tools do not exist");
-    expect(prompt).toContain('`discover_tools(namespace="x", list=true)`');
+    expect(prompt).toContain('`ToolSearch(namespace="x")` with NO query');
     expect(prompt).toContain("unranked and untruncated");
   });
 
@@ -206,7 +181,7 @@ describe("trench prompt package", () => {
       stale: false,
       robinhoodViaRelay: true,
     });
-    expect(text).toContain("`bridge_quote` then `bridge`");
+    expect(text).toContain("`BridgeQuote` then `BridgeExecute`");
     expect(text).toContain("auto-route to Relay");
     expect(text).not.toContain("in with `relay.*`");
   });
@@ -224,19 +199,21 @@ describe("trench prompt package", () => {
     it("names the two real yield families and forbids substituting a swap", () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
       resetProtocolsPromptCache();
-      const section = buildProtocolsPrompt().split("## Fixed Yield (Pendle)")[1]?.split("\n## ")[0] ?? "";
-      expect(section).toContain("There is NO plain staking tool in this install");
-      expect(section).toContain("`pendle.*`");
-      expect(section).toContain("`solana.lend.*`");
-      expect(section).toContain("never substitute a swap for a yield position");
+      const section = buildProtocolsPrompt().split("### Yield\n")[1]?.split("\n### ")[0] ?? "";
+      // Wave 2 migration rows T730-T733.
+      expect(section).toContain("There is no plain staking capability");
+      expect(section).toContain("Pendle");
+      expect(section).toContain("Route Solana yield to Jupiter Lend for earn and collateralized borrowing");
+      expect(section).toContain("Never substitute a swap for a yield position");
     });
 
     it("drops the Solana half when JUPITER_API_KEY is absent (same gate the dispatcher uses)", () => {
       delete process.env.JUPITER_API_KEY;
       resetProtocolsPromptCache();
-      const section = buildProtocolsPrompt().split("## Fixed Yield (Pendle)")[1]?.split("\n## ")[0] ?? "";
-      expect(section).toContain("There is NO plain staking tool in this install");
-      expect(section).not.toContain("`solana.lend.*`");
+      const section = buildProtocolsPrompt().split("### Yield\n")[1]?.split("\n### ")[0] ?? "";
+      // Wave 2 migration rows T734 and T735.
+      expect(section).toContain("There is no plain staking capability");
+      expect(section).toContain("Solana yield is unavailable until its configured capability is enabled");
     });
   });
 });

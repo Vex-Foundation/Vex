@@ -14,14 +14,18 @@ export function OpenLogsLink({ className }: OpenLogsLinkProps): JSX.Element {
         void window.vex.support.openLogsFolder().catch(() => undefined);
       }}
       className={cn(
-        // Token-driven, not hardcoded accent. The label reads
-        // `--vex-accent-text` — the accent's lighter mix — because accent AS
-        // TEXT needs it: since the INK REDESIGN the pre-shell plate is
-        // #070b1e, where raw #1f44ff is 3.09:1 and the 55%-toward-white mix
-        // is 7.99:1. Both the gate and shell scopes define the token; the
-        // fallback covers any surface that defines neither. The focus ring
-        // is a solid accent mark, so it keeps --color-ring.
-        "self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]",
+        // Inter Tight, NOT mono: this is a UI action label, and mono is
+        // reserved for technical artifacts - code, JSON, addresses, hashes
+        // (design-language §4). Colour is token-driven: `--vex-accent-text`
+        // is the accent tuned for use AS TEXT, defined by both the gate and
+        // shell scopes; the fallback covers any surface defining neither.
+        //
+        // The ring offset is TRANSPARENT, not a surface token: this link
+        // renders on the pre-shell plate, on shell surfaces and inside
+        // dialogs, and any fixed offset colour cuts a wrong-coloured halo on
+        // the other two. A transparent offset band lets whatever is actually
+        // behind the link show through, in both themes.
+        "self-start text-xs text-[var(--vex-accent-text,var(--color-accent-primary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         className,
       )}
     >

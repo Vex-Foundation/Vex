@@ -335,7 +335,7 @@ describe("the SY manifests meet the context-free agent bar", () => {
 
   it("sy.redeem names the pt.redeem fallback it recovers", () => {
     const d = manifestFor("pendle.sy.redeem").description;
-    expect(d).toMatch(/pendle\.pt\.redeem/);
+    expect(d).toMatch(/pendle__pt_redeem/);
     expect(d).toMatch(/deliveredAsset/);
   });
 });
@@ -346,13 +346,13 @@ describe("the pt.redeem fallback note now names sy.redeem as REAL", () => {
 
   it("the handler's fallback note points at pendle.sy.redeem and no longer says it does not exist", () => {
     const source = read("../../../../../vex-agent/tools/protocols/pendle/handlers/pt/redeem.ts");
-    expect(source).toMatch(/pendle\.sy\.redeem/);
+    expect(source).toMatch(/pendle__sy_redeem/);
     expect(source).not.toMatch(/pendle\.sy\.redeem, which does not exist yet/);
   });
 
   it("the manifest's redeem description no longer claims Vex cannot unwrap SY", () => {
     const source = read("../../../../../vex-agent/tools/protocols/pendle/manifests/pt.ts");
     expect(source).not.toMatch(/no tool to unwrap SY yet/);
-    expect(source).toMatch(/pendle\.sy\.redeem/);
+    expect(source).toMatch(/pendle__sy_redeem/);
   });
 });

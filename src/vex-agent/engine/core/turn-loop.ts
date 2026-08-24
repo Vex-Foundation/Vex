@@ -16,13 +16,20 @@
  * Mission-run semantics: text from the model does NOT end the loop; it
  * continues until a stop condition, approval pause, or iteration limit.
  *
+ * Two INDEPENDENT bounds guard the loop and must not be conflated:
+ * - `loopConfig.maxIterations` bounds how much WORK a turn may do. A round
+ *   batching six tool calls costs one unit.
+ * - `MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS` bounds how many times in a row the
+ *   model may answer with nothing at all, and is RESET by every productive
+ *   round. See `runner/unproductive-rounds.ts`.
+ *
  * The only paths into compaction are:
  *   (a) runtime-automatic background PREPARATION at the `warning` band, forked
  *       by an iteration-boundary action. It only creates the frozen input; the
  *       cutover is a separate, explicitly requested step and never happens
  *       inside the trigger.
  *   (b) the queued APPLY consumed at the iteration boundary — requested by the
- *       `compact_apply` tool, the UI button, or the Full-Autonomous auto-apply.
+ *       `CompactApply` tool, the UI button, or the Full-Autonomous auto-apply.
  *   (c) the critical-band ladder (`critical-compaction.ts`): forced prepared
  *       apply, else the deterministic LLM-free fallback. Invoked proactively at
  *       iteration top, defensively before a `paused_wake` park, and on a
@@ -75,6 +82,10 @@ import {
   armPostCompactBridge,
   createBandObserverWithLog,
 } from "./turn-loop-state-init.js";
+import {
+  MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+  isProductiveRound,
+} from "./runner/unproductive-rounds.js";
 
 /**
  * Run the turn loop.
@@ -106,6 +117,13 @@ export async function runTurnLoop(
   // stopReason stays null) from "loop exhausted without resolution" (for
   // exits via `iteration < maxIterations` becoming false → iteration_limit).
   let stoppedOnText = false;
+  // STALL detector, not a budget. Counts rounds that emitted neither text nor a
+  // tool call; reset by every productive round. See `runner/unproductive-rounds.ts`
+  // for why it must stay separate from `maxIterations` and why the bound is small.
+  let consecutiveUnproductiveRounds = 0;
+  // Rounds actually entered, so the exhaustion events can report what the turn
+  // consumed rather than only which bound fired (rule 05).
+  let iterationsUsed = 0;
   const startTime = Date.now();
   let currentTokenCount = tokenCount;
   let currentSummary = summary;
@@ -205,6 +223,8 @@ export async function runTurnLoop(
       break;
     }
 
+    iterationsUsed = iteration + 1;
+
     // Increment iteration counter for mission runs AFTER entry guards pass.
     if (context.missionRunId) {
       await missionRunsRepo.incrementIterations(context.missionRunId);
@@ -234,7 +254,7 @@ export async function runTurnLoop(
 
     // THE per-turn compaction-preparation read — exactly one, feeding three
     // consumers that must agree: the pressure banner's copy, the tool
-    // visibility axes (barrier bypass + `compact_apply`), and the byte ceiling
+    // visibility axes (barrier bypass + `CompactApply`), and the byte ceiling
     // below. Fail-closed: an unreadable state resolves to `none`, which denies
     // the bypass and hides the apply tool.
     const preparationState = await resolvePreparationPressureState(
@@ -357,6 +377,40 @@ export async function runTurnLoop(
       break;
     }
 
+    // ── Stall detection (WP1) ───────────────────────────────────────
+    // Evaluated on the SAME `turnResult` the two dispatch branches below read,
+    // and BEFORE either of them, so the classification cannot drift from what
+    // the loop actually does with the round.
+    //
+    // An unproductive round takes neither branch: `toolCalls` is empty and
+    // `content` is `""`/`null`/whitespace, which the `if (turnResult.content)`
+    // guard treats as falsy. Before this counter existed the iteration body
+    // simply ended, the `for` continued, and the model was asked the identical
+    // question again - silently, with nothing logged and nothing persisted -
+    // until `maxIterations` ran out. That is the v0.2.6 report.
+    if (isProductiveRound(turnResult)) {
+      consecutiveUnproductiveRounds = 0;
+    } else {
+      consecutiveUnproductiveRounds += 1;
+      logger.warn("engine.turn.unproductive_round", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        consecutiveUnproductiveRounds,
+        limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        // A reasoning-only response is the common shape of this failure and is
+        // worth distinguishing in the log: the model spent output tokens, it
+        // just never answered.
+        reasoningOnly: turnResult.reasoning !== null,
+        finalRoundPromptTokens: turnResult.promptTokens,
+      });
+      if (consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS) {
+        stopReason = "no_progress";
+        break;
+      }
+      continue;
+    }
+
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
       const batchOutcome = await processTurnToolBatch({
         context,
@@ -430,6 +484,31 @@ export async function runTurnLoop(
   // transport can see why.
   if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
+  }
+
+  // Rule 05: the owner of a bound REPORTS what was consumed when it fires.
+  // Neither of these had any structured record before - the user was told "I
+  // reached my budget" with no way to learn the budget was 50, or that all 50
+  // rounds produced nothing. Modelled on `engine.mission.deadline_enforced`
+  // above, which is the same shape for the same class of bound.
+  if (stopReason === "iteration_limit" || stopReason === "no_progress") {
+    logger.warn(
+      stopReason === "no_progress"
+        ? "engine.turn.no_progress_stop"
+        : "engine.turn.iteration_limit_stop",
+      {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        stopReason,
+        iterationsUsed,
+        maxIterations: loopConfig.maxIterations,
+        consecutiveUnproductiveRounds,
+        unproductiveRoundLimit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        toolCallsMade: totalToolCalls,
+        producedText: lastText !== null,
+        elapsedMs: Date.now() - startTime,
+      },
+    );
   }
 
   return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason };

@@ -35,7 +35,7 @@ export function EmbeddingWarningPanels({
           role="alert"
           data-vex-embedding-warning="dim-locked"
           className={cn(
-            "py-1 text-sm text-[var(--color-danger)]",
+            "py-1 text-sm text-danger",
             RAIL_DANGER_CHROME,
           )}
         >
@@ -57,7 +57,7 @@ export function EmbeddingWarningPanels({
           role="alert"
           data-vex-embedding-warning="db-unavailable"
           className={cn(
-            "py-1 text-sm text-[var(--color-warning)]",
+            "py-1 text-sm text-warning",
             RAIL_WARNING_CHROME,
           )}
         >

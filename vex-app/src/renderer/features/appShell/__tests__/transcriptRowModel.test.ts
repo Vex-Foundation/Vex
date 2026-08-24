@@ -113,7 +113,7 @@ describe("toTranscriptRow", () => {
   });
 });
 
-describe("toTranscriptRows — tool call/result correlation (batch 3)", () => {
+describe("toTranscriptRows - tool call/result correlation (batch 3)", () => {
   it("labels a tool_result `<toolName>_output` by correlating toolCallId to its call", () => {
     const call = dto({
       id: 1,

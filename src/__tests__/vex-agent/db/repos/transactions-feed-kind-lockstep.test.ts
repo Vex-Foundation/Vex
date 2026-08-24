@@ -82,6 +82,10 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   // assets out from a token that already exists, so filing it as a launch would
   // put a payout inside every launch view.
   claim: "claim",
+  // Migration 084. A wallet send renders as its OWN product: it moves one asset
+  // to an address with no route, price or counterparty, so the `ELSE` arm's
+  // "spot" would state a trade that never happened.
+  transfer: "transfer",
 };
 
 /** Every current user-action role per kind; plumbing roles are intentionally absent. */
@@ -101,6 +105,7 @@ const KIND_LOGICAL_ROLES: Readonly<Record<string, readonly string[]>> = {
   ],
   launch: ["token_launch"],
   claim: ["pools_claim"],
+  transfer: ["wallet_transfer"],
 };
 
 /** The activity half's row predicate, read from the source it is written in. */

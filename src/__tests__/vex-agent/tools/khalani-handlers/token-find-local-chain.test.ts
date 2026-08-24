@@ -1,8 +1,8 @@
 /**
- * `token_find` on a LOCAL chain (Robinhood, 4663).
+ * `TokenFind` on a LOCAL chain (Robinhood, 4663).
  *
  * Robinhood Chain is a chain Vex fully supports — it just is not in Khalani's
- * token registry. Asking `token_find chainIds:"robinhood"` used to return the
+ * token registry. Asking `TokenFind chainIds:"robinhood"` used to return the
  * strict resolver's bare "Unsupported chain: robinhood", which reads as a
  * spelling mistake and sends the agent hunting for a better spelling of
  * something no spelling reaches through this tool.
@@ -54,9 +54,9 @@ describe("parseChainIds — a local-only chain gets an agent-actionable refusal"
     expect(thrown.message).toContain("4663");
     expect(thrown.message).toContain("Khalani's registry");
     // The three routes that actually work for a local chain.
-    expect(thrown.hint).toContain("dexscreener.search");
-    expect(thrown.hint).toContain("wallet_track_token");
-    expect(thrown.hint).toContain("wallet_balances");
+    expect(thrown.hint).toContain("dexscreener__pairs_search");
+    expect(thrown.hint).toContain("WalletTrackToken");
+    expect(thrown.hint).toContain("WalletBalances");
   });
 
   it("still resolves a Khalani chain normally", async () => {

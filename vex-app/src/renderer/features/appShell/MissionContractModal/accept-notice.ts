@@ -33,7 +33,7 @@ export function acceptNoticeFor(
   if (outcome !== null) return outcomeNotice(outcome);
   // No resolved outcome but the mutation rejected → transport/IPC failure.
   if (isError) {
-    return "Couldn't accept the contract — something went wrong. Try again.";
+    return "Couldn't accept the contract - something went wrong. Try again.";
   }
   return null;
 }
@@ -45,9 +45,9 @@ function outcomeNotice(
     case "accepted":
       return null;
     case "plan_stale":
-      return "Plan changed — review again before accepting.";
+      return "Plan changed - review again before accepting.";
     case "plan_missing":
-      return "No plan authored yet — ask Vex to write a plan first.";
+      return "No plan authored yet - ask Vex to write a plan first.";
     case "mission_not_found":
       return "Couldn't accept: this mission no longer exists. Refresh and try again.";
     case "session_mismatch":

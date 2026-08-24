@@ -67,7 +67,7 @@ function resolveChainIdForRouting(input: string): number | undefined {
 
 function unresolvableChainRefusal(input: string): string {
   return `"${input}" is not a chain Vex can resolve, so neither Khalani nor Relay can be asked to `
-    + "bridge it. Name the chain by the slug or numeric chain id `token_find` returns.";
+    + "bridge it. Name the chain by the slug or numeric chain id `TokenFind` returns.";
 }
 
 const KHALANI_REGISTRY_UNREADABLE_REFUSAL =

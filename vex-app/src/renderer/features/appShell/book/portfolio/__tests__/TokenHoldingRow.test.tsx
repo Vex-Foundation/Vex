@@ -17,10 +17,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 
-vi.mock("../../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
   Bnb: () => null,
@@ -76,7 +72,7 @@ describe("filterDustTokens", () => {
     expect(result).toEqual([]);
   });
 
-  it("is a no-op when hideDust is false — every row passes through", () => {
+  it("is a no-op when hideDust is false - every row passes through", () => {
     const tokens = [
       token({ symbol: "SEEYUH", balanceUsd: 0.001 }),
       token({ symbol: "SPAM", balanceUsd: -0.001 }),

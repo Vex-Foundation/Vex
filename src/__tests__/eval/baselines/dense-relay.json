@@ -1,0 +1,181 @@
+{
+  "version": "relay-v1",
+  "mode": "dense",
+  "datasetId": "tool-discovery-relay",
+  "datasetVersion": "relay-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:28:08.946Z",
+  "metrics": {
+    "overall": {
+      "count": 11,
+      "recall1": 0.909,
+      "recall5": 1,
+      "coverage5": 1,
+      "mrr5": 0.955,
+      "groupMrr5": 0.909
+    },
+    "awareness": {
+      "blind": {
+        "count": 6,
+        "recall1": 0.833,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.917,
+        "groupMrr5": 0.875
+      },
+      "protocolAware": {
+        "count": 5,
+        "recall1": 1,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 1,
+        "groupMrr5": 0.95
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 9,
+        "recall1": 0.889,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.944,
+        "groupMrr5": 0.944
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 2,
+        "recall1": 1,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 1,
+        "groupMrr5": 0.75
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "bridge": {
+        "count": 11,
+        "recall1": 0.909,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.955,
+        "groupMrr5": 0.909
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-relay@relay-v1, mode dense, 11 cases evaluated.",
+    "overall recall@1 0.909, recall@5 1, coverage@5 1, mrr@5 0.955, groupMrr@5 0.909.",
+    "First capture: no previous baseline to measure a delta against."
+  ]
+}

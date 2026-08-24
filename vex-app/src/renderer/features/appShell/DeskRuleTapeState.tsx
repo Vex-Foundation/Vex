@@ -74,7 +74,7 @@ export function DeskRuleTapeState(): JSX.Element | null {
             : "Idle";
   const lit = state !== "idle";
 
-  // `.vex-micro` is the register's small-caps stamp (Instrument Sans); the
+  // `.vex-micro` is the register's small-caps stamp; the
   // wider tracking override is local to this one word because it stands alone
   // at the centre of the strip with nothing beside it to set its rhythm.
   return (

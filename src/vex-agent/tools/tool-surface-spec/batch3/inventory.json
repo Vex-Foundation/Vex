@@ -1,0 +1,2982 @@
+{
+  "measuredAt": "2026-08-21T18:23:43.815Z",
+  "sha": "ea5dea2af71414cba6a492e4eba7c4565266d00f",
+  "totals": {
+    "protocolManifests": 134,
+    "internalTools": 32,
+    "surfaces": 166,
+    "generalAllowlistEntries": 616,
+    "generalToolDescriptionEntries": 157,
+    "generalToolDescriptionSubjects": 92,
+    "internalDescriptionAllowlistEntries": 33,
+    "internalDescriptionAllowlistSubjects": 23
+  },
+  "perNamespace": {
+    "dexscreener": {
+      "tools": 12,
+      "mutating": 0,
+      "withEmbeddingText": 12,
+      "withCanonicalSummary": 1,
+      "withAliases": 9,
+      "withExampleIntents": 10,
+      "withNavigationFacet": 12,
+      "descriptionBytesTotal": 20315,
+      "descriptionBytesMin": 1059,
+      "descriptionBytesMax": 2343,
+      "actionKinds": {
+        "read": 12
+      },
+      "allowlistEntries": 131,
+      "allowlistToolDescriptionEntries": 12,
+      "allowlistToolDescriptionSubjects": 8,
+      "allowlistRules": {
+        "param-key": 117,
+        "tool-description": 12,
+        "param-description": 2
+      }
+    },
+    "khalani": {
+      "tools": 9,
+      "mutating": 1,
+      "withEmbeddingText": 9,
+      "withCanonicalSummary": 3,
+      "withAliases": 2,
+      "withExampleIntents": 2,
+      "withNavigationFacet": 9,
+      "descriptionBytesTotal": 2886,
+      "descriptionBytesMin": 58,
+      "descriptionBytesMax": 837,
+      "actionKinds": {
+        "read": 8,
+        "user_wallet_broadcast": 1
+      },
+      "allowlistEntries": 47,
+      "allowlistToolDescriptionEntries": 16,
+      "allowlistToolDescriptionSubjects": 8,
+      "allowlistRules": {
+        "param-key": 19,
+        "tool-description": 16,
+        "chain-doc-parity": 6,
+        "param-description": 6
+      }
+    },
+    "kyberswap": {
+      "tools": 4,
+      "mutating": 1,
+      "withEmbeddingText": 4,
+      "withCanonicalSummary": 0,
+      "withAliases": 4,
+      "withExampleIntents": 4,
+      "withNavigationFacet": 4,
+      "descriptionBytesTotal": 1183,
+      "descriptionBytesMin": 97,
+      "descriptionBytesMax": 776,
+      "actionKinds": {
+        "read": 3,
+        "user_wallet_broadcast": 1
+      },
+      "allowlistEntries": 15,
+      "allowlistToolDescriptionEntries": 7,
+      "allowlistToolDescriptionSubjects": 3,
+      "allowlistRules": {
+        "tool-description": 7,
+        "chain-doc-parity": 3,
+        "param-description": 3,
+        "enum-declaration": 2
+      }
+    },
+    "morpho": {
+      "tools": 19,
+      "mutating": 9,
+      "withEmbeddingText": 19,
+      "withCanonicalSummary": 0,
+      "withAliases": 19,
+      "withExampleIntents": 19,
+      "withNavigationFacet": 19,
+      "descriptionBytesTotal": 63239,
+      "descriptionBytesMin": 2041,
+      "descriptionBytesMax": 6114,
+      "actionKinds": {
+        "read": 10,
+        "user_wallet_broadcast": 9
+      },
+      "allowlistEntries": 0,
+      "allowlistToolDescriptionEntries": 0,
+      "allowlistToolDescriptionSubjects": 0,
+      "allowlistRules": {}
+    },
+    "pendle": {
+      "tools": 29,
+      "mutating": 17,
+      "withEmbeddingText": 29,
+      "withCanonicalSummary": 0,
+      "withAliases": 29,
+      "withExampleIntents": 29,
+      "withNavigationFacet": 29,
+      "descriptionBytesTotal": 21006,
+      "descriptionBytesMin": 250,
+      "descriptionBytesMax": 1461,
+      "actionKinds": {
+        "user_wallet_broadcast": 17,
+        "read": 12
+      },
+      "allowlistEntries": 142,
+      "allowlistToolDescriptionEntries": 41,
+      "allowlistToolDescriptionSubjects": 23,
+      "allowlistRules": {
+        "param-key": 50,
+        "tool-description": 41,
+        "chain-doc-parity": 27,
+        "enum-declaration": 23,
+        "exclusive-param-groups": 1
+      }
+    },
+    "pools": {
+      "tools": 9,
+      "mutating": 4,
+      "withEmbeddingText": 9,
+      "withCanonicalSummary": 0,
+      "withAliases": 9,
+      "withExampleIntents": 9,
+      "withNavigationFacet": 9,
+      "descriptionBytesTotal": 10525,
+      "descriptionBytesMin": 688,
+      "descriptionBytesMax": 2599,
+      "actionKinds": {
+        "read": 5,
+        "local_write": 2,
+        "user_wallet_broadcast": 2
+      },
+      "allowlistEntries": 20,
+      "allowlistToolDescriptionEntries": 0,
+      "allowlistToolDescriptionSubjects": 0,
+      "allowlistRules": {
+        "param-key": 20
+      }
+    },
+    "relay": {
+      "tools": 2,
+      "mutating": 1,
+      "withEmbeddingText": 2,
+      "withCanonicalSummary": 0,
+      "withAliases": 2,
+      "withExampleIntents": 2,
+      "withNavigationFacet": 2,
+      "descriptionBytesTotal": 1208,
+      "descriptionBytesMin": 441,
+      "descriptionBytesMax": 767,
+      "actionKinds": {
+        "read": 1,
+        "user_wallet_broadcast": 1
+      },
+      "allowlistEntries": 6,
+      "allowlistToolDescriptionEntries": 0,
+      "allowlistToolDescriptionSubjects": 0,
+      "allowlistRules": {
+        "chain-doc-parity": 4,
+        "param-key": 2
+      }
+    },
+    "solana": {
+      "tools": 34,
+      "mutating": 8,
+      "withEmbeddingText": 34,
+      "withCanonicalSummary": 16,
+      "withAliases": 27,
+      "withExampleIntents": 27,
+      "withNavigationFacet": 34,
+      "descriptionBytesTotal": 16137,
+      "descriptionBytesMin": 102,
+      "descriptionBytesMax": 1560,
+      "actionKinds": {
+        "read": 26,
+        "user_wallet_broadcast": 8
+      },
+      "allowlistEntries": 129,
+      "allowlistToolDescriptionEntries": 49,
+      "allowlistToolDescriptionSubjects": 29,
+      "allowlistRules": {
+        "param-key": 72,
+        "tool-description": 49,
+        "exclusive-param-groups": 4,
+        "param-description": 3,
+        "amount-bps-shape": 1
+      }
+    },
+    "trench": {
+      "tools": 10,
+      "mutating": 3,
+      "withEmbeddingText": 10,
+      "withCanonicalSummary": 0,
+      "withAliases": 10,
+      "withExampleIntents": 10,
+      "withNavigationFacet": 10,
+      "descriptionBytesTotal": 8788,
+      "descriptionBytesMin": 441,
+      "descriptionBytesMax": 1677,
+      "actionKinds": {
+        "read": 7,
+        "user_wallet_broadcast": 2,
+        "local_write": 1
+      },
+      "allowlistEntries": 38,
+      "allowlistToolDescriptionEntries": 10,
+      "allowlistToolDescriptionSubjects": 7,
+      "allowlistRules": {
+        "param-key": 24,
+        "tool-description": 10,
+        "chain-doc-parity": 2,
+        "param-description": 2
+      }
+    },
+    "uniswap": {
+      "tools": 2,
+      "mutating": 1,
+      "withEmbeddingText": 2,
+      "withCanonicalSummary": 0,
+      "withAliases": 2,
+      "withExampleIntents": 2,
+      "withNavigationFacet": 2,
+      "descriptionBytesTotal": 1758,
+      "descriptionBytesMin": 696,
+      "descriptionBytesMax": 1062,
+      "actionKinds": {
+        "read": 1,
+        "user_wallet_broadcast": 1
+      },
+      "allowlistEntries": 4,
+      "allowlistToolDescriptionEntries": 0,
+      "allowlistToolDescriptionSubjects": 0,
+      "allowlistRules": {
+        "chain-doc-parity": 2,
+        "enum-declaration": 2
+      }
+    },
+    "virtuals": {
+      "tools": 4,
+      "mutating": 0,
+      "withEmbeddingText": 4,
+      "withCanonicalSummary": 0,
+      "withAliases": 4,
+      "withExampleIntents": 4,
+      "withNavigationFacet": 4,
+      "descriptionBytesTotal": 2671,
+      "descriptionBytesMin": 284,
+      "descriptionBytesMax": 1232,
+      "actionKinds": {
+        "read": 4
+      },
+      "allowlistEntries": 9,
+      "allowlistToolDescriptionEntries": 6,
+      "allowlistToolDescriptionSubjects": 4,
+      "allowlistRules": {
+        "tool-description": 6,
+        "param-key": 3
+      }
+    }
+  },
+  "allowlistByRule": {
+    "param-key": 329,
+    "tool-description": 157,
+    "chain-doc-parity": 61,
+    "enum-declaration": 27,
+    "param-description": 26,
+    "amount-bps-shape": 7,
+    "exclusive-param-groups": 5,
+    "generic-error-literal": 4
+  },
+  "allowlistBySubjectNamespace": {
+    "pendle": 142,
+    "dexscreener": 131,
+    "solana": 129,
+    "(internal)": 71,
+    "khalani": 47,
+    "trench": 38,
+    "pools": 20,
+    "kyberswap": 15,
+    "virtuals": 9,
+    "relay": 6,
+    "uniswap": 4,
+    "src/vex-agent/tools/protocols/pendle/handlers/read-shared": 1,
+    "src/vex-agent/tools/protocols/pendle/handlers/shared": 1,
+    "src/vex-agent/tools/protocols/trench/handlers/failure": 1,
+    "src/vex-agent/tools/protocols/virtuals/handlers": 1
+  },
+  "toolDescriptionByDetail": {
+    "returns": 76,
+    "when-to-use": 63,
+    "spends": 10,
+    "length": 8
+  },
+  "toolDescriptionByNamespace": {
+    "solana": 49,
+    "pendle": 41,
+    "(internal)": 16,
+    "khalani": 16,
+    "dexscreener": 12,
+    "trench": 10,
+    "kyberswap": 7,
+    "virtuals": 6
+  },
+  "internalAllowlistByDetail": {
+    "returns": 19,
+    "when-to-use": 12,
+    "approval": 1,
+    "length": 1
+  },
+  "internalAllowlistBySubject": {
+    "WalletSendConfirm": 3,
+    "AgentScan": 2,
+    "BridgeExecute": 2,
+    "BridgeQuote": 2,
+    "BridgeStatus": 2,
+    "ChainRead": 2,
+    "MissionStop": 2,
+    "WalletBalances": 2,
+    "WalletTrackToken": 2,
+    "CompactApply": 1,
+    "LoopDefer": 1,
+    "MemoryGet": 1,
+    "MemorySearch": 1,
+    "MemorySuggest": 1,
+    "PlanWrite": 1,
+    "SessionMemoryResolve": 1,
+    "SwapExecute": 1,
+    "SwapQuote": 1,
+    "TokenCheck": 1,
+    "TokenFind": 1,
+    "TwitterAccount": 1,
+    "UnitsConvert": 1,
+    "WalletSendPrepare": 1
+  },
+  "internalTools": [
+    {
+      "name": "AgentScan",
+      "descriptionBytes": 2543,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "BridgeExecute",
+      "descriptionBytes": 532,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast"
+    },
+    {
+      "name": "BridgeExecuteRelay",
+      "descriptionBytes": 723,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast"
+    },
+    {
+      "name": "BridgeQuote",
+      "descriptionBytes": 358,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "BridgeQuoteRelay",
+      "descriptionBytes": 578,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "BridgeStatus",
+      "descriptionBytes": 191,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "ChainRead",
+      "descriptionBytes": 648,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "CompactApply",
+      "descriptionBytes": 1196,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "LoopDefer",
+      "descriptionBytes": 5551,
+      "mutating": false,
+      "actionKind": "schedule"
+    },
+    {
+      "name": "MemoryGet",
+      "descriptionBytes": 673,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "MemoryHistory",
+      "descriptionBytes": 499,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "MemorySearch",
+      "descriptionBytes": 1407,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "MemorySuggest",
+      "descriptionBytes": 1501,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "MissionDraftUpdate",
+      "descriptionBytes": 261,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "MissionStop",
+      "descriptionBytes": 179,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "PlanWrite",
+      "descriptionBytes": 1144,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "SessionMemoryResolve",
+      "descriptionBytes": 961,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "SessionMemorySearch",
+      "descriptionBytes": 881,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "SwapExecute",
+      "descriptionBytes": 721,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast"
+    },
+    {
+      "name": "SwapExecuteUniswap",
+      "descriptionBytes": 701,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast"
+    },
+    {
+      "name": "SwapQuote",
+      "descriptionBytes": 730,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "SwapQuoteUniswap",
+      "descriptionBytes": 656,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "TokenCheck",
+      "descriptionBytes": 270,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "TokenFind",
+      "descriptionBytes": 611,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "ToolSearch",
+      "descriptionBytes": 1423,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "TwitterAccount",
+      "descriptionBytes": 1692,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "UnitsConvert",
+      "descriptionBytes": 1397,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "WalletBalances",
+      "descriptionBytes": 330,
+      "mutating": false,
+      "actionKind": "read"
+    },
+    {
+      "name": "WalletSendConfirm",
+      "descriptionBytes": 84,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast"
+    },
+    {
+      "name": "WalletSendPrepare",
+      "descriptionBytes": 185,
+      "mutating": false,
+      "actionKind": "approval_prepare"
+    },
+    {
+      "name": "WalletTrackToken",
+      "descriptionBytes": 337,
+      "mutating": false,
+      "actionKind": "local_write"
+    },
+    {
+      "name": "WebResearch",
+      "descriptionBytes": 2057,
+      "mutating": false,
+      "actionKind": "read"
+    }
+  ],
+  "protocolTools": [
+    {
+      "toolId": "dexscreener.ads",
+      "publicName": "dexscreener__ads_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1257,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 9,
+      "paramDescriptionBytes": 3760,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 477,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "dexscreener:Community takeovers and promotion checks"
+      ]
+    },
+    {
+      "toolId": "dexscreener.attention",
+      "publicName": "dexscreener__attention_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1702,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 9,
+      "paramDescriptionBytes": 3958,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 569,
+      "hasCanonicalSummary": false,
+      "aliasCount": 2,
+      "exampleIntentCount": 1,
+      "navigationFacets": [
+        "dexscreener:Trending narratives and profiles"
+      ]
+    },
+    {
+      "toolId": "dexscreener.boosts",
+      "publicName": "dexscreener__boosts_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1813,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 10,
+      "paramDescriptionBytes": 4429,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 675,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "dexscreener:Trending narratives and profiles"
+      ]
+    },
+    {
+      "toolId": "dexscreener.communityTakeovers",
+      "publicName": "dexscreener__community_takeovers_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1725,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 9,
+      "paramDescriptionBytes": 3768,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 476,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "dexscreener:Community takeovers and promotion checks"
+      ]
+    },
+    {
+      "toolId": "dexscreener.meta",
+      "publicName": "dexscreener__narrative_get",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1434,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 37,
+      "paramDescriptionBytes": 9597,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 671,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "dexscreener:Trending narratives and profiles"
+      ]
+    },
+    {
+      "toolId": "dexscreener.orders",
+      "publicName": "dexscreener__token_orders_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1059,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 230,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 481,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "dexscreener:Community takeovers and promotion checks"
+      ]
+    },
+    {
+      "toolId": "dexscreener.pairs",
+      "publicName": "dexscreener__pairs_get",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1264,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1811,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 535,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "dexscreener:Search and pair analytics"
+      ]
+    },
+    {
+      "toolId": "dexscreener.profiles",
+      "publicName": "dexscreener__profiles_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 2338,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 11,
+      "paramDescriptionBytes": 5278,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 724,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "dexscreener:Trending narratives and profiles"
+      ]
+    },
+    {
+      "toolId": "dexscreener.search",
+      "publicName": "dexscreener__pairs_search",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1934,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 11,
+      "paramDescriptionBytes": 4685,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 700,
+      "hasCanonicalSummary": true,
+      "aliasCount": 3,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "dexscreener:Search and pair analytics"
+      ]
+    },
+    {
+      "toolId": "dexscreener.tokenPairs",
+      "publicName": "dexscreener__token_pairs_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1995,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 37,
+      "paramDescriptionBytes": 9230,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 600,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 1,
+      "navigationFacets": [
+        "dexscreener:Search and pair analytics"
+      ]
+    },
+    {
+      "toolId": "dexscreener.tokens",
+      "publicName": "dexscreener__tokens_get",
+      "namespace": "dexscreener",
+      "descriptionBytes": 2343,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 12,
+      "paramDescriptionBytes": 4438,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 636,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "dexscreener:Search and pair analytics"
+      ]
+    },
+    {
+      "toolId": "dexscreener.trending",
+      "publicName": "dexscreener__narratives_list",
+      "namespace": "dexscreener",
+      "descriptionBytes": 1451,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 12,
+      "paramDescriptionBytes": 3700,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 694,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "dexscreener:Trending narratives and profiles"
+      ]
+    },
+    {
+      "toolId": "khalani.bridge",
+      "publicName": "khalani__bridge_execute",
+      "namespace": "khalani",
+      "descriptionBytes": 536,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 12,
+      "paramDescriptionBytes": 563,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 543,
+      "hasCanonicalSummary": true,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Bridge quotes and orders"
+      ]
+    },
+    {
+      "toolId": "khalani.chains.list",
+      "publicName": "khalani__chains_list",
+      "namespace": "khalani",
+      "descriptionBytes": 78,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 26,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 509,
+      "hasCanonicalSummary": true,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "khalani:Chains and token resolution"
+      ]
+    },
+    {
+      "toolId": "khalani.orders.get",
+      "publicName": "khalani__order_get",
+      "namespace": "khalani",
+      "descriptionBytes": 509,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 17,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 498,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Bridge quotes and orders"
+      ]
+    },
+    {
+      "toolId": "khalani.orders.list",
+      "publicName": "khalani__orders_list",
+      "namespace": "khalani",
+      "descriptionBytes": 70,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 8,
+      "paramDescriptionBytes": 668,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 454,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Bridge quotes and orders"
+      ]
+    },
+    {
+      "toolId": "khalani.quote.get",
+      "publicName": "khalani__bridge_quote_get",
+      "namespace": "khalani",
+      "descriptionBytes": 350,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 9,
+      "paramDescriptionBytes": 464,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 488,
+      "hasCanonicalSummary": true,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "khalani:Bridge quotes and orders"
+      ]
+    },
+    {
+      "toolId": "khalani.tokens.autocomplete",
+      "publicName": "khalani__tokens_autocomplete",
+      "namespace": "khalani",
+      "descriptionBytes": 67,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 273,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 481,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Chains and token resolution"
+      ]
+    },
+    {
+      "toolId": "khalani.tokens.balances",
+      "publicName": "khalani__token_balances_get",
+      "namespace": "khalani",
+      "descriptionBytes": 381,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 441,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 469,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Chains and token resolution"
+      ]
+    },
+    {
+      "toolId": "khalani.tokens.search",
+      "publicName": "khalani__tokens_search",
+      "namespace": "khalani",
+      "descriptionBytes": 837,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 185,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 526,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Chains and token resolution"
+      ]
+    },
+    {
+      "toolId": "khalani.tokens.top",
+      "publicName": "khalani__tokens_top_list",
+      "namespace": "khalani",
+      "descriptionBytes": 58,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 172,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 478,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "khalani:Chains and token resolution"
+      ]
+    },
+    {
+      "toolId": "kyberswap.chains",
+      "publicName": "kyberswap__chains_list",
+      "namespace": "kyberswap",
+      "descriptionBytes": 776,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 330,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 697,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "kyberswap:Chains and token safety"
+      ]
+    },
+    {
+      "toolId": "kyberswap.swap.execute",
+      "publicName": "kyberswap__swap_execute",
+      "namespace": "kyberswap",
+      "descriptionBytes": 203,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1487,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 550,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "kyberswap:Swaps"
+      ]
+    },
+    {
+      "toolId": "kyberswap.swap.quote",
+      "publicName": "kyberswap__swap_quote",
+      "namespace": "kyberswap",
+      "descriptionBytes": 107,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1434,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 526,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "kyberswap:Swaps"
+      ]
+    },
+    {
+      "toolId": "kyberswap.tokens.check",
+      "publicName": "kyberswap__token_safety_check",
+      "namespace": "kyberswap",
+      "descriptionBytes": 97,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 204,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 469,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "kyberswap:Chains and token safety"
+      ]
+    },
+    {
+      "toolId": "morpho.market.borrow",
+      "publicName": "morpho__market_borrow",
+      "namespace": "morpho",
+      "descriptionBytes": 2891,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1562,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 544,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Borrow, repay and move collateral on a market"
+      ]
+    },
+    {
+      "toolId": "morpho.market.get",
+      "publicName": "morpho__market_get",
+      "namespace": "morpho",
+      "descriptionBytes": 2041,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1368,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 637,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "morpho:Lending market detail"
+      ]
+    },
+    {
+      "toolId": "morpho.market.quote",
+      "publicName": "morpho__market_quote",
+      "namespace": "morpho",
+      "descriptionBytes": 2425,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 12,
+      "paramDescriptionBytes": 3653,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 630,
+      "hasCanonicalSummary": false,
+      "aliasCount": 9,
+      "exampleIntentCount": 6,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Price a borrow or a collateral move before doing it"
+      ]
+    },
+    {
+      "toolId": "morpho.market.repay",
+      "publicName": "morpho__market_repay",
+      "namespace": "morpho",
+      "descriptionBytes": 3454,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 2020,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 473,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Borrow, repay and move collateral on a market"
+      ]
+    },
+    {
+      "toolId": "morpho.market.supply",
+      "publicName": "morpho__market_supply",
+      "namespace": "morpho",
+      "descriptionBytes": 3954,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1567,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 529,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Lend directly into one market instead of a curated vault"
+      ]
+    },
+    {
+      "toolId": "morpho.market.supplyCollateral",
+      "publicName": "morpho__market_supply_collateral",
+      "namespace": "morpho",
+      "descriptionBytes": 2860,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1673,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 539,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Borrow, repay and move collateral on a market",
+        "morpho:Lend directly into one market instead of a curated vault"
+      ]
+    },
+    {
+      "toolId": "morpho.market.withdraw",
+      "publicName": "morpho__market_withdraw",
+      "namespace": "morpho",
+      "descriptionBytes": 3875,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1637,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 550,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Lend directly into one market instead of a curated vault"
+      ]
+    },
+    {
+      "toolId": "morpho.market.withdrawCollateral",
+      "publicName": "morpho__market_withdraw_collateral",
+      "namespace": "morpho",
+      "descriptionBytes": 2892,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1554,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 503,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Lending market detail",
+        "morpho:Borrow, repay and move collateral on a market",
+        "morpho:Lend directly into one market instead of a curated vault"
+      ]
+    },
+    {
+      "toolId": "morpho.markets.activity",
+      "publicName": "morpho__markets_activity_list",
+      "namespace": "morpho",
+      "descriptionBytes": 3250,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 14,
+      "paramDescriptionBytes": 3395,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 618,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 6,
+      "navigationFacets": [
+        "morpho:Lending market screening",
+        "morpho:Lending market detail",
+        "morpho:Market activity and liquidation history"
+      ]
+    },
+    {
+      "toolId": "morpho.markets.discover",
+      "publicName": "morpho__markets_discover",
+      "namespace": "morpho",
+      "descriptionBytes": 2569,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 26,
+      "paramDescriptionBytes": 5824,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 679,
+      "hasCanonicalSummary": false,
+      "aliasCount": 7,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "morpho:Lending market screening",
+        "morpho:Lending market detail"
+      ]
+    },
+    {
+      "toolId": "morpho.positions.get",
+      "publicName": "morpho__positions_get",
+      "namespace": "morpho",
+      "descriptionBytes": 3938,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 1957,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 571,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 6,
+      "navigationFacets": [
+        "morpho:Position and liquidation risk"
+      ]
+    },
+    {
+      "toolId": "morpho.rewards.claim",
+      "publicName": "morpho__rewards_claim",
+      "namespace": "morpho",
+      "descriptionBytes": 2694,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 3,
+      "paramDescriptionBytes": 1033,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 633,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Reward campaigns, read and claimed"
+      ]
+    },
+    {
+      "toolId": "morpho.rewards.get",
+      "publicName": "morpho__rewards_get",
+      "namespace": "morpho",
+      "descriptionBytes": 3186,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 877,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 593,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 6,
+      "navigationFacets": [
+        "morpho:Reward campaigns, read and claimed"
+      ]
+    },
+    {
+      "toolId": "morpho.vault.deposit",
+      "publicName": "morpho__vault_deposit",
+      "namespace": "morpho",
+      "descriptionBytes": 3287,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1269,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 619,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Curated vault detail",
+        "morpho:Deposit into or withdraw from a vault"
+      ]
+    },
+    {
+      "toolId": "morpho.vault.get",
+      "publicName": "morpho__vault_get",
+      "namespace": "morpho",
+      "descriptionBytes": 3337,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 1223,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 600,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Curated vault detail"
+      ]
+    },
+    {
+      "toolId": "morpho.vault.quote",
+      "publicName": "morpho__vault_quote",
+      "namespace": "morpho",
+      "descriptionBytes": 4481,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 2111,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 630,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Curated vault detail",
+        "morpho:Preview a vault deposit or withdrawal"
+      ]
+    },
+    {
+      "toolId": "morpho.vault.withdraw",
+      "publicName": "morpho__vault_withdraw",
+      "namespace": "morpho",
+      "descriptionBytes": 2843,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1305,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 610,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Curated vault detail",
+        "morpho:Deposit into or withdraw from a vault"
+      ]
+    },
+    {
+      "toolId": "morpho.vaults.discover",
+      "publicName": "morpho__vaults_discover",
+      "namespace": "morpho",
+      "descriptionBytes": 6114,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 19,
+      "paramDescriptionBytes": 5526,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 611,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "morpho:Curated vault screening",
+        "morpho:Curated vault detail"
+      ]
+    },
+    {
+      "toolId": "morpho.wallet.balance",
+      "publicName": "morpho__wallet_balance_get",
+      "namespace": "morpho",
+      "descriptionBytes": 3148,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 924,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 655,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 6,
+      "navigationFacets": [
+        "morpho:Wallet holdings and Morpho approvals"
+      ]
+    },
+    {
+      "toolId": "pendle.claim",
+      "publicName": "pendle__rewards_claim",
+      "namespace": "pendle",
+      "descriptionBytes": 682,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 3,
+      "paramDescriptionBytes": 434,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 619,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Positions and income"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.add",
+      "publicName": "pendle__lp_add",
+      "namespace": "pendle",
+      "descriptionBytes": 386,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 393,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 584,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.addKeepYt",
+      "publicName": "pendle__lp_add_keep_yt",
+      "namespace": "pendle",
+      "descriptionBytes": 1270,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 865,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 557,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)",
+        "pendle:Dual-leg liquidity"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.quote",
+      "publicName": "pendle__lp_quote",
+      "namespace": "pendle",
+      "descriptionBytes": 723,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 556,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 597,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.remove",
+      "publicName": "pendle__lp_remove",
+      "namespace": "pendle",
+      "descriptionBytes": 440,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 402,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 556,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.removeDual",
+      "publicName": "pendle__lp_remove_dual",
+      "namespace": "pendle",
+      "descriptionBytes": 1306,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 947,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 621,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)",
+        "pendle:Dual-leg liquidity"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.toPt",
+      "publicName": "pendle__lp_to_pt",
+      "namespace": "pendle",
+      "descriptionBytes": 1461,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 927,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 587,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)",
+        "pendle:Move a position (term mobility)"
+      ]
+    },
+    {
+      "toolId": "pendle.lp.transfer",
+      "publicName": "pendle__lp_transfer",
+      "namespace": "pendle",
+      "descriptionBytes": 1314,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 842,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 616,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Liquidity (LP)",
+        "pendle:Move a position (term mobility)"
+      ]
+    },
+    {
+      "toolId": "pendle.market.candles",
+      "publicName": "pendle__market_candles_get",
+      "namespace": "pendle",
+      "descriptionBytes": 683,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 602,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 599,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Market detail and history"
+      ]
+    },
+    {
+      "toolId": "pendle.market.get",
+      "publicName": "pendle__market_get",
+      "namespace": "pendle",
+      "descriptionBytes": 1063,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 603,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 645,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Market detail and history"
+      ]
+    },
+    {
+      "toolId": "pendle.market.history",
+      "publicName": "pendle__market_history_get",
+      "namespace": "pendle",
+      "descriptionBytes": 739,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 6,
+      "paramDescriptionBytes": 954,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 602,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Market detail and history"
+      ]
+    },
+    {
+      "toolId": "pendle.orderbook",
+      "publicName": "pendle__market_orderbook_get",
+      "namespace": "pendle",
+      "descriptionBytes": 839,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 608,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 613,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Order-book depth"
+      ]
+    },
+    {
+      "toolId": "pendle.position.value",
+      "publicName": "pendle__positions_get",
+      "namespace": "pendle",
+      "descriptionBytes": 691,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 766,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 690,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "pendle:Positions and income"
+      ]
+    },
+    {
+      "toolId": "pendle.prices.assets",
+      "publicName": "pendle__asset_prices_get",
+      "namespace": "pendle",
+      "descriptionBytes": 685,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 730,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 637,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Asset prices"
+      ]
+    },
+    {
+      "toolId": "pendle.pt.buy",
+      "publicName": "pendle__pt_buy",
+      "namespace": "pendle",
+      "descriptionBytes": 256,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 392,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 645,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:PT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.pt.quote",
+      "publicName": "pendle__pt_quote",
+      "namespace": "pendle",
+      "descriptionBytes": 606,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 338,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 594,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:PT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.pt.redeem",
+      "publicName": "pendle__pt_redeem",
+      "namespace": "pendle",
+      "descriptionBytes": 448,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 261,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 635,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:PT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.pt.rollover",
+      "publicName": "pendle__pt_rollover",
+      "namespace": "pendle",
+      "descriptionBytes": 1307,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 937,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 571,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:PT trading",
+        "pendle:Move a position (term mobility)"
+      ]
+    },
+    {
+      "toolId": "pendle.pt.sell",
+      "publicName": "pendle__pt_sell",
+      "namespace": "pendle",
+      "descriptionBytes": 250,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 392,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 532,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:PT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.py.mint",
+      "publicName": "pendle__py_mint",
+      "namespace": "pendle",
+      "descriptionBytes": 352,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 397,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 561,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Mint and redeem (PT + YT)"
+      ]
+    },
+    {
+      "toolId": "pendle.py.quote",
+      "publicName": "pendle__py_quote",
+      "namespace": "pendle",
+      "descriptionBytes": 682,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 582,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 616,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Mint and redeem (PT + YT)"
+      ]
+    },
+    {
+      "toolId": "pendle.py.redeem",
+      "publicName": "pendle__py_redeem",
+      "namespace": "pendle",
+      "descriptionBytes": 372,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 426,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 599,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Mint and redeem (PT + YT)"
+      ]
+    },
+    {
+      "toolId": "pendle.rewards.merkle",
+      "publicName": "pendle__merkle_rewards_list",
+      "namespace": "pendle",
+      "descriptionBytes": 631,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 248,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 667,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:Positions and income"
+      ]
+    },
+    {
+      "toolId": "pendle.sy.mint",
+      "publicName": "pendle__sy_mint",
+      "namespace": "pendle",
+      "descriptionBytes": 897,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 855,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 580,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:SY wrap and unwrap"
+      ]
+    },
+    {
+      "toolId": "pendle.sy.redeem",
+      "publicName": "pendle__sy_redeem",
+      "namespace": "pendle",
+      "descriptionBytes": 931,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 847,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 599,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:SY wrap and unwrap"
+      ]
+    },
+    {
+      "toolId": "pendle.yields",
+      "publicName": "pendle__markets_discover",
+      "namespace": "pendle",
+      "descriptionBytes": 641,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 20,
+      "paramDescriptionBytes": 1760,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 692,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "pendle:Yield markets"
+      ]
+    },
+    {
+      "toolId": "pendle.yt.buy",
+      "publicName": "pendle__yt_buy",
+      "namespace": "pendle",
+      "descriptionBytes": 357,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 392,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 646,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:YT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.yt.quote",
+      "publicName": "pendle__yt_quote",
+      "namespace": "pendle",
+      "descriptionBytes": 681,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 319,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 602,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:YT trading"
+      ]
+    },
+    {
+      "toolId": "pendle.yt.sell",
+      "publicName": "pendle__yt_sell",
+      "namespace": "pendle",
+      "descriptionBytes": 313,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 392,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 614,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pendle:YT trading"
+      ]
+    },
+    {
+      "toolId": "pools.candles",
+      "publicName": "pools__token_candles_list",
+      "namespace": "pools",
+      "descriptionBytes": 1006,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 531,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 602,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:pools.fun candles and token detail"
+      ]
+    },
+    {
+      "toolId": "pools.claim_fees",
+      "publicName": "pools__fees_claim",
+      "namespace": "pools",
+      "descriptionBytes": 1221,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 2,
+      "paramDescriptionBytes": 316,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 620,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:Own pools.fun launches"
+      ]
+    },
+    {
+      "toolId": "pools.launch_execute",
+      "publicName": "pools__launch_execute",
+      "namespace": "pools",
+      "descriptionBytes": 2599,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1125,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 618,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:Launching a token on pools.fun"
+      ]
+    },
+    {
+      "toolId": "pools.launch_preview",
+      "publicName": "pools__launch_preview",
+      "namespace": "pools",
+      "descriptionBytes": 884,
+      "mutating": true,
+      "actionKind": "local_write",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1000,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 563,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:Launching a token on pools.fun"
+      ]
+    },
+    {
+      "toolId": "pools.launch_request_form",
+      "publicName": "pools__launch_request_form",
+      "namespace": "pools",
+      "descriptionBytes": 688,
+      "mutating": true,
+      "actionKind": "local_write",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1000,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 505,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:Launching a token on pools.fun"
+      ]
+    },
+    {
+      "toolId": "pools.my_launches",
+      "publicName": "pools__my_launches_list",
+      "namespace": "pools",
+      "descriptionBytes": 1044,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 717,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 597,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:Own pools.fun launches"
+      ]
+    },
+    {
+      "toolId": "pools.search",
+      "publicName": "pools__tokens_search",
+      "namespace": "pools",
+      "descriptionBytes": 753,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 619,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 587,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:pools.fun browsing and search"
+      ]
+    },
+    {
+      "toolId": "pools.token",
+      "publicName": "pools__token_get",
+      "namespace": "pools",
+      "descriptionBytes": 1075,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 139,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 598,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "pools:pools.fun candles and token detail"
+      ]
+    },
+    {
+      "toolId": "pools.tokens",
+      "publicName": "pools__tokens_discover",
+      "namespace": "pools",
+      "descriptionBytes": 1255,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 15,
+      "paramDescriptionBytes": 3040,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 650,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "pools:pools.fun browsing and search",
+        "pools:pools.fun candles and token detail"
+      ]
+    },
+    {
+      "toolId": "relay.bridge",
+      "publicName": "relay__bridge_execute",
+      "namespace": "relay",
+      "descriptionBytes": 767,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 8,
+      "paramDescriptionBytes": 606,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 479,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "relay:Bridge quotes and execution"
+      ]
+    },
+    {
+      "toolId": "relay.quote.get",
+      "publicName": "relay__bridge_quote_get",
+      "namespace": "relay",
+      "descriptionBytes": 441,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 565,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 449,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "relay:Bridge quotes and execution"
+      ]
+    },
+    {
+      "toolId": "solana.lend.borrowOperate",
+      "publicName": "solana__lend_borrow_operate",
+      "namespace": "solana",
+      "descriptionBytes": 1560,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 9,
+      "paramDescriptionBytes": 1146,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 638,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.borrowPositions",
+      "publicName": "solana__lend_borrow_positions_list",
+      "namespace": "solana",
+      "descriptionBytes": 497,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 273,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 556,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.borrowVaults",
+      "publicName": "solana__lend_borrow_vaults_list",
+      "namespace": "solana",
+      "descriptionBytes": 1094,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 292,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 575,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.deposit",
+      "publicName": "solana__lend_earn_deposit",
+      "namespace": "solana",
+      "descriptionBytes": 404,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 2,
+      "paramDescriptionBytes": 277,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 386,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.positions",
+      "publicName": "solana__lend_earn_positions_list",
+      "namespace": "solana",
+      "descriptionBytes": 265,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 217,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 423,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.rates",
+      "publicName": "solana__lend_earn_rates_list",
+      "namespace": "solana",
+      "descriptionBytes": 459,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 415,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 436,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.lend.withdraw",
+      "publicName": "solana__lend_earn_withdraw",
+      "namespace": "solana",
+      "descriptionBytes": 671,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 3,
+      "paramDescriptionBytes": 614,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 381,
+      "hasCanonicalSummary": false,
+      "aliasCount": 0,
+      "exampleIntentCount": 0,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.predict.buy",
+      "publicName": "solana__predict_buy",
+      "namespace": "solana",
+      "descriptionBytes": 505,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 3,
+      "paramDescriptionBytes": 172,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 463,
+      "hasCanonicalSummary": true,
+      "aliasCount": 13,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.claim",
+      "publicName": "solana__predict_claim",
+      "namespace": "solana",
+      "descriptionBytes": 649,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 1,
+      "paramDescriptionBytes": 52,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 450,
+      "hasCanonicalSummary": true,
+      "aliasCount": 10,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.closeAll",
+      "publicName": "solana__predict_close_all",
+      "namespace": "solana",
+      "descriptionBytes": 473,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 1,
+      "paramDescriptionBytes": 287,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 422,
+      "hasCanonicalSummary": true,
+      "aliasCount": 10,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.event",
+      "publicName": "solana__predict_event_get",
+      "namespace": "solana",
+      "descriptionBytes": 252,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 129,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 384,
+      "hasCanonicalSummary": false,
+      "aliasCount": 8,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.events",
+      "publicName": "solana__predict_events_discover",
+      "namespace": "solana",
+      "descriptionBytes": 352,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 10,
+      "paramDescriptionBytes": 574,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 491,
+      "hasCanonicalSummary": true,
+      "aliasCount": 9,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.history",
+      "publicName": "solana__predict_trade_history_list",
+      "namespace": "solana",
+      "descriptionBytes": 481,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 354,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 515,
+      "hasCanonicalSummary": true,
+      "aliasCount": 9,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.leaderboards",
+      "publicName": "solana__predict_leaderboard_list",
+      "namespace": "solana",
+      "descriptionBytes": 427,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 97,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 443,
+      "hasCanonicalSummary": true,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.market",
+      "publicName": "solana__predict_market_get",
+      "namespace": "solana",
+      "descriptionBytes": 436,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 92,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 468,
+      "hasCanonicalSummary": false,
+      "aliasCount": 9,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.order",
+      "publicName": "solana__predict_order_get",
+      "namespace": "solana",
+      "descriptionBytes": 195,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 46,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 390,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.orderbook",
+      "publicName": "solana__predict_orderbook_get",
+      "namespace": "solana",
+      "descriptionBytes": 344,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 10,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 458,
+      "hasCanonicalSummary": true,
+      "aliasCount": 10,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.orders",
+      "publicName": "solana__predict_orders_list",
+      "namespace": "solana",
+      "descriptionBytes": 346,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 285,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 423,
+      "hasCanonicalSummary": true,
+      "aliasCount": 8,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.orderStatus",
+      "publicName": "solana__predict_order_status_get",
+      "namespace": "solana",
+      "descriptionBytes": 156,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 46,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 472,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.pnlHistory",
+      "publicName": "solana__predict_pnl_history_get",
+      "namespace": "solana",
+      "descriptionBytes": 486,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 336,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 448,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.position",
+      "publicName": "solana__predict_position_get",
+      "namespace": "solana",
+      "descriptionBytes": 195,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 52,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 471,
+      "hasCanonicalSummary": false,
+      "aliasCount": 9,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.positions",
+      "publicName": "solana__predict_positions_list",
+      "namespace": "solana",
+      "descriptionBytes": 425,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 6,
+      "paramDescriptionBytes": 394,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 414,
+      "hasCanonicalSummary": true,
+      "aliasCount": 9,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.profile",
+      "publicName": "solana__predict_profile_get",
+      "namespace": "solana",
+      "descriptionBytes": 506,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 217,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 421,
+      "hasCanonicalSummary": false,
+      "aliasCount": 6,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.search",
+      "publicName": "solana__predict_events_search",
+      "namespace": "solana",
+      "descriptionBytes": 317,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 372,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 508,
+      "hasCanonicalSummary": true,
+      "aliasCount": 9,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.sell",
+      "publicName": "solana__predict_sell",
+      "namespace": "solana",
+      "descriptionBytes": 822,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 1,
+      "paramDescriptionBytes": 52,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 357,
+      "hasCanonicalSummary": true,
+      "aliasCount": 10,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.suggestedEvents",
+      "publicName": "solana__predict_suggested_events_list",
+      "namespace": "solana",
+      "descriptionBytes": 188,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 260,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 532,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.trades",
+      "publicName": "solana__predict_trades_list",
+      "namespace": "solana",
+      "descriptionBytes": 260,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 180,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 478,
+      "hasCanonicalSummary": true,
+      "aliasCount": 8,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.tradingStatus",
+      "publicName": "solana__predict_trading_status_get",
+      "namespace": "solana",
+      "descriptionBytes": 102,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 0,
+      "paramDescriptionBytes": 0,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 388,
+      "hasCanonicalSummary": true,
+      "aliasCount": 6,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.predict.vaultInfo",
+      "publicName": "solana__predict_vault_get",
+      "namespace": "solana",
+      "descriptionBytes": 179,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 0,
+      "paramDescriptionBytes": 0,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 521,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "solana:Prediction markets"
+      ]
+    },
+    {
+      "toolId": "solana.prices",
+      "publicName": "solana__token_prices_get",
+      "namespace": "solana",
+      "descriptionBytes": 367,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 194,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 526,
+      "hasCanonicalSummary": true,
+      "aliasCount": 5,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "solana:Core token and price lookup"
+      ]
+    },
+    {
+      "toolId": "solana.swap.execute",
+      "publicName": "solana__swap_execute",
+      "namespace": "solana",
+      "descriptionBytes": 529,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 11,
+      "paramDescriptionBytes": 2752,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 417,
+      "hasCanonicalSummary": true,
+      "aliasCount": 10,
+      "exampleIntentCount": 5,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.swap.quote",
+      "publicName": "solana__swap_quote",
+      "namespace": "solana",
+      "descriptionBytes": 969,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 11,
+      "paramDescriptionBytes": 2752,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 431,
+      "hasCanonicalSummary": true,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Swaps and lending"
+      ]
+    },
+    {
+      "toolId": "solana.tokens.search",
+      "publicName": "solana__tokens_search",
+      "namespace": "solana",
+      "descriptionBytes": 376,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 414,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 428,
+      "hasCanonicalSummary": false,
+      "aliasCount": 3,
+      "exampleIntentCount": 2,
+      "navigationFacets": [
+        "solana:Core token and price lookup"
+      ]
+    },
+    {
+      "toolId": "solana.tokens.trending",
+      "publicName": "solana__tokens_discover",
+      "namespace": "solana",
+      "descriptionBytes": 850,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 914,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 626,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "solana:Core token and price lookup"
+      ]
+    },
+    {
+      "toolId": "trench.images",
+      "publicName": "trench__images_list",
+      "namespace": "trench",
+      "descriptionBytes": 609,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 93,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 516,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Launching a token on Trench"
+      ]
+    },
+    {
+      "toolId": "trench.launch_execute",
+      "publicName": "trench__launch_execute",
+      "namespace": "trench",
+      "descriptionBytes": 1303,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 6,
+      "paramDescriptionBytes": 590,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 635,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Launching a token on Trench"
+      ]
+    },
+    {
+      "toolId": "trench.launch_preview",
+      "publicName": "trench__launch_preview",
+      "namespace": "trench",
+      "descriptionBytes": 1114,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 1447,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 622,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Trench trade tape and launch preview"
+      ]
+    },
+    {
+      "toolId": "trench.launch_request_form",
+      "publicName": "trench__launch_request_form",
+      "namespace": "trench",
+      "descriptionBytes": 770,
+      "mutating": true,
+      "actionKind": "local_write",
+      "paramCount": 6,
+      "paramDescriptionBytes": 590,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 572,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Launching a token on Trench"
+      ]
+    },
+    {
+      "toolId": "trench.my_launches",
+      "publicName": "trench__my_launches_list",
+      "namespace": "trench",
+      "descriptionBytes": 441,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 61,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 603,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Launching a token on Trench"
+      ]
+    },
+    {
+      "toolId": "trench.search",
+      "publicName": "trench__tokens_search",
+      "namespace": "trench",
+      "descriptionBytes": 729,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 2,
+      "paramDescriptionBytes": 119,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 610,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Trench launchpad token browsing and search"
+      ]
+    },
+    {
+      "toolId": "trench.tokens",
+      "publicName": "trench__tokens_discover",
+      "namespace": "trench",
+      "descriptionBytes": 1677,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 10,
+      "paramDescriptionBytes": 2670,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 643,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 4,
+      "navigationFacets": [
+        "trench:Trench launchpad token browsing and search"
+      ]
+    },
+    {
+      "toolId": "trench.trade_execute",
+      "publicName": "trench__trade_execute",
+      "namespace": "trench",
+      "descriptionBytes": 860,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1420,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 621,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Trench curve trading (buy/sell)"
+      ]
+    },
+    {
+      "toolId": "trench.trade_quote",
+      "publicName": "trench__trade_quote",
+      "namespace": "trench",
+      "descriptionBytes": 662,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1420,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 582,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Trench curve trading (buy/sell)"
+      ]
+    },
+    {
+      "toolId": "trench.trades",
+      "publicName": "trench__token_trades_list",
+      "namespace": "trench",
+      "descriptionBytes": 623,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 161,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 622,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "trench:Trench trade tape and launch preview"
+      ]
+    },
+    {
+      "toolId": "uniswap.swap.execute",
+      "publicName": "uniswap__swap_execute",
+      "namespace": "uniswap",
+      "descriptionBytes": 1062,
+      "mutating": true,
+      "actionKind": "user_wallet_broadcast",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1550,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 534,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "uniswap:Swaps"
+      ]
+    },
+    {
+      "toolId": "uniswap.swap.quote",
+      "publicName": "uniswap__swap_quote",
+      "namespace": "uniswap",
+      "descriptionBytes": 696,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 5,
+      "paramDescriptionBytes": 1452,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 502,
+      "hasCanonicalSummary": false,
+      "aliasCount": 4,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "uniswap:Swaps"
+      ]
+    },
+    {
+      "toolId": "virtuals.geneses",
+      "publicName": "virtuals__genesis_launches_list",
+      "namespace": "virtuals",
+      "descriptionBytes": 284,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 3,
+      "paramDescriptionBytes": 201,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 565,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "virtuals:Graduations and launch calendar"
+      ]
+    },
+    {
+      "toolId": "virtuals.get",
+      "publicName": "virtuals__agent_get",
+      "namespace": "virtuals",
+      "descriptionBytes": 506,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 1,
+      "paramDescriptionBytes": 129,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 607,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "virtuals:Agent-token screening and detail"
+      ]
+    },
+    {
+      "toolId": "virtuals.graduations",
+      "publicName": "virtuals__graduations_list",
+      "namespace": "virtuals",
+      "descriptionBytes": 649,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 4,
+      "paramDescriptionBytes": 480,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 578,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "virtuals:Graduations and launch calendar"
+      ]
+    },
+    {
+      "toolId": "virtuals.list",
+      "publicName": "virtuals__agents_discover",
+      "namespace": "virtuals",
+      "descriptionBytes": 1232,
+      "mutating": false,
+      "actionKind": "read",
+      "paramCount": 7,
+      "paramDescriptionBytes": 1213,
+      "hasEmbeddingText": true,
+      "embeddingTextBytes": 649,
+      "hasCanonicalSummary": false,
+      "aliasCount": 5,
+      "exampleIntentCount": 3,
+      "navigationFacets": [
+        "virtuals:Agent-token screening and detail"
+      ]
+    }
+  ]
+}

@@ -31,7 +31,7 @@ import { useEffect, useState } from "react";
 /** Crypto orders mapped to real agent utilities; user-pinned order. `as const`
  * so literal-index reads stay definite strings under noUncheckedIndexedAccess. */
 export const WELCOME_PLACEHOLDERS = [
-  "Swap 0.5 ETH to USDG — best route first.",
+  "Swap 0.5 ETH to USDG - best route first.",
   "Bridge 200 USDC from Base to Robinhood Chain.",
   "What's trending on DexScreener right now?",
   "How is $VEX doing today?",

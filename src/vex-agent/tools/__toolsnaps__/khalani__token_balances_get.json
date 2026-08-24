@@ -1,0 +1,47 @@
+{
+  "definition": {
+    "function": {
+      "description": "Scan one wallet's token balances across the Khalani-supported chains of ONE wallet family (eip155 or solana), with USD prices. Use this when the user asks what they hold across chains, or when you need to find a funded source asset before quoting a bridge or a swap. Defaults to the session's own wallet; pass `walletAddress` to read a different one, which under a session-scoped wallet must equal the selected wallet or the call fails with WALLET_SCOPE_MISMATCH. One call covers ONE family, so an EVM and a Solana answer are two calls. It does NOT cover app-local chains such as Robinhood Chain (4663); read those with `WalletBalances`. RETURNS `address`, `wallet` (the family scanned), `count`, `totalUsd`, `scannedChainIds`, `chainErrors` (the chains whose scan failed, so a missing token is distinguishable from an unscanned chain), and `tokens`, one concise row each: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried. Balances are RAW base units; read them with the row's own `decimals`. Every matching row is returned; there is no pagination.",
+      "name": "khalani__token_balances_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chainIds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated chain IDs or aliases. Omit to scan all chains in the family. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+          },
+          "walletAddress": {
+            "description": "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH.",
+            "type": "string"
+          },
+          "walletFamily": {
+            "description": "Wallet FAMILY, never a chain: eip155 or solana (default: eip155).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "khalani",
+    "requiresEnv": null,
+    "toolId": "khalani.tokens.balances"
+  }
+}

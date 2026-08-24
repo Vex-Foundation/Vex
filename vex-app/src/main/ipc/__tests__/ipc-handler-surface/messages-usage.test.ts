@@ -272,7 +272,42 @@ describe("usage handlers", () => {
     expect((result.data as { totalCachedSavings: number }).totalCachedSavings).toBeCloseTo(-0.0033, 6);
   });
 
-  it("getLastTurn returns a turn DTO carrying the cache-savings fields", async () => {
+  // The DTO is a TURN ROLLUP across the turn's model rounds, not one
+  // `usage_log` row: input is the latest round's snapshot, output/cost are the
+  // turn's sums, and `roundCount` says how many rounds they cover. The output
+  // schema is strict, so a stale per-row payload cannot reach the renderer.
+  it("getLastTurn returns a turn rollup carrying the summed spend and round count", async () => {
+    mocks.getLastTurn.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        sessionId: SESSION,
+        latestRoundPromptTokens: 100,
+        latestRoundCachedTokens: 30,
+        turnCompletionTokens: 50,
+        turnReasoningTokens: 0,
+        turnCacheWriteTokens: 12,
+        turnCost: 0.001,
+        turnCachedSavings: 0.0004,
+        roundCount: 4,
+        currency: "USD",
+        provider: "openrouter",
+        model: "anthropic/claude-opus-4.7",
+        latestRoundAt: "2026-05-21T10:00:00.000Z",
+      },
+    });
+    const result = await call(CH.usage.getLastTurn, {
+      sessionId: SESSION,
+      currency: "USD",
+    });
+    expect(result.ok).toBe(true);
+    expect((result.data as { turnCacheWriteTokens: number }).turnCacheWriteTokens).toBe(12);
+    expect((result.data as { roundCount: number }).roundCount).toBe(4);
+  });
+
+  it("getLastTurn rejects a stale per-ROW payload at the output boundary", async () => {
+    // The regression guard for the shape change: a main-side helper that still
+    // returned one `usage_log` row must fail loudly here rather than reach the
+    // panel and be labelled a turn.
     mocks.getLastTurn.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -295,8 +330,7 @@ describe("usage handlers", () => {
       sessionId: SESSION,
       currency: "USD",
     });
-    expect(result.ok).toBe(true);
-    expect((result.data as { cacheWriteTokens: number }).cacheWriteTokens).toBe(12);
+    expect(result.ok).toBe(false);
   });
 
   it("getLastTurn rejects payload without sessionId", async () => {
@@ -355,7 +389,7 @@ describe("usage handlers", () => {
     });
   });
 
-  it("getContextWindow leaves a NULL window null — no bands on a session that does not exist", async () => {
+  it("getContextWindow leaves a NULL window null - no bands on a session that does not exist", async () => {
     mocks.getContextWindow.mockResolvedValueOnce({ ok: true, data: null });
     const result = await call(CH.usage.getContextWindow, { sessionId: SESSION });
     expect(result.ok).toBe(true);

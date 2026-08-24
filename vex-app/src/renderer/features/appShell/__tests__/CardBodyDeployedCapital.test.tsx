@@ -40,6 +40,8 @@ const BASE_DRAFT: MissionDraftDto = {
   acceptance: null,
   deployedCapital: null,
   renewedFromMissionId: null,
+  missingFields: [],
+  canAcceptContract: true,
 };
 
 const DECLARED = {

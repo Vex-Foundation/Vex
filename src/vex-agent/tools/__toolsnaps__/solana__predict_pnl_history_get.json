@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read a wallet's realized-PnL TIME SERIES on Jupiter Prediction, count data points over a 24h, 1w or 1m interval. UNAVAILABLE IN PRACTICE: since 2026-07-24 the provider answers 404 on this documented route for EVERY wallet, including traders whose profile returns 200, which Jupiter's own docs do not describe - a provider-side outage or stale documentation rather than a Vex fault or an empty history. Use this when the user asks how their PnL moved over time, but expect a failure that says exactly that, keeps the provider's own status, and points at solana__predict_profile_get; read that lifetime snapshot instead until the route is restored. When it does answer, it returns `history`, one point per interval bucket, each carrying realizedPnlUsd as an exact-decimal USD string with a raw realizedPnlUsdMicro sibling. count is capped at 100 and a larger value is REJECTED by name.",
+      "name": "solana__predict_pnl_history_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Number of data points to return, 1-100 (Vex owner-wide cap; provider default 10 when omitted).",
+            "type": "number"
+          },
+          "interval": {
+            "description": "Interval: 24h, 1w, or 1m.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interval"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.pnlHistory"
+  }
+}

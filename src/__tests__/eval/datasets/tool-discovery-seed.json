@@ -1,173 +1,1721 @@
 {
   "version": "v3-agent-116",
-  "description": "English-only discover_tools seed for active protocol retrieval. The first 55 blind prompts simulate an agent/user that does not know protocol names. The next 61 protocol-aware prompts mention a platform/protocol name but not internal tool IDs or function names. Expected IDs must be exact active tool IDs or valid active prefixes; expectedCoverageGroups measure multi-step coverage. (Shrunk from v3-agent-200 in the Agent Scan phase 1 teardown: polymarket, KyberSwap zap, KyberSwap limit orders, and the old buy/sell split all removed; no backfill invented - see discovery-baseline.test.ts for the count lockstep.)",
+  "description": "English-only discover_tools seed for active protocol retrieval. The first 55 blind prompts simulate an agent/user that does not know protocol names. The next 61 protocol-aware prompts mention a platform/protocol name but not internal tool IDs or function names. Expected IDs must be exact active tool IDs or valid active prefixes; expectedCoverageGroups measure multi-step coverage. (Shrunk from v3-agent-200 in the Agent Scan phase 1 teardown: polymarket, KyberSwap zap, KyberSwap limit orders, and the old buy/sell split all removed; no backfill invented - see discovery-baseline.test.ts for the count lockstep.) (Batch 2 tool-surface merge: the D7 near-duplicate retirements remapped 6 rows in place - kyberswap.chains.supported -> kyberswap.chains (the merged tool answers the same live-status question) and dexscreener.boosts.top -> dexscreener.boosts (the top feed is now its feed: top param). Query text, awareness, scenario and intentShape are unchanged, so every retargeted row still measures the intent it was written for; no row was dropped and no query text was invented.)",
   "queries": [
-    { "query": "what chains can I move USDC between", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.chains.list"], "expectedCoverageGroups": [["khalani.chains.list"]] },
-    { "query": "find the right USDC address on Ethereum and Base", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search"], "expectedCoverageGroups": [["khalani.tokens.search"]] },
-    { "query": "parse 100 usdc on ethereum into the matching token", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.autocomplete"], "expectedCoverageGroups": [["khalani.tokens.autocomplete"]] },
-
-    { "query": "show my wallet token balances across chains", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.tokens.balances"], "expectedCoverageGroups": [["khalani.tokens.balances"]] },
-
-    { "query": "which tokens are popular to bridge on Base", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.top"], "expectedCoverageGroups": [["khalani.tokens.top"]] },
-    { "query": "estimate moving 250 USDC from Ethereum to Solana", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.quote.get"], "expectedCoverageGroups": [["khalani.quote.get"]] },
-    { "query": "send ETH from Arbitrum to Solana", "awareness": "blind", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.bridge"], "expectedCoverageGroups": [["khalani.bridge"]] },
-
-    { "query": "track my recent cross chain transfers", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.orders.list"], "expectedCoverageGroups": [["khalani.orders.list"]] },
-    { "query": "look up one bridge transfer by order id", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.orders.get"], "expectedCoverageGroups": [["khalani.orders.get"]] },
-
-    { "query": "check bridge history and cross chain balances for my wallet", "awareness": "blind", "scenario": "workflow", "intentShape": "cross", "expectedToolIds": ["khalani.orders.list", "khalani.tokens.balances"], "expectedCoverageGroups": [["khalani.orders.list"], ["khalani.tokens.balances"]] },
-
-    { "query": "what EVM chains can I trade on", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.chains"], "expectedCoverageGroups": [["kyberswap.chains"]] },
-    { "query": "is BNB Chain currently active for swaps", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.chains.supported"], "expectedCoverageGroups": [["kyberswap.chains.supported"]] },
-    { "query": "find the PEPE token address on Base before trading", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search"], "expectedCoverageGroups": [["khalani.tokens.search"]] },
-
-    { "query": "check whether this new Base token is a honeypot", "awareness": "blind", "scenario": "token_safety", "intentShape": "single", "expectedToolIds": ["kyberswap.tokens.check"], "expectedCoverageGroups": [["kyberswap.tokens.check"]] },
-
-    { "query": "preview a USDC to ETH swap on Base", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.quote"], "expectedCoverageGroups": [["kyberswap.swap.quote"]] },
-    { "query": "buy a Base token using USDC", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.swap.execute"]] },
-    { "query": "sell my BNB token position for USDT", "awareness": "blind", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.swap.execute"]] },
-
-    { "query": "find the best liquidity pool for a Base token", "awareness": "blind", "scenario": "evm_lp", "intentShape": "single", "expectedToolIds": ["dexscreener.tokenPairs"], "expectedCoverageGroups": [["dexscreener.tokenPairs"]] },
-
-    { "query": "check token safety before buying on Base", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["kyberswap.tokens.check", "kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.tokens.check"], ["kyberswap.swap.execute"]] },
-    { "query": "find a token address and get a swap route on BNB", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["khalani.tokens.search", "kyberswap.swap.quote"], "expectedCoverageGroups": [["khalani.tokens.search"], ["kyberswap.swap.quote"]] },
-    { "query": "sell a Base token then bridge USDC to Solana", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["kyberswap.swap.execute", "khalani.bridge"], "expectedCoverageGroups": [["kyberswap.swap.execute"], ["khalani.bridge"]] },
-
-    { "query": "what is the current price of BONK on Solana", "awareness": "blind", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.prices"], "expectedCoverageGroups": [["solana.prices"]] },
-    { "query": "find the mint for JUP", "awareness": "blind", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.tokens.search"], "expectedCoverageGroups": [["solana.tokens.search"]] },
-
-    { "query": "show trending meme coins on Solana", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["solana.tokens.trending", "dexscreener.trending"], "expectedCoverageGroups": [["solana.tokens.trending", "dexscreener.trending"]] },
-
-    { "query": "quote SOL to USDC before swapping", "awareness": "blind", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.swap.quote"], "expectedCoverageGroups": [["solana.swap.quote"]] },
-    { "query": "swap SOL into USDC", "awareness": "blind", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.swap.execute"], "expectedCoverageGroups": [["solana.swap.execute"]] },
-
-    { "query": "find yield rates for lending USDC on Solana", "awareness": "blind", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.rates"], "expectedCoverageGroups": [["solana.lend.rates"]] },
-
-    { "query": "show my Solana lending deposits and earnings", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.lend.positions"], "expectedCoverageGroups": [["solana.lend.positions"]] },
-
-    { "query": "deposit USDC into a Solana lending vault", "awareness": "blind", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.deposit"], "expectedCoverageGroups": [["solana.lend.deposit"]] },
-    { "query": "withdraw from my Solana lending position", "awareness": "blind", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.withdraw"], "expectedCoverageGroups": [["solana.lend.withdraw"]] },
-
-    { "query": "find a Solana meme coin then swap into it", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["solana.tokens.search", "solana.swap.execute"], "expectedCoverageGroups": [["solana.tokens.search"], ["solana.swap.execute"]] },
-    { "query": "check Solana token price then get a swap quote", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["solana.prices", "solana.swap.quote"], "expectedCoverageGroups": [["solana.prices"], ["solana.swap.quote"]] },
-
-    { "query": "compare Solana meme trends with multichain trending tokens", "awareness": "blind", "scenario": "market_research", "intentShape": "compare", "expectedToolIds": ["solana.tokens.trending", "dexscreener.trending"], "expectedCoverageGroups": [["solana.tokens.trending"], ["dexscreener.trending"]] },
-
-    { "query": "find prediction markets about the election", "awareness": "blind", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.search"], "expectedCoverageGroups": [["solana.predict.search"]] },
-    { "query": "browse trending prediction market events", "awareness": "blind", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.events"], "expectedCoverageGroups": [["solana.predict.events"]] },
-    { "query": "show details for one prediction event", "awareness": "blind", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.event"], "expectedCoverageGroups": [["solana.predict.event"]] },
-
-    { "query": "buy YES shares in a prediction market", "awareness": "blind", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.buy"], "expectedCoverageGroups": [["solana.predict.buy"]] },
-    { "query": "sell my YES shares before settlement", "awareness": "blind", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.sell"], "expectedCoverageGroups": [["solana.predict.sell"]] },
-    { "query": "claim winnings from a resolved prediction position", "awareness": "blind", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.claim"], "expectedCoverageGroups": [["solana.predict.claim"]] },
-    { "query": "close every open prediction bet quickly", "awareness": "blind", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.closeAll"], "expectedCoverageGroups": [["solana.predict.closeAll"]] },
-
-    { "query": "show my open prediction positions", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.predict.positions"], "expectedCoverageGroups": [["solana.predict.positions"]] },
-    { "query": "show my past prediction trades and realized pnl", "awareness": "blind", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.predict.history"], "expectedCoverageGroups": [["solana.predict.history"]] },
-
-    { "query": "search for a new meme token by symbol across DEXes", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.search"], "expectedCoverageGroups": [["dexscreener.search"]] },
-    { "query": "get detailed liquidity and volume for a pool address", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.pairs"], "expectedCoverageGroups": [["dexscreener.pairs"]] },
-    { "query": "price several token addresses across DEX pools", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.tokens"], "expectedCoverageGroups": [["dexscreener.tokens"]] },
-    { "query": "compare all pools for one token", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.tokenPairs"], "expectedCoverageGroups": [["dexscreener.tokenPairs"]] },
-    { "query": "show latest token profiles gaining attention", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.profiles"], "expectedCoverageGroups": [["dexscreener.profiles"]] },
-    { "query": "show what tokens are trending right now", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.trending"], "expectedCoverageGroups": [["dexscreener.trending"]] },
-    { "query": "which tokens are buying paid boosts", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.boosts", "dexscreener.boosts.top"], "expectedCoverageGroups": [["dexscreener.boosts", "dexscreener.boosts.top"]] },
-    { "query": "show the tokens with the biggest active boosts", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.boosts.top"], "expectedCoverageGroups": [["dexscreener.boosts.top"]] },
-    { "query": "find community takeover meme coin signals", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.communityTakeovers"], "expectedCoverageGroups": [["dexscreener.communityTakeovers"]] },
-    { "query": "check whether a token paid for promotion", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.orders", "dexscreener.ads"], "expectedCoverageGroups": [["dexscreener.orders", "dexscreener.ads"]] },
-    { "query": "monitor current paid ad placements for tokens", "awareness": "blind", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.ads"], "expectedCoverageGroups": [["dexscreener.ads"]] },
-
-    { "query": "research boosted meme coins then run a honeypot check", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["dexscreener.boosts", "kyberswap.tokens.check"], "expectedCoverageGroups": [["dexscreener.boosts", "dexscreener.trending"], ["kyberswap.tokens.check"]] },
-    { "query": "find trending meme coins then buy one on Base", "awareness": "blind", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["dexscreener.trending", "kyberswap.swap.execute"], "expectedCoverageGroups": [["dexscreener.trending", "dexscreener.search"], ["kyberswap.swap.execute"]] },
-
-    { "query": "use Khalani to list chains I can bridge between", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.chains.list"], "expectedCoverageGroups": [["khalani.chains.list"]] },
-    { "query": "use Khalani to find USDC on Base", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search"], "expectedCoverageGroups": [["khalani.tokens.search"]] },
-    { "query": "use Khalani to parse 100 usdc on ethereum", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.autocomplete"], "expectedCoverageGroups": [["khalani.tokens.autocomplete"]] },
-
-    { "query": "use Khalani for my balances across chains", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.tokens.balances"], "expectedCoverageGroups": [["khalani.tokens.balances"]] },
-
-    { "query": "use Khalani to see top bridge tokens on Solana", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.top"], "expectedCoverageGroups": [["khalani.tokens.top"]] },
-    { "query": "use Khalani to estimate USDC from Ethereum to Base", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.quote.get"], "expectedCoverageGroups": [["khalani.quote.get"]] },
-    { "query": "use Khalani to move USDC from Arbitrum to Base", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.bridge"], "expectedCoverageGroups": [["khalani.bridge"]] },
-
-    { "query": "use Khalani for my recent bridge history", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.orders.list"], "expectedCoverageGroups": [["khalani.orders.list"]] },
-    { "query": "use Khalani to inspect one transfer by order id", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.orders.get"], "expectedCoverageGroups": [["khalani.orders.get"]] },
-
-    { "query": "use Khalani to check transfer history and wallet balances", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "cross", "expectedToolIds": ["khalani.orders.list", "khalani.tokens.balances"], "expectedCoverageGroups": [["khalani.orders.list"], ["khalani.tokens.balances"]] },
-    { "query": "use Khalani to find a token then quote a bridge route", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["khalani.tokens.search", "khalani.quote.get"], "expectedCoverageGroups": [["khalani.tokens.search"], ["khalani.quote.get"]] },
-    { "query": "use Khalani to quote then execute a cross chain transfer", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["khalani.quote.get", "khalani.bridge"], "expectedCoverageGroups": [["khalani.quote.get"], ["khalani.bridge"]] },
-
-    { "query": "use Khalani for supported Base and Solana bridge assets", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search", "khalani.chains.list"], "expectedCoverageGroups": [["khalani.tokens.search", "khalani.chains.list"]] },
-
-    { "query": "use Khalani to resolve token addresses before an EVM trade", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search"], "expectedCoverageGroups": [["khalani.tokens.search"]] },
-
-    { "query": "use Khalani for a bridge order status problem", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.orders.list", "khalani.orders.get"], "expectedCoverageGroups": [["khalani.orders.list", "khalani.orders.get"]] },
-
-    { "query": "use Khalani to bridge out of Polygon into Solana", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.bridge"], "expectedCoverageGroups": [["khalani.bridge"]] },
-    { "query": "use Khalani to know if Monad is supported", "awareness": "protocol-aware", "scenario": "bridge", "intentShape": "single", "expectedToolIds": ["khalani.chains.list"], "expectedCoverageGroups": [["khalani.chains.list"]] },
-
-    { "query": "use Khalani to understand my multi chain token holdings", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["khalani.tokens.balances"], "expectedCoverageGroups": [["khalani.tokens.balances"]] },
-
-    { "query": "use KyberSwap to list EVM networks for trading", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.chains"], "expectedCoverageGroups": [["kyberswap.chains"]] },
-    { "query": "use KyberSwap to check if Base swaps are live", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.chains.supported"], "expectedCoverageGroups": [["kyberswap.chains.supported"]] },
-    { "query": "use KyberSwap to find PEPE on BNB Chain", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["khalani.tokens.search"], "expectedCoverageGroups": [["khalani.tokens.search"]] },
-
-    { "query": "use KyberSwap to check a token before buying", "awareness": "protocol-aware", "scenario": "token_safety", "intentShape": "single", "expectedToolIds": ["kyberswap.tokens.check"], "expectedCoverageGroups": [["kyberswap.tokens.check"]] },
-
-    { "query": "use KyberSwap to estimate USDC to ETH on Base", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.quote"], "expectedCoverageGroups": [["kyberswap.swap.quote"]] },
-    { "query": "use KyberSwap to buy a Base token with USDC", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.swap.execute"]] },
-    { "query": "use KyberSwap to sell a token into USDT", "awareness": "protocol-aware", "scenario": "evm_swap", "intentShape": "single", "expectedToolIds": ["kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.swap.execute"]] },
-
-    { "query": "use KyberSwap to check a token then buy it", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["kyberswap.tokens.check", "kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.tokens.check"], ["kyberswap.swap.execute"]] },
-    { "query": "use KyberSwap to quote then sell a Base token", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["kyberswap.swap.quote", "kyberswap.swap.execute"], "expectedCoverageGroups": [["kyberswap.swap.quote"], ["kyberswap.swap.execute"]] },
-
-    { "query": "use Jupiter to check SOL and JUP prices", "awareness": "protocol-aware", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.prices"], "expectedCoverageGroups": [["solana.prices"]] },
-    { "query": "use Jupiter to find a Solana token mint", "awareness": "protocol-aware", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.tokens.search"], "expectedCoverageGroups": [["solana.tokens.search"]] },
-
-    { "query": "use Jupiter for trending Solana tokens", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["solana.tokens.trending"], "expectedCoverageGroups": [["solana.tokens.trending"]] },
-
-    { "query": "use Jupiter to estimate SOL to USDC", "awareness": "protocol-aware", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.swap.quote"], "expectedCoverageGroups": [["solana.swap.quote"]] },
-    { "query": "use Jupiter to swap SOL into BONK", "awareness": "protocol-aware", "scenario": "solana_swap", "intentShape": "single", "expectedToolIds": ["solana.swap.execute"], "expectedCoverageGroups": [["solana.swap.execute"]] },
-
-    { "query": "use Jupiter to see USDC earn rates", "awareness": "protocol-aware", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.rates"], "expectedCoverageGroups": [["solana.lend.rates"]] },
-
-    { "query": "use Jupiter to show my earn positions", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.lend.positions"], "expectedCoverageGroups": [["solana.lend.positions"]] },
-
-    { "query": "use Jupiter to deposit into an earn vault", "awareness": "protocol-aware", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.deposit"], "expectedCoverageGroups": [["solana.lend.deposit"]] },
-    { "query": "use Jupiter to withdraw from an earn vault", "awareness": "protocol-aware", "scenario": "solana_lend", "intentShape": "single", "expectedToolIds": ["solana.lend.withdraw"], "expectedCoverageGroups": [["solana.lend.withdraw"]] },
-
-    { "query": "use Jupiter to browse prediction events", "awareness": "protocol-aware", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.events"], "expectedCoverageGroups": [["solana.predict.events"]] },
-    { "query": "use Jupiter to search bitcoin prediction markets", "awareness": "protocol-aware", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.search"], "expectedCoverageGroups": [["solana.predict.search"]] },
-    { "query": "use Jupiter to see details for one prediction market", "awareness": "protocol-aware", "scenario": "prediction_discovery", "intentShape": "single", "expectedToolIds": ["solana.predict.market"], "expectedCoverageGroups": [["solana.predict.market"]] },
-
-    { "query": "use Jupiter to show my prediction positions", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.predict.positions"], "expectedCoverageGroups": [["solana.predict.positions"]] },
-    { "query": "use Jupiter to show my prediction trade history", "awareness": "protocol-aware", "scenario": "account_history", "intentShape": "single", "expectedToolIds": ["solana.predict.history"], "expectedCoverageGroups": [["solana.predict.history"]] },
-
-    { "query": "use Jupiter to buy YES shares", "awareness": "protocol-aware", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.buy"], "expectedCoverageGroups": [["solana.predict.buy"]] },
-    { "query": "use Jupiter to sell a prediction position", "awareness": "protocol-aware", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.sell"], "expectedCoverageGroups": [["solana.predict.sell"]] },
-    { "query": "use Jupiter to claim a winning prediction position", "awareness": "protocol-aware", "scenario": "prediction_trading", "intentShape": "single", "expectedToolIds": ["solana.predict.claim"], "expectedCoverageGroups": [["solana.predict.claim"]] },
-
-    { "query": "use Jupiter to find a token then swap into it", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["solana.tokens.search", "solana.swap.execute"], "expectedCoverageGroups": [["solana.tokens.search"], ["solana.swap.execute"]] },
-
-    { "query": "use DexScreener to search a token symbol", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.search"], "expectedCoverageGroups": [["dexscreener.search"]] },
-    { "query": "use DexScreener to inspect a pool address", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.pairs"], "expectedCoverageGroups": [["dexscreener.pairs"]] },
-    { "query": "use DexScreener to price several token addresses", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.tokens"], "expectedCoverageGroups": [["dexscreener.tokens"]] },
-
-    { "query": "use DexScreener to compare pools for one token", "awareness": "protocol-aware", "scenario": "evm_lp", "intentShape": "single", "expectedToolIds": ["dexscreener.tokenPairs"], "expectedCoverageGroups": [["dexscreener.tokenPairs"]] },
-
-    { "query": "use DexScreener to see new token profiles", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.profiles"], "expectedCoverageGroups": [["dexscreener.profiles"]] },
-    { "query": "use DexScreener to find trending meme coins", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.trending"], "expectedCoverageGroups": [["dexscreener.trending"]] },
-    { "query": "use DexScreener to see latest boosted tokens", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.boosts"], "expectedCoverageGroups": [["dexscreener.boosts"]] },
-    { "query": "use DexScreener to see top promoted tokens", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.boosts.top"], "expectedCoverageGroups": [["dexscreener.boosts.top"]] },
-    { "query": "use DexScreener to find community takeover tokens", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.communityTakeovers"], "expectedCoverageGroups": [["dexscreener.communityTakeovers"]] },
-    { "query": "use DexScreener to check token promotion payments", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.orders"], "expectedCoverageGroups": [["dexscreener.orders"]] },
-    { "query": "use DexScreener to monitor ad placements", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "single", "expectedToolIds": ["dexscreener.ads"], "expectedCoverageGroups": [["dexscreener.ads"]] },
-
-    { "query": "use DexScreener to research a meme coin then buy on Base", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["dexscreener.search", "kyberswap.swap.execute"], "expectedCoverageGroups": [["dexscreener.search", "dexscreener.trending"], ["kyberswap.swap.execute"]] },
-    { "query": "use DexScreener to check boosts then verify safety before buying", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["dexscreener.boosts", "kyberswap.tokens.check"], "expectedCoverageGroups": [["dexscreener.boosts", "dexscreener.boosts.top"], ["kyberswap.tokens.check"]] },
-    { "query": "use DexScreener to compare liquidity then get an EVM swap estimate", "awareness": "protocol-aware", "scenario": "workflow", "intentShape": "workflow", "expectedToolIds": ["dexscreener.tokenPairs", "kyberswap.swap.quote"], "expectedCoverageGroups": [["dexscreener.tokenPairs"], ["kyberswap.swap.quote"]] },
-
-    { "query": "use DexScreener to find paid promotion and current ads", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "cross", "expectedToolIds": ["dexscreener.orders", "dexscreener.ads"], "expectedCoverageGroups": [["dexscreener.orders"], ["dexscreener.ads"]] },
-    { "query": "use DexScreener to find trending tokens and CTO signals", "awareness": "protocol-aware", "scenario": "market_research", "intentShape": "cross", "expectedToolIds": ["dexscreener.trending", "dexscreener.communityTakeovers"], "expectedCoverageGroups": [["dexscreener.trending"], ["dexscreener.communityTakeovers"]] }
+    {
+      "query": "what chains can I move USDC between",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.chains.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.chains.list"
+        ]
+      ]
+    },
+    {
+      "query": "find the right USDC address on Ethereum and Base",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "parse 100 usdc on ethereum into the matching token",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.autocomplete"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.autocomplete"
+        ]
+      ]
+    },
+    {
+      "query": "show my wallet token balances across chains",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.balances"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.balances"
+        ]
+      ]
+    },
+    {
+      "query": "which tokens are popular to bridge on Base",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.top"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.top"
+        ]
+      ]
+    },
+    {
+      "query": "estimate moving 250 USDC from Ethereum to Solana",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.quote.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.quote.get"
+        ]
+      ]
+    },
+    {
+      "query": "send ETH from Arbitrum to Solana",
+      "awareness": "blind",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.bridge"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.bridge"
+        ]
+      ]
+    },
+    {
+      "query": "track my recent cross chain transfers",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.orders.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.list"
+        ]
+      ]
+    },
+    {
+      "query": "look up one bridge transfer by order id",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.orders.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.get"
+        ]
+      ]
+    },
+    {
+      "query": "check bridge history and cross chain balances for my wallet",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "cross",
+      "expectedToolIds": [
+        "khalani.orders.list",
+        "khalani.tokens.balances"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.list"
+        ],
+        [
+          "khalani.tokens.balances"
+        ]
+      ]
+    },
+    {
+      "query": "what EVM chains can I trade on",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
+    },
+    {
+      "query": "is BNB Chain currently active for swaps",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
+    },
+    {
+      "query": "find the PEPE token address on Base before trading",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "check whether this new Base token is a honeypot",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
+    },
+    {
+      "query": "preview a USDC to ETH swap on Base",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "buy a Base token using USDC",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "sell my BNB token position for USDT",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "find the best liquidity pool for a Base token",
+      "awareness": "blind",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
+    },
+    {
+      "query": "check token safety before buying on Base",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "kyberswap.tokens.check",
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ],
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "find a token address and get a swap route on BNB",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "khalani.tokens.search",
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ],
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "sell a Base token then bridge USDC to Solana",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "kyberswap.swap.execute",
+        "khalani.bridge"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ],
+        [
+          "khalani.bridge"
+        ]
+      ]
+    },
+    {
+      "query": "what is the current price of BONK on Solana",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.prices"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.prices"
+        ]
+      ]
+    },
+    {
+      "query": "find the mint for JUP",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "show trending meme coins on Solana",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.tokens.trending",
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.trending",
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "quote SOL to USDC before swapping",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "swap SOL into USDC",
+      "awareness": "blind",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "find yield rates for lending USDC on Solana",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.rates"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.rates"
+        ]
+      ]
+    },
+    {
+      "query": "show my Solana lending deposits and earnings",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.positions"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.positions"
+        ]
+      ]
+    },
+    {
+      "query": "deposit USDC into a Solana lending vault",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.deposit"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.deposit"
+        ]
+      ]
+    },
+    {
+      "query": "withdraw from my Solana lending position",
+      "awareness": "blind",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.withdraw"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.withdraw"
+        ]
+      ]
+    },
+    {
+      "query": "find a Solana meme coin then swap into it",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "solana.tokens.search",
+        "solana.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.search"
+        ],
+        [
+          "solana.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "check Solana token price then get a swap quote",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "solana.prices",
+        "solana.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.prices"
+        ],
+        [
+          "solana.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "compare Solana meme trends with multichain trending tokens",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "compare",
+      "expectedToolIds": [
+        "solana.tokens.trending",
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.trending"
+        ],
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "find prediction markets about the election",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.search"
+        ]
+      ]
+    },
+    {
+      "query": "browse trending prediction market events",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.events"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.events"
+        ]
+      ]
+    },
+    {
+      "query": "show details for one prediction event",
+      "awareness": "blind",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.event"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.event"
+        ]
+      ]
+    },
+    {
+      "query": "buy YES shares in a prediction market",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.buy"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.buy"
+        ]
+      ]
+    },
+    {
+      "query": "sell my YES shares before settlement",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.sell"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.sell"
+        ]
+      ]
+    },
+    {
+      "query": "claim winnings from a resolved prediction position",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.claim"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.claim"
+        ]
+      ]
+    },
+    {
+      "query": "close every open prediction bet quickly",
+      "awareness": "blind",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.closeAll"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.closeAll"
+        ]
+      ]
+    },
+    {
+      "query": "show my open prediction positions",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.positions"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.positions"
+        ]
+      ]
+    },
+    {
+      "query": "show my past prediction trades and realized pnl",
+      "awareness": "blind",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.history"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.history"
+        ]
+      ]
+    },
+    {
+      "query": "search for a new meme token by symbol across DEXes",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
+    },
+    {
+      "query": "get detailed liquidity and volume for a pool address",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs"
+        ]
+      ]
+    },
+    {
+      "query": "price several token addresses across DEX pools",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokens"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokens"
+        ]
+      ]
+    },
+    {
+      "query": "compare all pools for one token",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
+    },
+    {
+      "query": "show latest token profiles gaining attention",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.profiles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.profiles"
+        ]
+      ]
+    },
+    {
+      "query": "show what tokens are trending right now",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "which tokens are buying paid boosts",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.boosts"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts"
+        ]
+      ]
+    },
+    {
+      "query": "show the tokens with the biggest active boosts",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.boosts"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts"
+        ]
+      ]
+    },
+    {
+      "query": "find community takeover meme coin signals",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.communityTakeovers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.communityTakeovers"
+        ]
+      ]
+    },
+    {
+      "query": "check whether a token paid for promotion",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.orders",
+        "dexscreener.ads"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.orders",
+          "dexscreener.ads"
+        ]
+      ]
+    },
+    {
+      "query": "monitor current paid ad placements for tokens",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.ads"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.ads"
+        ]
+      ]
+    },
+    {
+      "query": "research boosted meme coins then run a honeypot check",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.boosts",
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts",
+          "dexscreener.trending"
+        ],
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
+    },
+    {
+      "query": "find trending meme coins then buy one on Base",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.trending",
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending",
+          "dexscreener.search"
+        ],
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to list chains I can bridge between",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.chains.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.chains.list"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to find USDC on Base",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to parse 100 usdc on ethereum",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.autocomplete"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.autocomplete"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani for my balances across chains",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.balances"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.balances"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to see top bridge tokens on Solana",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.top"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.top"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to estimate USDC from Ethereum to Base",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.quote.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.quote.get"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to move USDC from Arbitrum to Base",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.bridge"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.bridge"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani for my recent bridge history",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.orders.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.list"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to inspect one transfer by order id",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.orders.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.get"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to check transfer history and wallet balances",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "cross",
+      "expectedToolIds": [
+        "khalani.orders.list",
+        "khalani.tokens.balances"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.list"
+        ],
+        [
+          "khalani.tokens.balances"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to find a token then quote a bridge route",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "khalani.tokens.search",
+        "khalani.quote.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ],
+        [
+          "khalani.quote.get"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to quote then execute a cross chain transfer",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "khalani.quote.get",
+        "khalani.bridge"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.quote.get"
+        ],
+        [
+          "khalani.bridge"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani for supported Base and Solana bridge assets",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search",
+        "khalani.chains.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search",
+          "khalani.chains.list"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to resolve token addresses before an EVM trade",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani for a bridge order status problem",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.orders.list",
+        "khalani.orders.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.orders.list",
+          "khalani.orders.get"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to bridge out of Polygon into Solana",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.bridge"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.bridge"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to know if Monad is supported",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.chains.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.chains.list"
+        ]
+      ]
+    },
+    {
+      "query": "use Khalani to understand my multi chain token holdings",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.balances"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.balances"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to list EVM networks for trading",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to check if Base swaps are live",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to find PEPE on BNB Chain",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "khalani.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "khalani.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to check a token before buying",
+      "awareness": "protocol-aware",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to estimate USDC to ETH on Base",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to buy a Base token with USDC",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to sell a token into USDT",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to check a token then buy it",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "kyberswap.tokens.check",
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ],
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use KyberSwap to quote then sell a Base token",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "kyberswap.swap.quote",
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ],
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to check SOL and JUP prices",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.prices"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.prices"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to find a Solana token mint",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.tokens.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.search"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter for trending Solana tokens",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.tokens.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.trending"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to estimate SOL to USDC",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to swap SOL into BONK",
+      "awareness": "protocol-aware",
+      "scenario": "solana_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to see USDC earn rates",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.rates"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.rates"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to show my earn positions",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.positions"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.positions"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to deposit into an earn vault",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.deposit"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.deposit"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to withdraw from an earn vault",
+      "awareness": "protocol-aware",
+      "scenario": "solana_lend",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.lend.withdraw"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.lend.withdraw"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to browse prediction events",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.events"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.events"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to search bitcoin prediction markets",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.search"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to see details for one prediction market",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_discovery",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.market"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.market"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to show my prediction positions",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.positions"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.positions"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to show my prediction trade history",
+      "awareness": "protocol-aware",
+      "scenario": "account_history",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.history"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.history"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to buy YES shares",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.buy"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.buy"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to sell a prediction position",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.sell"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.sell"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to claim a winning prediction position",
+      "awareness": "protocol-aware",
+      "scenario": "prediction_trading",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "solana.predict.claim"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.predict.claim"
+        ]
+      ]
+    },
+    {
+      "query": "use Jupiter to find a token then swap into it",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "solana.tokens.search",
+        "solana.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "solana.tokens.search"
+        ],
+        [
+          "solana.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to search a token symbol",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to inspect a pool address",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to price several token addresses",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokens"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokens"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to compare pools for one token",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to see new token profiles",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.profiles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.profiles"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to find trending meme coins",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to see latest boosted tokens",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.boosts"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to see top promoted tokens",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.boosts"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to find community takeover tokens",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.communityTakeovers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.communityTakeovers"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to check token promotion payments",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.orders"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.orders"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to monitor ad placements",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.ads"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.ads"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to research a meme coin then buy on Base",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.search",
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search",
+          "dexscreener.trending"
+        ],
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to check boosts then verify safety before buying",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.boosts",
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.boosts"
+        ],
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to compare liquidity then get an EVM swap estimate",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs",
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ],
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to find paid promotion and current ads",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "cross",
+      "expectedToolIds": [
+        "dexscreener.orders",
+        "dexscreener.ads"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.orders"
+        ],
+        [
+          "dexscreener.ads"
+        ]
+      ]
+    },
+    {
+      "query": "use DexScreener to find trending tokens and CTO signals",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "cross",
+      "expectedToolIds": [
+        "dexscreener.trending",
+        "dexscreener.communityTakeovers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ],
+        [
+          "dexscreener.communityTakeovers"
+        ]
+      ]
+    }
   ]
 }

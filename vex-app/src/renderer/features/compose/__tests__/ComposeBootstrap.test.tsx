@@ -67,7 +67,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, "vex");
 });
 
-describe("ComposeBootstrap — cancellation (PR3 contract)", () => {
+describe("ComposeBootstrap - cancellation (PR3 contract)", () => {
   it("shows the Cancel button while compose-up is in flight", () => {
     mockCompose.mockReturnValue({
       promise: new Promise(() => {}),
@@ -148,7 +148,7 @@ describe("ComposeBootstrap — cancellation (PR3 contract)", () => {
   });
 });
 
-describe("ComposeBootstrap — terminal kinds", () => {
+describe("ComposeBootstrap - terminal kinds", () => {
   function clickLogs(view: ReturnType<typeof render>): void {
     fireEvent.click(
       view.getByRole("button", { name: "Open logs folder" }),

@@ -110,7 +110,7 @@ function renderedOrder(): readonly string[] {
   );
 }
 
-describe("ReorderableSection — pointer drag", () => {
+describe("ReorderableSection - pointer drag", () => {
   it("moves a section AFTER the row it was dropped on", () => {
     const onOrderChange = vi.fn();
     render(<Harness onOrderChange={onOrderChange} />);
@@ -165,14 +165,14 @@ describe("ReorderableSection — pointer drag", () => {
     expect(onOrderChange).not.toHaveBeenCalled();
   });
 
-  it("only the handle is draggable — dragging the card body starts nothing", () => {
+  it("only the handle is draggable - dragging the card body starts nothing", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     expect(handle("position").getAttribute("draggable")).toBe("true");
     expect(row("position").getAttribute("draggable")).toBeNull();
   });
 });
 
-describe("ReorderableSection — keyboard path", () => {
+describe("ReorderableSection - keyboard path", () => {
   it("ArrowDown moves the section one slot down and keeps focus on the handle", () => {
     const onOrderChange = vi.fn();
     render(<Harness onOrderChange={onOrderChange} />);
@@ -208,11 +208,12 @@ describe("ReorderableSection — keyboard path", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     expect(handle("balances").getAttribute("aria-label")).toMatch(/balances/i);
     fireEvent.keyDown(handle("balances"), { key: "ArrowDown" });
-    expect(screen.getByText(/moved to position 4 of 7/i)).not.toBeNull();
+    // 6 sections since "Runtime & Cost" retired in round 3.
+    expect(screen.getByText(/moved to position 4 of 6/i)).not.toBeNull();
   });
 });
 
-describe("ReorderableSection — the insertion cue", () => {
+describe("ReorderableSection - the insertion cue", () => {
   it("shows the insertion cue on the hovered row ONLY, naming the edge", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     const dataTransfer = transfer("trench");
@@ -244,7 +245,7 @@ describe("ReorderableSection — the insertion cue", () => {
   });
 });
 
-describe("ReorderableSection — the drop settle", () => {
+describe("ReorderableSection - the drop settle", () => {
   it("settles the MOVED card only, after a pointer drop", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     const dataTransfer = transfer("position");
@@ -258,7 +259,7 @@ describe("ReorderableSection — the drop settle", () => {
     }
   });
 
-  it("settles identically after a KEYBOARD move — one affordance, both paths", () => {
+  it("settles identically after a KEYBOARD move - one affordance, both paths", () => {
     render(<Harness onOrderChange={vi.fn()} />);
     fireEvent.keyDown(handle("balances"), { key: "ArrowDown" });
     expect(row("balances").className).toContain("vex-section-settle");

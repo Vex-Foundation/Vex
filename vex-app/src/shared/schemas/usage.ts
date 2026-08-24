@@ -16,39 +16,6 @@ import { z } from "zod";
 export const USAGE_DEFAULT_CURRENCY = "USD";
 
 /**
- * One row from `usage_log` mapped for the renderer. All token counts
- * are non-negative integers; `cost` is a JS number (DB column is
- * `NUMERIC` — the mapper parses safely or drops to `null` on overflow,
- * keeping JSON-serializable shape).
- */
-export const turnUsageDtoSchema = z
-  .object({
-    sessionId: z.string().uuid(),
-    promptTokens: z.number().int().min(0),
-    completionTokens: z.number().int().min(0),
-    totalTokens: z.number().int().min(0),
-    cachedTokens: z.number().int().min(0),
-    reasoningTokens: z.number().int().min(0),
-    /** `null` when the DB `NUMERIC` could not be coerced to a finite JS number. */
-    cost: z.number().nullable(),
-    /**
-     * NET cache savings (read savings − write surcharge) for this turn.
-     * Deliberately NO `.min(0)` — a write-heavy explicit-cache request
-     * yields a real NEGATIVE net, and clamping it would turn every read of
-     * such a session into a contract violation. `null` when the NUMERIC
-     * could not be coerced.
-     */
-    cachedSavings: z.number().nullable(),
-    cacheWriteTokens: z.number().int().min(0),
-    currency: z.string().min(1).max(8),
-    provider: z.string().nullable(),
-    model: z.string().nullable(),
-    createdAt: z.string().datetime({ offset: true }),
-  })
-  .strict();
-export type TurnUsageDto = z.infer<typeof turnUsageDtoSchema>;
-
-/**
  * Aggregated totals for one session, filtered by currency. The DB query
  * sums per-row counts/cost and returns `requestCount` + the latest
  * `created_at`. Empty sessions resolve to all-zero counts with
@@ -65,7 +32,7 @@ export const sessionUsageTotalsDtoSchema = z
     totalCost: z.number().nullable(),
     /**
      * Session-summed NET cache savings. NO `.min(0)` (negative net is
-     * real — see `turnUsageDtoSchema.cachedSavings`).
+     * real - see `turnUsageRollupDtoSchema.turnCachedSavings`).
      */
     totalCachedSavings: z.number().nullable(),
     currency: z.string().min(1).max(8),
@@ -84,12 +51,90 @@ export const usageInputSchema = z
 export type UsageInput = z.infer<typeof usageInputSchema>;
 
 /**
+ * Usage for ONE TURN, aggregated across every model round that turn ran.
+ *
+ * ## Why this is not a `usage_log` row
+ *
+ * A "turn" in this engine is a LOOP: `runTurnLoop` performs up to
+ * `maxIterations` model round-trips and `executeTurn` writes one `usage_log`
+ * row per round. Reading the newest row therefore describes the LAST ROUND, not
+ * the turn, and under-reported a real multi-round turn by roughly the round
+ * count - the reported v0.2.6 case displayed `OUT 1 / $0.0405` for a turn that
+ * had run fifty rounds. Rule 90 forbids shipping a false money figure on a
+ * user-facing surface, so the panel aggregates.
+ *
+ * ## What each number means, and why the two sides differ
+ *
+ * INPUT is a SNAPSHOT of the newest round. Every round re-sends the whole
+ * growing conversation, so summing prompt tokens across rounds would count the
+ * same conversation repeatedly and produce a number that means nothing.
+ * `latestRound*` is the honest input measurement: the size of the last request
+ * this turn issued.
+ *
+ * OUTPUT, COST and cache savings are RUNNING SUMS across the turn's rounds.
+ * Each round's completion tokens are new tokens actually generated and actually
+ * billed, and tool-call arguments are part of them (the provider bills them as
+ * completion tokens; this code has never had a separate bucket for them), so
+ * summing is the only correct answer for what the turn spent.
+ *
+ * Same split VS Code's chat model uses (`chatModel.ts`: `promptTokens`
+ * latest-call, `completionTokens` running total).
+ *
+ * `roundCount` makes the aggregation legible rather than implicit: the reader
+ * can see the figures cover N rounds, not one.
+ */
+export const turnUsageRollupDtoSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    /** SNAPSHOT: prompt tokens of the turn's most recent round. Never summed. */
+    latestRoundPromptTokens: z.number().int().min(0),
+    /**
+     * SNAPSHOT: cached prompt tokens of that SAME round. Cache-hit share is a
+     * property of one request's prompt, so it must come from the same round as
+     * `latestRoundPromptTokens` or the percentage divides two unrelated
+     * measurements.
+     */
+    latestRoundCachedTokens: z.number().int().min(0),
+    /** RUNNING SUM: completion tokens generated across every round of the turn. */
+    turnCompletionTokens: z.number().int().min(0),
+    /** RUNNING SUM: reasoning tokens across every round of the turn. */
+    turnReasoningTokens: z.number().int().min(0),
+    /** RUNNING SUM: cache-write tokens across every round of the turn. */
+    turnCacheWriteTokens: z.number().int().min(0),
+    /**
+     * RUNNING SUM of every round's cost. `null` when the DB `NUMERIC` could not
+     * be coerced to a finite JS number - a missing measurement is never printed
+     * as `$0`.
+     */
+    turnCost: z.number().nullable(),
+    /**
+     * RUNNING SUM of NET cache savings (read savings − write surcharge).
+     * Deliberately NO `.min(0)`: a write-heavy explicit-cache turn yields a real
+     * negative net, and clamping would make honest data a contract violation.
+     */
+    turnCachedSavings: z.number().nullable(),
+    /** How many model round-trips these figures cover. Always >= 1. */
+    roundCount: z.number().int().min(1),
+    currency: z.string().min(1).max(8),
+    /** Provider/model of the most recent round (a turn can fail over mid-run). */
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+    /** `created_at` of the most recent round in the turn. */
+    latestRoundAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type TurnUsageRollupDto = z.infer<typeof turnUsageRollupDtoSchema>;
+
+/**
  * Result for `usage.getLastTurn` — `null` when the session has no
  * usage rows yet (mission setup hasn't produced a turn, or all rows
  * were reaped by retention). The renderer renders an empty chip then,
  * not an error toast.
+ *
+ * The channel name is unchanged and is now ACCURATE: it returns the last TURN,
+ * where it used to return the last round.
  */
-export const lastTurnUsageResultSchema = turnUsageDtoSchema.nullable();
+export const lastTurnUsageResultSchema = turnUsageRollupDtoSchema.nullable();
 export type LastTurnUsageResult = z.infer<typeof lastTurnUsageResultSchema>;
 
 /**

@@ -170,7 +170,7 @@ describe("mission-runs-db mapper", () => {
   });
 });
 
-describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
+describe("getLatestRunForSession - lease-active mapping (WP-C)", () => {
   // `vi.mocked` re-types the hoisted `QueryFn`-cast mock so the vitest Mock
   // API (`mockResolvedValueOnce`) is visible without re-triggering the
   // file's pre-existing `QueryFn`-cast type-baseline pattern.

@@ -18,9 +18,9 @@
  * category that reads "rate-limited" in a session banner reads the same here.
  * Framing is the only thing that differs: "system", never "your session".
  *
- * Bounded codes only. There is no message field at any layer of this channel,
- * so no provider prose can reach the DOM. Dismissal is per-event because these
- * are independent jobs, not one story retold.
+ * Bounded codes plus the SANITIZED `detail` (owner decree 2026-08-02) - the
+ * one prose field, stripped of secrets at the main-side bridge. Dismissal is
+ * per-event because these are independent jobs, not one story retold.
  *
  * Chrome follows the repo-native anchored-panel pattern
  * (`components/ui/select-menu.tsx`) as `GlobalApprovals` does: no portals, no
@@ -79,8 +79,8 @@ function GlobalErrorRow({
       className="border-b border-[var(--vex-rule)] px-3 py-2 last:border-b-0"
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
-          {scopeLabel(entry.event.scope)} — {copy.title}
+        <p className="vex-micro font-medium text-danger">
+          {scopeLabel(entry.event.scope)} - {copy.title}
         </p>
         <button
           type="button"
@@ -88,14 +88,20 @@ function GlobalErrorRow({
           onClick={() => {
             onDismiss(entry.key);
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.2em] text-destructive/70 hover:text-destructive"
+          className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
         >
           Dismiss
         </button>
       </div>
-      <p className="mt-1 text-xs text-destructive">{copy.body}</p>
+      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{copy.body}</p>
+      {/* Sanitized REAL cause (decree 2026-08-02) - technical register, mono. */}
+      {entry.event.detail !== null ? (
+        <p className="mt-1 break-words font-mono text-[11px] leading-4 text-[var(--vex-text-2)]">
+          {entry.event.detail}
+        </p>
+      ) : null}
       {codes !== null ? (
-        <p className="mt-1 font-mono text-[10px] text-destructive/70">{codes}</p>
+        <p className="mt-1 font-mono text-[10px] text-[var(--vex-text-3)]">{codes}</p>
       ) : null}
     </li>
   );
@@ -160,9 +166,8 @@ export function GlobalErrorBanner(): JSX.Element | null {
           setOpen((prev) => !prev);
         }}
         className={cn(
-          "rounded-md border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)]",
-          "bg-destructive/10 px-2 py-1",
-          "font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive",
+          "rounded-full border border-[var(--vex-rule)] bg-danger-wash px-2.5 py-1",
+          "vex-micro font-medium text-danger transition-colors hover:border-danger",
         )}
       >
         {`System ${entries.length}`}
@@ -175,7 +180,7 @@ export function GlobalErrorBanner(): JSX.Element | null {
           aria-label="System errors"
           className={cn(
             "absolute right-0 top-full z-50 mt-2 w-[360px]",
-            "rounded-lg border border-[var(--vex-rule)] bg-[var(--vex-surface-1)] shadow-lg",
+            "rounded-xl border border-[var(--vex-rule)] bg-[var(--vex-surface-1)] shadow-lg",
           )}
         >
           <ul className="max-h-[320px] overflow-y-auto">

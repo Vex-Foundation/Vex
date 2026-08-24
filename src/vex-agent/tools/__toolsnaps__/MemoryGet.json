@@ -1,0 +1,47 @@
+{
+  "definition": {
+    "function": {
+      "description": "Fetch a single long-term memory entry by id (the numeric id returned by MemorySearch results with source:'long_memory'). Loads its full content into context. Use this when a MemorySearch row looks decisive but arrived without inline content - a via_graph(entity) lead, or a concise row whose title alone is not enough to act on - and when you are following a lineage pointer to the entry that superseded or preceded another. If the entry was replaced by a newer version, this fails with a pointer to the current entry id; if it is no longer current (invalidated/archived) it says so. Use MemorySearch to find a current id, MemoryHistory to trace the version chain. response_format: 'concise' (default) returns id/kind/title/summary/status + lineage links (the full body is still loaded into context); 'detailed' additionally inlines content_md, tags, source refs, confidence, and lifecycle metadata. Does not require the embeddings service.",
+      "name": "MemoryGet",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Long-term memory entry id (from a MemorySearch 'long_memory' result).",
+            "type": "number"
+          },
+          "response_format": {
+            "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' also inlines content_md and lifecycle metadata on top of the metadata and lineage links 'concise' returns (the body is loaded into context either way).",
+            "enum": [
+              "concise",
+              "detailed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false
+  }
+}

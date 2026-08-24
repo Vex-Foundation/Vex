@@ -1,0 +1,55 @@
+{
+  "definition": {
+    "function": {
+      "description": "Sell a Pendle principal token (PT) FOR REAL back to a payment token before expiry: signs and broadcasts an EARLY EXIT priced at the current market, which can be WORSE than the locked rate the PT was bought at. Use this when the user wants out of a fixed-rate position before its maturity date; a MATURED PT redeems at face value with pendle__pt_redeem instead and should not be sold here. SPENDS REAL FUNDS AND IS IRREVERSIBLE. APPROVAL: in a RESTRICTED session this does not execute, it returns pending approval so a human sees the trade and its term lock first; in a FULL-permission session it executes directly. PRECONDITIONS, refused BY NAME: a fresh matching pendle__pt_quote must already exist and `dryRun: true` HERE IS ONLY A THIN PREVIEW, it does NOT record that authorization and does NOT replace the quote; the transaction is pinned to the canonical Pendle Router; and `amountIn` is HUMAN decimals, never raw base units. Pendle is exact-INPUT only, so the output is an estimate bounded by `slippageBps`, never a guarantee. The `dryRun` preview RETURNS `dryRun`, `side`, `market`, `aggregator`, `priceImpact` and `feeUsdEstimate`. A real run RETURNS `txHash`, `side`, `market`, `tokenIn`, `tokenOut`, `amountIn`, `executedAmountIn`, `executedAmountOut` and `quotedAmountOut`, where the executed amounts are DECODED FROM THE RECEIPT and sit beside the quoted ones so the realized slippage is visible. ANY OTHER OUTCOME COMES BACK AS A FAILURE SENTENCE, NOT JSON, and it is not a licence to retry: a transaction that reverted, could not be proven, or was broadcast before Vex lost the read-back is already recorded and resolves automatically, so surface the transaction hash and check it rather than sending a second one.",
+      "name": "pendle__pt_sell",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount of tokenIn in human-readable units.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Preview without executing.",
+            "type": "boolean"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (default 100 = 1%).",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the PT address.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token CONTRACT ADDRESS. Buy: the PT address. Sell: the payment token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.pt.sell"
+  }
+}

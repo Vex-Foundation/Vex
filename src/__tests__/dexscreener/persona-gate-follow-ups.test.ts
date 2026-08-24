@@ -55,11 +55,20 @@ async function run(
 // ── Item 4: byte-cost honesty where `limit` is publicly appropriate ──
 
 describe("`limit` states the measured cost of a bare call, where there is one", () => {
-  it("search names its canonical bare-call size", () => {
-    // call-records.json: {"query":"SOL/USDC"} → 24,139 B, wouldOverflow: true.
+  it("search names its canonical bare-call size and the param that bounds it", () => {
+    // call-records.json: {"query":"SOL/USDC"} -> 24,139 B.
+    //
+    // CONTRACT CHANGE (Batch 3 Wave 0): this used to also require the text to
+    // name the 16,384 B tool-output cap. The runtime enforces no such cap
+    // (`engine/core/tool-output-policy.ts` was deleted; tool output persists
+    // verbatim and inline), so the assertion was pinning a false claim in a
+    // model-visible string. The measured byte figure is the real evidence and
+    // is still required; what replaces the cap clause is the honest consequence
+    // - `limit` is the producer-level bound the agent can actually use.
     const limit = paramOf("dexscreener.search", "limit");
     expect(limit).toContain("24,139");
-    expect(limit).toMatch(/16,384|16 KiB|cap/i);
+    expect(limit).toMatch(/`limit` is what bounds them/i);
+    expect(limit).not.toMatch(/16,384|16 KiB/i);
   });
 
   it("tokens advertises visible paging while address reconciliation stays complete", () => {
@@ -142,7 +151,9 @@ describe("attention discloses its missing timestamps, and why", () => {
   });
 
   it("points at the feed that IS time-ordered instead of inventing one here", () => {
-    expect(toolById("dexscreener.attention").description).toContain("dexscreener.profiles.recent");
+    expect(toolById("dexscreener.attention").description).toContain(
+      "dexscreener__profiles_list with feed: recentUpdates",
+    );
   });
 
   it("declares no freshness param it could not honour", () => {

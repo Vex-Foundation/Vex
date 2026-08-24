@@ -10,7 +10,7 @@
  *      `execute_tool` → `executeProtocolTool`).
  *
  * Both must reject at barrier+ with a clear hint pointing the agent at
- * `compact_apply`. The catalog-level filter (already covered in
+ * `CompactApply`. The catalog-level filter (already covered in
  * `tools/registry.test.ts`) is the soft signal; these are the runtime guards.
  */
 
@@ -71,7 +71,7 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
   });
 
   it("blocks mutating tools at barrier band, naming no tool the agent must call", () => {
-    const result = checkPressureDeny("wallet_send_confirm", "barrier");
+    const result = checkPressureDeny("WalletSendConfirm", "barrier");
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
     expect(result!.output).toContain("blocked");
@@ -83,11 +83,11 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
   });
 
   it("BYPASS: a live preparation un-blocks mutating tools at barrier", () => {
-    expect(checkPressureDeny("wallet_send_confirm", "barrier", true)).toBeNull();
+    expect(checkPressureDeny("WalletSendConfirm", "barrier", true)).toBeNull();
   });
 
   it("BYPASS does NOT extend to critical — forced apply owns that band", () => {
-    const result = checkPressureDeny("wallet_send_confirm", "critical", true);
+    const result = checkPressureDeny("WalletSendConfirm", "critical", true);
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
   });
@@ -95,38 +95,38 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
   it("the bypass parameter DEFAULTS to false — omitting it keeps today's barrier", () => {
     // Every pre-existing call site relies on this. A default of `true` would
     // silently remove the barrier process-wide.
-    expect(checkPressureDeny("wallet_send_confirm", "barrier")).not.toBeNull();
+    expect(checkPressureDeny("WalletSendConfirm", "barrier")).not.toBeNull();
   });
 
   it("blocks mutating tools at critical band", () => {
-    const result = checkPressureDeny("wallet_send_confirm", "critical");
+    const result = checkPressureDeny("WalletSendConfirm", "critical");
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
     expect(result!.output).toContain("critical");
   });
 
   it("does NOT block mutating tools at normal band", () => {
-    expect(checkPressureDeny("wallet_send_confirm", "normal")).toBeNull();
+    expect(checkPressureDeny("WalletSendConfirm", "normal")).toBeNull();
   });
 
   it("does NOT block mutating tools at warning band (the LLM still sees them)", () => {
-    expect(checkPressureDeny("wallet_send_confirm", "warning")).toBeNull();
+    expect(checkPressureDeny("WalletSendConfirm", "warning")).toBeNull();
   });
 
-  it("compact_apply is safe_at_barrier — never pressure-denied at any band", () => {
+  it("CompactApply is safe_at_barrier — never pressure-denied at any band", () => {
     // It is the pressure RELIEF; gating it on pressure would be circular, and
     // a prepared summary is worth applying the moment it exists.
     for (const band of ["normal", "warning", "barrier", "critical"] as const) {
-      expect(checkPressureDeny("compact_apply", band), `compact_apply @ ${band}`).toBeNull();
+      expect(checkPressureDeny("CompactApply", band), `CompactApply @ ${band}`).toBeNull();
     }
   });
 
   it("ALLOWS read_only tools at every band", () => {
     const bands: ContextUsageBand[] = ["normal", "warning", "barrier", "critical"];
     for (const band of bands) {
-      expect(checkPressureDeny("session_memory_search", band), `session_memory_search @ ${band}`).toBeNull();
-      expect(checkPressureDeny("long_memory_search", band), `long_memory_search @ ${band}`).toBeNull();
-      expect(checkPressureDeny("wallet_balances", band), `wallet_balances @ ${band}`).toBeNull();
+      expect(checkPressureDeny("SessionMemorySearch", band), `SessionMemorySearch @ ${band}`).toBeNull();
+      expect(checkPressureDeny("MemorySearch", band), `MemorySearch @ ${band}`).toBeNull();
+      expect(checkPressureDeny("WalletBalances", band), `WalletBalances @ ${band}`).toBeNull();
     }
   });
 });

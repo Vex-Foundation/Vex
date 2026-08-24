@@ -12,16 +12,34 @@ import {
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 
+/**
+ * The ONE prepare → confirm handoff pair, as two exported constants.
+ *
+ * THE EMITTER AND THE VALIDATOR MUST AGREE, and nothing used to make them.
+ * `tools/internal/wallet/send/prepare.ts` writes `toolName` into the follow-up
+ * it authors, and {@link validatePreparedActionFollowUp} compares it against a
+ * literal here; the two lived in different modules with no shared symbol, so
+ * the Batch 2 rename silently broke the pair (the validator answered
+ * `unknown_mapping` for every transfer — fail-closed, but the feature was
+ * dead). Both sides now import these, so a future rename is a COMPILE ERROR
+ * rather than a money-path feature that quietly stops working.
+ *
+ * Deliberately typed as literals (`as const`), not `string`: the literal type
+ * is what lets {@link ValidatedPreparedActionFollowUp} keep naming the exact
+ * tool rather than widening to `string`.
+ */
+export const PREPARED_ACTION_SOURCE_TOOL = "WalletSendPrepare" as const;
+export const PREPARED_ACTION_FOLLOW_UP_TOOL = "WalletSendConfirm" as const;
+
 export interface ValidatedWalletSendFollowUp {
-  readonly toolName: "wallet_send_confirm";
+  readonly toolName: typeof PREPARED_ACTION_FOLLOW_UP_TOOL;
   readonly args: {
     readonly walletFamily: "eip155" | "solana";
     readonly intentId: string;
   };
   readonly expiresAt: string;
   readonly approvalPreview: {
-    readonly toolName: "wallet_send_confirm";
-    readonly namespace?: string;
+    readonly toolName: typeof PREPARED_ACTION_FOLLOW_UP_TOOL;
     readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
   };
 }
@@ -300,11 +318,11 @@ function isScalar(value: unknown): value is ApprovalPreviewScalar {
  * spelled `network` — that is stored preview data, not a param);
  * the richer preview is validated independently and never rebuilt from args.
  *
- * Maintainer decision: every prepare→execute mapping must be named here. The
- * registry currently allows wallet_send_prepare → wallet_send_confirm and the
- * protocol `execute_tool` handoffs for the explicitly registered Lighter
- * order, deposit, key-registration, and withdrawal intents. Every other
- * source/target pair fails closed as "unknown_mapping".
+ * Maintainer decision: every prepare → execute/confirm mapping must be named
+ * here. The registry currently allows WalletSendPrepare → WalletSendConfirm
+ * and the protocol `execute_tool` handoffs for the explicitly registered
+ * Lighter order, deposit, key-registration, and withdrawal intents. Every
+ * other source/target pair fails closed as "unknown_mapping".
  */
 export function validatePreparedActionFollowUp(
   sourceToolName: string,
@@ -368,8 +386,8 @@ export function validatePreparedActionFollowUp(
   }
 
   if (
-    sourceToolName !== "wallet_send_prepare" ||
-    candidate.toolName !== "wallet_send_confirm"
+    sourceToolName !== PREPARED_ACTION_SOURCE_TOOL ||
+    candidate.toolName !== PREPARED_ACTION_FOLLOW_UP_TOOL
   ) {
     return { ok: false, reason: "unknown_mapping" };
   }
@@ -389,7 +407,7 @@ export function validatePreparedActionFollowUp(
   }
 
   const preview = candidate.approvalPreview;
-  if (preview.toolName !== "wallet_send_confirm") {
+  if (preview.toolName !== PREPARED_ACTION_FOLLOW_UP_TOOL) {
     return { ok: false, reason: "invalid_contract" };
   }
   if (!Number.isFinite(Date.parse(candidate.expiresAt))) {
@@ -423,11 +441,11 @@ export function validatePreparedActionFollowUp(
   return {
     ok: true,
     followUp: {
-      toolName: "wallet_send_confirm",
+      toolName: PREPARED_ACTION_FOLLOW_UP_TOOL,
       args: { walletFamily: network, intentId },
       expiresAt: candidate.expiresAt,
       approvalPreview: {
-        toolName: "wallet_send_confirm",
+        toolName: PREPARED_ACTION_FOLLOW_UP_TOOL,
         criticalArgs,
       },
     },

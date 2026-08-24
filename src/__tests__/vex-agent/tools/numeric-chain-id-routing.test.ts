@@ -1,7 +1,7 @@
 /**
  * Numeric chain ids must route exactly like their slug (Wave B, card B2).
  *
- * `token_find` (khalani.tokens.search) returns `chainId` as a NUMBER, so the
+ * `TokenFind` (khalani.tokens.search) returns `chainId` as a NUMBER, so the
  * value the agent has in hand for a chain is routinely `8453`, not `"base"`.
  * Before this suite, that number took a completely different path from the
  * slug through the swap stack:
@@ -10,7 +10,7 @@
  *          → kyberAggregatorSlug() returns undefined
  *          → resolveUniswapChainId("8453") succeeds numerically
  *          → the venue router classified Base as a UNISWAP-ONLY chain
- *          → swap_quote told the agent "KyberSwap does not support chain 8453"
+ *          → SwapQuote told the agent "KyberSwap does not support chain 8453"
  *            (false — kyberswap/chains.ts registers Base with aggregator:true)
  *            and BURNED the session's one-shot Uniswap reveal on what was only
  *            an input-formatting difference.
@@ -53,10 +53,6 @@ import {
   handleSwapQuoteUniswap,
   handleTokenCheck,
 } from "@vex-agent/tools/internal/action-aliases.js";
-import {
-  isUniswapPairRevealed,
-  revealUniswapPair,
-} from "@vex-agent/tools/registry/uniswap-reveal.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -170,7 +166,7 @@ describe("venue router — a numeric id classifies as the slug does", () => {
 
 // ── Layer 3: the agent-facing alias ─────────────────────────────────────────
 
-describe("swap_quote — token_find's numeric chainId is accepted and routed honestly", () => {
+describe("SwapQuote — TokenFind's numeric chainId is accepted and routed honestly", () => {
   it("accepts a JSON NUMBER chain id and dispatches KyberSwap on the canonical slug", async () => {
     const context = freshContext();
     const result = await handleSwapQuote(
@@ -182,8 +178,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
     const { toolId, params } = lastDispatch();
     expect(toolId).toBe("kyberswap.swap.quote");
     expect(params.chain).toBe("base");
-    // The formatting of the chain must not have consumed the session's reveal.
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("accepts a digit-string chain id the same way", async () => {
@@ -196,7 +190,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
     expect(result.success).toBe(true);
     expect(lastDispatch().toolId).toBe("kyberswap.swap.quote");
     expect(lastDispatch().params.chain).toBe("base");
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("keeps the slug form working unchanged", async () => {
@@ -216,7 +209,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
       amountIn: "1.5",
       slippageBps: 50,
     });
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("all three forms of the same chain produce the identical dispatch", async () => {
@@ -248,7 +240,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
     // support it" — the venue supports every chain the reveal would offer.
     expect(result.output).not.toMatch(/KyberSwap does not support/i);
     expect(executeProtocolTool).not.toHaveBeenCalled();
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("refuses an unsupported digit-string id the same way", async () => {
@@ -260,7 +251,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
 
     expect(result.success).toBe(false);
     expect(executeProtocolTool).not.toHaveBeenCalled();
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("still rejects a chain that is neither a slug, an id, nor solana", async () => {
@@ -272,7 +262,6 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
 
     expect(result.success).toBe(false);
     expect(executeProtocolTool).not.toHaveBeenCalled();
-    expect(isUniswapPairRevealed(context.sessionId)).toBe(false);
   });
 
   it("still routes the literal solana chain to Jupiter", async () => {
@@ -298,11 +287,9 @@ describe("swap_quote — token_find's numeric chainId is accepted and routed hon
   });
 });
 
-describe("swap_quote_uniswap — the same numeric chain id is accepted post-reveal", () => {
+describe("SwapQuoteUniswap — the same numeric chain id is accepted", () => {
   it("accepts a JSON NUMBER chain id and resolves the Uniswap deployment key", async () => {
     const context = freshContext();
-    revealUniswapPair(context.sessionId);
-
     const result = await handleSwapQuoteUniswap(
       { chain: 8453, tokenIn: WETH_BASE, tokenOut: USDC_BASE, amountIn: "1.5" },
       context,
@@ -315,7 +302,7 @@ describe("swap_quote_uniswap — the same numeric chain id is accepted post-reve
   });
 });
 
-describe("token_check — token_find's numeric chainId reaches the token API", () => {
+describe("TokenCheck — TokenFind's numeric chainId reaches the token API", () => {
   it("accepts a JSON NUMBER chain id", async () => {
     const context = freshContext();
     const result = await handleTokenCheck({ chain: 8453, tokenAddress: USDC_BASE }, context);

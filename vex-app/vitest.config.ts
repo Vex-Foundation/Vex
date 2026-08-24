@@ -22,6 +22,23 @@ export default defineConfig({
     },
   },
   test: {
+    /**
+     * 15s instead of vitest's 5s default (UIUX round 2, 2026-08-21).
+     *
+     * Reason, measured not guessed: on the WSL2 drvfs mount this repo lives
+     * on, a FULL parallel `vitest run` intermittently times out ~7 files
+     * under `features/appShell/__tests__/AppShell/*` at exactly 5000ms; the
+     * same files pass 113/113 in isolation and a second full run is green.
+     * The cost is transform-time I/O contention across workers, not a
+     * product race, so a per-suite timeout would only chase the symptom
+     * from file to file as the suite grows.
+     *
+     * This raises the CEILING for a hung test; it does not slow a passing
+     * one and it weakens no assertion. A genuine deadlock still fails, just
+     * 10s later. Per-test `{ timeout: ... }` overrides (e.g. the 60s
+     * design-guard I/O budget) still win over this default.
+     */
+    testTimeout: 15_000,
     projects: [
       {
         extends: true,
@@ -47,18 +64,6 @@ export default defineConfig({
             "src/renderer/**/__tests__/**/*.test.tsx",
           ],
           setupFiles: [path.resolve(__dirname, "src/renderer/test/setup.ts")],
-          /**
-           * `lucide-react` ships one ES module per icon (~2000 of them) behind
-           * a barrel. Loaded unbundled, every renderer test file pays for the
-           * whole barrel and the suite slows down by roughly half (measured:
-           * 137s → 208s, with timeouts). Prebundling collapses it to one
-           * module. Vite already prebundles it for dev/build.
-           */
-          deps: {
-            optimizer: {
-              web: { enabled: true, include: ["lucide-react"] },
-            },
-          },
         },
       },
     ],

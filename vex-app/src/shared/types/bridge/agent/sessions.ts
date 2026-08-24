@@ -1,5 +1,7 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  SessionBranchInput,
+  SessionBranchResult,
   SessionCreateInput,
   SessionCreateResult,
   SessionDeleteInput,
@@ -11,6 +13,8 @@ import type {
   SessionList,
   SessionListItem,
   SessionModelDto,
+  SessionRenameInput,
+  SessionRenameResult,
   SessionSetPinnedInput,
   SessionSetPinnedResult,
 } from "../../../schemas/sessions.js";
@@ -39,6 +43,22 @@ export interface SessionsBridge {
   readonly setPinned: (
     input: SessionSetPinnedInput
   ) => Promise<Result<SessionSetPinnedResult>>;
+  /**
+   * Rename a session (user display title). Returns the updated row, or
+   * `null` when the id is unknown or soft-deleted (stale renderer cache).
+   */
+  readonly rename: (
+    input: SessionRenameInput
+  ) => Promise<Result<SessionRenameResult>>;
+  /**
+   * Fork the session at a message (A14): a new session seeded with a copy
+   * of the transcript prefix, the source never rewritten. Blocked states
+   * come back as a named discriminated outcome. Never auto-retry: each
+   * successful call creates a new session.
+   */
+  readonly branch: (
+    input: SessionBranchInput
+  ) => Promise<Result<SessionBranchResult>>;
   /**
    * Soft-delete a session. Main enforces fail-closed against active
    * mission runs and pending approvals; the discriminated outcome

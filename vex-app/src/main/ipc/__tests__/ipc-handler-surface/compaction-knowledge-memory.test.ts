@@ -283,7 +283,7 @@ describe("long-memory handler", () => {
   });
 });
 
-describe("memory-inspector handlers (S10 — read-only)", () => {
+describe("memory-inspector handlers (S10 - read-only)", () => {
   it("listCandidates returns the sanitized array and passes the parsed input", async () => {
     mocks.listInspectorCandidates.mockResolvedValueOnce({ ok: true, data: [] });
     const result = await call(CH.memoryInspector.listCandidates, {

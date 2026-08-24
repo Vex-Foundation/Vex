@@ -25,8 +25,8 @@ interface RunningBodyProps {
 
 /** Status word ink — paper-alpha while working, tokens once settled. */
 const statusInk: Record<ServiceStatus, string> = {
-  starting: "text-[var(--color-text-muted)]",
-  probing: "text-[var(--color-text-secondary)]",
+  starting: "text-ink-tertiary",
+  probing: "text-ink-secondary",
   ready: "text-[var(--color-success)]",
   failed: "text-[var(--color-danger)]",
 };
@@ -58,10 +58,10 @@ export function RunningBody({
             data-status={s.status}
           >
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+              <span className="truncate text-sm font-medium text-ink-primary">
                 {s.service}
               </span>
-              <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+              <span className="truncate font-mono text-xs text-ink-tertiary">
                 {s.detail}
               </span>
             </div>
@@ -94,7 +94,7 @@ export function RunningBody({
         {...(cancelling
           ? { "data-vex-compose-cancelling": "" }
           : { "data-vex-compose-cancel": "" })}
-        className="self-center text-[var(--color-text-secondary)]"
+        className="self-center text-ink-secondary"
       >
         {cancelling ? "Cancelling…" : "Cancel"}
       </Button>

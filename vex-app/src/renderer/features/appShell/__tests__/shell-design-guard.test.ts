@@ -1,32 +1,47 @@
 /**
- * Shell design-language guard — THE SIGNAL DESK (landing rebrand) stays
- * locked.
+ * Shell design-language guard — the VEX tokens-v2 law (rebrand 2026-08-20)
+ * stays locked.
  *
- * The shell's visual law (globals.css `[data-vex-shell]` scope): the
- * projectvex.ai landing DNA on ink surfaces — depth is solid luminance +
- * hairlines, never glass or resting glow; one accent family (the landing
- * cobalt #1f44ff via the --vex-accent tokens) and ZERO raw legacy hexes;
- * no ShinyText gradient chrome. The only sanctioned gradient is the
- * `.vex-select-beam` utility (globals.css) — the landing's selected-item
- * beam. This test turns each law into a red build instead of a review
- * comment:
+ * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 —
+ * the --vex-alias-* vars, their --color-* utility projections, and the
+ * shell's --vex-* scope tokens). One accent family rooted at the vx-logo
+ * #0000c0 (chronos interactive = blue-400 #7a8cff, celeris = blue-700);
+ * the RETIRED cobalt family #1f44ff/#0a23b8 is banned outright, alongside
+ * every older legacy hex. Depth is luminance + hairlines (or border+shadow
+ * in celeris), never glass or resting glow; no ShinyText gradient chrome.
+ * This test turns each law into a red build instead of a review comment:
  *
  *   1. /backdrop-blur(?!-none)/ — no backdrop-filter glass anywhere in the
  *      shell. `backdrop-blur-none` is EXEMPT by the lookahead (the dialog
  *      base itself is blur-free since the rebrand).
  *   2. /ShinyText|vex-shiny-text/ — the shine chrome died in S7 (component
  *      + @keyframes deleted); nothing may re-import it.
- *   3. the legacy gray-blue hex family + the retired Protocol Desk accent
- *      #3275f8 — replaced by --vex-accent tokens rooted at #1f44ff.
+ *   3. legacy hex families: the gray-blue set, the Protocol Desk accent
+ *      #3275f8, AND the retired cobalt accent pair #1f44ff/#0a23b8. Raw
+ *      hexes never appear in shell sources — the static palette lives in
+ *      tokens.css only (CSS files are outside this scan by design).
  *   4. /shadow-\[0_0_/ — resting glow. Depth never comes from shadows
  *      (directional shadows and the select-beam's lit-item shadow live in
  *      globals.css, outside this scan by design).
+ *   5. theme-blind `white`/`black` utilities (round 2, owner QA 2026-08-21).
+ *      A `bg-white/[0.04]` hover or a `text-white` glyph describes a colour,
+ *      not a role, so it can only be right in ONE theme. Every such site in
+ *      the shell AND in the pre-shell was migrated to the alias families;
+ *      the only exemptions are the two Chronos Gate call sites below.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
  * turn island (components/ui/dialog.tsx, components/ui/select-menu.tsx,
- * components/ui/dynamic-island.tsx). Onboarding
- * surfaces are a separate, finished language and are NOT scanned.
+ * components/ui/dynamic-island.tsx), plus - since UIUX round 2 - the whole
+ * PRE-SHELL tree (features/{setup,systemCheck,secrets,wizard,docker,compose,
+ * database} and components/{onboarding,common}).
+ *
+ * The pre-shell used to be excluded as "a separate, finished language". That
+ * exclusion died with the owner's round-2 decision (2026-08-21): every screen
+ * AFTER the Chronos Gate is now theme-aware, so it is bound by the same
+ * theme-blind colour law as the shell and deserves the same red build. The
+ * ONE remaining theme-invariant surface is the gate composition itself,
+ * whitelisted by path below.
  *
  * Sources are read via `import.meta.glob(..., ?raw)` — Vite inlines the
  * file contents at transform time — instead of `node:fs`, so this test
@@ -61,12 +76,43 @@ const SHELL_SOURCES: Record<string, string> = {
     ],
     { query: "?raw", import: "default", eager: true },
   ),
+  // PRE-SHELL (round 2): the boot stack between first paint and the shell.
+  // `features/systemCheck` is in scope with the rest because the blocked-port
+  // / Docker-down screen is now a themed pre-shell surface, not a dark plate.
+  ...import.meta.glob<string>(
+    [
+      "../../setup/**/*.ts",
+      "../../setup/**/*.tsx",
+      "../../systemCheck/**/*.ts",
+      "../../systemCheck/**/*.tsx",
+      "../../secrets/**/*.ts",
+      "../../secrets/**/*.tsx",
+      "../../wizard/**/*.ts",
+      "../../wizard/**/*.tsx",
+      "../../docker/**/*.ts",
+      "../../docker/**/*.tsx",
+      "../../compose/**/*.ts",
+      "../../compose/**/*.tsx",
+      "../../database/**/*.ts",
+      "../../database/**/*.tsx",
+      "../../../components/onboarding/**/*.ts",
+      "../../../components/onboarding/**/*.tsx",
+      "../../../components/common/**/*.ts",
+      "../../../components/common/**/*.tsx",
+      "!../../**/__tests__/**",
+      "!../../../components/**/__tests__/**",
+    ],
+    { query: "?raw", import: "default", eager: true },
+  ),
 };
 
 /** Normalize a glob key to a stable renderer-relative path. */
 function normalizeKey(key: string): string {
-  if (key.startsWith("../../../components/ui/")) {
-    return `components/ui/${key.slice("../../../components/ui/".length)}`;
+  if (key.startsWith("../../../components/")) {
+    return `components/${key.slice("../../../components/".length)}`;
+  }
+  if (key.startsWith("../../")) {
+    return `features/${key.slice("../../".length)}`;
   }
   return `features/appShell/${key.replace(/^\.\.\//, "")}`;
 }
@@ -92,10 +138,57 @@ const BANNED: readonly BannedPattern[] = [
   { name: "legacy indigo/violet accent", regex: /#(?:6366f1|8b5cf6)/i },
   { name: "raw pin/warn status hex", regex: /#(?:ffd35c|ffce5a|f0a0a0)/i },
   // Landing rebrand: the Protocol Desk accent root retired repo-wide in the
-  // shell. The new root #1f44ff lives ONLY in globals.css token definitions
-  // (CSS files are out of this scan's scope) — components go through
-  // var(--vex-accent*).
+  // shell — components go through var(--vex-accent*).
   { name: "retired Protocol Desk accent (#3275f8)", regex: /#3275f8/i },
+  // Tokens v2 (2026-08-20): the cobalt #1f44ff/#0a23b8 family is retired in
+  // favour of the #0000c0-rooted blue ramp, which lives ONLY in tokens.css
+  // (CSS is out of this scan's scope). Any raw re-introduction in shell
+  // sources is a red build — fix the file with var(), never whitelist.
+  { name: "retired cobalt accent (#1f44ff/#0a23b8)", regex: /#(?:1f44ff|0a23b8)/i },
+  // UIUX round 2 (owner QA 2026-08-21): a `white`/`black` Tailwind colour is
+  // theme-BLIND - it says nothing about the surface under it, so a
+  // `hover:bg-white/[0.05]` hover or a `bg-white/[0.02]` plate that reads on
+  // chronos is invisible on celeris, and a `text-white` glyph on the chronos
+  // accent (light blue-400) lands near 2:1. The theme-aware families are
+  // `interactive-hover`/`interactive-active` (washes), `surface-*` (plates),
+  // `line-*` (strokes) and `ink-on-accent`/`ink-on-primary`/`ink-on-chrome`
+  // (text painted on a known fill). The alpha forms are covered by the same
+  // pattern: `bg-white/[0.05]` matches on the utility, not the value.
+  {
+    name: "theme-blind white literal",
+    regex:
+      /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-white(?![\w-])/,
+  },
+  {
+    name: "theme-blind black literal",
+    regex:
+      /(?<![\w-])(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|caret|decoration|placeholder|accent|shadow)-black(?![\w-])/,
+  },
+  // R3-F3 micro-label register (2026-08-21): Doto retired app-wide. The face,
+  // its `--font-doto` token, its `@font-face` and its woff2 files are gone, so
+  // the old `font-doto` utility no longer compiles to anything and banning it
+  // is moot - what a stale edit CAN still write is the DEAD CLASS NAME, which
+  // silently styles nothing. `.vex-micro-label` (+ `--wide`) in
+  // landing-motifs.css is the register; `.vex-doto-chip` is retired outright
+  // (owner decision 2: no backing plate under a micro label). Both names are a
+  // red build here - rename the call site, never whitelist.
+  {
+    name: "dead Doto class name (use .vex-micro-label)",
+    regex: /\bvex-doto-(?:label|chip)\b|\bfont-doto\b/,
+  },
+  // The class sets no color on purpose (this sheet is unlayered and would beat
+  // the call site's `text-*` utility), so the floor TIER is enforced here:
+  // at 11px a stamp needs the readable tier, and `text-ink-tertiary` /
+  // `text-ink-caption` sit below it. `text-ink-secondary` is the floor. Variant-
+  // prefixed tiers (`disabled:text-ink-tertiary`, `hover:...`) are EXEMPT by
+  // the lookbehind - a receding disabled state is the correct use of tertiary.
+  // Limitation: the scan is per class string, so it catches the common
+  // single-literal case, not a tier assembled across a conditional expression.
+  {
+    name: "micro label below the ink-secondary floor tier",
+    regex:
+      /vex-micro-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-micro-label/,
+  },
 ];
 
 /**
@@ -161,34 +254,40 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
   },
+  // ── The Chronos Gate composition: the theme-INVARIANT brand moment ──
+  // Owner decision 1, round 2 (2026-08-21): "gate zostaje domyslnie". Every
+  // screen after the gate follows celeris/chronos; the gate itself stays the
+  // dark-cobalt brand plate under both themes and under the system default,
+  // because it is also the first-paint cover for the window's dark
+  // backgroundColor. Its ink is therefore painted on a KNOWN fill, which is
+  // exactly the condition under which a literal is not theme-blind. Two
+  // entries, both reasoned per call site; no pattern-level exemption.
   {
-    // Owner decree 2026-07-20, Chronos glass law: the shared Dialog base
-    // (a shell primitive also scanned here) wears the same floating glass
-    // chrome — every modal is a Chronos glass surface per the approved
-    // Personalize mock.
-    file: "components/ui/dialog.tsx",
-    pattern: "backdrop-blur (glass)",
+    file: "features/setup/ChronosGate.tsx",
+    pattern: "theme-blind white literal",
     reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the Dialog " +
-      "base is a floating glass panel (translucent ink + backdrop-blur + " +
-      "grain, white/10 hairline, rounded-2xl). The ::backdrop dim itself " +
-      "stays blur-free (backdrop:backdrop-blur-none).",
+      "Gate corner stamp (`text-white/60`) on the invariant dark-cobalt gate " +
+      "plate. The gate never re-themes, so the fill under this glyph is " +
+      "fixed and the literal is a known-contrast choice, not a theme guess.",
   },
   {
-    // Welcome Portfolio tab (approved harness plan v6, 2026-07-20): the
-    // welcome stage's floating card stack (Overview / Wallets / Balances)
-    // joins the Chronos glass family. Deliberately scoped to the SINGLE
-    // PortfolioCard chrome every card composes (the HvZone precedent) — no
-    // other portfolio file may carry backdrop-blur; the round handle button
-    // is intentionally blur-free ink.
-    file: "features/appShell/book/portfolio/PortfolioCard.tsx",
-    pattern: "backdrop-blur (glass)",
+    file: "features/setup/ChronosGate/GateActs.tsx",
+    pattern: "theme-blind white literal",
     reason:
-      "Approved welcome Portfolio tab (plan v6, 2026-07-20): the floating " +
-      "portfolio cards wear translucent ink (--vex-rail) with " +
-      "backdrop-blur + static grain over the current shell backdrop, via this " +
-      "one card chrome that every card composes.",
+      "Gate act status line (`text-white/80`) inside the same invariant " +
+      "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
+      "gate stops being theme-invariant, BOTH entries must go, not one.",
   },
+  // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
+  // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
+  // when the glass chrome retired, so the entry is deleted rather than
+  // kept as a stale sanction.
+  // REMOVED (rebrand phase 3, 2026-08-20): PortfolioCard is a solid
+  // layer-1 card on tokens v2 (border + lv1 shadow) — its backdrop-blur
+  // exemption became inert when the glass chrome retired, so the entry is
+  // deleted rather than kept as a stale sanction. Glass remains sanctioned
+  // ONLY on the two side rails, the ShellScreen overlays, and the profile
+  // menu.
 ];
 
 interface Violation {
@@ -224,6 +323,26 @@ describe("shell design guard (S7)", () => {
       const files = entries.map(([key]) => normalizeKey(key));
       expect(files).toContain("components/ui/dialog.tsx");
       expect(files).toContain("components/ui/select-menu.tsx");
+      // ... and the pre-shell trees round 2 added, so a broken glob cannot
+      // silently shrink the scope back to the shell.
+      expect(files).toContain("features/setup/ChronosGate.tsx");
+      expect(files).toContain("features/secrets/UnlockScreen.tsx");
+      expect(files).toContain("components/common/OpenLogsLink.tsx");
+      for (const tree of [
+        "features/systemCheck/",
+        "features/wizard/",
+        "features/docker/",
+        "features/compose/",
+        "features/database/",
+        "components/onboarding/",
+      ]) {
+        expect(
+          files.some((f) => f.startsWith(tree)),
+          `pre-shell tree not scanned: ${tree}`,
+        ).toBe(true);
+      }
+      // No test file may leak into the scan (the negative globs above).
+      expect(files.filter((f) => f.includes("__tests__"))).toEqual([]);
 
       const violations: Violation[] = [];
       for (const [key, source] of entries) {
@@ -267,9 +386,18 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("bg-[#3275F8]")).toContain(
       "retired Protocol Desk accent (#3275f8)",
     );
-    // #1f44ff is the accent ROOT — it lives in globals.css token definitions
-    // and is not part of this hex ban (CSS is out of scope here).
-    expect(matchNames("#1f44ff")).toEqual([]);
+  });
+
+  it("flags the retired cobalt accent family (tokens v2 law)", () => {
+    expect(matchNames("bg-[#1f44ff]")).toContain(
+      "retired cobalt accent (#1f44ff/#0a23b8)",
+    );
+    expect(matchNames("text-[#0A23B8]")).toContain(
+      "retired cobalt accent (#1f44ff/#0a23b8)",
+    );
+    // The new accent is consumed as aliases, never as a raw hex.
+    expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
+    expect(matchNames("var(--vex-accent)")).toEqual([]);
   });
 
   it("flags the retired indigo/violet accent and raw pin/warn status hexes", () => {
@@ -283,7 +411,74 @@ describe("shell design guard (S7)", () => {
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
     expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
-    expect(matchNames("#1f44ff")).toEqual([]);
+  });
+
+  it("flags theme-blind white/black utilities, in every alpha and variant form", () => {
+    expect(matchNames("text-white")).toContain("theme-blind white literal");
+    expect(matchNames("hover:bg-white/[0.05]")).toContain(
+      "theme-blind white literal",
+    );
+    expect(matchNames("border-white/[0.08]")).toContain(
+      "theme-blind white literal",
+    );
+    expect(matchNames("bg-black/70")).toContain("theme-blind black literal");
+    expect(matchNames("text-black")).toContain("theme-blind black literal");
+    // The theme-aware replacements are what the law asks for, so none of
+    // them may trip the pattern - including the ink-on-* names that end in
+    // a word the regex must not treat as the colour.
+    for (const ok of [
+      "bg-interactive-hover",
+      "hover:bg-interactive-hover",
+      "text-ink-on-accent",
+      "bg-ink-on-accent",
+      "text-ink-on-chrome",
+      "border-line-2",
+      "bg-mask-1",
+      "bg-surface-1",
+    ]) {
+      expect(matchNames(ok)).toEqual([]);
+    }
+    // Prose in a file header is not a class: the pattern is anchored on the
+    // utility prefix, so an ordinary hyphenated word does not trip it.
+    expect(matchNames("an off-white plate, a coal-black rail")).toEqual([]);
+  });
+
+  it("flags the retired Doto names but not the live register", () => {
+    for (const dead of [
+      'className="font-doto text-[10px]"',
+      'className="vex-doto-label uppercase"',
+      'className="vex-doto-chip"',
+    ]) {
+      expect(matchNames(dead)).toContain(
+        "dead Doto class name (use .vex-micro-label)",
+      );
+    }
+    // The live register is the sanctioned class; it must not self-trigger.
+    expect(matchNames('className="vex-micro-label uppercase"')).toEqual([]);
+    expect(
+      matchNames('className="vex-micro-label vex-micro-label--wide"'),
+    ).toEqual([]);
+  });
+
+  it("flags a micro label below the ink-secondary floor tier, in either order", () => {
+    expect(
+      matchNames('className="vex-micro-label uppercase text-ink-tertiary"'),
+    ).toContain("micro label below the ink-secondary floor tier");
+    expect(
+      matchNames('className="text-ink-caption vex-micro-label uppercase"'),
+    ).toContain("micro label below the ink-secondary floor tier");
+    // The floor tier itself is fine, as is a receding DISABLED/hover state.
+    expect(
+      matchNames('className="vex-micro-label uppercase text-ink-secondary"'),
+    ).toEqual([]);
+    expect(
+      matchNames(
+        'className="vex-micro-label text-accent-primary disabled:text-ink-tertiary"',
+      ),
+    ).toEqual([]);
+    // A tertiary tier on the 10px CAPTION register is untouched by this rule:
+    // `.vex-micro` is a different class with a different contract.
+    expect(matchNames('className="vex-micro text-ink-tertiary"')).toEqual([]);
   });
 
   it("flags resting glow and shine chrome", () => {

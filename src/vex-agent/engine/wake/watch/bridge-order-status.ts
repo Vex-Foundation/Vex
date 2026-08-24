@@ -4,7 +4,7 @@
  *
  * ## Why this evaluator exists
  *
- * `loop_defer`'s timer is a guess. A bridge advertised as "1-10 minutes" is
+ * `LoopDefer`'s timer is a guess. A bridge advertised as "1-10 minutes" is
  * sometimes 40 seconds and sometimes 12 minutes, so a timer sized for the tail
  * wastes the good case and a timer sized for the good case re-sleeps through the
  * bad one. The watch removes the guess from the good case WITHOUT removing the
@@ -15,7 +15,7 @@
  * ## Ids: the model gives an orderId, the trigger path compares a row id
  *
  * The model holds a PROVIDER order id — it is what the bridge execute tools
- * return and what `bridge_status` takes. The push source (the pending-activity
+ * return and what `BridgeStatus` takes. The push source (the pending-activity
  * bus `resolved` event) carries the `agent_activity` ROW id and nothing else,
  * by the bus's ids-only doctrine.
  *
@@ -27,7 +27,7 @@
  * ## Failure is never silent and never fatal
  *
  * An unknown order id, or one that already settled, is REJECTED BY NAME with
- * what to do instead. The rejection travels back as a warning on a `loop_defer`
+ * what to do instead. The rejection travels back as a warning on a `LoopDefer`
  * that still parked on its timer — see `watch-registry.ts` for why a rejected
  * watch must never fail the defer.
  */
@@ -96,13 +96,13 @@ export function createBridgeOrderStatusEvaluator(
       if (row === null) {
         throw new Error(
           `no recorded bridge has orderId "${orderId}". Use the orderId a bridge execute tool `
-          + "returned, or find it with agent_scan(view=\"transactions\", productType=\"bridge\").",
+          + "returned, or find it with AgentScan(view=\"transactions\", productType=\"bridge\").",
         );
       }
       if (row.status !== "pending") {
         throw new Error(
           `bridge order "${orderId}" already reached status "${row.status}" — there is nothing `
-          + "left to wait for. Read it now with bridge_status instead of deferring.",
+          + "left to wait for. Read it now with BridgeStatus instead of deferring.",
         );
       }
       const canonical: BridgeOrderStatusCondition = {

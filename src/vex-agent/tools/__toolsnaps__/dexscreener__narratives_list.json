@@ -1,0 +1,73 @@
+{
+  "definition": {
+    "function": {
+      "description": "Live, undocumented DEX Screener TRENDING NARRATIVES feed — themes/metas (AI, dogs, 'knockoff legends', …) with aggregate market cap, liquidity, 24h volume, token count, and one market-cap change field, marketCapChangePctSelected, resolved against the `window` param (default h24). Use this when the user asks what themes or metas the market is rotating into, or wants a narrative-level starting point before naming any token. Returns NARRATIVES, not individual tokens; drill into one with dexscreener__narrative_get. Every filter, sort and window is applied by Vex to the provider's current trending list, whose size the provider chooses (19 narratives in current captures). No server-side filter, sort, limit or pagination exists, so paging here walks the ONE list the provider returned instead of asking it for more. Every reply carries the provenance envelope: `totalMatched` (narratives left after your filters), `returned`, `offset`, `hasMore` (true exactly when offset + returned is below totalMatched), `filtersApplied` and `droppedByFilter`, plus a `providerWindow` block naming the endpoint and how many rows it gave. Continue by adding `returned` to `offset` while hasMore is true; hasMore false is the end of that provider list, never a claim about every narrative that exists. Live but undocumented API surface - may change; if it does the call fails with the real reason (rate limit, transport, or unreadable payload), it does not return an empty success. Every response carries sourceObservation: observed (true = the transport was measured; the age may STILL be unknown), responseAtMs (when Vex answered; asOfMs echoes it), localCacheHit/localCacheAgeMs (Vex's own cache only - 0 beside a null dataAgeMs means the local fetch was live, not that the data is), upstreamAgeMs + upstreamAgeKnown (DexScreener's CDN age, from its whole-second Age header), providerFetchedAtMs (derived origin time, about 1 s quantized; null when the upstream age is unknown), and dataAgeMs - the PROVABLE FLOOR of data age, never a worst case (null means unknown, never fresh). Batched or merged calls report the stalest completed fetch. Nothing here is real-time.",
+      "name": "dexscreener__narratives_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "explainDrops": {
+            "description": "Also emit droppedRows[]: at most 10 rejected rows, each carrying the FIRST filter that rejected it, that row's own value, and the threshold you passed — which answers 'missed by 0.1 or by 100x?' in the same call. droppedByFilter stays the full census; this is a sample, and droppedRowsTruncated states whether more were dropped than shown. providerRowIndex is the row's 0-based position in THIS response before filtering. It is deterministic inside this answer and NOT stable across calls, since DexScreener re-chooses its window every time. rowId carries the row's own identifier — a pool address, a listed-asset address, or a narrative slug — and that is the value worth keeping. Off by default, and it costs nothing when off.",
+            "type": "boolean"
+          },
+          "fields": {
+            "description": "Comma-separated extra output fields, ADDED to the default row. Use 'full' for every field; a misspelled name is rejected with the complete accepted list. Opt-in covers the narrative description and each individual m5/h1/h6/h24 window of market-cap change (percent) and market-cap delta (absolute USD) — two different units the provider ships in two identically-shaped, unnamed maps.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max narratives to return (1-200). Omit to receive EVERY narrative DexScreener returned — 19 on the live feed, and the whole payload is under 7 KB, so there is rarely a reason to set this. 0 is rejected because it cannot mean both 'none' and 'all'.",
+            "type": "number"
+          },
+          "minLiquidityUsd": {
+            "description": "Keep narratives whose liquidityUsd is at least this. Note the provider's aggregate is NOT the sum of the pools it will show you for that narrative — measured 23,354,089.77 reported against 21,774,508.92 summed. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minMarketCapUsd": {
+            "description": "Keep narratives whose marketCapUsd is at least this, in USD. Aggregated by DexScreener over tokens whose individual market caps are derived from pool prices a pool can set itself, so a fabricated token price inflates its narrative too. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "minTokenCount": {
+            "description": "Keep narratives whose narrativeTokenCount — how many tokens DexScreener counts in the narrative — is at least this. This is the narrative-level count and it disagrees with what dexscreener__narrative_get reports for the same slug — measured 67 here against 31 there, in the same minute. This tool owns the narrative-level number. 0 is a genuine no-op; whole number.",
+            "type": "number"
+          },
+          "minVolumeUsd": {
+            "description": "Keep narratives whose volumeUsdH24 is at least this. Same caveat as minLiquidityUsd: the aggregate is not a sum over the pools dexscreener__narrative_get returns. 0 is a genuine no-op.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip this many narratives of the same provider window (default 0). The PROVIDER has no pagination: this walks the single trending list Vex already fetched, so the reply's `hasMore` and `totalMatched` are about that list. Continue by adding the reply's `returned` to this value while hasMore is true.",
+            "type": "number"
+          },
+          "omitFields": {
+            "description": "Comma-separated output fields to REMOVE. Accepts one name: description — DexScreener's editorial prose, which is unbounded and which no decision reads. It is opt-in here, so this is only meaningful together with fields: \"full\": that pairing means 'every number, none of the prose'. slug and the aggregates are what this feed exists to report and are never omittable. Echoed back as fieldsOmitted.",
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "relevance | marketCapUsd | liquidityUsd | volumeUsdH24 | narrativeTokenCount | marketCapChangePct. Default 'relevance', meaning 'as DexScreener returned'. DexScreener DOES NOT DISCLOSE ITS ORDER and it is not a ranking: nine candidate sorts (market cap, liquidity, volume, token count and each change window, both directions) were tested against the live feed and none reproduces it, so position carries no meaning. Sort by marketCapChangePct to see what is ROTATING; the largest narrative is rarely the moving one.",
+            "type": "string"
+          },
+          "sortDir": {
+            "description": "desc (default) or asc. Narratives whose sort metric is unknown always sort last, in both directions.",
+            "type": "string"
+          },
+          "window": {
+            "description": "m5 | h1 | h6 | h24 (default h24). Selects the window behind marketCapChangePctSelected and behind a marketCapChangePct sort. Unlike the pair tools, all four windows were present on every live narrative row.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.trending"
+  }
+}

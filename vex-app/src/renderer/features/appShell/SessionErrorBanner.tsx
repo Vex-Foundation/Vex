@@ -7,11 +7,11 @@
  * background rendered nothing at all. Agent sessions are the point of this
  * banner.
  *
- * Everything shown here is a bounded code turned into fixed copy
- * (`shared/engine-error-copy.ts`). No provider text reaches this component,
- * because no layer beneath it carries any. The technical codes are rendered as
- * a small monospace trailer so a user can quote them in a bug report without
- * the banner reading like a stack trace.
+ * Bounded codes turned into fixed copy (`shared/engine-error-copy.ts`), plus
+ * the SANITIZED real cause as `detail` and the remedy action hint (owner
+ * decree 2026-08-02) - the one prose field, already stripped of secrets at
+ * the main-side bridge. The technical codes remain a small monospace trailer
+ * so a user can quote them in a bug report.
  *
  * Dismissible, unlike the standing `MissionErrorAlert`: this is a "what just
  * happened" signal for a discrete failure, not a standing state. The durable
@@ -20,7 +20,11 @@
  */
 
 import type { JSX } from "react";
-import { engineErrorCopy, engineErrorRetryHint } from "@shared/engine-error-copy.js";
+import {
+  engineErrorCopy,
+  engineErrorRemedyHint,
+  engineErrorRetryHint,
+} from "@shared/engine-error-copy.js";
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import { useEngineErrorStore } from "../../stores/engineErrorStore.js";
 
@@ -79,7 +83,15 @@ export function SessionErrorBanner({
   if (event === undefined) return null;
 
   const copy = engineErrorCopy(event.category);
-  const retryHint = engineErrorRetryHint(event.category, event.retryAfterSeconds);
+  // The remedy hint is the ACTION line: when the classifier names the one
+  // thing that clears the failure it replaces the generic retry advice - but
+  // a provider-stamped "Retry in Ns" is more precise than any remedy phrase,
+  // so an explicit retry-after always wins.
+  const actionHint =
+    event.retryAfterSeconds !== null
+      ? engineErrorRetryHint(event.category, event.retryAfterSeconds)
+      : (engineErrorRemedyHint(event.remedy) ??
+        engineErrorRetryHint(event.category, null));
   const codes = codeTrailer(event);
 
   return (
@@ -87,11 +99,11 @@ export function SessionErrorBanner({
       role="alert"
       data-vex-area="session-error-banner"
       data-vex-category={event.category}
-      className="mb-2 w-full rounded-lg border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2"
+      className="mb-2 w-full rounded-xl border border-[var(--vex-rule)] bg-danger-wash px-3 py-2"
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
-          {scopeLabel(event.scope)} — {copy.title}
+        <p className="vex-micro font-medium text-danger">
+          {scopeLabel(event.scope)} - {copy.title}
         </p>
         <button
           type="button"
@@ -99,17 +111,23 @@ export function SessionErrorBanner({
           onClick={() => {
             clear(sessionId);
           }}
-          className="font-mono text-[10px] uppercase tracking-[0.2em] text-destructive/70 hover:text-destructive"
+          className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
         >
           Dismiss
         </button>
       </div>
-      <p className="mt-1 text-xs text-destructive">{copy.body}</p>
-      {retryHint !== null ? (
-        <p className="mt-1 text-xs text-destructive">{retryHint}</p>
+      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{copy.body}</p>
+      {/* Sanitized REAL cause (decree 2026-08-02) - technical register, mono. */}
+      {event.detail !== null ? (
+        <p className="mt-1 break-words font-mono text-[11px] leading-4 text-[var(--vex-text-2)]">
+          {event.detail}
+        </p>
+      ) : null}
+      {actionHint !== null ? (
+        <p className="mt-1 text-xs font-medium text-[var(--vex-text-1)]">{actionHint}</p>
       ) : null}
       {codes !== null ? (
-        <p className="mt-1 font-mono text-[10px] text-destructive/70">{codes}</p>
+        <p className="mt-1 font-mono text-[10px] text-[var(--vex-text-3)]">{codes}</p>
       ) : null}
     </div>
   );

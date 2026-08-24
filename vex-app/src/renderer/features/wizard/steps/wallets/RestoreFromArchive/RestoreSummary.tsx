@@ -16,7 +16,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
       aria-live="polite"
       data-vex-restore-success
     >
-      <p className="text-sm text-[var(--color-success)]">
+      <p className="text-sm text-success">
         Restored {result.walletsRestored.length} {walletWord} and{" "}
         {result.filesRestored.length} file
         {result.filesRestored.length === 1 ? "" : "s"} from the backup.
@@ -25,7 +25,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
         <ul className="flex flex-col gap-2">
           {result.walletsRestored.map((wallet) => (
             <li key={wallet.id} className="flex flex-col gap-1">
-              <span className="vex-micro text-[var(--color-text-muted)]">
+              <span className="vex-micro text-ink-tertiary">
                 {wallet.label}
                 {wallet.legacy === true ? " · legacy" : ""}
               </span>
@@ -36,12 +36,12 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
       ) : null}
       {result.vaultLocked ? (
         <p
-          className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-1 pl-3 text-sm text-[var(--color-warning)]"
+          className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-1 pl-3 text-sm text-warning"
           role="alert"
           data-vex-restore-vault-locked
         >
           This backup&apos;s vault uses a different master password. Vex is now
-          locked — unlock it again using <strong>this backup&apos;s</strong>{" "}
+          locked - unlock it again using <strong>this backup&apos;s</strong>{" "}
           master password (not your previous one) to access the restored
           wallets.
         </p>

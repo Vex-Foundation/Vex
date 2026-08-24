@@ -84,9 +84,9 @@ const PREDICT_LEADERBOARD_METRIC = ["pnl", "volume", "win_rate"] as const;
 // the known-outage note is appended as context, with the status preserved.
 const PNL_HISTORY_UNAVAILABLE_HINT =
   "(Jupiter answered 404 on the documented pnl-history route. Since 2026-07-24 that route " +
-  "has returned 404 for every wallet, including traders whose solana.predict.profile returns " +
+  "has returned 404 for every wallet, including traders whose solana__predict_profile_get returns " +
   "200 — a provider-side outage or stale docs, not a Vex error. Retry later, or use " +
-  "solana.predict.profile for a lifetime PnL snapshot now.)";
+  "solana__predict_profile_get for a lifetime PnL snapshot now.)";
 
 export const PREDICT_SOCIAL_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.profile": async (p, ctx) => {

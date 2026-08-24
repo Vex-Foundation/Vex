@@ -6,10 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   dockerSpawnEnv: vi.fn(() => ({ PATH: "/augmented/docker/path" })),
+  resolveDockerCli: vi.fn(),
 }));
 
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
 vi.mock("../cli-env.js", () => ({ dockerSpawnEnv: mocks.dockerSpawnEnv }));
+vi.mock("../locate.js", () => ({ resolveDockerCli: mocks.resolveDockerCli }));
+
+const DOCKER_EXE = "/opt/docker/bin/docker";
 
 import { runSpawn } from "../spawn-runner.js";
 
@@ -42,6 +46,10 @@ describe("runSpawn environment and spawn errors", () => {
   beforeEach(() => {
     mocks.spawn.mockReset();
     mocks.dockerSpawnEnv.mockClear();
+    mocks.resolveDockerCli.mockReset().mockReturnValue({
+      executablePath: DOCKER_EXE,
+      source: "install_dir",
+    });
     mocks.spawn.mockImplementation(() => fakeChild());
   });
 
@@ -49,10 +57,35 @@ describe("runSpawn environment and spawn errors", () => {
     await runSpawn("docker", ["info"]);
 
     expect(mocks.dockerSpawnEnv).toHaveBeenCalledOnce();
+    // The bare name is resolved to the located absolute path so every
+    // Docker caller in main spawns the same executable.
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      DOCKER_EXE,
+      ["info"],
+      expect.objectContaining({ env: { PATH: "/augmented/docker/path" } }),
+    );
+  });
+
+  it("falls back to the bare name when no Docker CLI can be located", async () => {
+    mocks.resolveDockerCli.mockReturnValue(null);
+
+    await runSpawn("docker", ["info"]);
+
     expect(mocks.spawn).toHaveBeenCalledWith(
       "docker",
       ["info"],
-      expect.objectContaining({ env: { PATH: "/augmented/docker/path" } }),
+      expect.anything(),
+    );
+  });
+
+  it("does not redirect a non-docker command through the locator", async () => {
+    await runSpawn("systemctl", ["--user", "start", "docker-desktop"]);
+
+    expect(mocks.resolveDockerCli).not.toHaveBeenCalled();
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      "systemctl",
+      ["--user", "start", "docker-desktop"],
+      expect.anything(),
     );
   });
 
@@ -84,7 +117,7 @@ describe("runSpawn environment and spawn errors", () => {
 
     expect(mocks.dockerSpawnEnv).not.toHaveBeenCalled();
     expect(mocks.spawn).toHaveBeenCalledWith(
-      "docker",
+      DOCKER_EXE,
       ["info"],
       expect.objectContaining({
         env: { PATH: "/caller/path", CUSTOM: "yes" },

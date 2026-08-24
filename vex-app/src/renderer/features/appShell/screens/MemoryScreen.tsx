@@ -22,7 +22,7 @@ export function MemoryScreen({
     <ShellScreen title="Memory" origin={origin} onClose={onClose}>
       {/* Comfortable reading measure for the intro; the register below keeps
        * its own 760px ledger width. */}
-      <div className="mx-auto mb-8 w-full max-w-[72ch] text-[14.5px] leading-[1.7] text-[var(--vex-text-2)]">
+      <div className="mx-auto mb-8 w-full max-w-[72ch] text-[14.5px] leading-[1.7] text-ink-secondary">
         <MarkdownContent text={memoryExplainerMd} variant="article" />
       </div>
       <MemoryPanel />

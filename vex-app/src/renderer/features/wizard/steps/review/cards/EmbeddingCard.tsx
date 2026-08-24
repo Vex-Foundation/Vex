@@ -33,7 +33,7 @@ export function EmbeddingCard({
       testId="embedding"
     >
       {e.allFieldsConfigured ? (
-        <span>Endpoint: {e.baseUrlRedacted ?? "—"}</span>
+        <span>Endpoint: {e.baseUrlRedacted ?? "-"}</span>
       ) : (
         <span>Memory and semantic search stay off until configured.</span>
       )}

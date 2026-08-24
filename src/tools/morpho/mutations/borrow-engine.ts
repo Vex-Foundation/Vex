@@ -289,7 +289,7 @@ function assertSupplyPosition(intent: MorphoBorrowIntent, position: MorphoPositi
     + `${position.supplySharesRaw} supply shares) and the withdrawal asks for ${wanted}. A supplier can only take `
     + "back what they lent plus the interest it has earned.",
     `Nothing was approved, signed or sent. Withdraw at most ${position.supplyAssetsRaw} raw units. Check the `
-    + "position with morpho.positions.get: a wallet that supplied to a DIFFERENT market on the same token holds "
+    + "position with `morpho__positions_get`: a wallet that supplied to a DIFFERENT market on the same token holds "
     + "nothing on this one.",
   );
 }

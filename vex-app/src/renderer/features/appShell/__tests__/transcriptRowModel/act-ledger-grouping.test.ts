@@ -31,7 +31,7 @@ describe("groupTranscriptRows (S5 act ledger)", () => {
 
   // Owner decree: collapse only ABOVE five calls (TOOL_GROUP_MIN_CALLS 3 → 6),
   // so an ordinary multi-step turn stays readable without a disclosure click.
-  it("the collapse threshold is 6 — five calls is still ordinary work", () => {
+  it("the collapse threshold is 6 - five calls is still ordinary work", () => {
     expect(TOOL_GROUP_MIN_CALLS).toBe(6);
   });
 
@@ -99,7 +99,7 @@ describe("groupTranscriptRows (S5 act ledger)", () => {
     expect(g.calls.map((c) => c.toolName)).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
 
-  it("any non-tool row interrupts the run — split runs below the threshold stay individual", () => {
+  it("any non-tool row interrupts the run - split runs below the threshold stay individual", () => {
     const entries = groupTranscriptRows(
       toTranscriptRows([
         callDto(1, ["a", "b", "c", "d"]),
@@ -246,7 +246,7 @@ describe("grouping × persisted reasoning (contract C1)", () => {
     expect(group(entries)?.reasonings).toEqual([]);
   });
 
-  it("never double-carries a PROSE row's trace — the split prose row keeps it", () => {
+  it("never double-carries a PROSE row's trace - the split prose row keeps it", () => {
     // The prose splits into its own assistant row (which renders the trace),
     // so harvesting it onto the group too would print one turn's thinking
     // twice.

@@ -1,8 +1,8 @@
 /**
- * WHO SCROLLS, AND WHO IS THE READING COLUMN — the two must not be the same
+ * WHO SCROLLS, AND WHO IS THE READING COLUMN (standalone mount) - the two must not be the same
  * element.
  *
- * The transcript's scroller used to BE the 860px reading column, so the browser
+ * The transcript's scroller used to BE the reading column, so the browser
  * drew its scrollbar at the column's right edge: a bar floating in the middle
  * of the window beside the text, which is not how any browser behaves and is
  * not what a reader reaches for (owner, 2026-08-05). The fix is structural, not
@@ -10,10 +10,13 @@
  * overlay bar hugs the panel's right edge, next to the BOOK rail — and the
  * reading column is re-applied as a wrapper INSIDE it.
  *
- * This suite is what keeps those two roles apart. Everything the arrangement
- * must not break — the top anchor, the run-out spacer, the "↓ latest" pill —
- * is pinned next door in `scroll-model.test.tsx`, which is the real regression
- * guard for the swap.
+ * This suite is what keeps those two roles apart. It exercises the STANDALONE
+ * mount, where the transcript owns its own overflow; inside the resident shell
+ * `SessionPanel`'s scroll body is the scrollport instead and these classes go
+ * inert (`chat-transcript.css`). Everything the arrangement must not break -
+ * follow ownership, the force-scroll on the reader's own words, prepend
+ * anchoring, the "↓ latest" pill - is pinned next door in
+ * `scroll-model.test.tsx`.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,7 +59,7 @@ async function renderTranscript() {
 
 /** The wrapper that carries the reading measure, inside the scroller. */
 function readingColumn(container: HTMLElement): HTMLElement {
-  const el = getScroller(container).querySelector(".max-w-\\[860px\\]");
+  const el = getScroller(container).querySelector(".max-w-\\[780px\\]");
   if (el === null) throw new Error("reading column not found inside scroller");
   return el as HTMLElement;
 }
@@ -91,13 +94,19 @@ describe("the scroller spans the panel; the column lives inside it", () => {
     expect(column.contains(row)).toBe(true);
   });
 
-  it("keeps the anchor run-out spacer inside the scroller's flow", async () => {
-    // The spacer guarantees the scroll range under an anchored user message;
-    // if the swap had left it outside the scroller it would guarantee nothing.
+  it("keeps the floating slots inside the scroller but OUT of the row column", async () => {
+    // The centred scene and the jump pill are zero-height STICKY slots: inside
+    // the scroller (sticky resolves against the scrolling ancestor) and
+    // outside the row column, whose 16px gap they would otherwise take,
+    // opening a hole between rows. The retired anchor-run-out spacer used to
+    // hold the scroll range with dead space; the follow model needs none, so
+    // nothing in the scroller writes an inline height any more.
     const { container } = await renderTranscript();
     const scroller = getScroller(container);
-    const spacer = scroller.querySelector("div[aria-hidden]:last-child");
-    expect(spacer).not.toBeNull();
+    const column = readingColumn(container);
+    const rowStack = column.querySelector(".gap-4");
+    expect(rowStack).not.toBeNull();
+    expect(scroller.querySelector('div[style*="height"]')).toBeNull();
   });
 
   it("wears the overlay scrollbar utility, so the bar is the native one", async () => {

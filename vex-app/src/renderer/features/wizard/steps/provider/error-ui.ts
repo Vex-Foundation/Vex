@@ -93,13 +93,13 @@ export function uiCopyFor(code: string): ErrorCopy {
  * user data (main extracts only errno-shaped `.code` strings).
  */
 const TLS_HINT =
-  "TLS certificate could not be verified — antivirus or proxy HTTPS " +
+  "TLS certificate could not be verified - antivirus or proxy HTTPS " +
   "inspection is a common cause. Check your antivirus 'HTTPS scanning' " +
   "setting.";
 const DNS_HINT =
-  "DNS lookup failed — check your network connection or DNS settings.";
+  "DNS lookup failed - check your network connection or DNS settings.";
 const CONNECT_HINT =
-  "Connection could not be established — a firewall, VPN, or proxy may " +
+  "Connection could not be established - a firewall, VPN, or proxy may " +
   "be blocking the app.";
 
 export const CAUSE_HINTS: Readonly<Record<string, string>> = {

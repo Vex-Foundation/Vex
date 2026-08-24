@@ -47,7 +47,7 @@ export const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 /**
  * How the agent may spell Solana. `sol`/`solana` mirror the Khalani chain
  * aliases, and the numeric form is the repo's ONE synthetic Solana chain id
- * (`SOLANA_SYNTHETIC_CHAIN_ID`), which is what `token_find` and the activity
+ * (`SOLANA_SYNTHETIC_CHAIN_ID`), which is what `TokenFind` and the activity
  * vocabulary hand the model. Anything else numeric goes to the EVM registry.
  */
 const SOLANA_CHAIN_INPUTS: ReadonlySet<string> = new Set([

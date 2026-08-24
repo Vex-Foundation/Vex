@@ -385,10 +385,15 @@ describe("solana-jupiter manifest", () => {
   // P1: winRatePct's scale is not confirmed by any fixture or doc — the
   // manifest description must say so rather than let an agent present it as
   // a settled percent.
-  it("solana.predict.leaderboards description flags winRatePct as unit-unconfirmed", () => {
+  it("solana.predict.leaderboards description flags winRatePct's scale as unverified", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.leaderboards")!;
     expect(tool.description).toContain("winRatePct");
-    expect(tool.description).toContain("unit-unconfirmed");
+    // The literal label "unit-unconfirmed" was replaced by the D8 rewording; the
+    // claim it carried is what this test protects, so assert the claim instead.
+    expect(tool.description).toMatch(/UNVERIFIED/);
+    expect(tool.description).toMatch(/no capture or document has confirmed its scale/);
+    expect(tool.description).toMatch(/passed through unconverted/);
+    expect(tool.description).toMatch(/must not be presented as a settled percent/);
   });
 
   it("solana.predict.vaultInfo takes no params", () => {

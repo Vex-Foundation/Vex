@@ -75,10 +75,9 @@ export const TabsList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement
     <div
       ref={ref}
       role="tablist"
-      // Landing hairline grammar — transparent rail bounded by a hairline,
-      // never a filled muted slab.
+      // Transparent rail bounded by a hairline, never a filled muted slab.
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-white/[0.16] bg-transparent p-1 text-[var(--color-text-muted)]",
+        "inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary",
         className
       )}
       {...props}
@@ -151,13 +150,13 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
         onKeyDown={handleKeyDown}
-        // Mono micro-label triggers (landing chrome register); the active
-        // tab is an accent-fill step, not a shadowed slab.
+        // Chrome-register triggers (13/20 max w500); the active tab is a
+        // quiet interactive wash, not a shadowed slab.
         className={cn(
-          "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] leading-5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isActive
-            ? "bg-[color-mix(in_oklab,var(--color-accent-primary)_12%,transparent)] text-[var(--color-text-primary)]"
-            : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]",
+            ? "bg-interactive-active text-ink-primary"
+            : "text-ink-tertiary hover:text-ink-primary",
           className
         )}
         {...props}

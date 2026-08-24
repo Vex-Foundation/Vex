@@ -50,7 +50,7 @@ export function gatedReason(status: MissionRunStatus | null): string {
     case "paused_plan_acceptance":
       return "Mission is paused for plan acceptance. Review and accept the action plan to resume.";
     case "paused_user_form":
-      return "Mission is waiting on a form you opened. Submit or dismiss it to resume — dismissing tells the agent you declined.";
+      return "Mission is waiting on a form you opened. Submit or dismiss it to resume - dismissing tells the agent you declined.";
     default:
       return "Composer is gated until the mission run reaches a free state.";
   }
@@ -125,6 +125,17 @@ export function submitFailureNotice(
       return incompleteTurnNotice(
         data,
         "Vex stopped before completing the task after reaching this turn's action limit.",
+      );
+    case "no_progress":
+      // Routed through `incompleteTurnNotice` like the other incomplete-turn
+      // reasons, and for the same reason: the STALL is only the tail of the
+      // turn. Rounds before it can have dispatched real tool calls, so retry
+      // stays gated on `toolCallsMade` exactly as everywhere else. Only when
+      // the count is zero - the reported v0.2.6 shape - is one-click retry
+      // offered, and there it is genuinely safe: nothing ran.
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped early because the model returned only empty responses.",
       );
     case "timeout":
       return incompleteTurnNotice(

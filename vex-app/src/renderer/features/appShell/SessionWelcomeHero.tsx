@@ -1,102 +1,118 @@
 /**
- * Welcome stage — the Grok-style LOGO ROW crown (owner decree 2026-07-21).
- *
- * The H1 "What should I execute?" display statement is DELETED. What remains
- * above the composer is ONE centered logo row borrowing Grok's home
- * [icon + wordmark] grammar:
- *
- *   - the VexSigil particle-constellation mark (falls back to the clean
- *     monogram <img> in jsdom / on canvas failure), sized to the Grok icon
- *     slot rather than the old full-crown height;
- *   - beside it, the PREVIEW · v{version} badge redesigned as a wordmark-
- *     position hallmark: White House face (Instrument Sans), letterspaced
- *     caps, SOLID text wearing the `.vex-preview-shimmer` overlay
- *     (globals.css — an ::after duplicate via data-shimmer-text sweeps a
- *     translucent white band over the glyphs on a slow ~3.2s loop; the base
- *     text is never background-clipped; stilled under reduced motion). The
- *     honest build-stage tooltip carries over from the retired pill via a
- *     plain `title` attribute.
- *
- * The parent (`SessionPanel`) seats this crown directly above the composer
- * and centers [logo row + input + chips] vertically as one column — the
- * Grok home composition. This component no longer bottom-anchors itself
- * (the old `mt-auto` is gone); it is plain flow content plus one absolute
- * band:
- *
- *   BOTTOM BAND (absolute at the stage's bottom edge — the parent's
- *   trailing spacer keeps this band clear): ONLY the centered BACKED BY
- *   hallmark (unchanged by the 2026-07-21 logo-row round). The only other
- *   copy on the stage.
- *
- * Load-in: the one-shot .vex-rise choreography — the logo row takes the
- * base slot as one unit; the parent stages the instrument at d2 and the
- * chips row at d3 on SIBLING elements outside this component; the bottom
- * band closes at d4. Mount-once: no class re-toggles on re-render.
- * Pure presentation: no session state, no composer coupling.
+ * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
+ * vx script mark over a micro-label date eyebrow, the time-of-day greeting headline, and the
+ * Agent | Studio runtime-mode toggle (Studio reserved: disabled with a lock
+ * until vex-studio ships - seam #2). The parent (`SessionPanel`) seats this
+ * directly above the composer and centers the column; the "BACKED BY"
+ * footer band is retired. Load-in rides the one-shot `.vex-rise`
+ * choreography; the composer and chips stagger on sibling elements.
  */
 
-import type { JSX } from "react";
-import { VexSigil } from "./VexSigil.js";
+import { useState, type JSX } from "react";
+import { IconLock } from "../../components/icons/index.js";
+import { VexMark } from "../../components/common/VexMark.js";
+import { pickGreeting } from "../../lib/greeting.js";
+import { useUserProfile } from "../../lib/api/user-profile.js";
+import { cn } from "../../lib/utils.js";
+import { useUiStore } from "../../stores/uiStore.js";
 
-/** Sigil sizing — the crown mark ABOVE the PREVIEW wordmark (owner decree
- * 2026-07-21 round 2: "logo VEX musi być nad preview i ma być w chuj
- * większe" — the side-by-side Grok row shrank it to badge scale). */
-const SIGIL_CLASS = "h-36 md:h-44";
-
-/** The wordmark-slot text — also the badge's accessible name. */
-const PREVIEW_LABEL = `PREVIEW · v${__VEX_APP_VERSION__}`;
-
-/** Honest build-stage disclosure, carried over from the retired pill. */
+/** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
 const PREVIEW_TITLE =
   `Preview build (v${__VEX_APP_VERSION__}). Vex is pre-1.0 and evolving. ` +
-  "Self-custodial — you control your keys and every action. " +
+  "Self-custodial - you control your keys and every action. " +
   "Verify before moving funds. Not financial advice.";
 
-export function SessionWelcomeHero(): JSX.Element {
-  return (
-    <>
-      {/* LOGO CROWN — the BIG sigil stacked OVER the PREVIEW wordmark
-       * (owner decree 2026-07-21 round 2: the side-by-side row shrank the
-       * mark to badge scale — now the mark dominates and the wordmark sits
-       * beneath it), one centered unit riding the base .vex-rise slot.
-       * pb-2 + the composer's own mt-6 keep the breath before the input. */}
-      <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
-        <div className="vex-rise flex flex-col items-center justify-center gap-4">
-          <VexSigil className={SIGIL_CLASS} />
-          {/* PREVIEW BADGE — the wordmark slot. Instrument Sans (the WH
-           * face; the serif is rationed to the Portfolio Total Value),
-           * letterspaced caps in the secondary tone so the sweeping white
-           * shimmer band reads against it. Static SPAN, not a control. */}
-          <span
-            className="vex-preview-shimmer font-sans text-[13px] font-medium uppercase tracking-[0.42em] text-[var(--vex-text-2)] md:text-sm"
-            data-shimmer-text={PREVIEW_LABEL}
-            title={PREVIEW_TITLE}
-            aria-label={PREVIEW_LABEL}
-          >
-            {PREVIEW_LABEL}
-          </span>
-        </div>
-      </div>
+/** "WEDNESDAY · AUG 20" - computed once per mount; a date, not a clock. */
+function eyebrowDate(): string {
+  const now = new Date();
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const day = now.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${weekday} · ${day}`.toUpperCase();
+}
 
-      {/* BOTTOM BAND — the landing .hero-bottom at the stage's bottom edge:
-       * ONLY the centered BACKED BY hallmark (owner decree 2026-07-21: the
-       * "Executes through" integrations rail + chain-coverage line are
-       * retired; the flanking barcode/LOCAL-FIRST/YOU-SIGN copy went in the
-       * 2026-07-20 round). Click-transparent (pointer-events-none). */}
-      <div className="vex-rise vex-rise-d4 pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3.5 px-8 pb-5 sm:px-12">
-        {/* BACKED BY — the partner hallmark: a monochrome mark at
-         * opacity-70, comfortable spacing. A hallmark, not a billboard. */}
-        <div className="flex items-center justify-center gap-4">
-          <span className="font-sans text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
-            Backed by
-          </span>
-          <img
-            src="/logo/virtuals.svg"
-            alt="Virtuals"
-            className="h-7 w-7 opacity-70"
-          />
-        </div>
+export function SessionWelcomeHero(): JSX.Element {
+  // READ-ONLY seam: the slot exists so the toggle can light up the moment
+  // Studio ships; nothing here may switch it.
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
+
+  // Headline greeting (owner decision 2026-08-20, rotating pools): the
+  // Vex-setup displayName through the SAME profile read SidebarProfile uses,
+  // failing closed to the nameless draw for every non-success state. The
+  // hour and the random draw are frozen ONCE PER MOUNT (useState
+  // initializers) so the headline never flickers across re-renders, and no
+  // ticking timer exists - the welcome stage remounts often enough that a
+  // band flip never needs a live clock. Only the profile read resolving can
+  // upgrade the line (nameless → name variant), and at most once.
+  const profileQuery = useUserProfile();
+  const displayName = profileQuery.data?.ok
+    ? profileQuery.data.data.displayName
+    : null;
+  const [rand01] = useState(() => Math.random());
+  const [hour] = useState(() => new Date().getHours());
+  const headline = pickGreeting(hour, displayName, rand01);
+
+  return (
+    <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
+      <div className="vex-rise flex flex-col items-center justify-center gap-3">
+        {/* vx script mark on the brand-mark token (owner rule 2026-08-21:
+          * white everywhere in chronos, brand blue in celeris) - one inline
+          * mark, the theme flip lives in tokens.css. */}
+        <span aria-hidden className="text-brand-mark">
+          <VexMark size={64} />
+        </span>
+        <span
+          className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary"
+          title={PREVIEW_TITLE}
+        >
+          {eyebrowDate()}
+        </span>
+        <h1 className="font-display text-[30px] font-medium leading-[38px] tracking-[-0.01em] text-ink-primary">
+          {headline}
+        </h1>
+        <RuntimeModeToggle runtimeMode={runtimeMode} />
       </div>
-    </>
+    </div>
+  );
+}
+
+/**
+ * Agent | Studio segmented capsule. Studio is a reserved seat: disabled,
+ * wearing the lock, explained by its title - the interaction space ships now
+ * so the studio mode plugs in without a layout change. Neither segment
+ * writes the store.
+ */
+function RuntimeModeToggle({
+  runtimeMode,
+}: {
+  readonly runtimeMode: "agent" | "studio";
+}): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label="Runtime mode"
+      className="flex h-9 items-center gap-0.5 rounded-capsule border border-line-2 bg-surface-1 p-0.5 shadow-lv1"
+    >
+      <span
+        aria-current={runtimeMode === "agent" ? "true" : undefined}
+        className={cn(
+          "inline-flex h-full items-center rounded-capsule px-3.5 text-[12.5px]",
+          runtimeMode === "agent"
+            ? "bg-interactive-active font-medium text-ink-primary"
+            : "text-ink-tertiary",
+        )}
+      >
+        Agent
+      </span>
+      <button
+        type="button"
+        disabled
+        title="Vex Studio - coming soon"
+        aria-label="Studio mode (coming soon)"
+        className="inline-flex h-full cursor-not-allowed items-center gap-1.5 rounded-capsule px-3.5 text-[12.5px] text-ink-caption"
+      >
+        Studio
+        <IconLock size={12} className="shrink-0" />
+      </button>
+    </div>
   );
 }

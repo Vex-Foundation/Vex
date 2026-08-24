@@ -190,7 +190,7 @@ describe("getAgentScan scope", () => {
     expect(params[0]).toEqual([WALLET_EVM, WALLET_EVM_LOWER, WALLET_SOL]);
   });
 
-  it("makes sessionId NARROW the scope — an AND on top of the wallet filter", async () => {
+  it("makes sessionId NARROW the scope - an AND on top of the wallet filter", async () => {
     await getAgentScan({ cursor: null, filters: { sessionId: SESSION } }, CORRELATION_ID);
     const { sql, params } = pageCall();
     expect(sql).toContain("aa.wallet_address = ANY($1::text[])");
@@ -256,7 +256,7 @@ describe("getAgentScan row selection", () => {
     }
   });
 
-  it("projects the fee leg onto its parent UNCONDITIONALLY — no fee leg is its own row now", async () => {
+  it("projects the fee leg onto its parent UNCONDITIONALLY - no fee leg is its own row now", async () => {
     // The projection used to skip a fee leg that was already its own ledger
     // entry. With no fee leg rendering as a row, that guard would hide the
     // charge completely; its removal is what keeps the money visible.
@@ -271,7 +271,7 @@ describe("getAgentScan row selection", () => {
     expect(sql).not.toContain("fee.kind");
   });
 
-  it("reads agent_activity ONLY — no legacy union arm", async () => {
+  it("reads agent_activity ONLY - no legacy union arm", async () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();
     expect(sql).not.toContain("proj_activity");

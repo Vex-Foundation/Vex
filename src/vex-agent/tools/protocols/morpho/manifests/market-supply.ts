@@ -38,6 +38,7 @@ import {
  */
 export const MORPHO_MARKET_SUPPLY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.supply",
+  publicName: "morpho__market_supply",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -45,13 +46,13 @@ export const MORPHO_MARKET_SUPPLY_TOOL: ProtocolToolManifest = {
     + "of through a curated vault. This SPENDS real funds, signs and broadcasts on-chain transactions from the "
     + "user's wallet, and cannot be undone. THIS IS THE LENDER'S SIDE AND IT IS NOT COLLATERAL: it earns interest, "
     + "it backs nobody's loan, and it is a different token from the one "
-    + "`morpho.market.supplyCollateral` moves. It is also NOT `morpho.vault.deposit`: a vault spreads the same money "
+    + "`morpho__market_supply_collateral` moves. It is also NOT `morpho__vault_deposit`: a vault spreads the same money "
     + "over several markets under a curator who reallocates it, and charges a performance fee for doing so. "
     + `${MORPHO_LENDER_CHOICE_SENTENCE} `
     + `${MORPHO_LENDER_NO_HEALTH_SENTENCE} `
     + "WHAT THE POSITION ACTUALLY IS: supplied assets are accounted in SUPPLY SHARES, not an ERC-20 token, so nothing "
     + "is minted to the wallet and nothing shows up in a token balance. Read the position back with "
-    + "`morpho.positions.get`. Interest accrues into the share price, so the amount withdrawable grows without any "
+    + "`morpho__positions_get`. Interest accrues into the share price, so the amount withdrawable grows without any "
     + "further transaction. "
     + `${MORPHO_MARKET_QUOTE_FIRST_SENTENCE} `
     + `${MORPHO_PULLING_CONSENT_SENTENCE} `
@@ -87,7 +88,7 @@ export const MORPHO_MARKET_SUPPLY_TOOL: ProtocolToolManifest = {
       description:
         "How much of the LOAN asset to lend, in the LOAN token's RAW base units as a whole-number string. THE SCALE "
         + "IS THE LOAN TOKEN'S OWN, which is usually NOT the collateral token's: read `loanAsset.decimals` from "
-        + "`morpho.market.get`. A human decimal amount is refused, not rounded. `supplyCollateralAmountRaw` is a "
+        + "`morpho__market_get`. A human decimal amount is refused, not rounded. `supplyCollateralAmountRaw` is a "
         + "DIFFERENT operation on a DIFFERENT token and is refused by name rather than accepted here.",
     },
     {

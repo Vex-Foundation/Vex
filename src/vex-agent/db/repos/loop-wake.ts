@@ -1,5 +1,5 @@
 /**
- * Loop wake requests repo — durable substrate for `loop_defer` and the wake
+ * Loop wake requests repo — durable substrate for `LoopDefer` and the wake
  * executor.
  *
  * Schema lives in `011_loop_wake_requests.sql`, relaxed by
@@ -7,7 +7,7 @@
  *   - MISSION RUN — `missionRunId` set. Claimed by run status (`paused_wake`).
  *   - AGENT SESSION — `missionRunId` null. A Full-Autonomous agent chat has no
  *     run row, so its continuation is session-scoped and the executor claims
- *     the session lease instead. `loop_defer` still only ever writes the
+ *     the session lease instead. `LoopDefer` still only ever writes the
  *     mission shape.
  *
  * Rows progress one-way:
@@ -64,7 +64,7 @@ export interface EnqueueInput {
 /**
  * Insert a pending wake row. Returns the inserted row, or `null` when a
  * pending row already exists for this session (partial unique index hits
- * `ON CONFLICT DO NOTHING`). The `loop_defer` handler treats `null` as a
+ * `ON CONFLICT DO NOTHING`). The `LoopDefer` handler treats `null` as a
  * no-op and surfaces that back to the model so it doesn't double-enqueue.
  *
  * `client` lets a caller INSERT inside its own transaction. The agent-session

@@ -1,0 +1,181 @@
+{
+  "version": "kyberswap-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-kyberswap",
+  "datasetVersion": "kyberswap-v1",
+  "status": "captured",
+  "capturedAt": "2026-08-22T14:13:17.267Z",
+  "metrics": {
+    "overall": {
+      "count": 20,
+      "recall1": 0.2,
+      "recall5": 0.4,
+      "coverage5": 0.4,
+      "mrr5": 0.279,
+      "groupMrr5": 0.279
+    },
+    "awareness": {
+      "blind": {
+        "count": 12,
+        "recall1": 0.167,
+        "recall5": 0.25,
+        "coverage5": 0.25,
+        "mrr5": 0.188,
+        "groupMrr5": 0.188
+      },
+      "protocolAware": {
+        "count": 8,
+        "recall1": 0.25,
+        "recall5": 0.625,
+        "coverage5": 0.625,
+        "mrr5": 0.417,
+        "groupMrr5": 0.417
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 20,
+        "recall1": 0.2,
+        "recall5": 0.4,
+        "coverage5": 0.4,
+        "mrr5": 0.279,
+        "groupMrr5": 0.279
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "bridge": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 15,
+        "recall1": 0.2,
+        "recall5": 0.333,
+        "coverage5": 0.333,
+        "mrr5": 0.256,
+        "groupMrr5": 0.256
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 5,
+        "recall1": 0.2,
+        "recall5": 0.6,
+        "coverage5": 0.6,
+        "mrr5": 0.35,
+        "groupMrr5": 0.35
+      },
+      "workflow": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
+    "overall recall@1 0.2, recall@5 0.4, coverage@5 0.4, mrr@5 0.279, groupMrr@5 0.279.",
+    "Measured delta vs previous baseline (kyberswap-v1, captured 2026-08-22T13:40:39.501Z): 12 metric values moved; overall recall@5 0.4 -> 0.4, overall mrr@5 0.338 -> 0.279, case count 20 -> 20."
+  ]
+}

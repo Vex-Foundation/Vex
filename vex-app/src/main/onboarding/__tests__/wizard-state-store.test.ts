@@ -361,7 +361,7 @@ describe("WizardStateStore.peekCompleted (write-protection guard)", () => {
     // store instance, then creating a FRESH store with the same
     // filePath and peeking.
     const first = new WizardStateStore({ filePath });
-    await first.load(); // recovery branch — defaults written + marker touched
+    await first.load(); // recovery branch - defaults written + marker touched
 
     const second = new WizardStateStore({ filePath });
     expect(await second.peekCompleted()).toBeNull();

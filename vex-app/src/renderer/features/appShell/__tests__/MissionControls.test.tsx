@@ -22,6 +22,8 @@ import { createElement, type ReactNode } from "react";
 import { useSubmitChat } from "../../../lib/api/chat.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { MissionControls } from "../MissionControls.js";
+import { MISSION_SETUP_STALL_PROMPT_MS } from "../MissionSetupProgress.js";
+import { resetMissionContractRequests } from "../mission-contract-request.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000d1";
 const MISSION = "mission-1";
@@ -43,6 +45,11 @@ const renewMock = vi.fn();
 const chatSubmitMock = vi.fn();
 const getPlanMock = vi.fn();
 const onTranscriptAppendMock = vi.fn(() => vi.fn());
+import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
+type MissionUpdateListener = (event: MissionUpdateEvent) => void;
+const onMissionUpdateMock = vi.fn(
+  (_cb: MissionUpdateListener): (() => void) => vi.fn(),
+);
 
 function setVex(): void {
   Object.defineProperty(window, "vex", {
@@ -65,6 +72,7 @@ function setVex(): void {
       chat: { submit: chatSubmitMock },
       engine: makeEngineBridgeStub({
         onTranscriptAppend: onTranscriptAppendMock,
+        onMissionUpdate: onMissionUpdateMock,
       }),
     },
   });
@@ -88,7 +96,25 @@ function runtimeState(over: Record<string, unknown>) {
 }
 
 function draftReady() {
-  return ok({ missionId: MISSION, status: "ready" });
+  return ok({
+    missionId: MISSION,
+    status: "ready",
+    // The OWNER's capability answer, carried on the DTO. The renderer no longer
+    // re-derives acceptability from `status`, so a stub that omits it is not a
+    // valid `mission.getDraft` response.
+    canAcceptContract: true,
+    missingFields: [],
+  });
+}
+
+/** A contract the agent is still writing - the state the dead end lived in. */
+function draftInSetup(missingFields: readonly string[] = ["goal", "stopConditions"]) {
+  return {
+    missionId: MISSION,
+    status: "draft",
+    canAcceptContract: false,
+    missingFields,
+  };
 }
 
 function diffAccepted(isAccepted: boolean, isDirty = false) {
@@ -146,6 +172,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // Any request left pending by a test settles as `cancelled` - never leaks
+  // into the next test, and never resolves as anything but the truth.
+  resetMissionContractRequests();
   useUiStore.setState({ reviewModal: "none" });
   // @ts-expect-error — test cleanup
   delete window.vex;
@@ -164,7 +193,7 @@ describe("MissionControls", () => {
     const startBtn = await screen.findByRole("button", { name: "Start mission" });
     // Accepted-clean contract → the acceptance-pending notice AND the review
     // bar must be gone (the Start CTA is the deterministic signal from here).
-    expect(screen.queryByText(/Mission contract not accepted/i)).toBeNull();
+    expect(screen.queryByText(/stay blocked until the contract is accepted/i)).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
@@ -173,7 +202,7 @@ describe("MissionControls", () => {
     expect(startMock).toHaveBeenCalledWith({ sessionId: SESSION, missionId: MISSION });
   });
 
-  it("shows the Review & accept contract bar (not Start, not the notice) for a ready, unaccepted contract — the MISSION READY state", async () => {
+  it("shows the Review & accept contract bar (not Start, not the notice) for a ready, unaccepted contract - the MISSION READY state", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -183,7 +212,7 @@ describe("MissionControls", () => {
     const reviewBtn = await screen.findByRole("button", {
       name: "Review & accept contract",
     });
-    expect(screen.queryByText(/Mission contract not accepted/i)).toBeNull();
+    expect(screen.queryByText(/stay blocked until the contract is accepted/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
     // Store wiring: clicking the bar opens the mission dialog via uiStore.
     expect(useUiStore.getState().reviewModal).toBe("none");
@@ -191,20 +220,20 @@ describe("MissionControls", () => {
     expect(useUiStore.getState().reviewModal).toBe("mission");
   });
 
-  it("keeps the bar hidden while the plan read is still PENDING — unknown plan state is not readiness", async () => {
+  it("keeps the bar hidden while the plan read is still PENDING - unknown plan state is not readiness", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
     getPlanMock.mockImplementation(() => new Promise(() => {})); // never settles
     renderControls();
 
-    await screen.findByText(/Mission contract not accepted/i);
+    await screen.findByText(/stay blocked until the contract is accepted/i);
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
   });
 
-  it("keeps the bar hidden after a FAILED plan read — a failed read must not unlock readiness", async () => {
+  it("keeps the bar hidden after a FAILED plan read - a failed read must not unlock readiness", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -214,13 +243,13 @@ describe("MissionControls", () => {
     });
     renderControls();
 
-    await screen.findByText(/Mission contract not accepted/i);
+    await screen.findByText(/stay blocked until the contract is accepted/i);
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
   });
 
-  it("keeps the bar hidden while an enabled plan is still missing — MissionRail's Preparing state must win", async () => {
+  it("keeps the bar hidden while an enabled plan is still missing - MissionRail's Preparing state must win", async () => {
     // Shared readiness predicate (planMissing, exported by MissionRail): a
     // ready draft with plan-mode ON but an empty plan body is NOT the
     // MISSION READY state — the rail says Preparing, and the bar must agree.
@@ -231,23 +260,156 @@ describe("MissionControls", () => {
     renderControls();
 
     // The standing notice (the pre-existing affordance) stays instead.
-    await screen.findByText(/Mission contract not accepted/i);
+    await screen.findByText(/stay blocked until the contract is accepted/i);
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
   });
 
-  it("shows the standing acceptance-pending notice while the draft is still in setup", async () => {
+  /**
+   * DELIBERATE EXPECTATION CHANGE. This test previously read:
+   *
+   *   it("shows the standing acceptance-pending notice while the draft is
+   *      still in setup", ...)
+   *     await screen.findByText(/stay blocked until the contract is accepted/i);
+   *     expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
+   *     expect(
+   *       screen.queryByRole("button", { name: "Review & accept contract" }),
+   *     ).toBeNull();
+   *
+   * It asserted that in the setup state the surface offers NO control at all -
+   * it codified the reported dead end as intended behaviour. Start and Review &
+   * accept must still be absent (the contract genuinely is not acceptable yet,
+   * and offering Accept on a `draft`-status contract would only relocate the
+   * dead end to `commit-start`'s `not_ready`), but "no next action" is exactly
+   * the bug. The notice now names the state, the blocked consequence, the actor
+   * who must act, the exact missing fields, and carries a control.
+   */
+  it("names the state, the actor and the missing fields, and carries a control, while the draft is still in setup", async () => {
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
-    getDraftMock.mockResolvedValue(ok({ missionId: MISSION, status: "draft" }));
+    getDraftMock.mockResolvedValue(ok(draftInSetup(["goal", "stopConditions"])));
     getDiffMock.mockResolvedValue(diffAccepted(false));
     renderControls();
 
-    await screen.findByText(/Mission contract not accepted/i);
+    const notice = await screen.findByRole("status");
+    expect(notice.getAttribute("data-vex-readiness")).toBe("drafting");
+    // State + consequence.
+    expect(notice.textContent).toMatch(/Vex is still writing the mission contract/i);
+    expect(notice.textContent).toMatch(
+      /On-chain actions \(swaps, bridges, sends\) stay blocked/i,
+    );
+    // The actor: NOT the user. This is the specific defect being fixed.
+    expect(notice.textContent).toMatch(/Only Vex can fill these fields/i);
+    // The concrete losses, enumerated - not summarised.
+    const missing = notice.querySelector(
+      '[data-vex-state="mission-missing-fields"]',
+    );
+    expect(missing).not.toBeNull();
+    expect(missing?.textContent).toMatch(/Goal/);
+    expect(missing?.textContent).toMatch(/Stop conditions/);
+    // The way forward. Keyboard-reachable and correctly named.
+    const control = screen.getByRole("button", { name: "Show mission contract" });
+    expect((control as HTMLButtonElement).disabled).toBe(false);
+    control.focus();
+    expect(document.activeElement).toBe(control);
+    fireEvent.click(control);
+    expect(useUiStore.getState().reviewModal).toBe("mission");
+
+    // Still correctly withheld: the contract is not acceptable or startable yet.
     expect(screen.queryByRole("button", { name: "Start mission" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
+  });
+
+  it("escalates to the stalled copy after a setup turn that wrote nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+      getDraftMock.mockResolvedValue(ok(draftInSetup(["goal"])));
+      getDiffMock.mockResolvedValue(diffAccepted(false));
+      let emit: MissionUpdateListener | null = null;
+      onMissionUpdateMock.mockImplementation((cb: MissionUpdateListener) => {
+        emit = cb;
+        return vi.fn();
+      });
+      renderControls();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-vex-readiness="drafting"]'),
+        ).not.toBeNull(),
+      );
+      expect(screen.getByRole("status").textContent).toMatch(
+        /Vex is still writing the mission contract/i,
+      );
+
+      // The engine reports a setup turn that produced no patch.
+      act(() => {
+        emit?.({
+          type: "engine.mission.update" as const,
+          sessionId: SESSION,
+          missionId: MISSION,
+          kind: "setup_no_progress",
+          occurredAt: new Date().toISOString(),
+        });
+      });
+      // A threshold, not a spinner: nothing escalates before it elapses, so an
+      // ordinary clarifying question the user is already answering never trips.
+      expect(screen.getByRole("status").textContent).not.toMatch(
+        /did not add anything/i,
+      );
+      act(() => {
+        vi.advanceTimersByTime(MISSION_SETUP_STALL_PROMPT_MS);
+      });
+      expect(screen.getByRole("status").textContent).toMatch(
+        /Vex's last reply did not add anything to the mission contract/i,
+      );
+      // The escape hatch is named explicitly.
+      expect(screen.getByRole("status").textContent).toMatch(
+        /Nothing will change until you reply/i,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the stalled state when a later mission update reports real progress", async () => {
+    vi.useFakeTimers();
+    try {
+      getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
+      getDraftMock.mockResolvedValue(ok(draftInSetup(["goal"])));
+      getDiffMock.mockResolvedValue(diffAccepted(false));
+      let emit: MissionUpdateListener | null = null;
+      onMissionUpdateMock.mockImplementation((cb: MissionUpdateListener) => {
+        emit = cb;
+        return vi.fn();
+      });
+      renderControls();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-vex-readiness="drafting"]'),
+        ).not.toBeNull(),
+      );
+
+      const update = (kind: MissionUpdateEvent["kind"]): MissionUpdateEvent => ({
+        type: "engine.mission.update",
+        sessionId: SESSION,
+        missionId: MISSION,
+        kind,
+        occurredAt: new Date().toISOString(),
+      });
+      act(() => emit?.(update("setup_no_progress")));
+      act(() => emit?.(update("draft_updated")));
+      act(() => {
+        vi.advanceTimersByTime(MISSION_SETUP_STALL_PROMPT_MS * 2);
+      });
+      // The armed escalation was cancelled by the real change.
+      expect(screen.getByRole("status").textContent).not.toMatch(
+        /did not add anything/i,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("holds the review bar until the chat turn settles, revealing it only once chatSubmitting goes false (no mid-turn flash)", async () => {
@@ -281,7 +443,7 @@ describe("MissionControls", () => {
 
     // Turn still in flight → the bar is HELD; the pre-existing standing
     // notice covers this state instead (never both at once).
-    await screen.findByText(/Mission contract not accepted/i);
+    await screen.findByText(/stay blocked until the contract is accepted/i);
     expect(
       screen.queryByRole("button", { name: "Review & accept contract" }),
     ).toBeNull();
@@ -454,18 +616,18 @@ describe("MissionControls", () => {
     expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 
-  it("hides Renew once a fresh draft exists (post-renew) — no duplicate-draft loop", async () => {
+  it("hides Renew once a fresh draft exists (post-renew) - no duplicate-draft loop", async () => {
     // After mission.renew, a fresh status='draft' mission exists, but
     // getRenewableSource STILL returns the old terminal accepted mission. Renew
     // must NOT linger — else it looks like it "did nothing" and each extra click
     // clones another duplicate draft. The fresh draft's acceptance UI wins.
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
-    getDraftMock.mockResolvedValue(ok({ missionId: MISSION, status: "draft" }));
+    getDraftMock.mockResolvedValue(ok(draftInSetup()));
     getDiffMock.mockResolvedValue(diffAccepted(false));
     getRenewableMock.mockResolvedValue(ok({ missionId: "m-done" }));
     renderControls();
 
-    await screen.findByText(/Mission contract not accepted/i);
+    await screen.findByText(/stay blocked until the contract is accepted/i);
     expect(screen.queryByRole("button", { name: "Renew mission" })).toBeNull();
   });
 
@@ -518,7 +680,7 @@ describe("MissionControls", () => {
   });
 });
 
-describe("MissionControls — paused_error standing alert (issue #42)", () => {
+describe("MissionControls - paused_error standing alert (issue #42)", () => {
   it("renders the alert with the eyebrow, provider_error copy, and the warning line", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({
@@ -534,7 +696,7 @@ describe("MissionControls — paused_error standing alert (issue #42)", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.getAttribute("data-vex-area")).toBe("mission-error-alert");
-    expect(alert.textContent).toMatch(/Mission paused — error/i);
+    expect(alert.textContent).toMatch(/Mission paused - error/i);
     expect(alert.textContent).toMatch(
       /The mission paused after an inference or runtime error\./,
     );

@@ -31,7 +31,7 @@ import {
   casSummaryReady,
   claimBranch,
 } from "../../db/repos/compaction-preparations/index.js";
-import { emitEngineError } from "../runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
 import logger from "@utils/logger.js";
 
@@ -177,8 +177,8 @@ export async function runSummaryBranchTick(
       // prepared cutover: the user must be able to see that, because the next
       // turns are the ones that walk into the context wall.
       //
-      // Bounded codes only — `errorMsg` is raw provider/exception text and
-      // stays in the bug report, not on the error bus.
+      // Codes plus the raw message as `detail` - sanitized at the main-side
+      // bridge before it can reach the renderer (owner decree 2026-08-02).
       const signal = readMissionErrorSignal(err);
       emitEngineError({
         sessionId: preparation.sessionId,
@@ -188,6 +188,7 @@ export async function runSummaryBranchTick(
         statusCode: signal.status,
         causeCode: signal.causeCode,
         retryAfterSeconds: signal.retryAfterSeconds,
+        detail: errorDetailOf(err),
       });
       await emitPreparationBranchPermanentlyFailedBug({
         preparationId: preparation.id,

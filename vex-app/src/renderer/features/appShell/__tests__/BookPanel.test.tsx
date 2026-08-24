@@ -23,9 +23,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 vi.mock("../book/PositionBlock.js", () => ({
   PositionBlock: () => <div data-testid="card-position" />,
 }));
@@ -33,15 +30,21 @@ vi.mock("../book/SessionWalletsCard.js", () => ({
   SessionWalletsCard: () => <div data-testid="card-wallets" />,
 }));
 vi.mock("../book/portfolio/BalancesCard.js", () => ({
-  BalancesCard: ({ sessionId }: { readonly sessionId?: string | null }) => (
-    <div data-testid="card-balances" data-session-id={sessionId ?? ""} />
+  BalancesCard: ({
+    scope,
+  }: {
+    readonly scope:
+      | { readonly kind: "global" }
+      | { readonly kind: "session"; readonly sessionId: string };
+  }) => (
+    <div
+      data-testid="card-balances"
+      data-session-id={scope.kind === "session" ? scope.sessionId : ""}
+    />
   ),
 }));
 vi.mock("../book/SessionActivityCard.js", () => ({
   SessionActivityCard: () => <div data-testid="card-activity" />,
-}));
-vi.mock("../book/SessionRuntimeCard.js", () => ({
-  SessionRuntimeCard: () => <div data-testid="card-runtime" />,
 }));
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="card-session" />,
@@ -84,7 +87,6 @@ const CARD_ORDER = [
   "card-wallets",
   "card-balances",
   "card-activity",
-  "card-runtime",
   "card-session",
   "card-images",
 ] as const;
@@ -129,7 +131,7 @@ describe("BookPanel chrome", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
-  it("routes the WELCOME stage to the floating Portfolio tab — no rail chrome at all", () => {
+  it("routes the WELCOME stage to the floating Portfolio tab - no rail chrome at all", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
     const tab = screen.getByTestId("welcome-portfolio-panel");
     expect(tab.getAttribute("data-book-open")).toBe("true");
@@ -165,7 +167,7 @@ describe("the launch surface is reachable", () => {
     ).toBe(SESSION);
   });
 
-  it("does not mount the Trench card on the welcome stage — a launch needs a session", () => {
+  it("does not mount the Trench card on the welcome stage - a launch needs a session", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
     expect(screen.queryByTestId("card-images")).toBeNull();
   });
@@ -210,11 +212,10 @@ describe("BookPanel session card stack", () => {
       "card-wallets",
       "card-balances",
       "card-activity",
-      "card-runtime",
-    ]);
+        ]);
   });
 
-  it("keeps the SESSION rail on session stage — the welcome tab never mounts there", () => {
+  it("keeps the SESSION rail on session stage - the welcome tab never mounts there", () => {
     render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
     expect(screen.queryByTestId("welcome-portfolio-panel")).toBeNull();
   });

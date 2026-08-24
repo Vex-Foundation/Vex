@@ -2,9 +2,9 @@
  * Quote/execute PARITY on the chain param (Wave B, card CP).
  *
  * Batch 1 (`numeric-chain-id-routing.test.ts`) widened only the READ-ONLY
- * quote aliases: `swap_quote`, `swap_quote_uniswap`, `token_check`. The two
+ * quote aliases: `SwapQuote`, `SwapQuoteUniswap`, `TokenCheck`. The two
  * MUTATING executes kept a bare `z.string()`, so an agent could quote a trade
- * with `chain: 8453` — the exact form `token_find` hands back — and have the
+ * with `chain: 8453` — the exact form `TokenFind` hands back — and have the
  * execute of that same trade refused with "expected string, received number".
  *
  * A quote/execute asymmetry on a money path is a silent dead end: nothing in
@@ -38,7 +38,6 @@ import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
 import { handleSwapQuote } from "@vex-agent/tools/internal/action-aliases.js";
 import { MUTATING_PROTOCOL_ALIAS_ROUTERS } from "@vex-agent/tools/mutating-aliases.js";
 import { computePrequoteMatchHash } from "@vex-agent/tools/protocols/swap-prequote.js";
-import { revealUniswapPair } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -81,7 +80,7 @@ beforeEach(() => {
 });
 
 /**
- * The SYNC routers only. `bridge` is async (its venue depends on the live
+ * The SYNC routers only. `BridgeExecute` is async (its venue depends on the live
  * Khalani chain registry) and is not exercised here; narrowing the return type
  * at this seam keeps these swap cases readable without an await per assertion.
  */
@@ -98,12 +97,12 @@ function mutatingRouter(name: string): (args: Record<string, unknown>, sessionId
   };
 }
 
-const routeSwapExecute = mutatingRouter("swap_execute");
-const routeSwapExecuteUniswap = mutatingRouter("swap_execute_uniswap");
+const routeSwapExecute = mutatingRouter("SwapExecute");
+const routeSwapExecuteUniswap = mutatingRouter("SwapExecuteUniswap");
 
 const EXECUTE_ARGS = { tokenIn: WETH_BASE, tokenOut: USDC_BASE, amountIn: "1.5" };
 
-describe("swap_execute — the execute half accepts every chain form the quote half does", () => {
+describe("SwapExecute — the execute half accepts every chain form the quote half does", () => {
   it("accepts a JSON NUMBER chain id and routes KyberSwap on the canonical slug", () => {
     const target = routeSwapExecute({ chain: 8453, ...EXECUTE_ARGS }, "sess-exec-1");
 
@@ -151,11 +150,9 @@ describe("swap_execute — the execute half accepts every chain form the quote h
 
     const message = thrown instanceof Error ? thrown.message : "";
     expect(message).toContain(`chain id ${UNKNOWN_CHAIN_ID} is not a chain Vex can swap on`);
-    expect(message).toContain("either its slug or the chain id token_find");
+    expect(message).toContain("either its slug or the chain id TokenFind");
     // Honest attribution — never "KyberSwap does not support it", which would
-    // also spend the session's one-shot Uniswap reveal on a formatting problem.
     expect(message).not.toMatch(/KyberSwap does not support/i);
-    expect((thrown as { revealEligible?: boolean }).revealEligible).toBe(false);
   });
 
   it("still rejects a chain that is neither a slug, an id, nor solana", () => {
@@ -180,10 +177,9 @@ describe("swap_execute — the execute half accepts every chain form the quote h
   });
 });
 
-describe("swap_execute_uniswap — the hidden execute accepts the same forms post-reveal", () => {
+describe("SwapExecuteUniswap — the venue execute accepts the same forms", () => {
   it("accepts a JSON NUMBER chain id and resolves the Uniswap deployment key", () => {
     const sessionId = "sess-exec-uni-1";
-    revealUniswapPair(sessionId);
 
     const target = routeSwapExecuteUniswap({ chain: 8453, ...EXECUTE_ARGS }, sessionId);
 
@@ -193,7 +189,6 @@ describe("swap_execute_uniswap — the hidden execute accepts the same forms pos
 
   it("accepts a digit-string and a slug identically", () => {
     const sessionId = "sess-exec-uni-2";
-    revealUniswapPair(sessionId);
 
     expect(routeSwapExecuteUniswap({ chain: "8453", ...EXECUTE_ARGS }, sessionId).params.chain).toBe("base");
     expect(routeSwapExecuteUniswap({ chain: "base", ...EXECUTE_ARGS }, sessionId).params.chain).toBe("base");
@@ -201,7 +196,6 @@ describe("swap_execute_uniswap — the hidden execute accepts the same forms pos
 
   it("still refuses a chain with no verified Uniswap deployment", () => {
     const sessionId = "sess-exec-uni-3";
-    revealUniswapPair(sessionId);
 
     expect(() => routeSwapExecuteUniswap({ chain: Number(UNKNOWN_CHAIN_ID), ...EXECUTE_ARGS }, sessionId))
       .toThrow(/no verified Uniswap deployment/i);

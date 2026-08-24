@@ -1,21 +1,17 @@
 /**
  * Public session-list building blocks for the sidebar and the library view:
- * the grouped list (`SessionGroups`), the loading / error / empty placeholders,
- * and the small `SidebarIconButton`. The presentational internals — a single
- * ledger row, its trash/pin actions, the exception stamp, and the shared
- * placeholder strip — live as co-located subcomponents under `./SessionRows/`.
- *
- * This file keeps the existing public export surface; importers are unchanged.
+ * the grouped list (`SessionGroups`) mapping session items onto the generic
+ * RailGroup/RailRow primitives, the loading / error / empty placeholders,
+ * and the small `SidebarIconButton`. The presentational internals — the row,
+ * its trash/pin actions, the hover-card body, and the shared placeholder
+ * strip — live as co-located subcomponents under `./SessionRows/`.
  */
 
 import type { JSX } from "react";
-import {
-  ArchiveIcon,
-  CircleStopIcon,
-  VexIcon,
-} from "../../components/icons/index.js";
+import { IconArchive, IconWarning } from "../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { DotmSquare3 } from "../../components/ui/dotm-square-3.js";
+import { RailGroup } from "../../components/ui/rail-list.js";
 import { type SessionGroup } from "./sessionListModel.js";
 import { ListPlaceholder } from "./SessionRows/ListPlaceholder.js";
 import { SessionRow } from "./SessionRows/SessionRow.js";
@@ -27,6 +23,8 @@ interface SessionGroupsProps {
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
   readonly onRequestRemove: (row: SessionListItem) => void;
+  /** Inline-rename persist; omit to disable double-click rename (library). */
+  readonly onRename?: (id: string, name: string) => void;
   readonly pendingPinId: string | null;
   /**
    * Namespace for `<section aria-labelledby>` / `<h2 id>` pairs so the
@@ -44,55 +42,38 @@ export function SessionGroups({
   onSelect,
   onTogglePin,
   onRequestRemove,
+  onRename,
   pendingPinId,
   idPrefix,
 }: SessionGroupsProps): JSX.Element {
   return (
-    // gap-3 (12px) between sections — SIDEBAR_GROUP_GAP_PX must stay in
-    // lockstep (sessionListLayout.ts).
+    // gap-3 (12px) between sections; rows inside a group sit on RailGroup's
+    // 2px column.
     <div className="flex flex-col gap-3">
       {groups.map((group) => {
         if (group.rows.length === 0) return null;
-        // When the sidebar is collapsed we hide the <h2>, so referring
-        // back to it via aria-labelledby would point at nothing. Fall
-        // back to an aria-label that names the section directly.
-        const sectionId = `${idPrefix}-${group.key}`;
         return (
-          <section
+          <RailGroup
             key={group.key}
-            aria-labelledby={sidebarOpen ? sectionId : undefined}
-            aria-label={sidebarOpen ? undefined : group.title}
+            title={group.title}
+            collapsed={!sidebarOpen}
+            headingId={`${idPrefix}-${group.key}`}
           >
-            {sidebarOpen ? (
-              // Landing eyebrow group header (mono micro-label + leading
-              // rule, globals.css `.vex-eyebrow`). The h2 keeps layout
-              // control (flex/h-6) and the span carries the eyebrow so the
-              // unlayered utility never fights Tailwind's display classes.
-              // h-6 (24px) + mb-1 (4px) = SIDEBAR_GROUP_HEADER_HEIGHT_PX.
-              <h2
-                id={sectionId}
-                className="mb-1 flex h-6 items-center px-2"
-              >
-                <span className="vex-eyebrow">{group.title}</span>
-              </h2>
-            ) : null}
-            {/* Rows are hairline-separated (border-b on each <li>), not
-             * gapped — SIDEBAR_ROW_GAP_PX = 0 must stay in lockstep. */}
-            <ol className="flex flex-col">
-              {group.rows.map((row) => (
+            {group.rows.map((row) => (
+              <li key={row.id}>
                 <SessionRow
-                  key={row.id}
                   row={row}
                   selected={row.id === activeSessionId}
                   sidebarOpen={sidebarOpen}
                   onSelect={onSelect}
                   onTogglePin={onTogglePin}
                   onRequestRemove={onRequestRemove}
+                  onRename={onRename}
                   pinPending={pendingPinId === row.id}
                 />
-              ))}
-            </ol>
-          </section>
+              </li>
+            ))}
+          </RailGroup>
         );
       })}
     </div>
@@ -132,7 +113,7 @@ export function SessionsErrorPlaceholder({
       sidebarOpen={sidebarOpen}
       text={message}
       tone="error"
-      icon={<VexIcon icon={CircleStopIcon} size={18} aria-hidden />}
+      icon={<IconWarning size={18} />}
     />
   );
 }
@@ -146,7 +127,7 @@ export function SessionsEmptyPlaceholder({
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
       text="No sessions"
-      icon={<VexIcon icon={ArchiveIcon} size={18} aria-hidden />}
+      icon={<IconArchive size={18} />}
     />
   );
 }
@@ -165,7 +146,7 @@ export function SidebarIconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--vex-text-2)] transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
     >
       {children}
     </button>

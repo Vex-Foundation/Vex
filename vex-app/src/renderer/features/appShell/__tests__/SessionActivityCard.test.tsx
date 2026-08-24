@@ -23,7 +23,6 @@ const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
 }));
-vi.mock("../../../components/icons/VexIcon.js", () => ({ VexIcon: () => null }));
 
 const { SessionActivityCard } = await import("../book/SessionActivityCard.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
@@ -128,7 +127,7 @@ describe("SessionActivityCard", () => {
     expect(container.querySelectorAll("li")).toHaveLength(5);
   });
 
-  it("renders legs from displayAmount ONLY — never the raw amountHuman", () => {
+  it("renders legs from displayAmount ONLY - never the raw amountHuman", () => {
     mockFeed([entry({ id: "a-1" })]);
     const { container } = render(<SessionActivityCard sessionId={SESSION} />);
     const text = container.textContent ?? "";

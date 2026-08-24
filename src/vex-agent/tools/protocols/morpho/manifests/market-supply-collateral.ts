@@ -33,13 +33,14 @@ import {
  */
 export const MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.supplyCollateral",
+  publicName: "morpho__market_supply_collateral",
   namespace: "morpho",
   lifecycle: "active",
   description:
     "SUPPLY COLLATERAL to one Morpho Blue market: move the wallet's own token onto the market to back a loan. This "
     + "SPENDS real funds, signs and broadcasts on-chain transactions from the user's wallet, and cannot be undone. "
     + "COLLATERAL IS NOT A DEPOSIT AND EARNS NOTHING: it sits on the market to support borrowing and to hold the "
-    + "position away from liquidation. A user who wants to EARN on an asset wants `morpho.vault.deposit` instead. "
+    + "position away from liquidation. A user who wants to EARN on an asset wants `morpho__vault_deposit` instead. "
     + "This is the only one of the four market operations that can never make a position less safe, because adding "
     + "collateral only ever raises the health factor. "
     + `${MORPHO_MARKET_QUOTE_FIRST_SENTENCE} `
@@ -74,7 +75,7 @@ export const MORPHO_MARKET_SUPPLY_COLLATERAL_TOOL: ProtocolToolManifest = {
       description:
         "How much COLLATERAL to supply, in the COLLATERAL token's RAW base units as a whole-number string. THE SCALE "
         + "IS THE COLLATERAL TOKEN'S OWN, which is usually NOT the loan token's: read `collateralAsset.decimals` "
-        + "from `morpho.market.get`. A market pairing 8-decimal cbBTC against 6-decimal USDC will silently accept a "
+        + "from `morpho__market_get`. A market pairing 8-decimal cbBTC against 6-decimal USDC will silently accept a "
         + "loan-scaled number as a hundredfold wrong amount, so read the scale rather than assuming it. A human "
         + "decimal amount is refused, not rounded. Another operation's amount key is refused by name.",
     },

@@ -1,0 +1,65 @@
+{
+  "definition": {
+    "function": {
+      "description": "Browse Jupiter prediction-market EVENTS across categories (crypto, sports, politics, esports, culture, economics, tech), filtered by status and sorted by volume or start time. An event is the QUESTION; the tradable YES/NO contracts are the MARKETS nested inside it. Use this when the user wants to see what is on offer rather than a topic they can already name - solana__predict_events_search finds a named one, solana__predict_event_get reads one already-known eventId. Returns `data`, one row per event: eventId, category, curated metadata (eventId, title, subtitle), and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets (marketId, title, status, result, openTime, closeTime, resolveAt, pricing). Page with offset/limit (integer 1-100, default 20); an out-of-range value is REJECTED by name, never clamped. Continuation is the provider's own `pagination` block, passed through verbatim: start, end, total and `hasNext`. hasNext false is the end of the result set; while it is true, continue by sending offset = pagination.end.",
+      "name": "solana__predict_events_discover",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "description": "Category filter: all, crypto, sports, politics, esports, culture, economics, or tech. Omit for all categories.",
+            "type": "string"
+          },
+          "filter": {
+            "description": "Status filter: trending, live, new, or upcoming (not yet open for trading).",
+            "type": "string"
+          },
+          "includeMarkets": {
+            "description": "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets).",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max results, 1-100 (default 20).",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip first N results for pagination.",
+            "type": "number"
+          },
+          "provider": {
+            "description": "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket.",
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "Sort by: volume or beginAt.",
+            "type": "string"
+          },
+          "sortDirection": {
+            "description": "Sort direction: asc or desc.",
+            "type": "string"
+          },
+          "subcategory": {
+            "description": "Comma-separated subcategory filter.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "Free-text tag filter, e.g. soccer.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.events"
+  }
+}

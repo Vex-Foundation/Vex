@@ -1,7 +1,7 @@
 /**
  * Adversarial pins: rettiwt/X error text must reach NEITHER the transcript NOR the logs.
  *
- * Same defect as the web lane, second tool. `fail(\`twitter_account:
+ * Same defect as the web lane, second tool. `fail(\`TwitterAccount:
  * ${sanitizeTwitterAccountError(error)}\`)` forwarded the provider's own words
  * into `ToolResult.output` — the model's transcript — behind a DENYLIST that
  * redacted three things it had thought of (the configured API key, cookie pairs,
@@ -98,7 +98,7 @@ function twitterError(input: {
   return error;
 }
 
-describe("twitter_account — provider error text never reaches the model or the logs", () => {
+describe("TwitterAccount — provider error text never reaches the model or the logs", () => {
   const originalApiKey = process.env.RETTIWT_API_KEY;
 
   beforeEach(() => {
@@ -120,7 +120,7 @@ describe("twitter_account — provider error text never reaches the model or the
     const result = await handleTwitterAccount({ action: "account_status" }, baseContext);
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("twitter_account:");
+    expect(result.output).toContain("TwitterAccount:");
     expect(result.output).toContain("provider_rejected");
     expectNoPoison(result);
   });

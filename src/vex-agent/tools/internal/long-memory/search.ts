@@ -1,5 +1,5 @@
 /**
- * long_memory_search handler (S3) — the agent's high-level cross-session recall.
+ * MemorySearch handler (S3) — the agent's high-level cross-session recall.
  * Hides the strategy (vector + dual-trace + rerank) behind one tool (genesis
  * §398). Ordered, fail-loud, IO only at the edges:
  *
@@ -78,12 +78,12 @@ export async function handleLongMemorySearch(
   );
   if (unknownParams.length > 0) {
     return fail(
-      `long_memory_search rejected the input — unknown parameter(s): ${unknownParams.join(", ")}. Allowed: ${ALLOWED_SEARCH_PARAMS.join(", ")}.`,
+      `MemorySearch rejected the input — unknown parameter(s): ${unknownParams.join(", ")}. Allowed: ${ALLOWED_SEARCH_PARAMS.join(", ")}.`,
     );
   }
   const mapResult = mapAndValidate(params);
   if (!mapResult.ok) {
-    return fail(`long_memory_search rejected the input — ${firstIssueMessage(mapResult.error)}`);
+    return fail(`MemorySearch rejected the input — ${firstIssueMessage(mapResult.error)}`);
   }
   const input = mapResult.input;
 

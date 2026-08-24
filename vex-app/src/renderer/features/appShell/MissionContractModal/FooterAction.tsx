@@ -15,6 +15,7 @@ import { Button } from "../../../components/ui/button.js";
 import { DialogFooter } from "../../../components/ui/dialog.js";
 import type { CardState } from "./contract-state.js";
 import type { PlanGate } from "./plan-gate.js";
+import { MissionMissingFields } from "../MissionMissingFields.js";
 
 export interface FooterActionProps {
   readonly state: CardState | null;
@@ -38,20 +39,43 @@ export function FooterAction({
   notice,
 }: FooterActionProps): JSX.Element | null {
   if (state === null) return null;
-  const { kind, currentHash } = state;
+  const { kind, currentHash, missingFields } = state;
 
   if (kind === "setup-needed") {
+    // THE defect this rewrite fixes: the old copy read "Add a goal,
+    // constraints, and stop conditions to enable Accept." - an imperative aimed
+    // at the user for fields the user CANNOT edit. `mission.updateDraft`
+    // returns `unavailable` (the host-side draft editor is deliberately
+    // stubbed), so only the agent's `MissionDraftUpdate` tool can write them.
+    // Telling the user to do the impossible was the dead end; naming the real
+    // actor, and the exact fields, is the fix. Shape follows VS Code's
+    // Restricted Mode copy: state, consequence, next action.
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
-        Add a goal, constraints, and stop conditions to enable Accept.
+      <DialogFooter className="flex-col items-start gap-1 border-line-2 text-xs text-ink-tertiary sm:flex-col sm:items-start">
+        <p data-vex-state="contract-incomplete">
+          Vex is still writing this contract. Accepting unlocks once every
+          required field is set, and Vex sets them from your conversation - they
+          cannot be edited here.
+        </p>
+        {missingFields.length > 0 ? (
+          <>
+            <p>Ask Vex for what is still missing:</p>
+            <MissionMissingFields
+              fields={missingFields}
+              surface="contract-modal"
+            />
+          </>
+        ) : (
+          <p>Reading the current contract state.</p>
+        )}
       </DialogFooter>
     );
   }
   if (kind === "accepted") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)] text-xs text-[var(--vex-text-3)]">
+      <DialogFooter className="justify-start border-line-2 text-xs text-ink-tertiary">
         Use the{" "}
-        <span className="text-[var(--vex-accent-text)]">Start mission</span>{" "}
+        <span className="text-accent-primary">Start mission</span>{" "}
         button to dispatch.
       </DialogFooter>
     );
@@ -62,7 +86,7 @@ export function FooterAction({
   // action the engine is known to reject right now.
   if (planGate.kind === "loading") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)]">
+      <DialogFooter className="justify-start border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -78,7 +102,7 @@ export function FooterAction({
   // Retry the user would be stranded here.
   if (planGate.kind === "failed") {
     return (
-      <DialogFooter className="justify-between border-[var(--vex-line)]">
+      <DialogFooter className="justify-between border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -103,7 +127,7 @@ export function FooterAction({
   // first (matches the engine `plan_missing`).
   if (planGate.kind === "missing") {
     return (
-      <DialogFooter className="justify-start border-[var(--vex-line)]">
+      <DialogFooter className="justify-start border-line-2">
         <p
           className="text-xs text-warning"
           role="alert"
@@ -132,9 +156,9 @@ export function FooterAction({
         : "Accept contract";
 
   return (
-    <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-col">
+    <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-[var(--vex-text-3)]">{helperText}</span>
+        <span className="text-xs text-ink-tertiary">{helperText}</span>
         {/* THE single primary action — filled cobalt pill (Button default). */}
         <Button
           type="button"

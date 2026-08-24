@@ -10,7 +10,10 @@
  *  - SESSION stage: the rail below, now carrying the SAME `PortfolioCard`
  *    stack rather than the retired hairline/mono-ledger `BookBlock` grammar
  *    (owner decree: one card system app-wide). Card order — Position,
- *    Wallets, Balances, Activity, Runtime & Cost, Session.
+ *    Wallets, Balances, Activity, Session. An ADDITIVE
+ *    inspect mode (A32/E13, `book/inspect/`) overlays a tool-call view while
+ *    the inspect store holds a payload; the stack hides via CSS, never
+ *    unmounts.
  *
  * The rail floats over the Eclipse backdrop as soft translucent ink
  * (`--vex-rail` + backdrop-blur, guard-whitelisted for exactly this file and
@@ -26,24 +29,28 @@
  * the DESK RULE toggle uses. When collapsed the panel keeps the header bar
  * mounted (chevron-only spine) and hides the stack via CSS (no remount), so
  * the BOOK slide-in keyframe never replays on expand. The version stamp is
- * shown only when expanded. `useAutoCollapseBook` (mounted in `AppShell`)
- * still owns the stage/viewport collapse edges — unchanged by this redesign.
+ * shown only when expanded. Width is owned by the AppShell grid track (the
+ * shell-columns solver derives auto-close and the 48px spine); the rail
+ * only fills its track.
  */
 
-import { useMemo, useRef, useState, type JSX, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import { motion } from "motion/react";
 import {
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
-  VexIcon,
+  IconPanelRight,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
-import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { ImageLockerCard } from "./book/ImageLockerCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
-import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
 import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
 import { BalancesCard } from "./book/portfolio/BalancesCard.js";
 import {
@@ -60,27 +67,22 @@ import {
   resolveBookSectionOrder,
   type BookSectionId,
 } from "./book/section-order.js";
+import { BookInspectPanel } from "./book/inspect/BookInspectPanel.js";
+import { useToolInspectStore } from "./book/inspect/inspect-store.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import type { SessionPermission } from "@shared/schemas/sessions.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */
-function renderBookSection(
-  id: BookSectionId,
-  sessionId: string,
-  permission: SessionPermission | null,
-): ReactNode {
+function renderBookSection(id: BookSectionId, sessionId: string): ReactNode {
   switch (id) {
     case "position":
       return <PositionBlock activeSessionId={sessionId} />;
     case "wallets":
       return <SessionWalletsCard sessionId={sessionId} />;
     case "balances":
-      return <BalancesCard sessionId={sessionId} />;
+      return <BalancesCard scope={{ kind: "session", sessionId }} />;
     case "activity":
       return <SessionActivityCard sessionId={sessionId} />;
-    case "runtime":
-      return <SessionRuntimeCard sessionId={sessionId} permission={permission} />;
     case "session":
       return <SessionBlock sessionId={sessionId} />;
     case "trench":
@@ -123,14 +125,22 @@ export function BookPanel({
   const stackRef = useRef<HTMLUListElement>(null);
   useScrollbarVisibility(stackRef);
 
-  // The rail owns the session read that the Runtime & Cost card's apply
-  // control needs: permission is a session-STATIC axis, so a prop cannot go
-  // stale, and the query is already cached by the mission rail under the same
-  // key. Called before the welcome-stage early return so hook order is stable.
-  const sessionQuery = useSession(activeSessionId);
-  const permission = sessionQuery.data?.ok
-    ? (sessionQuery.data.data?.permission ?? null)
-    : null;
+  // INSPECT mode (A32/E13) — an ADDITIVE view: while a tool-call payload for
+  // THIS session is open, the inspect panel shows and the card stack hides
+  // via CSS (it stays mounted, so no card state or query is lost and the
+  // stack's enter stagger never replays on close). A session switch closes
+  // the view — a stale call from another session must never render.
+  const inspect = useToolInspectStore((s) => s.inspect);
+  const closeToolInspect = useToolInspectStore((s) => s.closeToolInspect);
+  useEffect(() => {
+    closeToolInspect();
+  }, [activeSessionId, closeToolInspect]);
+  const inspecting =
+    inspect !== null && inspect.sessionId === activeSessionId;
+
+  // One static glyph for both states, like the left rail toggle - the
+  // open/close semantic lives in the aria-label.
+  const PanelGlyph = IconPanelRight;
 
   // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
   if (activeSessionId === null) {
@@ -147,8 +157,10 @@ export function BookPanel({
         // glass, NO separating stroke (owner review round 2: even the
         // edge-fading hairline still read as a dividing line). macOS-clean ink
         // glass: the rail carries ONLY the ink tint + blur, no grain overlay.
-        "vex-book-enter relative flex h-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        bookOpen ? "w-[340px] gap-3 p-3" : "w-12 p-0",
+        // Width is OWNED by the AppShell grid track (shell-columns solver:
+        // 300-520 open, 48px spine closed) - the rail only fills it.
+        "vex-book-enter relative flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl",
+        bookOpen ? "gap-3 p-3" : "p-0",
       )}
     >
       {/* Collapse header bar — version stamp + chevron. When collapsed the bar
@@ -160,7 +172,7 @@ export function BookPanel({
         )}
       >
         {bookOpen ? (
-          <span className="vex-micro text-[var(--vex-text-3)]">
+          <span className="vex-micro-label uppercase text-ink-secondary">
             v{__VEX_APP_VERSION__}
           </span>
         ) : null}
@@ -168,14 +180,13 @@ export function BookPanel({
           label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
           onClick={onToggle}
         >
-          <VexIcon
-            icon={bookOpen ? PanelRightCloseIcon : PanelRightOpenIcon}
-            size={17}
-            aria-hidden
-          />
+          <PanelGlyph size={17} />
         </SidebarIconButton>
       </div>
 
+      {bookOpen && inspecting && inspect !== null ? (
+        <BookInspectPanel inspect={inspect} />
+      ) : null}
       {bookOpen ? (
         <motion.ul
           variants={stackVariants}
@@ -183,7 +194,10 @@ export function BookPanel({
           animate="show"
           role="list"
           ref={stackRef}
-          className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+          className={cn(
+            "vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto",
+            inspecting && "hidden",
+          )}
         >
           {order.map((id, index) => (
             <ReorderableSection
@@ -193,7 +207,7 @@ export function BookPanel({
               count={order.length}
               reorder={reorder}
             >
-              {renderBookSection(id, activeSessionId, permission)}
+              {renderBookSection(id, activeSessionId)}
             </ReorderableSection>
           ))}
           {/* The keyboard path's spoken confirmation — the same visually-hidden

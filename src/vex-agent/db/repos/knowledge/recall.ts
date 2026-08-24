@@ -19,7 +19,7 @@ import {
 /**
  * Top-K cosine recall over `knowledge_entries` (S3) — active/model/dim/expiry
  * vector recall whose SELECT/DTO ALSO returns `source` (provenance tier) and
- * `maturity_state` so `long_memory_search` can rank inferred/hypothesis entries
+ * `maturity_state` so `MemorySearch` can rank inferred/hypothesis entries
  * LOWER without excluding them (genesis §951).
  *
  * Fetches `k * 2` raw candidates as headroom; the caller reranks + de-weights

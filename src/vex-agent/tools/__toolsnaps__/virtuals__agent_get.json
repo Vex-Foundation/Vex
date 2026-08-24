@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read ONE Virtuals agent token's full profile by its numeric id. Returns `agent`, which carries every field the screening row does and adds: factory, category, fdvInVirtual, liquidityUsd, graduation state, launchInfo, a bounded tokenomics summary, a sanitized short description excerpt, and a tradingRoute hint {venue, namespace, quoteToken} naming the EXACT existing tool that trades it (uniswap/kyberswap/solana, quoted in VIRTUAL). ALWAYS call this before buying a graduated agent to read the anti-sniper window - never buy while windowActive. Read-only.",
+      "name": "virtuals__agent_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Numeric Virtuals agent id, exactly as virtuals__agents_discover returns it (e.g. 96200 for VEX). The string spelling \"96200\" is accepted too.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.get"
+  }
+}

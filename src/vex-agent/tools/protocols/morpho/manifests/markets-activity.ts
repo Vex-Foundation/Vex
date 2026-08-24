@@ -17,6 +17,7 @@ import {
  */
 export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.markets.activity",
+  publicName: "morpho__markets_activity_list",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -24,9 +25,9 @@ export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
     + "movement and liquidation, filterable by market, chain, address, event type, time window, LIQUIDATOR address, "
     + "a minimum bad-debt or seized-collateral size, and by one TRANSACTION HASH. Use this when "
     + "the user asks what has been happening in a market, whether anyone still uses it, how often and how badly "
-    + "are liquidated there, wants one address audited, or asks what a specific transaction did. "
+    + "borrowers are liquidated there, wants one address audited, or asks what a specific transaction did. "
     + "This is history, not a recommendation signal. Use "
-    + "morpho.markets.discover to find a market, morpho.market.get for its current state, and morpho.positions.get "
+    + "morpho__markets_discover to find a market, morpho__market_get for its current state, and morpho__positions_get "
     + "for what a wallet holds NOW. "
     + "LIQUIDATION ROWS carry `repaidAssets` (debt the liquidator cleared), `seizedAssets` (collateral taken), "
     + "`badDebtAssets` (debt nobody can repay) and `liquidatorAddress`, with `userAddress` naming the BORROWER whose "
@@ -63,7 +64,7 @@ export const MORPHO_MARKETS_ACTIVITY_TOOL: ProtocolToolManifest = {
       acceptsStringArray: true,
       description:
         "Morpho Blue market ids as a comma list OR an array, up to 20. A market id is a 0x-prefixed 64-hex hash, NOT a "
-        + "contract address, and it is chain-scoped; read one from morpho.markets.discover. An address here is "
+        + "contract address, and it is chain-scoped; read one from morpho__markets_discover. An address here is "
         + "rejected by name and told what it actually is.",
     },
     {

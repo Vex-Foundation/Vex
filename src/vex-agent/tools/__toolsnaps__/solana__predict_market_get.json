@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read ONE Jupiter prediction MARKET in full by its marketId - the tradable YES/NO contract, with its status, resolution and current top-of-book pricing. Call this before sizing a position with solana__predict_buy, and use solana__predict_orderbook_get when you need the depth behind these top-of-book prices rather than the prices themselves. Returns the market's own fields plus a `pricing` block: buyYesPriceUsd, buyNoPriceUsd, sellYesPriceUsd and sellNoPriceUsd as exact-decimal USD strings each with a raw *Micro sibling, and volumeUsd as a whole-dollar exact string. Find a marketId with solana__predict_events_discover, solana__predict_events_search, or an event's nested markets.",
+      "name": "solana__predict_market_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "marketId": {
+            "description": "Market ID (from solana__predict_events_discover, solana__predict_events_search, or an event's nested markets).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.market"
+  }
+}

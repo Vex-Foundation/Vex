@@ -53,14 +53,14 @@ export function assertPtMaturedForFallback(expiry: string | null, now: Date = ne
       classified.reason === "missing"
         ? "Pendle refused to sign: this market publishes no expiry, so maturity cannot be proven."
         : "Pendle refused to sign: this market's expiry could not be read, so maturity cannot be proven.",
-      "The direct redeem path only works on a matured PT. Re-check the market with pendle.market.get before retrying.",
+      "The direct redeem path only works on a matured PT. Re-check the market with pendle__market_get before retrying.",
     );
   }
   if (classified.state === "not_matured") {
     throw new VexError(
       ErrorCodes.PENDLE_UNSAFE_TX,
       `Pendle refused to sign: this PT has not matured yet (expires ${expiry}), and the direct redeem would revert on-chain.`,
-      "Nothing was signed or spent. To exit before maturity sell the PT with pendle.pt.sell, or redeem the full PT+YT pair with pendle.py.redeem.",
+      "Nothing was signed or spent. To exit before maturity sell the PT with pendle__pt_sell, or redeem the full PT+YT pair with pendle__py_redeem.",
     );
   }
 }

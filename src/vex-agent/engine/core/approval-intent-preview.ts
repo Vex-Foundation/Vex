@@ -24,6 +24,7 @@
 
 import type { InternalToolContext } from "../../tools/internal/types.js";
 import { resolveInjectedProtocolTool } from "../../tools/registry/injected-protocol-tools.js";
+import { resolveToolName } from "../../tools/registry/name-resolution.js";
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
@@ -211,9 +212,19 @@ function renderSafetyVerdict(verdict: SafetyVerdict): string {
  * important UI/policy summary for user_wallet_broadcast, so it cannot ship."
  */
 function resolveEffectiveCall(
-  toolName: string,
+  rawToolName: string,
   args: Record<string, unknown>,
 ): { toolName: string; args: Record<string, unknown> } {
+  // Deprecation-alias resolution FIRST (approved plan section 5.5). The turn
+  // loop passes the ORIGINAL model tool call to the preview builder, so without
+  // this the human approving a fund-moving action would be shown a name the
+  // runtime has retired. The Vex-fee itemisation also keys off the resolved
+  // `toolName`, so a stale spelling would silently drop the fee line from the
+  // approval card. The human sees the canonical identity, the same one the
+  // envelope stores. A retired PROTOCOL name resolves through the injected lane
+  // just below, which consults the same alias table.
+  const toolName = resolveToolName(rawToolName);
+
   // Injected discovered-tool lane (owner decision 2026-08-03): the model calls
   // the manifest directly under its mapped name (`khalani__bridge`), and the
   // arguments ARE the params — there is no envelope to unwrap. The human must

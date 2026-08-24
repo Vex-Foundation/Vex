@@ -30,14 +30,14 @@ export function FingerprintCard({
     <section
       aria-label="What you are authorizing"
       data-vex-pools-fingerprint={fingerprint.fingerprintId}
-      className="flex flex-col gap-2 rounded-[6px] border border-[var(--vex-line-strong)] bg-[var(--vex-surface-down)] p-3"
+      className="flex flex-col gap-2 rounded-xl border border-line-3 bg-surface-deep p-3"
     >
-      <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+      <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
         What you are authorizing
       </h3>
 
       {!fingerprint.imageLanded ? (
-        <p role="alert" className="text-[12px] leading-relaxed text-[var(--vex-warn-text)]">
+        <p role="alert" className="text-[12px] leading-relaxed text-warning">
           The image did not make it into this token&apos;s published metadata.
           Deploying now creates a token with no picture, and that cannot be
           changed afterwards. Prepare again with a different image URL.
@@ -51,7 +51,7 @@ export function FingerprintCard({
         <Mono>{fingerprint.predictedPoolAddress}</Mono>
       </Row>
       <Row label="Paired with">
-        <span className="font-mono text-[11px] uppercase text-[var(--vex-text)]">
+        <span className="vex-micro-label uppercase text-ink-primary">
           {fingerprint.pairedAsset}
         </span>
       </Row>
@@ -80,7 +80,7 @@ function CostRow({
 }): JSX.Element {
   return (
     <Row label={label}>
-      <span className="font-mono text-[11px] tabular-nums text-[var(--vex-text)]">
+      <span className="font-mono text-[11px] tabular-nums text-ink-primary">
         {formatPoolsAmount(amount)}
       </span>
     </Row>
@@ -89,7 +89,7 @@ function CostRow({
 
 function Mono({ children }: { readonly children: string }): JSX.Element {
   return (
-    <span className="font-mono text-[11px] break-all text-[var(--vex-text)]">
+    <span className="font-mono text-[11px] break-all text-ink-primary">
       {children}
     </span>
   );
@@ -104,7 +104,7 @@ function Row({
 }): JSX.Element {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-[11px] text-[var(--vex-text-2)]">{label}</span>
+      <span className="text-[11px] text-ink-secondary">{label}</span>
       {children}
     </div>
   );

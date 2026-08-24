@@ -78,18 +78,13 @@ const TONE_CLASS: Readonly<Record<TurnIslandView["tone"], string>> = {
 /**
  * THE STATUS WORD — and the island's only motion.
  *
- * While the turn is live the word wears `.vex-preview-shimmer`: a narrow
- * cobalt band sweeping through the glyphs on a slow 7s loop, the SAME
- * sanctioned gesture as the reasoning-effort selector's value and the VEX
- * speaker caption. One mark, one meaning — Vex is present and this is live.
- * It replaced a pulsing 2px bar that said the same thing in a third dialect.
- *
- * The base text stays SOLID at all times (the shimmer is an ::after duplicate
- * clipped to the glyphs, never a background-clip on the text itself), so under
- * `prefers-reduced-motion` — where the family drops the overlay entirely — and
- * under the awaiting-signature freeze, the word is simply still and fully
- * legible. `data-shimmer-text` must carry the identical string or the overlay
- * would sweep the wrong glyphs.
+ * While the turn is live the word wears `.vex-turn-shimmer`
+ * (chat-transcript.css): the 5-stop gradient with a narrow bright band at
+ * 40-60% clipped to the glyphs, sweeping on a 1.8s linear loop. Under
+ * `prefers-reduced-motion` and under the awaiting-signature freeze the class
+ * pins a static gradient / the word simply stays in its tone color — still
+ * and fully legible. A clock beside a shimmered word must wear
+ * `.vex-turn-clock` to escape the transparent text fill.
  */
 function StatusWord({
   label,
@@ -103,8 +98,7 @@ function StatusWord({
   return (
     <span
       data-vex-island-label=""
-      className={cn(animated && "vex-preview-shimmer", className)}
-      data-shimmer-text={animated ? label : undefined}
+      className={cn(animated && "vex-turn-shimmer", className)}
     >
       {label}
     </span>
@@ -149,10 +143,12 @@ function IslandBody({
           <StatusWord
             label={`${view.label}:`}
             animated={view.animated}
-            className={cn("font-serif text-[13px] italic", TONE_CLASS[view.tone])}
+            className={cn("text-[13px] italic", TONE_CLASS[view.tone])}
           />
           {view.showElapsed ? (
-            <ElapsedCounter startedAtMs={preview.startedAtMs} />
+            <span className="vex-turn-clock flex items-center">
+              <ElapsedCounter startedAtMs={preview.startedAtMs} />
+            </span>
           ) : null}
         </span>
         <LiveReasoning text={preview.reasoningText} />
@@ -171,7 +167,7 @@ function IslandBody({
         className={cn("min-w-0 truncate text-[11px]", TONE_CLASS[view.tone])}
       />
       {view.showElapsed ? (
-        <span className="ml-auto flex items-center">
+        <span className="vex-turn-clock ml-auto flex items-center">
           <ElapsedCounter startedAtMs={preview.startedAtMs} />
         </span>
       ) : null}
@@ -182,15 +178,8 @@ function IslandBody({
 export function TurnIsland({
   preview,
   awaitingApproval = false,
-  centredSceneUp = false,
 }: {
   readonly preview: StreamPreview;
-  /**
-   * The centred "vexing…" scene is mounted over the transcript. The island's
-   * `working` pill stands down so the same fact is not stated twice; the
-   * sr-only announcement below is deliberately unchanged.
-   */
-  readonly centredSceneUp?: boolean;
   /**
    * The active session has ≥1 pending approval. The island FREEZES: every
    * animation stops and the label becomes the pin-tone "Awaiting signature".
@@ -199,7 +188,7 @@ export function TurnIsland({
    */
   readonly awaitingApproval?: boolean;
 }): JSX.Element {
-  const view = resolveTurnIslandView(preview, awaitingApproval, centredSceneUp);
+  const view = resolveTurnIslandView(preview, awaitingApproval);
   const streaming = preview.phase === "streaming";
 
   return (
@@ -209,7 +198,7 @@ export function TurnIsland({
       className="flex flex-col"
     >
       {/* Announced: phase + status only. The growing text is NEVER a live
-          region — that would spam a screen reader token by token; the
+          region - that would spam a screen reader token by token; the
           persisted transcript row is the canonical content. */}
       <span className="sr-only" role="status">
         <span>
@@ -222,7 +211,7 @@ export function TurnIsland({
         {streaming ? <span>{view.label}</span> : null}
       </span>
       {/* The thoughts this turn has already finished, folded. They sit ABOVE
-          the island because they are behind it in time — the turn reads top to
+          the island because they are behind it in time - the turn reads top to
           bottom as it happened. They persist across tool calls and across
           provider rounds; only the end of the TURN retires them. */}
       <ReasoningSegments segments={preview.reasoningSegments} />
@@ -234,15 +223,27 @@ export function TurnIsland({
         initialSize={view.size}
         frozen={view.state === "awaiting"}
       >
-        <DynamicIsland id="vex-turn-island">
-          <IslandBody view={view} preview={preview} />
-        </DynamicIsland>
+        {/* The running-row sweep washes the calling row while a tool runs —
+            the tool-ledger signature applied to the live surface. */}
+        <div
+          className="vex-row-sweep"
+          data-vex-sweep={view.state === "calling" ? "running" : undefined}
+        >
+          <DynamicIsland id="vex-turn-island">
+            <IslandBody view={view} preview={preview} />
+          </DynamicIsland>
+        </div>
       </DynamicIslandProvider>
       {view.state === "error" && view.errorBody !== undefined ? (
-        // Category copy, NOT provider text — the second line explains what the
-        // classified failure means, from the same shared copy table as the
-        // error banner.
-        <span className="mt-1 text-xs text-destructive">{view.errorBody}</span>
+        // Category copy - the second line explains what the classified
+        // failure means, from the same shared copy table as the error banner.
+        <span className="mt-1 text-xs text-danger">{view.errorBody}</span>
+      ) : null}
+      {view.state === "error" && view.errorDetail !== undefined ? (
+        // Sanitized REAL cause (decree 2026-08-02) - technical register.
+        <span className="mt-1 break-words font-mono text-[11px] leading-4 text-[var(--vex-text-2)]">
+          {view.errorDetail}
+        </span>
       ) : null}
       {view.state === "error" && preview.reasoningText.length > 0 ? (
         // The trace itself is deliberately NOT rendered on the error path.

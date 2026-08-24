@@ -27,13 +27,18 @@
  *     confirmed state before accepting. A simulation failure is thereby
  *     reported to us synchronously instead of becoming a silent disappearance.
  *
- *  3. `maxRetries` is OMITTED, so "the RPC node will retry the transaction
- *     until it is finalized or until the blockhash expires"
+ *  3. `maxRetries` is OMITTED BY DEFAULT, so "the RPC node will retry the
+ *     transaction until it is finalized or until the blockhash expires"
  *     (solana.com/developers/guides/advanced/retry). The guide's recommended
  *     alternative — `maxRetries: 0` plus an application-owned rebroadcast loop
  *     — needs a durable outbox holding signed bytes, which is explicitly out
  *     of scope this wave (design D3) and needs its own security design. Node-
  *     side retry re-sends the SAME bytes, so it cannot violate point 1.
+ *     A caller whose lane carried its own retry bound BEFORE adopting this
+ *     module (the wallet send lane, `maxRetries: 2`) passes that bound via
+ *     `options.maxRetries` so adopting the shared classifier does not
+ *     silently expand its retry semantics; protocol lanes keep the omitted
+ *     default.
  *
  *  4. A successful return does NOT mean confirmation — the docs are explicit
  *     that acceptance "does not guarantee the transaction is processed or
@@ -56,6 +61,12 @@ import type { SolanaSubmitOutcome } from "./submit-outcome.js";
 export interface SubmitPreparedTxOverRpcOptions {
   /** Defaults to the shared cached Solana connection. Inject for tests or a non-default RPC. */
   readonly connection?: Connection;
+  /**
+   * Node-side retry bound for `sendRawTransaction`. OMITTED by default
+   * (contract point 3). Pass it only to PRESERVE a lane's pre-existing
+   * bound; never to introduce new retry behavior on a money path.
+   */
+  readonly maxRetries?: number;
 }
 
 export async function submitPreparedTxOverRpc(
@@ -69,6 +80,7 @@ export async function submitPreparedTxOverRpc(
     rpcSignature = await connection.sendRawTransaction(prepared.serialized, {
       skipPreflight: false,
       preflightCommitment: "confirmed",
+      ...(options.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }),
     });
   } catch (err) {
     if (err instanceof SendTransactionError) {

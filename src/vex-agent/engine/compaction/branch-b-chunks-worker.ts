@@ -45,7 +45,7 @@ import {
   insertPreparedMemory,
 } from "@vex-agent/db/repos/session-memories/index.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
-import { emitEngineError } from "../runtime/error-bus.js";
+import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
 import logger from "@utils/logger.js";
 
@@ -212,6 +212,7 @@ async function runLlmPhase(
         statusCode: signal.status,
         causeCode: signal.causeCode,
         retryAfterSeconds: signal.retryAfterSeconds,
+        detail: errorDetailOf(err),
       });
       await emitPreparationBranchPermanentlyFailedBug({
         preparationId: preparation.id,

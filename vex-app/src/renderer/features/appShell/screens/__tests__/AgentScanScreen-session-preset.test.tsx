@@ -30,14 +30,6 @@ import {
   restoreJsdomGeometry,
 } from "./_agent-scan-fixtures.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-}));
-
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
@@ -78,22 +70,22 @@ afterEach(() => {
   cleanup();
 });
 
-describe("AgentScanScreen — session preset (C4)", () => {
+describe("AgentScanScreen - session preset (C4)", () => {
   const SESSION = "00000000-0000-4000-8000-0000000000ac";
 
-  it("sends the session scope to the read — a preset silently dropped would render the GLOBAL history", () => {
+  it("sends the session scope to the read - a preset silently dropped would render the GLOBAL history", () => {
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(SESSION);
     expect(lastFilters()).toEqual({ sessionId: SESSION });
   });
 
-  it("shows the preset as a VISIBLE scope chip — a narrowed audit feed is never silent", () => {
+  it("shows the preset as a VISIBLE scope chip - a narrowed audit feed is never silent", () => {
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(SESSION);
     expect(screen.getByText("this session")).not.toBeNull();
   });
 
-  it("the scope chip is NOT a toggle (no aria-pressed) — it cannot be cleared from the bar", () => {
+  it("the scope chip is NOT a toggle (no aria-pressed) - it cannot be cleared from the bar", () => {
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(SESSION);
     expect(
@@ -121,7 +113,7 @@ describe("AgentScanScreen — session preset (C4)", () => {
     expect(lastFilters()).toEqual({});
   });
 
-  it("an empty SESSION feed says so — never 'the agent has done nothing'", () => {
+  it("an empty SESSION feed says so - never 'the agent has done nothing'", () => {
     mockQuery([availablePage([])]);
     mountScreen(SESSION);
     expect(

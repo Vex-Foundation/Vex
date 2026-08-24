@@ -72,7 +72,7 @@ beforeEach(() => {
   mockUseWalletPortfolio.mockReturnValue({ isLoading: true, isError: false, data: undefined });
 });
 
-describe("GlobalWalletSwitcher — chip visibility", () => {
+describe("GlobalWalletSwitcher - chip visibility", () => {
   it("hides the chip row with zero configured wallets (default flat list only)", () => {
     mockWallets([], []);
     render(<GlobalWalletSwitcher portfolio={portfolio()} />);
@@ -98,7 +98,7 @@ describe("GlobalWalletSwitcher — chip visibility", () => {
   });
 });
 
-describe("GlobalWalletSwitcher — default 'All wallets' body", () => {
+describe("GlobalWalletSwitcher - default 'All wallets' body", () => {
   it("defaults to the aggregate flat holdings list; the wallet-scoped hook is never invoked", () => {
     mockWallets([EVM_1, EVM_2], []);
     render(<GlobalWalletSwitcher portfolio={portfolio()} />);
@@ -109,7 +109,7 @@ describe("GlobalWalletSwitcher — default 'All wallets' body", () => {
   });
 });
 
-describe("GlobalWalletSwitcher — token-symbol trust boundary (no branding by symbol)", () => {
+describe("GlobalWalletSwitcher - token-symbol trust boundary (no branding by symbol)", () => {
   it("drops a symbol carrying control/zero-width spoofing characters, falling back to the em dash", () => {
     mockWallets([EVM_1, EVM_2], []);
     // Zero-width space (U+200B) spliced into "ETH".
@@ -123,7 +123,7 @@ describe("GlobalWalletSwitcher — token-symbol trust boundary (no branding by s
     );
     expect(screen.queryByText("ETH")).toBeNull();
     expect(screen.queryByText(spoofed)).toBeNull();
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 
   it("drops an over-length symbol (length-capped)", () => {
@@ -138,7 +138,7 @@ describe("GlobalWalletSwitcher — token-symbol trust boundary (no branding by s
       />,
     );
     expect(screen.queryByText("A".repeat(65))).toBeNull();
-    expect(screen.getByText("—")).not.toBeNull();
+    expect(screen.getByText("-")).not.toBeNull();
   });
 
   it("renders a legitimate ASCII symbol unchanged", () => {
@@ -154,7 +154,7 @@ describe("GlobalWalletSwitcher — token-symbol trust boundary (no branding by s
   });
 });
 
-describe("GlobalWalletSwitcher — per-wallet drill-down", () => {
+describe("GlobalWalletSwitcher - per-wallet drill-down", () => {
   it("selecting a wallet swaps in the wallet-scoped, chain-grouped view with its own total", () => {
     mockWallets([EVM_1, EVM_2], []);
     mockUseWalletPortfolio.mockReturnValue({

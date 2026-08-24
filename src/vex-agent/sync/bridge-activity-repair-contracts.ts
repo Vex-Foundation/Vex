@@ -349,7 +349,6 @@ export interface BridgeRepairDeps {
   /** Idempotent by execution id (DB-enforced, migration 046) — safe to call for the same execution repeatedly (C3 recovery relies on this). */
   enqueueBalanceRefresh(input: { namespace: string; executionId: number }): Promise<void>;
   /** Best-effort, same-process only (an in-memory Map). Called ONLY on a VERIFIED pending→confirmed of a relay-originated bridge (B5). */
-  clearRelayReveal(sessionId: string, routeKey: string): void;
 }
 
 export interface BridgeRepairSweepResult {

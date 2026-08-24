@@ -1,10 +1,10 @@
 /**
- * `session_memory_search` tool handler — semantic recall over THIS session's
+ * `SessionMemorySearch` tool handler — semantic recall over THIS session's
  * narrative memory chunks (`session_memories` table).
  *
  * Returns top-K narrative chunks (4-section markdown bodies) scoped to the
  * caller's session_id. Embedding goes through the same local EmbeddingGemma
- * service as `long_memory_search` (no remote calls, no OpenRouter).
+ * service as `MemorySearch` (no remote calls, no OpenRouter).
  *
  * Empty-store short-circuit: if the session has zero active chunks, returns
  * success with an empty hits array and a hint — no DB load, no embedding
@@ -51,7 +51,7 @@ export async function handleSessionMemorySearch(
   if (!parsed.success) {
     return {
       success: false,
-      output: `session_memory_search: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
+      output: `SessionMemorySearch: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
     };
   }
   const { query, k } = parsed.data;
@@ -76,7 +76,7 @@ export async function handleSessionMemorySearch(
     return {
       success: true,
       output:
-        "session_memory_search: no memories yet — the session has not been compacted. " +
+        "SessionMemorySearch: no memories yet — the session has not been compacted. " +
         "Continue working; memories become available after the first compact (≥ 88% context).",
       data: { hits: [], reason: "empty_store" },
     };
@@ -103,7 +103,7 @@ export async function handleSessionMemorySearch(
     return {
       success: true,
       output:
-        `session_memory_search: no chunks above similarity threshold ${MEMORY_RECALL_MIN_SIMILARITY}. ` +
+        `SessionMemorySearch: no chunks above similarity threshold ${MEMORY_RECALL_MIN_SIMILARITY}. ` +
         `Session has ${stats.activeCount} chunk(s) across ${stats.compactCount} compact(s); try a different framing.`,
       data: { hits: [], reason: "below_threshold", active_count: stats.activeCount },
     };

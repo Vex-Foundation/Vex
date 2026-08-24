@@ -34,7 +34,7 @@ import {
 import logger from "@utils/logger.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import type { ToolResult } from "../../../../types.js";
-import { revealOnEligibleKhalaniFailure } from "../reveal.js";
+import { venueFallbackNoteOnKhalaniFailure } from "../fallback.js";
 import {
   abortRemaining,
   bridgeResult,
@@ -180,15 +180,15 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
         await failActivityEvent(legRow.id, { failureCode: "mined_revert", failureReason: `${stagedLeg.role} transaction ${outcome.txHash} reverted on-chain.` });
         recordedLegs.push({ role: stagedLeg.role, chain: fromChainName, txHash: outcome.txHash, explorerUrl: txExplorerUrl(fromChainId, chains, outcome.txHash), status: "reverted" });
         await abortRemaining(executionId, i + 1, `earlier ${stagedLeg.role} reverted`);
-        // REVISION 1 R1: reveal ONLY for the bridge_deposit leg (never allowance).
-        const revealSuffix = stagedLeg.role === "bridge_deposit"
-          ? revealOnEligibleKhalaniFailure({ kind: "deposit_mined_revert" }, sessionId, params)
+        // REVISION 1 R1: note the fallback ONLY for the bridge_deposit leg (never allowance).
+        const fallbackNote = stagedLeg.role === "bridge_deposit"
+          ? venueFallbackNoteOnKhalaniFailure({ kind: "deposit_mined_revert" }, sessionId, params)
           : "";
         return {
           outcome: "halted", currentIndex,
           result: bridgeResult({
             ...pendingBase, success: false, status: "reverted",
-            message: `The ${stagedLeg.role} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted and no bridge was initiated.${revealSuffix}`,
+            message: `The ${stagedLeg.role} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted and no bridge was initiated.${fallbackNote}`,
             legs: recordedLegs,
           }),
         };

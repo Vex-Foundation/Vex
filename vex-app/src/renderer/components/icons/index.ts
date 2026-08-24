@@ -1,10 +1,10 @@
 /**
  * Public gate for the renderer's icon layer.
  *
- * Call sites import BOTH the renderer (`VexIcon`, `IconGlyph`) and the glyph
- * values from here. `lucide-react` is an implementation detail of this folder
- * and must not be imported anywhere else in the renderer.
+ * Every glyph is an inline SVG owned by this folder; there is no icon vendor
+ * behind it. Call sites import the glyph components and the shared
+ * `GlyphProps` contract from here; a config object that carries an icon per
+ * key types the value as `ComponentType<GlyphProps>`.
  */
 
-export { VexIcon, type IconGlyph, type VexIconProps } from "./VexIcon.js";
-export * from "./icon-glyphs.js";
+export * from "./glyphs.js";

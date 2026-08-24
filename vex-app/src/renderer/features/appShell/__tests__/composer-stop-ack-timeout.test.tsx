@@ -28,12 +28,12 @@ const mockUseRuntimeState = vi.fn();
 
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
-    // Background slice: nothing pending in THIS window, so the settle effect
-    // depends entirely on the lease — which never drops here, by design.
-    isPending: false,
     mutateAsync: vi.fn(),
     stop: mockStopTurn,
   }),
+  // Background slice: nothing pending in THIS window, so the settle effect
+  // depends entirely on the lease - which never drops here, by design.
+  useIsChatSubmitting: () => false,
 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({
@@ -108,7 +108,7 @@ describe("stop acknowledgment time-box", () => {
     expect(result.current.notice?.tone).not.toBe("error");
   });
 
-  it("makes the second press real — the durable request fires again", async () => {
+  it("makes the second press real - the durable request fires again", async () => {
     const { result } = renderHook(
       () => useComposerSubmit(SESSION, null, false, null),
       { wrapper },

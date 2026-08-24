@@ -11,6 +11,7 @@ import { registerApprovalsHandlers } from "./approvals.js";
 import { registerCancelHandler } from "./cancel.js";
 import { registerCapabilitiesHandler } from "./capabilities.js";
 import { registerChatSubmitHandler } from "./chat.js";
+import { registerChatSteerHandler } from "./chat-steer.js";
 import { registerCompactionHandlers } from "./compaction.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
@@ -41,6 +42,8 @@ import { registerSessionsExportMarkdownHandler } from "./sessions/export-markdow
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
+import { registerSessionsBranchHandler } from "./sessions/branch.js";
+import { registerSessionsRenameHandler } from "./sessions/rename.js";
 import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
 import { registerSessionPlanHandlers } from "./sessions/plan.js";
 import { registerSecretsHandlers } from "./secrets.js";
@@ -76,6 +79,8 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsListHandler());
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
+  teardowns.push(registerSessionsRenameHandler());
+  teardowns.push(registerSessionsBranchHandler());
   teardowns.push(registerSessionsDeleteHandler());
   teardowns.push(registerSessionsExportMarkdownHandler());
   teardowns.push(...registerSessionPlanHandlers());
@@ -119,6 +124,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(...registerModelsHandlers());
   teardowns.push(registerSessionsGetModelHandler());
   teardowns.push(registerChatSubmitHandler());
+  teardowns.push(registerChatSteerHandler());
   // Agent integration puzzle 2: engine -> renderer transcript event spine.
   // Subscribes the in-process transcript bus to the IPC broadcaster so
   // committed `messages` INSERTs surface as `EV.engine.transcriptAppend`.

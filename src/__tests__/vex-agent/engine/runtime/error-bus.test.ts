@@ -44,6 +44,7 @@ describe("EngineErrorBus", () => {
       retryAfterSeconds: null,
       occurredAt: "2026-07-29T10:00:00.000Z",
       correlationId: null,
+      detail: null,
     });
     expect(a).toHaveBeenCalledTimes(1);
     expect(b).toHaveBeenCalledTimes(1);
@@ -74,6 +75,7 @@ describe("EngineErrorBus", () => {
         retryAfterSeconds: null,
         occurredAt: "2026-07-29T10:00:00.000Z",
         correlationId: null,
+        detail: null,
       });
     }).not.toThrow();
     expect(good).toHaveBeenCalledTimes(1);

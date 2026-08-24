@@ -1,0 +1,185 @@
+{
+  "namespace": "lighter",
+  "entries": [
+    {
+      "toolId": "lighter.account.onboarding.status",
+      "publicName": "lighter__account_onboarding_status",
+      "rationale": "Preserves the complete onboarding status surface while projecting the durable dotted id into the public callable grammar."
+    },
+    {
+      "toolId": "lighter.system",
+      "publicName": "lighter__system_get",
+      "rationale": "Public environment status/config is a single read, so the canonical verb is get."
+    },
+    {
+      "toolId": "lighter.markets",
+      "publicName": "lighter__markets_list",
+      "rationale": "Returns a bounded, paged market collection; list is the canonical verb."
+    },
+    {
+      "toolId": "lighter.market.get",
+      "publicName": "lighter__market_get",
+      "rationale": "Single-market detail read by market id."
+    },
+    {
+      "toolId": "lighter.account.get",
+      "publicName": "lighter__account_get",
+      "rationale": "Single-account public state read by account index or owning wallet."
+    },
+    {
+      "toolId": "lighter.positions",
+      "publicName": "lighter__positions_list",
+      "rationale": "Returns account position rows, so list is the canonical verb."
+    },
+    {
+      "toolId": "lighter.openOrders",
+      "publicName": "lighter__open_orders_list",
+      "rationale": "Authenticated read of active order rows."
+    },
+    {
+      "toolId": "lighter.orderHistory",
+      "publicName": "lighter__order_history_list",
+      "rationale": "Authenticated read of historical order rows."
+    },
+    {
+      "toolId": "lighter.trades",
+      "publicName": "lighter__trades_list",
+      "rationale": "Authenticated read of account trade rows."
+    },
+    {
+      "toolId": "lighter.apiKeys.inspect",
+      "publicName": "lighter__api_keys_inspect",
+      "rationale": "Public API-key metadata inspection, not credential access."
+    },
+    {
+      "toolId": "lighter.order.preview",
+      "publicName": "lighter__order_preview",
+      "rationale": "Read-only order preview that prepares no state by itself."
+    },
+    {
+      "toolId": "lighter.deposit.status",
+      "publicName": "lighter__deposit_status",
+      "rationale": "Durable deposit intent status and reconciliation read."
+    },
+    {
+      "toolId": "lighter.withdraw.status",
+      "publicName": "lighter__withdraw_status",
+      "rationale": "Durable withdrawal status and reconciliation read."
+    },
+    {
+      "toolId": "lighter.key.register.status",
+      "publicName": "lighter__key_register_status",
+      "rationale": "Durable key-registration status and reconciliation read."
+    },
+    {
+      "toolId": "lighter.order.status",
+      "publicName": "lighter__order_status",
+      "rationale": "Durable order/lifecycle action status and reconciliation read."
+    },
+    {
+      "toolId": "lighter.orderbook",
+      "publicName": "lighter__orderbook_get",
+      "rationale": "Single-market order-book depth read."
+    },
+    {
+      "toolId": "lighter.recentTrades",
+      "publicName": "lighter__recent_trades_list",
+      "rationale": "Single-market recent public trade tape rows."
+    },
+    {
+      "toolId": "lighter.candles",
+      "publicName": "lighter__candles_list",
+      "rationale": "Single-market OHLCV candle series."
+    },
+    {
+      "toolId": "lighter.order.cancel.prepare",
+      "publicName": "lighter__order_cancel_prepare",
+      "rationale": "Approval preparation for one order cancel."
+    },
+    {
+      "toolId": "lighter.order.cancel",
+      "publicName": "lighter__order_cancel",
+      "rationale": "Approval-resume execution for one order cancel."
+    },
+    {
+      "toolId": "lighter.order.modify.prepare",
+      "publicName": "lighter__order_modify_prepare",
+      "rationale": "Approval preparation for one order modification."
+    },
+    {
+      "toolId": "lighter.order.modify",
+      "publicName": "lighter__order_modify",
+      "rationale": "Approval-resume execution for one order modification."
+    },
+    {
+      "toolId": "lighter.order.cancelAll.prepare",
+      "publicName": "lighter__order_cancel_all_prepare",
+      "rationale": "Normalizes cancelAll to cancel_all in the public callable grammar."
+    },
+    {
+      "toolId": "lighter.order.cancelAll",
+      "publicName": "lighter__order_cancel_all",
+      "rationale": "Approval-resume execution for the account-wide cancel-all action."
+    },
+    {
+      "toolId": "lighter.position.close.prepare",
+      "publicName": "lighter__position_close_prepare",
+      "rationale": "Approval preparation for a full-position close."
+    },
+    {
+      "toolId": "lighter.position.close",
+      "publicName": "lighter__position_close",
+      "rationale": "Approval-resume execution for a full-position close."
+    },
+    {
+      "toolId": "lighter.withdraw.claim.prepare",
+      "publicName": "lighter__withdraw_claim_prepare",
+      "rationale": "Approval preparation for the separate settlement claim."
+    },
+    {
+      "toolId": "lighter.withdraw.claim",
+      "publicName": "lighter__withdraw_claim",
+      "rationale": "Approval-resume settlement claim execution."
+    },
+    {
+      "toolId": "lighter.withdraw.prepare",
+      "publicName": "lighter__withdraw_prepare",
+      "rationale": "Approval preparation for secure withdrawal."
+    },
+    {
+      "toolId": "lighter.withdraw",
+      "publicName": "lighter__withdraw",
+      "rationale": "Approval-resume secure withdrawal execution."
+    },
+    {
+      "toolId": "lighter.key.register.prepare",
+      "publicName": "lighter__key_register_prepare",
+      "rationale": "Approval preparation for managed key registration."
+    },
+    {
+      "toolId": "lighter.key.register",
+      "publicName": "lighter__key_register",
+      "rationale": "Approval-resume managed key registration execution."
+    },
+    {
+      "toolId": "lighter.deposit.prepare",
+      "publicName": "lighter__deposit_prepare",
+      "rationale": "Approval preparation for exact settlement-asset deposit."
+    },
+    {
+      "toolId": "lighter.deposit",
+      "publicName": "lighter__deposit",
+      "rationale": "Approval-resume settlement-asset deposit execution."
+    },
+    {
+      "toolId": "lighter.order.create.prepare",
+      "publicName": "lighter__order_create_prepare",
+      "rationale": "Approval preparation from a fresh order preview."
+    },
+    {
+      "toolId": "lighter.order.create",
+      "publicName": "lighter__order_create",
+      "rationale": "Approval-resume order create execution."
+    }
+  ]
+}

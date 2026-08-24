@@ -64,7 +64,7 @@ function buildReadError(status: number, endpoint: string, cause: string): VexErr
     return new VexError(
       ErrorCodes.PENDLE_MARKET_NOT_FOUND,
       withCause(`Pendle has no ${endpoint} data for that market (HTTP 404)`, cause),
-      "The market may be matured, may not exist on that chain, or may not be covered by this endpoint. Re-check it with pendle.yields.",
+      "The market may be matured, may not exist on that chain, or may not be covered by this endpoint. Re-check it with `pendle__markets_discover`.",
     );
   }
   if (status === 400) {
@@ -99,7 +99,7 @@ function buildReadError(status: number, endpoint: string, cause: string): VexErr
     return new VexError(
       ErrorCodes.PENDLE_API_ERROR,
       withCause(`Pendle reports a conflicting ${endpoint} state (HTTP 409)`, cause),
-      "The market or order state moved while this request was in flight. Re-read it with pendle.yields rather than replaying this call.",
+      "The market or order state moved while this request was in flight. Re-read it with `pendle__markets_discover` rather than replaying this call.",
     );
   }
   if (status === 422) {

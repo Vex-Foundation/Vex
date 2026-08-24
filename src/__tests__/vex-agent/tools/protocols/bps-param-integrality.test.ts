@@ -52,6 +52,7 @@ const TOOL_ID = "test.bps.quote";
 beforeAll(() => {
   TEST_MANIFESTS.set(TOOL_ID, {
     toolId: TOOL_ID,
+    publicName: "test__bps_quote",
     namespace: "dexscreener", // executable, non-reveal-gated, no requiresEnv
     lifecycle: "active",
     description: "Synthetic tool for basis-point boundary tests",

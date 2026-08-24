@@ -154,7 +154,7 @@ describe("providerPersist keep-existing-key delta save", () => {
     expect(written.model).toBe("openai/gpt-5.2");
   });
 
-  it("still verifies before persisting — a verify failure writes nothing", async () => {
+  it("still verifies before persisting - a verify failure writes nothing", async () => {
     mockVerify.mockResolvedValue({
       ok: false,
       error: vexError("provider.invalid_api_key", "onboarding"),

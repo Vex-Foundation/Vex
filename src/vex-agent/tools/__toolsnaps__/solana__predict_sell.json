@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Close an OPEN Jupiter prediction position before its market resolves, at whatever the book currently offers. SPENDS REAL FUNDS in the sense that it signs and broadcasts an irreversible on-chain close from the session's Solana wallet, and it is approval-gated. Use this while the market is still OPEN; once it has RESOLVED and the position won, solana__predict_claim settles at the resolved price instead, which is the better exit. A sell takes the book's price under the provider's own default tolerance, so size the position accordingly. Returns TRUTHFUL-PENDING and never a confirmation: the reply names the closed position, the transaction signature and an explorer link, says confirmation is tracked automatically and must not be retried, and states that the payout settles in JupUSD (6 decimals), NOT USDC, arriving in a LATER keeper transaction that this broadcast does not deliver - so the position stays pending until settlement is observed. Convert a JupUSD payout with solana__swap_quote then solana__swap_execute once the balance appears. A refusal before broadcast says nothing went on-chain and why.",
+      "name": "solana__predict_sell",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "positionPubkey": {
+            "description": "Position public key (from solana__predict_positions_list).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "positionPubkey"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.sell"
+  }
+}

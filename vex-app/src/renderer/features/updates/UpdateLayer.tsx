@@ -4,9 +4,10 @@
  *
  * Owns the live status subscription, the renderer-local per-version "Later"
  * snooze, the error-toast dismissal, and the two-step + blocked-recovery
- * action wiring; renders the bottom-right `UpdateToast`. Defensive: a no-op
- * when the updater bridge is absent (plain dev / no feed / isolated renderer
- * tests that don't stub `window.vex.updater`).
+ * action wiring; projects the status onto the global ToastHost's sticky
+ * slot via `UpdateToastSurface`. Defensive: a no-op when the updater bridge
+ * is absent (plain dev / no feed / isolated renderer tests that don't stub
+ * `window.vex.updater`).
  *
  * "Later" is a renderer-local, per-version, in-memory snooze — it only hides
  * the toast for the CURRENT `latestVersion` and resets on restart; it does
@@ -16,7 +17,7 @@
  * the feed reports a newer release.
  */
 
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import {
   openReleaseNotes,
@@ -27,7 +28,11 @@ import {
   useUpdateStatus,
   useUpdaterLiveSync,
 } from "../../lib/api/updates.js";
-import { isToastKind, UpdateToast } from "./UpdateToast.js";
+import { isToastKind } from "./update-toast-model.js";
+import {
+  UpdateToastSurface,
+  type UpdateToastHandlers,
+} from "./UpdateToastSurface.js";
 import { UPDATER_PREVIEW_ENABLED, UpdaterPreview } from "./UpdaterPreview.js";
 
 export function UpdateLayer(): JSX.Element | null {
@@ -71,6 +76,35 @@ function UpdateLayerInner(): JSX.Element | null {
     }
   }, [status?.kind]);
 
+  // Unconditional (hook order): the guards below early-return AFTER every hook.
+  const handlers: UpdateToastHandlers = useMemo(
+    () => ({
+      onLater: () => {
+        if (status?.kind === "available" || status?.kind === "downloaded") {
+          setSnoozedVersion(status.latestVersion);
+        }
+      },
+      onUpdateNow: () => startMut.mutate(),
+      onCancel: () => cancelMut.mutate(),
+      onRestart: () => restartMut.mutate(),
+      onTryAgain: () => {
+        if (status?.kind === "error") {
+          checkMut.mutate();
+          return;
+        }
+        if (status?.kind === "blockedByOperation") {
+          if (status.blockedAction === "download") startMut.mutate();
+          else restartMut.mutate();
+        }
+      },
+      onReleaseNotes: openReleaseNotes,
+      onDismissError: () => setErrorDismissed(true),
+    }),
+    // `mutate` is referentially stable per hook instance (the result object
+    // is not) - depending on it keeps the handler identity per status.
+    [status, checkMut.mutate, startMut.mutate, cancelMut.mutate, restartMut.mutate],
+  );
+
   if (status === null || !isToastKind(status)) return null;
   if (status.kind === "error" && errorDismissed) return null;
   if (
@@ -80,34 +114,5 @@ function UpdateLayerInner(): JSX.Element | null {
     return null;
   }
 
-  const handleLater = (): void => {
-    if (status.kind === "available" || status.kind === "downloaded") {
-      setSnoozedVersion(status.latestVersion);
-    }
-  };
-
-  const handleTryAgain = (): void => {
-    if (status.kind === "error") {
-      checkMut.mutate();
-      return;
-    }
-    if (status.kind === "blockedByOperation") {
-      if (status.blockedAction === "download") startMut.mutate();
-      else restartMut.mutate();
-    }
-  };
-
-  return (
-    <UpdateToast
-      status={status}
-      busy={busy}
-      onLater={handleLater}
-      onUpdateNow={() => startMut.mutate()}
-      onCancel={() => cancelMut.mutate()}
-      onRestart={() => restartMut.mutate()}
-      onTryAgain={handleTryAgain}
-      onReleaseNotes={openReleaseNotes}
-      onDismissError={() => setErrorDismissed(true)}
-    />
-  );
+  return <UpdateToastSurface status={status} busy={busy} handlers={handlers} />;
 }

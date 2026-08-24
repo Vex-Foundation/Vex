@@ -2,22 +2,26 @@
  * Dispatcher — injected discovered-tool lane (owner decision 2026-08-03,
  * SPEC §7 Q1 / `reports/model-research.md` R1).
  *
- * A discovered manifest is offered to the model as a real function named
- * `<toolId with . → __>`. This suite pins the four properties that make that
+ * A discovered manifest is offered to the model as a real function named by its
+ * manifest `publicName` (Batch 2; the projection is a catalog TABLE, not a
+ * transform of the toolId). This suite pins the four properties that make that
  * safe:
  *
- *  1. the mapped name reverse-maps and enters the SAME `executeProtocolTool`
+ *  1. the projected name reverse-maps and enters the SAME `executeProtocolTool`
  *     pipeline `execute_tool` uses (arguments ARE the params — no envelope);
  *  2. approval / mutating classification keys off the RESOLVED MANIFEST, never
  *     off the function name;
  *  3. a name this session did not discover (evicted or hallucinated) is
- *     refused by name, pointing at `discover_tools` and `execute_tool`;
- *  4. `discover_tools` records what it returned, and `execute_tool` is
+ *     refused by name, pointing at `ToolSearch` select mode;
+ *  4. `ToolSearch` records what it returned, and the `execute_tool` envelope is
  *     unchanged.
  *
- * Mocks mirror `execute-tool-taxonomy.test.ts`: the catalog is stubbed so the
- * manifest under test is synthetic and each case is independent of live
- * manifest state.
+ * Mocks mirror `execute-tool-taxonomy.test.ts`: `getProtocolManifest` is stubbed
+ * so the manifest under test is synthetic and each case is independent of live
+ * manifest CONTENT. The toolId/publicName PAIRS below are real catalog pairs on
+ * purpose — the name→id reverse map is built from the live catalog at module
+ * load and a synthetic name would resolve to nothing, which is exactly the
+ * behaviour case 3 pins rather than the routing case 1 pins.
  */
 
 import assert from "node:assert/strict";
@@ -59,6 +63,9 @@ vi.mock("@vex-agent/db/params.js", () => ({ sanitizeJsonbValue: (v: unknown) => 
 
 const { dispatchTool } = await import("@vex-agent/tools/dispatcher.js");
 const catalog = await import("@vex-agent/tools/protocols/catalog.js");
+const { fromInjectedToolName } = await import(
+  "@vex-agent/tools/registry/injected-protocol-tools.js"
+);
 const {
   clearDiscoveredTools,
   getDiscoveredToolIds,
@@ -67,15 +74,17 @@ const {
 
 const SESSION = "injected-dispatch-session";
 const READ_TOOL_ID = "dexscreener.search";
-const READ_TOOL_NAME = "dexscreener__search";
-// Synthetic mutating manifest — deliberately NOT a prequote-gated toolId, so
-// this case isolates the APPROVAL gate rather than the prequote gate.
-const MUTATING_TOOL_ID = "khalani.test.mutate";
-const MUTATING_TOOL_NAME = "khalani__test__mutate";
+const READ_TOOL_NAME = "dexscreener__pairs_search";
+// Mutating case — a real id/name pair that is deliberately NOT prequote-gated,
+// so this case isolates the APPROVAL gate rather than the prequote gate. The
+// MANIFEST is still synthetic (mutating/actionKind come from the stub).
+const MUTATING_TOOL_ID = "pools.claim_fees";
+const MUTATING_TOOL_NAME = "pools__fees_claim";
 
 function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolToolManifest {
   return {
     toolId: READ_TOOL_ID,
+    publicName: READ_TOOL_NAME,
     namespace: "dexscreener",
     lifecycle: "active",
     description: "fake",
@@ -139,7 +148,8 @@ describe("dispatcher — injected discovered-tool lane", () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(
       makeManifest({
         toolId: MUTATING_TOOL_ID,
-        namespace: "khalani",
+        publicName: MUTATING_TOOL_NAME,
+        namespace: "pools",
         mutating: true,
         actionKind: "user_wallet_broadcast",
         params: [],
@@ -160,19 +170,22 @@ describe("dispatcher — injected discovered-tool lane", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("discover_tools records the RANKED rows it returned; list mode records nothing", async () => {
+  it("ToolSearch records the RANKED rows it returned; a namespace listing records nothing", async () => {
     const ranked = await dispatchTool(
-      { name: "discover_tools", args: { namespace: "dexscreener" }, toolCallId: "call_d1" },
+      { name: "ToolSearch", args: { query: "token pair search", namespace: "dexscreener" }, toolCallId: "call_d1" },
       context,
     );
-    const returned = JSON.parse(ranked.output).tools.map((t: { toolId: string }) => t.toolId);
+    // The model copy carries `publicName`, not the dotted id: the working set is
+    // keyed on the id, and the projection strips it before the model sees it.
+    const returned = JSON.parse(ranked.output).tools
+      .map((t: { publicName: string }) => fromInjectedToolName(t.publicName));
     expect(returned.length).toBeGreaterThan(0);
     expect([...getDiscoveredToolIds(SESSION)]).toEqual(returned);
 
     clearDiscoveredTools(SESSION);
     await dispatchTool(
       {
-        name: "discover_tools",
+        name: "ToolSearch",
         args: { namespace: "dexscreener", list: true },
         toolCallId: "call_d2",
       },
@@ -185,7 +198,7 @@ describe("dispatcher — injected discovered-tool lane", () => {
 
   it("ranked discovery NAMES the ids it displaced from a full session set", async () => {
     // The registry contract is "nothing is silently dropped", and it must hold
-    // on BOTH recording paths. `describe_tools` surfaced displacement from the
+    // on BOTH recording paths. Select mode surfaced displacement from the
     // start; the ranked path discarded `recordDiscoveredTools`'s return value,
     // so a tool the model had been told was callable stopped being callable
     // with no signal at all.
@@ -199,7 +212,7 @@ describe("dispatcher — injected discovered-tool lane", () => {
     recordDiscoveredTools(SESSION, filler);
 
     const result = await dispatchTool(
-      { name: "discover_tools", args: { namespace: "dexscreener" }, toolCallId: "call_evict" },
+      { name: "ToolSearch", args: { query: "token pair search", namespace: "dexscreener" }, toolCallId: "call_evict" },
       context,
     );
     const payload = JSON.parse(result.output);
@@ -215,13 +228,13 @@ describe("dispatcher — injected discovered-tool lane", () => {
 
   it("ranked discovery adds NO displacement warning when it displaced nothing", async () => {
     const result = await dispatchTool(
-      { name: "discover_tools", args: { namespace: "dexscreener" }, toolCallId: "call_noevict" },
+      { name: "ToolSearch", args: { query: "token pair search", namespace: "dexscreener" }, toolCallId: "call_noevict" },
       context,
     );
     expect(JSON.parse(result.output).warnings.join(" ")).not.toContain("no longer callable");
   });
 
-  it("refuses a name this session never discovered, pointing at discover_tools and execute_tool", async () => {
+  it("refuses a name this session never made callable, pointing at ToolSearch select mode", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(makeManifest());
 
     const result = await dispatchTool(
@@ -231,8 +244,11 @@ describe("dispatcher — injected discovered-tool lane", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain(READ_TOOL_NAME);
-    expect(result.output).toContain("discover_tools");
-    expect(result.output).toContain(READ_TOOL_ID);
+    expect(result.output).toContain("ToolSearch");
+    // The hint names the CALLABLE name, never the dotted toolId: the id is the
+    // durable internal identity and the model has no way to use it — telling it
+    // to select an id would be advice that cannot succeed.
+    expect(result.output).not.toContain(READ_TOOL_ID);
   });
 
   it("refuses an injected-shaped name with no manifest at all", async () => {

@@ -73,7 +73,7 @@ export async function handleWebResearch(
   _context: InternalToolContext,
 ): Promise<ToolResult> {
   const parsed = parseWebResearchRequest(params);
-  if (!parsed.success) return fail(`web_research: ${parsed.message}`);
+  if (!parsed.success) return fail(`WebResearch: ${parsed.message}`);
 
   return parsed.request.mode === "page"
     ? fetchUrl(parsed.request.url)
@@ -114,7 +114,7 @@ async function fetchUrl(url: string): Promise<ToolResult> {
 
   const client = getTavilyClient();
   if (!client) {
-    // Defense-in-depth: the registry hides web_research without the key
+    // Defense-in-depth: the registry hides WebResearch without the key
     // (requiresEnv), so this branch is unreachable via visible tools.
     logger.warn("web.fetch.no_api_key", { hint: "Set TAVILY_API_KEY for web fetch" });
     return fail(

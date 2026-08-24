@@ -16,15 +16,40 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
   summary:
-    "Research and screen pools.fun launchpad tokens on Robinhood Chain (4663): browse and filter launches by age, volume, trade count, market cap, deployer or fee recipient, look one up by name, read its price history as candles, and deep-read a single token against the chain (canonical pool, creator, fee recipient, fee split, decimals). pools.fun has NO bonding curve and NO graduation - a token trades in a real SushiSwap V3 pool with a 1 percent fee from its first block, and total supply is always one billion. Two launchers share this chain (pools.fun and the older sushi launchpad); the browsing tools take a platform selector, while the single-token tools resolve whichever launcher a token belongs to.",
+    "pools.fun, the NO-CURVE launchpad on Robinhood Chain (4663): its own registry of launches, one-token deep reads against the chain, price candles, the creator-fee claim, and the launch path. A pools.fun token has no bonding curve and no graduation - it opens straight into a real SushiSwap V3 pool with a 1 percent fee, at a fixed one-billion supply - so this registry sees it from its FIRST BLOCK, which is why it is reached for ahead of an indexer.",
   whenToUse:
-    "Use to find, screen, or vet a pools.fun token: what launched in the last few hours, what is trading heaviest, who deployed a token and who earns its fees, how it has traded, or what the user launched themselves. All of it is read-only; nothing in this namespace spends.",
+    "Use when the user names pools.fun, asks what just launched on Robinhood Chain, or wants to vet, launch, or collect fees on one: screen or search the launchpad, read one token against the chain, read its candles, review their own launches, claim the creator fees a launch earned, or launch a token. Only the claim and the launch spend; everything else is read-only.",
   preferInstead:
     "Use `kyberswap` to QUOTE AND TRADE these tokens - they trade in ordinary SushiSwap V3 pools on Robinhood Chain that KyberSwap routes, so this namespace deliberately has no swap tool. Use `dexscreener` for pair-level liquidity research (these pools are indexed there as dexId sushiswap, label v3, chain robinhood). `trench` is a DIFFERENT launchpad on the same chain: it has a bonding curve and a graduation step, while pools.fun has neither, so their tokens never overlap.",
+  declaration: {
+    identity: "pools.fun is a no-curve launchpad whose tokens open directly in a real SushiSwap V3 pool with no graduation step.",
+    read: "Browse the pools.fun launchpad and new pools fun launches, search by name or symbol, read price history and full detail for one token, inspect my launches on the Robinhood launchpad, and read creator-fee state.",
+    quote: "Preview a launch and its current deployment cost without committing. The preview is advisory and cannot predict the final token address. This namespace has no trading quote; acquiring a token requires a separate trading quote on a swap venue.",
+    act: "Open the launch form for a pools fun coin, launch the coin on pools fun now under the applicable authority, or claim my creator fees after a dry-run simulation. It has no buy or sell action.",
+    whenItApplies: "Use it to research, vet, launch, or collect fees on a pools.fun token, including first-block launchpad discovery before a general indexer sees the pool.",
+    characteristicAndLimits: "Symbols repeat and contract address is identity. Holder count and liquidity are unavailable here, display prices are not executable, and pair research is a separate stage. The deployment cost is dynamic, the agent path requires a staged image, the creator recipient is fixed to the session wallet, and an image-free token can render blank forever.",
+    retrievalTerms: [
+      "pools.fun launchpad",
+      "new pools fun launches",
+      "price history",
+      "full detail",
+      "my launches on the robinhood launchpad",
+      "claim my creator fees",
+      "open the launch form for a pools fun coin",
+      "launch the coin on pools fun now",
+      "trading quote",
+    ],
+    facets: [
+      "pools.fun browsing and search",
+      "pools.fun candles and token detail",
+      "Own pools.fun launches",
+      "Launching a token on pools.fun",
+    ],
+  },
   exampleQueries: [
-    'discover_tools(query="new pools fun launches", namespace="pools")',
-    'discover_tools(query="pools fun token price history", namespace="pools")',
-    'discover_tools(query="who earns fees on this pools fun token", namespace="pools")',
+    'ToolSearch(query="new pools fun launches", namespace="pools")',
+    'ToolSearch(query="pools fun token price history", namespace="pools")',
+    'ToolSearch(query="who earns fees on this pools fun token", namespace="pools")',
   ],
   aliases: ["pools", "pools.fun", "pools fun", "bankr", "robinhood launchpad", "sushi launchpad"],
   discoveryHints: [

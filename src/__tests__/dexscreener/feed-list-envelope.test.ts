@@ -85,16 +85,28 @@ function totalDropped(dropped: Record<string, number>): number {
   return Object.values(dropped).reduce((sum, count) => sum + count, 0);
 }
 
-/** Every feed tool, so an invariant is asserted on all of them rather than one. */
-const FEED_TOOLS = [
-  "dexscreener.profiles",
-  "dexscreener.profiles.recent",
-  "dexscreener.boosts",
-  "dexscreener.boosts.top",
-  "dexscreener.communityTakeovers",
-  "dexscreener.attention",
-  "dexscreener.ads",
-] as const;
+/**
+ * Every feed CALL, so an invariant is asserted on all of them rather than one.
+ *
+ * A call, not a tool, since the Batch 2 merges (owner decision D7) put the
+ * retired `profiles.recent` and `boosts.top` endpoints behind their siblings'
+ * `feed` param: both endpoints of each pair still face every invariant below.
+ */
+const FEED_CALLS = [
+  ["dexscreener.profiles", {}],
+  ["dexscreener.profiles", { feed: "recentUpdates" }],
+  ["dexscreener.boosts", {}],
+  ["dexscreener.boosts", { feed: "top" }],
+  ["dexscreener.communityTakeovers", {}],
+  ["dexscreener.attention", {}],
+  ["dexscreener.ads", {}],
+] as const satisfies readonly (readonly [string, Record<string, unknown>])[];
+
+/** A stable label for a failure message. */
+function labelOf(toolId: string, params: Record<string, unknown>): string {
+  const feed = params.feed;
+  return typeof feed === "string" ? `${toolId} (feed: ${feed})` : toolId;
+}
 
 describe("DexScreener feed provenance envelope", () => {
   beforeEach(() => {
@@ -116,21 +128,21 @@ describe("DexScreener feed provenance envelope", () => {
   // ── The arithmetic ─────────────────────────────────────────────
 
   it("every feed tool: returned + dropped === providerReturned with no window applied", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId);
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, params);
       expect(
         data.totalMatched + totalDropped(data.droppedByFilter),
-        `${toolId} envelope does not reconcile`,
+        `${labelOf(toolId, params)} envelope does not reconcile`,
       ).toBe(data.providerWindow.providerReturned);
     }
   });
 
   it("every feed tool: totalMatched + dropped === providerReturned even when a window IS applied", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId, { limit: 3, chainIds: "solana" });
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, { ...params, limit: 3, chainIds: "solana" });
       expect(
         data.totalMatched + totalDropped(data.droppedByFilter),
-        `${toolId} envelope does not reconcile under a window`,
+        `${labelOf(toolId, params)} envelope does not reconcile under a window`,
       ).toBe(data.providerWindow.providerReturned);
       expect(data.returned).toBeLessThanOrEqual(3);
     }
@@ -147,9 +159,9 @@ describe("DexScreener feed provenance envelope", () => {
   // ── No hidden defaults ─────────────────────────────────────────
 
   it("profile defaults are bounded and visible; other feeds return their provider window", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId);
-      if (toolId === "dexscreener.profiles" || toolId === "dexscreener.profiles.recent") {
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, params);
+      if (toolId === "dexscreener.profiles") {
         expect(data.returned).toBe(20);
         expect(data.filtersApplied.limit).toBe(20);
         expect(data.hasMore).toBe(true);
@@ -182,9 +194,9 @@ describe("DexScreener feed provenance envelope", () => {
   // ── Honest provenance ──────────────────────────────────────────
 
   it("no feed claims a ranking DexScreener does not disclose", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId);
-      expect(data.providerWindow.providerOrder).toBe("unspecified");
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, params);
+      expect(data.providerWindow.providerOrder, labelOf(toolId, params)).toBe("unspecified");
     }
     const narratives = await call("dexscreener.trending");
     expect(narratives.providerWindow.providerOrder).toBe("unspecified");
@@ -204,20 +216,20 @@ describe("DexScreener feed provenance envelope", () => {
     expect(data.providerWindow.providerCap).toBe(30);
     expect(data.providerWindow.providerCapped).toBe(true);
     expect(data.providerWindow.note).toContain("NO price, liquidity, volume or pool address");
-    expect(data.providerWindow.note).toContain("dexscreener.tokenPairs");
+    expect(data.providerWindow.note).toContain("dexscreener__token_pairs_list");
   });
 
   it("asOfMs exists on every feed, so eventAgeSeconds means something", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId);
-      expect(data.asOfMs).toBeGreaterThan(Date.UTC(2026, 0, 1));
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, params);
+      expect(data.asOfMs, labelOf(toolId, params)).toBeGreaterThan(Date.UTC(2026, 0, 1));
     }
   });
 
   // ── O9: full text, labelled, never bounded ─────────────────────
 
   it("issuer descriptions are delivered whole and every carrying path is named", async () => {
-    const data = await call("dexscreener.profiles.recent");
+    const data = await call("dexscreener.profiles", { feed: "recentUpdates" });
     expect(data.externalContentWarning).toContain("untrusted data");
     expect(data.externalContentFields.length).toBeGreaterThan(0);
 
@@ -274,12 +286,12 @@ describe("DexScreener feed provenance envelope", () => {
   // ── The two recovered fields ───────────────────────────────────
 
   it("BOTH profile feeds emit updatedAt and communityTakeover, which the latest feed used to discard", async () => {
-    for (const toolId of ["dexscreener.profiles", "dexscreener.profiles.recent"]) {
-      const data = await call(toolId);
+    for (const feed of ["latest", "recentUpdates"]) {
+      const data = await call("dexscreener.profiles", { feed });
       const withTimestamps = data.rows.filter((row) => typeof row.updatedAt === "string");
-      expect(withTimestamps, `${toolId} lost updatedAt`).toHaveLength(data.rows.length);
+      expect(withTimestamps, `${feed} lost updatedAt`).toHaveLength(data.rows.length);
       const withFlag = data.rows.filter((row) => typeof row.communityTakeover === "boolean");
-      expect(withFlag, `${toolId} lost the cto flag`).toHaveLength(data.rows.length);
+      expect(withFlag, `${feed} lost the cto flag`).toHaveLength(data.rows.length);
       // The derived age is what filters and sorts read, so it must be there too.
       expect(data.rows.every((row) => typeof row.eventAgeSeconds === "number")).toBe(true);
     }
@@ -288,9 +300,9 @@ describe("DexScreener feed provenance envelope", () => {
   // ── openGraph: a deliberate omission, not an oversight ─────────
 
   it("openGraph is emitted nowhere, because it is derivable from two fields on the row", async () => {
-    for (const toolId of FEED_TOOLS) {
-      const data = await call(toolId, { fields: "full" });
-      expect(JSON.stringify(data), `${toolId} leaked openGraph`).not.toContain("openGraph");
+    for (const [toolId, params] of FEED_CALLS) {
+      const data = await call(toolId, { ...params, fields: "full" });
+      expect(JSON.stringify(data), `${labelOf(toolId, params)} leaked openGraph`).not.toContain("openGraph");
       expect(JSON.stringify(data)).not.toContain("/token-images/og/");
     }
   });
@@ -318,7 +330,7 @@ describe("DexScreener feed provenance envelope", () => {
     const trendingCat = metasTrending().find((meta) => meta.slug === "cat");
     expect(trendingCat?.tokenCount).toBeGreaterThan(detail.pairs.length * 2);
 
-    expect(data.narrativeSubsetNote).toContain("dexscreener.trending");
+    expect(data.narrativeSubsetNote).toContain("dexscreener__narratives_list");
   });
 
   it("meta's liquidity and volume are named as the PROVIDER's aggregate, not a sum of these pairs", async () => {
@@ -384,7 +396,7 @@ describe("DexScreener feed provenance envelope", () => {
       { ...first, updatedAt: null },
       ...rest,
     ]);
-    const data = await call("dexscreener.profiles.recent", { updatedWithinSeconds: 60 });
+    const data = await call("dexscreener.profiles", { feed: "recentUpdates", updatedWithinSeconds: 60 });
     expect(data.droppedByFilter.unknownEventAge).toBe(1);
     expect(data.totalMatched + totalDropped(data.droppedByFilter)).toBe(
       data.providerWindow.providerReturned,
@@ -397,7 +409,7 @@ describe("DexScreener feed provenance envelope", () => {
     const message = await refuse("dexscreener.boosts", { updatedWithinSeconds: 60 });
     expect(message).toContain("updatedWithinSeconds");
     expect(message).toContain("no timestamp");
-    expect(message).toContain("dexscreener.profiles.recent");
+    expect(message).toContain("dexscreener__profiles_list with feed: recentUpdates");
   });
 
   it("the wrong spelling of a freshness filter names the right one", async () => {
@@ -408,7 +420,7 @@ describe("DexScreener feed provenance envelope", () => {
   it("a boost threshold on a feed with no boost units is refused by name", async () => {
     const message = await refuse("dexscreener.profiles", { minBoostCountTotal: 10 });
     expect(message).toContain("minBoostCountTotal");
-    expect(message).toContain("dexscreener.boosts");
+    expect(message).toContain("dexscreener__boosts_list");
   });
 
   it("chainIds on the narrative feed is refused, because a narrative has no chain", async () => {

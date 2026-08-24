@@ -1,5 +1,5 @@
 /**
- * Wake-WATCH queries - the reads and the promotion that back `loop_defer`'s
+ * Wake-WATCH queries - the reads and the promotion that back `LoopDefer`'s
  * `watch` parameter.
  *
  * Split out of `loop-wake.ts` (which owns enqueue / claim / cancel, the row

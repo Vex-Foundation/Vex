@@ -33,11 +33,22 @@ const MOCK_NAV: ProtocolNamespaceNavigation = {
       hints: ["trending tokens", "boosted tokens"],
     },
   ],
+  declaration: {
+    identity: "DexScreener fixture: read-only pair analytics.",
+    read: "Inspect pairs, tokens, and trending markets.",
+    quote: "No quote capability is available.",
+    act: "No action capability is available.",
+    whenItApplies: "Use for token research.",
+    characteristicAndLimits: "Fixture data only.",
+    retrievalTerms: ["pair analytics", "trending tokens"],
+    facets: ["Pairs and tokens", "Trending"],
+  },
 };
 
 function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolToolManifest {
   return {
     toolId: "dexscreener.tokens.get",
+    publicName: "dexscreener__tokens_get",
     namespace: "dexscreener",
     lifecycle: "active",
     description: "Get token pair analytics.",

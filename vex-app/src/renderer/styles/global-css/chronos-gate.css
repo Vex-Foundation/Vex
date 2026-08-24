@@ -1,0 +1,504 @@
+/* CHRONOS GATE + pre-shell continuum chrome (tokens v2 rebrand).
+ * Owns: the boot gate's four-act choreography (dither sky, diamond wipes,
+ * mark entry, seal stamp, progress line), the VexLoader ring, the shared
+ * pre-shell plate, and the `[data-vex-gate="true"]` token re-projection
+ * every boot screen carries. Replaces the retired setup-gate.css. */
+
+/* One easing + duration language for the gate (rule 08: the standard
+ * curve for structural motion; ambient loops run linear). */
+:root {
+  --vex-gate-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================ *
+ *  VEX LOADER — clean ring on tokens v2 aliases                 *
+ * ============================================================ */
+@property --vex-loader-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.vex-loader {
+  position: relative;
+  border-radius: 9999px;
+}
+.vex-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--vex-loader-stroke, 2px);
+  background:
+    conic-gradient(
+      from var(--vex-loader-angle),
+      transparent 0deg,
+      transparent 250deg,
+      color-mix(in oklab, var(--vex-loader-arc) 45%, transparent) 320deg,
+      var(--vex-loader-arc) 352deg,
+      transparent 360deg
+    ),
+    linear-gradient(var(--vex-loader-track), var(--vex-loader-track));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: vex-loader-travel 1.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes vex-loader-travel {
+  to {
+    --vex-loader-angle: 360deg;
+  }
+}
+
+/* Tones: `ink` runs the theme's interactive accent; `paper` is the
+ * pre-shell variant — a paper arc on the dark continuum plate (the
+ * brightest thing on it, same tier as label-primary there). */
+.vex-loader--ink {
+  --vex-loader-arc: var(--color-accent-primary);
+  --vex-loader-track: var(--color-line-2);
+}
+.vex-loader--paper {
+  --vex-loader-arc: #f3f4f7;
+  --vex-loader-track: rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-loader::before {
+    animation: none;
+    background:
+      conic-gradient(
+        from 0deg,
+        color-mix(in oklab, var(--vex-loader-arc) 55%, transparent) 0deg 270deg,
+        transparent 270deg 360deg
+      ),
+      linear-gradient(var(--vex-loader-track), var(--vex-loader-track));
+  }
+}
+
+/* ============================================================ *
+ *  The pre-shell continuum plate                                *
+ * ============================================================ */
+/* THEME-AWARE since round 2 (ratified 2026-08-21): every screen after the
+ * Chronos Gate follows celeris/chronos, so the plate reads a per-theme
+ * alias instead of the old `#0a0d18` literal. The alias lives on
+ * documentElement (tokens.css), which is where `data-vex-theme` is stamped,
+ * so it resolves for curtain layers whose roots sit outside any component
+ * scope. Chronos keeps #0a0d18 = the main-window `backgroundColor`
+ * (main/main-window.ts) so first paint and the plate are one surface;
+ * celeris is free to be the light base because the theme-invariant gate
+ * covers first paint. Re-hardcoding a literal here re-breaks the light
+ * setup stack - `theme-matrix.test.ts` guards it. */
+.vex-gate-plate {
+  background: var(--vex-alias-gate-plate);
+}
+
+/* Vignette — a whisper of deep accent bloom toward the edges; the centre
+ * stays the darkest thing on screen. */
+.vex-gate-vignette {
+  background: radial-gradient(
+    120% 90% at 50% 50%,
+    transparent 55%,
+    color-mix(in oklab, var(--color-accent-wash) 45%, transparent) 100%
+  );
+}
+
+/* ============================================================ *
+ *  [data-vex-gate="true"] — pre-shell token scope (tokens v2)   *
+ * ============================================================ */
+/* Every boot screen carries this attribute, and `SetupFrame` also stamps it
+ * on documentElement for its own lifetime so body-portaled surfaces
+ * (toasts, hover cards, menus) opened from the pre-shell keep the same
+ * projection. Colour tiers come from tokens v2; the scope keeps only what
+ * the pre-shell genuinely re-pins: hairline strength, accent-as-text, the
+ * type scale, and the micro-label weight. Re-projection (not call-site
+ * edits) because six wizard steps are ALSO rendered by the app shell's
+ * Settings screen.
+ *
+ * Every value below is theme-aware: the strengths come from the
+ * `--vex-alias-gate-*` group in tokens.css, which has a chronos and a
+ * celeris definition. */
+[data-vex-gate="true"] {
+  /* Hairlines on the plate need a stronger step than the global line ramp
+   * (l2 is visually absent behind the vignette + grain); input wells get
+   * one more step so a field reads as a field. */
+  --color-border: var(--vex-alias-gate-border);
+  --color-input: var(--vex-alias-gate-input);
+  /* Accent AS TEXT or thin stroke: the theme's interactive accent
+   * (chronos blue-400 on ink, celeris blue-700 on white) is the readable
+   * choice on either plate; same token names the shell scope uses so
+   * dual-hosted primitives resolve in both worlds. */
+  --vex-onboarding-accent: var(--color-accent-primary);
+  --vex-accent-text: var(--color-accent-primary);
+  /* Raised plate for popovers/menus over the continuum. */
+  --color-popover: var(--color-surface-1);
+  --color-muted: var(--vex-alias-gate-muted);
+
+  /* Pre-shell type scale: rem-based and one step up from the shell's
+   * chrome scale. Tailwind v4 compiles text-* to var(--text-*), so
+   * re-pinning here rescales every utility in the pre-shell only. */
+  --text-xs: 0.875rem; /* helper/hint copy under fields */
+  --text-sm: 1rem; /* body copy, field labels, inputs */
+  --text-2xl: 2.5rem; /* the serif screen/step title */
+  --vex-micro-size: 0.75rem;
+  --vex-micro-tracking: 0.14em;
+}
+
+/* The pre-shell's eyebrow voice. This block used to re-pin `.vex-micro` to
+ * Doto (the brand's dot signature); Doto retired app-wide (owner decision 2,
+ * ratified 2026-08-21) and the pre-shell now speaks the SAME Inter Tight
+ * small-caps voice as the shell's `.vex-micro-label` register. The family
+ * therefore comes from `.vex-micro` itself and only the WEIGHT is re-pinned
+ * here: the boot flow's technical labels are must-read, and the ladder's
+ * answer to that is up a weight, never wider tracking. */
+[data-vex-gate="true"] .vex-micro {
+  font-weight: 600;
+}
+
+/* --- The pre-shell action pill --------------------------------- */
+/* Button's type scale is a literal inside its CVA base (shared with the
+ * app shell), so the pre-shell resizes the pill here.
+ *
+ * INVARIANT (components/ui/button.tsx <-> this file): Button emits
+ * `data-vex-button` (the variant) and `data-vex-button-size` (the size) as
+ * the STABLE styling hook for cross-file rules. This selector used to key on
+ * `button.rounded-full.font-mono`; the rebrand renamed the radius utility to
+ * `rounded-capsule` and dropped `font-mono`, and the rule silently stopped
+ * matching - every pre-shell CTA rendered at shell size. Class coupling is
+ * why. Do not re-key this on utility classes, and do not remove the data
+ * attributes from Button without updating this block.
+ * Unlayered author CSS beats `@layer utilities`. */
+[data-vex-gate="true"] button[data-vex-button] {
+  font-size: 0.875rem;
+  letter-spacing: 0.12em;
+}
+
+/* The two ACTION sizes grow to a single h-12: `default` (wizard step
+ * footers) and `lg` (SetupFrame primary CTAs). `sm` and `icon` stay quiet -
+ * they mark small inline actions inside wallet/model rows, not page CTAs. */
+[data-vex-gate="true"] button[data-vex-button-size="default"],
+[data-vex-gate="true"] button[data-vex-button-size="lg"] {
+  height: 3rem;
+  padding-inline: 2rem;
+}
+
+/* --- The wizard step header, centered for the pre-shell only ---- */
+/* Lives here, not in WizardStepPanel.tsx, because that component is also
+ * every Settings section header in the app shell, where the left-aligned
+ * composition must not change. The two hook classes carry no
+ * declarations outside this scope. */
+[data-vex-gate="true"] .vex-step-header {
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+}
+/* The lede steps up in the pre-shell only; it cannot ride a --text-*
+ * re-pin because text-sm also carries body copy in both worlds. */
+[data-vex-gate="true"] .vex-step-lede {
+  font-size: var(--text-lg);
+}
+[data-vex-gate="true"] .vex-step-actions {
+  justify-content: center;
+}
+
+/* Input wells grow with the body scale; checkboxes/radios keep their
+ * intrinsic box. */
+[data-vex-gate="true"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+  height: 2.75rem;
+}
+
+/* --- The gate page column scroll contract ---------------------- */
+/* The vex-rise choreography translates children down 18px inside this
+ * overflow-y:auto column; transformed descendants extend the scrollable
+ * overflow until the motion lands, flashing a scrollbar. The step-end
+ * keyframe holds overflow-y at `clip` for that window. overflow-x is
+ * clipped permanently (an unspecified overflow-x next to overflow-y:auto
+ * coerces to auto and mints phantom horizontal bars). */
+.vex-gate-page {
+  overflow-x: clip;
+  overflow-y: auto;
+  animation: vex-gate-scroll-settle 1.1s step-end;
+  /* Symmetric scrollbar gutter so the thumb stays off the text column;
+   * call sites widen max-w by 4rem to compensate. */
+  padding-inline: 2rem;
+}
+@keyframes vex-gate-scroll-settle {
+  from {
+    overflow-y: clip;
+  }
+}
+
+/* Gate scrollbar — the thumb is a passive affordance and sits below the
+ * content's contrast floor: the accent at partial alpha. Wins over the
+ * onboarding recipe by source order (this file imports after
+ * onboarding.css; both attributes sit on the same root). */
+[data-vex-gate="true"]::-webkit-scrollbar-thumb,
+[data-vex-gate="true"] *::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-accent-primary) 45%, transparent);
+  background-clip: content-box;
+}
+[data-vex-gate="true"]::-webkit-scrollbar-thumb:hover,
+[data-vex-gate="true"] *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-accent-primary) 75%, transparent);
+  background-clip: content-box;
+}
+/* Standard-property fallback gated off WebKit engines - see the measured
+ * Chromium drop-behavior note in scrollbars.css. */
+@supports not selector(::-webkit-scrollbar) {
+  [data-vex-gate="true"],
+  [data-vex-gate="true"] * {
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-accent-primary) 45%,
+        transparent
+      )
+      transparent;
+  }
+}
+
+/* ============================================================ *
+ *  CHRONOS GATE — the four-act boot choreography                *
+ * ============================================================ */
+/* Static styles below are the ACT III resting frame; keyframes declare
+ * only `from` (the journey start) so `animation-fill-mode: backwards`
+ * holds the start during each act's delay and prefers-reduced-motion
+ * (animation: none) lands the static frame instantly. The gate is a
+ * theme-independent royal-blue brand moment (VEX 2 reference), so its
+ * white/royal literals are deliberate. Transform strings are always
+ * full (translate3d + rotate + scale) — GPU compositing, never split
+ * x/y props. */
+
+/* Act 0 backdrop: the dithered sky, drifting. The layer oversizes its
+ * panel and loops a slow full-transform drift; `alternate` keeps the
+ * loop seamless without a jump cut. */
+.chronos-sky {
+  position: absolute;
+  inset: -6%;
+  background-color: var(--color-accent-brand);
+  background-image: url("/brand/dither-sky.webp");
+  background-size: cover;
+  background-position: center;
+  transform: translate3d(0, 0, 0) scale(1.02);
+  animation: chronos-sky-drift 44s linear infinite alternate;
+}
+@keyframes chronos-sky-drift {
+  from {
+    transform: translate3d(-1.2%, -0.8%, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(1.2%, 0.8%, 0) scale(1.05);
+  }
+}
+
+/* Act 1: two diamond wipes enter from the screen sides and CONVERGE into
+ * the seal apex (owner target: VEX 2 frame 0:03 / frame_007). Each wipe
+ * is a huge square whose TOP edge is the visible line; the square is
+ * rotated ±45° around that edge's midpoint (transform-origin 50% 0),
+ * and the midpoint rests exactly on the seal anchor (50vw, 64vh) — so
+ * the two lines cross AT the seal, which is their lower apex. Each
+ * translucent body shades the half-plane below its own line; the open
+ * sky field is the upper wedge between them, where the mark lives. */
+.chronos-wipe {
+  position: absolute;
+  left: 50%;
+  top: 64vh;
+  width: 300vmax;
+  height: 300vmax;
+  transform-origin: 50% 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(6, 8, 40, 0.22);
+  pointer-events: none;
+}
+.chronos-wipe--left {
+  transform: translate3d(-50%, 0, 0) rotate(45deg);
+  animation: chronos-wipe-left 1.2s var(--vex-gate-ease) backwards;
+}
+@keyframes chronos-wipe-left {
+  from {
+    transform: translate3d(calc(-50% - 110vw), 0, 0) rotate(45deg);
+  }
+}
+.chronos-wipe--right {
+  transform: translate3d(-50%, 0, 0) rotate(-45deg);
+  animation: chronos-wipe-right 1.2s var(--vex-gate-ease) backwards;
+}
+@keyframes chronos-wipe-right {
+  from {
+    transform: translate3d(calc(-50% + 110vw), 0, 0) rotate(-45deg);
+  }
+}
+
+/* Act 2: the vx mark enters soft — the blurred echo rises first, the
+ * sharp mark de-blurs onto it (the "OFFICIAL PARTNERS" entry from the
+ * reference). Echo proportions from the Gate mockup: blur 10, .38. */
+.chronos-mark {
+  position: absolute;
+  left: 50%;
+  /* Centered in the open wedge above the 64vh convergence point (the
+   * field the video reserved for OFFICIAL PARTNERS). */
+  top: 34%;
+  width: 228px;
+  transform: translate3d(-50%, -50%, 0);
+}
+.chronos-mark__echo {
+  position: absolute;
+  inset: 0;
+  filter: blur(10px);
+  opacity: 0.38;
+  animation: chronos-mark-echo 0.9s var(--vex-gate-ease) 1s backwards;
+}
+@keyframes chronos-mark-echo {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.96);
+  }
+}
+.chronos-mark__sharp {
+  position: relative;
+  opacity: 1;
+  filter: blur(0);
+  animation: chronos-mark-sharp 0.8s var(--vex-gate-ease) 1.4s backwards;
+}
+@keyframes chronos-mark-sharp {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+}
+
+/* Act 3: the white diamond seal STAMPS at the wipes' convergence point —
+ * it IS the lines' lower apex (owner target), fast scale-in with an
+ * overshoot, then one subtle ripple lets go around the stamp point.
+ * Star inside counter-rotates to stay upright. The 64vh anchor is the
+ * COUPLED invariant shared with `.chronos-wipe`'s top. */
+.chronos-seal {
+  position: absolute;
+  left: 50%;
+  top: 64vh;
+  width: 48px;
+  height: 48px;
+  background: #ffffff;
+  color: var(--color-accent-brand);
+  transform: translate3d(-50%, -50%, 0) rotate(45deg);
+  animation: chronos-seal-stamp 0.45s var(--vex-gate-ease) 2.2s backwards;
+}
+@keyframes chronos-seal-stamp {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(0.2);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(1.16);
+  }
+  80% {
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(1);
+  }
+}
+.chronos-seal__star {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-45deg);
+}
+.chronos-seal-ripple {
+  position: absolute;
+  left: 50%;
+  top: 64vh;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  opacity: 0;
+  transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(1);
+  animation: chronos-seal-ripple 0.9s ease-out 2.55s backwards;
+}
+@keyframes chronos-seal-ripple {
+  from {
+    opacity: 0.6;
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(-50%, -50%, 0) rotate(45deg) scale(2.6);
+  }
+}
+
+/* Act 3 chrome: the CHRONOS GATE label (letterspaced per the Gate mockup)
+ * and the 2px progress line reporting the REAL launch pipeline. Set in the
+ * app-wide sans since Doto retired (2026-08-21). This is a WIDE-TRACKED
+ * DISPLAY STAMP on the brand plate, not a micro label, so it keeps its own
+ * 13px/700/0.42em scale rather than joining `.vex-micro-label`. */
+.chronos-gate-label {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: #ffffff;
+  /* Optically recenters the trailing tracking space. */
+  padding-left: 0.42em;
+  animation: chronos-fade-up 0.4s var(--vex-gate-ease) 2.5s backwards;
+}
+.chronos-gate-status {
+  animation: chronos-fade-up 0.4s var(--vex-gate-ease) 2.6s backwards;
+}
+@keyframes chronos-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+.chronos-progress {
+  width: 180px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  animation: chronos-fade-up 0.4s var(--vex-gate-ease) 2.5s backwards;
+}
+.chronos-progress__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  transform-origin: left center;
+  /* `--chronos-progress` is written per pipeline stage via CSSOM (a
+   * single custom-property assignment — CSP-safe); the transition rides
+   * the resulting transform change. */
+  transform: scaleX(var(--chronos-progress, 0));
+  transition: transform 0.3s var(--vex-gate-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chronos-sky,
+  .chronos-wipe--left,
+  .chronos-wipe--right,
+  .chronos-mark__echo,
+  .chronos-mark__sharp,
+  .chronos-seal,
+  .chronos-seal-ripple,
+  .chronos-gate-label,
+  .chronos-gate-status,
+  .chronos-progress {
+    animation: none;
+  }
+  .chronos-seal-ripple {
+    opacity: 0;
+  }
+  .chronos-progress__fill {
+    transition: none;
+  }
+}

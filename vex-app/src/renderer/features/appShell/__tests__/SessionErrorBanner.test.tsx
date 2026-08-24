@@ -50,6 +50,8 @@ function makeEvent(over: Partial<EngineErrorEvent> = {}): EngineErrorEvent {
     retryAfterSeconds: 41,
     occurredAt: "2026-07-29T10:00:00.000Z",
     correlationId: null,
+    detail: null,
+    remedy: null,
     ...over,
   };
 }
@@ -88,7 +90,7 @@ describe("SessionErrorBanner", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("surfaces a provider 429 with the retry hint — not a generic failure", () => {
+  it("surfaces a provider 429 with the retry hint - not a generic failure", () => {
     useEngineErrorStore.getState().record(makeEvent());
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
 
@@ -108,6 +110,26 @@ describe("SessionErrorBanner", () => {
     );
     expect(alert.textContent).toContain("rate_limit_exceeded");
     expect(alert.textContent).toContain("HTTP 429");
+  });
+
+  it("shows the sanitized real cause when the event carries one", () => {
+    useEngineErrorStore
+      .getState()
+      .record(makeEvent({ detail: "Rate limit exceeded: free-models-per-day" }));
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    expect(
+      screen.getByText("Rate limit exceeded: free-models-per-day"),
+    ).toBeTruthy();
+  });
+
+  it("renders the remedy as the action hint, replacing the generic retry advice", () => {
+    useEngineErrorStore
+      .getState()
+      .record(makeEvent({ remedy: "rate-limited", retryAfterSeconds: null }));
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    expect(
+      screen.getByText("Wait out the rate limit, then retry."),
+    ).toBeTruthy();
   });
 
   it("says something specific for EVERY category, including `unknown`", () => {
@@ -139,7 +161,7 @@ describe("SessionErrorBanner", () => {
     }
   });
 
-  it("is scoped to its session — another session's failure does not render", () => {
+  it("is scoped to its session - another session's failure does not render", () => {
     useEngineErrorStore.getState().record(makeEvent({ sessionId: SESSION_B }));
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
     expect(screen.queryByRole("alert")).toBeNull();
@@ -147,7 +169,7 @@ describe("SessionErrorBanner", () => {
 });
 
 describe("retention vs invalidation", () => {
-  it("retains an event for an INACTIVE session — it is there when the user selects it", () => {
+  it("retains an event for an INACTIVE session - it is there when the user selects it", () => {
     // The defect: retention used to be filtered by the selected session, so a
     // wake/compact failure for session B while A was on screen was recorded
     // NOWHERE. Background failures are exactly the ones that arrive for a
@@ -181,7 +203,7 @@ describe("retention vs invalidation", () => {
     );
   });
 
-  it("keeps a retained event across a session switch — no clear-on-unmount", () => {
+  it("keeps a retained event across a session switch - no clear-on-unmount", () => {
     // Retention outliving the panel is the point: the banner is retired by an
     // explicit dismiss, not by looking away.
     const client = new QueryClient();
@@ -213,7 +235,7 @@ describe("retention vs invalidation", () => {
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
-  it("mounts for an AGENT-mode session — the surface that rendered nothing before", () => {
+  it("mounts for an AGENT-mode session - the surface that rendered nothing before", () => {
     // No mission gate anywhere in the retention hook or the banner: the only
     // input is a session id. This is the regression the channel exists for.
     const client = new QueryClient();

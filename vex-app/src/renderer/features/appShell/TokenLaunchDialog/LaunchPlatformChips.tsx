@@ -70,10 +70,10 @@ export function LaunchPlatformChips({
             disabled={disabled}
             onClick={() => onChange(chip.platform)}
             className={
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50 " +
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 " +
               (selected
-                ? "border-[var(--vex-line-strong)] text-[var(--vex-text)]"
-                : "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]")
+                ? "border-line-3 text-ink-primary"
+                : "border-line-2 text-ink-tertiary hover:text-ink-secondary")
             }
           >
             <ProtocolMark mark={resolveProtocolMark(chip.protocol)} size={12} />

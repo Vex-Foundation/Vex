@@ -1,0 +1,25 @@
+{
+  "namespace": "virtuals",
+  "entries": [
+    {
+      "toolId": "virtuals.list",
+      "publicName": "virtuals__agents_discover",
+      "rationale": "Names the resource and the operation. `virtuals.list` said neither what it lists nor that it screens: it takes chain, status, sortBy, limit, page and pageSize and returns a filtered, ranked, bounded window of agent tokens (manifests/agents.ts:33-55), which is exactly the canonical `discover` verb rather than `list`."
+    },
+    {
+      "toolId": "virtuals.get",
+      "publicName": "virtuals__agent_get",
+      "rationale": "Names the resource; singular for the by-id read, matching the plural discover above."
+    },
+    {
+      "toolId": "virtuals.graduations",
+      "publicName": "virtuals__graduations_list",
+      "rationale": "Adds the missing canonical verb. Mapped 1:1 here, but see the merge proposal in protocol-naming-2.md: the handler is virtuals.list with sort lpCreatedAt plus an AVAILABLE-and-lpCreatedAt predicate over the same projector (handlers.ts:139-178 vs :81-120)."
+    },
+    {
+      "toolId": "virtuals.geneses",
+      "publicName": "virtuals__genesis_launches_list",
+      "rationale": "Provider jargon expanded. `geneses` is an unusual plural that carries no meaning for a model scanning the namespace; the tool browses the genesis launch calendar, points-sale events preceding agent-token launches (manifests/agents.ts:93). Kept in the singular-noun-plus-plural-resource form with the canonical verb last."
+    }
+  ]
+}

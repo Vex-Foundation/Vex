@@ -10,7 +10,7 @@
  * a count we do not have is OMITTED rather than estimated.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { ReasonedBlock } from "../ReasonedBlock.js";
@@ -27,15 +27,21 @@ describe("ReasonedBlock", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders the collapsed stamp when reasoning is present", () => {
+  it("renders the collapsed stamp plus a ONE-LINE summary when reasoning is present", () => {
     const { container } = render(
-      createElement(ReasonedBlock, { reasoning: "I weighed the options" }),
+      createElement(ReasonedBlock, {
+        reasoning: "I weighed the options\nthen checked the balances\nand decided",
+      }),
     );
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).not.toBeNull();
     const btn = screen.getByRole("button", { name: /Reasoned/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
-    // Collapsed by default — a long trace never buries the answer.
-    expect(container.textContent).not.toContain("I weighed the options");
+    // Collapsed by default: the summary is the FIRST line and nothing more, so
+    // a long trace still never buries the answer it produced.
+    const summary = container.querySelector("[data-vex-reasoning-summary]");
+    expect(summary?.textContent).toBe("I weighed the options");
+    expect(container.textContent).not.toContain("then checked the balances");
+    expect(container.textContent).not.toContain("and decided");
   });
 
   it("expands through aria-controls and renders the trace as MARKDOWN", () => {
@@ -72,5 +78,131 @@ describe("ReasonedBlock", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("drops the moving summary once expanded", () => {
+    const { container } = render(
+      createElement(ReasonedBlock, {
+        reasoning: "first line\nsecond line",
+        running: true,
+      }),
+    );
+    expect(container.querySelector("[data-vex-reasoning-summary]")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
+    // Expanded, the full trace is in ordinary page flow - page reading must
+    // never fight an internal follower.
+    expect(container.querySelector("[data-vex-reasoning-summary]")).toBeNull();
+  });
+
+  it("announces a running trace in text, since the sweep is colour-only", () => {
+    const running = render(
+      createElement(ReasonedBlock, { reasoning: "t", running: true }),
+    );
+    expect(running.container.querySelector(".sr-only")?.textContent).toBe(
+      "Reasoning",
+    );
+    expect(
+      running.container.querySelector('[data-vex-sweep="running"]'),
+    ).not.toBeNull();
+    running.unmount();
+
+    const settled = render(createElement(ReasonedBlock, { reasoning: "t" }));
+    expect(settled.container.querySelector(".sr-only")).toBeNull();
+    expect(
+      settled.container.querySelector('[data-vex-sweep="running"]'),
+    ).toBeNull();
+  });
+});
+
+/**
+ * THE ONE-LINE FOLLOWER (deepseek ReasoningRow). Deterministic through a
+ * stubbed rAF map stepped by `flushAnimationFrames` - the 3-frame throttle is
+ * the subject, so a wall-clock sleep would prove nothing about it.
+ */
+describe("ReasonedBlock streaming summary follower", () => {
+  let nextFrameId = 1;
+  let frames = new Map<number, FrameRequestCallback>();
+
+  function flushAnimationFrames(count: number): void {
+    for (let index = 0; index < count; index += 1) {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(index);
+    }
+  }
+
+  beforeEach(() => {
+    nextFrameId = 1;
+    frames = new Map();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextFrameId;
+      nextFrameId += 1;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames.delete(id);
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("follows the latest streaming line to its end, then restores the settled first line", () => {
+    const view = render(
+      createElement(ReasonedBlock, {
+        reasoning: "Inspect the session\nNewest reasoning tokens",
+        running: true,
+      }),
+    );
+    const summary = view.container.querySelector(
+      "[data-vex-reasoning-summary]",
+    ) as HTMLElement;
+    // While running the summary is the LATEST line, not the first.
+    expect(summary.textContent).toBe("Newest reasoning tokens");
+    Object.defineProperties(summary, {
+      scrollWidth: { configurable: true, value: 300 },
+      clientWidth: { configurable: true, value: 100 },
+    });
+
+    view.rerender(
+      createElement(ReasonedBlock, {
+        reasoning: "Inspect the session\nNewest reasoning tokens keep arriving",
+        running: true,
+      }),
+    );
+    // Throttled: nothing moves until the third frame.
+    expect(summary.scrollLeft).toBe(0);
+    flushAnimationFrames(2);
+    expect(summary.scrollLeft).toBe(0);
+    flushAnimationFrames(1);
+    expect(summary.scrollLeft).toBe(300 - 100);
+    expect(summary.getAttribute("data-follow-end")).toBe("true");
+    // Clipped, not ellipsized: an ellipsis on a line being scrolled to its own
+    // end claims there is more to the right than there is.
+    expect(summary.className).toContain("text-clip");
+
+    view.rerender(
+      createElement(ReasonedBlock, {
+        reasoning: "Inspect the session\nNewest reasoning tokens keep arriving",
+        running: false,
+      }),
+    );
+    flushAnimationFrames(3);
+    expect(summary.textContent).toBe("Inspect the session");
+    expect(summary.scrollLeft).toBe(0);
+    expect(summary.hasAttribute("data-follow-end")).toBe(false);
+    expect(summary.className).toContain("text-ellipsis");
+  });
+
+  it("cancels its pending frame on unmount", () => {
+    const view = render(
+      createElement(ReasonedBlock, { reasoning: "a", running: true }),
+    );
+    view.rerender(createElement(ReasonedBlock, { reasoning: "ab", running: true }));
+    expect(frames.size).toBeGreaterThan(0);
+    view.unmount();
+    expect(frames.size).toBe(0);
   });
 });

@@ -19,7 +19,7 @@ const NATIVE_EVM_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 const BSC_PEG_USD = "0x55d398326f99059ff775485246999027b3197955";
 const ARBITRUM_USDT = "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9";
 
-describe("resolveTokenMark — verified brand matches", () => {
+describe("resolveTokenMark - verified brand matches", () => {
   it("grants the Usdc mark for mainnet USDC at the verified address (checksummed input)", () => {
     const mark = resolveTokenMark(1, MAINNET_USDC, "USDC");
     expect(mark).toEqual({ kind: "brand", icon: Usdc });
@@ -41,7 +41,7 @@ describe("resolveTokenMark — verified brand matches", () => {
   });
 });
 
-describe("resolveTokenMark — native EVM sentinel (per-chain, unspoofable address)", () => {
+describe("resolveTokenMark - native EVM sentinel (per-chain, unspoofable address)", () => {
   it("resolves Ethereum for the sentinel on chains 1/10/8453/42161", () => {
     for (const chainId of [1, 10, 8453, 42161]) {
       expect(resolveTokenMark(chainId, NATIVE_EVM_SENTINEL, "ETH")).toEqual({
@@ -73,26 +73,26 @@ describe("resolveTokenMark — native EVM sentinel (per-chain, unspoofable addre
   });
 });
 
-describe("resolveTokenMark — table-driven negative cases", () => {
-  it("correct address, WRONG chain — never matches across chains", () => {
+describe("resolveTokenMark - table-driven negative cases", () => {
+  it("correct address, WRONG chain - never matches across chains", () => {
     // Mainnet USDC's address is NOT Polygon's USDC address; claiming it on
     // chain 137 must fail closed to the family mark, not the Usdc brand.
     const mark = resolveTokenMark(137, MAINNET_USDC, "USDC");
     expect(mark).toEqual({ kind: "family", family: "evm" });
   });
 
-  it("correct address, WRONG symbol — never matches on a symbol lie", () => {
+  it("correct address, WRONG symbol - never matches on a symbol lie", () => {
     const mark = resolveTokenMark(1, MAINNET_USDC, "USDT");
     expect(mark).toEqual({ kind: "family", family: "evm" });
   });
 
-  it("Solana case sensitivity — a case-variant mint does NOT match", () => {
+  it("Solana case sensitivity - a case-variant mint does NOT match", () => {
     const caseVariant = SOL_USDC_MINT.toLowerCase();
     const mark = resolveTokenMark(SOLANA_CHAIN_ID, caseVariant, "USDC");
     expect(mark).toEqual({ kind: "family", family: "solana" });
   });
 
-  it("unknown chain/address — falls back to the family mark", () => {
+  it("unknown chain/address - falls back to the family mark", () => {
     expect(
       resolveTokenMark(999999, "0x000000000000000000000000000000000000ff", "FOO"),
     ).toEqual({ kind: "family", family: "evm" });
@@ -102,7 +102,7 @@ describe("resolveTokenMark — table-driven negative cases", () => {
     });
   });
 
-  it("unknown family (no chain to resolve at all) — monogram, never a mark", () => {
+  it("unknown family (no chain to resolve at all) - monogram, never a mark", () => {
     expect(resolveTokenMark(null, null, null)).toEqual({ kind: "monogram" });
     expect(resolveTokenMark(null, MAINNET_USDC, "USDC")).toEqual({
       kind: "monogram",

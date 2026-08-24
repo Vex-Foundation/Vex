@@ -181,7 +181,7 @@ export function pendingResult(args: {
     message =
       `${depositState}; the destination fill is in progress${providerStatus ? ` (last status: ${providerStatus})` : ""} — Vex is tracking it automatically `
       + `and will finalize the record once the fill is independently verified. This result was returned as soon as the short in-turn check ended; `
-      + `Vex's background sweep owns confirmation, so do NOT poll or re-run this tool in a loop — use loop_defer if you need to wait. Do NOT re-bridge.`;
+      + `Vex's background sweep owns confirmation, so do NOT poll or re-run this tool in a loop — use LoopDefer if you need to wait. Do NOT re-bridge.`;
   }
   // `observed:false` means EVERY status call in the window threw. That is NOT
   // "still pending", and collapsing it to `providerStatus: null` made the two
@@ -203,9 +203,9 @@ export function pendingResult(args: {
     providerRefundFailReason: refundFailReason,
     /** True when EVERY status call this turn threw — no provider status was read. */
     providerStatusUnreachable: poll !== null && !poll.observed,
-    // O-8: whether the status above actually reached `agent_scan`, and if not,
+    // O-8: whether the status above actually reached `AgentScan`, and if not,
     // WHY — `null` means none was read, so there was nothing to record. A write
-    // that silently did nothing does not meet "agent_scan is fed at return".
+    // that silently did nothing does not meet "AgentScan is fed at return".
     providerStatusRecorded: args.providerStatusRecording.providerStatusRecorded,
     providerStatusRecordedReason: args.providerStatusRecording.providerStatusRecordedReason,
     legs: outputLegs(broadcasts, from, to, fillStatus, fillTxHash),

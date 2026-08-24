@@ -21,7 +21,7 @@ export const DEXSCREENER_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     const missing = missingRequired("dexscreener.orders", { chain: chainRaw, tokenAddress });
     if (missing) return fail(missing);
     const chain = resolveDexScreenerChain(chainRaw);
-    if (!chain.ok) return fail(`dexscreener.orders: ${chain.reason}`);
+    if (!chain.ok) return fail(`dexscreener__token_orders_list: ${chain.reason}`);
     const client = getDexScreenerClient();
     // The endpoint answers with BOTH the paid-order history and the
     // boost-payment ledger for the same token. Both are spend signals, so

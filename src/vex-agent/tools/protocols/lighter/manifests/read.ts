@@ -45,14 +45,14 @@ const MARKET_ID_REQUIRED_PARAM: ProtocolParamDef = {
   type: "number",
   required: true,
   description:
-    "Numeric Lighter market id from lighter.markets, as an integer from 0 to 65535. It names the order book to read.",
+    "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
 };
 
 const MARKET_ID_OPTIONAL_PARAM: ProtocolParamDef = {
   ...MARKET_ID_REQUIRED_PARAM,
   required: false,
   description:
-    "Optional numeric Lighter market id from lighter.markets. When omitted, the market list reads the environment's visible markets.",
+    "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
 };
 
 const MARKET_SYMBOL_PARAM: ProtocolParamDef = {
@@ -241,10 +241,11 @@ const ONBOARDING_REQUIRED_COLLATERAL_PARAM: ProtocolParamDef = {
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "lighter.account.onboarding.status",
+    publicName: "lighter__account_onboarding_status",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report the selected Vex wallet's complete managed Lighter readiness on Core or Robinhood Chain and the minimal setup steps still required. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible funding may route to lighter.deposit.prepare; once funding and account ownership are proven, missing managed access may route separately to lighter.key.register.prepare. This tool moves no funds and signs nothing.",
+      "Report the selected Vex wallet's complete managed Lighter readiness on Core or Robinhood Chain and the minimal setup steps still required. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. This tool moves no funds and signs nothing.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -261,6 +262,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.system",
+    publicName: "lighter__system_get",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -273,6 +275,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.markets",
+    publicName: "lighter__markets_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -285,6 +288,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.market.get",
+    publicName: "lighter__market_get",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -297,6 +301,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.account.get",
+    publicName: "lighter__account_get",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -311,6 +316,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.positions",
+    publicName: "lighter__positions_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -325,6 +331,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.openOrders",
+    publicName: "lighter__open_orders_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -337,6 +344,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.orderHistory",
+    publicName: "lighter__order_history_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -349,6 +357,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.trades",
+    publicName: "lighter__trades_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -361,6 +370,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.apiKeys.inspect",
+    publicName: "lighter__api_keys_inspect",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -373,6 +383,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.order.preview",
+    publicName: "lighter__order_preview",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -409,6 +420,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.deposit.status",
+    publicName: "lighter__deposit_status",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -421,7 +433,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
         key: "intentId",
         type: "string",
         description:
-          "Optional Lighter deposit intent id returned by lighter.deposit.prepare. Omit to list every unresolved deposit intent for the selected Vex wallet and environment.",
+          "Optional Lighter deposit intent id returned by lighter__deposit_prepare. Omit to list every unresolved deposit intent for the selected Vex wallet and environment.",
       },
     ],
     exampleParams: { environment: "core" },
@@ -429,6 +441,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.withdraw.status",
+    publicName: "lighter__withdraw_status",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -438,13 +451,14 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [{
       key: "intentId",
       type: "string",
-      description: "Optional session-scoped Core or RHC withdrawal intent id from lighter.withdraw.prepare or lighter.withdraw.",
+      description: "Optional session-scoped Core or RHC withdrawal intent id from lighter__withdraw_prepare or lighter__withdraw.",
     }],
     exampleParams: {},
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.status"],
   },
   {
     toolId: "lighter.key.register.status",
+    publicName: "lighter__key_register_status",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -456,13 +470,14 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       type: "string",
       required: true,
       description:
-        "Session-scoped Lighter key-registration intent id returned by lighter.key.register.prepare or the approved registration result.",
+        "Session-scoped Lighter key-registration intent id returned by lighter__key_register_prepare or the approved registration result.",
     }],
     exampleParams: { intentId: "lighter-onboard-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.key.register.status"],
   },
   {
     toolId: "lighter.order.status",
+    publicName: "lighter__order_status",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -483,6 +498,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.orderbook",
+    publicName: "lighter__orderbook_get",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -495,6 +511,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.recentTrades",
+    publicName: "lighter__recent_trades_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
@@ -507,10 +524,11 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "lighter.candles",
+    publicName: "lighter__candles_list",
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Read public OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start/end timestamps. Use when the user asks for chart history, recent price movement, volatility, or candle data after choosing a market id. Returns the newest candle rows up to the agent output cap, plus provider row count, requested window, resolution, countBack, and truncation disclosure. Read-only: no account lookup, signing, order, deposit, or withdrawal path.",
+      "Read public OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start/end timestamps. Use when the user asks for chart history, recent price movement, volatility, or candle data after choosing a market id. Returns provider rows bounded by countBack and the newest projected rows, plus provider row count, requested window, resolution, countBack, and truncation disclosure. Read-only: no account lookup, signing, order, deposit, or withdrawal path.",
     mutating: false,
     actionKind: "read",
     params: [

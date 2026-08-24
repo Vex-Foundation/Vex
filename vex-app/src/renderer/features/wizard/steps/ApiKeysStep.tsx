@@ -63,7 +63,7 @@ export interface ApiKeysStepProps {
 }
 
 const JUPITER_MISSING_WARNING =
-  "Without a Jupiter key, Solana swaps stay unavailable. Everything else still works — you can add the key later in Settings.";
+  "Without a Jupiter key, Solana swaps stay unavailable. Everything else still works - you can add the key later in Settings.";
 
 export function ApiKeysStep({
   completedSteps,
@@ -185,7 +185,7 @@ export function ApiKeysStep({
       icon={meta.icon}
       flowMode={flowMode}
       title="Connect your API keys"
-      description="Each key unlocks one tool, and every one of them is optional. Keys are stored on this machine and sent only to their own provider when a tool that needs them runs — never anywhere else."
+      description="Each key unlocks one tool, and every one of them is optional. Keys are stored on this machine and sent only to their own provider when a tool that needs them runs - never anywhere else."
       formProps={{
         onSubmit: (e) => {
           void onSubmit(e);
@@ -209,7 +209,7 @@ export function ApiKeysStep({
             role="status"
             data-vex-apikeys-warning="jupiter-missing"
             className={cn(
-              "py-0.5 text-sm text-[var(--color-warning)]",
+              "py-0.5 text-sm text-warning",
               RAIL_WARNING_CHROME,
             )}
           >
@@ -260,7 +260,7 @@ export function ApiKeysStep({
         />
 
         {formError ? (
-          <p className="text-sm text-[var(--color-danger)]" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {formError}
           </p>
         ) : null}

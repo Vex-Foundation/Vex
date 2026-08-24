@@ -32,7 +32,7 @@ export function MemorySection({
         <h2 className="vex-eyebrow">
           Session memory
         </h2>
-        <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+        <p className="mt-1 text-xs text-ink-secondary">
           What the agent remembers from this session (read-only). Outstanding
           work is shown as counts.
         </p>
@@ -62,7 +62,7 @@ function MemoryStatsRow({
   return (
     <div
       data-vex-memory-stats
-      className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--vex-text-2)]"
+      className="flex flex-wrap items-center gap-2 text-[11px] text-ink-secondary"
     >
       <span className={PILL}>{stats.activeCount} memories</span>
       <span className={PILL}>gen {stats.compactCount}</span>
@@ -110,10 +110,10 @@ function MemoryRow({ memory }: { readonly memory: SessionMemoryDto }): JSX.Eleme
   return (
     <li
       data-vex-memory-id={memory.id}
-      className="border-b border-[var(--vex-line)] px-1 py-2 last:border-b-0"
+      className="border-b border-line-2 px-1 py-2 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-foreground">
+        <span className="truncate text-xs font-medium text-ink-primary">
           {memory.theme}
         </span>
         <span className={PILL}>{memory.status}</span>
@@ -131,7 +131,7 @@ function MemoryRow({ memory }: { readonly memory: SessionMemoryDto }): JSX.Eleme
         <span
           data-vex-created
           title={memory.createdAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
         >
           {fmtDate(memory.createdAt)}
         </span>

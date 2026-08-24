@@ -114,14 +114,14 @@ export function WalletInventoryPanel({
       className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4"
       data-vex-wallet-inventory={chain}
     >
-      <p className="vex-micro text-muted-foreground">
+      <p className="vex-micro text-ink-tertiary">
         {chainLabel(chain)} wallets ({count}/{MAX_PER_FAMILY})
       </p>
       {others.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {others.map((w) => (
             <li key={w.id} className="flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">{w.label}</span>
+              <span className="text-xs text-ink-tertiary">{w.label}</span>
               <AddressDisplay address={w.address} />
             </li>
           ))}
@@ -145,9 +145,9 @@ export function WalletInventoryPanel({
             autoFocus
             autoComplete="off"
           />
-          <p className="text-xs text-muted-foreground">{importHint(chain)}</p>
+          <p className="text-xs text-ink-tertiary">{importHint(chain)}</p>
           {error !== null ? (
-            <p className="text-xs text-[var(--color-danger)]" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -191,12 +191,12 @@ export function WalletInventoryPanel({
             </Button>
           </div>
           {atCap ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-ink-tertiary">
               Maximum of {MAX_PER_FAMILY} {chainLabel(chain)} wallets reached.
             </p>
           ) : null}
           {error !== null ? (
-            <p className="text-xs text-[var(--color-danger)]" role="alert">
+            <p className="text-xs text-danger" role="alert">
               {error}
             </p>
           ) : null}

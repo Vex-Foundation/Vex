@@ -1,0 +1,149 @@
+/* Inline indicator chrome: disclosure row crossfade and the state dot. */
+
+/* ── Disclosure row ────────────────────────────────────────────────────────
+ * 24px header, 16px leading box; hover crossfades icon <-> chevron in the
+ * one box - "this row expands" without a permanent chevron. */
+.vex-disclosure-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.vex-disclosure-row {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  min-width: 0;
+}
+
+.vex-disclosure-row[data-expandable] {
+  cursor: pointer;
+}
+
+.vex-disclosure-leading {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vex-alias-label-tertiary);
+}
+
+button.vex-disclosure-leading {
+  cursor: pointer;
+}
+
+.vex-disclosure-icon-idle {
+  display: inline-flex;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.vex-disclosure-chevron-hover {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.vex-disclosure-row:hover .vex-disclosure-icon-idle {
+  opacity: 0;
+}
+
+.vex-disclosure-row:hover .vex-disclosure-chevron-hover {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-disclosure-icon-idle,
+  .vex-disclosure-chevron-hover {
+    transition: none;
+  }
+}
+
+.vex-disclosure-title {
+  flex: none;
+  font-size: 14px;
+  line-height: 24px;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* ── State dot ─────────────────────────────────────────────────────────────
+ * Solid states: same-color halo (::before, 0.10 opacity) around a 6/10
+ * core; color rides currentColor set per state. Ongoing: pixel chase with
+ * flat keyframe holds (duplicate-stop trick, no tweening); phase offsets
+ * come from per-rect animation-delay (index * -125ms) set inline. */
+.vex-state-dot,
+.vex-state-matrix {
+  --vex-state-ongoing: var(--vex-alias-accent-primary);
+}
+
+.vex-state-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+
+.vex-state-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.1;
+}
+
+.vex-state-dot::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.vex-state-dot[data-state="done"] {
+  color: var(--vex-alias-state-success);
+}
+
+.vex-state-dot[data-state="warning"] {
+  color: var(--vex-alias-state-warn);
+}
+
+.vex-state-dot[data-state="error"] {
+  color: var(--vex-alias-state-error);
+}
+
+.vex-state-matrix {
+  flex: none;
+  color: var(--vex-state-ongoing);
+}
+
+.vex-state-cell {
+  fill: currentColor;
+  opacity: 0.15;
+  animation: vex-state-dot-chase 1s infinite;
+}
+
+@keyframes vex-state-dot-chase {
+  0%, 12.4% { opacity: 1; }
+  12.5%, 24.9% { opacity: 0.6; }
+  25%, 37.4% { opacity: 0.35; }
+  37.5%, 100% { opacity: 0.15; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-state-cell {
+    animation: none;
+    opacity: 0.5;
+  }
+}

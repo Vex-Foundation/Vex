@@ -116,7 +116,7 @@ export async function readMorphoBlueMarket(
       `No Morpho Blue market exists at id ${id} on chain ${chainId}. Morpho Blue answered with an empty parameter `
       + "set, which is what it returns for an id that was never created.",
       "Check the market id and the chain together: a market id is chain-scoped, and the same id on the wrong chain "
-      + "resolves to nothing. `morpho.markets.discover` lists real markets per chain.",
+      + "resolves to nothing. `morpho__markets_discover` lists real markets per chain.",
     );
   }
 

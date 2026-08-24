@@ -73,7 +73,7 @@ import { settleLaunchFailure } from "./execute/authorize.js";
 import { broadcastLaunch } from "./execute/broadcast.js";
 import { openLaunchSigningClients } from "../../../shared/launch-signing-clients.js";
 
-const ENTRY_ID = "trench.launch (user submit)";
+const ENTRY_ID = "Trench launch form submission";
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 /**

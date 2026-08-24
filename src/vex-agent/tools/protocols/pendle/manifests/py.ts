@@ -19,10 +19,11 @@ const PT_PARAM = {
 export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pendle.py.quote",
+    publicName: "pendle__py_quote",
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Preview a Pendle PY mint or pre-expiry redeem — mint splits a payment token into an EQUAL amount of PT and YT; redeem burns an EQUAL PT+YT pair back to a token before expiry. Shows the output, price impact, feeUsdEstimate (Pendle's own estimated route fee in USD), aggregator, liquidity, and expiry. Quotes route through Pendle's AMM only — limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT — it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
+      "Preview a Pendle PY mint or pre-expiry redeem - mint splits a payment token into an EQUAL amount of PT and YT; redeem burns an EQUAL PT+YT pair back to a token before expiry. Call this before every pendle__py_mint and pendle__py_redeem. RETURNS `action` (mint-py or redeem-py), `direction`, `chainId`, `tokenIn` and `tokenOut`, the resolved `pt`, `yt` and `market`, `receiver` (always the session wallet), `expiry`, `liquidityUsd`, `priceImpact`, `feeUsdEstimate` (Pendle's own estimated route fee in USD), `amountIn`, `aggregator`, `slippageBps`, and then `ptOut` with `ytOut` on a mint or `amountOut` on a redeem. Quotes route through Pendle's AMM only - limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT - it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -39,10 +40,11 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.py.mint",
+    publicName: "pendle__py_mint",
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Mint a Pendle PT and YT together from one payment token — splits the token into an EQUAL amount of principal token (PT, fixed yield to expiry) and yield token (YT, variable yield that decays to zero at expiry) in a single transaction. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.py.quote (direction mint) first.",
+      "Mint a Pendle PT and YT together FOR REAL from one payment token: signs and broadcasts one transaction that splits the token into an EQUAL amount of principal token (PT, a fixed rate to expiry) and yield token (YT, variable yield that decays to zero at expiry). Use this when the user wants BOTH legs, typically to hold one and sell the other; when they only want one of them, buying it directly with pendle__pt_buy or pendle__yt_buy is the shorter path." + " SPENDS REAL FUNDS AND IS IRREVERSIBLE. APPROVAL: in a RESTRICTED session this does not execute, it returns pending approval so a human sees the trade and its term lock first; in a FULL-permission session it executes directly. PRECONDITIONS, refused BY NAME: a fresh matching pendle__py_quote with direction mint must already exist and `dryRun: true` HERE IS ONLY A THIN PREVIEW, it does NOT record that authorization and does NOT replace the quote; the transaction is pinned to the canonical Pendle Router; and `amountIn` is HUMAN decimals, never raw base units. Pendle is exact-INPUT only, so the output is an estimate bounded by `slippageBps`, never a guarantee. The `dryRun` preview RETURNS `dryRun`, `action`, `pt`, `yt`, `market`, `aggregator`, `priceImpact` and `feeUsdEstimate`. A real run RETURNS `txHash`, `action`, `pt`, `yt`, `market`, `amountIn`, `executedPtOut`, `executedYtOut`, `quotedPtOut` and `quotedYtOut`, where the executed amounts are DECODED FROM THE RECEIPT and sit beside the quoted ones so the realized slippage is visible. ANY OTHER OUTCOME COMES BACK AS A FAILURE SENTENCE, NOT JSON, and it is not a licence to retry: a transaction that reverted, could not be proven, or was broadcast before Vex lost the read-back is already recorded and resolves automatically, so surface the transaction hash and check it rather than sending a second one.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
@@ -58,10 +60,11 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "pendle.py.redeem",
+    publicName: "pendle__py_redeem",
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Redeem a Pendle PT and YT pair back to a token BEFORE expiry — burns an EQUAL amount of principal token (PT) and yield token (YT) and returns the output token. This needs BOTH legs in equal amount; a MATURED PT with no YT uses pendle.pt.redeem instead. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.py.quote (direction redeem) first.",
+      "Redeem a Pendle PT and YT pair back to a token FOR REAL BEFORE expiry: signs and broadcasts one transaction that burns an EQUAL amount of principal token (PT) and yield token (YT) and returns the output token. Use this to unwind a minted pair while the market is still active. It needs BOTH legs in equal amount: a MATURED PT held without its YT redeems with pendle__pt_redeem instead." + " SPENDS REAL FUNDS AND IS IRREVERSIBLE. APPROVAL: in a RESTRICTED session this does not execute, it returns pending approval so a human sees the trade and its term lock first; in a FULL-permission session it executes directly. PRECONDITIONS, refused BY NAME: a fresh matching pendle__py_quote with direction redeem must already exist and `dryRun: true` HERE IS ONLY A THIN PREVIEW, it does NOT record that authorization and does NOT replace the quote; the transaction is pinned to the canonical Pendle Router; and `amountIn` is HUMAN decimals, never raw base units. Pendle is exact-INPUT only, so the output is an estimate bounded by `slippageBps`, never a guarantee. The `dryRun` preview RETURNS `dryRun`, `action`, `pt`, `yt`, `outputToken` and `market`. A real run RETURNS `txHash`, `action`, `pt`, `yt`, `outputToken`, `amountIn`, `executedAmountOut` and `quotedAmountOut`, where the executed amounts are DECODED FROM THE RECEIPT and sit beside the quoted ones so the realized slippage is visible. ANY OTHER OUTCOME COMES BACK AS A FAILURE SENTENCE, NOT JSON, and it is not a licence to retry: a transaction that reverted, could not be proven, or was broadcast before Vex lost the read-back is already recorded and resolves automatically, so surface the transaction hash and check it rather than sending a second one.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

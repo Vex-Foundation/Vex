@@ -323,6 +323,13 @@ describe("recoverStaleHashlessIntents", () => {
         // `pools_claim` is deliberately ABSENT - a claim is the primary
         // transaction of its own execution, not a dependent leg.
         "pools_fee",
+        // Migration 084 (agent wallet send). SHARED by both families, locally
+        // signed through the wallet send writer, and owned by no sweep. Unlike
+        // `pools_claim` - also a primary transaction, and deliberately absent -
+        // the transfer writer STAGES its hash before it submits, so a hashless
+        // transfer row is positive proof that nothing was ever sent and is
+        // therefore definitively not-attempted.
+        "wallet_transfer",
       ].sort(),
     );
   });
@@ -359,7 +366,10 @@ describe("recoverStaleHashlessIntents", () => {
     // built by `bridge-fee/solana-fee-transfer.ts`) or `family: "eip155"`, and
     // `khalani/handlers/bridge-execute.ts` picks the receiver with
     // `fromFamily === "solana" ? BRIDGE_FEE_RECEIVER_SOLANA : ..._EVM`.
-    const sharedRoles = ["swap", "bridge_deposit", "bridge_fee"];
+    // `wallet_transfer` (migration 084) is SHARED too: `wallet_send_confirm`
+    // takes an eip155 OR a solana wallet family, and both executors write the
+    // same role through the same staged writer.
+    const sharedRoles = ["swap", "bridge_deposit", "bridge_fee", "wallet_transfer"];
 
     for (const role of [...evmOnlyRoles, ...solanaOnlyRoles, ...sharedRoles]) {
       expect(allowedRoles).toContain(role);

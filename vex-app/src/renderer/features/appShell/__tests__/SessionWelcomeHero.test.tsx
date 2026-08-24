@@ -1,35 +1,31 @@
 /**
- * SessionWelcomeHero — Grok-style logo-row contract (owner decree
- * 2026-07-21).
- *
- * Pins the pieces other suites and the design system depend on:
- *   1. the H1 "What should I execute?" is DELETED — no heading of any level
- *      renders on the stage (shell-sidebar / welcome-create assert the same
- *      absence through the full AppShell; this is the close-range pin), and
- *      the retired barcode flicker class is gone with it;
- *   2. the crown is ONE centered logo row — the VexSigil mark beside the
- *      PREVIEW · v{version} wordmark badge (Grok's [icon + wordmark]
- *      grammar) — riding the base .vex-rise slot as one unit;
- *   3. the badge contract: White House face (Instrument Sans via
- *      font-sans), SOLID base text wearing the `.vex-preview-shimmer`
- *      overlay through `data-shimmer-text` (the delta-shimmer idiom — the
- *      base text is never background-clipped), the honest build-stage
- *      tooltip via a plain `title`, a static non-interactive SPAN;
- *   4. the hero's ONLY imagery is the sigil (jsdom: the canvas falls back
- *      to the plain monogram <img> INSIDE [data-vex-sigil]) plus the bottom
- *      band's partner mark;
- *   5. the bottom band is unchanged: ONLY the centered BACKED BY hallmark,
- *      closing the rise choreography at d4;
- *   6. retired compositions stay dead: the H1, the rotating tagline quips,
- *      the eyebrow status line, the old hairline PREVIEW pill's border
- *      chrome, the integrations rail, and the theme switch.
+ * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
+ * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
+ * honest build-stage disclosure, the display headline, the reserved
+ * Agent | Studio toggle (Studio disabled + lock, runtimeMode read-only),
+ * and the retirement of the BACKED BY footer (studio seam #2).
  */
 
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { SessionWelcomeHero } from "../SessionWelcomeHero.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { greetingPoolForHour } from "../../../lib/greeting.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
-const PREVIEW_LABEL = "PREVIEW · v0.0.0-test";
+// The hero reads the Vex-setup displayName through the SAME profile hook
+// SidebarProfile uses; stubbed per case so both headline forms are provable
+// without a query provider.
+const useUserProfileMock = vi.fn();
+vi.mock("../../../lib/api/user-profile.js", () => ({
+  useUserProfile: () => useUserProfileMock(),
+}));
+
+const { SessionWelcomeHero } = await import("../SessionWelcomeHero.js");
+
+function profileWithName(displayName: string | null): void {
+  useUserProfileMock.mockReturnValue({
+    data: { ok: true, data: { displayName } },
+  });
+}
 
 /** The five retired rotator quips — must never render again. */
 const RETIRED_QUIPS = [
@@ -40,101 +36,112 @@ const RETIRED_QUIPS = [
   "VEX is listening.",
 ] as const;
 
+beforeEach(() => {
+  useUiStore.setState({ runtimeMode: "agent" });
+  profileWithName(null);
+});
+
 describe("SessionWelcomeHero", () => {
-  it("deletes the H1 — no heading renders on the stage at all", () => {
-    render(<SessionWelcomeHero />);
-    expect(screen.queryByRole("heading")).toBeNull();
-    expect(screen.queryByText(/What should I execute/i)).toBeNull();
-  });
-
-  it("renders the logo row: sigil + PREVIEW wordmark side by side as one rising unit", () => {
+  it("renders the vx mark inline on currentColor ink - no theme-swapped image pair", () => {
+    // Owner rule 2026-08-21: the standalone mark is WHITE everywhere in
+    // chronos and BRAND BLUE in celeris. One inline SVG on the brand-mark
+    // token carries both - no img assets, no theme-attribute variants, no JS
+    // theme read; the flip lives in tokens.css.
     const { container } = render(<SessionWelcomeHero />);
-    const sigil = container.querySelector("[data-vex-sigil]");
-    expect(sigil).not.toBeNull();
-    const badge = screen.getByText(PREVIEW_LABEL);
-    // One row: the mark and the wordmark share the same flex parent.
-    const row = sigil?.parentElement ?? null;
-    expect(row).not.toBeNull();
-    expect(badge.parentElement).toBe(row);
-    expect(row?.classList.contains("items-center")).toBe(true);
-    // The row takes the base .vex-rise slot as ONE unit (no delay modifier);
-    // its children carry no rise classes of their own.
-    expect(row?.classList.contains("vex-rise")).toBe(true);
-    expect(row?.classList.contains("vex-rise-d1")).toBe(false);
-    expect(badge.classList.contains("vex-rise")).toBe(false);
-    expect(sigil?.classList.contains("vex-rise")).toBe(false);
+    expect(container.querySelector("img")).toBeNull();
+    const markBox = container.querySelector('span[aria-hidden="true"]');
+    expect(markBox).not.toBeNull();
+    expect(markBox?.className).toContain("text-brand-mark");
+    expect(markBox?.querySelector("svg path")).not.toBeNull();
   });
 
-  it("badge: Instrument Sans wordmark with the shimmer overlay, solid base text, honest tooltip", () => {
+  it("speaks the date in the micro-label eyebrow and keeps the honest preview disclosure as its tooltip", () => {
+    const { container } = render(<SessionWelcomeHero />);
+    const eyebrow = container.querySelector(".vex-micro-label");
+    expect(eyebrow).not.toBeNull();
+    // A date, uppercase, e.g. "WEDNESDAY · AUG 20" — pinned by grammar, not
+    // by today's value.
+    expect(eyebrow?.textContent).toMatch(/^[A-Z]+ · [A-Z]{3} \d{1,2}$/);
+    expect(eyebrow?.getAttribute("title")).toContain("Preview build (v0.0.0-test)");
+    expect(eyebrow?.getAttribute("title")).toContain("Self-custodial");
+  });
+
+  it("draws the headline from the current bucket's NAMELESS pool while no displayName is set", () => {
     render(<SessionWelcomeHero />);
-    const badge = screen.getByText(PREVIEW_LABEL);
-    expect(badge.textContent).toBe(PREVIEW_LABEL);
-    // Shimmer contract (the .vex-delta-shimmer idiom): the overlay
-    // duplicates the SOLID text via data-shimmer-text — the class must
-    // pair with the attribute or the ::after band has nothing to clip to.
-    expect(badge.classList.contains("vex-preview-shimmer")).toBe(true);
-    expect(badge.getAttribute("data-shimmer-text")).toBe(PREVIEW_LABEL);
-    // White House face: Instrument Sans, not the serif and not the mono.
-    expect(badge.classList.contains("font-sans")).toBe(true);
-    expect(badge.classList.contains("font-serif")).toBe(false);
-    expect(badge.classList.contains("font-mono")).toBe(false);
-    // Honest build-stage disclosure carried over from the retired pill.
-    expect(badge.getAttribute("title")).toBe(
-      "Preview build (v0.0.0-test). Vex is pre-1.0 and evolving. " +
-        "Self-custodial — you control your keys and every action. " +
-        "Verify before moving funds. Not financial advice.",
+    const heading = screen.getByRole("heading", { level: 1 });
+    const nameless = greetingPoolForHour(new Date().getHours())
+      .filter((variant) => !variant.withName)
+      .map((variant) => variant.text);
+    expect(nameless).toContain(heading.textContent);
+  });
+
+  it("with a set displayName the whole bucket is eligible and {name} is substituted", () => {
+    profileWithName("desu");
+    render(<SessionWelcomeHero />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    const eligible = greetingPoolForHour(new Date().getHours()).map((variant) =>
+      variant.text.replace("{name}", "desu"),
     );
-    expect(badge.getAttribute("aria-label")).toBe(PREVIEW_LABEL);
-    // Non-interactive: a static disclosure wordmark, not a button/link, and
-    // the old hairline pill chrome is gone (no border classes).
-    expect(badge.tagName).toBe("SPAN");
-    expect(badge.className).not.toContain("border");
+    expect(eligible).toContain(heading.textContent);
+    expect(heading.textContent).not.toContain("{name}");
   });
 
-  it("carries the sigil crown (decorative, with the jsdom monogram fallback) plus the partner mark", () => {
-    const { container } = render(<SessionWelcomeHero />);
-    const sigil = container.querySelector("[data-vex-sigil]");
-    expect(sigil).not.toBeNull();
-    // Decorative contract on the mark.
-    expect(sigil?.getAttribute("aria-hidden")).toBe("true");
-    expect(sigil?.className).toContain("pointer-events-none");
-    // jsdom: the sigil's canvas 2D is unavailable → its <img> fallback lives
-    // INSIDE the sigil box (the VEX monogram).
-    const sigilImg = sigil?.querySelector("[data-vex-sigil-fallback]");
-    expect(sigilImg?.getAttribute("src")).toBe("/logo_clean.png");
-    // The only other imagery on the stage is the bottom band's partner mark.
-    const backing = Array.from(container.querySelectorAll("img")).filter(
-      (img) =>
-        sigil?.contains(img) === false && (img.getAttribute("alt") ?? "") !== "",
-    );
-    expect(backing.map((img) => img.getAttribute("alt"))).toEqual(["Virtuals"]);
-  });
-
-  it("keeps the BACKED BY bottom band unchanged, closing the rise at d4", () => {
+  it("fails closed to the nameless draw while the profile read is unresolved or failed", () => {
+    useUserProfileMock.mockReturnValue({ data: undefined });
     render(<SessionWelcomeHero />);
-    expect(screen.getByText("Backed by")).not.toBeNull();
-    expect(screen.getByAltText("Virtuals")).not.toBeNull();
-    // The band rises LAST (d4) as one unit.
-    const bottomRow = screen.getByText("Backed by").closest(".vex-rise");
-    expect(bottomRow).not.toBeNull();
-    expect(bottomRow?.classList.contains("vex-rise-d4")).toBe(true);
-    // The retired Robinhood mark and mode switch stay dead.
-    expect(screen.queryByAltText("Robinhood")).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
+    const heading = screen.getByRole("heading", { level: 1 });
+    const nameless = greetingPoolForHour(new Date().getHours())
+      .filter((variant) => !variant.withName)
+      .map((variant) => variant.text);
+    expect(nameless).toContain(heading.textContent);
   });
 
-  it("retired compositions stay dead: quips, eyebrow, barcode, integrations rail", () => {
+  it("freezes the draw per mount - re-rendering never changes the headline", () => {
+    const randSpy = vi.spyOn(Math, "random");
+    const view = render(<SessionWelcomeHero />);
+    const first = screen.getByRole("heading", { level: 1 }).textContent;
+    view.rerender(<SessionWelcomeHero />);
+    view.rerender(<SessionWelcomeHero />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(first);
+    // One draw for the whole mount, not one per render.
+    expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it("reserves the Studio seat: disabled, wearing the lock, and never writing runtimeMode", () => {
+    render(<SessionWelcomeHero />);
+    const studio = screen.getByRole("button", {
+      name: "Studio mode (coming soon)",
+    });
+    expect(studio).toHaveProperty("disabled", true);
+    expect(studio.querySelector("svg")).not.toBeNull();
+    fireEvent.click(studio);
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+  });
+
+  it("marks the Agent segment as the current runtime mode without offering a switch", () => {
+    render(<SessionWelcomeHero />);
+    const group = screen.getByRole("group", { name: "Runtime mode" });
+    const agent = Array.from(group.querySelectorAll("span")).find(
+      (el) => el.textContent === "Agent",
+    );
+    expect(agent?.getAttribute("aria-current")).toBe("true");
+    // Agent is a state readout, not a control — no button, no store write.
+    expect(agent?.tagName).toBe("SPAN");
+  });
+
+  it("retires the BACKED BY footer band entirely (studio seam #2)", () => {
+    render(<SessionWelcomeHero />);
+    expect(screen.queryByText(/Backed by/i)).toBeNull();
+    expect(screen.queryByAltText("Virtuals")).toBeNull();
+  });
+
+  it("retired compositions stay dead: quips, PREVIEW wordmark, sigil, integrations rail", () => {
     const { container } = render(<SessionWelcomeHero />);
-    // The rotating tagline quips (retired 2026-07-21) never render.
     for (const quip of RETIRED_QUIPS) {
       expect(screen.queryByText(quip)).toBeNull();
     }
-    // No eyebrow status line, no barcode flicker (deleted with the H1).
-    expect(container.querySelector(".vex-eyebrow")).toBeNull();
-    expect(container.querySelector(".vex-title-barcode")).toBeNull();
-    // The "Executes through" integrations rail stays retired.
+    expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
+    expect(container.querySelector("[data-vex-sigil]")).toBeNull();
     expect(screen.queryByText(/Executes through/i)).toBeNull();
-    // The phase-5 img-in-text quips (the inline monogram mechanism).
-    expect(screen.queryByAltText("Vex")).toBeNull();
   });
 });

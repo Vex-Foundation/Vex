@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { formatToolDuration } from "../ToolLedger/toolDuration.js";
 
 describe("formatToolDuration", () => {
-  it("prints nothing for null — a not-run call must never read as 0 s", () => {
+  it("prints nothing for null - a not-run call must never read as 0 s", () => {
     expect(formatToolDuration(null)).toBeNull();
   });
 

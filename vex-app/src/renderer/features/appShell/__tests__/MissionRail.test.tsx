@@ -14,8 +14,7 @@
  *
  * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
  * a marker that echoes its `open` prop, so the cluster's own logic is exercised
- * in isolation. VexIcon is mocked (ESM-heavy; the badge glyph is
- * irrelevant to behaviour).
+ * in isolation.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,10 +26,6 @@ import type {
 } from "@shared/schemas/mission.js";
 import type { PlanGetResult } from "@shared/schemas/session-plan.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 
 const mockUseSession = vi.fn();
 const mockUseMissionDraft = vi.fn();
@@ -108,6 +103,8 @@ const READY_DRAFT: MissionDraftDto = {
   approvedAt: null,
   acceptance: null,
   renewedFromMissionId: null,
+  missingFields: [],
+  canAcceptContract: true,
 } as unknown as MissionDraftDto;
 
 function diff(over: Partial<Extract<MissionGetDiffResult, { outcome: "ready" }>> = {}) {
@@ -226,7 +223,7 @@ describe("MissionRail render gate", () => {
     expect(screen.queryByText("Mission")).toBeNull();
   });
 
-  it("renders the Legacy plan chip for an ACCEPTED, still-enabled plan — the only exit ramp left for that session", () => {
+  it("renders the Legacy plan chip for an ACCEPTED, still-enabled plan - the only exit ramp left for that session", () => {
     // Plan Mode can never be re-enabled, so an accepted plan that stays
     // `enabled: true` would otherwise strand the session with no visible
     // way to turn it off. The condition is exactly `plan.enabled === true`,
@@ -257,7 +254,7 @@ describe("MissionRail badge derivation", () => {
   it("Mission badge is Preparing while the draft is not ready", () => {
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({
-      data: ok({ ...READY_DRAFT, status: "draft" }),
+      data: ok({ ...READY_DRAFT, status: "draft", canAcceptContract: false, missingFields: ["goal", "stopConditions"] }),
     });
     rail();
     expect(screen.getByText("Preparing")).not.toBeNull();
@@ -273,7 +270,7 @@ describe("MissionRail badge derivation", () => {
     expect(btn.classList.contains("vex-badge--shimmer")).toBe(true);
   });
 
-  it("Mission badge stays Preparing while the plan read is PENDING — unknown plan state never flashes Ready", () => {
+  it("Mission badge stays Preparing while the plan read is PENDING - unknown plan state never flashes Ready", () => {
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
     mockUseMissionDiff.mockReturnValue({ data: ok(diff()) });
@@ -353,7 +350,7 @@ describe("MissionRail badge derivation", () => {
     // must derive normally, NOT be masked "accepted" by the stale source.
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({
-      data: ok({ ...READY_DRAFT, status: "draft" }),
+      data: ok({ ...READY_DRAFT, status: "draft", canAcceptContract: false, missingFields: ["goal", "stopConditions"] }),
     });
     mockUseRuntimeState.mockReturnValue({ data: runtime(false) });
     mockUseRenewableMissionSource.mockReturnValue({ data: renewable(MISSION) });

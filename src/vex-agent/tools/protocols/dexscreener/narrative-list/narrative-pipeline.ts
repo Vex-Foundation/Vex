@@ -67,7 +67,7 @@ export const NARRATIVE_SUBSET_NOTE =
   + "the number of pairs it returns, while the trending feed reported more than twice as many "
   + "tokens for the same slug in the same minute. Its liquidity and volume are not sums of these "
   + "pairs either, so the object is internally inconsistent. For narrative-level totals call "
-  + "dexscreener.trending, which owns them.";
+  + "dexscreener__narratives_list, which owns them.";
 
 export interface NarrativeListRequest {
   readonly endpoint: string;

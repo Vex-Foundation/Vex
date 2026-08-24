@@ -31,10 +31,14 @@ let submitPending = false;
 
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
-    isPending: submitPending,
     mutateAsync: vi.fn(),
     stop: mockStopTurn,
   }),
+  // The composer reads the SESSION-FILTERED answer, never the hook-wide
+  // `isPending`: a resident composer would otherwise inherit the pending
+  // state of a session the user merely switched away from.
+  useIsChatSubmitting: (sessionId: string | null) =>
+    submitPending && sessionId === SESSION,
 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({
@@ -177,7 +181,7 @@ describe("stop availability", () => {
    * NO pending submit. Keyed on the lease this was a hidden key over a running
    * agent; keyed on `stoppable` it is a visible one.
    */
-  it("offers Stop while parked on a loop_defer — stoppable without a lease", () => {
+  it("offers Stop while parked on a loop_defer - stoppable without a lease", () => {
     mockUseRuntimeState.mockReturnValue(runtimeState(false, true));
 
     const { result } = renderComposerSubmit();
@@ -200,7 +204,7 @@ describe("stop availability", () => {
   });
 });
 
-describe("stop routing — one route per case, never both", () => {
+describe("stop routing - one route per case, never both", () => {
   /**
    * The stranded-row defect. A foreground turn is observed only through the
    * request-local AbortSignal, so a durable `stop_terminal` row queued here
@@ -221,7 +225,7 @@ describe("stop routing — one route per case, never both", () => {
     expect(mockRequestStopMutate).not.toHaveBeenCalled();
   });
 
-  it("FOREGROUND: a later approval/continuation is unaffected — no row to strand", async () => {
+  it("FOREGROUND: a later approval/continuation is unaffected - no row to strand", async () => {
     submitPending = true;
     mockUseRuntimeState.mockReturnValue(runtimeState(true));
     const { result } = renderComposerSubmit();
@@ -236,7 +240,7 @@ describe("stop routing — one route per case, never both", () => {
     expect(result.current.stopRequested).toBe(true);
   });
 
-  it("BACKGROUND: uses the durable route only — stopTurn has nothing to cancel", async () => {
+  it("BACKGROUND: uses the durable route only - stopTurn has nothing to cancel", async () => {
     submitPending = false;
     mockUseRuntimeState.mockReturnValue(runtimeState(true));
     const { result } = renderComposerSubmit();

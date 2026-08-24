@@ -4,7 +4,9 @@
 
 import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import type { ToolDefinition } from "@vex-agent/inference/types.js";
+import type { RuntimeStopReason, StopReason } from "../../types.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
+import { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } from "./unproductive-rounds.js";
 
 /**
  * Convert OpenAITool[] to ToolDefinition[]. Type-level identity after
@@ -72,12 +74,64 @@ export const TIMEOUT_REPLY =
   "narrow the task, or ask me something specific — and I'll pick up from here.";
 
 /**
+ * The `no_progress` sibling of `ITERATION_LIMIT_REPLY`.
+ *
+ * Reusing `ITERATION_LIMIT_REPLY` here would be the same dishonesty the
+ * `TIMEOUT_REPLY` comment above rejected, and worse: nothing was spent on tool
+ * use, no budget was exhausted, and "tell me how to proceed" invites the user
+ * to pay for another run of empty rounds. The model returned nothing, several
+ * times over. That is what this says, and it points at the two actions that can
+ * actually change the outcome.
+ *
+ * The count is derived from the bound so the sentence cannot drift from the
+ * value it claims.
+ *
+ * It deliberately does NOT claim that nothing ran. The stall is only the tail
+ * of the turn - rounds before it can have dispatched real tool calls - and a
+ * reply that promised a clean slate would be a false statement about a turn
+ * that may have moved funds. Pointing at the transcript is the honest version;
+ * the renderer's own notice gates one-click retry on the same fact.
+ */
+export const NO_PROGRESS_REPLY =
+  `I stopped this turn early: the model returned ${MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS} ` +
+  "empty responses in a row - no answer and no tool call - so continuing would " +
+  "have re-sent the same request without producing anything. Check the " +
+  "transcript above for what did run, then send the request again, or try a " +
+  "different model if it keeps happening.";
+
+/**
+ * A runtime bound that ends a turn and therefore owes the user a deterministic
+ * reply when the model produced no text.
+ *
+ * This is deliberately NOT the same set as `isContinuableRuntimeStop`, which
+ * answers a different question: whether the turn may be auto-continued.
+ * `no_progress` belongs here (a stalled turn must never be silent) but not
+ * there (auto-continuing a stall would re-send the request that just produced
+ * nothing). Conflating the two predicates is what made a stalled mission-setup
+ * turn return `text: null`.
+ */
+export type RuntimeBoundStop = Extract<
+  RuntimeStopReason,
+  "iteration_limit" | "timeout" | "no_progress"
+>;
+
+export function isRuntimeBoundStop(
+  stopReason: StopReason | null,
+): stopReason is RuntimeBoundStop {
+  return (
+    stopReason === "iteration_limit"
+    || stopReason === "timeout"
+    || stopReason === "no_progress"
+  );
+}
+
+/**
  * The deterministic reply for a turn that exhausted a runtime bound without the
  * model ever emitting text. Honest about WHICH bound fired; never a generic
  * "budget" paragraph and never a cost figure.
  */
-export function runtimeBoundExhaustedReply(
-  trigger: "iteration_limit" | "timeout",
-): string {
-  return trigger === "timeout" ? TIMEOUT_REPLY : ITERATION_LIMIT_REPLY;
+export function runtimeBoundExhaustedReply(trigger: RuntimeBoundStop): string {
+  if (trigger === "timeout") return TIMEOUT_REPLY;
+  if (trigger === "no_progress") return NO_PROGRESS_REPLY;
+  return ITERATION_LIMIT_REPLY;
 }

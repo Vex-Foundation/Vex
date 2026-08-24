@@ -4,9 +4,10 @@ import { SOLANA_PREDICT_DISCOVERY } from "../../embeddings/solana-jupiter/predic
 export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "solana.predict.events",
+    publicName: "solana__predict_events_discover",
     namespace: "solana",
     lifecycle: "active",
-    description: "List/browse prediction market events across categories (crypto, sports, politics, culture, economics, tech), with filtering, sorting, and pagination. Use solana.predict.search instead for a keyword lookup, or solana.predict.event for one already-known event by ID. Money field volumeUsd is an exact-decimal USD string with a raw volumeUsdMicro sibling.",
+    description: "Browse Jupiter prediction-market EVENTS across categories (crypto, sports, politics, esports, culture, economics, tech), filtered by status and sorted by volume or start time. An event is the QUESTION; the tradable YES/NO contracts are the MARKETS nested inside it. Use this when the user wants to see what is on offer rather than a topic they can already name - solana__predict_events_search finds a named one, solana__predict_event_get reads one already-known eventId. Returns `data`, one row per event: eventId, category, curated metadata (eventId, title, subtitle), and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets (marketId, title, status, result, openTime, closeTime, resolveAt, pricing). Page with offset/limit (integer 1-100, default 20); an out-of-range value is REJECTED by name, never clamped. Continuation is the provider's own `pagination` block, passed through verbatim: start, end, total and `hasNext`. hasNext false is the end of the result set; while it is true, continue by sending offset = pagination.end.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -17,7 +18,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tags", type: "string", description: "Free-text tag filter, e.g. soccer." },
       { key: "sortBy", type: "string", description: "Sort by: volume or beginAt." },
       { key: "sortDirection", type: "string", description: "Sort direction: asc or desc." },
-      { key: "includeMarkets", type: "boolean", description: "Include each event's nested markets array (default false — lean; use solana.predict.event for one event's markets)." },
+      { key: "includeMarkets", type: "boolean", description: "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets)." },
       { key: "limit", type: "number", description: "Max results, 1-100 (default 20)." },
       { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
@@ -27,15 +28,16 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.search",
+    publicName: "solana__predict_events_search",
     namespace: "solana",
     lifecycle: "active",
-    description: "Search prediction events by keyword across all categories and providers — use this to find a SPECIFIC event/topic by name (e.g. \"bitcoin\", \"election\") instead of browsing via solana.predict.events. Once you have a marketId/eventId from the results, use solana.predict.market or solana.predict.event for full detail.",
+    description: "Find Jupiter prediction EVENTS by keyword across every category on one provider. Use this when the user names a topic (\"bitcoin\", \"super bowl\", \"election\") - solana__predict_events_discover is the browse surface when they have no name yet. Returns `data`, one row per matching event: eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets. Take an eventId to solana__predict_event_get or a marketId to solana__predict_market_get for full detail before trading. The provider ignores its own limit and answers with up to 10 rows, so Vex enforces the requested count (1-20, default 20) locally by slicing, and a value out of that range is REJECTED by name. THE SLICE IS REPORTED, NOT SILENT: alongside `data` the reply carries `totalMatched` (rows the provider returned), `returned` (rows after the slice) and `truncated`, with a `truncationNote` when true. There is NO continuation on this tool - no cursor, no page, no offset - so the only ways to reach a dropped row are a more specific `query` or a higher `limit` up to 20.",
     mutating: false,
     actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search keyword or phrase, e.g. \"bitcoin\" or \"super bowl\"." },
       { key: "provider", type: "string", description: "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket." },
-      { key: "includeMarkets", type: "boolean", description: "Include each event's nested markets array (default false — lean; use solana.predict.event for one event's markets)." },
+      { key: "includeMarkets", type: "boolean", description: "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets)." },
       { key: "limit", type: "number", description: "Max results, 1-20 (default 20). The provider ignores this param upstream — Vex enforces the requested count locally." },
     ],
     exampleParams: { query: "bitcoin" },
@@ -44,13 +46,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.market",
+    publicName: "solana__predict_market_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get full details for ONE known prediction market by ID — YES/NO buy/sell prices, volume, status, payout. Use solana.predict.events/.search first to find a marketId, or solana.predict.orderbook for order-book depth beyond the top-of-book prices returned here. Price fields (buyYesPriceUsd, buyNoPriceUsd, sellYesPriceUsd, sellNoPriceUsd) are exact-decimal USD strings with raw *Micro siblings; volumeUsd is a whole-dollar exact string.",
+    description: "Read ONE Jupiter prediction MARKET in full by its marketId - the tradable YES/NO contract, with its status, resolution and current top-of-book pricing. Call this before sizing a position with solana__predict_buy, and use solana__predict_orderbook_get when you need the depth behind these top-of-book prices rather than the prices themselves. Returns the market's own fields plus a `pricing` block: buyYesPriceUsd, buyNoPriceUsd, sellYesPriceUsd and sellNoPriceUsd as exact-decimal USD strings each with a raw *Micro sibling, and volumeUsd as a whole-dollar exact string. Find a marketId with solana__predict_events_discover, solana__predict_events_search, or an event's nested markets.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "marketId", type: "string", required: true, description: "Market ID (from solana.predict.events, solana.predict.search, or an event's nested markets)." },
+      { key: "marketId", type: "string", required: true, description: "Market ID (from solana__predict_events_discover, solana__predict_events_search, or an event's nested markets)." },
     ],
     exampleParams: { marketId: "abc123" },
     requiresEnv: "JUPITER_API_KEY",
@@ -58,9 +61,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.positions",
+    publicName: "solana__predict_positions_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a wallet's currently OPEN prediction positions — exposure, unrealized PnL, and claimability, one row per YES/NO side held. Use solana.predict.history instead for PAST (closed/settled) trades. Money fields (sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd, payoutUsd) are exact-decimal USD strings with raw *Micro siblings; prefer contractsMicro/contractsDecimal over the legacy contracts field for exact accounting.",
+    description: "List a wallet's currently OPEN Jupiter prediction positions - exposure, unrealized PnL and claimability, one row per YES/NO side held. Use this when the question is what the wallet holds RIGHT NOW; solana__predict_trade_history_list answers what already happened. Returns `data`, one row per position: pubkey (the positionPubkey every trade tool takes), owner, contracts with its exact contractsMicro/contractsDecimal siblings, claimed, eventId, curated eventMetadata and marketMetadata, and sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd and payoutUsd as exact-decimal USD strings each with a raw *Micro sibling. Account on contractsMicro/contractsDecimal - the bare legacy contracts field is documented as unfit for accounting. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range; continuation is the provider's own `pagination` block passed through verbatim - start, end, total and `hasNext`, where hasNext false is the end and offset = pagination.end fetches the next page.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -77,9 +81,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.history",
+    publicName: "solana__predict_trade_history_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a wallet's PAST (closed/settled) prediction trade history — buys, sells, claims, realized PnL. Use solana.predict.positions instead for currently OPEN positions. Money *Usd fields (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd, etc.) are exact-decimal USD strings with raw *Micro siblings; transferAmountTokenRaw is a SEPARATE unit family — the transferred token's own native units, never a USD amount — do not convert or compare it against the *Usd fields.",
+    description: "Read a wallet's PAST Jupiter prediction activity - the settled record of buys, sells, claims and realized PnL, one row per history event. Use this when the question is what a wallet already did or what it actually made; solana__predict_positions_list answers what it still holds. Returns `data`, one row per event, carrying the event's own fields plus curated eventMetadata and marketMetadata: every *Usd money field (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd and the rest) is an exact-decimal USD string with a raw *Micro sibling, while transferAmountTokenRaw is a DIFFERENT unit family - the transferred token's own native units, never a USD amount - so never convert or compare it against the *Usd fields. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range; continuation is the provider's own `pagination` block passed through verbatim - start, end, total and `hasNext`, where hasNext false is the end and offset = pagination.end fetches the next page.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -95,13 +100,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.buy",
+    publicName: "solana__predict_buy",
     namespace: "solana",
     lifecycle: "active",
-    description: "Buy YES or NO shares in a prediction market — opens or adds to a position. Read solana.predict.tradingStatus first to confirm trading is active, and solana.predict.market/.orderbook to check current pricing before sizing amountUsdc. Broadcasts and returns truthful-pending — never confirms in this call; estimatedSizeUsd/estimatedFeeUsd in the output are order-preview ESTIMATES, not executed truth. Use solana.predict.sell to exit before resolution, or solana.predict.claim after the market resolves.",
+    description: "Buy YES or NO shares in a Jupiter prediction market, opening or adding to a position. SPENDS REAL FUNDS: it signs and broadcasts a USDC order from the session's Solana wallet and is approval-gated. Call solana__predict_trading_status_get first to confirm trading is open, and solana__predict_market_get or solana__predict_orderbook_get to price the side before sizing amountUsdc, which is a HUMAN USDC amount (10 = $10), never raw units. Returns TRUTHFUL-PENDING and never a confirmation: on a successful broadcast the reply names the order, its market and side, the transaction signature and an explorer link, and says confirmation is tracked automatically and must not be retried. A landing service that refuses answers \"rejected before broadcast - nothing went on-chain\" with the reason; a failure after the attempt was recorded names the execution id and says not to retry blindly. Exit later with solana__predict_sell before resolution, or solana__predict_claim after it.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "marketId", type: "string", required: true, description: "Market ID (from solana.predict.events/.search)." },
+      { key: "marketId", type: "string", required: true, description: "Market ID (from solana__predict_events_discover or solana__predict_events_search)." },
       { key: "side", type: "string", required: true, description: "Side: yes or no." },
       { key: "amountUsdc", type: "number", required: true, description: "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units." },
     ],
@@ -111,13 +117,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.sell",
+    publicName: "solana__predict_sell",
     namespace: "solana",
     lifecycle: "active",
-    description: "Sell (close) an OPEN prediction position before the market resolves, for whatever it's currently worth. Use solana.predict.claim instead once the market has RESOLVED and this position is a winner — claim settles at the resolved price; a sell takes whatever the book offers and Vex applies the provider's own default tolerance — size the position accordingly. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
+    description: "Close an OPEN Jupiter prediction position before its market resolves, at whatever the book currently offers. SPENDS REAL FUNDS in the sense that it signs and broadcasts an irreversible on-chain close from the session's Solana wallet, and it is approval-gated. Use this while the market is still OPEN; once it has RESOLVED and the position won, solana__predict_claim settles at the resolved price instead, which is the better exit. A sell takes the book's price under the provider's own default tolerance, so size the position accordingly. Returns TRUTHFUL-PENDING and never a confirmation: the reply names the closed position, the transaction signature and an explorer link, says confirmation is tracked automatically and must not be retried, and states that the payout settles in JupUSD (6 decimals), NOT USDC, arriving in a LATER keeper transaction that this broadcast does not deliver - so the position stays pending until settlement is observed. Convert a JupUSD payout with solana__swap_quote then solana__swap_execute once the balance appears. A refusal before broadcast says nothing went on-chain and why.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana.predict.positions)." },
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana__predict_positions_list)." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
@@ -125,13 +132,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.claim",
+    publicName: "solana__predict_claim",
     namespace: "solana",
     lifecycle: "active",
-    description: "Claim winnings from a RESOLVED (settled) prediction position — the market has an outcome and this position won. Use solana.predict.sell instead to exit an OPEN position before resolution. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with tokenIn JupUSD, tokenOut USDC once the balance appears.",
+    description: "Claim the winnings of a RESOLVED Jupiter prediction position - the market has an outcome and this position won. It signs and broadcasts an irreversible on-chain claim with the session's Solana wallet and is approval-gated; it spends network fees rather than principal. Use this AFTER the market resolves; solana__predict_sell is the exit while it is still open. Returns TRUTHFUL-PENDING and never a confirmation: the reply names the claimed position, the transaction signature and an explorer link, says confirmation is tracked automatically and must not be retried, and states that the payout settles in JupUSD (6 decimals), NOT USDC, arriving in a LATER keeper transaction that this broadcast does not deliver - so the position stays pending until settlement is observed. Convert a JupUSD payout with solana__swap_quote then solana__swap_execute once the balance appears. A refusal before broadcast says nothing went on-chain and why.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana.predict.positions)." },
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana__predict_positions_list)." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
@@ -139,9 +147,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.closeAll",
+    publicName: "solana__predict_close_all",
     namespace: "solana",
     lifecycle: "active",
-    description: "Close every open prediction position for the wallet in one call — each position gets its own independent sell-or-claim (whichever applies) and its own broadcast result; a failure on one position never blocks or rolls back the others. Zero open positions is reported as an explicit success with zero rows, never an error. Every result is truthful-pending — this never confirms any position in this call. Use solana.predict.sell/.claim instead to close just ONE position.",
+    description: "Close EVERY open Jupiter prediction position for the wallet in one call. SPENDS REAL FUNDS: each position gets its own independent sell or claim, whichever applies, and its own signed broadcast; a failure on one never blocks or rolls back the others, so this is not an atomic batch. Use this when the user wants out of everything at once - solana__predict_sell and solana__predict_claim close ONE named position. minSellPriceSlippageBps applies to EVERY sell in the batch, so pick a tolerance you accept across all of them; it is required (the provider has no default), capped at 1000 bps, and a higher value is REJECTED rather than clamped. Returns one TRUTHFUL-PENDING row per position - its signature, explorer link and pending status - and never a confirmation for any of them. Zero open positions answers with an explicit success carrying zero rows, never an error.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
@@ -153,13 +162,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.event",
+    publicName: "solana__predict_event_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get ONE known prediction event by ID — pass includeMarkets to also fetch its nested markets (each with its own marketId for solana.predict.market). Use solana.predict.events to browse/list events, or solana.predict.search to find an event by keyword.",
+    description: "Read ONE Jupiter prediction EVENT by its eventId. Use this when you already hold an eventId and want the question itself, or the list of tradable markets under it - solana__predict_events_discover browses, solana__predict_events_search finds one by keyword. Returns the event's eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; pass includeMarkets to also fetch its nested markets, each carrying the marketId that solana__predict_market_get and the trade tools take, plus title, status, result, openTime, closeTime, resolveAt and pricing. The result is complete: there is no paging on a single event.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "eventId", type: "string", required: true, description: "Event ID (from solana.predict.events or solana.predict.search)." },
+      { key: "eventId", type: "string", required: true, description: "Event ID (from solana__predict_events_discover or solana__predict_events_search)." },
       { key: "includeMarkets", type: "boolean", description: "Include the event's nested markets array (default false — lean)." },
     ],
     exampleParams: { eventId: "abc123" },
@@ -168,13 +178,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.position",
+    publicName: "solana__predict_position_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get ONE prediction position's full detail by pubkey — open or resolved, contracts, payout, claimability. Use solana.predict.positions to list all of a wallet's open positions and find a pubkey.",
+    description: "Read ONE Jupiter prediction position in full by its positionPubkey, open or already resolved. Use this before selling or claiming, to confirm what a position is actually worth and whether it is claimable. Returns pubkey, owner, contracts with its exact contractsMicro/contractsDecimal siblings, claimed, eventId, curated eventMetadata and marketMetadata, and sizeUsd, valueUsd, avgPriceUsd, markPriceUsd, pnlUsd and payoutUsd as exact-decimal USD strings each with a raw *Micro sibling. Account on contractsMicro/contractsDecimal rather than the bare legacy contracts field. Find a pubkey with solana__predict_positions_list.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana.predict.positions)." },
+      { key: "positionPubkey", type: "string", required: true, description: "Position public key (from solana__predict_positions_list)." },
     ],
     exampleParams: { positionPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
@@ -183,9 +194,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   // ── Pre-trade visibility & order tools (W1-D) ───────────────────
   {
     toolId: "solana.predict.orderbook",
+    publicName: "solana__predict_orderbook_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get bid/ask order-book depth for a prediction market — YES/NO price levels and sizes, beyond the top-of-book price solana.predict.market already returns. Depth is uncapped upstream and can be large for liquid markets. Fails with a clear error (never a silent empty book) when Jupiter's own upstream order-book data is temporarily unavailable.",
+    description: "Read bid and ask DEPTH for one Jupiter prediction market - the YES and NO price levels and the size resting at each. Use this before sizing a position that is large enough for the top-of-book price from solana__predict_market_get to be misleading. Returns the provider's own book: the native price-level arrays with their yes_dollars/no_dollars decimal-dollar mirrors, passed through in full. Depth is uncapped upstream and can be long on a liquid market; there is no depth or limit parameter and Vex adds no client-side cap. When Jupiter's own order-book fetch fails it answers with a clear named error naming the market, never a silently empty book, so an empty result is never manufactured from a failure.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -197,9 +209,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.tradingStatus",
+    publicName: "solana__predict_trading_status_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Check whether Jupiter Prediction Markets trading is currently active — call before placing an order.",
+    description: "Check whether Jupiter Prediction Markets trading is open right now. Call this before solana__predict_buy, solana__predict_sell, solana__predict_claim or solana__predict_close_all: an order placed while trading is halted fails at the venue, and this is the cheapest way to find out first. Takes no parameters and returns the venue's current trading-status record as the provider states it, complete with no paging. It is a statement about the VENUE, not about any one market - a market can still be closed, resolved or unpriced while the venue as a whole is open, which solana__predict_market_get answers.",
     mutating: false,
     actionKind: "read",
     params: [],
@@ -209,9 +222,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.orders",
+    publicName: "solana__predict_orders_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "List a wallet's prediction orders (buy/sell order lifecycle — pending/filled/failed, distinct from settled positions). No server-side status or market filter exists upstream — results are the owner's orders within the requested page, unfiltered beyond that. Use solana.predict.order or solana.predict.orderStatus for a single order by pubkey.",
+    description: "List a wallet's Jupiter prediction ORDERS - the buy/sell order lifecycle (pending, filled, failed), which is a different thing from the settled positions solana__predict_positions_list returns. Use this when the user asks what happened to an order they placed. Returns `data`, one row per order, carrying the order's own fields (minus internal PDA noise) plus curated eventMetadata and marketMetadata, with maxFillPriceUsd, maxBuyPriceUsd, minSellPriceUsd, avgFillPriceUsd and sizeUsd as exact-decimal USD strings each with a raw *Micro sibling. No server-side status, market or side filter exists upstream, so a page is the owner's orders unfiltered beyond the window. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range; continuation is the provider's own `pagination` block passed through verbatim - start, end, total and `hasNext`, where hasNext false is the end and offset = pagination.end fetches the next page. solana__predict_order_get and solana__predict_order_status_get read one order by pubkey.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -225,13 +239,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.order",
+    publicName: "solana__predict_order_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a single prediction order by pubkey (from solana.predict.orders). Errors once the order account closes post-fill — use solana.predict.orderStatus instead for a lookup that survives closure.",
+    description: "Read ONE live Jupiter prediction order by its orderPubkey, straight from its on-chain account. Use this when the order is still OPEN: once it fills, the account CLOSES and this call errors, so solana__predict_order_status_get is the lookup that survives a filled or cancelled order. Returns the order's own fields (minus internal PDA noise) plus curated eventMetadata and marketMetadata, with maxFillPriceUsd, maxBuyPriceUsd, minSellPriceUsd, avgFillPriceUsd and sizeUsd as exact-decimal USD strings each carrying a raw *Micro sibling. One record, complete, with no paging. Find an orderPubkey with solana__predict_orders_list.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "orderPubkey", type: "string", required: true, description: "Order public key (from solana.predict.orders)." },
+      { key: "orderPubkey", type: "string", required: true, description: "Order public key (from solana__predict_orders_list)." },
     ],
     exampleParams: { orderPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
@@ -239,13 +254,14 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.orderStatus",
+    publicName: "solana__predict_order_status_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a prediction order's durable status and fill-event history (from solana.predict.orders) — survives order-account closure, unlike solana.predict.order.",
+    description: "Read a Jupiter prediction order's DURABLE status and fill-event history by orderPubkey. Use this after an order has filled or been cancelled: the on-chain account is gone by then and solana__predict_order_get errors, while this record survives closure and is the honest answer to \"did my order go through\". Returns the provider's own status record for that order, with its fill events, as the provider states it - one record, complete, with no paging. Find an orderPubkey with solana__predict_orders_list.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "orderPubkey", type: "string", required: true, description: "Order public key (from solana.predict.orders)." },
+      { key: "orderPubkey", type: "string", required: true, description: "Order public key (from solana__predict_orders_list)." },
     ],
     exampleParams: { orderPubkey: "Abc123..." },
     requiresEnv: "JUPITER_API_KEY",
@@ -253,9 +269,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.trades",
+    publicName: "solana__predict_trades_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "Browse the global Jupiter Prediction trade feed (all traders, all markets) — no owner/market scope upstream. Vex applies the requested limit/offset window client-side. Money fields (amountUsd, priceUsd) are exact-decimal USD strings with raw *Micro siblings.",
+    description: "Browse the GLOBAL Jupiter Prediction trade feed - every trader, every market, newest activity as the venue publishes it. Use this when the question is what the venue as a whole is trading; a wallet's own fills are solana__predict_trade_history_list. Returns `data`, one row per trade, with amountUsd and priceUsd as exact-decimal USD strings each carrying a raw *Micro sibling and every other field (ids, side, action, titles) passed through, plus a `pagination` block of start, end, total and `hasNext` - hasNext false is the end of the feed, and while it is true the next page is offset = pagination.end. The feed has NO upstream scope or paging of its own, so the whole feed is fetched and Vex applies your window client-side: limit is REQUIRED (integer 1-100) precisely so an unbounded response is never returned by accident, and an out-of-range limit or offset is REJECTED by name rather than clamped.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -269,9 +286,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   // ── Discovery & social tools (W1-F) ─────────────────────────────
   {
     toolId: "solana.predict.profile",
+    publicName: "solana__predict_profile_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a trader's aggregate lifetime Jupiter Prediction stats — realized PnL, total volume, win/loss counts. Session-scoped: a walletAddress other than the session's selected wallet is REJECTED, so use solana.predict.leaderboards to compare other traders. Use solana.predict.pnlHistory instead for a PnL time series, or solana.predict.leaderboards to compare against other traders. Money fields (realizedPnlUsd, totalVolumeUsd, totalPositionsValueUsd) are exact-decimal USD strings with raw *Micro siblings.",
+    description: "Read one trader's aggregate LIFETIME Jupiter Prediction record - how they have done overall, not what they hold. Use this when the user asks how their prediction trading has gone; solana__predict_leaderboard_list is the ranked comparison against other traders, since this read is SESSION-SCOPED and a walletAddress other than the session's selected wallet is REJECTED by name. Returns the provider's profile record: realizedPnlUsd, totalVolumeUsd and totalPositionsValueUsd as exact-decimal USD strings each with a raw *Micro sibling, alongside predictionsCount, correctPredictions, wrongPredictions and totalActiveContracts with its own Micro/Decimal quantity siblings. One record, complete, with no paging.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -283,9 +301,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.pnlHistory",
+    publicName: "solana__predict_pnl_history_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get a wallet's realized-PnL TIME SERIES on Jupiter Prediction over an interval — use solana.predict.profile instead for a single lifetime snapshot rather than a series. realizedPnlUsd per data point is an exact-decimal USD string with a raw realizedPnlUsdMicro sibling. NOTE: as of 2026-07-24 the provider's pnl-history route is documented but returns 404 upstream for every wallet (a provider-side outage, not removal) — prefer solana.predict.profile until it is restored upstream.",
+    description: "Read a wallet's realized-PnL TIME SERIES on Jupiter Prediction, count data points over a 24h, 1w or 1m interval. UNAVAILABLE IN PRACTICE: since 2026-07-24 the provider answers 404 on this documented route for EVERY wallet, including traders whose profile returns 200, which Jupiter's own docs do not describe - a provider-side outage or stale documentation rather than a Vex fault or an empty history. Use this when the user asks how their PnL moved over time, but expect a failure that says exactly that, keeps the provider's own status, and points at solana__predict_profile_get; read that lifetime snapshot instead until the route is restored. When it does answer, it returns `history`, one point per interval bucket, each carrying realizedPnlUsd as an exact-decimal USD string with a raw realizedPnlUsdMicro sibling. count is capped at 100 and a larger value is REJECTED by name.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -299,9 +318,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.leaderboards",
+    publicName: "solana__predict_leaderboard_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get ranked Jupiter Prediction traders by period and metric (PnL, volume, or win rate) — use solana.predict.profile instead for one trader's own stats rather than a ranked comparison. realizedPnlUsd/totalVolumeUsd fields are exact-decimal USD strings with raw *Micro siblings. Note: each row's winRatePct is unit-unconfirmed (no fixture/doc has confirmed its scale) — treat it as an unverified figure, not a settled percent.",
+    description: "Rank Jupiter Prediction traders by period (all_time, weekly, monthly) and metric (pnl, volume, win_rate). Use this when the user asks who is doing well, or wants to see how their own trading stands against the field; solana__predict_profile_get answers what ONE trader has done. All three params are required and an unrecognised value is REJECTED by name. Returns `data`, one row per ranked trader, with realizedPnlUsd and totalVolumeUsd as exact-decimal USD strings each carrying a raw *Micro sibling plus predictionsCount, correctPredictions and wrongPredictions, and a `summary` block holding all_time, weekly and monthly totalVolumeUsd. Read each row's winRatePct as an UNVERIFIED figure: no capture or document has confirmed its scale, so it is passed through unconverted and must not be presented as a settled percent. A ranked page is the whole answer; there is no continuation.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -315,9 +335,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.vaultInfo",
+    publicName: "solana__predict_vault_get",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get the Jupiter Prediction protocol vault's on-chain public key and balance — protocol-level infrastructure state, not a personal wallet or position lookup. Takes no parameters.",
+    description: "Read the Jupiter Prediction PROTOCOL vault's own on-chain account - the venue's infrastructure state, not anybody's wallet, position or balance. Use this when the question is about the protocol itself, such as how much the venue's vault holds, and only then; a user's own money is solana__predict_positions_list and solana__predict_profile_get. Takes no parameters and returns the vault's public key and balance as the provider reports them, one record, complete, with no paging. Nothing here is scoped to the session wallet, so never present a figure from it as the user's own.",
     mutating: false,
     actionKind: "read",
     params: [],
@@ -327,9 +348,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
   },
   {
     toolId: "solana.predict.suggestedEvents",
+    publicName: "solana__predict_suggested_events_list",
     namespace: "solana",
     lifecycle: "active",
-    description: "Get personalized Jupiter Prediction event recommendations for ANY wallet address (not only your own). Use solana.predict.events/.search instead for an unpersonalized browse/keyword lookup.",
+    description: "Get Jupiter Prediction event recommendations PERSONALIZED to one wallet's trading, for ANY Solana address and not only the session's own. Use this when the user wants ideas shaped by what a wallet already trades; solana__predict_events_discover browses the venue with no personalization and solana__predict_events_search finds a named topic. Returns `data`, one row per recommended event: eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets keeps each event's curated markets in the view. The provider decides how many rows come back and offers no window, so the result is what it offers, with no continuation to page through.",
     mutating: false,
     actionKind: "read",
     params: [

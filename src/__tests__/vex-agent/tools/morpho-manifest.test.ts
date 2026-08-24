@@ -326,7 +326,7 @@ describe("morpho manifest", () => {
       const param = quote?.params.find((p) => p.key === key);
       expect(param?.description, key).toMatch(/RAW base units/);
       expect(param?.description, key).toMatch(/asset\.decimals/);
-      expect(param?.description, key).toMatch(/morpho\.vault\.get/);
+      expect(param?.description, key).toMatch(/morpho__vault_get/);
       expect(param?.description, key).not.toContain("token_find");
     }
   });

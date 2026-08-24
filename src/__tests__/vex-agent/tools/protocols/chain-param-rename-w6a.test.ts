@@ -1,6 +1,6 @@
 /**
  * W6a — `chainId` → `chain` on the four single-chain DexScreener tools and
- * `chain_read`, plus the virtuals `chain` enum (W7 populate).
+ * `ChainRead`, plus the virtuals `chain` enum (W7 populate).
  *
  * WHAT THIS PROVES, and why each half is here.
  *
@@ -11,12 +11,12 @@
  *    is what is pinned, on both lanes:
  *      • protocol lane: `runtime/params.ts`'s unknown-key gate, whose message
  *        carries the allowed list (which now contains `chain`);
- *      • internal lane: `chain_read` has NO strict unknown-key gate, so it must
+ *      • internal lane: `ChainRead` has NO strict unknown-key gate, so it must
  *        refuse the old key itself or answer "chain is missing" to a caller that
  *        did send a chain. That refusal is authored, so it is pinned by text.
  *
  * 2. A NUMERIC chain id works. CANONICAL_CHAIN_SENTENCE promises it on every
- *    chain-valued param, and `token_find` hands the agent numbers. DexScreener's
+ *    chain-valued param, and `TokenFind` hands the agent numbers. DexScreener's
  *    URL path needs a slug and Virtuals needs an UPPERCASE enum, so both
  *    translate in their own adapter — never in the manifest.
  *
@@ -156,9 +156,9 @@ describe("W6a — dexscreener `chainId` → `chain`", () => {
   });
 });
 
-describe("W6a — chain_read `chainId` → `chain`", () => {
-  const chainRead = EVM_TOOLS.find((tool) => tool.name === "chain_read");
-  if (chainRead === undefined) throw new Error("no chain_read tool in EVM_TOOLS");
+describe("W6a — ChainRead `chainId` → `chain`", () => {
+  const chainRead = EVM_TOOLS.find((tool) => tool.name === "ChainRead");
+  if (chainRead === undefined) throw new Error("no ChainRead tool in EVM_TOOLS");
   const schema = chainRead.parameters as {
     properties: Record<string, unknown>;
     required: readonly string[];

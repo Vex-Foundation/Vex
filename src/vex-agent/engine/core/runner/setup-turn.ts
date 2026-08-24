@@ -30,8 +30,8 @@ import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
-import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply } from "./shared.js";
-import { isContinuableRuntimeStop } from "./runtime-continuation.js";
+import { emitMissionUpdate } from "../../runtime/mission-bus.js";
+import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply, isRuntimeBoundStop } from "./shared.js";
 
 export async function processMissionSetupTurn(
   sessionId: string,
@@ -101,11 +101,11 @@ export async function processMissionSetupTurn(
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
-    // Mission setup co-authors the WHAT (mission_draft_update) and, when
-    // plan-mode is on, the HOW (plan_write); the single host Accept step
+    // Mission setup co-authors the WHAT (MissionDraftUpdate) and, when
+    // plan-mode is on, the HOW (PlanWrite); the single host Accept step
     // accepts both. Carry the LIVE plan-mode (= `session_plans.enabled`) so
     // the dispatch-path plan-acceptance gate is active in setup once the agent
-    // writes an unaccepted plan. `mission_draft_update` is safe-listed in
+    // writes an unaccepted plan. `MissionDraftUpdate` is safe-listed in
     // `PLAN_GATE_SAFE_CONTROL`, so the gate never deadlocks contract editing.
     planMode: hydrated.context.planMode ?? false,
   };
@@ -115,7 +115,7 @@ export async function processMissionSetupTurn(
     permission: setupContext.sessionPermission,
     sessionKind: "mission",
     missionRunActive: false, // setup — no run yet
-    // plan_write is visible in setup when plan-mode is on (`requiresPlanMode`;
+    // PlanWrite is visible in setup when plan-mode is on (`requiresPlanMode`;
     // `hiddenInMissionSetup` is now false). Carry the live plan-mode so the
     // seed tool set matches the dispatch-path snapshot above.
     planMode: hydrated.context.planMode ?? false,
@@ -188,8 +188,12 @@ export async function processMissionSetupTurn(
   // mission patch nor trigger the not-ready notice below. The turn-loop
   // persists real model text itself; nothing was saved on this path, so we
   // persist the synthesised reply here.
-  const capHit = isContinuableRuntimeStop(result.stopReason) && !result.text;
-  const capHitReply = isContinuableRuntimeStop(result.stopReason)
+  // `isRuntimeBoundStop`, NOT `isContinuableRuntimeStop`: a stalled turn
+  // (`no_progress`) is never auto-continued but still owes the user a reply.
+  // Asking the continuation question here is what returned `text: null` and
+  // produced a silent setup turn.
+  const boundHit = isRuntimeBoundStop(result.stopReason) && !result.text;
+  const boundHitReply = isRuntimeBoundStop(result.stopReason)
     ? runtimeBoundExhaustedReply(result.stopReason)
     : null;
   logger.info("engine.mission.setup_turn.timing", {
@@ -197,12 +201,12 @@ export async function processMissionSetupTurn(
     elapsedMs: Date.now() - startedAt,
     toolCallsMade: result.toolCallsMade,
     stopReason: result.stopReason,
-    capHit,
+    boundHit,
   });
-  if (capHit && capHitReply !== null) {
+  if (boundHit && boundHitReply !== null) {
     await appendMessage(
       sessionId,
-      { role: "assistant", content: capHitReply, timestamp: new Date().toISOString() },
+      { role: "assistant", content: boundHitReply, timestamp: new Date().toISOString() },
       { source: "assistant", messageType: "mission_setup", visibility: "user" },
     );
   }
@@ -210,10 +214,11 @@ export async function processMissionSetupTurn(
   // Apply mission patch from model response to draft (never from synthesised
   // text, never from text truncated by a user Stop — a partial patch could
   // corrupt the draft).
-  if (!capHit && result.stopReason !== "user_stopped" && result.text && missionId) {
+  let draftWasWritten = false;
+  if (!boundHit && result.stopReason !== "user_stopped" && result.text && missionId) {
     const parsed = parseModelMissionOutput(result.text);
     if (parsed) {
-      await applyMissionPatch(missionId, parsed);
+      draftWasWritten = (await applyMissionPatch(missionId, parsed)).draftWasWritten;
     }
   }
 
@@ -222,9 +227,31 @@ export async function processMissionSetupTurn(
   // mission can start unless the structured draft update made it ready.
   const latestSetupState = await getMissionSetupState(missionId);
   const missionStatus = (latestSetupState?.status ?? "draft") as MissionStatus;
-  let text = capHit ? capHitReply : result.text;
+
+  // `drafting → drafting-stalled` (see the state machine in `mission/setup.ts`).
+  // The turn ran to completion, the draft is still incomplete, and NOTHING was
+  // written - so `applyMissionPatch`'s emit-on-change stayed silent and the host
+  // would otherwise see an unchanged row it cannot distinguish from progress.
+  // Emit the absence explicitly so the mission surface can name the state and
+  // offer an escape instead of spinning forever on MISSION PREPARING.
+  //
+  // Deliberately NOT emitted for `boundHit` or `user_stopped`: those already have
+  // their own user-visible surfaces (the synthesised cap reply, the Stop the
+  // user pressed), and calling them "stalled" on top would be a second,
+  // contradictory explanation of the same event.
   if (
-    !capHit
+    !boundHit
+    && result.stopReason !== "user_stopped"
+    && !draftWasWritten
+    && latestSetupState
+    && latestSetupState.status !== "ready"
+  ) {
+    emitMissionUpdate({ sessionId, missionId, kind: "setup_no_progress" });
+  }
+
+  let text = boundHit ? boundHitReply : result.text;
+  if (
+    !boundHit
     && result.stopReason !== "user_stopped"
     && latestSetupState
     && latestSetupState.status !== "ready"

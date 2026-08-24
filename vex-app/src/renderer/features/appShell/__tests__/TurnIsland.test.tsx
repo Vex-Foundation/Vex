@@ -24,6 +24,7 @@ const PREVIEW: StreamPreview = {
   reasoningTokens: null,
   startedAtMs: 0,
   errorType: null,
+  errorDetail: null,
   status: "calling",
 };
 
@@ -78,7 +79,7 @@ describe("TurnIsland reasoning segments", () => {
     // No window, no clipping, no independent scroll box — a thought is read
     // whole or it is not read.
     expect(body?.className).not.toMatch(/max-h-|overflow-y-auto/);
-    // The reasoning register: serif italic, muted (`.vex-reasoning-prose`).
+    // The reasoning register: sans, muted (`.vex-reasoning-prose`).
     expect(body?.className).toContain("vex-reasoning-prose");
   });
 
@@ -138,13 +139,11 @@ describe("TurnIsland reasoning segments", () => {
     const live = renderIsland({ status: "working" }).querySelector(
       "[data-vex-island-label]",
     );
-    expect(live?.className).toContain("vex-preview-shimmer");
-    expect(live?.getAttribute("data-shimmer-text")).toBe(live?.textContent);
+    expect(live?.className).toContain("vex-turn-shimmer");
 
     const frozen = render(
       createElement(TurnIsland, { preview: PREVIEW, awaitingApproval: true }),
     ).container.querySelector("[data-vex-island-label]");
-    expect(frozen?.className).not.toContain("vex-preview-shimmer");
-    expect(frozen?.hasAttribute("data-shimmer-text")).toBe(false);
+    expect(frozen?.className).not.toContain("vex-turn-shimmer");
   });
 });

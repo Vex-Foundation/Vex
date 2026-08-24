@@ -211,7 +211,7 @@ const REQ_5 = "55555555-aaaa-4aaa-8aaa-555555555555";
 const REAL_USER_DATA = "/real/user-data";
 const REAL_LOGS_DIR = "/real/user-data/logs";
 
-describe("registerSupportHandler — openLogsFolder", () => {
+describe("registerSupportHandler - openLogsFolder", () => {
   beforeEach(() => {
     handlers.clear();
     cleanupTasks.clear();
@@ -239,7 +239,7 @@ describe("registerSupportHandler — openLogsFolder", () => {
     expect(openPathMock).toHaveBeenCalledWith(REAL_LOGS_DIR);
   });
 
-  it("rejects when realpath escapes userData (symlink traversal) — openPath never called", async () => {
+  it("rejects when realpath escapes userData (symlink traversal) - openPath never called", async () => {
     realpathMock.mockImplementation(async (p: unknown) => {
       if (p === FAKE_USER_DATA) return REAL_USER_DATA;
       // Symlink swap: logs dir resolves OUTSIDE userData.

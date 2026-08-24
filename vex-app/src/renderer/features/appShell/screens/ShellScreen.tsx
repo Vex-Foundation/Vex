@@ -29,7 +29,8 @@
 
 import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion, type TargetAndTransition } from "motion/react";
-import { XIcon, VexIcon } from "../../../components/icons/index.js";
+import { IconClose } from "../../../components/icons/index.js";
+import { Tooltip } from "../../../components/ui/tooltip.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion.js";
 
@@ -77,8 +78,8 @@ export function ShellScreen({
   readonly onClose: () => void;
   /**
    * Optional custom header content replacing the default serif H1 (the
-   * token-history screen composes its own mark + name + chain cluster —
-   * serif is banned there). `title` still names the dialog (aria-label) and
+   * token-history screen composes its own mark + name + chain cluster).
+   * `title` still names the dialog (aria-label) and
    * the close key either way.
    */
   readonly header?: ReactNode;
@@ -222,7 +223,7 @@ export function ShellScreen({
       >
         <header className="flex shrink-0 items-center px-8 pb-5 pt-8">
           {header ?? (
-            <h1 className="font-serif text-[30px] leading-none text-foreground">
+            <h1 className="font-display text-[26px] font-medium leading-8 text-ink-primary">
               {title}
             </h1>
           )}
@@ -232,15 +233,19 @@ export function ShellScreen({
         </div>
       </motion.div>
 
-      <button
-        ref={closeRef}
-        type="button"
-        aria-label={`Close ${title}`}
-        onClick={onClose}
-        className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--vex-line)] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-      >
-        <VexIcon icon={XIcon} size={16} aria-hidden />
-      </button>
+      {/* Keybinding hint (G9): Escape already closes - the tooltip only
+       * surfaces the existing shortcut, it defines nothing new. */}
+      <Tooltip label="Close · Esc" side="left">
+        <button
+          ref={closeRef}
+          type="button"
+          aria-label={`Close ${title}`}
+          onClick={onClose}
+          className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-line-2 text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        >
+          <IconClose size={16} />
+        </button>
+      </Tooltip>
     </motion.section>
   );
 }

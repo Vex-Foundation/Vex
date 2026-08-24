@@ -74,7 +74,7 @@ const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
   .update(Buffer.from(LIGHTER_KEY_PUBLIC_KEY, "hex"))
   .digest("hex");
 const trustedPreview = {
-  toolName: "wallet_send_confirm",
+  toolName: "WalletSendConfirm",
   criticalArgs: {
     network: "solana",
     chain: null,
@@ -90,7 +90,7 @@ function prepareResult(overrides: Record<string, unknown> = {}) {
     output: "prepared",
     actionKind: "approval_prepare",
     preparedActionFollowUp: {
-      toolName: "wallet_send_confirm",
+      toolName: "WalletSendConfirm",
       args: { walletFamily: "solana", intentId: INTENT_ID },
       expiresAt: EXPIRES_AT,
       approvalPreview: trustedPreview,
@@ -205,7 +205,7 @@ async function run(permission: "restricted" | "full", abortSignal?: AbortSignal)
       toolCalls: [
         {
           id: "prepare-call",
-          name: "wallet_send_prepare",
+          name: "WalletSendPrepare",
           arguments: {
             network: "solana",
             to: "model-recipient-must-not-feed-preview",
@@ -293,20 +293,20 @@ describe("prepared-action follow-up handoff", () => {
     });
     expect(dispatchTool).toHaveBeenCalledTimes(2);
     expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
-      name: "wallet_send_confirm",
+      name: "WalletSendConfirm",
       args: { walletFamily: "solana", intentId: INTENT_ID },
     });
     expect(enqueueApprovalIntent).toHaveBeenCalledWith(
       expect.objectContaining({
         trustedPreview,
         trustedExpiresAt: EXPIRES_AT,
-        toolCall: expect.objectContaining({ name: "wallet_send_confirm" }),
+        toolCall: expect.objectContaining({ name: "WalletSendConfirm" }),
       }),
     );
     expect(persistBatchTranscript).toHaveBeenCalledTimes(2);
     expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
       content: "Preparing transfer.",
-      executedCalls: [expect.objectContaining({ name: "wallet_send_prepare" })],
+      executedCalls: [expect.objectContaining({ name: "WalletSendPrepare" })],
       executedResults: [expect.objectContaining({ output: "prepared" })],
     });
     // Second persist is the synthetic confirm call — stamped system-originated
@@ -314,7 +314,7 @@ describe("prepared-action follow-up handoff", () => {
     // `saveAssistantMessage` provenance stamp + transcript-provenance test).
     expect(persistBatchTranscript.mock.calls[1]![0]).toMatchObject({
       content: null,
-      executedCalls: [expect.objectContaining({ name: "wallet_send_confirm" })],
+      executedCalls: [expect.objectContaining({ name: "WalletSendConfirm" })],
       executedResults: [],
       systemOriginated: true,
     });
@@ -432,7 +432,7 @@ describe("prepared-action follow-up handoff", () => {
     expect(enqueueApprovalIntent).not.toHaveBeenCalled();
     expect(persistBatchTranscript.mock.calls[1]![0]).toMatchObject({
       content: null,
-      executedCalls: [expect.objectContaining({ name: "wallet_send_confirm" })],
+      executedCalls: [expect.objectContaining({ name: "WalletSendConfirm" })],
       executedResults: [
         expect.objectContaining({ output: "transfer confirmed", success: true }),
       ],
@@ -444,7 +444,7 @@ describe("prepared-action follow-up handoff", () => {
     "hands off validated EVM transfers in %s sessions",
     async (permission) => {
       const evmPreview = {
-        toolName: "wallet_send_confirm",
+        toolName: "WalletSendConfirm",
         criticalArgs: {
           network: "eip155",
           chain: "base",
@@ -457,7 +457,7 @@ describe("prepared-action follow-up handoff", () => {
         .mockResolvedValueOnce(
           prepareResult({
             preparedActionFollowUp: {
-              toolName: "wallet_send_confirm",
+              toolName: "WalletSendConfirm",
               args: { walletFamily: "eip155", intentId: INTENT_ID },
               expiresAt: EXPIRES_AT,
               approvalPreview: evmPreview,
@@ -477,7 +477,7 @@ describe("prepared-action follow-up handoff", () => {
 
       const outcome = await run(permission);
       expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
-        name: "wallet_send_confirm",
+        name: "WalletSendConfirm",
         args: { walletFamily: "eip155", intentId: INTENT_ID },
       });
       if (permission === "restricted") {
@@ -534,7 +534,7 @@ describe("prepared-action follow-up handoff", () => {
   });
 
   // ── Codex Wave-1 defect 7: post-dispatch Stop, money path ─────
-  // `wallet_send_prepare → wallet_send_confirm` is the one place the runtime
+  // `WalletSendPrepare → WalletSendConfirm` is the one place the runtime
   // dispatches a SECOND tool on its own initiative, and the confirm leg is the
   // one that signs. A Stop that arrives while the prepare is in flight must
   // reach a decision point BEFORE that second dispatch.
@@ -555,7 +555,7 @@ describe("prepared-action follow-up handoff", () => {
       // The prepare DID run, so it is persisted truthfully and paired.
       expect(persistBatchTranscript).toHaveBeenCalledTimes(1);
       expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
-        executedCalls: [expect.objectContaining({ name: "wallet_send_prepare" })],
+        executedCalls: [expect.objectContaining({ name: "WalletSendPrepare" })],
         executedResults: [expect.objectContaining({ output: "prepared" })],
       });
     });
@@ -601,7 +601,7 @@ describe("prepared-action follow-up handoff", () => {
       // Pairing preserved: the synthetic confirm gets a truthful result row.
       expect(persistBatchTranscript).toHaveBeenCalledTimes(2);
       expect(persistBatchTranscript.mock.calls[1]![0]).toMatchObject({
-        executedCalls: [expect.objectContaining({ name: "wallet_send_confirm" })],
+        executedCalls: [expect.objectContaining({ name: "WalletSendConfirm" })],
         executedResults: [
           expect.objectContaining({
             success: false,

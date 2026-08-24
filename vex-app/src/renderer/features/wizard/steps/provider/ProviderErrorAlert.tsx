@@ -27,29 +27,29 @@ export function ProviderErrorAlert({
     <div
       role="alert"
       data-vex-provider-error={String(error.code)}
-      className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] py-1 pl-3 text-sm text-[var(--color-danger)]"
+      className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] py-1 pl-3 text-sm text-danger"
     >
       <strong className="block font-semibold">{copy.title}</strong>
       <p className="mt-1">{copy.body}</p>
       {error.causeCode !== null ? (
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+        <p className="mt-2 text-xs text-ink-tertiary">
           Cause: <code className="font-mono">{error.causeCode}</code>
         </p>
       ) : null}
       {error.causeCode !== null &&
       CAUSE_HINTS[error.causeCode] !== undefined ? (
-        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+        <p className="mt-1 text-xs text-ink-tertiary">
           {CAUSE_HINTS[error.causeCode]}
         </p>
       ) : null}
       {error.correlationId ? (
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+        <p className="mt-2 text-xs text-ink-tertiary">
           Correlation id:{" "}
           <code className="font-mono">{error.correlationId}</code>{" "}
           <button
             type="button"
             onClick={onOpenLogsFolder}
-            className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+            className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
           >
             Open logs folder
           </button>

@@ -16,7 +16,7 @@ import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
 import { kyberFailureMessage } from "./error-output.js";
 import { negativePriceImpactNote } from "../../../price-impact-note.js";
-import { revealOnEligibleFailure } from "./reveal-messaging.js";
+import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { resolveQuoteSafetyLeg, type QuoteSafety, type QuoteSafetyLeg } from "./quote-safety.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
@@ -49,8 +49,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     requireFeature(slug, "aggregator");
     chainId = slugToChainId(slug);
   } catch (err) {
-    const revealSuffix = revealOnEligibleFailure(err, context.sessionId, false);
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}.${revealSuffix}`);
+    const fallbackNote = venueFallbackNoteOnFailure(err, context.sessionId, false);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}.${fallbackNote}`);
   }
 
   let tokenIn: ResolvedKyberTokenMetadata;
@@ -60,11 +60,11 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     // resolved via Kyber's DEX search here. A symbol like "USDC" can match the
     // wrong contract (e.g. axlUSDC) and seed a prequote for the wrong token, so
     // the quote resolution is symmetric with execute (resolveTokenMetadataStrict)
-    // and EVM symbols must be resolved with token_find first.
+    // and EVM symbols must be resolved with TokenFind first.
     tokenIn = await resolveTokenMetadataStrict(tokenInRaw, chainId);
     tokenOut = await resolveTokenMetadataStrict(tokenOutRaw, chainId);
   } catch (err) {
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}`);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}`);
   }
   // Agent-facing labels only. A native leg's `symbol` is the chain-agnostic
   // `NATIVE` sentinel, which tells the agent nothing about what it is trading;
@@ -90,8 +90,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       resolveQuoteSafetyLeg(chainId, tokenOut),
     ]);
   } catch (err) {
-    const revealSuffix = revealOnEligibleFailure(err, context.sessionId, true);
-    return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}.${revealSuffix}`);
+    const fallbackNote = venueFallbackNoteOnFailure(err, context.sessionId, true);
+    return fail(`kyberswap__swap_quote failed: ${kyberFailureMessage("kyberswap__swap_quote", err)}.${fallbackNote}`);
   }
   const safety: QuoteSafety = { tokenIn: safetyIn, tokenOut: safetyOut };
   const route = formatRouteSummary(response.data.routeSummary);

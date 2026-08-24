@@ -17,7 +17,7 @@ import { MORPHO_VAULT_ROUTES } from "../read-params/vaults.js";
  * Every filter is a REAL server-side predicate on the generation it is sent to,
  * and every sort key a real order-by member, both verified by live introspection
  * on 2026-08-14. Where the two generations DIVERGE the tool refuses by name
- * rather than half-applying: `search` and `assetSymbol` exist only on V1's
+ * rather than half-applying: `query` and `assetSymbol` exist only on V1's
  * filter input and `sort: name` only on V1's order-by, so asking for one while
  * V2 is in scope is an error naming the `version` that would work.
  *
@@ -27,6 +27,7 @@ import { MORPHO_VAULT_ROUTES } from "../read-params/vaults.js";
  */
 export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vaults.discover",
+  publicName: "morpho__vaults_discover",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -35,9 +36,9 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "A Morpho vault is a CURATED, MANAGED deposit: the depositor hands one asset to a curator who spreads it across "
     + "many Morpho Blue lending markets and takes a fee from the yield. That is a different product from a lending "
     + "market, and the routing rule is simple - use THIS tool when the user wants somewhere passive to park an asset, "
-    + "asks which vault pays best, or wants to compare curators; use `morpho.markets.discover` when they want to lend "
+    + "asks which vault pays best, or wants to compare curators; use `morpho__markets_discover` when they want to lend "
     + "into ONE specific asset pair themselves, or to borrow. Use `pendle.*` for a FIXED rate locked to an expiry date "
-    + "and `solana.lend.*` for Solana. "
+    + "and the `solana__lend_*` tools for Solana. "
     + "COVERS BOTH VAULT GENERATIONS. `version` selects v1 (MetaMorpho), v2, or both (the default). At `both` this "
     + "tool queries BOTH generations, takes the top (offset + limit) rows from EACH under your sort key, merges them "
     + "and re-sorts the union, so the returned ordering is the exact global ranking for that window and `matched` is "
@@ -47,12 +48,16 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "cut percent (the fee bound is spelled `maxCuratorCutPercent`: a key containing 'fee' is reserved here for a "
     + "fee VEX charges); also filter by asset TAGS and by which lending MARKETS a vault supplies "
     + "(`suppliesMarketIds`, the way to ask 'which vaults are exposed to this market'). "
-    + "`search`, `assetSymbol`, `assetTags` and `suppliesMarketIds` are V1-only predicates and are REJECTED BY NAME "
+    + "`query`, `assetSymbol`, `assetTags` and `suppliesMarketIds` are V1-only predicates and are REJECTED BY NAME "
     + "when v2 is in scope, "
     + "because applying a filter to half a result set and not the other half is worse than refusing. Sort by "
     + `${MORPHO_VAULT_SORT_KEYS.join(", ")} (default tvlUsd); a key only one generation's order-by declares is `
     + "rejected by name, naming the `version` that can serve it; page with offset/limit (max "
-    + `${MORPHO_MAX_PAGE_LIMIT}). Every filter that ran is echoed in \`filtersApplied\`. `
+    + `${MORPHO_MAX_PAGE_LIMIT}). PAGING IS EXPLICIT: every reply carries \`matched\` (the total that matched, `
+    + "summed across the generations in scope), `returned`, `offset`, `limit`, `hasMore`, `nextOffset` (the "
+    + "offset to send next when `hasMore` is true, and `null` when it is false), `droppedRows` and "
+    + "`filtersApplied` (every filter that actually ran). Continue by sending back `nextOffset`, never by "
+    + "computing an offset yourself. "
     + "RETURNS one row per vault: address, version, chain, name, symbol, listed flag, the vault asset with address, "
     + "symbol and decimals, TVL as {raw, decimals, symbol, human, usd}, share supply as a SHARE count at an "
     + "explicitly unknown scale, share price, "
@@ -67,7 +72,7 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "decides whether a depositor may exit at all; `gating.depositGated` blocks entry. Live gated vaults exist, so "
     + "never recommend a deposit without reading this flag. V1 vaults report `gating: null` and a single "
     + "`timelockSeconds`; V2 vaults report `timelockSeconds: null` because their timelocks are per-function and are "
-    + "returned by `morpho.vault.get`. "
+    + "returned by `morpho__vault_get`. "
     + "`listedOnly` defaults to TRUE because anyone can deploy a vault: reading Morpho's own unordered vault list in "
     + "a live capture put a vault named `tstcntrct` in SECOND position, next to one named `Test`, both unlisted and "
     + "holding about ten dollars between them. "
@@ -90,10 +95,11 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
     + "curated USDC vault earned the same gross 4.13% because they allocate into the same markets and differed only "
     + "by fee - 0%, 5%, 10% and 25% giving 4.13%, 3.92%, 3.71% and 3.08% net - while supplying cbBTC/USDC directly "
     + "earned that same 4.13% with no fee and no diversification at all. "
-    + "EVERY OPTION NAMES THE TOOL IT IS ACTED ON WITH. `routing.quote` and `routing.execute` carry a toolId, the "
-    + "params this call already knows, the params still to decide, and an `available` flag - a curated option routes "
-    + "to morpho.vault.quote then morpho.vault.deposit, a direct option to morpho.market.quote then "
-    + "morpho.market.supply. Read-only - it signs nothing and spends nothing.",
+    + "EVERY OPTION NAMES THE TOOL IT IS ACTED ON WITH. `routing.quote` and `routing.execute` carry a `publicName` - "
+    + "the callable name, and the one to emit - the params this call already knows, the params still to decide, and "
+    + "an `available` flag; a curated option routes to `morpho__vault_quote` then `morpho__vault_deposit`, a direct "
+    + "option to `morpho__market_quote` then `morpho__market_supply`. Read-only - it signs nothing and spends "
+    + "nothing.",
   mutating: false,
   actionKind: "read",
   params: [
@@ -130,11 +136,21 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
         + "is rejected with the full set spelled out. Omit for every supported chain.",
     },
     {
-      key: "search",
+      key: "query",
+      aliases: [
+        {
+          key: "search",
+          removeAfter:
+            "D5 owner acceptance: a stale call carrying `search` is rewritten to `query`; the alias goes when "
+            + "the owner accepts that such a call should instead receive the unknown-parameter answer naming "
+            + "`query`.",
+        },
+      ],
       type: "string",
       description:
-        "Free-text substring match on the vault's name and symbol (for example 'steakhouse', 'usdc'). V1-ONLY: "
-        + "Morpho's V2 filter input has no search predicate, so this is rejected by name unless `version` is 'v1'.",
+        "Free-text substring match on the vault's name and symbol (for example 'steakhouse', 'usdc'). It is a "
+        + "FILTER, not a ranker: it narrows the set and `sort` decides the order. V1-ONLY: Morpho's V2 filter "
+        + "input has no free-text predicate, so this is rejected by name unless `version` is 'v1'.",
     },
     {
       key: "assetTokenAddress",
@@ -166,7 +182,7 @@ export const MORPHO_VAULTS_DISCOVER_TOOL: ProtocolToolManifest = {
       description:
         "Comma list or array of Morpho's own asset-class TAGS the vault's asset must carry, to screen a whole class "
         + "of vault rather than one named token. The accepted set is not enumerated here, for the reason recorded on "
-        + "`morpho.markets.discover.loanAssetTags`; an unknown tag is rejected by name with the full set spelled out, "
+        + "`morpho__markets_discover`'s own `loanAssetTags`; an unknown tag is rejected by name with the full set spelled out, "
         + "rather than sent as a predicate that matches nothing. V1-ONLY: "
         + "Morpho's V2 filter input declares no tag predicate, so this is rejected by name unless `version` is 'v1'.",
     },

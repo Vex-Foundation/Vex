@@ -124,7 +124,7 @@ describe("registry completeness", () => {
 // DIRECT-DISPATCH internal tools live OUTSIDE `INTERNAL_TOOL_LOADERS` because
 // `routeToolCall` dispatches them via a dedicated branch BEFORE the
 // internal-tool fallback:
-//   - meta-tools `discover_tools` / `execute_tool` → protocol runtime,
+//   - the `ToolSearch` meta-tool → the ToolSearch dispatch lane,
 //   - MUTATING protocol-aliases (Stage 8b, e.g. `swap`) → resolved target via
 //     `executeProtocolTool`. These MUST bypass `routeInternalTool` so they skip
 //     its internal mutating-approval gate (approval is owned by
@@ -134,7 +134,7 @@ describe("registry completeness", () => {
 // a separate assertion below proves every alias key is a real internal ToolDef
 // (so the exclusion can never hide an orphan).
 
-const META_TOOL_NAMES = new Set(["discover_tools", "execute_tool"]);
+const META_TOOL_NAMES = new Set(["ToolSearch"]);
 const MUTATING_ALIAS_NAMES = new Set(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS));
 const DIRECT_DISPATCH_TOOL_NAMES = new Set([...META_TOOL_NAMES, ...MUTATING_ALIAS_NAMES]);
 

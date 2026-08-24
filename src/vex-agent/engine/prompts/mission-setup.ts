@@ -17,7 +17,7 @@ export interface MissionSetupContext {
   /**
    * Measurability warnings for the CURRENT draft (engine/mission/
    * measurability.ts), re-assessed on every setup turn. Carried here so the
-   * model sees them without having to call `mission_draft_update` first - the
+   * model sees them without having to call `MissionDraftUpdate` first - the
    * gap that let a RENEWED draft inherit a stale deployedCapital declaration
    * silently (renew clones capital_source_json wholesale and fires no tool
    * call of its own).
@@ -40,20 +40,20 @@ export function buildMissionSetupPrompt(
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Capability Orientation only: use the Available Tool Map (including `web_research` and `twitter_account` when present), `discover_tools`, `wallet_balances`, and `agent_scan` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or any market-data protocol call; Operational Research belongs to the run");
+  lines.push("- Capability Orientation only: use the Available Tool Map (including `WebResearch` and `TwitterAccount` when present), `ToolSearch`, `WalletBalances`, and `AgentScan` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or any market-data protocol call; Operational Research belongs to the run");
   lines.push("- Record the trading venues/protocols the mission will use in `allowedProtocols` (venue/protocol names only). Do NOT put exact toolIds or research tool names in `allowedProtocols` — the exact tool-selection (including web/X research tools) belongs in the action plan's tool-selection section under plan mode, not in the mission contract");
   lines.push("- Keep orientation grounded in the draft — read what you need to fill, verify, or explain a field; do not spiral into open-ended market analysis before the draft is ready");
   lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or ask the user to confirm/refine the proposed stop-condition list");
   lines.push("- A partial mission idea is draft input first: capture it, then do the focused tool/state research needed to fill the remaining fields — do not defer the draft into an open-ended token/market hunt");
-  lines.push("- A mission that may launch a token checks the user's staged image locker during setup: discovering `trench.images` and calling it as `trench__images` is a state read (like a balance), not market data, so it is allowed here. If the locker is empty, ask the user to upload an image to the Trench Photos card — a launch cannot run without one and you can never supply one");
+  lines.push("- A mission that may launch a token checks the user's staged image locker during setup: discovering and calling `trench__images_list` is a state read (like a balance), not market data, so it is allowed here. If the locker is empty, ask the user to upload an image to the Trench Photos card — a launch cannot run without one and you can never supply one");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
-  lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
-  lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
-  lines.push("- `mission_draft_update` is the source of truth for readiness. Assistant prose does not make a draft ready");
+  lines.push("- When the user provides mission information, call `MissionDraftUpdate` to save it into the mission draft");
+  lines.push("- If a read-only tool gives new facts that change any draft field, call `MissionDraftUpdate` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
+  lines.push("- `MissionDraftUpdate` is the source of truth for readiness. Assistant prose does not make a draft ready");
   lines.push("- Show the current draft state after each update so the user can track progress");
-  lines.push("- A success criterion phrased as a percentage, a multiple, or a portfolio total needs deployedCapital set. Without it, coins the wallet already held count toward the target and the criterion can read as met before the mission trades. mission_draft_update returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
-  lines.push("- Activation sequence: when the most recent `mission_draft_update` returns ready=true, tell the user to review the contract (and plan when plan mode is on) and click Accept contract. Only after that acceptance does the host show Start mission. Never claim the mission has launched during setup");
-  lines.push("- If `mission_draft_update` returns ready=false, show its missingFields and ask for exactly those fields; do not say the mission is ready");
+  lines.push("- A success criterion phrased as a percentage, a multiple, or a portfolio total needs deployedCapital set. Without it, coins the wallet already held count toward the target and the criterion can read as met before the mission trades. MissionDraftUpdate returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
+  lines.push("- Activation sequence: when the most recent `MissionDraftUpdate` returns ready=true, tell the user to review the contract (and plan when plan mode is on) and click Accept contract. Only after that acceptance does the host show Start mission. Never claim the mission has launched during setup");
+  lines.push("- If `MissionDraftUpdate` returns ready=false, show its missingFields and ask for exactly those fields; do not say the mission is ready");
   lines.push("- Never use `undefined` as a mission field value. Omit fields that are unchanged; for required fields that are not applicable, save an explicit `not applicable: ...` reason");
   lines.push("- Stop conditions are user-owned contract terms: they are permissions to end the mission without success. You may propose them, and the user may provide or refine the list in chat, but never accept them on the user's behalf");
   lines.push("");
@@ -70,7 +70,7 @@ export function buildMissionSetupPrompt(
   lines.push("- **riskProfile** — conservative, moderate, or aggressive");
   lines.push("- **successCriteria** — how to know the mission succeeded");
   lines.push("- **stopConditions** — proposed/user-owned non-success stop conditions. Final acceptance happens via the host Accept contract step (mission.acceptContract), not by chat agreement. Prefer canonical reasons: deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity");
-  lines.push("- **launch ceilings** (only for a mission that may launch tokens) — the max launch value and the max launch count are HOST-authored: the user sets them on the contract card in the app, and `mission_draft_update` cannot write them. Never invent, promise, or claim them; when the user asks for a launch mission, tell them to set both on the contract card before accepting the contract");
+  lines.push("- **launch ceilings** (only for a mission that may launch tokens) — the max launch value and the max launch count are HOST-authored: the user sets them on the contract card in the app, and `MissionDraftUpdate` cannot write them. Never invent, promise, or claim them; when the user asks for a launch mission, tell them to set both on the contract card before accepting the contract");
   lines.push("- **deadline** (optional) — time limit for the mission");
   lines.push("- **durationMinutes** (optional) — the mission's hard time-box in whole minutes (e.g. 5, 60), set from the goal's stated duration. The run auto-finalizes at started_at + this many minutes regardless of progress; if omitted, a 60-minute default applies");
   lines.push("");
@@ -89,9 +89,9 @@ export function buildMissionSetupPrompt(
   if (engineContext.planMode === true) {
     lines.push("## Action Plan (plan mode is ON)");
     lines.push("Plan mode is on, so co-author the action plan (the HOW) alongside the mission contract (the WHAT); the activation sequence's single Accept contract step accepts both.");
-    lines.push("- After the contract draft is taking shape, call `plan_write` to author the full action plan in markdown. Record which tools and venues you will use; do NOT run live market scans or route-price quotes now — defer that Operational Research until after acceptance.");
+    lines.push("- After the contract draft is taking shape, call `PlanWrite` to author the full action plan in markdown. Record which tools and venues you will use; do NOT run live market scans or route-price quotes now — defer that Operational Research until after acceptance.");
     lines.push("- Write the plan using the 9-section template: 1) Objective & boundaries, 2) Effort tier (simple|comparison|complex + tool-call budget), 3) Research findings, 4) Approach & tool selection (exact protocol toolIds you will reuse, the research/social tools you will use when relevant, and which tools you will NOT use), 5) Cadence/aggressiveness, 6) Sub-tasks (one at a time, checkboxes), 7) Stop conditions, 8) Success criteria & self-verify, 9) Re-plan log.");
-    lines.push("- Any content change to the plan (a new `plan_write`) re-arms acceptance, so finalize the plan before asking the user to accept. Do not claim either is accepted on the user's behalf.");
+    lines.push("- Any content change to the plan (a new `PlanWrite`) re-arms acceptance, so finalize the plan before asking the user to accept. Do not claim either is accepted on the user's behalf.");
     lines.push("");
   }
 

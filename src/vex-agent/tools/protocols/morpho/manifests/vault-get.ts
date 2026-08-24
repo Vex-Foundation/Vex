@@ -17,6 +17,7 @@ import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
  */
 export const MORPHO_VAULT_GET_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vault.get",
+  publicName: "morpho__vault_get",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -24,7 +25,7 @@ export const MORPHO_VAULT_GET_TOOL: ProtocolToolManifest = {
     + "address is chain-scoped and the same address on the wrong chain resolves to nothing). The vault GENERATION is "
     + "detected automatically: V2 is tried first and V1 second, so you never have to know which one an address "
     + "belongs to, and a miss is only reported after both registries were checked. Use this AFTER "
-    + "`morpho.vaults.discover` has narrowed the candidates and BEFORE treating a vault as somewhere to deposit, "
+    + "`morpho__vaults_discover` has narrowed the candidates and BEFORE treating a vault as somewhere to deposit, "
     + "because it returns the facts the screening call cannot carry. "
     + "RETURNS everything the discovery row has (asset with decimals, TVL as {raw, decimals, symbol, human, usd}, "
     + "share price, the labelled APY block, fees, curator, listed flag, warnings) PLUS three blocks. "
@@ -62,8 +63,8 @@ export const MORPHO_VAULT_GET_TOOL: ProtocolToolManifest = {
       type: "string",
       required: true,
       description:
-        "The vault's 0x-prefixed 40-hex contract address. Read one from `morpho.vaults.discover`. A 64-hex value is "
-        + "rejected by name because that is a MARKET id and belongs to `morpho.market.get`. You do not need to know "
+        "The vault's 0x-prefixed 40-hex contract address. Read one from `morpho__vaults_discover`. A 64-hex value is "
+        + "rejected by name because that is a MARKET id and belongs to `morpho__market_get`. You do not need to know "
         + "whether the vault is V1 or V2; both are tried.",
     },
     {

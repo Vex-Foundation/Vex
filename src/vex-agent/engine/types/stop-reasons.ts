@@ -34,6 +34,21 @@ export type RuntimeStopReason =
    * answers it. Sibling of `approval_required` — the call it stopped on has no
    * transcript result yet, and `resumeAgentAfterUserForm` appends the only one.
    */
-  | "user_form_required";
+  | "user_form_required"
+  /**
+   * The model produced a run of rounds that emitted NOTHING - no tool call, no
+   * text - so the turn stalled without consuming its iteration budget in any
+   * meaningful sense.
+   *
+   * Deliberately NOT `iteration_limit`. `iteration_limit` means "the agent did
+   * a lot of work and ran out of room"; this means "the agent did no work at
+   * all and kept asking". They call for different copy, different operator
+   * next steps, and different continuation policy: an exhausted budget is
+   * continuable (a fresh slice makes progress), a stall is NOT - the round that
+   * produced nothing persisted nothing, so the next round sees the identical
+   * input and would stall identically. See
+   * `runner/unproductive-rounds.ts` for the detector and its bound.
+   */
+  | "no_progress";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;

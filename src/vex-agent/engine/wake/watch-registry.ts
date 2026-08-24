@@ -1,5 +1,5 @@
 /**
- * Generic `loop_defer` watch registry.
+ * Generic `LoopDefer` watch registry.
  *
  * The scheduler validates only a discriminated envelope. A protocol that owns
  * a condition registers its live validation and trigger predicate here, so a
@@ -50,7 +50,7 @@ export function listWakeWatchTypes(): readonly string[] {
  * Per-condition validation outcome.
  *
  * Validation NEVER throws for the caller as a whole: one unusable condition
- * must not take the surrounding `loop_defer` with it. The live incident this
+ * must not take the surrounding `LoopDefer` with it. The live incident this
  * design answers is the reverse — a rejected watch failed the whole call, the
  * run therefore did NOT park, and the agent kept thinking. A watch is an
  * OPTIMIZATION over the timer; losing it must degrade to the timer, never to
@@ -66,7 +66,7 @@ export interface WakeWatchValidationResult {
   readonly rejected: readonly string[];
   /**
    * Conditions that are ALREADY TRUE. This is the one outcome that must change
-   * what `loop_defer` does: arming a watch for an event that has already
+   * what `LoopDefer` does: arming a watch for an event that has already
    * happened parks the session until its timer, which is the opposite of what
    * the model asked for. See `WakeWatchSatisfiedError`.
    */

@@ -5,10 +5,11 @@
  * lane: a predicate one vault generation cannot serve is REFUSED BY NAME, never
  * applied to the half that can serve it and silently skipped on the other half.
  *
- * That is not a stylistic preference. `VaultFilters` (V1) declares `search` and
- * `assetSymbol_in`; `VaultV2sFilters` declares NEITHER. `VaultOrderBy` declares
+ * That is not a stylistic preference. `VaultFilters` (V1) declares `search` (the
+ * provider spelling of the agent-facing `query`) and `assetSymbol_in`;
+ * `VaultV2sFilters` declares NEITHER. `VaultOrderBy` declares
  * `Name`; `VaultV2OrderBy` does not. Both differences were read off the live
- * schema on 2026-08-14. If a `search` at the default `version: both` were quietly
+ * schema on 2026-08-14. If a `query` at the default `version: both` were quietly
  * applied to V1 only, the reply would mix filtered V1 rows with UNFILTERED V2
  * rows under one heading, and the agent would have no way to tell. The refusal
  * names the predicate, names the generation that cannot serve it, and names the
@@ -191,7 +192,9 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
 
   const chainIds = readChains(p["chainIds"], "chainIds");
   if (!chainIds.ok) return chainIds;
-  const search = readOptionalString(p["search"]);
+  // Agent-facing key `query` (owner decision D1); the PROVIDER's V1 predicate is
+  // still spelled `search`, and that translation stays inside this adapter.
+  const query = readOptionalString(p["query"]);
   const assetAddresses = readAddressCsv(p["assetTokenAddress"], "assetTokenAddress");
   if (!assetAddresses.ok) return assetAddresses;
   const assetSymbols = readSymbolCsv(p["assetSymbol"], "assetSymbol");
@@ -231,8 +234,8 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
   const directScope = readDirectScope(chosenRoute, assetAddresses.value, chainIds.value);
   if (!directScope.ok) return directScope;
 
-  if (search !== undefined && versions.includes("v2")) {
-    return v1OnlyRejection("search", "free-text search predicate");
+  if (query !== undefined && versions.includes("v2")) {
+    return v1OnlyRejection("query", "free-text search predicate");
   }
   if (assetSymbols.value !== undefined && versions.includes("v2")) {
     return v1OnlyRejection("assetSymbol", "asset-symbol predicate (use `assetTokenAddress`, which both generations serve)");
@@ -286,7 +289,7 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
 
   const v1Filters: MorphoVaultV1Filters = {
     ...shared,
-    ...(search !== undefined ? { search } : {}),
+    ...(query !== undefined ? { search: query } : {}),
     ...(assetSymbols.value ? { assetSymbol_in: assetSymbols.value } : {}),
     ...(assetTags.value ? { assetTags_in: assetTags.value } : {}),
     ...(suppliesMarketIds.value ? { marketUniqueKey_in: suppliesMarketIds.value } : {}),
@@ -306,7 +309,7 @@ export function parseMorphoVaultsParams(p: Record<string, unknown>): MorphoParam
   };
   const optional: Array<[string, unknown]> = [
     ["chainIds", chainIds.value?.map((id) => String(id))],
-    ["search", search],
+    ["query", query],
     ["assetTokenAddress", assetAddresses.value],
     ["assetSymbol", assetSymbols.value],
     ["curatorAddress", curators.value],
@@ -363,8 +366,8 @@ export function parseMorphoVaultGetParams(p: Record<string, unknown>): MorphoPar
     return reject(
       "vaultAddress",
       `\`vaultAddress\` must be a 0x-prefixed 40-hex contract address. Received "${vaultAddress}"`
-      + (looksLikeMarketId ? ", which is a 64-hex MARKET id - that belongs to morpho.market.get." : ".")
-      + " Read one from morpho.vaults.discover.",
+      + (looksLikeMarketId ? ", which is a 64-hex MARKET id - that belongs to morpho__market_get." : ".")
+      + " Read one from morpho__vaults_discover.",
     );
   }
 

@@ -70,7 +70,7 @@ function notFound(vaultAddress: string, chainId: number): never {
     `No Morpho vault answered at ${vaultAddress.toLowerCase()} on chain ${chainId}. Both the V2 and the V1 `
     + "(MetaMorpho) readers were tried, so this is not a generation mismatch.",
     "Check the address and the chain together: a vault address is chain-scoped, and the same address on the wrong "
-    + "chain resolves to nothing. `morpho.vaults.discover` lists real vaults per chain.",
+    + "chain resolves to nothing. `morpho__vaults_discover` lists real vaults per chain.",
   );
 }
 

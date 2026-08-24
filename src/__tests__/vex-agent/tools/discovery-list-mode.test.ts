@@ -27,7 +27,7 @@ import {
  * and needs no magic number.
  */
 
-describe("discover_tools namespace list mode", () => {
+describe("ToolSearch namespace listing mode", () => {
   const ENV_KEYS = [
     "JUPITER_API_KEY",
     "POLYMARKET_API_KEY",
@@ -59,7 +59,7 @@ describe("discover_tools namespace list mode", () => {
     const result = await discoverProtocolCapabilities({ list: true });
     expect(result.success).toBe(false);
     expect(result.tools).toHaveLength(0);
-    expect(result.warnings.join(" ")).toContain("list mode requires a namespace");
+    expect(result.warnings.join(" ")).toContain("A listing requires a namespace");
   });
 
   it("refuses list mode without a namespace even when a query is present", async () => {

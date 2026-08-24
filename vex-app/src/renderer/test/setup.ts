@@ -11,4 +11,33 @@
 (globalThis as { __VEX_APP_VERSION__?: string }).__VEX_APP_VERSION__ ??=
   "0.0.0-test";
 
+// Vitest 4 can inherit a Node localStorage shim when NODE_OPTIONS contains
+// --localstorage-file without a valid path. Zustand persist needs Storage.
+const storageCandidate = (globalThis as { localStorage?: Partial<Storage> })
+  .localStorage;
+if (
+  !storageCandidate ||
+  typeof storageCandidate.getItem !== "function" ||
+  typeof storageCandidate.setItem !== "function" ||
+  typeof storageCandidate.removeItem !== "function" ||
+  typeof storageCandidate.clear !== "function"
+) {
+  const state = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => state.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        state.set(key, value);
+      },
+      removeItem: (key: string) => {
+        state.delete(key);
+      },
+      clear: () => {
+        state.clear();
+      },
+    },
+  });
+}
+
 export {};

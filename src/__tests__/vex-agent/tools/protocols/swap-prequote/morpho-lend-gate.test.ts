@@ -264,7 +264,7 @@ describe("the gate fails closed and speaks the right language", () => {
     const decision = await mod.evaluatePrequoteGate("morpho.vault.deposit", executeParams("deposit"), ctx());
 
     if (decision.kind !== "block") throw new Error("expected a block");
-    expect(decision.message).toContain("morpho.vault.quote");
+    expect(decision.message).toContain("morpho__vault_quote");
     expect(decision.message).not.toContain("swap quote");
   });
 

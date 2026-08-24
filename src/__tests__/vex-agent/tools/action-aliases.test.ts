@@ -1,6 +1,6 @@
 /**
  * Action-named READ-ONLY alias handlers (Stage 8a; Agent Scan plan §11.2
- * rewired swap_quote — FIX-SPINE round 1 corrected this file for the
+ * rewired SwapQuote — FIX-SPINE round 1 corrected this file for the
  * `amount`→`amountIn` rename, the removed silent Kyber→Uniswap fallback, and
  * the new `.strict()` schemas, none of which were fixed when round 1 first
  * made those changes).
@@ -9,13 +9,13 @@
  * EXACT translated params, by mocking `executeProtocolTool` to capture its
  * arguments (the underlying protocol runtime is exercised elsewhere). Covers:
  *
- *   - swap_quote family router: EVM → kyberswap.swap.quote ONLY (no venue
+ *   - SwapQuote family router: EVM → kyberswap.swap.quote ONLY (no venue
  *     fallback — plan §11.2), "solana" → solana.swap.quote, ambiguous chain →
  *     clear failure (no dispatch).
- *   - swap_quote EVM token guard: a bare symbol is rejected (no dispatch) — EVM
- *     tokens must be a contract address or native; symbols resolve via token_find.
- *   - token_check / bridge_quote pass-through translation.
- *   - bridge_status: orders.get with an id, orders.list without, and a by-name
+ *   - SwapQuote EVM token guard: a bare symbol is rejected (no dispatch) — EVM
+ *     tokens must be a contract address or native; symbols resolve via TokenFind.
+ *   - TokenCheck / BridgeQuote pass-through translation.
+ *   - BridgeStatus: orders.get with an id, orders.list without, and a by-name
  *     rejection when the two modes are mixed (W2d).
  *
  * `resolveChainSlug` is NOT mocked — the router's real EVM/Solana decision is
@@ -43,6 +43,7 @@ import {
   handleBridgeStatus,
   handleBridgeQuote,
 } from "@vex-agent/tools/internal/action-aliases.js";
+import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 // Minimal context — the aliases only forward the execution-context slice
@@ -66,7 +67,7 @@ beforeEach(() => {
   executeProtocolTool.mockClear();
 });
 
-describe("swap_quote — family router", () => {
+describe("SwapQuote — family router", () => {
   // EVM token addresses (the quote path is now strict: address-or-native only).
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
@@ -96,14 +97,14 @@ describe("swap_quote — family router", () => {
     expect(params).not.toHaveProperty("slippageBps");
   });
 
-  it("rejects a bare EVM symbol — clear fail, no dispatch (symbol must be resolved with token_find)", async () => {
+  it("rejects a bare EVM symbol — clear fail, no dispatch (symbol must be resolved with TokenFind)", async () => {
     const result = await handleSwapQuote(
       { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "1" },
       CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("EVM tokens must be a contract address");
-    expect(result.output).toContain("token_find");
+    expect(result.output).toContain("TokenFind");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
@@ -172,7 +173,7 @@ describe("swap_quote — family router", () => {
   });
 });
 
-describe("swap_quote — Robinhood Chain 4663 is KyberSwap-supported (plan §11.2 — EVM is ALWAYS KyberSwap, no fallback)", () => {
+describe("SwapQuote — Robinhood Chain 4663 is KyberSwap-supported (plan §11.2 — EVM is ALWAYS KyberSwap, no fallback)", () => {
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 
@@ -192,7 +193,7 @@ describe("swap_quote — Robinhood Chain 4663 is KyberSwap-supported (plan §11.
   });
 });
 
-describe("swap_quote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 removed it; Agent Scan hidden pair replaces it)", () => {
+describe("SwapQuote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 removed it; Agent Scan hidden pair replaces it)", () => {
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
   const WETH = "0x4200000000000000000000000000000000000006";
 
@@ -204,7 +205,7 @@ describe("swap_quote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 
     const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" }, CTX);
     // The old silent Kyber→Uniswap fallback is REMOVED — exactly one call,
     // and the model sees the raw Kyber failure (its own text may point it at
-    // swap_quote_uniswap once W2a's handler reveals it — that reveal call is
+    // SwapQuoteUniswap once W2a's handler reveals it — that reveal call is
     // W2a's, not this alias's, for an in-band Kyber API failure).
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
     expect((executeProtocolTool.mock.calls[0]![0] as { toolId: string }).toolId).toBe("kyberswap.swap.quote");
@@ -226,7 +227,7 @@ describe("swap_quote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 
 
 });
 
-describe("token_check — pass-through to kyberswap.tokens.check", () => {
+describe("TokenCheck — pass-through to kyberswap.tokens.check", () => {
   it("forwards chain + tokenAddress verbatim", async () => {
     await handleTokenCheck({ chain: "ethereum", tokenAddress: "0xabc" }, CTX);
     const { toolId, params } = lastCall();
@@ -241,7 +242,7 @@ describe("token_check — pass-through to kyberswap.tokens.check", () => {
   });
 });
 
-describe("bridge_status — orders.get (id) vs orders.list (no id)", () => {
+describe("BridgeStatus — orders.get (id) vs orders.list (no id)", () => {
   it("with orderId routes to khalani.orders.get", async () => {
     await handleBridgeStatus({ orderId: "order_abc123" }, CTX);
     const { toolId, params } = lastCall();
@@ -250,10 +251,30 @@ describe("bridge_status — orders.get (id) vs orders.list (no id)", () => {
   });
 
   it("without orderId routes to khalani.orders.list and forwards provided filters", async () => {
-    await handleBridgeStatus({ wallet: "solana", limit: 20 }, CTX);
+    await handleBridgeStatus({ walletFamily: "solana", limit: 20 }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("khalani.orders.list");
-    expect(params).toEqual({ wallet: "solana", limit: 20 });
+    expect(params).toEqual({ walletFamily: "solana", limit: 20 });
+  });
+
+  // D15: the two retired spellings are rewritten BEFORE the schema parse, so the
+  // target sees only the canonical keys. `BridgeStatusArgs` strips undeclared
+  // keys, which is why the rewrite cannot live after it: `address` would have
+  // vanished and the call would have listed the WRONG wallet's orders silently.
+  it("rewrites the retired `address` / `wallet` spellings before the schema parse", async () => {
+    await handleBridgeStatus({ address: "0xabc", wallet: "eip155", limit: 3 }, CTX);
+    const { toolId, params } = lastCall();
+    expect(toolId).toBe("khalani.orders.list");
+    expect(params).toEqual({ walletAddress: "0xabc", walletFamily: "eip155", limit: 3 });
+  });
+
+  it("refuses BY NAME when a retired spelling and its canonical key both arrive", async () => {
+    const result = await handleBridgeStatus({ wallet: "eip155", walletFamily: "solana" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('"wallet"');
+    expect(result.output).toContain('"walletFamily"');
+    expect(result.output).toContain("Vex will not guess which one you meant");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   // W2d: orderId no longer "takes precedence" — the combination is REJECTED BY
@@ -261,15 +282,51 @@ describe("bridge_status — orders.get (id) vs orders.list (no id)", () => {
   // also supplied, and the agent had no way to learn they were never applied
   // (SPEC §2.4 item 22).
   it("rejects orderId combined with list filters, naming what would be discarded", async () => {
-    const result = await handleBridgeStatus({ orderId: "order_x", wallet: "solana", limit: 5 }, CTX);
+    const result = await handleBridgeStatus({ orderId: "order_x", walletFamily: "solana", limit: 5 }, CTX);
     expect(result.success).toBe(false);
-    expect(result.output).toContain("bridge_status takes EITHER orderId (one order) OR the list filters");
-    expect(result.output).toContain("wallet, limit");
+    expect(result.output).toContain("BridgeStatus takes EITHER orderId (one order) OR the list filters");
+    expect(result.output).toContain("walletFamily, limit");
     expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("refuses `address` together with `walletAddress` before the schema parse", async () => {
+    const result = await handleBridgeStatus({ address: "0xabc", walletAddress: "0xdef" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain('"address"');
+    expect(result.output).toContain('"walletAddress"');
+    expect(result.output).toContain("Vex will not guess which one you meant");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("treats orderId plus a RETIRED list key as the same mode conflict, on the canonical name", async () => {
+    // The rewrite runs before conflict detection, so the conflict is detected
+    // and reported in the canonical vocabulary, never missed because the
+    // retired spelling is absent from the list-only set.
+    const result = await handleBridgeStatus({ orderId: "order_x", wallet: "solana" }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("BridgeStatus takes EITHER orderId (one order) OR the list filters");
+    expect(result.output).toContain("walletFamily");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
+
+  it("advertises canonical keys only: the schema has no retired property and teaches no retired spelling", () => {
+    const bridgeStatus = ACTION_ALIAS_TOOLS.find((tool) => tool.name === "BridgeStatus");
+    if (!bridgeStatus) throw new Error("BridgeStatus is not registered in ACTION_ALIAS_TOOLS");
+    const properties = bridgeStatus.parameters["properties"];
+    if (typeof properties !== "object" || properties === null) throw new Error("BridgeStatus has no properties");
+    const keys = Object.keys(properties);
+    expect(keys).toContain("walletAddress");
+    expect(keys).toContain("walletFamily");
+    expect(keys).not.toContain("address");
+    expect(keys).not.toContain("wallet");
+    // D15: the model-visible schema advertises the canonical key alone; a
+    // retired spelling named in a description would teach it back.
+    const descriptions = JSON.stringify(properties) + bridgeStatus.description;
+    expect(descriptions).not.toMatch(/former key|retired|rewritten to/i);
   });
 });
 
-describe("bridge_quote — pass-through to khalani.quote.get", () => {
+describe("BridgeQuote — pass-through to khalani.quote.get", () => {
   it("forwards required + provided optional params", async () => {
     await handleBridgeQuote(
       {
@@ -382,7 +439,7 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
         CTX,
       );
       expect(result.success).toBe(false);
-      expect(result.output).toMatch(/^bridge_quote:/);
+      expect(result.output).toMatch(/^BridgeQuote:/);
       expect(result.output).toMatch(/referrer/);
       expect(result.output).toContain("not an accepted parameter");
       expect(executeProtocolTool).not.toHaveBeenCalled();

@@ -60,6 +60,24 @@ describe("submitPreparedTxOverRpc", () => {
     expect(options).not.toHaveProperty("maxRetries");
   });
 
+  it("passes a caller-preserved maxRetries bound through unchanged (wallet lane contract)", async () => {
+    // A lane that carried its own submit bound BEFORE adopting this module
+    // keeps it by passing maxRetries; the option must reach the RPC exactly
+    // and change nothing else about the submit options.
+    const sendRawTransaction = vi.fn().mockResolvedValue(LOCAL_SIGNATURE);
+
+    await submitPreparedTxOverRpc(preparedFixture(), {
+      connection: connectionWith(sendRawTransaction),
+      maxRetries: 2,
+    });
+
+    expect(sendRawTransaction).toHaveBeenCalledWith(expect.anything(), {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+      maxRetries: 2,
+    });
+  });
+
   it("reports accepted when the RPC echoes the canonical local signature", async () => {
     const sendRawTransaction = vi.fn().mockResolvedValue(LOCAL_SIGNATURE);
 

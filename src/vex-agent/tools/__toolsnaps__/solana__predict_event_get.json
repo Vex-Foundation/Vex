@@ -1,0 +1,36 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read ONE Jupiter prediction EVENT by its eventId. Use this when you already hold an eventId and want the question itself, or the list of tradable markets under it - solana__predict_events_discover browses, solana__predict_events_search finds one by keyword. Returns the event's eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; pass includeMarkets to also fetch its nested markets, each carrying the marketId that solana__predict_market_get and the trade tools take, plus title, status, result, openTime, closeTime, resolveAt and pricing. The result is complete: there is no paging on a single event.",
+      "name": "solana__predict_event_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "description": "Event ID (from solana__predict_events_discover or solana__predict_events_search).",
+            "type": "string"
+          },
+          "includeMarkets": {
+            "description": "Include the event's nested markets array (default false — lean).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "eventId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.event"
+  }
+}

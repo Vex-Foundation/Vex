@@ -20,7 +20,7 @@ import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
  * or Solana), so its `family` is resolved inside the recorder, not here.
  *
  * `khalani.quote.get` is the BRIDGE quote (cross-chain), and is used ONLY for
- * bridges (the read alias `bridge_quote` is its only other caller) — recording
+ * bridges (the read alias `BridgeQuote` is its only other caller) — recording
  * it as `kind: "bridge"` never mis-records a non-bridge quote.
  */
 type PrequoteQuoteRegistration =

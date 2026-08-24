@@ -56,6 +56,10 @@ import {
   type CardState,
 } from "./MissionContractModal/contract-state.js";
 import { FooterAction } from "./MissionContractModal/FooterAction.js";
+import {
+  grantMissionContractRequest,
+  refuseMissionContractRequest,
+} from "./mission-contract-request.js";
 import { LaunchCeilingsSection } from "./MissionContractModal/LaunchCeilingsSection.js";
 import {
   readPlan,
@@ -116,11 +120,21 @@ export function MissionContractModal({
         // A successful accept closes the modal so the Start mission button it
         // points at is actually reachable. Every non-`accepted` outcome (and
         // any transport failure) keeps it open for the in-modal notice.
+        // Settle any pending contract request from the COMMIT, never from the
+        // press: `granted` is reported only once the engine has answered
+        // `accepted`, which is the point the acceptance actually exists. Any
+        // other resolved outcome is a real refusal, and a rejected mutation is
+        // reported as one too. A caller waiting on this must never be told
+        // `granted` for an acceptance that did not commit.
         onSuccess: (result) => {
           if (result.ok && result.data.outcome === "accepted") {
+            grantMissionContractRequest(sessionId);
             onOpenChange(false);
+            return;
           }
+          refuseMissionContractRequest(sessionId);
         },
+        onError: () => refuseMissionContractRequest(sessionId),
       },
     );
   };
@@ -168,10 +182,10 @@ export function MissionContractModal({
         data-vex-area="mission-contract-modal"
         className="max-w-lg"
       >
-        <DialogHeader className="flex-row items-center justify-between gap-3 border-[var(--vex-line)]">
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-line-2">
           {/* Mission titles are authored content, not chrome — they speak the
-           * display register (Archivo), not the base mono stamp. */}
-          <DialogTitle className="truncate font-display text-base font-bold normal-case tracking-[-0.01em]">
+           * Inter Tight display register, not the micro-label stamp. */}
+          <DialogTitle className="truncate font-display text-base font-medium normal-case tracking-[-0.01em]">
             {title}
           </DialogTitle>
           {/* Status marker only — the modal is already open, so this is a
@@ -189,11 +203,11 @@ export function MissionContractModal({
 
         <DialogBody>
           {state === null ? (
-            <p className="text-sm text-[var(--vex-text-3)]">
+            <p className="text-sm text-ink-tertiary">
               Loading the mission contract…
             </p>
           ) : (
-            <div className="-mx-6 -my-5">
+            <div className="flex flex-col gap-2">
               <CardBody draft={state.draft} />
               {/* Host-authored launch ceilings (C6/C6b). Editable only while the
                * mission is still editable — a started run enforces the ceilings

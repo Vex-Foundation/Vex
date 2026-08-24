@@ -8,10 +8,11 @@ import { TRENCH_TRADES_DISCOVERY } from "../../embeddings/trench/trades.js";
 export const TRENCH_TRADES_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.trades",
+    publicName: "trench__token_trades_list",
     namespace: "trench",
     lifecycle: "active",
     description:
-      "Show the recent trade tape for ONE Trench Express token on Robinhood Chain (4663): each fill carries direction (buy/sell), display-grade in/out amounts, USD volume, price, transaction hash, timestamp (ms epoch, newest first within a page), and maker. TRAP: an empty tape (count: 0) means no fills were recorded for that address - a brand-new token with no trades and a mistyped address are indistinguishable here, so verify the address via trench.search or trench.tokens before reading absence as youth. Sourced from an undocumented launchpad endpoint, so the output flags its provisional nature. ETH curve only. Read-only.",
+      "Read the recent trade tape for ONE Trench Express token on Robinhood Chain (4663). Use this when the user asks whether a token is actually trading, who is buying it, or how it moved fill by fill. Returns `trades` alongside token, page, count and source; each fill carries side (buy, sell, or unknown), display-grade in and out amounts, volumeUsd, price, tx, time (ms epoch, newest first within a page) and maker. Page with the REQUIRED 0-based page plus limit (1-30, provider-capped); there is no hasMore field, so a short page is the only end-of-tape signal. TRAP: an empty tape (count: 0) means no fills were recorded for that address - a brand-new token with no trades and a mistyped address are indistinguishable here, so verify the address via trench__tokens_search or trench__tokens_discover before reading absence as youth. Sourced from an undocumented launchpad endpoint, so the output flags its provisional nature. ETH curve only. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

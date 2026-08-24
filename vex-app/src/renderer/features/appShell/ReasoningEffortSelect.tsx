@@ -12,15 +12,13 @@
  * `normalizeReasoningCapability` in `shared/schemas/reasoning.ts` owns
  * that set), with "none" labelled "Off".
  *
- * Anatomy: the {@link SelectMenu} primitive restyled into the composer's
- * quiet grammar — a ghost text trigger (no border, no fill at rest; the label
- * in --vex-text-2 lifting to foreground over a --vex-surface-2 wash on
- * hover), `rounded-xl` + h-10 so it sits level with the send key and echoes
- * the surface's rounded-2xl, opening UPWARD (the composer sits low on the
- * session stage). Sans, not serif: this is a CONTROL, not prose. Menu physics, the ARIA combobox/listbox contract and the
- * selected-dot convention all come from SelectMenu as-is. The trigger's
- * min-width doubles as the floating panel's width (SelectMenu's panel spans
- * its trigger), sized so the longest label ("Minimal") never truncates.
+ * Anatomy: the {@link SelectMenu} primitive restyled into the capsule's
+ * chip grammar (h28/r8, 13/20 medium) - a ghost trigger with a hover fill,
+ * opening UPWARD (the composer sits low on the session stage). Menu
+ * physics, the ARIA combobox/listbox contract and the selected-dot
+ * convention all come from SelectMenu as-is. The trigger's min-width
+ * doubles as the floating panel's width, sized so the longest label
+ * ("Minimal") never truncates.
  */
 
 import { useMemo, type JSX } from "react";
@@ -90,20 +88,31 @@ export function ReasoningEffortSelect({
       // later classes win): h-10 sits level with the round send key;
       // border/bg go transparent so the control reads as text at rest (no
       // glass-on-glass); justify-start seats the chevron right after the
-      // label (the Grok "Szybki ⌄" read); min-w keeps the upward panel wide
-      // enough for every label. Focus ring stays SelectMenu's repo default.
-      className="h-10 w-auto min-w-[6.5rem] justify-start rounded-xl border-transparent bg-transparent px-3 font-sans text-[13px] text-[var(--vex-text-2)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground"
+      // label (the Grok "Szybki ⌄" read).
+      //
+      // WIDTH (round 3, codex Bug 3): 6.5rem is a PREFERRED width, not a
+      // floor. It was `min-w-[6.5rem]`, which pinned the trigger's outer box
+      // and made this seat a hard 104px the toolbar row could not reclaim -
+      // one of the row's overflow contributors. `w-[6.5rem]` keeps the same
+      // resting size (the longest label, "Minimal", still fits, and the
+      // `left-0 right-0` listbox still inherits it) while letting the seat
+      // concede under container pressure; SelectMenu's own label already owns
+      // `min-w-0 truncate` and its chevron is already `shrink-0`, so the
+      // conceded state truncates rather than clipping the control.
+      // Focus ring stays SelectMenu's repo default.
+      className="h-7 min-w-0 w-[6.5rem] justify-start rounded-md border-transparent bg-transparent px-2 font-sans text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary"
       />
   );
 }
 
 /**
  * Quiet INERT placeholder for the control slot while the global
- * model-capability query (`useAvailableModels`) hasn't resolved yet —
+ * model-capability query (`useAvailableModels`) hasn't resolved yet -
  * welcome's cold-start case, and occasionally an existing session opened
  * before the app's first models fetch settles. Same box as the resolved
- * trigger (`h-10 min-w-[6.5rem] rounded-full px-3`) so the slot never
- * reflows once the real selector mounts or the gate resolves to hidden.
+ * trigger (h28 / 6.5rem preferred width / r8) so the slot never reflows once
+ * the real selector mounts or the gate resolves to hidden, and it concedes
+ * width on the same terms rather than pinning the toolbar row.
  * Deliberately STATIC (no shimmer, no pulse): this is "we don't know yet",
  * not "a value is loading in" — an animated hint here would overstate what
  * is actually happening. No role, no onChange — Send stays enabled while
@@ -114,9 +123,9 @@ export function ReasoningEffortPlaceholder(): JSX.Element {
     <span
       aria-hidden
       data-vex-reasoning-placeholder
-      className="inline-flex h-10 min-w-[6.5rem] shrink-0 items-center rounded-xl px-3"
+      className="inline-flex h-7 w-[6.5rem] min-w-0 items-center rounded-md px-2"
     >
-      <span className="h-2.5 w-10 rounded-full bg-[var(--vex-line-strong)] opacity-60" />
+      <span className="h-2.5 w-10 rounded-full bg-surface-skeleton" />
     </span>
   );
 }

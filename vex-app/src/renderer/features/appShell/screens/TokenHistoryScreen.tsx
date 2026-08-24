@@ -2,7 +2,7 @@
  * Token-history screen — the full-app ShellScreen showing one token's
  * Vex-recorded activity (owner decree 2026-07-21: the eye key on a token row
  * in Balances / All assets opens this). Chronos grammar throughout: ink
- * glass inherited from the ShellScreen chrome, mono for every figure, serif
+ * glass inherited from the ShellScreen chrome, tabular figures, serif
  * NOWHERE here (the chrome's serif H1 is replaced via the `header` slot).
  *
  * This file is the SCREEN GATE only — identity, query, the states matrix,
@@ -103,32 +103,32 @@ export function TokenHistoryScreen({
   let body: JSX.Element;
   if (query.isLoading) {
     body = (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
   } else if (firstPage !== undefined && !firstPage.ok) {
     body = (
-      <p className="text-[12.5px] text-[var(--vex-warn-text)]">
+      <p className="text-[12.5px] text-warning-label">
         Couldn&apos;t load this token&apos;s history.
       </p>
     );
   } else if (firstPage !== undefined && firstPage.ok && firstPage.data.status === "unavailable") {
     // Timeout degradation (plan v3): NEVER rendered as empty history.
     body = (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
-        History is unavailable right now — try again shortly.
+      <p className="text-[12.5px] leading-relaxed text-ink-secondary">
+        History is unavailable right now - try again shortly.
       </p>
     );
   } else if (query.isError) {
     body = (
-      <p className="text-[12.5px] text-[var(--vex-warn-text)]">
+      <p className="text-[12.5px] text-warning-label">
         Couldn&apos;t load this token&apos;s history.
       </p>
     );
   } else if (entries.length === 0) {
     body = (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
+      <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
         No Vex-recorded history for this token yet.
       </p>
     );
@@ -141,7 +141,7 @@ export function TokenHistoryScreen({
           ))}
         </ul>
         {laterPageDegraded ? (
-          <p className="mt-2 text-[11px] text-[var(--vex-text-3)]">
+          <p className="mt-2 text-[11px] text-ink-tertiary">
             Couldn&apos;t load more history right now.
           </p>
         ) : null}
@@ -150,7 +150,7 @@ export function TokenHistoryScreen({
             type="button"
             onClick={() => void query.fetchNextPage()}
             disabled={query.isFetchingNextPage}
-            className="mt-3 w-full rounded-lg border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-60"
+            className="mt-3 w-full rounded-xl border border-line-2 py-1.5 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
           >
             {query.isFetchingNextPage ? "Loading…" : "Load more"}
           </button>
@@ -168,18 +168,18 @@ export function TokenHistoryScreen({
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <TokenMark mark={mark} size={20} />
-            <span className="min-w-0 truncate text-[17px] font-semibold leading-tight text-foreground">
+            <span className="min-w-0 truncate text-[17px] font-medium leading-tight text-ink-primary">
               {displayName}
             </span>
-            <span className="shrink-0 text-[13px] text-[var(--vex-text-3)]">
+            <span className="shrink-0 text-[13px] text-ink-tertiary">
               ({chainName})
             </span>
           </div>
           {/* Scope disclosure (plan v2): this feed is what Vex itself
            * recorded — protocol captures + Vex-executed sends. It is NOT a
            * chain scan; external activity is honestly out of scope. */}
-          <p className="text-[11px] leading-snug text-[var(--vex-text-3)]">
-            Vex-recorded activity — protocol captures and Vex-executed sends.
+          <p className="text-[11px] leading-snug text-ink-tertiary">
+            Vex-recorded activity - protocol captures and Vex-executed sends.
             Transfers made outside Vex (including airdrops) are not locally
             known.
           </p>
@@ -188,7 +188,7 @@ export function TokenHistoryScreen({
     >
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
         <section aria-label="Activity">
-          <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <h2 className="mb-2 vex-micro-label uppercase text-ink-secondary">
             Activity
           </h2>
           {body}

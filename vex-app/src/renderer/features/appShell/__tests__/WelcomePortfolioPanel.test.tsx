@@ -26,10 +26,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
+import { WELCOME_PORTFOLIO_WIDTH } from "../../../lib/shell-columns.js";
 
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
@@ -139,7 +136,7 @@ function scopeChips() {
   return within(screen.getByRole("group", { name: "Portfolio scope" }));
 }
 
-describe("WelcomePortfolioPanel — collapsed ⇄ expanded", () => {
+describe("WelcomePortfolioPanel - collapsed ⇄ expanded", () => {
   it("collapsed: only the round handle, no cards; the handle fires onToggle", () => {
     const onToggle = vi.fn();
     render(<WelcomePortfolioPanel bookOpen={false} onToggle={onToggle} />);
@@ -174,19 +171,21 @@ describe("WelcomePortfolioPanel — collapsed ⇄ expanded", () => {
     // A real flex sibling (sidebar behavior), not an absolute overlay.
     expect(aside?.tagName).toBe("ASIDE");
     expect(aside?.className).toContain("transition-[width]");
-    expect(aside?.className).toContain("w-[380px]");
-    expect(aside?.className).not.toContain("w-0");
+    // The width is the SHARED constant the shell reserves its third grid track
+    // from, so the aside and its reservation cannot drift (round-3 QA item 8).
+    expect((aside as HTMLElement | null)?.style.width).toBe(
+      `${WELCOME_PORTFOLIO_WIDTH}px`,
+    );
 
     rerender(<WelcomePortfolioPanel bookOpen={false} onToggle={() => {}} />);
     const collapsed = container.querySelector(
       '[data-vex-area="welcome-portfolio"]',
     );
-    expect(collapsed?.className).toContain("w-0");
-    expect(collapsed?.className).not.toContain("w-[380px]");
+    expect((collapsed as HTMLElement | null)?.style.width).toBe("0px");
   });
 });
 
-describe("WelcomePortfolioPanel — Primary label dedupe", () => {
+describe("WelcomePortfolioPanel - Primary label dedupe", () => {
   it('suppresses the badge when the wallet label already says "Primary" (no "Primary PRIMARY")', () => {
     mockUseAvailableWallets.mockReturnValue({
       isLoading: false,
@@ -211,7 +210,7 @@ describe("WelcomePortfolioPanel — Primary label dedupe", () => {
   });
 });
 
-describe("WelcomePortfolioPanel — overview scope chips", () => {
+describe("WelcomePortfolioPanel - overview scope chips", () => {
   it("defaults to the global aggregate and narrows to a wallet-scoped read on chip click", () => {
     render(<WelcomePortfolioPanel bookOpen onToggle={() => {}} />);
 
@@ -258,7 +257,7 @@ describe("WelcomePortfolioPanel — overview scope chips", () => {
   });
 });
 
-describe("WelcomePortfolioPanel — wallets card", () => {
+describe("WelcomePortfolioPanel - wallets card", () => {
   it("lists each inventory wallet with its own wallet-scoped USD total", () => {
     render(<WelcomePortfolioPanel bookOpen onToggle={() => {}} />);
     const wallets = within(screen.getByRole("region", { name: "Wallets" }));
@@ -268,7 +267,7 @@ describe("WelcomePortfolioPanel — wallets card", () => {
     expect(wallets.getByText("Trading")).not.toBeNull();
   });
 
-  it("keeps the em dash while a per-wallet read is unresolved — never a fabricated $0", () => {
+  it("keeps the em dash while a per-wallet read is unresolved - never a fabricated $0", () => {
     mockUseWalletPortfolio.mockImplementation(() => ({
       isLoading: true,
       isError: false,
@@ -276,7 +275,7 @@ describe("WelcomePortfolioPanel — wallets card", () => {
     }));
     render(<WelcomePortfolioPanel bookOpen onToggle={() => {}} />);
     const wallets = within(screen.getByRole("region", { name: "Wallets" }));
-    expect(wallets.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(wallets.getAllByText("-").length).toBeGreaterThanOrEqual(3);
     expect(wallets.queryByText("$0.00")).toBeNull();
   });
 

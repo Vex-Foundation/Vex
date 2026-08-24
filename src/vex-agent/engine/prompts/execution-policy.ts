@@ -21,31 +21,44 @@ import type { Permission, SessionKind } from "../types.js";
 /**
  * The owner-decreed waiting pattern (2026-08-03), rendered verbatim in every
  * mode whose session can actually park: both mission-run modes and
- * AGENT / FULL. It replaced a one-line "use loop_defer when waiting for
+ * AGENT / FULL. It replaced a one-line "use LoopDefer when waiting for
  * external conditions" bullet that named no anti-pattern, so the model had no
  * reason to prefer deferring over polling.
  *
  * Kept as ONE constant rather than three copies so the three modes cannot drift.
- * Must stay in lockstep with `loop_defer`'s tool description
+ * Must stay in lockstep with `LoopDefer`'s tool description
  * (`tools/registry/autonomy.ts`) and with the turn-state call forms in
  * `runtime-clock.ts`.
  */
-const WAITING_PATTERN = `- Waiting is an action: call \`loop_defer\`. When the next useful step depends on an
+const WAITING_PATTERN = `- Waiting is an action: call \`LoopDefer\`. When the next useful step depends on an
   on-chain or time-based event you cannot make happen sooner — a bridge fill, a
   transaction confirmation or finality window, a cooldown, a scheduled market event, a
-  price level you have decided to re-check later — call \`loop_defer\` with a wait sized to
+  price level you have decided to re-check later — call \`LoopDefer\` with a wait sized to
   that event and a \`reason\` that tells your future self what to check first. Do NOT
-  "watch" an event by re-calling \`wallet_balances\`, \`bridge_status\`, \`agent_scan\` or a
+  "watch" an event by re-calling \`WalletBalances\`, \`BridgeStatus\`, \`AgentScan\` or a
   quote tool in a thought loop: polling does not make the event arrive, it spends the
   user's money on inference and burns the iteration budget. A bridge is minutes, not
   seconds — defer minutes. One pending wake exists at a time; a user message wakes you
   early.`;
 
 /**
+ * Relocated from `EXECUTE_TOOL_DESCRIPTION` in `tools/registry/protocol.ts`
+ * (`tool-surface-spec/toolsearch-design.md` §6). It stated the no-tight-retry
+ * rule on a tool WITHHELD from every model-facing surface, so no model could
+ * read it. Rendered in EVERY mode from one constant, because the rule is not
+ * mode-dependent and six copies would drift.
+ */
+const ERROR_RESPONSE_PATTERN = `- On a tool error, diagnose and adapt — do NOT re-issue the same call with the same
+  arguments in a tight loop. A call that failed for a real reason fails the same way
+  the second time, and the retry spends the user's money on inference. Read what the
+  error actually said, change something (the arguments, the tool, the approach), or
+  present the error and the next step to the user or the mission loop.`;
+
+/**
  * Which PHASE the session is in. `mission` splits in two: setup (no run yet —
  * draft-first planning, execution locked) and run (the proactive loop). The old
  * `SessionKind`-only selection handed a mission-SETUP session the run loop's
- * "take proactive actions" / `loop_defer` wording, which contradicts the setup
+ * "take proactive actions" / `LoopDefer` wording, which contradicts the setup
  * execution lock it is shown three layers later.
  */
 export type ExecutionPhase = "agent" | "mission_setup" | "mission_run";
@@ -88,7 +101,8 @@ permission. Rules:
 - After approval, execute the tool and report the result.
 - If multiple mutating actions are needed, request approval for each one.
 - Do NOT loop indefinitely — agent mode is one-shot. When the user's
-  request is satisfied, return a final text reply.`;
+  request is satisfied, return a final text reply.
+${ERROR_RESPONSE_PATTERN}`;
 
 const AGENT_FULL = `# Execution Policy: AGENT / FULL
 
@@ -103,14 +117,15 @@ permission. Rules:
   verification.
 - Do NOT loop indefinitely. When the user's request is satisfied, return a
   final text reply — WAITING for an event is the one exception, and it is a
-  \`loop_defer\` call, not a polling loop.
-${WAITING_PATTERN}`;
+  \`LoopDefer\` call, not a polling loop.
+${WAITING_PATTERN}
+${ERROR_RESPONSE_PATTERN}`;
 
 const MISSION_SETUP_RESTRICTED = `# Execution Policy: MISSION SETUP / RESTRICTED
 
 You are designing a mission with the user; the run has not started. Rules:
 - Your job this phase is the DRAFT: co-design the mission contract, gather the
-  missing required fields, and save them with \`mission_draft_update\`.
+  missing required fields, and save them with \`MissionDraftUpdate\`.
 - Read-only tools (discover, balances, prices, research) — execute freely, to
   ground the draft.
 - On-chain mutations (swaps, bridges, transfers, orders) are LOCKED during
@@ -119,14 +134,15 @@ You are designing a mission with the user; the run has not started. Rules:
 - You are not in a loop this phase. Reply to the user, then wait — do not
   schedule wake-ups and do not act between messages.
 - The mission starts only when the user accepts the contract and starts the run
-  from the host UI.`;
+  from the host UI.
+${ERROR_RESPONSE_PATTERN}`;
 
 const MISSION_SETUP_FULL = `# Execution Policy: MISSION SETUP / FULL
 
 You are designing a mission with the user; the run has not started. Full
 permission applies to the RUN, not to setup. Rules:
 - Your job this phase is the DRAFT: co-design the mission contract, gather the
-  missing required fields, and save them with \`mission_draft_update\`.
+  missing required fields, and save them with \`MissionDraftUpdate\`.
 - Read-only tools (discover, balances, prices, research) — execute freely, to
   ground the draft.
 - On-chain mutations (swaps, bridges, transfers, orders) are LOCKED during
@@ -135,7 +151,8 @@ permission applies to the RUN, not to setup. Rules:
 - You are not in a loop this phase. Reply to the user, then wait — do not
   schedule wake-ups and do not act between messages.
 - The mission starts only when the user accepts the contract and starts the run
-  from the host UI.`;
+  from the host UI.
+${ERROR_RESPONSE_PATTERN}`;
 
 const MISSION_RESTRICTED = `# Execution Policy: MISSION RUN / RESTRICTED
 
@@ -150,7 +167,8 @@ Rules:
 - If multiple mutating actions are needed, request approval for each one.
 - Continue working toward your mission objective between approval gates.
 ${WAITING_PATTERN}
-- Stop only when the frozen mission contract allows it.`;
+- Stop only when the frozen mission contract allows it.
+${ERROR_RESPONSE_PATTERN}`;
 
 const MISSION_FULL = `# Execution Policy: MISSION RUN / FULL
 
@@ -159,9 +177,9 @@ You are in mission mode (goal-driven loop) with full permission. Rules:
   policies always apply.
 - Stop only when the frozen mission contract allows it.
 - Log significant decisions and their rationale.
-- If you encounter an error, diagnose and adapt — don't stop unless the
-  error is unrecoverable.
+- Do not stop on an error unless it is unrecoverable.
 - Full permission does NOT waive the \`# Safety Contract\` — every mutating
   action still obeys gas reserve, fresh balances, quote/preview, and token
   verification.
-${WAITING_PATTERN}`;
+${WAITING_PATTERN}
+${ERROR_RESPONSE_PATTERN}`;

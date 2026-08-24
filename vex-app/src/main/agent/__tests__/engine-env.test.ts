@@ -37,7 +37,7 @@ describe("exposeAppVersionToEngine", () => {
     expect(process.env.VEX_APP_VERSION).toBe("1.2.3");
   });
 
-  it("preserves a pre-existing non-empty value — developer override wins", () => {
+  it("preserves a pre-existing non-empty value - developer override wins", () => {
     process.env.VEX_APP_VERSION = "9.9.9-dev";
 
     exposeAppVersionToEngine();

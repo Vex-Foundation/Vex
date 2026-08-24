@@ -2,27 +2,33 @@
  * Session transcript surface (stage 8-1 + 8-2b load-older).
  *
  * Pages backward through `useTranscriptInfinite` (newest page first). Renders
- * loading (dotmatrix) / error / empty / list.
+ * loading / error / empty / list (`SessionTranscript/TranscriptStates.tsx`).
+ * The whole scroll model - follow-stream with reader ownership, force-scroll
+ * on the reader's own words, the jump pill, prepend anchoring and per-session
+ * position persistence - lives in `SessionTranscript/useTranscriptScroll.ts`.
  *
- * SCROLL MODEL (owner decree 2026-07-29 — CHAT NEVER AUTO-SCROLLS DURING
- * STREAMING). Exactly ONE arrival moves the viewport: a just-sent USER message
- * anchors at the viewport TOP, so the reply streams into the space below it
- * (the trailing anchor spacer guarantees the scroll range). EVERY other new
- * row — assistant text, tool rows, and every growth tick of the live preview —
- * moves nothing at all, not even from a bottom-pinned viewport. The reader's
- * position is theirs. When newer content lands out of view, the "↓ latest"
- * pill offers the jump instead of taking it; it hides again the moment the
- * bottom is in view. Session change still jumps to newest.
+ * WHO SCROLLS. Inside the resident shell the transcript is ORDINARY FLOW
+ * CONTENT: `SessionPanel`'s scroll body (`[data-vex-conversation-scroll]`) is
+ * the scrollport, because it is the only box that can also hold the sticky
+ * composer seat. Mounted alone (unit tests) this component's own element
+ * scrolls instead. `scrollportOf` in the scroll model resolves which, and the
+ * nested-mode geometry lives in `chat-transcript.css`. The one floating
+ * surface left - the jump pill - is a ZERO-HEIGHT STICKY SLOT outside the row
+ * column's gap, so it neither extends `scrollHeight` nor disturbs the column
+ * rhythm in either mode.
  *
- * Scrolling near the top loads the next older page (capped at
- * `MAX_TRANSCRIPT_PAGES` until 8-2c adds virtualization); the viewport is held
- * steady across that prepend by restoring the scrollHeight delta — and ONLY
- * for that intentional prepend, never for a live refetch or a new bottom
- * message.
+ * THE PENDING TURN IS IN FLOW. A turn with nothing to show yet renders as
+ * `TurnIsland`'s `vexing…` pill at the tail of the observed message column
+ * (through `StreamingBubble`), exactly like any other row. The retired centred
+ * scene was a zero-height sticky slot with a VIEWPORT-TALL child: a zero-height
+ * box adds no normal-flow height, but a positively overflowing child still
+ * enlarges scrollable overflow, so the bottom-follow write pushed the sticky
+ * composer seat up and Chromium's clamp dropped it back when the scene
+ * unmounted (owner repro, round-3 QA item 7).
  *
  * Error handling is split: an initial (newest-page) failure shows the
  * transcript error state; an older-page failure keeps the loaded messages and
- * shows a top "couldn't load older" banner. Content rendering is delegated to
+ * shows a top "couldn't load older" strip. Content rendering is delegated to
  * `TranscriptMessage` (assistant = safe markdown, others = plain text).
  *
  * S3 entry settle: only rows appended LIVE after the session's first completed
@@ -30,16 +36,8 @@
  * (initial load + load-older prepends) enter with a hard cut.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-} from "react";
-import { ChevronDownIcon, VexIcon } from "../../components/icons/index.js";
+import { useCallback, useMemo, useRef, type JSX } from "react";
+import { IconChevronDown } from "../../components/icons/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting, useSubmitChat } from "../../lib/api/chat.js";
@@ -47,15 +45,9 @@ import {
   flattenTranscriptPages,
   useTranscriptInfinite,
 } from "../../lib/api/messages.js";
-import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
-import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
-import { TranscriptMessage } from "./TranscriptMessage.js";
-import {
-  findWorkingAgentEntryKey,
-  transcriptEntryKey as entryKey,
-} from "./agentActivity.js";
+import { findWorkingAgentEntryKey } from "./agentActivity.js";
 import {
   groupTranscriptRows,
   toTranscriptRows,
@@ -65,11 +57,17 @@ import {
   type SettledIdsTracker,
 } from "./SessionTranscript/settledIds.js";
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
-import {
-  VexingOverlay,
-  isCentredSceneUp,
-} from "./SessionTranscript/VexingOverlay.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
+import {
+  OlderPageErrorStrip,
+  OlderPageLoadingStrip,
+  TranscriptEmptyState,
+  TranscriptErrorState,
+  TranscriptLoadingState,
+} from "./SessionTranscript/TranscriptStates.js";
+import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
+import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
+import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import {
   LIGHTER_PREPARE_TRADE_APPROVAL_MESSAGE,
@@ -77,8 +75,6 @@ import {
 } from "./LighterPreviewAction.js";
 import type { TranscriptEntry } from "./transcriptRowModel.js";
 
-const PINNED_THRESHOLD_PX = 48;
-const LOAD_OLDER_THRESHOLD_PX = 64;
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
 // Slowed 5s → 60s with the rest: `useMissionUpdateLiveSync` pushes
@@ -183,16 +179,6 @@ export function SessionTranscript({
   const streamPreview = useStreamPreview(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
   const submitChat = useSubmitChat();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const anchorSpacerRef = useRef<HTMLDivElement>(null);
-  const pinnedToBottom = useRef(true);
-  // Set ONLY by an intentional load-older fetch; consumed by the settle effect
-  // below for scroll restoration. It never gates fetching or bottom-follow, so
-  // it cannot wedge the transcript even if the older fetch fails.
-  const prependAnchor = useRef<{
-    readonly prevHeight: number;
-    readonly prevOldestId: number;
-  } | null>(null);
 
   const pages = query.data?.pages;
   const items = useMemo<SessionMessageDto[]>(
@@ -207,6 +193,8 @@ export function SessionTranscript({
     [items],
   );
   const workingAgentEntryKey = findWorkingAgentEntryKey(rows, chatSubmitting);
+  // A14/A18 - branch + edit hover keys on prose rows.
+  const forkActions = useMessageForkActions({ sessionId, rows });
 
   // S5 — pending approvals drive two quiet signals: per-act "Awaiting
   // signature" stamps (matched by toolCallId) and the working strip's
@@ -255,99 +243,6 @@ export function SessionTranscript({
     items.length > 0 &&
     ((pages?.some((page) => !page.ok) ?? false) || query.isError);
 
-  // "↓ latest" pill visibility. Derived by MEASUREMENT, never by guessing:
-  // the pill exists to say "there is newer content below the fold", so the one
-  // honest source is the live distance from the bottom. Every caller (scroll,
-  // a new row, a preview tick) funnels through here, which is why the pill can
-  // never desync from what the reader can actually see. It also keeps
-  // `pinnedToBottom` — the load-older/anchor bookkeeping — in step.
-  const [showLatest, setShowLatest] = useState(false);
-  const syncLatestVisibility = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const pinned = distanceFromBottom < PINNED_THRESHOLD_PX;
-    pinnedToBottom.current = pinned;
-    setShowLatest(!pinned);
-  }, []);
-
-  // The SAME measurement, coalesced to one per animation frame. Reading
-  // scrollHeight/scrollTop/clientHeight forces a synchronous layout, so doing
-  // it once per streamed growth tick made the reflow the stream's own cost
-  // (owner decree 2026-08-03). A frame is the finest cadence the pill can
-  // actually be seen changing at, and the trailing edge is guaranteed: the
-  // last scheduled frame always runs, so the pill can never settle on a stale
-  // measurement.
-  const latestSyncFrame = useRef<number | null>(null);
-  const scheduleLatestSync = useCallback((): void => {
-    if (latestSyncFrame.current !== null) return;
-    latestSyncFrame.current = window.requestAnimationFrame(() => {
-      latestSyncFrame.current = null;
-      syncLatestVisibility();
-    });
-  }, [syncLatestVisibility]);
-  useEffect(
-    () => () => {
-      if (latestSyncFrame.current !== null) {
-        window.cancelAnimationFrame(latestSyncFrame.current);
-      }
-    },
-    [],
-  );
-
-  // macOS-style overlay bar: visible while scrolling, gone ~1s after.
-  useScrollbarVisibility(scrollRef);
-
-  const jumpToLatest = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    // Instant, never smooth — reduced-motion safe by construction.
-    el.scrollTop = el.scrollHeight;
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-  }, []);
-
-  // Session change → jump to the newest message. The anchor spacer is zeroed
-  // FIRST so the jump lands on real content, not send-time run-out space.
-  useEffect(() => {
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-    prependAnchor.current = null;
-    const spacer = anchorSpacerRef.current;
-    if (spacer !== null) spacer.style.height = "0px";
-    const el = scrollRef.current;
-    if (el !== null) el.scrollTop = el.scrollHeight;
-  }, [sessionId]);
-
-  // FIRST PAGE LANDED → jump to newest. The session-change effect above can
-  // only reach the scroller when one is already mounted; opening an UNCACHED
-  // session renders the loading branch first, so that effect finds
-  // `scrollRef.current === null` and the transcript would otherwise open at
-  // its OLDEST visible row. This layout effect is the landing counterpart: it
-  // fires once per session, on the commit where rows first exist, before paint.
-  // Declared ABOVE the newest-row effect on purpose — if the same commit also
-  // carries a live user append, that effect runs after and its top-anchor wins.
-  const bottomJumpedFor = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (bottomJumpedFor.current === sessionId || items.length === 0) return;
-    const el = scrollRef.current;
-    if (el === null) return;
-    bottomJumpedFor.current = sessionId;
-    el.scrollTop = el.scrollHeight;
-    pinnedToBottom.current = true;
-    setShowLatest(false);
-  }, [sessionId, items.length]);
-
-  // New newest message. A just-SENT user message (a LIVE append — its id is
-  // outside the settled set, the same signal that drives the entry-settle
-  // print) anchors at the viewport TOP: the reading position for the reply
-  // streaming in below it, with the trailing spacer guaranteeing the scroll
-  // range even when nothing follows yet. A HISTORICAL user row (opening an old
-  // session) never anchors. EVERY other newest row moves nothing — the old
-  // "bottom-follow while pinned" branch is deliberately gone; it is replaced by
-  // the pill, which offers the jump instead of taking it. A load-older prepend
-  // never changes `newestId`, so this stays quiet during one. Scrolls are
-  // instant (no smooth) — reduced-motion safe.
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
     settledIds !== null && newestId !== 0 && !settledIds.has(newestId);
@@ -359,48 +254,11 @@ export function SessionTranscript({
   // the scroll-jump reports were the round-scoped value leaking into
   // turn-scoped decisions (the island's mount, the anchor run-out).
   //
-  // It is called HERE, after the row bookkeeping, because its centred-scene
-  // latch reads the very rows the top-anchor effect below keys on — passed in
-  // rather than re-queried, so there is no second source of truth.
-  const { preview, centredSceneEligible } = useTurnPreview({
+  const { preview } = useTurnPreview({
     sessionId,
     preview: streamPreview,
     submitting: chatSubmitting,
-    newestId,
-    newestVariant,
-    newestIsLiveAppend,
   });
-  const centredSceneUp = isCentredSceneUp(
-    preview,
-    centredSceneEligible,
-    hasPendingApproval,
-  );
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el === null || newestId === 0) return;
-    if (newestVariant === "user" && newestIsLiveAppend) {
-      const target = el.querySelector(
-        `[data-vex-entry-id="${newestId}"][data-vex-entry-variant="user"]`,
-      );
-      if (target instanceof HTMLElement) {
-        const spacer = anchorSpacerRef.current;
-        if (spacer !== null) {
-          spacer.style.height = `${Math.max(0, el.clientHeight - 96)}px`;
-        }
-        const gap = 12;
-        el.scrollTop =
-          target.getBoundingClientRect().top -
-          el.getBoundingClientRect().top +
-          el.scrollTop -
-          gap;
-        pinnedToBottom.current = false;
-        setShowLatest(false);
-        return;
-      }
-    }
-    syncLatestVisibility();
-  }, [newestId, newestVariant, newestIsLiveAppend, syncLatestVisibility]);
 
   // Preview signature — every VISIBLE preview change, so the pill measurement
   // sees the bubble grow no matter WHICH part of it is growing: streamed text,
@@ -408,89 +266,53 @@ export function SessionTranscript({
   // active-segment length, which flushes independently of the answer text and
   // expands the island into a panel), and the SETTLED segment count (each
   // settle adds a collapsed stamp row). Omitting reasoning let the surface
-  // grow past the fold without ever raising the pill. It NO LONGER drives a
-  // scroll (that follow effect is deleted): it only re-measures whether the
-  // growing bubble has left the viewport. The spacer-retirement effect below
-  // still depends on this value — and because `preview` is now TURN-scoped,
-  // that retirement fires exactly once per turn instead of once per round.
+  // grow past the fold without ever raising the pill.
   const previewSig =
     preview === null
       ? null
       : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
-  useEffect(() => {
-    if (previewSig === null) return;
-    // Frame-coalesced: a growth tick asks for a measurement, it does not take
-    // one. See `scheduleLatestSync`.
-    scheduleLatestSync();
-  }, [previewSig, scheduleLatestSync]);
 
-  // Turn settled (stream → null): retire the anchor run-out. The spacer's job
-  // was to guarantee scroll range WHILE the reply streamed below the anchored
-  // user message; once the turn is complete, "scrolled to bottom" must mean
-  // the last message sits flush with the bottom edge — no dead space (owner
-  // order). If the viewport was inside the removed range the browser clamps
-  // scrollTop, which lands exactly on that flush state; a reader anchored
-  // above a long reply sees no movement at all.
-  const hadPreview = useRef(false);
-  useEffect(() => {
-    const had = hadPreview.current;
-    hadPreview.current = previewSig !== null;
-    if (!had || previewSig !== null) return;
-    const spacer = anchorSpacerRef.current;
-    if (spacer !== null) spacer.style.height = "0px";
-    // Retiring the spacer CHANGES the scroll geometry (scrollHeight shrinks,
-    // and the browser may clamp scrollTop), so the pill must be re-derived
-    // from the new measurements — a stale pill would point at a bottom that
-    // is already in view.
-    syncLatestVisibility();
-  }, [previewSig, syncLatestVisibility]);
-
-  // After an intentional older-page fetch settles, hold the viewport if a page
-  // was actually prepended (oldest id changed); clear the anchor either way —
-  // success OR failure — so it can never gate a later load or bottom-follow.
-  useLayoutEffect(() => {
-    if (query.isFetchingNextPage) return;
-    const anchor = prependAnchor.current;
-    if (anchor === null) return;
-    const el = scrollRef.current;
-    if (el !== null && oldestId !== anchor.prevOldestId) {
-      el.scrollTop += el.scrollHeight - anchor.prevHeight;
+  // The newest steering mark. A change is the reader's own words entering a
+  // running turn, so the scroll model force-scrolls to it exactly as it does
+  // for a sent user row - the steer is otherwise invisible mid-transcript.
+  const steeringSig = useMemo<string | null>(() => {
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      // `steering` lives on the message row model, not on a tool group, so
+      // the `in` check is the narrowing (the union has no shared discriminant
+      // that separates the two here).
+      if (row !== undefined && "steering" in row && row.steering === true) {
+        return String(row.id);
+      }
     }
-    prependAnchor.current = null;
-  }, [query.isFetchingNextPage, oldestId]);
+    return null;
+  }, [rows]);
 
-  const onScroll = useCallback((): void => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    syncLatestVisibility();
-    if (
-      el.scrollTop < LOAD_OLDER_THRESHOLD_PX &&
-      query.hasNextPage &&
-      !query.isFetchingNextPage
-    ) {
-      prependAnchor.current = {
-        prevHeight: el.scrollHeight,
-        prevOldestId: oldestId,
-      };
-      void query.fetchNextPage();
-    }
-  }, [query, oldestId, syncLatestVisibility]);
+  const {
+    scrollRef,
+    scrollNodeRef,
+    scrollNodeEpoch,
+    columnRef,
+    showLatest,
+    jumpToLatest,
+  } = useTranscriptScroll({
+      sessionId,
+      query,
+      itemCount: items.length,
+      newestId,
+      oldestId,
+      newestVariant,
+      newestIsLiveAppend,
+      previewSig,
+      steeringSig,
+    });
+
+  // macOS-style overlay bar: visible while scrolling, gone ~1s after. The
+  // epoch is what binds it when the scroller attaches AFTER the loading branch.
+  useScrollbarVisibility(scrollNodeRef, scrollNodeEpoch);
 
   if (query.isLoading) {
-    return (
-      <div
-        data-vex-area="chat-transcript"
-        data-state="loading"
-        className="flex min-h-0 flex-1 items-center justify-center"
-      >
-        <DotmHex3
-          size={28}
-          dotSize={4}
-          color="var(--vex-accent)"
-          ariaLabel="Loading conversation"
-        />
-      </div>
-    );
+    return <TranscriptLoadingState />;
   }
 
   // Empty/error copy only when there is also no live preview — otherwise the
@@ -502,88 +324,48 @@ export function SessionTranscript({
         firstPage !== undefined && !firstPage.ok
           ? firstPage.error.message
           : "Unable to load this conversation.";
-      return (
-        <div
-          data-vex-area="chat-transcript"
-          data-state="error"
-          className="flex min-h-0 flex-1 items-center justify-center px-4"
-        >
-          <div
-            role="alert"
-            className="rounded-[6px] border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2 text-xs text-destructive"
-          >
-            {message}
-          </div>
-        </div>
-      );
+      return <TranscriptErrorState message={message} />;
     }
-    return (
-      <div
-        data-vex-area="chat-transcript"
-        data-state="empty"
-        className="flex min-h-0 flex-1 items-center justify-center px-4"
-      >
-        <p className="text-center text-sm text-[var(--vex-text-2)]">
-          Start the conversation — your messages and Vex&apos;s replies appear
-          here.
-        </p>
-      </div>
-    );
+    return <TranscriptEmptyState />;
   }
 
   return (
-    // Positioning frame for the "↓ latest" pill ONLY. It sizes exactly like the
-    // scroller it wraps (`flex min-h-0 flex-1`), so the transcript's own layout
-    // and scroll math are unchanged; the pill floats over it rather than inside
-    // it, which keeps the pill out of the scrolled content.
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    // The transcript frame. Standalone it is the flex parent of a scroller;
+    // nested under the resident shell `chat-transcript.css` collapses both to
+    // ordinary flow so the panel's scroll body owns overflow.
+    <div
+      data-vex-transcript-frame
+      className="relative flex min-h-0 flex-1 flex-col"
+    >
       <div
         ref={scrollRef}
-        onScroll={onScroll}
         data-vex-area="chat-transcript"
         data-state="ready"
-        // SCROLLBAR (owner visual round 2026-07-30: "do przesunięcia i
-        // upiększenia"). It used to float in the middle of the layout wearing
-        // the OS default, because the column's horizontal padding sat OUTSIDE
-        // the scroller — the bar was inset by that padding and read as a stray
-        // rule through the conversation. Now the scroller spans the full
-        // column width so the bar hugs its OUTER edge, `scrollbar-gutter:
-        // stable` reserves the track so content never shifts when it appears,
-        // and the row padding moved INSIDE (`px-3` on the content wrapper).
-        // `.vex-scroll` is the repo's thin cobalt treatment.
+        // SCROLLBAR (owner visual round 2026-07-30): the scroller spans the
+        // full column width so the bar hugs its OUTER edge,
+        // `scrollbar-gutter: stable` reserves the track so content never
+        // shifts when it appears, and the row padding moved INSIDE (`px-3` on
+        // the content wrapper). `.vex-scroll` is the repo's thin treatment.
         className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
       >
-      {/* THE READING COLUMN, re-applied INSIDE the scroller. The scroller
-          itself now spans the whole chat panel so the native scrollbar sits at
-          the panel's right edge (next to the BOOK rail) instead of floating
-          beside the text — the browser-native arrangement. Nesting the column
-          here keeps the text measure byte-identical to when the column was the
-          scroller: the same `max-w-[860px] px-6` box, the same inner `px-3`.
-          Both wrappers size to content, so the outer scroll math is unchanged —
-          scrollHeight is still total row height + py-4, and the bottom-follow,
-          top-anchor and load-older bookkeeping on scrollRef are untouched. */}
-      <div className="mx-auto w-full max-w-[860px] px-6">
-      <div className="relative flex flex-col gap-3 px-3">
-        {/* The spine hairline that used to run the gutter's full height was
-            removed (seamless-chat owner review): a wall-to-wall vertical rule
-            bracketed the conversation into its own box. The gutter still hosts
-            the live working mark (StreamingBubble, left-0) — an indicator, not
-            a wall. */}
-        {query.isFetchingNextPage ? (
-          <div className="flex justify-center py-1">
-            <DotmHex3 size={18} dotSize={3} color="var(--vex-accent)" ariaLabel="Loading older messages" />
-          </div>
-        ) : null}
-        {olderError ? (
-          <div
-            role="alert"
-            className="mx-auto rounded-[6px] border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-2.5 py-1 text-[11px] text-destructive"
-          >
-            Couldn&apos;t load older messages.
-          </div>
-        ) : null}
+      {/* THE READING COLUMN, re-applied INSIDE the scroller so the native
+          scrollbar sits at the panel's right edge. Nesting the column here
+          keeps the text measure byte-identical to when the column was the
+          scroller; both wrappers size to content, so the outer scroll math is
+          unchanged. */}
+      {/* 780px card axis − 16px sides = the 748px reading column: the
+          transcript stays exactly 32px narrower than the composer card
+          (the shared width rule). The 16px column gap is the ONE vertical
+          rhythm - no per-element margins. */}
+      <div className="mx-auto w-full max-w-[780px] px-4">
+      <div ref={columnRef} className="relative flex flex-col gap-4">
+        {/* The gutter hosts the live working mark (StreamingBubble, left-0) —
+            an indicator, not a wall. */}
+        {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
+        {olderError ? <OlderPageErrorStrip /> : null}
         <TranscriptRows
           rows={rows}
+          sessionId={sessionId}
           settledIds={settledIds}
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
@@ -594,49 +376,45 @@ export function SessionTranscript({
               onPrepare={onPrepareLighterPreview}
             />
           }
+          forkActions={forkActions}
         />
+        {/* A17 — the settled turn's tail wears its usage stats. Mounted only
+            between turns; a user-tail (message sent, reply not begun) or a
+            live preview means the turn is not settled yet. */}
+        {preview === null && rows.length > 0 && newestVariant !== "user" ? (
+          <TurnStatsLine sessionId={sessionId} />
+        ) : null}
         {preview !== null ? (
           <StreamingBubble
             preview={preview}
             awaitingApproval={hasPendingApproval}
-            centredSceneUp={centredSceneUp}
           />
         ) : null}
-        {/* Anchor spacer — inert run-out below the newest turn. Sized (via the
-            top-anchor effect, direct style so it lands in the same frame as
-            the scroll) so a just-sent user message can anchor at the viewport
-            TOP with the reply streaming into the space beneath it. Zeroed on
-            session switch: history browsing gets no dead scroll region. */}
-        <div ref={anchorSpacerRef} aria-hidden className="shrink-0" />
         </div>
-        </div>
-      </div>
-
-      {/* The centred scene — a SIBLING of the scroller, never a descendant.
-          See `SessionTranscript/VexingOverlay.tsx` for why. */}
-      <VexingOverlay
-        preview={preview}
-        centredSceneEligible={centredSceneEligible}
-        awaitingApproval={hasPendingApproval}
-      />
-
-      {/* "↓ LATEST" — the jump the transcript no longer takes on the reader's
-          behalf. Solid ink (no glass), bottom-centred over the chat column,
-          and mounted ONLY while newer content sits below the fold, so it never
-          covers text the reader is already looking at. The jump is instant, so
-          it needs no reduced-motion branch. */}
+      {/* "↓ LATEST" - the jump the transcript takes only for the reader's own
+          words; for everything else the pill offers it instead.
+          A ZERO-HEIGHT STICKY SLOT (deepseek ChatView's idiom): it never
+          extends `scrollHeight`, so raising the pill cannot itself move the
+          floor the pill is measured against. It rides above the sticky
+          composer seat by the seat's LIVE height, republished as
+          `--vex-composer-height` by the scroll model's ResizeObserver, so a
+          growing draft pushes the pill up with it. Mounted ONLY while newer
+          content sits below the fold. */}
       {showLatest ? (
-        <button
-          type="button"
-          data-vex-latest-pill
-          onClick={jumpToLatest}
-          aria-label="Jump to latest message"
-          className="vex-micro absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-3 py-1.5 text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-accent-border)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
-        >
-          <VexIcon icon={ChevronDownIcon} size={12} aria-hidden />
-          Latest
-        </button>
+        <div data-vex-latest-slot>
+          <button
+            type="button"
+            data-vex-latest-pill
+            onClick={jumpToLatest}
+            aria-label="Jump to latest message"
+            className="pointer-events-auto -mt-[34px] inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-line-2 bg-surface-2 text-ink-primary shadow-md transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          >
+            <IconChevronDown size={14} />
+          </button>
+        </div>
       ) : null}
+      </div>
+      </div>
     </div>
   );
 }

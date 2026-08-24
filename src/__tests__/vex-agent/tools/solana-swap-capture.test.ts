@@ -539,7 +539,7 @@ describe("solana.swap.execute capture", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("solana.swap.quote first");
+    expect(result.output).toContain("solana__swap_quote first");
     expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
     expect(mockCreateAgentActivityPreBroadcastFailure).not.toHaveBeenCalled();
   });

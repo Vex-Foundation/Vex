@@ -1,0 +1,51 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read, directly from the chain, what ONE wallet holds of named token contracts and which Morpho contracts it has already approved to move them. Use this before acting on Morpho, or to audit standing spending permissions: whether an approval already exists, whether it is unlimited, and whether there is native balance to pay gas. For a plain 'how much do I have' question with no approval angle, WalletBalances and ChainRead are cheaper and cover more chains; use morpho__positions_get for what is already inside Morpho. THE APPROVAL HALF IS THE REASON THIS TOOL EXISTS. It reports the allowance granted to each of four contracts, pinned per chain from Morpho's own address registry and never taken from a parameter: Morpho Blue, the core lending protocol; Bundler3, the batch entry point; GeneralAdapter1, the contract that actually PULLS tokens during a bundled Morpho action and therefore the one whose standing approval matters most; and Permit2, the signature-based approval contract. Each entry carries the spender address, what that contract does, the exact raw integer, and TWO flags. `unlimited` is an EXACT match with the maximum possible value. `effectivelyUnlimited` also catches a max approval that has been partly drawn and so no longer equals the maximum: a live Base wallet held one whose remainder was still around 1e71 tokens, which is unbounded in every sense that matters, and reporting it as a bounded number would under-warn. Treat either flag as a standing risk worth naming, because it lets that contract move the whole balance later without another signature. AN UNANSWERED READ IS REPORTED AS UNKNOWN, NEVER AS ZERO. Reads are batched and answer per contract, so one token or one spender can fail while the rest succeed. Anything that failed appears under `tokensUnavailable`, `allowancesUnavailable` or `nativeUnavailable` with the reason, and is absent from the numbers. Treating those as zero would report a balance as empty or an approval as absent, and an approval reported as absent reads as safety. Permit2 is genuinely NOT DEPLOYED on two supported chains; it is listed under `spendersUnavailable` by name rather than read as an approval of zero. THE NATIVE COIN IS NOT AN ERC-20 and is always read: it has no allowance because it is never pulled by a spender, and a wallet holding tokens with no native balance cannot send any transaction on that chain at all, whatever its approvals say. RETURNS: `wallet` with the chain, the address, the native balance as {raw, decimals, symbol, human}, and per token the balance in the same shape plus its allowances, each with spender, role, raw, decimals, human and unlimited. Plus the unavailable lists described above. LIMITS: no USD is returned, because this reads a node rather than a price feed and a mark nothing on-chain backs would be the one invented number in the answer. Balances and allowances are POINT-IN-TIME at the block the node answered from and can change before anything built on them is sent, so re-read immediately before acting. It reads any address and needs no key. Read-only - it signs nothing, spends nothing, and cannot grant or revoke an approval.",
+      "name": "morpho__wallet_balance_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The chain to read on. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). Required and single, because a balance and an approval exist per chain: the same token symbol on two chains is two different contracts with two different allowances, so a guessed chain answers confidently about the wrong one.",
+            "type": "string"
+          },
+          "tokenAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Comma-separated ERC-20 CONTRACT addresses, or an array of the same. Symbols are rejected: several tokens on one chain answer to the same symbol, and an allowance read against the wrong contract is a false safety signal. At most 12 per call, rejected by name rather than trimmed, because each token costs a balance read plus one read per Morpho spender. The native sentinel address is accepted and folded into the native balance. Omit it entirely for the native balance alone."
+          },
+          "walletAddress": {
+            "description": "The ONE account address to read, 0x-prefixed and 40 hex. Any address works; no key is used and nothing is unlocked.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "walletAddress",
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "morpho",
+    "requiresEnv": null,
+    "toolId": "morpho.wallet.balance"
+  }
+}

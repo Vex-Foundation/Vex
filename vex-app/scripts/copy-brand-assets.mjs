@@ -12,22 +12,15 @@ import { mkdirSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 
-const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const VEX_APP = path.resolve(import.meta.dirname, "..");
 const PUBLIC_DIR = path.join(VEX_APP, "src", "renderer", "public");
 
-const SOURCES = [
-  {
-    src: path.join(REPO_ROOT, "src", "vex-agent", "public", "logo_clean.png"),
-    dest: path.join(PUBLIC_DIR, "logo_clean.png"),
-    expect: { width: 500, height: 500, format: "png", maxBytes: 40_000 },
-  },
-  {
-    src: path.join(REPO_ROOT, "src", "vex-agent", "public", "vex.jpg"),
-    dest: path.join(PUBLIC_DIR, "vex.jpg"),
-    expect: { width: 1254, height: 1254, format: "jpeg", maxBytes: 130_000 },
-  },
-];
+// Registry of raster brand assets re-encoded into the renderer bundle.
+// Currently EMPTY: the assistant avatar (vex.jpg) was the only entry, and the
+// transcript now draws the inline `VexMark` SVG instead (UIUX round 2), so no
+// raster brand asset is bundled. The script stays as the seam for the next
+// one - add an entry here and its pin in check-build-artifacts.mjs together.
+const SOURCES = [];
 
 mkdirSync(PUBLIC_DIR, { recursive: true });
 

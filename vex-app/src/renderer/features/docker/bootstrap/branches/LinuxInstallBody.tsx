@@ -42,7 +42,7 @@ export function LinuxInstallBody({
         tone="info"
         word="Install"
         title="Docker Engine is not installed"
-        detail="Linux — install via your package manager."
+        detail="Linux - install via your package manager."
       />
 
       {state.kind === "loading" ? (
@@ -53,7 +53,7 @@ export function LinuxInstallBody({
             tone="paper"
             label="Loading install instructions"
           />
-          <p aria-hidden className="text-xs text-[var(--color-text-secondary)]">
+          <p aria-hidden className="text-xs text-ink-secondary">
             Loading install instructions…
           </p>
         </div>
@@ -66,7 +66,7 @@ export function LinuxInstallBody({
             variant="ghost"
             size="sm"
             onClick={onRetryFetch}
-            className="self-start text-[var(--color-text-secondary)]"
+            className="self-start text-ink-secondary"
           >
             Retry instructions fetch
           </Button>
@@ -76,7 +76,7 @@ export function LinuxInstallBody({
       ) : null}
 
       {/* Warning RAIL (A3 alert grammar — no fill, no box). */}
-      <div className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+      <div className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-xs leading-relaxed text-ink-secondary">
         <strong className="font-semibold text-[var(--color-warning)]">
           Heads up:
         </strong>{" "}
@@ -88,7 +88,7 @@ export function LinuxInstallBody({
           href={DOCKER_ROOTLESS_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline"
+          className="text-[var(--vex-accent-text,var(--color-accent-primary))] underline-offset-4 hover:underline"
         >
           Docker&rsquo;s rootless mode
         </a>{" "}

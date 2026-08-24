@@ -7,6 +7,7 @@ import { TRENCH_SEARCH_DISCOVERY } from "../../embeddings/trench/search.js";
 export const TRENCH_SEARCH_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "trench.search",
+    publicName: "trench__tokens_search",
     namespace: "trench",
     lifecycle: "active",
     description:

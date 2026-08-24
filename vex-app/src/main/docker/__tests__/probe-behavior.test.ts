@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   isModelRunnerReachable: vi.fn(),
   getAvailableDiskGB: vi.fn(),
   logWarn: vi.fn(),
+  resolveDockerCli: vi.fn(),
+  probeEngineEndpoint: vi.fn(),
 }));
 
 vi.mock("node:child_process", () => {
@@ -42,6 +44,10 @@ vi.mock("node:child_process", () => {
   return { execFile };
 });
 vi.mock("../cli-env.js", () => ({ dockerSpawnEnv: mocks.dockerSpawnEnv }));
+vi.mock("../locate.js", () => ({ resolveDockerCli: mocks.resolveDockerCli }));
+vi.mock("../engine-endpoint.js", () => ({
+  probeDockerEngineEndpoint: mocks.probeEngineEndpoint,
+}));
 vi.mock("../endpoint-policy.js", () => ({
   inspectDockerEndpointPolicy: mocks.inspectEndpoint,
 }));
@@ -57,6 +63,9 @@ vi.mock("../../logger/index.js", () => ({
 }));
 
 import { probeDocker } from "../probe/daemon.js";
+import { clearDockerEngineStartWindow } from "../engine-start-window.js";
+
+const DOCKER_EXE = "/usr/local/bin/docker";
 
 function commandError(code: string): Error {
   return Object.assign(new Error(`docker failed (${code})`), {
@@ -98,31 +107,71 @@ describe("probeDocker engine failure taxonomy", () => {
     mocks.isPortFree.mockResolvedValue(true);
     mocks.isModelRunnerReachable.mockResolvedValue(false);
     mocks.getAvailableDiskGB.mockResolvedValue(50);
+    mocks.resolveDockerCli.mockReturnValue({
+      executablePath: DOCKER_EXE,
+      source: "install_dir",
+    });
+    mocks.probeEngineEndpoint.mockResolvedValue({ kind: "not_running" });
+    clearDockerEngineStartWindow();
   });
 
-  it("classifies ENOENT version failures as cli_not_found", async () => {
+  it("reports not_installed when the locator finds no Docker CLI at all", async () => {
+    mocks.resolveDockerCli.mockReturnValue(null);
     installExecBehavior(() => ({ error: commandError("ENOENT") }));
 
     const status = await probeDocker({ pgPort: 55432, diskTarget: "/tmp" });
 
     expect(status.engine).toEqual({
-      present: false,
+      state: { kind: "not_installed" },
       version: null,
+      cliSource: null,
+      present: false,
       runtimeOK: false,
-      failure: "cli_not_found",
     });
+    // Nothing was located, so nothing is spawned to prove it again.
+    expect(mocks.execFile).not.toHaveBeenCalled();
   });
 
-  it("classifies non-ENOENT version failures as probe_error", async () => {
+  it("classifies a located-but-unrunnable CLI as a probe error, not as missing", async () => {
     installExecBehavior(() => ({ error: commandError("EACCES") }));
 
     const status = await probeDocker({ pgPort: 55432, diskTarget: "/tmp" });
 
     expect(status.engine.present).toBe(false);
-    expect(status.engine.failure).toBe("probe_error");
+    expect(status.engine.state).toMatchObject({
+      kind: "error",
+      reason: "probe_error",
+    });
   });
 
-  it("keeps engine failure null when version succeeds but docker info fails", async () => {
+  it("spawns the located ABSOLUTE path, never the bare name", async () => {
+    installExecBehavior(() => ({ stdout: "Docker version 27.5.1, build abc\n" }));
+
+    await probeDocker({ pgPort: 55432, diskTarget: "/tmp" });
+
+    for (const call of mocks.execFile.mock.calls) {
+      expect(call[0]).toBe(DOCKER_EXE);
+    }
+  });
+
+  it("reports permission_denied when the engine endpoint refuses this process", async () => {
+    mocks.probeEngineEndpoint.mockResolvedValue({
+      kind: "permission_denied",
+      endpoint: "/var/run/docker.sock",
+    });
+    installExecBehavior((args) =>
+      args.join(" ") === "--version"
+        ? { stdout: "Docker version 27.5.1, build abc\n" }
+        : { error: commandError("EACCES") },
+    );
+
+    const status = await probeDocker({ pgPort: 55432, diskTarget: "/tmp" });
+
+    expect(status.engine.state.kind).toBe("permission_denied");
+    expect(status.daemon.running).toBe(false);
+  });
+
+  it("reports engine_stopped when the CLI works but docker info fails", async () => {
     installExecBehavior((args) => {
       const key = args.join(" ");
       if (key === "--version") {
@@ -140,11 +189,12 @@ describe("probeDocker engine failure taxonomy", () => {
     const status = await probeDocker({ pgPort: 55432, diskTarget: "/tmp" });
 
     expect(status.engine.present).toBe(true);
-    expect(status.engine.failure).toBeNull();
+    expect(status.engine.state).toEqual({ kind: "engine_stopped" });
+    expect(status.engine.cliSource).toBe("install_dir");
     expect(status.daemon.running).toBe(false);
     expect(mocks.dockerSpawnEnv).toHaveBeenCalled();
     expect(mocks.execFile).toHaveBeenCalledWith(
-      "docker",
+      DOCKER_EXE,
       expect.any(Array),
       expect.objectContaining({ env: { PATH: "/docker/path" } }),
       expect.any(Function),

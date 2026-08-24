@@ -84,7 +84,7 @@ export async function morphoRewardsGet(
   const failedChains = chains.filter((chain) => chain.error !== null);
   if (failedChains.length === q.chainIds.length && q.chainIds.length > 0) {
     return fail(
-      `morpho.rewards.get failed on every chain it was asked about. ${failedChains[0]?.error ?? ""}`.trim(),
+      `morpho__rewards_get failed on every chain it was asked about. ${failedChains[0]?.error ?? ""}`.trim(),
     );
   }
 
@@ -129,9 +129,9 @@ export async function morphoRewardsGet(
         + "campaign can end.",
     },
     nextStep:
-      "To claim what is listed above, call morpho.rewards.claim with that chain - it sweeps every claimable row on "
+      "To claim what is listed above, call morpho__rewards_claim with that chain - it sweeps every claimable row on "
       + "one chain in a single transaction and needs no quote. It costs gas, so claiming a dust balance can cost "
       + "more than it delivers: check the figures first. To see where the rewards came from, read the vault or "
-      + "market with morpho.vault.get or morpho.market.get.",
+      + "market with morpho__vault_get or morpho__market_get.",
   });
 }

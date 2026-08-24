@@ -346,7 +346,7 @@ describe("the agent path REQUIRES a locker image", () => {
     expect(result.output).toContain("requires a picture");
     // The remedy has to be actionable: the locker is SHARED between the two
     // launchpads, so the tool that lists it is `trench.images`.
-    expect(result.output).toContain("trench.images");
+    expect(result.output).toContain("trench__images_list");
     // Nothing may exist after this refusal - no intent row, no authorization,
     // no broadcast. A refusal that had already written one would be a leak.
     expect(written).toHaveLength(0);

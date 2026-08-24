@@ -36,7 +36,7 @@ vi.mock("@vex-agent/tools/dispatcher/internal-loaders.js", async () => {
     ...actual,
     INTERNAL_TOOL_LOADERS: {
       ...actual.INTERNAL_TOOL_LOADERS,
-      wallet_send_confirm: async () => mockWalletSendConfirmHandler,
+      WalletSendConfirm: async () => mockWalletSendConfirmHandler,
     },
   };
 });
@@ -163,12 +163,12 @@ describe("A9 autonomy guarantee — internal mutating tool dispatch", () => {
   it("the tool under test really is classified as mutating", () => {
     // Guards the two tests below from silently passing because the registry
     // stopped classifying this tool as mutating.
-    expect(isMutatingTool("wallet_send_confirm")).toBe(true);
+    expect(isMutatingTool("WalletSendConfirm")).toBe(true);
   });
 
   it("restricted → pendingApproval and the handler is NOT executed", async () => {
     const result = await dispatchTool(
-      { name: "wallet_send_confirm", args: {}, toolCallId: "tc-1" },
+      { name: "WalletSendConfirm", args: {}, toolCallId: "tc-1" },
       internalToolContext("restricted"),
     );
 
@@ -178,7 +178,7 @@ describe("A9 autonomy guarantee — internal mutating tool dispatch", () => {
 
   it("full → executes immediately, NEVER raises pendingApproval", async () => {
     const result = await dispatchTool(
-      { name: "wallet_send_confirm", args: {}, toolCallId: "tc-1" },
+      { name: "WalletSendConfirm", args: {}, toolCallId: "tc-1" },
       internalToolContext("full"),
     );
 

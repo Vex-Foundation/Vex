@@ -95,7 +95,7 @@ beforeEach(() => {
 });
 
 describe("runtime.cancelWake", () => {
-  it("inserts the audit row already 'cleared' — never a stranded pending row", async () => {
+  it("inserts the audit row already 'cleared' - never a stranded pending row", async () => {
     mockCancelForSession.mockResolvedValueOnce(1);
     const r = await call({ sessionId: SESSION });
 

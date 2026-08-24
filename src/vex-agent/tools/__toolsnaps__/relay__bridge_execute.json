@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a REAL Relay cross-chain bridge. SPENDS FUNDS: it signs and broadcasts the origin-chain deposit from the user's wallet, requires approval before it runs, and cannot be undone; the solver then fills on the destination. REQUIRES a fresh matching relay__bridge_quote_get first. `amountRaw` is in the source token's smallest units. Vex charges 25 bps (0.25%) on the input token: `amountRaw` is the TOTAL debited and the route is priced for that amount MINUS the fee, so the quoted destination amount is what actually arrives. The fee is a SEPARATE transfer to the Vex treasury that runs only AFTER the origin deposit, so a bridge that does not happen is never charged; the `vexFee` block reports the split, and its rate and receiver are fixed. THE CALL RETURNS BEFORE THE BRIDGE IS FINAL, and this is the fact to act on: the destination fill is still in progress, so the result comes back with `status: \"pending\"` and success false. Vex's background sweep owns confirmation and finalizes the record once the fill is independently verified. Do NOT re-bridge and do NOT poll this tool in a loop. RETURNS `status`, a `message` stating what is known, `requestId`, `legs[]` (role, chain, txHash, status), `inTxHashes` for the origin broadcasts Vex signed, `txHashes` for any destination fill seen, `amounts.in` and `amounts.out`, and `vexFee` with its collection outcome. `providerStatus` is Relay's own last reported state and `providerStatusUnreachable` true means no status could be read this turn, which is NOT the same as still pending. Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other route Khalani is Vex's primary bridge: use this when Khalani does not cover the route, or when its quote failed for a routing reason.",
+      "name": "relay__bridge_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "If true, fetch the route without signing.",
+            "type": "boolean"
+          },
+          "fromChain": {
+            "description": "Source chain. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). Robinhood Chain is `robinhood` / `4663`.",
+            "type": "string"
+          },
+          "fromToken": {
+            "description": "Source token address, or native ETH/native.",
+            "type": "string"
+          },
+          "recipient": {
+            "description": "Destination recipient (default: your wallet).",
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Basis points (1 bps = 0.01%). Default 100 = 1%. Vex caps this at 1000 (10%) and REJECTS a higher value rather than clamping it.",
+            "type": "number"
+          },
+          "toChain": {
+            "description": "Destination chain. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). Robinhood Chain is `robinhood` / `4663`.",
+            "type": "string"
+          },
+          "toToken": {
+            "description": "Destination token address, or native ETH/native.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromChain",
+          "fromToken",
+          "toChain",
+          "toToken",
+          "amountRaw"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "relay",
+    "requiresEnv": null,
+    "toolId": "relay.bridge"
+  }
+}

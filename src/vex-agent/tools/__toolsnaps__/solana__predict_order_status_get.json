@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read a Jupiter prediction order's DURABLE status and fill-event history by orderPubkey. Use this after an order has filled or been cancelled: the on-chain account is gone by then and solana__predict_order_get errors, while this record survives closure and is the honest answer to \"did my order go through\". Returns the provider's own status record for that order, with its fill events, as the provider states it - one record, complete, with no paging. Find an orderPubkey with solana__predict_orders_list.",
+      "name": "solana__predict_order_status_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderPubkey": {
+            "description": "Order public key (from solana__predict_orders_list).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderPubkey"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.orderStatus"
+  }
+}

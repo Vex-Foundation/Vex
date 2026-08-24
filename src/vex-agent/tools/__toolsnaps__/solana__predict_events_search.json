@@ -1,0 +1,44 @@
+{
+  "definition": {
+    "function": {
+      "description": "Find Jupiter prediction EVENTS by keyword across every category on one provider. Use this when the user names a topic (\"bitcoin\", \"super bowl\", \"election\") - solana__predict_events_discover is the browse surface when they have no name yet. Returns `data`, one row per matching event: eventId, category, curated metadata (title, subtitle) and volumeUsd as an exact-decimal USD string with a raw volumeUsdMicro sibling; includeMarkets adds each event's curated markets. Take an eventId to solana__predict_event_get or a marketId to solana__predict_market_get for full detail before trading. The provider ignores its own limit and answers with up to 10 rows, so Vex enforces the requested count (1-20, default 20) locally by slicing, and a value out of that range is REJECTED by name. THE SLICE IS REPORTED, NOT SILENT: alongside `data` the reply carries `totalMatched` (rows the provider returned), `returned` (rows after the slice) and `truncated`, with a `truncationNote` when true. There is NO continuation on this tool - no cursor, no page, no offset - so the only ways to reach a dropped row are a more specific `query` or a higher `limit` up to 20.",
+      "name": "solana__predict_events_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "includeMarkets": {
+            "description": "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets).",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max results, 1-20 (default 20). The provider ignores this param upstream — Vex enforces the requested count locally.",
+            "type": "number"
+          },
+          "provider": {
+            "description": "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search keyword or phrase, e.g. \"bitcoin\" or \"super bowl\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.search"
+  }
+}

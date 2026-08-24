@@ -12,6 +12,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { redact } from "../logger/redact.js";
 import { dockerSpawnEnv } from "./cli-env.js";
+import { resolveDockerCli } from "./locate.js";
 import { withoutManagedSecrets } from "./env-hygiene.js";
 
 export interface SpawnRunnerOptions {
@@ -101,6 +102,15 @@ export async function runSpawn(
     : command === "docker"
       ? dockerSpawnEnv()
       : withoutManagedSecrets(process.env);
+  // One owner decides where `docker` lives (`locate.ts`), so every caller -
+  // the probe, the endpoint policy inspector, the daemon starter - resolves
+  // to the SAME executable instead of each getting whatever a stale PATH
+  // snapshot happens to hold. Falling back to the bare name only preserves
+  // the previous ENOENT behaviour when nothing was located.
+  const spawnCommand =
+    command === "docker"
+      ? (resolveDockerCli()?.executablePath ?? command)
+      : command;
 
   return new Promise((resolve) => {
     let aborted = false;
@@ -149,7 +159,7 @@ export async function runSpawn(
       }
     };
 
-    const child: ChildProcess = spawn(command, [...args], {
+    const child: ChildProcess = spawn(spawnCommand, [...args], {
       cwd,
       env: spawnEnv,
       stdio: ["ignore", "pipe", "pipe"],

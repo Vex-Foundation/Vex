@@ -1,25 +1,29 @@
 /**
- * UPDATER PREVIEW — diagnostic toast viewer (owner request 2026-07-22,
+ * UPDATER PREVIEW - diagnostic toast viewer (owner request 2026-07-22,
  * sibling of the SetupTour): `VITE_VEX_UPDATER_PREVIEW=1` replaces the
- * live update layer with this local previewer so the bottom-right
- * `UpdateToast` can be seen in EVERY state without a real update feed.
+ * live update layer with this local previewer so the sticky update toast
+ * can be seen in EVERY state without a real update feed.
  *
- * A small mono picker docks to the LEFT of the toast slot; each key
- * feeds `UpdateToast` a schema-valid mock status. Action handlers walk
- * the mock through realistic transitions locally ("Update now" →
- * downloading → downloaded, "Cancel" → available, "Try again" from a
- * block re-enters its step) — no IPC is ever called, main is never
+ * A small picker docks to the LEFT of the toast slot; each key feeds the
+ * `UpdateToastSurface` a schema-valid mock status. Action handlers walk
+ * the mock through realistic transitions locally ("Update now" ->
+ * downloading -> downloaded, "Cancel" -> available, "Try again" from a
+ * block re-enters its step) - no IPC is ever called, main is never
  * touched, and release builds are made without the flag so this
  * component is unreachable in production.
  */
 
-import { useState, type JSX } from "react";
+import { useMemo, useState, type JSX } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
+import { cn } from "../../lib/utils.js";
 import {
   isToastKind,
-  UpdateToast,
   type ToastableUpdateStatus,
-} from "./UpdateToast.js";
+} from "./update-toast-model.js";
+import {
+  UpdateToastSurface,
+  type UpdateToastHandlers,
+} from "./UpdateToastSurface.js";
 
 export const UPDATER_PREVIEW_ENABLED =
   import.meta.env.VITE_VEX_UPDATER_PREVIEW === "1";
@@ -33,7 +37,7 @@ const AVAILABLE_STATUS: UpdateStatus = {
   currentVersion: CURRENT,
   latestVersion: LATEST,
   severity: "normal",
-  summary: "Chronos Gate — the rebuilt setup experience.",
+  summary: "Chronos Gate - the rebuilt setup experience.",
 };
 
 const MOCKS: ReadonlyArray<{
@@ -116,13 +120,43 @@ export function UpdaterPreview(): JSX.Element {
     ? status
     : null;
 
+  const handlers: UpdateToastHandlers = useMemo(
+    () => ({
+      onLater: () => pick("available"),
+      onUpdateNow: () =>
+        setStatus({
+          kind: "downloading",
+          currentVersion: CURRENT,
+          latestVersion: LATEST,
+          percent: 42,
+        }),
+      onCancel: () => pick("available"),
+      onRestart: () =>
+        setStatus({
+          kind: "downloaded",
+          currentVersion: CURRENT,
+          latestVersion: LATEST,
+        }),
+      onTryAgain: () =>
+        setStatus((current) =>
+          current.kind === "blockedByOperation" &&
+          current.blockedAction === "install"
+            ? mockFor("downloaded")
+            : mockFor("downloading"),
+        ),
+      onReleaseNotes: () => undefined,
+      onDismissError: () => pick("available"),
+    }),
+    [],
+  );
+
   return (
     <>
       <div
         data-vex-updater-preview
-        className="fixed bottom-4 right-[21.5rem] z-[70] flex flex-col gap-1 rounded-lg border border-white/[0.16] bg-[rgba(8,11,24,0.85)] p-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(243,244,247,0.85)]"
+        className="fixed bottom-4 right-[21.5rem] z-[70] flex flex-col gap-1 rounded-xl border border-line-3 bg-surface-2 p-2 vex-micro-label uppercase text-ink-secondary shadow-lv2"
       >
-        <span className="px-1 text-[9px] text-[rgba(243,244,247,0.55)]">
+        <span className="px-1 text-[9px] text-ink-tertiary">
           Updater preview
         </span>
         {MOCKS.map((m) => (
@@ -130,48 +164,19 @@ export function UpdaterPreview(): JSX.Element {
             key={m.key}
             type="button"
             onClick={() => pick(m.key)}
-            className={
+            className={cn(
+              "rounded-lg px-2 py-1 text-left transition-colors",
               m.key === activeKey
-                ? "rounded bg-white/[0.14] px-2 py-1 text-left text-[var(--color-text-primary)]"
-                : "rounded px-2 py-1 text-left hover:bg-white/[0.08]"
-            }
+                ? "bg-interactive-active text-ink-primary"
+                : "hover:bg-interactive-hover",
+            )}
           >
             {m.key}
           </button>
         ))}
       </div>
       {toastable !== null ? (
-        <UpdateToast
-          status={toastable}
-          busy={false}
-          onLater={() => pick("available")}
-          onUpdateNow={() =>
-            setStatus({
-              kind: "downloading",
-              currentVersion: CURRENT,
-              latestVersion: LATEST,
-              percent: 42,
-            })
-          }
-          onCancel={() => pick("available")}
-          onRestart={() =>
-            setStatus({
-              kind: "downloaded",
-              currentVersion: CURRENT,
-              latestVersion: LATEST,
-            })
-          }
-          onTryAgain={() =>
-            setStatus(
-              status.kind === "blockedByOperation" &&
-                status.blockedAction === "install"
-                ? mockFor("downloaded")
-                : mockFor("downloading"),
-            )
-          }
-          onReleaseNotes={() => undefined}
-          onDismissError={() => pick("available")}
-        />
+        <UpdateToastSurface status={toastable} busy={false} handlers={handlers} />
       ) : null}
     </>
   );

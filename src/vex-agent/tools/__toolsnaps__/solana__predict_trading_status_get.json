@@ -1,0 +1,24 @@
+{
+  "definition": {
+    "function": {
+      "description": "Check whether Jupiter Prediction Markets trading is open right now. Call this before solana__predict_buy, solana__predict_sell, solana__predict_claim or solana__predict_close_all: an order placed while trading is halted fails at the venue, and this is the cheapest way to find out first. Takes no parameters and returns the venue's current trading-status record as the provider states it, complete with no paging. It is a statement about the VENUE, not about any one market - a market can still be closed, resolved or unpriced while the venue as a whole is open, which solana__predict_market_get answers.",
+      "name": "solana__predict_trading_status_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.tradingStatus"
+  }
+}

@@ -58,7 +58,7 @@ describe("migrateResultSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects unknown kind (no failed branch — failures go through err())", () => {
+  it("rejects unknown kind (no failed branch - failures go through err())", () => {
     const result = migrateResultSchema.safeParse({
       kind: "failed",
       message: "boom",

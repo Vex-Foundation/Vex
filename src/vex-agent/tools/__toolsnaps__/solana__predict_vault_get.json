@@ -1,0 +1,24 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the Jupiter Prediction PROTOCOL vault's own on-chain account - the venue's infrastructure state, not anybody's wallet, position or balance. Use this when the question is about the protocol itself, such as how much the venue's vault holds, and only then; a user's own money is solana__predict_positions_list and solana__predict_profile_get. Takes no parameters and returns the vault's public key and balance as the provider reports them, one record, complete, with no paging. Nothing here is scoped to the session wallet, so never present a figure from it as the user's own.",
+      "name": "solana__predict_vault_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.vaultInfo"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "definition": {
+    "function": {
+      "description": "Rank Jupiter Prediction traders by period (all_time, weekly, monthly) and metric (pnl, volume, win_rate). Use this when the user asks who is doing well, or wants to see how their own trading stands against the field; solana__predict_profile_get answers what ONE trader has done. All three params are required and an unrecognised value is REJECTED by name. Returns `data`, one row per ranked trader, with realizedPnlUsd and totalVolumeUsd as exact-decimal USD strings each carrying a raw *Micro sibling plus predictionsCount, correctPredictions and wrongPredictions, and a `summary` block holding all_time, weekly and monthly totalVolumeUsd. Read each row's winRatePct as an UNVERIFIED figure: no capture or document has confirmed its scale, so it is passed through unconverted and must not be presented as a settled percent. A ranked page is the whole answer; there is no continuation.",
+      "name": "solana__predict_leaderboard_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Max results, 1-100.",
+            "type": "number"
+          },
+          "metric": {
+            "description": "Ranking metric: pnl, volume, or win_rate.",
+            "type": "string"
+          },
+          "period": {
+            "description": "Period: all_time, weekly, or monthly.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "metric",
+          "limit"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.leaderboards"
+  }
+}

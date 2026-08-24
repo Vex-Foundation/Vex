@@ -217,7 +217,7 @@ export async function resolveTokenMetadataStrict(input: string, chainId: number)
   if (!isAddress(input)) {
     throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
-      `Token "${input}" is not a valid address. Resolve token addresses via khalani.tokens.search before calling mutating tools.`,
+      `Token "${input}" is not a valid address. Resolve token addresses via khalani__tokens_search before calling mutating tools.`,
       "Pass the exact contract address, not a symbol or name.",
     );
   }

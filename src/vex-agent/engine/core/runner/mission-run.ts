@@ -251,7 +251,7 @@ export async function runPreparedMissionStart(
       // Partial assistant text is persisted as a stopped row by the existing
       // `turnResult.inferenceAborted` branch in `turn-loop.ts`; nothing on
       // the mission-run path parses that text (mission patches only come from
-      // the `mission_draft_update` tool or the setup turn), so no
+      // the `MissionDraftUpdate` tool or the setup turn), so no
       // `user_stopped` text guard is needed here.
       controller.signal, // abortSignal
       controller.signal, // inferenceAbortSignal

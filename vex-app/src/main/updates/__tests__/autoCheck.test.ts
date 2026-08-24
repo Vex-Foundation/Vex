@@ -102,7 +102,7 @@ describe("maybeAutoCheck", () => {
     expect(silentCheck).not.toHaveBeenCalled();
   });
 
-  it("NOW also runs from available — a newer release must still surface while snoozed", async () => {
+  it("NOW also runs from available - a newer release must still surface while snoozed", async () => {
     currentKind = "available";
     await maybeAutoCheck("startup");
     expect(silentCheck).toHaveBeenCalledTimes(1);

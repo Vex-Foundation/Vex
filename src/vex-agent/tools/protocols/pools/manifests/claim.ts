@@ -13,6 +13,7 @@ import { POOLS_CLAIM_DISCOVERY } from "../../embeddings/pools/claim.js";
 export const POOLS_CLAIM_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "pools.claim_fees",
+    publicName: "pools__fees_claim",
     namespace: "pools",
     lifecycle: "active",
     description:
@@ -25,9 +26,13 @@ export const POOLS_CLAIM_TOOLS: readonly ProtocolToolManifest[] = [
       + "approval gate. A claim pays TWO assets - the launched token and the pool's paired asset (WETH or USDG) - "
       + "so both legs are reported separately with their raw amounts, their decimals and their asset addresses; "
       + "never add them together. Returns the token, the pool, the wallet, both claimable legs, the fees already "
-      + "collected under their own label, a gas bound, and after a real claim the transaction hash with both "
-      + "amounts the receipt PROVED. A pool with nothing to pay says so and signs nothing, and a claim that pays "
-      + "zero is a real answer rather than a failure. Only the wallet the fee stream points at can claim it.",
+      + "collected under their own label, a gas bound, and after a real claim a status carrying the transaction "
+      + "hash: `confirmed` with both amounts the receipt PROVED and a paidNothing flag when it paid zero; "
+      + "`confirmed_pending_amounts` when it settled but the amounts could not be decoded, which are never guessed; "
+      + "`reverted` when it landed and failed; or `pending` when the outcome is UNKNOWN, already recorded, and must "
+      + "NOT be retried. A pool with nothing to pay says so, signs nothing, and answers with a null claimable beside "
+      + "the already-collected figures rather than a transaction hash; a claim that pays zero is a real answer "
+      + "rather than a failure. Only the wallet the fee stream points at can claim it.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

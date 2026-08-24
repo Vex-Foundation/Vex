@@ -102,7 +102,7 @@ afterEach(() => {
   delete window.vex;
 });
 
-describe("CompactionApplyButton — state table", () => {
+describe("CompactionApplyButton - state table", () => {
   it("renders nothing without a preparation", () => {
     const { container } = renderButton(null);
     expect(container.innerHTML).toBe("");
@@ -152,7 +152,7 @@ describe("CompactionApplyButton — state table", () => {
     const button = screen.getByRole("button");
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.textContent).toBe(
-      "Queued — will apply when the agent next runs",
+      "Queued - will apply when the agent next runs",
     );
   });
 
@@ -182,7 +182,7 @@ describe("CompactionApplyButton — state table", () => {
   });
 });
 
-describe("CompactionApplyButton — the one call", () => {
+describe("CompactionApplyButton - the one call", () => {
   it("clicking calls requestApply EXACTLY once and no other bridge method", async () => {
     requestApply.mockResolvedValue({
       ok: true,
@@ -215,7 +215,7 @@ describe("CompactionApplyButton — the one call", () => {
     const button = screen.getByRole("button");
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.textContent).toBe(
-      "Queued — will apply when the agent next runs",
+      "Queued - will apply when the agent next runs",
     );
   });
 
@@ -231,7 +231,7 @@ describe("CompactionApplyButton — the one call", () => {
     advance(prep("apply_requested"));
 
     expect(screen.getByRole("button").textContent).toBe(
-      "Queued — applies at the next step",
+      "Queued - applies at the next step",
     );
   });
 });

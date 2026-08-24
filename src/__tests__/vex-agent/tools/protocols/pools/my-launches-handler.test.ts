@@ -77,7 +77,7 @@ describe("pools.my_launches resolves the wallet server-side", () => {
     stubResolvedWallet(null);
     const res = await myLaunches({});
     expect(res.success).toBe(false);
-    expect(res.output).toContain("pools.my_launches");
+    expect(res.output).toContain("pools__my_launches_list");
   });
 });
 

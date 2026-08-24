@@ -18,7 +18,7 @@ describe("tool-model prompt — discovery limits", () => {
   const prompt = buildToolModelPrompt();
 
   it("states the real default and maximum", () => {
-    expect(prompt).toContain(`returns ${DEFAULT_DISCOVERY_LIMIT} tools by default`);
+    expect(prompt).toContain(`Returns ${DEFAULT_DISCOVERY_LIMIT} rows by default`);
     expect(prompt).toContain(`raise \`limit\` up to ${MAX_DISCOVERY_LIMIT}`);
   });
 

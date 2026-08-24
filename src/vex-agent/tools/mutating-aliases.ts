@@ -2,8 +2,8 @@
  * Mutating protocol-alias routers (Stage 8b; Agent Scan plan §4.2/§11.2
  * rewired the swap pair).
  *
- * A MUTATING action-named alias (`swap_execute`, `swap_execute_uniswap`,
- * `bridge`) resolves to a TARGET protocol toolId + translated params, then is
+ * A MUTATING action-named alias (`SwapExecute`, `SwapExecuteUniswap`,
+ * `BridgeExecute`) resolves to a TARGET protocol toolId + translated params, then is
  * dispatched DIRECTLY through `executeProtocolTool` by the dispatcher's
  * dedicated branch. This is the whole point of the dedicated path: a mutating
  * alias must NOT travel through the dispatcher's internal mutating-approval
@@ -14,12 +14,12 @@
  *
  * Each router:
  *   - validates the (untrusted) alias args with Zod at the boundary,
- *   - classifies the swap family (shared with the read-only `swap_quote` alias
+ *   - classifies the swap family (shared with the read-only `SwapQuote` alias
  *     via `classifySwapFamily` so quote and execute can never disagree),
  *   - translates to the target's EXACT param names,
  *   - THROWS `MutatingAliasRouteError` on an un-routable request (unknown
- *     family, chain not usable on this venue, a hidden pair not yet revealed
- *     for the session). The dispatcher turns the throw into a bounded failure
+ *     family, chain not usable on this venue, invalid args). The dispatcher
+ *     turns the throw into a bounded failure
  *     ToolResult — it never dispatches a guessed target.
  *
  * `side` / `recipient` are REMOVED from the unified contract (plan §11.2) — no
@@ -47,8 +47,6 @@ import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { khalaniSlippageRejection } from "./protocols/khalani/slippage-unsupported.js";
-import { isUniswapPairRevealed, UNISWAP_REVEAL_TRIGGER_SUMMARY } from "./registry/uniswap-reveal.js";
-import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
 /** A resolved target for a mutating protocol-alias. */
@@ -59,45 +57,36 @@ export interface ResolvedAliasTarget {
 
 /**
  * Thrown by a router when the alias cannot be routed to a concrete target
- * (unknown family, chain not usable on this venue, invalid args, hidden pair
- * not yet revealed). Carries a bounded, agent-facing message — never raw
+ * (unknown family, chain not usable on this venue, invalid args). Carries a
+ * bounded, agent-facing message — never raw
  * provider/DB text. The dispatcher returns it as a failed ToolResult; the
  * predicate `dispatchTargetIsMutating` swallows it and falls back to the
  * registry mutating flag (the throw is a validation signal, not a side-effect
  * classification signal).
- *
- * `revealEligible` marks the ONE case a router can determine synchronously,
- * pre-call, that the hidden Uniswap pair should now be revealed for the
- * session (`swap_execute`'s "chain has no KyberSwap support at all" case,
- * plan §11.2). The dispatcher's dedicated branch checks this flag (it has
- * `context.sessionId`, which a pure router does not) and calls
- * `revealUniswapPair` before surfacing the failure.
  */
 export class MutatingAliasRouteError extends Error {
-  readonly revealEligible: boolean;
-  constructor(message: string, options?: { readonly revealEligible?: boolean }) {
+  constructor(message: string) {
     super(message);
     this.name = "MutatingAliasRouteError";
-    this.revealEligible = options?.revealEligible ?? false;
   }
 }
 
 /**
  * Router signature: validated-or-raw args + the calling session id → resolved
  * target, or throw. `sessionId` is `undefined` for the classification-only
- * call site (`dispatcher/mutating-targets.ts`) — a router that NEEDS session
- * scope (the hidden Uniswap pair) then always throws for that call, which
- * correctly falls back to the registry's static `mutating` flag there.
+ * call site (`dispatcher/mutating-targets.ts`). No router requires session scope
+ * any more (owner decision D4 retired the venue reveals), so the parameter is
+ * retained only for the signature's stability across routers.
  */
 export type MutatingAliasRouter = (
   args: Record<string, unknown>,
   sessionId: string | undefined,
 ) => ResolvedAliasTarget | Promise<ResolvedAliasTarget>;
 
-// ── swap_execute — EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
+// ── SwapExecute — EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
 
 /**
- * `swap_execute` alias args. `side` / `recipient` are REMOVED (plan §11.2 — no
+ * `SwapExecute` alias args. `side` / `recipient` are REMOVED (plan §11.2 — no
  * lot-direction tracking survives, and the Jupiter execute manifest never had
  * a recipient param either). `amountIn` is a HUMAN decimal string for both
  * families.
@@ -120,14 +109,12 @@ const SwapArgs = z.object({
 type SwapArgs = z.infer<typeof SwapArgs>;
 
 /**
- * Resolve the `swap_execute` alias to a concrete swap EXECUTE toolId +
+ * Resolve the `SwapExecute` alias to a concrete swap EXECUTE toolId +
  * translated params. EVM → `kyberswap.swap.execute` ONLY (plan §11.2 — the
  * silent Uniswap fallback is removed); Solana → `solana.swap.execute`
  * (unchanged). Throws `MutatingAliasRouteError` on invalid args or an unknown
- * family; throws with `revealEligible: true` when the chain has NO KyberSwap
- * aggregator support at all (the "local chain-not-Kyber-supported,
- * registry gate, pre-call" reveal case, plan §11.2) — the dispatcher's
- * dedicated branch reveals the hidden Uniswap pair for the session on that flag.
+ * family; when the chain has NO KyberSwap aggregator support at all it throws a
+ * message naming `SwapExecuteUniswap` as the venue that does cover it.
  */
 function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   const parsed = SwapArgs.safeParse(args);
@@ -136,7 +123,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
     // the offending key (Zod's default "expected string, received undefined"
     // message omits it).
     throw new MutatingAliasRouteError(
-      `swap_execute: ${parsed.error.issues
+      `SwapExecute: ${parsed.error.issues
         .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
         .join("; ")}`,
     );
@@ -146,21 +133,20 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
     // A chain ID is refused AS an id — same branch and same wording as the
-    // quote half (`internal/action-aliases.ts`). It came from token_find, so
+    // quote half (`internal/action-aliases.ts`). It came from TokenFind, so
     // "cannot determine swap family" would read as a lookup mistake rather than
     // the truth: no venue in the tree serves that chain. This runs BEFORE the
-    // reveal-eligible branch below on purpose — revealing the Uniswap fallback
-    // would claim it covers a chain nothing registers, and would spend the
-    // session's one-shot reveal to say it.
+    // venue branch below on purpose — pointing at the Uniswap venue would claim
+    // it covers a chain nothing registers.
     if (isNumericChainIdInput(a.chain)) {
       throw new MutatingAliasRouteError(
-        `swap_execute: chain id ${a.chain} is not a chain Vex can swap on. ` +
-          `Pass a supported EVM chain — either its slug or the chain id token_find ` +
+        `SwapExecute: chain id ${a.chain} is not a chain Vex can swap on. ` +
+          `Pass a supported EVM chain — either its slug or the chain id TokenFind ` +
           `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
       );
     }
     throw new MutatingAliasRouteError(
-      `swap_execute: cannot determine swap family for chain "${a.chain}". ` +
+      `SwapExecute: cannot determine swap family for chain "${a.chain}". ` +
         `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
     );
   }
@@ -182,22 +168,21 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   // resolves strictly (resolveTokenMetadataStrict), so a bare symbol would only
   // fail deeper inside with a less-clear error. Reject it EARLY with the same
   // doctrine message the quote alias uses (symmetry: a symbol is never DEX-
-  // resolved on the EVM path; use token_find first).
+  // resolved on the EVM path; use TokenFind first).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     throw new MutatingAliasRouteError(
-      "swap_execute: EVM tokens must be a contract address — resolve the symbol with " +
-        "token_find first, or pass native ETH/native.",
+      "SwapExecute: EVM tokens must be a contract address — resolve the symbol with " +
+        "TokenFind first, or pass native ETH/native.",
     );
   }
 
   // `family.venue === "uniswap"` means the venue classifier found NO KyberSwap
-  // aggregator support for this chain at all — reveal-eligible pre-call gate.
+  // aggregator support for this chain at all. Name the alternative venue rather
+  // than only the refusal: it is always callable, so this is actionable now.
   if (family.venue === "uniswap") {
     throw new MutatingAliasRouteError(
-      `swap_execute: KyberSwap does not support chain "${a.chain}". ` +
-        `swap_execute_uniswap is now available for this session as a fallback (Uniswap venue) — ` +
-        `call swap_quote_uniswap first.`,
-      { revealEligible: true },
+      `SwapExecute: KyberSwap does not support chain "${a.chain}". ` +
+        `Use SwapExecuteUniswap for this chain — quote it with SwapQuoteUniswap first.`,
     );
   }
 
@@ -211,10 +196,10 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   return { toolId: "kyberswap.swap.execute", params };
 }
 
-// ── swap_execute_uniswap — HIDDEN EVM-only Uniswap fallback execute ────────
+// ── SwapExecuteUniswap — HIDDEN EVM-only Uniswap fallback execute ────────
 
 const SwapExecuteUniswapArgs = z.object({
-  // Same shared schema as `swap_quote_uniswap` — see `SwapArgs` above.
+  // Same shared schema as `SwapQuoteUniswap` — see `SwapArgs` above.
   chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
@@ -225,27 +210,19 @@ const SwapExecuteUniswapArgs = z.object({
 type SwapExecuteUniswapArgs = z.infer<typeof SwapExecuteUniswapArgs>;
 
 /**
- * Resolve the hidden `swap_execute_uniswap` alias. Dispatch-side hard rule
- * (plan §11.2): THROWS when the session has no active reveal, independent of
- * whatever the tool list showed the model. Resolves DIRECTLY against the
- * Uniswap deployment registry (not `classifySwapFamily`, which would
- * prioritize KyberSwap on a chain it ALSO covers — the whole point of this
- * fallback is to reach Uniswap even there).
+ * Resolve the `SwapExecuteUniswap` alias. Resolves DIRECTLY against the Uniswap
+ * deployment registry, NOT `classifySwapFamily` — that would prioritize
+ * KyberSwap on a chain it ALSO covers, and the whole point of naming the venue
+ * in the tool is to reach Uniswap even there.
  */
 function routeSwapExecuteUniswap(
   args: Record<string, unknown>,
   sessionId: string | undefined,
 ): ResolvedAliasTarget {
-  if (!isUniswapPairRevealed(sessionId)) {
-    throw new MutatingAliasRouteError(
-      `swap_execute_uniswap is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`,
-    );
-  }
-
   const parsed = SwapExecuteUniswapArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
-      `swap_execute_uniswap: ${parsed.error.issues
+      `SwapExecuteUniswap: ${parsed.error.issues
         .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
         .join("; ")}`,
     );
@@ -254,12 +231,12 @@ function routeSwapExecuteUniswap(
 
   const deployment = resolveUniswapDeployment(a.chain);
   if (!deployment) {
-    throw new MutatingAliasRouteError(`swap_execute_uniswap: "${a.chain}" has no verified Uniswap deployment.`);
+    throw new MutatingAliasRouteError(`SwapExecuteUniswap: "${a.chain}" has no verified Uniswap deployment.`);
   }
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     throw new MutatingAliasRouteError(
-      "swap_execute_uniswap: EVM tokens must be a contract address — resolve the symbol with "
-        + "token_find first, or pass native ETH/native.",
+      "SwapExecuteUniswap: EVM tokens must be a contract address — resolve the symbol with "
+        + "TokenFind first, or pass native ETH/native.",
     );
   }
 
@@ -273,16 +250,16 @@ function routeSwapExecuteUniswap(
   return { toolId: "uniswap.swap.execute", params };
 }
 
-// ── bridge — Khalani cross-chain bridge EXECUTE router ─────────────────────
+// ── BridgeExecute — Khalani cross-chain bridge EXECUTE router ─────────────────────
 
 /**
- * `bridge` alias args. Mirrors the read-only `bridge_quote` shape (Stage 8a) so
- * the agent presents ONE bridge surface: preview with `bridge_quote`, execute
- * with `bridge`. Translation is a pass-through to `khalani.bridge`'s EXACT param
+ * `BridgeExecute` alias args. Mirrors the read-only `BridgeQuote` shape (Stage 8a) so
+ * the agent presents ONE bridge surface: preview with `BridgeQuote`, execute
+ * with `BridgeExecute`. Translation is a pass-through to `khalani.bridge`'s EXACT param
  * keys (verified against the khalani manifest:
  * fromChain/fromToken/toChain/toToken/amountRaw + the optional overrides). `dryRun`
  * is intentionally NOT accepted — the alias is the real broadcast; a dry run is
- * reached via `execute_tool({ toolId:"khalani.bridge", params:{ dryRun:true }})`.
+ * reached by calling the Khalani bridge tool directly with `dryRun: true`.
  * The EXECUTE-ONLY `routeId`/`depositMethod` knobs are ALSO not accepted (8c
  * security fix): the quote can never bind them, so the bridge auto-selects the
  * best route and the execute gate fail-closes them on the direct path.
@@ -300,7 +277,7 @@ function routeSwapExecuteUniswap(
 // they can never be bound to a quote — the bridge auto-selects the best route.
 // `.strict()` REJECTS them (and any other unknown key) at the alias boundary so
 // the agent cannot smuggle them through the menu; the execute gate independently
-// fail-closes them on the direct execute_tool path.
+// fail-closes them on the direct protocol-call path.
 const BridgeArgs = z
   .object({
     fromChain: z.string().min(1, { message: "fromChain is required" }),
@@ -321,7 +298,7 @@ const BridgeArgs = z
 type BridgeArgs = z.infer<typeof BridgeArgs>;
 
 /**
- * Resolve the `bridge` alias to `khalani.bridge` OR `relay.bridge` + translated
+ * Resolve the `BridgeExecute` alias to `khalani.bridge` OR `relay.bridge` + translated
  * params, per the bridge VENUE ROUTER (Khalani when its LIVE chain registry
  * serves both sides, else Relay - the chain-aware default fallback). Throws
  * `MutatingAliasRouteError` on invalid args or when no venue can be named
@@ -343,20 +320,20 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   const forbiddenParam = findCallerSuppliedForbiddenParam(args);
   if (forbiddenParam !== null) {
     throw new MutatingAliasRouteError(
-      `bridge: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeExecute: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
   // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
   // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
   // it had bought price protection Khalani never offered.
-  const khalaniSlippage = await khalaniSlippageRejection("bridge", args);
+  const khalaniSlippage = await khalaniSlippageRejection("BridgeExecute", args);
   if (khalaniSlippage !== null) throw new MutatingAliasRouteError(khalaniSlippage);
 
   const parsed = BridgeArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
-      `bridge: ${parsed.error.issues
+      `BridgeExecute: ${parsed.error.issues
         .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
         .join("; ")}`,
     );
@@ -364,7 +341,7 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   const a: BridgeArgs = parsed.data;
 
   const venue = await resolveBridgeVenue(a.fromChain, a.toChain);
-  if (venue.venue === null) throw new MutatingAliasRouteError(`bridge: ${venue.refusal}`);
+  if (venue.venue === null) throw new MutatingAliasRouteError(`BridgeExecute: ${venue.refusal}`);
   if (venue.venue === "relay") {
     // Relay params — no referrer/fee/filler/fromAddress surface (Khalani-only).
     const params: Record<string, unknown> = {
@@ -396,12 +373,12 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   return { toolId: "khalani.bridge", params };
 }
 
-// ── bridge_execute_relay — HIDDEN Relay-only bridge EXECUTE (route-bound reveal) ──
+// ── BridgeExecuteRelay — Relay-only bridge EXECUTE ────────────────────────
 
 /**
- * `bridge_execute_relay` alias args — the Relay subset of the bridge contract
+ * `BridgeExecuteRelay` alias args — the Relay subset of the bridge contract
  * (no referrer/fee/filler/fromAddress surface; those are Khalani-only). Mirrors
- * the Relay branch of the generic `bridge` router so quote↔execute currencies
+ * the Relay branch of the generic `BridgeExecute` router so quote↔execute currencies
  * and chains collide on the venue-bound prequote identity.
  */
 const BridgeExecuteRelayArgs = z
@@ -423,43 +400,31 @@ const BridgeExecuteRelayArgs = z
 type BridgeExecuteRelayArgs = z.infer<typeof BridgeExecuteRelayArgs>;
 
 /**
- * Resolve the hidden `bridge_execute_relay` alias to `relay.bridge` + translated
- * params (bridge factory W5; plan R7/R8). ALWAYS targets Relay (the generic
- * `bridge` router stays Khalani-routed except its local-chain exception). The
- * ROUTE-BOUND reveal gate is checked here for an early, clean rejection (throws
- * `MutatingAliasRouteError` on deny); `executeProtocolTool`'s own gate on
- * `relay.bridge` is the un-bypassable backstop. Local (Robinhood) routes pass
- * via the always-allowed carve-out. `sessionId === undefined` (the
- * classification-only call site) makes the non-local branch throw, which
- * correctly falls back to the registry's static `mutating` flag there.
+ * Resolve the `BridgeExecuteRelay` alias to `relay.bridge` + translated params.
+ * ALWAYS targets Relay (the generic `BridgeExecute` router stays Khalani-routed
+ * except its local-chain exception). Authorization is the prequote gate plus the
+ * approval gate inside `executeProtocolTool`, exactly as for every other
+ * fund-moving alias.
  */
 function routeBridgeExecuteRelay(
   args: Record<string, unknown>,
   sessionId: string | undefined,
 ): ResolvedAliasTarget {
-  if (evaluateRelayRevealGate(args, sessionId).decision === "deny") {
-    throw new MutatingAliasRouteError(
-      "bridge_execute_relay is not available for this route yet — it unlocks after an eligible "
-        + "Khalani no-route failure for this exact route, or the Khalani deposit transaction reverting "
-        + "on-chain for this exact route (Robinhood routes are always available via bridge). Preview "
-        + "with bridge_quote_relay first.",
-    );
-  }
 
-  // Same by-name refusal as the generic `bridge` router: `.strict()` below
+  // Same by-name refusal as the generic `BridgeExecute` router: `.strict()` below
   // would reject these too, but as an opaque unknown-key error that reads like
   // a typo rather than like a blocked redirection attempt.
   const forbiddenParam = findCallerSuppliedForbiddenParam(args);
   if (forbiddenParam !== null) {
     throw new MutatingAliasRouteError(
-      `bridge_execute_relay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeExecuteRelay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
   const parsed = BridgeExecuteRelayArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
-      `bridge_execute_relay: ${parsed.error.issues
+      `BridgeExecuteRelay: ${parsed.error.issues
         .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
         .join("; ")}`,
     );
@@ -493,10 +458,10 @@ function routeBridgeExecuteRelay(
  * `kind: "internal"` ToolDef, so the exclusion can never hide an orphan.
  */
 export const MUTATING_PROTOCOL_ALIAS_ROUTERS: Readonly<Record<string, MutatingAliasRouter>> = {
-  swap_execute: routeSwap,
-  swap_execute_uniswap: routeSwapExecuteUniswap,
-  bridge: routeBridge,
-  bridge_execute_relay: routeBridgeExecuteRelay,
+  SwapExecute: routeSwap,
+  SwapExecuteUniswap: routeSwapExecuteUniswap,
+  BridgeExecute: routeBridge,
+  BridgeExecuteRelay: routeBridgeExecuteRelay,
 };
 
 /** True iff `name` is a registered mutating protocol-alias (dedicated dispatch). */

@@ -30,7 +30,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("ActivityBadge — kind vocabulary", () => {
+describe("ActivityBadge - kind vocabulary", () => {
   it.each([
     ["swap", "SWAP"],
     ["bridge", "BRIDGE"],
@@ -73,7 +73,7 @@ describe("ActivityBadge — kind vocabulary", () => {
     expect(treatments.size).toBe(1);
   });
 
-  it("renders an UNKNOWN kind as its raw uppercased value — never blank (tolerant reader)", () => {
+  it("renders an UNKNOWN kind as its raw uppercased value - never blank (tolerant reader)", () => {
     render(<ActivityBadge kind="perp_close" eventRole={null} status={null} />);
     expect(screen.getByText("PERP_CLOSE")).not.toBeNull();
   });
@@ -87,7 +87,7 @@ describe("ActivityBadge — kind vocabulary", () => {
   });
 });
 
-describe("ActivityBadge — event role segment", () => {
+describe("ActivityBadge - event role segment", () => {
   // The DB roles are kind-PREFIXED (`lend_deposit`); the prefix is dropped in
   // the badge because the kind segment already carries it.
   it.each([
@@ -171,7 +171,7 @@ describe("ActivityBadge — event role segment", () => {
   });
 });
 
-describe("ActivityBadge — status", () => {
+describe("ActivityBadge - status", () => {
   it("renders a PENDING chip", () => {
     render(<ActivityBadge kind="swap" eventRole={null} status="pending" />);
     expect(screen.getByText("PENDING")).not.toBeNull();

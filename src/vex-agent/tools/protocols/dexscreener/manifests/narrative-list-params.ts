@@ -35,7 +35,10 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
   {
     key: "offset",
     type: "number",
-    description: "Skip this many narratives of the same provider window (default 0). No pagination exists.",
+    description:
+      "Skip this many narratives of the same provider window (default 0). The PROVIDER has no pagination: this "
+      + "walks the single trending list Vex already fetched, so the reply's `hasMore` and `totalMatched` are "
+      + "about that list. Continue by adding the reply's `returned` to this value while hasMore is true.",
   },
   {
     key: "fields",
@@ -79,7 +82,7 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     description:
       "Keep narratives whose narrativeTokenCount — how many tokens DexScreener counts in the "
       + "narrative — is at least this. This is "
-      + "the narrative-level count and it disagrees with what dexscreener.meta reports for the same "
+      + "the narrative-level count and it disagrees with what dexscreener__narrative_get reports for the same "
       + "slug — measured 67 here against 31 there, in the same minute. This tool owns the "
       + "narrative-level number. 0 is a genuine no-op; whole number.",
   },
@@ -104,6 +107,6 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     type: "number",
     description:
       "Keep narratives whose volumeUsdH24 is at least this. Same caveat as minLiquidityUsd: "
-      + "the aggregate is not a sum over the pools dexscreener.meta returns. 0 is a genuine no-op.",
+      + "the aggregate is not a sum over the pools dexscreener__narrative_get returns. 0 is a genuine no-op.",
   },
 ];

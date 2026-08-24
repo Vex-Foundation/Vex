@@ -36,7 +36,7 @@ function event(over: Record<string, unknown> = {}) {
   };
 }
 
-describe("engineErrorEventSchema — sessionId nullability", () => {
+describe("engineErrorEventSchema - sessionId nullability", () => {
   it("accepts a null sessionId (global failure)", () => {
     const parsed = engineErrorEventSchema.safeParse(
       event({ sessionId: null, scope: "memory" }),
@@ -49,7 +49,7 @@ describe("engineErrorEventSchema — sessionId nullability", () => {
     expect(engineErrorEventSchema.safeParse(event()).success).toBe(true);
   });
 
-  it("STILL rejects a malformed sessionId — nullable is not loose", () => {
+  it("STILL rejects a malformed sessionId - nullable is not loose", () => {
     // The whole point of nullable-on-the-field: a present session id is the
     // path where a bad value routes a banner to the wrong place, so it keeps
     // its UUID guard.
@@ -64,13 +64,13 @@ describe("engineErrorEventSchema — sessionId nullability", () => {
     ).toBe(false);
   });
 
-  it("rejects an absent sessionId — null must be stated, not implied", () => {
+  it("rejects an absent sessionId - null must be stated, not implied", () => {
     const { sessionId: _omitted, ...withoutSession } = event();
     expect(engineErrorEventSchema.safeParse(withoutSession).success).toBe(false);
   });
 });
 
-describe("engineErrorScopeSchema — closed vocabulary", () => {
+describe("engineErrorScopeSchema - closed vocabulary", () => {
   it("includes `memory` and stays closed", () => {
     expect(engineErrorScopeSchema.options).toEqual([
       "turn",

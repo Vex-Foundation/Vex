@@ -146,7 +146,7 @@ export async function pendlePositionValue(
     wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
   } catch (err) {
     return fail(
-      `Pendle positions unavailable — no EVM wallet selected (${failureDetail("pendle.position.value", err)})`,
+      `Pendle positions unavailable - no EVM wallet selected (${failureDetail("pendle__positions_get", err)})`,
     );
   }
 
@@ -158,7 +158,7 @@ export async function pendlePositionValue(
     );
     chains = dashboard.chains;
   } catch (err) {
-    return fail(`Pendle positions unavailable (${failureDetail("pendle.position.value", err)})`);
+    return fail(`Pendle positions unavailable (${failureDetail("pendle__positions_get", err)})`);
   }
 
   const legs: ProjectedPositionLeg[] = [];
@@ -283,7 +283,7 @@ export async function pendlePositionValue(
     positions: shown.map((leg) => selectPositionFields(leg, q.fields)),
     nextStep:
       "`state` is the single status field: earning | matured_redeemable | matured_removable | expired_worthless. " +
-      "Redeem a matured PT with pendle.pt.redeem, remove a matured LP with pendle.lp.remove, sweep accrued income with pendle.claim. " +
+      "Redeem a matured PT with pendle__pt_redeem, remove a matured LP with pendle__lp_remove, sweep accrued income with pendle__rewards_claim. " +
       "Amounts are {raw, decimals, exact} — use `exact` to talk to the user and `raw` to build a transaction.",
   });
 }

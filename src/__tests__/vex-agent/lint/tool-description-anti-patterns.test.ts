@@ -8,10 +8,14 @@
  * with `mutating: false` must not advertise "approval required" — the
  * mutating flag is what controls the approval gate, not pressure-safety.
  *
- * Allowlist for `execute_tool`: codex green-light note (round 1).
- * `execute_tool` is `mutating: false` but legitimately describes
- * approval semantics for discovered protocol tools (whose mutating
- * flag varies). Discovery surface ≠ tool surface — pin the exception.
+ * The `execute_tool` allowlist is GONE, and its absence is the assertion.
+ * `execute_tool` used to be the one `mutating: false` tool describing approval
+ * semantics, allowed because the discovery surface is not the tool surface.
+ * The Batch 2 doctrine relocation moved that paragraph to the prompt stack
+ * (`engine/prompts/safety-contract.ts`, `## Approval`) precisely because
+ * `execute_tool` is not registered at all any more, so no model could
+ * read it where it stood. With the paragraph gone the exception has no subject,
+ * and the rule is now absolute: NO `mutating: false` ToolDef promises approval.
  */
 
 import { describe, it, expect } from "vitest";
@@ -75,14 +79,14 @@ describe("ToolDef anti-pattern lint", () => {
 });
 
 describe("orthogonal classification lint: `mutating: false` tools must not promise approval", () => {
-  // Codex PR3 GREEN LIGHT round 1, implementation note 2: `execute_tool`
-  // is `mutating: false` but legitimately describes approval semantics
-  // for discovered protocol tools. Allow exactly this one tool.
-  const APPROVAL_WORDING_ALLOWLIST = new Set<string>(["execute_tool"]);
+  // The allowlist is deliberately EMPTY. See the module header: the one entry
+  // it ever held (`execute_tool`) lost its approval paragraph to the prompt
+  // stack, so the rule below now admits no exception at all.
+  const APPROVAL_WORDING_ALLOWLIST = new Set<string>();
   const APPROVAL_PATTERN =
     /\b(requires?\s+approval|approval\s+required|needs?\s+approval|requires?\s+confirmation)\b/i;
 
-  it("only `execute_tool` (allowlisted) mentions approval among mutating:false tools", () => {
+  it("NO mutating:false tool mentions approval", () => {
     const offenders: string[] = [];
     for (const def of getAllTools()) {
       if (def.mutating) continue;
@@ -100,33 +104,37 @@ describe("orthogonal classification lint: `mutating: false` tools must not promi
     ).toEqual([]);
   });
 
-  it("execute_tool retains its approval-semantics paragraph (allowlist invariant)", () => {
-    // Sanity check the allowlist remains meaningful — execute_tool's
-    // description SHOULD still mention approval because that's how it
-    // describes the gate for discovered mutating protocol tools.
-    const def = getToolDef("execute_tool");
-    expect(def).toBeDefined();
-    expect(def?.description).toMatch(APPROVAL_PATTERN);
+  it("execute_tool is gone from the registry and its doctrine renders from the prompt stack", () => {
+    // The inverse of the old allowlist invariant, and the reason the allowlist
+    // is empty. `execute_tool` carried approval doctrine that no model could
+    // read, because the tool was withheld. The ToolSearch merge finished the
+    // retirement: the ToolDef is DELETED, so there is no description left to
+    // lint, while the doctrine renders on every request from `# Safety
+    // Contract`. The envelope's dispatch route and its cold-resume behaviour
+    // are pinned by `tools/registry/injected-protocol-tools.test.ts` and
+    // `engine/core/approval-runtime/durable-direct-call-approval.test.ts`.
+    expect(getToolDef("execute_tool")).toBeUndefined();
+    expect(buildSafetyContractPrompt()).toMatch(APPROVAL_PATTERN);
   });
 });
 
-describe("long_memory_suggest provenance contract (S9 — manager-derived `source`)", () => {
+describe("MemorySuggest provenance contract (S9 — manager-derived `source`)", () => {
   it("does NOT expose a `source` param — provenance is derived by the memory manager", () => {
-    const def = getToolDef("long_memory_suggest");
+    const def = getToolDef("MemorySuggest");
     expect(def).toBeDefined();
     const sourceProp = (def?.parameters.properties as Record<string, unknown> | undefined)?.source;
     expect(sourceProp).toBeUndefined();
   });
 
   it("description explains the staged write-door (manager reviews, never a direct write)", () => {
-    const def = getToolDef("long_memory_suggest");
+    const def = getToolDef("MemorySuggest");
     expect(def?.description).toMatch(/STAGES a candidate/);
     expect(def?.description).toMatch(/async manager/i);
     expect(def?.description.toLowerCase()).toContain("does not write memory directly");
   });
 
   it("description advertises the secret / live-state reject policy", () => {
-    const def = getToolDef("long_memory_suggest");
+    const def = getToolDef("MemorySuggest");
     expect(def?.description).toMatch(/Never include secrets/i);
     expect(def?.description).toMatch(/live values/i);
   });

@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Claim accrued Pendle income FOR REAL on one chain in a single sweep: signs and broadcasts a transaction that collects the interest held YTs have earned and the rewards liquidity positions have earned, sent to the session's own wallet. SPENDS REAL FUNDS (gas) AND IS IRREVERSIBLE, and it moves ONLY accrued income, never principal, though converting interest may grant the Router an exact allowance on the market's own SY. Use this when the user wants to harvest or collect what their Pendle positions have earned; the merkle-distributed campaign rewards `pendle__merkle_rewards_list` reports are a DIFFERENT pot that no Vex tool can claim. There is nothing to quote here, because a claim has no price and no size to choose, so this tool has NO prequote requirement. APPROVAL: in a RESTRICTED session it does not execute, it returns pending approval so a human sees it first; in a FULL-permission session it executes directly. PRECONDITIONS: the transaction is pinned to the canonical Pendle Router, and an unscoped sweep covers at most 10 held markets per transaction as a gas bound. Call it with `dryRun: true` first to see exactly which markets would be swept. Selection order is stable, so repeating the call reaches the same markets again; reach a skipped market by passing its address as `market`, which is not capped. The `dryRun` preview RETURNS `dryRun`, `chain`, `yts` and `markets` as COUNTS, `eligibleMarkets`, `selectedMarkets`, `marketCap`, `skippedMarkets` and an optional `skippedNote`. A real run RETURNS `txHash`, `claimed` true, `chain`, `creditToken`, `executedCredit`, `yts` and `markets` as ADDRESS LISTS rather than counts, `eligibleMarkets`, `claimedMarkets`, `marketCap`, `skippedMarkets` and an optional `skippedNote`; each skipped entry names its `market` and a `reason` of market_not_found, no_position, unbindable_yt or market_cap. When there is nothing accrued to take it RETURNS `claimed` false with `chain` and a `reason` and broadcasts nothing. ANY OTHER OUTCOME COMES BACK AS A FAILURE SENTENCE, NOT JSON, and it is not a licence to retry: a transaction that reverted, could not be proven, or was broadcast before Vex lost the read-back is already recorded and resolves automatically, so surface the transaction hash and check it rather than sending a second one.",
+      "name": "pendle__rewards_claim",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Preview the positions that would be claimed — including eligibleMarkets and skippedMarkets — without executing.",
+            "type": "boolean"
+          },
+          "market": {
+            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market — the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pendle",
+    "requiresEnv": null,
+    "toolId": "pendle.claim"
+  }
+}

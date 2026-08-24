@@ -43,7 +43,7 @@ vi.mock("../../../vex-agent/tools/dispatcher/internal-loaders.js", () => ({
 
 const { dispatchTool } = await import("../../../vex-agent/tools/dispatcher.js");
 
-const CALL = { name: "web_research", args: { query: "x" }, toolCallId: "tc-1" };
+const CALL = { name: "WebResearch", args: { query: "x" }, toolCallId: "tc-1" };
 const CONTEXT: InternalToolContext = makeTestContext({ sessionId: "s1" });
 
 beforeEach(() => {
@@ -85,7 +85,7 @@ describe("dispatcher generic fallback — sanitized, never raw", () => {
     const result = await dispatchTool(CALL, CONTEXT);
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("web_research");
+    expect(result.output).toContain("WebResearch");
     expect(result.output.toLowerCase()).toContain("insufficient funds");
     expect(result.output.toLowerCase()).not.toContain("unexpected error");
   });

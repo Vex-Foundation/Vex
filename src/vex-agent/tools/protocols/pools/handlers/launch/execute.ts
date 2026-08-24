@@ -91,7 +91,7 @@ export async function poolsLaunchExecuteHandler(
   deps: PoolsLaunchExecuteDeps = DEFAULT_DEPS,
 ): Promise<ToolResult> {
   if (params.dryRun === true) {
-    return fail(`${TOOL_ID} does not support dryRun — call pools.launch_preview instead.`);
+    return fail(`${TOOL_ID} does not support dryRun - call pools__launch_preview instead.`);
   }
 
   // 1. Boundary.

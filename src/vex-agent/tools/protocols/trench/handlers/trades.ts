@@ -71,6 +71,6 @@ export async function trenchTradesHandler(p: Record<string, unknown>) {
       trades: rows.map(projectTrade),
     });
   } catch (err) {
-    return fail(`Trench trades unavailable (${trenchFailureDetail("trench.trades", err)})`);
+    return fail(`Trench trades unavailable (${trenchFailureDetail("trench__token_trades_list", err)})`);
   }
 }

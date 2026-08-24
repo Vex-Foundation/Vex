@@ -16,9 +16,9 @@
  *
  * IN-FLOW like a sidebar (owner correction, 2026-07-20 screenshot review —
  * the earlier absolute overlay ran the cards OVER the hero/composer): the
- * root is an `<aside>` flex sibling in the shell row that RESERVES its
- * width while open (`w-[380px]` = 24px gutter + 340px stack + 16px
- * breathing) and gives it all back when collapsed (`w-0`), animated with
+ * root is an `<aside>` grid child in the shell row that RESERVES its
+ * width while open (`WELCOME_PORTFOLIO_WIDTH` = 24px gutter + 340px stack +
+ * 16px breathing) and gives it all back when collapsed (0), animated with
  * the SessionsList width-only transition idiom, so the centered welcome
  * canvas reflows and re-centers instead of being covered. The aside is the
  * row's LAST child — its right edge stays pinned to the window — so the
@@ -26,12 +26,12 @@
  * at the same spot in both states. The only transient overlap left is the
  * ~0.15s stack exit fade painting over the re-expanding center — decay,
  * not occlusion. The moment a session materializes the real rail at narrow
- * width, `useAutoCollapseBook`'s stage-aware edge collapses it once.
+ * width, the shell-columns solver's derived auto-close folds it once.
  *
  * The handle deliberately carries NO glass blur (the design-guard scans raw
  * text, so even naming the banned utility here would redden the build): at
- * 44px the effect is imperceptible, and skipping it keeps the guard's glass
- * whitelist at exactly ONE portfolio file (`PortfolioCard.tsx`); the
+ * 44px the effect is imperceptible, and portfolio cards are solid on tokens
+ * v2 (no portfolio file holds a glass exemption any more); the
  * solid-leaning `--vex-rail-strong` ink reads clean over the Eclipse.
  * Reduced motion is sampled once per mount (SidebarProfile pattern): the
  * stack renders and removes its final frame instantly.
@@ -40,12 +40,12 @@
 import { useId, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ChevronDownIcon,
-  VexIcon,
-  WalletIcon,
+  IconChevronDown,
+  IconWallet,
 } from "../../../../components/icons/index.js";
-import { cn } from "../../../../lib/utils.js";
+import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
+import { GLOBAL_PORTFOLIO_SCOPE } from "./portfolio-scope.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
 import { WalletsCard } from "./WalletsCard.js";
 import { BalancesCard } from "./BalancesCard.js";
@@ -67,13 +67,13 @@ export function WelcomePortfolioPanel({
       data-vex-area="welcome-portfolio"
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Portfolio"
-      className={cn(
-        // Sidebar-like width reservation (owner correction): the aside holds
-        // its space open so the cards can never cover the center column;
-        // width-only transition = the SessionsList collapse idiom.
-        "relative z-20 h-full shrink-0 transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        bookOpen ? "w-[380px]" : "w-0",
-      )}
+      // Sidebar-like width reservation (owner correction): the aside holds its
+      // space open so the cards can never cover the center column; width-only
+      // transition = the SessionsList collapse idiom. The width comes from the
+      // SHARED constant the shell's third grid track is reserved from, so the
+      // child and its reservation cannot drift apart.
+      className="relative z-20 h-full shrink-0 transition-[width] duration-300 ease-[var(--vex-ease-out)]"
+      style={{ width: bookOpen ? WELCOME_PORTFOLIO_WIDTH : 0 }}
     >
       {/* Anchor column: the full height budget between the top inset and the
         * handle zone (top-6 → bottom-[88px]). The stack is flex-constrained
@@ -97,9 +97,9 @@ export function WelcomePortfolioPanel({
             // origin-bottom-right = the morph's anchor at the handle below.
             className="vex-scroll pointer-events-auto mb-4 flex min-h-0 w-full origin-bottom-right flex-col gap-3 overflow-y-auto"
           >
-            <PortfolioOverviewCard />
-            <WalletsCard />
-            <BalancesCard />
+            <PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            <WalletsCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            <BalancesCard scope={GLOBAL_PORTFOLIO_SCOPE} />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -113,13 +113,13 @@ export function WelcomePortfolioPanel({
         // shrink-0: in the height-constrained justify-end column the button
         // must never be squashed by flex shrink (owner report 2026-07-21:
         // the stack rode over a shrunken handle).
-        className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] bg-[var(--vex-rail-strong)] text-[var(--vex-text-2)] shadow-[0_14px_32px_-16px_rgba(0,0,0,0.85)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line-2 bg-[var(--vex-rail-strong)] text-ink-secondary shadow-lv2 transition-colors hover:border-line-3 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
-        <VexIcon
-          icon={bookOpen ? ChevronDownIcon : WalletIcon}
-          size={17}
-          aria-hidden
-        />
+        {bookOpen ? (
+          <IconChevronDown size={17} />
+        ) : (
+          <IconWallet size={17} />
+        )}
       </button>
       </div>
     </aside>

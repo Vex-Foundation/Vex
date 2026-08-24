@@ -1,0 +1,64 @@
+{
+  "definition": {
+    "function": {
+      "description": "Open, adjust, or close a Jupiter Lend Borrow position in ONE call: deposit/withdraw collateral and/or borrow/repay debt, via the six params below (at least one required). You are responsible for the health of this position: read solana__lend_borrow_vaults_list for maxLtvPercent and liquidationThresholdPercent, and solana__lend_borrow_positions_list for current collateral and debt, and compute the post-operation LTV yourself BEFORE calling this - no preview is shown in an autonomous session. If either risk number is absent or the position reports isLiquidated, treat that as UNKNOWN risk, never as healthy: reduce debt or add collateral rather than increasing exposure. At most one collateral param (depositAmountRaw|withdrawAmountRaw|withdrawAll) and one debt param (borrowAmountRaw|repayAmountRaw|repayAll), and the two must move in OPPOSITE directions: deposit+borrow and withdraw+repay are accepted; deposit+repay and withdraw+borrow are REJECTED before signing, because the ledger records at most one incoming and one outgoing leg per call - run those as two calls. Reads first: solana__lend_borrow_vaults_list for vaultId + thresholds, solana__lend_borrow_positions_list for an existing positionId. Jupiter's /operate endpoint never wraps or unwraps native SOL - depositing or repaying a leg denominated in native SOL requires WRAPPED SOL (WSOL) already sitting in your wallet; this call fails clearly beforehand if that balance is insufficient, rather than broadcasting. This tool broadcasts and returns truthful-pending - it is tracked automatically, do not resubmit. Provide at most one of: depositAmountRaw, withdrawAmountRaw, withdrawAll. Provide at most one of: borrowAmountRaw, repayAmountRaw, repayAll. Provide at most one of: depositAmountRaw, repayAmountRaw, repayAll. Provide at most one of: withdrawAmountRaw, withdrawAll, borrowAmountRaw. Provide at least one of: depositAmountRaw, withdrawAmountRaw, withdrawAll, borrowAmountRaw, repayAmountRaw, repayAll.",
+      "name": "solana__lend_borrow_operate",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "borrowAmountRaw": {
+            "description": "Borrow this many raw atomic units of the vault's debt token (scale = the vault's borrowTokenDecimals). Mutually exclusive with repayAmountRaw/repayAll.",
+            "type": "string"
+          },
+          "depositAmountRaw": {
+            "description": "Add this many raw atomic units of the vault's collateral token (scale = the vault's supplyTokenDecimals). Mutually exclusive with withdrawAmountRaw/withdrawAll.",
+            "type": "string"
+          },
+          "market": {
+            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Must match the vault's own market.",
+            "type": "string"
+          },
+          "positionId": {
+            "description": "Existing position id to adjust - from solana__lend_borrow_positions_list. Omit (or 0) to create a NEW position.",
+            "type": "number"
+          },
+          "repayAll": {
+            "description": "Repay ALL debt on this position, including accrued-interest dust. Mutually exclusive with borrowAmountRaw/repayAmountRaw.",
+            "type": "boolean"
+          },
+          "repayAmountRaw": {
+            "description": "Repay this many raw atomic units of debt (scale = the vault's borrowTokenDecimals). Mutually exclusive with borrowAmountRaw/repayAll.",
+            "type": "string"
+          },
+          "vaultId": {
+            "description": "Vault to operate on - from solana__lend_borrow_vaults_list, which also gives the two legs' decimals every amount param below is expressed in.",
+            "type": "number"
+          },
+          "withdrawAll": {
+            "description": "Withdraw ALL collateral from this position. Mutually exclusive with depositAmountRaw/withdrawAmountRaw.",
+            "type": "boolean"
+          },
+          "withdrawAmountRaw": {
+            "description": "Remove this many raw atomic units of collateral (scale = the vault's supplyTokenDecimals). Mutually exclusive with depositAmountRaw/withdrawAll.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vaultId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.lend.borrowOperate"
+  }
+}

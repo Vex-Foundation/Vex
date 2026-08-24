@@ -121,7 +121,7 @@ export async function resolveMorphoBorrowIntent(
       ErrorCodes.MORPHO_APPROVAL_POLICY_VIOLATION,
       `Refusing this repayment: \`repayFullDebt\` was requested but the wallet holds NO debt on market `
       + `${market.identity.marketId}, so there is nothing to repay.`,
-      "Nothing was approved, signed or sent. Check the market id and the wallet with morpho.positions.get: a "
+      "Nothing was approved, signed or sent. Check the market id and the wallet with `morpho__positions_get`: a "
       + "position with no borrow shares has already been closed, or was never opened on this market.",
     );
   }

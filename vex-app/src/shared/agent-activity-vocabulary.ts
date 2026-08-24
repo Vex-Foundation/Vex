@@ -62,6 +62,13 @@ export const AGENT_ACTIVITY_KINDS = [
   // belongs to, spends nothing, and pays two assets out - so filing it under
   // `launch` would put a payout inside every launch feed, filter and count.
   "claim",
+  // Migration 084: an agent WALLET SEND. Until 084 this value lived here only as
+  // a LEGACY-DERIVED display kind for a deprecated `proj_activity` send row (see
+  // below); it is now a real `agent_activity.kind` too, because a transfer
+  // finally writes its own row. The spelling is deliberately the SAME one, so
+  // nothing a user has already seen changes label: the legacy derivation keeps
+  // producing it, and both now mean the same thing.
+  "transfer",
 ] as const;
 export type AgentActivityKind = (typeof AGENT_ACTIVITY_KINDS)[number];
 
@@ -73,7 +80,12 @@ export type AgentActivityKind = (typeof AGENT_ACTIVITY_KINDS)[number];
  * consumer to keep reading `productType`/`tradeSide`:
  *
  *  - `transfer` — a Vex-executed wallet send (legacy `product_type` `send` /
- *    `transfer`), which has no trade economics at all;
+ *    `transfer`), which has no trade economics at all. Since migration 084 it is
+ *    ALSO a canonical `agent_activity.kind`, and the two mean the same thing: a
+ *    new-format send row and a legacy one present identically, which is why the
+ *    canonical list reused this exact spelling rather than minting a second name
+ *    for one concept. It stays listed here because the legacy deriver still
+ *    produces it;
  *  - `activity` — the deliberate NEUTRAL fallback for a legacy product this
  *    build has no canonical name for (e.g. `perps`). It is an explicit "a
  *    thing happened, we will not claim what" — strictly better than
@@ -90,10 +102,17 @@ export const NEUTRAL_ACTIVITY_KIND = "activity";
  * Every `activityKind` a feed DTO can carry — the canonical kinds plus the
  * legacy-derived ones. This is the list a renderer keys its chips off; an
  * `activityKind` outside it is engine drift and must degrade to neutral.
+ *
+ * DEDUPED SINCE MIGRATION 084. `transfer` now appears in BOTH source lists - it
+ * is a canonical kind and it is still what the legacy deriver emits - so a bare
+ * spread of the two would list it twice. Every consumer of this list iterates it
+ * (the badge's label map, its tests), and a duplicate member there is a
+ * duplicate React key and a doubled test case, not a wider vocabulary. Only the
+ * legacy-ONLY member is appended.
  */
 export const FEED_ACTIVITY_KINDS = [
   ...AGENT_ACTIVITY_KINDS,
-  ...LEGACY_DERIVED_ACTIVITY_KINDS,
+  NEUTRAL_ACTIVITY_KIND,
 ] as const;
 export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
 
@@ -155,6 +174,11 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "swap_fee",
   "pools_fee",
   "pools_claim",
+  // Migration 084: the whole of an agent wallet send, on either chain family.
+  // ONE role carrying the INPUT leg only - the asset that left the wallet. There
+  // is no output leg because nothing comes back, and the destination is
+  // deliberately not recorded.
+  "wallet_transfer",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

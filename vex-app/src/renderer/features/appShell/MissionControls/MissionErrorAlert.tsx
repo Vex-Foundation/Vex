@@ -9,8 +9,14 @@
  */
 
 import type { JSX } from "react";
-import { classifyEngineFailure } from "@shared/engine-error-classification.js";
-import { engineErrorCopy } from "@shared/engine-error-copy.js";
+import {
+  classifyEngineFailure,
+  classifyEngineRemedy,
+} from "@shared/engine-error-classification.js";
+import {
+  engineErrorCopy,
+  engineErrorRemedyHint,
+} from "@shared/engine-error-copy.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 
 /**
@@ -39,16 +45,22 @@ export function MissionErrorAlert({
   // the chat IPC mapper — one vocabulary, one mapping table — and degrades to
   // the generic wording when the run paused before the evidence was written or
   // for a reason with nothing classifiable to say.
-  const classified =
+  const signals =
     lastError === undefined
       ? null
-      : classifyEngineFailure({
+      : {
           errorType: lastError.errorType ?? null,
           errorClass: lastError.errorClass ?? null,
           statusCode: lastError.statusCode ?? null,
           causeCode: lastError.causeCode ?? null,
-        });
+        };
+  const classified = signals === null ? null : classifyEngineFailure(signals);
   const copy = classified === null ? null : engineErrorCopy(classified);
+  // Same remedy vocabulary as the live push event - the durable evidence
+  // carries the same bounded signals, so the paused card can also name the
+  // one action that clears the failure.
+  const remedyHint =
+    signals === null ? null : engineErrorRemedyHint(classifyEngineRemedy(signals));
 
   const body =
     copy !== null
@@ -77,18 +89,21 @@ export function MissionErrorAlert({
       role="alert"
       data-vex-area="mission-error-alert"
       data-vex-category={classified ?? undefined}
-      className="mb-2 w-full rounded-lg border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2"
+      className="mb-2 w-full rounded-xl border border-[var(--vex-rule)] bg-danger-wash px-3 py-2"
     >
-      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
-        {copy !== null ? `Mission paused — ${copy.title}` : "Mission paused — error"}
+      <p className="vex-micro font-medium text-danger">
+        {copy !== null ? `Mission paused - ${copy.title}` : "Mission paused - error"}
       </p>
-      <p className="mt-1 text-xs text-destructive">{body}</p>
-      <p className="mt-1 text-xs text-destructive">
+      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{body}</p>
+      {remedyHint !== null ? (
+        <p className="mt-1 text-xs font-medium text-[var(--vex-text-1)]">{remedyHint}</p>
+      ) : null}
+      <p className="mt-1 text-xs text-[var(--vex-text-2)]">
         The mission is not monitoring the market or your positions until you
         recover it.
       </p>
       {codes !== null && codes.length > 0 ? (
-        <p className="mt-1 font-mono text-[10px] text-destructive/70">{codes}</p>
+        <p className="mt-1 font-mono text-[10px] text-[var(--vex-text-3)]">{codes}</p>
       ) : null}
     </div>
   );

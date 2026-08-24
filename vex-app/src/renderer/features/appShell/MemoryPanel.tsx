@@ -38,7 +38,7 @@ export function MemoryPanel(): JSX.Element {
     // not on flex gaps, so the page reads as one continuous register.
     <div
       data-vex-screen="memory"
-      className="mx-auto flex w-full max-w-[760px] flex-col text-foreground"
+      className="mx-auto flex w-full max-w-[760px] flex-col text-ink-primary"
     >
       <LongMemorySection />
       {/* S10 inspector trio — read-only manager pipeline views. */}

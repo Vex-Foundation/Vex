@@ -40,7 +40,7 @@ describe("the renderer vocabulary carries it as its OWN member", () => {
     expect(isAgentActivityStatus(SUPERSEDED)).toBe(true);
   });
 
-  it("is filterable — a filter value with no translation would match zero rows forever", () => {
+  it("is filterable - a filter value with no translation would match zero rows forever", () => {
     expect(agentScanStatusFilterSchema.safeParse(SUPERSEDED).success).toBe(true);
   });
 });
@@ -50,7 +50,7 @@ describe("its amounts were never proven, so none are rendered", () => {
     expect(resolveAgentActivityAmount(SUPERSEDED, "10.0", "10000000", 6)).toBeNull();
   });
 
-  it("shows no amount and no basis — never the quote as a settlement", () => {
+  it("shows no amount and no basis - never the quote as a settlement", () => {
     expect(resolveAmountWithEstimateBasis(SUPERSEDED, "10.0", "10000000", 6)).toEqual({
       value: null,
       basis: null,

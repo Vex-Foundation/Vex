@@ -57,7 +57,7 @@ import {
  * until hovered; the primary Accept is the filled cobalt Button default.
  */
 const RESUME_KEY =
-  "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:border-[var(--vex-accent-border-strong)] hover:bg-[var(--vex-accent-fill-8)] hover:text-[var(--vex-accent-text)]";
+  "border-accent-primary/55 text-accent-primary hover:border-accent-primary/85 hover:bg-accent-primary/8 hover:text-accent-primary";
 
 export interface PlanDisplayModalProps {
   readonly sessionId: string;
@@ -139,15 +139,15 @@ export function PlanDisplayModal({
         data-vex-area="plan-display-modal"
         className="max-w-lg"
       >
-        <DialogHeader className="flex-row items-center justify-between gap-3 border-[var(--vex-line)]">
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-line-2">
           <DialogTitle>Action plan</DialogTitle>
           {hasPlan ? (
             <span
               data-vex-state={pending ? "pending" : "accepted"}
               className={
                 pending
-                  ? "flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-warning"
-                  : "flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-success"
+                  ? "flex shrink-0 items-center gap-1.5 vex-micro-label uppercase text-warning"
+                  : "flex shrink-0 items-center gap-1.5 vex-micro-label uppercase text-success"
               }
             >
               {pending ? (
@@ -170,8 +170,8 @@ export function PlanDisplayModal({
 
         <DialogBody>
           {enabled ? (
-            <p className="text-xs text-[var(--vex-text-2)]">
-              Plan Mode has been retired — no session can turn it on anymore.
+            <p className="text-xs text-ink-secondary">
+              Plan Mode has been retired - no session can turn it on anymore.
               This session still carries a plan from before that change.{" "}
               {pending
                 ? "Accept it to unblock the mission, or turn Plan Mode off below."
@@ -180,16 +180,16 @@ export function PlanDisplayModal({
           ) : null}
           {hasPlan ? (
             // Recessed well — the plan reads like a filed document.
-            <div className="rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2">
+            <div className="rounded-xl border border-line-2 bg-surface-deep px-3 py-2">
               <MarkdownContent text={plan?.planMd ?? ""} />
             </div>
           ) : (
-            <p className="text-sm text-[var(--vex-text-3)]">
+            <p className="text-sm text-ink-tertiary">
               No action plan has been authored yet.
             </p>
           )}
           {pending && suppressAccept ? (
-            <p className="text-[11px] text-[var(--vex-text-3)]">
+            <p className="text-[11px] text-ink-tertiary">
               Accept this plan together with the contract.
             </p>
           ) : null}
@@ -200,7 +200,7 @@ export function PlanDisplayModal({
         showDisableButton ||
         acceptNotice !== null ||
         disableNotice !== null ? (
-          <DialogFooter className="flex-col items-stretch gap-2 border-[var(--vex-line)] sm:flex-col">
+          <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-col">
             <div className="flex flex-wrap items-center gap-2">
               {awaitingResume ? (
                 <span className="mr-auto text-[11px] text-warning">
@@ -295,9 +295,9 @@ function planAcceptNotice(
       case "accepted":
         return null;
       case "stale":
-        return "Plan changed — review again before accepting.";
+        return "Plan changed - review again before accepting.";
       case "no_plan":
-        return "No plan authored yet — ask Vex to write a plan first.";
+        return "No plan authored yet - ask Vex to write a plan first.";
       case "not_found":
         return "Couldn't accept: this session no longer exists. Refresh and try again.";
       default:
@@ -305,7 +305,7 @@ function planAcceptNotice(
     }
   }
   if (isError) {
-    return "Couldn't accept the plan — something went wrong. Try again.";
+    return "Couldn't accept the plan - something went wrong. Try again.";
   }
   return null;
 }
@@ -330,7 +330,7 @@ function planDisableNotice(
       case "updated":
         return null;
       case "blocked_pending_acceptance":
-        return "Can't turn off yet — a mission run is waiting on this plan's acceptance. Stop the mission first, then turn off Plan Mode.";
+        return "Can't turn off yet - a mission run is waiting on this plan's acceptance. Stop the mission first, then turn off Plan Mode.";
       case "not_found":
         return "Couldn't turn off: this session no longer exists. Refresh and try again.";
       default:
@@ -338,7 +338,7 @@ function planDisableNotice(
     }
   }
   if (isError) {
-    return "Couldn't turn off Plan Mode — something went wrong. Try again.";
+    return "Couldn't turn off Plan Mode - something went wrong. Try again.";
   }
   return null;
 }

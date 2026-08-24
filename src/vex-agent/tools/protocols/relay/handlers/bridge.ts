@@ -11,9 +11,10 @@
  *   - `bridge/results.ts`   — every agent-facing body,
  *   - `bridge/recording.ts` — the best-effort durable-ledger side effects.
  *
- * Relay is a KEYLESS cross-chain bridge and the direct route to/from Robinhood
- * Chain (Khalani does not cover 4663); as the general-purpose fallback it is
- * reveal-gated (W5). `relay.bridge` migrates the OLD proj_activity capture onto
+ * Relay is a KEYLESS cross-chain bridge and the ONLY route to/from Robinhood
+ * Chain (Khalani does not cover 4663); elsewhere it is the alternative venue to
+ * Khalani, always callable (owner decision D4). `relay.bridge` migrates the OLD
+ * proj_activity capture onto
  * the durable `agent_activity` bridge ledger:
  *
  *  1. Pre-sign gates (all pure, all fail-closed, NONE record) run in order —
@@ -33,12 +34,10 @@
  *     logical row STAYS pending for the W4 sweep. `executed_*` is NEVER copied
  *     from the quote; USD is the adapted quote's per-side estimate (nullable).
  *
- * REVEAL-CLEAR SEAM (B5): W3b NEVER clears the route reveal — not on broadcast,
- * pending, or an in-turn provider status (even 'success'). Only an independently
- * VERIFIED pending→confirmed clears it, and the W4 sweep owns that call (it also
- * owns pending→confirmed, refund terminalization, and the balance-job enqueue).
- * W3b leaves the confirmation to that verified path; no verification helper
- * exists here, so the in-turn poll is INFORMATIONAL only.
+ * CONFIRMATION SEAM (B5): W3b never confirms a bridge. Only an independently
+ * VERIFIED pending→confirmed transition counts, and the W4 sweep owns that call
+ * (it also owns refund terminalization and the balance-job enqueue). No
+ * verification helper exists here, so the in-turn poll is INFORMATIONAL only.
  */
 
 import { formatUnits, getAddress, type Hex } from "viem";
@@ -138,7 +137,7 @@ async function relayQuoteGet(
   try {
     quote = await getRelayClient().getQuote(buildRequest(legs, user, params));
   } catch (err) {
-    return fail(`relay.quote.get failed: ${summarizeProtocolError(err).message}`);
+    return fail(`relay__bridge_quote_get failed: ${summarizeProtocolError(err).message}`);
   }
   if (quote.steps.length === 0) return fail("Relay returned no steps for this route.");
 
@@ -210,8 +209,8 @@ async function relayBridge(
     return walletScopeErrorToResult(err);
   }
 
-  // relay.bridge is a mutating, reveal-gated tool — a session is always present
-  // by the time it dispatches; guard defensively and narrow it for recording.
+  // relay.bridge is a mutating tool — a session is always present by the time it
+  // dispatches; guard defensively and narrow it for recording.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${BRIDGE_TOOL_ID} requires an active session.`);
 
@@ -464,7 +463,7 @@ async function relayBridge(
       });
 
   const poll = await pollRelayIntentStatus(requestId);
-  // R1 Step 3a: persist what the provider actually said, so `agent_scan` is fed
+  // R1 Step 3a: persist what the provider actually said, so `AgentScan` is fed
   // at return instead of waiting for the next sweep. `observed:false` means
   // every status call this turn threw — there is no status to record, and
   // recording the placeholder would invent one.

@@ -6,7 +6,7 @@
  * spends more calls reading blobs.** Params break it at the source.
  *
  * The worked example was "hunt for fresh memecoins on the robinhood chain", which
- * before this card was not slow but IMPOSSIBLE: `profiles.recent` had no chain
+ * before this card was not slow but IMPOSSIBLE: the recent-updates feed had no chain
  * filter, so the agent received 30 rows across all chains at 40,089 B — 2.45x the
  * context cap — which blobbed, and it still could not say "robinhood only" or
  * "give me 15".
@@ -465,7 +465,8 @@ describe("DexScreener shared param vocabulary", () => {
         .filter((param) => param.key === "chainIds")
         .map((param) => [tool.toolId, param.description ?? ""] as const),
     );
-    expect(chainFilters.length).toBeGreaterThanOrEqual(8);
+    // 8 before the Batch 2 merges retired two of the feed tools into params.
+    expect(chainFilters.length).toBeGreaterThanOrEqual(7);
     for (const [toolId, description] of chainFilters) {
       expect(description, `${toolId} chainIds hides that Vex applies the filter`).toMatch(
         /droppedByFilter|does not mean|not that none exist/i,
@@ -474,13 +475,13 @@ describe("DexScreener shared param vocabulary", () => {
   });
 
   // The card's headline number: nine tools went from 0-1 params to a real filter
-  // surface. Asserted so a future edit cannot quietly strip it back.
-  it("the nine hunt and narrative tools all have a real filter surface now", () => {
+  // surface. Asserted so a future edit cannot quietly strip it back. Seven of
+  // the nine survive the Batch 2 merges; the two retired ones (profiles.recent,
+  // boosts.top) kept their whole filter surface, on the tools they merged into.
+  it("the surviving hunt and narrative tools all have a real filter surface now", () => {
     const wasParamless = [
       "dexscreener.profiles",
-      "dexscreener.profiles.recent",
       "dexscreener.boosts",
-      "dexscreener.boosts.top",
       "dexscreener.communityTakeovers",
       "dexscreener.ads",
       "dexscreener.attention",

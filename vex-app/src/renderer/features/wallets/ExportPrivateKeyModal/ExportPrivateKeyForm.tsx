@@ -52,12 +52,12 @@ export function ExportPrivateKeyForm({
         onSelect={onSelect}
       />
       <p
-        className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+        className="rounded-xl border border-danger/40 bg-danger/5 p-3 text-sm text-danger"
         role="alert"
       >
         Your private key will be copied to the system clipboard. Vex{" "}
         <strong>will attempt</strong> to clear the clipboard after 10
-        seconds, but this is best-effort — a crash or power loss may
+        seconds, but this is best-effort - a crash or power loss may
         prevent cleanup. Anyone with access to this computer during
         that window can read the key. Do not paste it into untrusted
         applications. The key will NOT be shown on screen.
@@ -96,7 +96,7 @@ export function ExportPrivateKeyForm({
 
       {error !== null ? (
         <p
-          className="text-sm text-destructive"
+          className="text-sm text-danger"
           role="alert"
           data-vex-export-error
         >

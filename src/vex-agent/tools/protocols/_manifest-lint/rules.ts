@@ -18,13 +18,30 @@ export type ManifestLintRule =
   | "amount-bps-shape"
   | "param-description"
   | "tool-description"
+  // Internal `ToolDef` descriptions, classified by ActionKind rather than by
+  // the loose `mutating` boolean. Own rules module + own allowlist:
+  // `_manifest-lint/internal-description-rules.ts`.
+  | "internal-tool-description"
   | "example-params-required"
   | "generic-error-literal"
   | "slippage-default-home"
+  // A string asserting a GLOBAL tool-output byte cap. The runtime enforces none
+  // (`engine/core/tool-output-policy.ts` was deleted; tool output persists
+  // verbatim and inline), so every such claim budgets the model against a number
+  // nothing enforces. Source-level rule: `_manifest-lint/source-rules.ts`.
+  | "stale-output-cap-claim"
+  // A model-visible manifest or param description naming a DOTTED tool id.
+  // Only `publicName` is callable; the dotted id is the internal and audit
+  // identity. Own rules module: `_manifest-lint/dotted-toolid-rules.ts`.
+  | "dotted-toolid-reference"
   | "chain-doc-parity"
   | "exclusive-param-groups"
   | "enum-declaration"
-  | "enum-case-uniqueness";
+  | "enum-case-uniqueness"
+  // A declared retired input spelling (`ProtocolParamDef.aliases`). Checked at
+  // the tool level, not the param level, because uniqueness is a fact about the
+  // whole call.
+  | "param-alias";
 
 export interface ManifestLintIssue {
   /** Tool id, tool name, or source path — whatever owns the violation. */
@@ -43,6 +60,8 @@ export interface LintParam {
   readonly required: boolean;
   readonly unit?: string;
   readonly enum?: readonly string[];
+  /** Declared retired input spellings; the JSON-schema lane never has any. */
+  readonly aliases?: readonly { readonly key: string; readonly removeAfter: string }[];
 }
 
 const MIN_PARAM_DESCRIPTION = 25;
@@ -56,7 +75,7 @@ const RAW_AMOUNT_SUFFIX = /Raw$/;
 const AMOUNT_UNIT_ANCHOR = /human|raw|base unit|atomic|decimal/i;
 const BPS_UNIT_ANCHOR = /basis point|1 bps = 0\.01%/i;
 const CHAIN_UNIT_ANCHOR = /slug|chain id|chainid/i;
-const DECIMALS_SOURCE_ANCHOR = /token_find|decimals/i;
+const DECIMALS_SOURCE_ANCHOR = /TokenFind|decimals/i;
 
 const WHEN_TO_USE_ANCHOR = /Use (this )?when|Call this|before|after/i;
 const RETURNS_ANCHOR = /returns|answers with/i;
@@ -162,7 +181,7 @@ export function lintParamDescription(subject: string, param: LintParam): Manifes
   if (RAW_AMOUNT_SUFFIX.test(param.key) && AMOUNT_KEY.test(param.key) && !DECIMALS_SOURCE_ANCHOR.test(text)) {
     issues.push({
       subject, rule: "param-description", detail: param.key,
-      message: `raw amount \`${param.key}\` must name where the decimals come from (token_find).`,
+      message: `raw amount \`${param.key}\` must name where the decimals come from (TokenFind).`,
     });
   }
   if (BPS_KEY.test(param.key) && !BPS_UNIT_ANCHOR.test(text)) {
@@ -344,6 +363,83 @@ export function lintEnumCaseUniqueness(subject: string, param: LintParam): Manif
     }];
   }
   return [];
+}
+
+// ── 12. param-alias ──────────────────────────────────────────────
+
+/**
+ * A declared input alias must be a spelling the convention actually RETIRED,
+ * must be unique across the tool, and must say when it goes away.
+ *
+ * `BANNED_PARAM_KEYS` is the membership test rather than the lint allowlist,
+ * because a rename wave DELETES its allowlist rows in the same change that
+ * lands the alias - so the allowlist is not a durable record of what was once
+ * spelled, and `BANNED_PARAM_KEYS` is (`conventions.ts`).
+ *
+ * Uniqueness is checked against every declared KEY and every other ALIAS of the
+ * tool, not only against the aliased param: an alias colliding with a live key
+ * would make the rewrite overwrite a value the caller deliberately sent, and two
+ * params claiming one retired spelling would make the rewrite's target depend on
+ * manifest declaration order.
+ *
+ * `removeAfter` is required for rule 03's reason: a compatibility shim with no
+ * named removal condition is a permanent second vocabulary.
+ */
+export function lintParamAliases(
+  subject: string,
+  params: readonly LintParam[],
+): ManifestLintIssue[] {
+  const issues: ManifestLintIssue[] = [];
+  const declaredKeys = new Set(params.map((param) => param.key));
+  const seenAliases = new Set<string>();
+
+  for (const param of params) {
+    for (const alias of param.aliases ?? []) {
+      if (!BANNED_PARAM_KEYS.has(alias.key)) {
+        issues.push({
+          subject, rule: "param-alias", detail: alias.key,
+          message:
+            `param \`${param.key}\` declares the alias \`${alias.key}\`, which is not a RETIRED spelling. `
+            + "Add it to BANNED_PARAM_KEYS (conventions.ts) naming its replacement, or drop the alias - "
+            + "an alias for a key the convention never retired teaches a second vocabulary.",
+        });
+      }
+      if (CANONICAL_PARAM_KEYS.has(alias.key)) {
+        issues.push({
+          subject, rule: "param-alias", detail: alias.key,
+          message:
+            `param \`${param.key}\` declares the alias \`${alias.key}\`, which is CANONICAL. `
+            + "A canonical key cannot also be a retired spelling of another key.",
+        });
+      }
+      if (declaredKeys.has(alias.key)) {
+        issues.push({
+          subject, rule: "param-alias", detail: alias.key,
+          message:
+            `param \`${param.key}\` declares the alias \`${alias.key}\`, which this tool also declares as a `
+            + "real param. The boundary rewrite would overwrite a value the caller deliberately sent.",
+        });
+      }
+      if (seenAliases.has(alias.key)) {
+        issues.push({
+          subject, rule: "param-alias", detail: alias.key,
+          message:
+            `the alias \`${alias.key}\` is declared twice on this tool, so which param the boundary `
+            + "rewrites it to would depend on manifest declaration order.",
+        });
+      }
+      seenAliases.add(alias.key);
+      if (alias.removeAfter.trim().length === 0) {
+        issues.push({
+          subject, rule: "param-alias", detail: alias.key,
+          message:
+            `the alias \`${alias.key}\` on \`${param.key}\` states no \`removeAfter\` condition - `
+            + "a compatibility shim with no named removal condition never gets removed.",
+        });
+      }
+    }
+  }
+  return issues;
 }
 
 // ── Structural readers for not-yet-existing schema fields ────────

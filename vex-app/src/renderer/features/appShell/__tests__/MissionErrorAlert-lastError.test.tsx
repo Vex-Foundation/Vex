@@ -26,7 +26,7 @@ function renderAlert(
   return screen.getByRole("alert");
 }
 
-describe("MissionErrorAlert — with durable evidence", () => {
+describe("MissionErrorAlert - with durable evidence", () => {
   it("names the provider rate limit instead of `an inference or runtime error`", () => {
     const alert = renderAlert({ errorType: "rate_limit_exceeded", statusCode: 429 });
     expect(alert.getAttribute("data-vex-category")).toBe("capacity");
@@ -67,7 +67,7 @@ describe("MissionErrorAlert — with durable evidence", () => {
   });
 });
 
-describe("MissionErrorAlert — without durable evidence", () => {
+describe("MissionErrorAlert - without durable evidence", () => {
   it("degrades to the original generic copy when lastError is absent", () => {
     // Runs that paused before the evidence was persisted, and pauses with
     // nothing classifiable to say, must not regress.

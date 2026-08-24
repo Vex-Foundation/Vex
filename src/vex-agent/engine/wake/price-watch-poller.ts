@@ -1,5 +1,5 @@
 /**
- * Price watch poller - the PULL half of `loop_defer`'s `token_price` watch.
+ * Price watch poller - the PULL half of `LoopDefer`'s `token_price` watch.
  *
  * ## Why a poller and not a subscription
  *

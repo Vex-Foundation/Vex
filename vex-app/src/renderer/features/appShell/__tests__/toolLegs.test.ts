@@ -32,7 +32,7 @@ function legsFor(
 
 const SWAP_ARGS = '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}';
 
-describe("resolveToolLegs — fail-closed parsing", () => {
+describe("resolveToolLegs - fail-closed parsing", () => {
   it.each([
     ["null args and output", null, null],
     ["truncated JSON", '{"tokenIn":"SOL","tokenOut":"USD', null],
@@ -45,7 +45,7 @@ describe("resolveToolLegs — fail-closed parsing", () => {
   });
 });
 
-describe("resolveToolLegs — amounts are never invented", () => {
+describe("resolveToolLegs - amounts are never invented", () => {
   it("renders a dotted-decimal human amount", () => {
     const legs = legsFor(SWAP_ARGS, '{"amountOut":"240.31"}', true);
     expect(legs?.from.amount).toBe("1.5");
@@ -83,7 +83,7 @@ describe("resolveToolLegs — amounts are never invented", () => {
   });
 });
 
-describe("resolveToolLegs — execution outcome gates the claim", () => {
+describe("resolveToolLegs - execution outcome gates the claim", () => {
   it("marks a proven success as executed", () => {
     expect(legsFor(SWAP_ARGS, null, true)?.outcome).toBe("executed");
   });
@@ -106,7 +106,7 @@ describe("resolveToolLegs — execution outcome gates the claim", () => {
 // UI is a lie the user can see: the same row's prose says it is pending. The
 // engine's `displayStatus` projection splits the display without touching the
 // model-facing outcome.
-describe("resolveToolLegs — pending is not failed", () => {
+describe("resolveToolLegs - pending is not failed", () => {
   it("marks success:false + displayStatus 'pending' as pending", () => {
     expect(
       resolveToolLegs(SWAP_ARGS, null, false, "mutating", "pending")?.outcome,
@@ -128,7 +128,7 @@ describe("resolveToolLegs — pending is not failed", () => {
     },
   );
 
-  it("never upgrades a SUCCEEDED act — pending only ever splits success:false", () => {
+  it("never upgrades a SUCCEEDED act - pending only ever splits success:false", () => {
     expect(
       resolveToolLegs(SWAP_ARGS, null, true, "mutating", "pending")?.outcome,
     ).toBe("executed");
@@ -140,7 +140,7 @@ describe("resolveToolLegs — pending is not failed", () => {
     ).toBe("requested");
   });
 
-  it("reads the ARGS only — a pending act's untrusted output supplies nothing", () => {
+  it("reads the ARGS only - a pending act's untrusted output supplies nothing", () => {
     const legs = resolveToolLegs(
       SWAP_ARGS,
       '{"tokenIn":"ATTACK","tokenOut":"EVIL","amountOut":"240.31"}',
@@ -157,7 +157,7 @@ describe("resolveToolLegs — pending is not failed", () => {
 // `success` means THE CALL succeeded, not that funds moved. A successful
 // swap_quote is a preview; only a proven MUTATING operation may claim
 // "executed" (rules/90 money-path honesty).
-describe("resolveToolLegs — operation identity gates the executed claim", () => {
+describe("resolveToolLegs - operation identity gates the executed claim", () => {
   it("marks a successful QUOTE as a quote, never executed", () => {
     expect(resolveToolLegs(SWAP_ARGS, null, true, "quote")?.outcome).toBe(
       "quote",
@@ -199,7 +199,7 @@ describe("resolveToolLegs — operation identity gates the executed claim", () =
   });
 });
 
-describe("resolveToolLegs — untrusted output is trusted only when executed", () => {
+describe("resolveToolLegs - untrusted output is trusted only when executed", () => {
   it("prefers the executed OUTPUT's out-amount (what happened) over the args", () => {
     const legs = legsFor(
       '{"tokenIn":"SOL","tokenOut":"USDC","amountOut":"999.0"}',
@@ -213,7 +213,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
     ["pending / unknown", null],
     ["failed", false],
   ])(
-    "IGNORES the output entirely for a %s act — hostile text cannot invent a leg",
+    "IGNORES the output entirely for a %s act - hostile text cannot invent a leg",
     (_label, success) => {
       // Args prove nothing at all; only the output is token-shaped.
       const legs = legsFor(
@@ -246,7 +246,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
   });
 });
 
-describe("resolveToolLegs — shapes and provenance", () => {
+describe("resolveToolLegs - shapes and provenance", () => {
   it("reads the execute_tool wrapper's nested params (one level only)", () => {
     const legs = legsFor(
       '{"toolId":"kyberswap.swap.quote","params":{"tokenIn":"ETH","tokenOut":"USDC","amountIn":"0.25"}}',

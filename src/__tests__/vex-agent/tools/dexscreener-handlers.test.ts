@@ -34,8 +34,11 @@ describe("dexscreener handlers", () => {
     expect(extra).toEqual([]);
   });
 
-  it("handler count matches manifest count (14)", () => {
-    expect(Object.keys(DEXSCREENER_HANDLERS)).toHaveLength(14);
+  // 14 before the Batch 2 merges (owner decision D7) retired
+  // `dexscreener.profiles.recent` and `dexscreener.boosts.top` into their
+  // siblings' `feed` param.
+  it("handler count matches manifest count (12)", () => {
+    expect(Object.keys(DEXSCREENER_HANDLERS)).toHaveLength(12);
   });
 
   it("every handler is a function", () => {
@@ -157,8 +160,19 @@ describe("dexscreener handlers", () => {
     expect(typeof data.returned).toBe("number");
     expect(typeof data.totalMatched).toBe("number");
     expect(Array.isArray(data.rows)).toBe(true);
-    // The two fields this feed used to parse and discard.
-    expect(typeof data.rows[0].updatedAt).toBe("string");
+    // The two fields this feed used to parse and discard. `updatedAt` is
+    // `string | null` BY CONTRACT (feed-row.ts) and null in practice here:
+    // the provider dropped the field from /token-profiles/latest/v1
+    // (measured live 2026-08-21: 0/30 rows carry it on this feed while
+    // recent-updates still sends it 30/30). A live pin asserts the canonical
+    // union and that any value parses - never the provider's mood.
+    expect(data.rows[0]).toHaveProperty("updatedAt");
+    for (const row of data.rows) {
+      if (row.updatedAt !== null) {
+        expect(typeof row.updatedAt).toBe("string");
+        expect(Number.isNaN(Date.parse(row.updatedAt))).toBe(false);
+      }
+    }
     expect(data.rows[0]).toHaveProperty("communityTakeover");
   });
 
@@ -173,8 +187,8 @@ describe("dexscreener handlers", () => {
 
   // Live regression guard: this tool threw on 100% of calls because the shared
   // boost schema required `amount`, which `/token-boosts/top/v1` never sends.
-  it("dexscreener.boosts.top returns rows against the LIVE top feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]({}, READ_CTX);
+  it("dexscreener.boosts feed:top returns rows against the LIVE top feed", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]({ feed: "top" }, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBeGreaterThan(0);
@@ -448,7 +462,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     expect(pair.priceInQuoteToken).toBe("1892.5670");
     expect(pair.decimalsAvailable).toBe(false);
     // …and the payload names the resolver, because DexScreener sends no decimals.
-    expect(data.tokenDecimalsNote).toContain("khalani.tokens.search");
+    expect(data.tokenDecimalsNote).toContain("khalani__tokens_search");
   });
 });
 
@@ -703,7 +717,7 @@ describe("dexscreener metas + recent handlers", () => {
     expect(data.tokenCount).toBeUndefined();
     expect(data.marketCap).toBeUndefined();
     expect(data.pairCount).toBeUndefined();
-    expect(data.narrativeSubsetNote).toContain("dexscreener.trending");
+    expect(data.narrativeSubsetNote).toContain("dexscreener__narratives_list");
     // Pairs are AgentDexPair rows now — `projectors.ts` is deleted.
     expect(data.pairs[0].liquidityUsd).toBe(10);
     expect(data.pairs[0].turnoverRatioH24).toBeDefined();
@@ -726,7 +740,7 @@ describe("dexscreener metas + recent handlers", () => {
     expect(result.output).not.toContain("undocumented");
   });
 
-  it("dexscreener.profiles.recent returns profiles and propagates failures", async () => {
+  it("dexscreener.profiles feed:recentUpdates returns profiles and propagates failures", async () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "getProfilesRecentUpdates").mockResolvedValue([
       {
@@ -736,8 +750,11 @@ describe("dexscreener metas + recent handlers", () => {
       },
     ]);
     const okResult = JSON.parse(
-      (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).output,
+      (await DEXSCREENER_HANDLERS["dexscreener.profiles"]({ feed: "recentUpdates" }, READ_CTX)).output,
     );
+    // The reply names WHICH feed it read, so it cannot be mistaken for the
+    // other one.
+    expect(okResult.providerWindow.endpoint).toBe("/token-profiles/recent-updates/v1");
     expect(okResult.returned).toBe(1);
     expect(okResult.rows[0].updatedAt).toBe("2026-07-04T00:00:00.000Z");
     expect(okResult.rows[0].communityTakeover).toBe(false);
@@ -745,6 +762,8 @@ describe("dexscreener metas + recent handlers", () => {
 
     const boom = new Error("boom");
     vi.spyOn(client, "getProfilesRecentUpdates").mockRejectedValue(boom);
-    await expect(DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).rejects.toBe(boom);
+    await expect(
+      DEXSCREENER_HANDLERS["dexscreener.profiles"]({ feed: "recentUpdates" }, READ_CTX),
+    ).rejects.toBe(boom);
   });
 });

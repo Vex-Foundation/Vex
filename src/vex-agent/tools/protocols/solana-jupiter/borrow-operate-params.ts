@@ -277,7 +277,7 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
         `Cannot combine a collateral ${collateral.leg.direction === "in" ? "deposit" : "withdrawal"} with a debt `
         + `${debt.leg.direction === "in" ? "repayment" : "borrow"} in one call — both would move in the same `
         + "direction and the activity ledger records at most one incoming and one outgoing leg per call. "
-        + "Call these as two separate solana.lend.borrowOperate calls.",
+        + "Call these as two separate solana__lend_borrow_operate calls.",
       ),
     };
   }

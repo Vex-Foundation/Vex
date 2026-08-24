@@ -54,12 +54,12 @@ export function NameField({
         placeholder="Give this session a short name."
         className="h-10"
       />
-      <div className="flex items-center justify-between gap-3 text-xs text-[var(--vex-text-3)]">
+      <div className="flex items-center justify-between gap-3 text-xs text-ink-tertiary">
         <p>The sidebar uses this as the session title.</p>
         {/* Numerals speak mono/tabular (mirrors the ReportIssue counter). */}
         <span
           aria-live="polite"
-          className="font-mono text-[10px] tracking-[0.14em] tabular-nums text-[var(--vex-text-3)]"
+          className="font-mono text-[10px] tracking-[0.14em] tabular-nums text-ink-tertiary"
         >
           {name.length} / {SESSION_TITLE_MAX_LENGTH}
         </span>
@@ -149,8 +149,8 @@ export function WalletFieldset({
   return (
     <fieldset className="flex flex-col gap-2.5">
       <legend className="vex-eyebrow">Wallets</legend>
-      <p className="text-xs text-[var(--vex-text-3)]">
-        Optional — pick the EVM + Solana wallet this session may use. Locked
+      <p className="text-xs text-ink-tertiary">
+        Optional - pick the EVM + Solana wallet this session may use. Locked
         once the session starts; leave empty for a chat-only session.
       </p>
       <div className="grid grid-cols-2 gap-2">
@@ -182,7 +182,7 @@ interface SubmitErrorProps {
 export function SubmitError({ submitError }: SubmitErrorProps): JSX.Element | null {
   if (submitError === null) return null;
   return (
-    <p className="text-sm text-destructive" role="alert">
+    <p className="text-sm text-danger" role="alert">
       {submitError}
     </p>
   );

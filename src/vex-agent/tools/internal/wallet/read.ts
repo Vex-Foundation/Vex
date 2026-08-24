@@ -25,6 +25,7 @@ import { getLocalChain, listLocalChains } from "@tools/evm-chains/registry.js";
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { buildTokenScanSet } from "@vex-agent/sync/local-chain-balance-sync.js";
+import { responseFormatSchema, type ResponseFormat } from "@vex-agent/response-format.js";
 import {
   type ConciseKhalaniToken,
   projectTokens,
@@ -69,7 +70,10 @@ const WalletReadArgs = z.object({
   }).optional(),
   // 'detailed' (DEFAULT, compatibility-first) returns every projected token.
   // 'concise' enables the `limit` trim to the top-N tokens by held USD value.
-  response_format: z.enum(["concise", "detailed"]).optional().default("detailed"),
+  //
+  // The `detailed` default is the RATIFIED EXCEPTION of D17, not drift: see the
+  // state-2 note in `@vex-agent/response-format.js`.
+  response_format: responseFormatSchema("detailed"),
 }).strict();
 
 /**
@@ -85,7 +89,7 @@ interface TokenReadError {
 }
 
 /**
- * A projected token row as `wallet_balances` emits it. `priceUnavailable` is
+ * A projected token row as `WalletBalances` emits it. `priceUnavailable` is
  * added only by the concise trim, on a held token with no price feed, so the
  * agent can tell "no USD price" from "not held".
  */
@@ -103,8 +107,37 @@ interface WalletSnapshot {
   tokenErrorsOmitted?: number;
   /** Held-but-unpriced rows the concise trim's cap dropped. Present only when non-zero. */
   unpricedOmitted?: number;
+  /**
+   * Whether `tokens` is short of the full projected scan for this wallet (D16,
+   * bounded_non_pageable class). ALWAYS PRESENT, including as `false` on the
+   * `detailed` path and on a `{limit}` call that carried no `response_format`:
+   * an absent field would read as "no answer", and the whole point of the
+   * field is that the agent can tell a complete row set from a trimmed one
+   * without re-deriving the trim rules. There is no continuation to fetch;
+   * `truncationNote` names the narrowing action instead.
+   */
+  truncated: boolean;
+  /** The recovery instruction. Present only when `truncated` is true. */
+  truncationNote?: string;
   tokens: WalletTokenRow[];
 }
+
+/**
+ * Narrowing action for a trimmed snapshot, phrased against the FULL projected
+ * scan, which is what `truncated` is measured against. The concise trim drops
+ * rows three ways (priced rows past `limit`, unpriced rows past the 20-row
+ * cap, unpriced rows with a zero balance) and only the first is recoverable by
+ * raising `limit`; the `detailed` format is the one recovery that returns
+ * every row. There is no cursor and no page, so the note must not imply a
+ * next call, and it must not promise `limit` more than it can deliver.
+ */
+const TRUNCATION_NOTE =
+  "Some rows of the FULL projected scan for this wallet are not listed: the concise trim "
+  + "keeps the top `limit` priced rows, then at most 20 held-but-unpriced rows, and drops "
+  + "unpriced rows with a zero balance. There is no continuation to fetch. To see every row, "
+  + "pass response_format:\"detailed\" (the only complete recovery). Raising `limit` recovers "
+  + "only the priced rows it cut, never the rows the 20-row unpriced cap or the zero-balance "
+  + "rule removed. `tokenCount` and `totalUsd` already describe the FULL scan.";
 
 /**
  * A broken scan set can fail on hundreds of tokens; the agent needs to know it
@@ -177,7 +210,7 @@ type LocalChainSnapshot =
 
 /**
  * Matches `DEFAULT_BALANCE_SCAN_CONCURRENCY` in the Khalani scan: the two sides
- * of one `wallet_balances` answer must not race each other into a provider's
+ * of one `WalletBalances` answer must not race each other into a provider's
  * rate limit.
  */
 const LOCAL_CHAIN_SCAN_CONCURRENCY = 4;
@@ -264,7 +297,7 @@ async function readLocalChainSnapshot(
   }
 }
 
-// ── wallet_balances ─────────────────────────────────────────────
+// ── WalletBalances ─────────────────────────────────────────────
 
 export async function handleWalletBalances(
   params: Record<string, unknown>,
@@ -272,14 +305,14 @@ export async function handleWalletBalances(
 ): Promise<ToolResult> {
   const parsed = WalletReadArgs.safeParse(params);
   if (!parsed.success) {
-    return fail(`wallet_balances: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
+    return fail(`WalletBalances: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
 
   let scope: BalanceChainScope;
   try {
     scope = await partitionBalanceChainScope(parsed.data.chainIds);
   } catch (err) {
-    return fail(`wallet_balances: ${err instanceof Error ? err.message : String(err)}`);
+    return fail(`WalletBalances: ${err instanceof Error ? err.message : String(err)}`);
   }
   const walletFamilies = requestedWalletFamilies(parsed.data.walletFamily);
   const snapshots: WalletSnapshot[] = [];
@@ -295,7 +328,7 @@ export async function handleWalletBalances(
       !scope.rawProvided || (scope.selection.rawProvided && (khalaniChainIds?.length ?? 0) > 0);
     if (!khalaniRequested && localChainIds.length === 0) {
       if (parsed.data.walletFamily === family) {
-        return fail(`wallet_balances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
+        return fail(`WalletBalances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
       }
       continue;
     }
@@ -337,7 +370,7 @@ export async function handleWalletBalances(
       //
       // Bounded-concurrency, not serial: each chain costs a scan-set build, an
       // RPC read and a DexScreener price batch, and running N of them one after
-      // another is the `wallet_balances` latency complaint. The bound matches
+      // another is the `WalletBalances` latency complaint. The bound matches
       // the Khalani scan's own (4) so the provider rate limits are not the new
       // failure mode, and results are written into slots keyed by index so the
       // output order stays chain order rather than completion order.
@@ -371,6 +404,11 @@ export async function handleWalletBalances(
       });
 
       const trimmed = trimTokens(projected, parsed.data.limit, parsed.data.response_format);
+      // Measured against the FULL projected set, so it covers all three ways a
+      // row can be missing: the priced overflow past `limit`, the 20-row
+      // unpriced cap, and the zero-balance unpriced rows the trim drops (which
+      // `unpricedOmitted` deliberately does not count).
+      const truncated = trimmed.tokens.length < projected.length;
       snapshots.push({
         wallet: family,
         address,
@@ -381,6 +419,8 @@ export async function handleWalletBalances(
         tokenErrors,
         ...(tokenErrorsOmitted > 0 ? { tokenErrorsOmitted } : {}),
         ...(trimmed.unpricedOmitted > 0 ? { unpricedOmitted: trimmed.unpricedOmitted } : {}),
+        truncated,
+        ...(truncated ? { truncationNote: TRUNCATION_NOTE } : {}),
         tokens: trimmed.tokens,
       });
     } catch (err) {
@@ -393,7 +433,7 @@ export async function handleWalletBalances(
   }
 
   if (snapshots.length === 0) {
-    return fail(`wallet_balances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
+    return fail(`WalletBalances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
   }
 
   return ok({
@@ -478,7 +518,7 @@ function holdsBalance(token: ConciseKhalaniToken): boolean {
 function trimTokens(
   tokens: ConciseKhalaniToken[],
   limit: number | undefined,
-  responseFormat: "concise" | "detailed",
+  responseFormat: ResponseFormat,
 ): { tokens: WalletTokenRow[]; unpricedOmitted: number } {
   if (responseFormat === "detailed" || limit === undefined) return { tokens, unpricedOmitted: 0 };
   // Stable sort: rows with equal held USD (every unpriced row scores 0) keep

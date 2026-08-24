@@ -1,9 +1,25 @@
 /* ============================================================ *
  *  MOTION PRIMITIVES (CSP-safe build-time keyframes)            *
- *  Brand curves from the landing GSAP engine:                   *
- *    Out   = cubic-bezier(0.25, 1, 0.5, 1)                      *
- *    InOut = cubic-bezier(0.76, 0, 0.24, 1)                     *
  * ============================================================ */
+
+/* THE EASING FAMILY - one family, three curves, no fourth.
+ *
+ *   --vex-ease-standard  design-language §7 transition curve. Anything moving
+ *                        BETWEEN two resting states (transitions, crossfades,
+ *                        staggers).
+ *   --vex-ease-out       the landing "Out" curve. ENTRANCES only - a surface
+ *                        arriving from nothing and decelerating into place.
+ *   --vex-ease-inout     full-surface reveals (the Chronos Gate curtain).
+ *
+ * INVARIANT, three files. `--vex-ease-out` and `--vex-ease-inout` are declared
+ * in `shell.css` (:root) and only CONSUMED here; `--vex-ease-standard` is
+ * declared here because this sheet owns the transcript's motion.
+ * `lib/motion.ts` mirrors all three as JS tuples for the Motion call sites
+ * (EASE_STANDARD / EASE_OUT / EASE_INOUT). A curve changed in one place and
+ * not the others splits the family - change every site together. */
+:root {
+  --vex-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
 
 /* Desk entry settle — a live-appended transcript row settles onto the page.
  * One-shot, applied ONLY to rows appended after mount (history pagination
@@ -20,7 +36,7 @@
 }
 
 .vex-entry-settle {
-  animation: vex-entry-settle 180ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-entry-settle 180ms var(--vex-ease-out) both;
 }
 
 @keyframes vex-answer-resolve {
@@ -35,7 +51,7 @@
 }
 
 .vex-answer-resolve {
-  animation: vex-answer-resolve 260ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-answer-resolve 260ms var(--vex-ease-out) both;
 }
 
 /* BOOK panel slide-in — one-shot on mount (the panel is mounted/unmounted by
@@ -52,7 +68,7 @@
 }
 
 .vex-book-enter {
-  animation: vex-book-enter 240ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-book-enter 240ms var(--vex-ease-out) both;
 }
 
 /* MESSAGE SEND — the user's own message arriving in the transcript.
@@ -67,10 +83,15 @@
  * arriving row buys ~90% of the impression for none of the policy cost.
  *
  * The class rides an INNER wrapper, never the row element that carries
- * `data-vex-entry-id`: the transcript's top-anchor layout effect measures that
- * element's rect before paint, and a transform on it would shift the anchor by
- * the animation's opening offset. A descendant's transform cannot move its
- * parent's border box, so the scroll model measures an untransformed row.
+ * `data-vex-entry-id` / `data-vex-anchor-key`. That element is what the
+ * follow-stream scroll model measures with `getBoundingClientRect()` when it
+ * captures and restores a paging anchor or a saved reader position, and it
+ * measures it in the same commit the row mounts in. A transform on the row
+ * itself would fold the animation's opening offset into the restored
+ * `scrollTop`; a descendant's transform cannot move its parent's border box,
+ * so the model always measures an untransformed row.
+ * (The pre-follow model needed the same rule for its pre-paint top-anchor
+ * measurement - the reason changed with the scroll swap, the rule did not.)
  *
  * Reduced motion collapses this to a resting frame via base.css — an instant
  * append, which is exactly right: the message is already there. */
@@ -86,7 +107,7 @@
 }
 
 .vex-message-send {
-  animation: vex-message-send 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-message-send 280ms var(--vex-ease-out) both;
   /* The row is the transform's own containing box, so a scaled bubble cannot
    * bleed over its neighbours mid-flight. */
   transform-origin: center bottom;
@@ -117,7 +138,7 @@
 }
 
 .vex-section-settle {
-  animation: vex-section-settle 240ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: vex-section-settle 240ms var(--vex-ease-out) both;
 }
 
 /* PremiumBadge "awaiting your action" shimmer — applied ONLY to a badge in the
@@ -141,3 +162,55 @@
   animation: vex-badge-shimmer 2.5s ease-in-out infinite;
 }
 
+/* ============================================================ *
+ *  THE EXPAND PRIMITIVE (owner motion law, round 3 item 9)      *
+ * ============================================================ *
+ *
+ * ONE mechanism for every in-flow open/close reveal in the app: disclosures,
+ * tool bodies, the queue dock's list, activity details. `components/ui/
+ * expand-region.tsx` is its only sanctioned consumer - it owns the mounted-
+ * while-closing rule, `data-open`, `aria-hidden` and `inert`.
+ *
+ * MECHANISM. `interpolate-size: allow-keywords` makes `height: 0` -> `height:
+ * auto` an interpolable pair (Chromium 129+; Electron 42 embeds Chromium 148,
+ * so the engine is fixed and nineteen majors past the introduction point). The
+ * opt-in is SCOPED TO THIS CLASS and must never move to `:root` - at document
+ * scope it would silently make every unrelated intrinsic-size change animatable.
+ *
+ * BOX CONTRACT. The animated outer box owns no vertical padding, border or
+ * margin: those collapse independently of `height` and would leak a few px of
+ * chrome out of a "closed" region. The consumer puts them on the inner content
+ * box. `overflow: clip` (not `hidden`) keeps the closed box from becoming a
+ * scroll container.
+ *
+ * SCOPE. This is an OPEN/CLOSE primitive. Content that changes size while
+ * already open re-lays-out instantly - `height: auto` -> `height: auto` is not
+ * a value change, so there is nothing to interpolate. Continuous auto-layout
+ * animation is not on offer and must not be faked here.
+ *
+ * CURVE. `--vex-ease-out` rather than `--vex-ease-standard`: a reveal starts
+ * from nothing, and the fast-start/soft-landing landing curve is the macOS feel
+ * the owner asked for. This is the ONE sanctioned transition consumer of the
+ * entrance curve; the family comment above still holds for everything else.
+ * 220ms is the chosen duration (design-language §7 budget) - one value, both
+ * directions.
+ *
+ * REDUCED MOTION. base.css already clamps every transition-duration globally,
+ * but the primitive states its own collapse so it is complete on its own and
+ * provable in isolation. */
+.vex-expand {
+  interpolate-size: allow-keywords;
+  height: 0;
+  overflow: clip;
+  transition: height 220ms var(--vex-ease-out);
+}
+
+.vex-expand[data-open="true"] {
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-expand {
+    transition: none;
+  }
+}

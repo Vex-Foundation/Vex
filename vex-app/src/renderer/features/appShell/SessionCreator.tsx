@@ -169,7 +169,7 @@ export function SessionCreator({
        * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent className="max-w-2xl">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="gap-2.5 border-[var(--vex-line)] px-8 py-5">
+          <DialogHeader className="gap-2.5 border-line-2 px-8 py-5">
             {/* The stamp becomes the landing eyebrow (mono micro-label +
              * leading rule). Same <h2>, same aria-labelledby id — only the
              * register changes; text stays "New session" (uppercased by
@@ -178,10 +178,10 @@ export function SessionCreator({
             {/* Ceremony line — the retired welcome headline promoted to the
              * display register (landing .prob-card h3: Archivo 700 19px),
              * read once per new act (where ceremony belongs). */}
-            <p className="font-display text-[19px] font-bold leading-tight tracking-[-0.02em] text-[var(--vex-text)]">
+            <p className="font-display text-[19px] font-bold leading-tight tracking-[-0.02em] text-ink-primary">
               Your chain. Your rules. I execute.
             </p>
-            <DialogDescription className="text-xs text-[var(--vex-text-3)]">
+            <DialogDescription className="text-xs text-ink-tertiary">
               Mode and permission are locked once the session is created.
             </DialogDescription>
           </DialogHeader>
@@ -208,13 +208,13 @@ export function SessionCreator({
             <SubmitError submitError={submitError} />
           </DialogBody>
 
-          <DialogFooter className="border-[var(--vex-line)] px-8 py-4">
+          <DialogFooter className="border-line-2 px-8 py-4">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
-              className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
+              className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             >
               Cancel
             </Button>

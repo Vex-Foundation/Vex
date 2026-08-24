@@ -21,7 +21,7 @@
  *   - `swap/execute-broadcast.ts`    — Phase B (staged broadcast loop)
  *   - `swap/execute-failure.ts`      — post-intent failure wording + writes
  *   - `swap/activity-recording.ts`   — the `agent_activity` failure writes
- *   - `swap/reveal-messaging.ts`     — the Uniswap fallback-venue reveal
+ *   - `swap/fallback-messaging.ts`     — the Uniswap fallback-venue reveal
  *   - `swap/quote-safety.ts`, `swap/slippage.ts`, `swap/route-request.ts`,
  *     `swap/error-output.ts`, `swap/chain-native.ts`, `swap/protocol-id.ts`
  *

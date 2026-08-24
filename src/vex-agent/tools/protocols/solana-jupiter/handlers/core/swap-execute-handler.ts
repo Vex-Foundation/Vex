@@ -107,7 +107,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     ? jupiterFeePreviewSchema.safeParse((matched.safetyDetail as Record<string, unknown>).feePreview)
     : undefined;
   if (!matched || !persistedFeePreview?.success) {
-    return fail(`${toolId} failed: no matching fee-bearing quote found. Call solana.swap.quote first with the exact same params, then retry.`);
+    return fail(`${toolId} failed: no matching fee-bearing quote found. Call solana__swap_quote first with the exact same params, then retry.`);
   }
 
   const connection = getSolanaConnection();

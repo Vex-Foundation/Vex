@@ -111,8 +111,8 @@ describe("DexScreener feed + narrative byte budgets", () => {
     expect(await outputBytes("dexscreener.boosts")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
-  it("boosts.top, no params: under the cap (it was 21,612 B)", async () => {
-    expect(await outputBytes("dexscreener.boosts.top")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
+  it("boosts feed:top, no other params: under the cap (it was 21,612 B)", async () => {
+    expect(await outputBytes("dexscreener.boosts", { feed: "top" })).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("communityTakeovers, no params: under the cap (it was 23,122 B)", async () => {
@@ -130,24 +130,24 @@ describe("DexScreener feed + narrative byte budgets", () => {
   // characters, and one earlier window reached 3,390. Owner decision O9 forbids
   // truncating any of it, so the levers are `limit` and `updatedWithinSeconds`,
   // both agent-set and both documented on the tool.
-  it("profiles.recent, bounded default: issuer text remains under the cap", async () => {
-    const bytes = await outputBytes("dexscreener.profiles.recent");
+  it("profiles feed:recentUpdates, bounded default: issuer text remains under the cap", async () => {
+    const bytes = await outputBytes("dexscreener.profiles", { feed: "recentUpdates" });
     expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeGreaterThan(12_000);
   });
 
-  it("profiles.recent, limit 15: comfortably under the cap", async () => {
-    const bytes = await outputBytes("dexscreener.profiles.recent", { limit: 15 });
+  it("profiles feed:recentUpdates, limit 15: comfortably under the cap", async () => {
+    const bytes = await outputBytes("dexscreener.profiles", { feed: "recentUpdates", limit: 15 });
     expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
-  it("profiles.recent: projecting description away is the other lever, and it is huge", async () => {
-    const withText = await outputBytes("dexscreener.profiles.recent");
+  it("profiles feed:recentUpdates: projecting description away is the other lever, and it is huge", async () => {
+    const withText = await outputBytes("dexscreener.profiles", { feed: "recentUpdates" });
     // `fields` is additive over the LEAN set, so description cannot be projected
     // away by naming other fields — the honest comparison is against a narrowed
     // row count, which is what `limit` is for. What this asserts is the SIZE of
     // the text: half the payload is issuer prose.
-    const tenRows = await outputBytes("dexscreener.profiles.recent", { limit: 10 });
+    const tenRows = await outputBytes("dexscreener.profiles", { feed: "recentUpdates", limit: 10 });
     expect(withText - tenRows).toBeGreaterThan(5_000);
   });
 
@@ -228,21 +228,24 @@ describe("DexScreener feed + narrative byte budgets", () => {
   // Not an assertion: prints the measured matrix next to the recon's numbers so a
   // future reader can compare without re-deriving them.
   it("prints the measured byte matrix against the pre-card measurements", async () => {
-    const before: Record<string, number | null> = {
-      "dexscreener.profiles": 21_205,
-      "dexscreener.profiles.recent": 40_089,
-      "dexscreener.boosts": 20_493,
-      "dexscreener.boosts.top": 21_612,
-      "dexscreener.communityTakeovers": 23_122,
-      "dexscreener.ads": 7_801,
-      "dexscreener.attention": 38_152,
-      "dexscreener.trending": 8_573,
-      "dexscreener.meta": 17_161,
-    };
+    // Keyed by the CALL, since the Batch 2 merges moved two of the measured
+    // feeds behind their siblings' `feed` param.
+    const before: Array<[string, Record<string, unknown>, number]> = [
+      ["dexscreener.profiles", {}, 21_205],
+      ["dexscreener.profiles", { feed: "recentUpdates" }, 40_089],
+      ["dexscreener.boosts", {}, 20_493],
+      ["dexscreener.boosts", { feed: "top" }, 21_612],
+      ["dexscreener.communityTakeovers", {}, 23_122],
+      ["dexscreener.ads", {}, 7_801],
+      ["dexscreener.attention", {}, 38_152],
+      ["dexscreener.trending", {}, 8_573],
+      ["dexscreener.meta", { slug: "cat" }, 17_161],
+    ];
     const rows: Array<[string, number, number]> = [];
-    for (const [toolId, was] of Object.entries(before)) {
-      const params = toolId === "dexscreener.meta" ? { slug: "cat" } : {};
-      rows.push([toolId, was ?? 0, await outputBytes(toolId, params)]);
+    for (const [toolId, params, was] of before) {
+      const feed = params.feed;
+      const label = typeof feed === "string" ? `${toolId} (feed: ${feed})` : toolId;
+      rows.push([label, was, await outputBytes(toolId, params)]);
     }
     for (const [toolId, was, now] of rows) {
       const verdict = now < DEXSCREENER_BYTE_BUDGET_BYTES ? "under" : `OVER ${(now / DEXSCREENER_BYTE_BUDGET_BYTES).toFixed(2)}x`;

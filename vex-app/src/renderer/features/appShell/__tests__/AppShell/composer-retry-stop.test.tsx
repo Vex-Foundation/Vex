@@ -22,62 +22,6 @@ import {
   localIsoDaysAgo,
 } from "./_appshell-render.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  PlusIcon: "PlusIcon",
-  AnalyticsUpIcon: "AnalyticsUpIcon",
-  DownloadIcon: "DownloadIcon",
-  MessageSquareIcon: "MessageSquareIcon",
-  // S5 act ledger — ToolLedger/toolGlyph.ts imports these four.
-  GlobeIcon: "GlobeIcon",
-  FileIcon: "FileIcon",
-  TerminalIcon: "TerminalIcon",
-  WrenchIcon: "WrenchIcon",
-  CircleAlertIcon: "CircleAlertIcon",
-  ArchiveIcon: "ArchiveIcon",
-  ChevronDownIcon: "ChevronDownIcon",
-  ChevronLeftIcon: "ChevronLeftIcon",
-  ChevronRightIcon: "ChevronRightIcon",
-  ArrowUpIcon: "ArrowUpIcon",
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  XIcon: "XIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-  BridgeIcon: "BridgeIcon",
-  BubbleChatSparkIcon: "BubbleChatSparkIcon",
-  BugIcon: "BugIcon",
-  ChartCandlestickIcon: "ChartCandlestickIcon",
-  CircleCheckBigIcon: "CircleCheckBigIcon",
-  Clock03Icon: "Clock03Icon",
-  DatabaseLightningIcon: "DatabaseLightningIcon",
-  Trash2Icon: "Trash2Icon",
-  FlameIcon: "FlameIcon",
-  RocketIcon: "RocketIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
-  FilterHorizontalIcon: "FilterHorizontalIcon",
-  BrainIcon: "BrainIcon",
-  MapPinIcon: "MapPinIcon",
-  PanelLeftCloseIcon: "PanelLeftCloseIcon",
-  PanelLeftOpenIcon: "PanelLeftOpenIcon",
-  PanelRightCloseIcon: "PanelRightCloseIcon",
-  PanelRightOpenIcon: "PanelRightOpenIcon",
-  SearchIcon: "SearchIcon",
-  RadarIcon: "RadarIcon",
-  Settings2Icon: "Settings2Icon",
-  Shield02Icon: "Shield02Icon",
-  SparklesIcon: "SparklesIcon",
-  StarIcon: "StarIcon",
-  CircleStopIcon: "CircleStopIcon",
-  TargetIcon: "TargetIcon",
-  PercentIcon: "PercentIcon",
-  // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  WalletIcon: "WalletIcon",
-  ZapIcon: "ZapIcon",
-}));
-
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
 // partial mocks. The screen has its own suite; a stub keeps THIS suite's

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the `loop_defer` handler — Zod validation, defense-in-depth
+ * Unit tests for the `LoopDefer` handler — Zod validation, defense-in-depth
  * against visibility bypasses, and registry visibility gating. DB is mocked
  * (no testcontainers); claim of the enqueue contract is exercised in
  * `loop-wake.test.ts`.
@@ -114,7 +114,7 @@ beforeEach(() => {
 
 // ── Zod validation ─────────────────────────────────────────────
 
-describe("loop_defer — argument validation", () => {
+describe("LoopDefer — argument validation", () => {
   it("rejects missing reason", async () => {
     const result = await handleLoopDefer({ after_ms: 10_000 }, ctxMissionActive());
     expect(result.success).toBe(false);
@@ -199,7 +199,7 @@ describe("loop_defer — argument validation", () => {
 
 // ── Defense-in-depth (runtime context) ─────────────────────────
 
-describe("loop_defer — defense-in-depth", () => {
+describe("LoopDefer — defense-in-depth", () => {
   it("rejects a RESTRICTED agent session (a human is in the loop there)", async () => {
     const ctx = makeTestContext({
       sessionKind: "agent",
@@ -241,7 +241,7 @@ describe("loop_defer — defense-in-depth", () => {
 
 // ── Happy path ─────────────────────────────────────────────────
 
-describe("loop_defer — happy path", () => {
+describe("LoopDefer — happy path", () => {
   it("enqueues for mission active run and returns engineSignal", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
@@ -314,13 +314,13 @@ describe("loop_defer — happy path", () => {
 
 // ── Full-Autonomous agent sessions (owner decree 2026-08-03) ───
 
-describe("loop_defer — Full-Autonomous agent session", () => {
+describe("LoopDefer — Full-Autonomous agent session", () => {
   it("parks a full-permission agent session with missionRunId null", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
 
     const result = await handleLoopDefer(
-      { after_ms: 300_000, reason: "bridge base→arbitrum ~5 min; on wake call bridge_status" },
+      { after_ms: 300_000, reason: "bridge base→arbitrum ~5 min; on wake call BridgeStatus" },
       ctxAgentFull(),
     );
 
@@ -349,7 +349,7 @@ describe("loop_defer — Full-Autonomous agent session", () => {
 
 // ── Wait bounds and units ──────────────────────────────────────
 
-describe("loop_defer — wake time bounds", () => {
+describe("LoopDefer — wake time bounds", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
@@ -407,10 +407,10 @@ describe("loop_defer — wake time bounds", () => {
 
 // ── Watch (bridge_order_status) ────────────────────────────────
 
-describe("loop_defer — watch never kills the defer", () => {
+describe("LoopDefer — watch never kills the defer", () => {
   // THE regression this suite exists for: an unsupported watch type used to
   // fail the whole call, so the run did NOT park and the agent stayed in its
-  // loop — the exact "unlimited thoughts" pathology loop_defer exists to stop.
+  // loop — the exact "unlimited thoughts" pathology LoopDefer exists to stop.
   // Pin updated 2026-08-10: `token_price` is now a REGISTERED type, so it no
   // longer demonstrates the unknown-type path. The pathology this test guards
   // is unchanged, only the type used to provoke it. The token_price condition's
@@ -517,7 +517,7 @@ describe("loop_defer — watch never kills the defer", () => {
 
 // ── Registry visibility ────────────────────────────────────────
 
-describe("loop_defer — visibility", () => {
+describe("LoopDefer — visibility", () => {
   it("is visible in a mission active run (restricted)", () => {
     const tools = getOpenAITools(defaultVisibilityContext({
       permission: "restricted",
@@ -525,7 +525,7 @@ describe("loop_defer — visibility", () => {
       missionRunActive: true,
     }));
     const names = tools.map((t) => t.function.name);
-    expect(names).toContain("loop_defer");
+    expect(names).toContain("LoopDefer");
   });
 
   it("is visible in a mission active run (full)", () => {
@@ -535,7 +535,7 @@ describe("loop_defer — visibility", () => {
       missionRunActive: true,
     }));
     const names = tools.map((t) => t.function.name);
-    expect(names).toContain("loop_defer");
+    expect(names).toContain("LoopDefer");
   });
 
   it("is VISIBLE in a Full-Autonomous agent session", () => {
@@ -545,7 +545,7 @@ describe("loop_defer — visibility", () => {
       missionRunActive: false,
     }));
     const names = tools.map((t) => t.function.name);
-    expect(names).toContain("loop_defer");
+    expect(names).toContain("LoopDefer");
   });
 
   it("is hidden in a restricted agent session", () => {
@@ -555,7 +555,7 @@ describe("loop_defer — visibility", () => {
       missionRunActive: false,
     }));
     const names = tools.map((t) => t.function.name);
-    expect(names).not.toContain("loop_defer");
+    expect(names).not.toContain("LoopDefer");
   });
 
   it("survives the pressure barrier — the loop-stopping tool is safe_at_barrier", () => {
@@ -566,7 +566,7 @@ describe("loop_defer — visibility", () => {
         missionRunActive: true,
         contextUsageBand: band,
       }));
-      expect(tools.map((t) => t.function.name)).toContain("loop_defer");
+      expect(tools.map((t) => t.function.name)).toContain("LoopDefer");
     }
   });
 
@@ -577,6 +577,6 @@ describe("loop_defer — visibility", () => {
       missionRunActive: false,
     }));
     const names = tools.map((t) => t.function.name);
-    expect(names).not.toContain("loop_defer");
+    expect(names).not.toContain("LoopDefer");
   });
 });

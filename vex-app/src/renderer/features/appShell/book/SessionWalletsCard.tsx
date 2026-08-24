@@ -51,7 +51,7 @@ export function SessionWalletsCard({
         </CardStateNote>
       ) : empty ? (
         <CardStateNote>
-          No wallets selected for this session — wallet tools stay disabled.
+          No wallets selected for this session - wallet tools stay disabled.
         </CardStateNote>
       ) : (
         <ul className="flex flex-col" data-vex-area="deposit-addresses">
@@ -90,15 +90,15 @@ function WalletRow({
   readonly wallet: SelectedWalletDto;
 }): JSX.Element {
   return (
-    <li className="flex flex-col gap-1.5 border-b border-[var(--vex-line)] py-2 first:pt-0.5 last:border-b-0 last:pb-1">
+    <li className="flex flex-col gap-1.5 border-b border-line-1 py-2 first:pt-0.5 last:border-b-0 last:pb-1">
       <div className="flex items-center gap-2">
         <ChainIcon chainId={chainId} size={13} />
         {wallet.label.length > 0 ? (
-          <span className="min-w-0 truncate text-[12px] text-[var(--vex-text)]">
+          <span className="min-w-0 truncate text-[12px] text-ink-primary">
             {wallet.label}
           </span>
         ) : null}
-        <span className="shrink-0 text-[10.5px] text-[var(--vex-text-3)]">
+        <span className="shrink-0 text-[10.5px] text-ink-tertiary">
           {familyCaption}
         </span>
       </div>

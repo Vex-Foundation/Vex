@@ -155,11 +155,11 @@ export const PAIR_AGE_FILTER_PARAMS: readonly ProtocolParamDef[] = [
       "Keep pools whose pairAgeSeconds is at or below this, computed from pairCreatedAt against asOfMs. "
       + "pairCreatedAt is absent on about 9% of rows and those rows are EXCLUDED and counted in "
       + "droppedByFilter.unknownAge. How fresh a pool you can reach at all depends on the entry "
-      + "point: arriving via dexscreener.profiles.recent, a 5-minute-old pool has been observed "
+      + "point: arriving via dexscreener__profiles_list with feed: recentUpdates, a 5-minute-old pool has been observed "
       + "(4 samples - a proven floor, not a typical value) - and the window's HORIZON is just as "
       + "bounded: one live 30-row window's oldest reachable row measured about 85 minutes, so a "
       + "feed sweep is a sample of a narrow live window, never a survey of 'the last N hours' - "
-      + "whereas dexscreener.search returns "
+      + "whereas dexscreener__pairs_search returns "
       + "established pools by its own relevance and will not surface them. DexScreener publishes "
       + "no new-pair stream and every response is edge-cached about 30s, so nothing here is "
       + "real-time. And there is no category field anywhere in this API: pair age, turnover, venue "
@@ -214,7 +214,7 @@ export const PAIR_QUALITY_FILTER_PARAMS: readonly ProtocolParamDef[] = [
     type: "boolean",
     description:
       "Keep only rows with an active paid boost. Nearly useless over pair rows — measured on 1 of "
-      + "489 — use dexscreener.boosts or dexscreener.ads for paid-visibility feeds.",
+      + "489 - use dexscreener__boosts_list or dexscreener__ads_list for paid-visibility feeds.",
   },
 ];
 
@@ -234,6 +234,6 @@ export const SEARCH_CHAIN_FILTER_PARAM: ProtocolParamDef = {
     + `echoed lowercase. ${STRING_OR_ARRAY_CLAUSE} `
     + "DexScreener applies no server-side equivalent, so this only subtracts "
     + "from the at most 30 rows it already chose: an EMPTY RESULT DOES NOT MEAN THERE IS NO POOL "
-    + "THERE. Read droppedByFilter to tell the two apart, then use dexscreener.tokenPairs to ask "
+    + "THERE. Read droppedByFilter to tell the two apart, then use dexscreener__token_pairs_list to ask "
     + "the question properly.",
 };

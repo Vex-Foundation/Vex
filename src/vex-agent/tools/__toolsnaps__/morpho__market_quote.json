@@ -1,0 +1,86 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read-only. PRICE one Morpho Blue market operation without performing it: supplying collateral, borrowing, repaying, withdrawing collateral, lending the loan asset into the market, or taking what was lent back out. It signs NOTHING, sends nothing, approves nothing and moves no funds, so there is never a reason to hesitate over calling it. Use it whenever the user asks what an operation WOULD do: how close to liquidation it leaves them, how much they can safely borrow, whether the market can fund it, what they would have to approve first. IT REFUSES WHERE THE EXECUTE WOULD REFUSE, because it runs the same gates: an unvouched market, a health factor below the floor, a market without the liquidity, or a repayment that cannot close its debt all fail here first, for free. REFUSED on any market whose oracle and IRM Vex cannot vouch for, by name, before anything is built. The gate is strict: only 9 of 100 Base markets sampled passed it. REFUSED below a health factor of 1.25, projected fresh and re-checked immediately before signing. That floor is a PRE-SIGNATURE BUFFER, not an on-chain guarantee: the signed call carries no floor, so an oracle move before inclusion can settle the position below 1.25 while still above Morpho's liquidation threshold of 1. A `null` health factor means NO DEBT, not a failed read. IT IS ALSO MANDATORY: each of the six executes is REFUSED without a fresh quote of ITS OWN direction for the same market, chain, amount and slippageBps. A quote of one direction NEVER authorizes another - a supplyCollateral quote cannot authorize a borrow - because supplying collateral is safe on its own while borrowing against it is the operation that can be liquidated. ONE LEG: the result carries one of `tokenIn` (wallet sends) or `tokenOut` (wallet receives), never both. The market's two tokens rarely share a decimal scale, so never compare a collateral raw amount with a loan one. RETURNS the vouching verdict and which oracle earned it, the health factor BEFORE and AFTER against the 1.25 floor, the position's current collateral and debt, the market's free liquidity, the allowance plan with any approval still needed, the fully decoded transaction, a gas bound and a simulation verdict. Every projection belongs to ONE wallet: the one named, else the session's selected wallet, else a stand-in with NO position, which the reply says out loud rather than implying the numbers are somebody's.",
+      "name": "morpho__market_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "borrowAmountRaw": {
+            "description": "Required when `direction` is `borrow`. RAW base units of the LOAN token, at that token's own decimals (`loanAsset.decimals` from `morpho__market_get`).",
+            "type": "string"
+          },
+          "chain": {
+            "description": "The chain the market lives on. Required: a market id is chain-scoped. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Which operation to price. `supplyCollateral` moves the collateral token onto the market (raises the health factor), `borrow` takes the loan token out against it (lowers it, and is the only one that creates liquidation risk), `repay` pays debt down (raises it), `withdrawCollateral` takes collateral back off (lowers it whenever debt remains). `supply` and `withdraw` are the LENDER'S side and move the LOAN token: `supply` lends into the market to earn its borrow rate and `withdraw` takes that back out. Neither moves any health factor, and neither is `supplyCollateral`/`withdrawCollateral`, which move the other token. The quote authorizes only the execute matching this direction.",
+            "enum": [
+              "supplyCollateral",
+              "withdrawCollateral",
+              "borrow",
+              "repay",
+              "supply",
+              "withdraw"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "The market's 0x-prefixed 64-hex id, from `morpho__markets_discover` or `morpho__positions_get`. A 40-hex value is a CONTRACT ADDRESS and is rejected by name. Chain-scoped.",
+            "type": "string"
+          },
+          "repayAmountRaw": {
+            "description": "Used when `direction` is `repay` and the repayment is PARTIAL. RAW base units of the LOAN token, at that token's own decimals: read `loanAsset.decimals` from `morpho__market_get`, not from TokenFind, because the market names its own loan asset. Omit it and send `repayFullDebt: true` to price closing the debt completely; sending both is refused.",
+            "type": "string"
+          },
+          "repayFullDebt": {
+            "description": "Set true with `direction: repay` to price closing the debt COMPLETELY. It reads the position's own borrow shares from the chain, which is the only denomination that reaches zero: an amount always leaves accruing dust behind. Only meaningful for a repayment.",
+            "type": "boolean"
+          },
+          "slippageBps": {
+            "description": "Price protection in basis points (1 bps = 0.01%). Default 100, capped at 1000, and a higher value is REJECTED rather than clamped. It bounds a full-debt repayment's per-share price of the TWO operations that move shares: a market supply and a repayment. On each, Vex derives a `maxSharePrice` ceiling from it that the CHAIN enforces, so a worse price cannot mine; on a full-debt (shares-mode) repayment it also caps the approval. The other four - supply_collateral, withdraw, withdraw_collateral and borrow - are direct calls naming their own exact token amount, carry NO on-chain price guard, and are unaffected by this value.",
+            "type": "number"
+          },
+          "supplyAmountRaw": {
+            "description": "Required when `direction` is `supply`. RAW base units of the LOAN token being LENT into the market, at that token's own decimals (`loanAsset.decimals` from `morpho__market_get`). This is the lender's side; `supplyCollateralAmountRaw` is a different operation on a different token and is refused by name.",
+            "type": "string"
+          },
+          "supplyCollateralAmountRaw": {
+            "description": "Required when `direction` is `supplyCollateral`. RAW base units of the COLLATERAL token, whose decimals are usually NOT the loan token's: read `collateralAsset.decimals` from `morpho__market_get`. Another direction's amount key is refused by name rather than dropped.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Whose position to price this against. A health factor has no meaning without one, so when this is omitted the quote uses the session's selected EVM wallet, and when there is none it uses a stand-in with NO position and says so. Read-only: it never selects a signer, and the executes refuse this parameter outright.",
+            "type": "string"
+          },
+          "withdrawAmountRaw": {
+            "description": "Required when `direction` is `withdraw`. RAW base units of the LOAN token being taken back out of the market, at that token's own decimals. Bounded by the wallet's own supplied position AND by the market's free liquidity, each refused by name rather than clamped.",
+            "type": "string"
+          },
+          "withdrawCollateralAmountRaw": {
+            "description": "Required when `direction` is `withdrawCollateral`. RAW base units of the COLLATERAL token, at that token's own decimals.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "marketId",
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "morpho",
+    "requiresEnv": null,
+    "toolId": "morpho.market.quote"
+  }
+}

@@ -150,7 +150,7 @@ export async function pendleYields(p: Record<string, unknown>): Promise<ReturnTy
     catalogComplete = catalog.complete;
     catalogTotal = catalog.total;
   } catch (err) {
-    return fail(`Pendle markets unavailable (${failureDetail("pendle.yields", err)})`);
+    return fail(`Pendle markets unavailable (${failureDetail("pendle__markets_discover", err)})`);
   }
 
   // Decimals come from the FROZEN per-chain asset catalogue, and only for the
@@ -219,6 +219,6 @@ export async function pendleYields(p: Record<string, unknown>): Promise<ReturnTy
     })),
     markets: page.map((row) => selectMarketFields(row, q.fields)),
     nextStep:
-      "Preview a trade with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote before any buy, sell or add. APY values are PERCENT (2.28 means 2.28%); an amount against any leg must use that leg's own `decimals`.",
+      "Preview a trade with pendle__pt_quote / pendle__yt_quote / pendle__lp_quote before any buy, sell or add. APY values are PERCENT (2.28 means 2.28%); an amount against any leg must use that leg's own `decimals`.",
   });
 }

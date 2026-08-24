@@ -92,7 +92,7 @@ export async function executePendleLpAddKeepYt(
     }
     const marketAddr = getAddress(market.address);
     if (!market.yt) {
-      return refuse("route_not_found", "This Pendle market reports no YT, so there is no yield token to keep — use pendle.lp.add.");
+      return refuse("route_not_found", "This Pendle market reports no YT, so there is no yield token to keep - use pendle__lp_add.");
     }
     const ytAddress = getAddress(market.yt);
     const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);

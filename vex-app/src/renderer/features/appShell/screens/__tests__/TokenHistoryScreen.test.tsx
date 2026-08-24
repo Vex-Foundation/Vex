@@ -37,18 +37,6 @@ import {
   USDC_BASE,
 } from "./_token-history-fixtures.js";
 
-vi.mock("../../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
-vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  XIcon: "XIcon",
-  EyeIcon: "EyeIcon",
-  ArrowUpRightIcon: "ArrowUpRightIcon",
-  ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
-  BridgeIcon: "BridgeIcon",
-  CoinsSwapIcon: "CoinsSwapIcon",
-}));
-
 vi.mock("@thesvg/react", () => ({
   Bitcoin: () => null,
   Bnb: () => null,
@@ -123,7 +111,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TokenHistoryScreen — chrome and disclosure", () => {
+describe("TokenHistoryScreen - chrome and disclosure", () => {
   it("mounts as the '<name> history' dialog with the identity cluster, the scope disclosure, and NO serif H1", () => {
     mockQuery([availablePage([swapEntry({ id: "a-1" })])]);
     mountScreen();
@@ -168,7 +156,7 @@ describe("TokenHistoryScreen — chrome and disclosure", () => {
     });
   });
 
-  it("PRESERVES the session scope on the 'assets' return — the register never re-mints global", () => {
+  it("PRESERVES the session scope on the 'assets' return - the register never re-mints global", () => {
     mockQuery([availablePage([])]);
     mountScreen({ kind: "assets", sessionId: SESSION });
     fireEvent.keyDown(window, { key: "Escape" });
@@ -180,7 +168,7 @@ describe("TokenHistoryScreen — chrome and disclosure", () => {
   });
 });
 
-describe("TokenHistoryScreen — states matrix", () => {
+describe("TokenHistoryScreen - states matrix", () => {
   it("status 'unavailable' renders the calm try-again note and NEVER the empty-history copy", () => {
     mockQuery([
       { ok: true, data: { status: "unavailable", reason: "query_timeout" } },
@@ -188,7 +176,7 @@ describe("TokenHistoryScreen — states matrix", () => {
     mountScreen();
 
     expect(
-      screen.getByText(/History is unavailable right now — try again shortly/),
+      screen.getByText(/History is unavailable right now - try again shortly/),
     ).not.toBeNull();
     expect(screen.queryByText(/No Vex-recorded history/)).toBeNull();
   });
@@ -227,7 +215,7 @@ describe("TokenHistoryScreen — states matrix", () => {
   });
 });
 
-describe("TokenHistoryScreen — pagination", () => {
+describe("TokenHistoryScreen - pagination", () => {
   it("shows Load more on hasNextPage, fires fetchNextPage, and renders appended pages' entries", () => {
     mockQuery(
       [

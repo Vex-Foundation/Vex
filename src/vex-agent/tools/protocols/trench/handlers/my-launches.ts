@@ -10,7 +10,7 @@
  * A DB-backed protocol read tool is established practice — the KyberSwap and
  * Relay execute handlers already call `tracked-tokens.ts` the same way. It lives
  * in the `trench` namespace rather than as an internal tool so a model exploring
- * "what can I do on Trench" through `discover_tools` finds it beside the other
+ * "what can I do on Trench" through `ToolSearch` finds it beside the other
  * launchpad capabilities.
  *
  * The wallet is SERVER-RESOLVED from the session's selection, never taken from
@@ -97,7 +97,7 @@ export async function trenchMyLaunchesHandler(
       "eip155",
     );
   } catch (err) {
-    return fail(`trench.my_launches: ${err instanceof Error ? err.message : String(err)}`);
+    return fail(`trench__my_launches_list: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // The local index read is guarded like every sibling read handler: an
@@ -114,7 +114,7 @@ export async function trenchMyLaunchesHandler(
     });
   } catch (err) {
     return fail(
-      `trench.my_launches: Vex's local launch index could not be read — ${trenchFailureDetail("trench.my_launches", err)}. `
+      `trench__my_launches_list: Vex's local launch index could not be read - ${trenchFailureDetail("trench__my_launches_list", err)}. `
         + "This is NOT an empty launch history; nothing about your launches was proven either way.",
     );
   }

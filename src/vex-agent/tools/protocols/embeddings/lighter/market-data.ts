@@ -447,7 +447,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Read OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start and end timestamps, a closed resolution set, and bounded countBack. ` +
       `Use when: the user asks for chart history, recent price movement, volatility, or candle data for a known Lighter market id. ` +
-      `Returns newest candle rows up to the agent output cap, plus provider row count and truncation disclosure. ` +
+      `Returns provider rows bounded by countBack and the newest projected rows, plus provider row count and truncation disclosure. ` +
       `Example queries: lighter 1h candles for market 0, rhc price history, chart btc lighter market, recent core candles.`,
     ),
     aliases: ["lighter candles", "lighter ohlcv", "price history", "market chart"],

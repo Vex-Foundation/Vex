@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-supplemental",
   "datasetVersion": "supplemental-v1",
   "status": "captured",
-  "capturedAt": "2026-08-03T14:51:04.823Z",
+  "capturedAt": "2026-08-22T14:12:30.939Z",
   "metrics": {
     "overall": {
       "count": 12,
       "recall1": 0.417,
-      "recall5": 0.667,
-      "coverage5": 0.833,
-      "mrr5": 0.5,
-      "groupMrr5": 0.549
+      "recall5": 0.917,
+      "coverage5": 0.917,
+      "mrr5": 0.565,
+      "groupMrr5": 0.586
     },
     "awareness": {
       "blind": {
@@ -26,20 +26,20 @@
       "protocolAware": {
         "count": 12,
         "recall1": 0.417,
-        "recall5": 0.667,
-        "coverage5": 0.833,
-        "mrr5": 0.5,
-        "groupMrr5": 0.549
+        "recall5": 0.917,
+        "coverage5": 0.917,
+        "mrr5": 0.565,
+        "groupMrr5": 0.586
       }
     },
     "intentShapes": {
       "single": {
         "count": 12,
         "recall1": 0.417,
-        "recall5": 0.667,
-        "coverage5": 0.833,
-        "mrr5": 0.5,
-        "groupMrr5": 0.549
+        "recall5": 0.917,
+        "coverage5": 0.917,
+        "mrr5": 0.565,
+        "groupMrr5": 0.586
       },
       "cross": {
         "count": 0,
@@ -77,27 +77,27 @@
       },
       "bridge": {
         "count": 3,
-        "recall1": 0.667,
-        "recall5": 0.667,
+        "recall1": 0.333,
+        "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0.667,
-        "groupMrr5": 0.778
+        "mrr5": 0.528,
+        "groupMrr5": 0.611
       },
       "evm_lp": {
         "count": 1,
         "recall1": 0,
-        "recall5": 0,
+        "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0,
-        "groupMrr5": 0.25
+        "mrr5": 0.2,
+        "groupMrr5": 0.2
       },
       "evm_swap": {
         "count": 2,
         "recall1": 0,
         "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0.25,
-        "groupMrr5": 0.25
+        "mrr5": 0.375,
+        "groupMrr5": 0.375
       },
       "limit_order": {
         "count": 0,
@@ -109,11 +109,11 @@
       },
       "market_research": {
         "count": 4,
-        "recall1": 0.5,
+        "recall1": 0.75,
         "recall5": 0.75,
         "coverage5": 0.75,
-        "mrr5": 0.625,
-        "groupMrr5": 0.625
+        "mrr5": 0.75,
+        "groupMrr5": 0.75
       },
       "prediction_discovery": {
         "count": 0,
@@ -134,10 +134,10 @@
       "rewards": {
         "count": 2,
         "recall1": 0.5,
-        "recall5": 0.5,
-        "coverage5": 0.5,
-        "mrr5": 0.5,
-        "groupMrr5": 0.5
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.625,
+        "groupMrr5": 0.625
       },
       "solana_lend": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-supplemental@supplemental-v1, mode lexical, 12 cases evaluated.",
-    "overall recall@1 0.417, recall@5 0.667, coverage@5 0.833, mrr@5 0.5, groupMrr@5 0.549.",
-    "First capture — no previous baseline to measure a delta against."
+    "overall recall@1 0.417, recall@5 0.917, coverage@5 0.917, mrr@5 0.565, groupMrr@5 0.586.",
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

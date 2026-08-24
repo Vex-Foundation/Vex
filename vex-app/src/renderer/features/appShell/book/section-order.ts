@@ -4,8 +4,8 @@
  * The order is persisted as an ID LIST, never component references, so a
  * renamed component cannot invalidate a saved layout and an id from an older or
  * newer build is simply dropped. It lives in the renderer's Zustand persist
- * whitelist (`stores/uiStore.ts`) because it is COSMETIC — the `prologueVersion`
- * doctrine: a display preference never crosses IPC into the privileged process,
+ * whitelist (`stores/uiStore.ts`) because it is COSMETIC — a display
+ * preference never crosses IPC into the privileged process,
  * whose storage is for secrets, wallet state and setup truth.
  *
  * Resolution is deliberately TOLERANT: the payload is user-writable
@@ -13,12 +13,17 @@
  * default rather than to a blank rail.
  */
 
+/**
+ * `runtime` ("Runtime & Cost") retired in round 3 (owner QA item 1): context
+ * occupancy and the access mode moved into the composer, and transcript turn
+ * stats remain the cost surface. A stored order that still lists it degrades
+ * cleanly - `resolveBookSectionOrder` drops unrecognised ids by design.
+ */
 export type BookSectionId =
   | "position"
   | "wallets"
   | "balances"
   | "activity"
-  | "runtime"
   | "session"
   | "trench";
 
@@ -28,7 +33,6 @@ export const DEFAULT_BOOK_SECTIONS: readonly BookSectionId[] = [
   "wallets",
   "balances",
   "activity",
-  "runtime",
   "session",
   "trench",
 ];
@@ -39,7 +43,6 @@ export const BOOK_SECTION_LABEL: Readonly<Record<BookSectionId, string>> = {
   wallets: "Wallets",
   balances: "Balances",
   activity: "Activity",
-  runtime: "Runtime & Cost",
   session: "Session",
   trench: "Trench Express",
 };

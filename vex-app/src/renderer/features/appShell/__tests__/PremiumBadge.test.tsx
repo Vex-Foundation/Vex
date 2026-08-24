@@ -7,17 +7,10 @@
  * `ready` (and only when opted in), and that the click handler + aria-expanded
  * work — for both the full (dialog-header) geometry and the `compact` header
  * pill the cluster renders.
- *
- * VexIcon is mocked to render nothing (the icon lib is ESM + heavy);
- * the badge's behavior is independent of the glyph.
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-
-vi.mock("../../../components/icons/VexIcon.js", () => ({
-  VexIcon: () => null,
-}));
 
 const { PremiumBadge } = await import("../PremiumBadge.js");
 

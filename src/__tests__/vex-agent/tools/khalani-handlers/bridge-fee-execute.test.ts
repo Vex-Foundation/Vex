@@ -138,10 +138,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   abortPlannedEvents: (...a: unknown[]) => mockAbortPlannedEvents(...a),
 }));
 
-vi.mock("@vex-agent/tools/registry/relay-reveal.js", () => ({
-  revealRelayRoute: vi.fn(),
-  resolveRelayRevealRoute: () => null,
-}));
 
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };

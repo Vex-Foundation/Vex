@@ -71,7 +71,7 @@ test("boots through the setup gate to SystemCheck with the bridged window.vex su
   await expect(
     firstWindow
       .locator(
-        '[data-vex-screen="setup-gate"], [data-vex-screen="systemCheck"]'
+        '[data-vex-screen="chronos-gate"], [data-vex-screen="systemCheck"]'
       )
       .first()
   ).toBeVisible();

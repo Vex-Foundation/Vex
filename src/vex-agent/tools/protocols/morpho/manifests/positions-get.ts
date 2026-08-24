@@ -17,13 +17,14 @@ import { MORPHO_MAX_PAGE_LIMIT, MORPHO_POSITION_SCOPES } from "@tools/morpho/req
  */
 export const MORPHO_POSITIONS_GET_TOOL: ProtocolToolManifest = {
   toolId: "morpho.positions.get",
+  publicName: "morpho__positions_get",
   namespace: "morpho",
   lifecycle: "active",
   description:
     "Read ONE wallet's Morpho footprint: its lending-market positions (collateral, assets lent, debt owed, health "
     + "factor) and its curated-vault deposits, across the EVM chains Vex reads Morpho on. Use this when the user "
-    + "asks what they ALREADY hold, what they owe, or how safe their loan is; use morpho.markets.discover or "
-    + "morpho.vaults.discover to find somewhere to go, and morpho.markets.activity for what happened in a market. "
+    + "asks what they ALREADY hold, what they owe, or how safe their loan is; use morpho__markets_discover or "
+    + "morpho__vaults_discover to find somewhere to go, and morpho__markets_activity_list for what happened in a market. "
     + "ONE WALLET PER CALL: Morpho accepts a list of addresses and this tool refuses to send one, because a "
     + "position read maps an account to its debts. A second address is rejected by name. "
     + "HEALTH FACTOR IS A RATIO, NOT A PERCENT, returned as a decimal string. Below 1 the position is liquidatable "
@@ -52,7 +53,13 @@ export const MORPHO_POSITIONS_GET_TOOL: ProtocolToolManifest = {
     + "human, usd}, PnL, roe and the vault APY. Every SHARE count arrives as {raw, decimals, human, scale} with "
     + "scale UNKNOWN and a null decimals, because Morpho serves no scale for a share unit: shares are an accounting "
     + "unit and must never be reported as money. Plus USD portfolio totals and a riskFlags "
-    + "count of positions liquidatable now. A vault APY is NET of the curator's fee and EXCLUDES nothing else, "
+    + "count of positions liquidatable now. "
+    + "CONTINUATION IS PER SECTION, never one signal for the whole reply: `marketPositions` carries returned, "
+    + "offset, limit, `hasMore` and `nextOffset` - a number when hasMore is true and null when it is false, to be "
+    + "sent back as `offset` rather than computed - while `vaultPositions` carries its own `hasMore` over the V1 "
+    + "half ONLY and no nextOffset, because the V2 half is a bounded sweep whose completeness is reported by "
+    + "`vaultV2Coverage` instead. `filtersApplied` echoes the filters that actually ran. "
+    + "A vault APY is NET of the curator's fee and EXCLUDES nothing else, "
     + "while a market supply APY is GROSS and INCLUDES no fee deduction: never rank the two against each other. "
     + "V2 VAULT COVERAGE IS COMPOSED AND ITS LIMITS ARE REPORTED. Morpho serves no per-user list of V2 vault "
     + "positions, so this tool finds candidates from the wallet's own V2 transaction history and reads each; when "

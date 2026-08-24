@@ -1,5 +1,5 @@
 /**
- * `long_memory_search` graph expansion (step 7 / S8 / D-EXPAND, split out in
+ * `MemorySearch` graph expansion (step 7 / S8 / D-EXPAND, split out in
  * 0R.15, refactor-only): ONE hop over `memory_entities`/`memory_edges` from
  * the top blended seeds, bounded, score-decayed BELOW every seed, and marked
  * `via:'graph'`. Fills ONLY the inline slots the direct results left free.
@@ -71,7 +71,7 @@ const EXPANSION_ENTRY_FETCH_LIMIT = 4 * LONG_MEMORY_INLINE_CAP;
  * NEIGHBOR's credibility multiplies in). Seeds with score ≤ 0 are skipped
  * (Codex R1 — the strict inequality is meaningless for them). Results carry
  * `via:'graph'` + `viaEntity` and an EMPTY contentMd (bounded pointers — the
- * agent fetches full content via long_memory_get).
+ * agent fetches full content via MemoryGet).
  */
 export async function expandViaGraph(
   seedResults: readonly LongMemoryResult[],
@@ -170,7 +170,7 @@ export async function expandViaGraph(
       title: entry.title,
       summary: entry.summary,
       // Bounded pointer — expansion never inlines full content; the agent
-      // fetches it via long_memory_get when the lead matters.
+      // fetches it via MemoryGet when the lead matters.
       contentMd: "",
       similarity: 0,
       score: graphScore(via.seedScore, {

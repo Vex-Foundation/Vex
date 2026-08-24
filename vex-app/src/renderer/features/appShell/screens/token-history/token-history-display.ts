@@ -46,8 +46,8 @@ import { amountDisplay } from "../../../../lib/token-leg-display.js";
  * finding 10 / contract C27).
  */
 export function quantityText(field: AmountField): string {
-  if (field.unitProvenance !== "human") return "—";
-  return amountDisplay(field.value, true) ?? "—";
+  if (field.unitProvenance !== "human") return "-";
+  return amountDisplay(field.value, true) ?? "-";
 }
 
 /**
@@ -59,9 +59,9 @@ export function quantityText(field: AmountField): string {
  * `value: null`/unparseable → em dash (never $0.00).
  */
 export function usdText(field: UsdField): string {
-  if (field.value === null) return "—";
+  if (field.value === null) return "-";
   const parsed = Number.parseFloat(field.value);
-  if (!Number.isFinite(parsed)) return "—";
+  if (!Number.isFinite(parsed)) return "-";
   const formatted = formatUsd(parsed);
   return field.usdProvenance === "estimated" ? `~${formatted} est.` : formatted;
 }

@@ -1,6 +1,6 @@
 /**
  * Pure functions for extracting token IDs from transaction receipt logs.
- * ERC-721 mint detection (shared with the generic `chain_read` tool's
+ * ERC-721 mint detection (shared with the generic `ChainRead` tool's
  * `erc721_mint` action — see `tools/internal/chain-read.ts`).
  */
 

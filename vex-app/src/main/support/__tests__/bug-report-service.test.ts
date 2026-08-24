@@ -55,7 +55,7 @@ const validInput = {
   severity: "error" as const,
   title: "private_key: 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
   description:
-    "happened while sending 0x742d35Cc6634C0532925a3b844Bc454e4438f44e — token sk-ant-api03-zzzzzzzzzzzzzzzzzzzzzzz",
+    "happened while sending 0x742d35Cc6634C0532925a3b844Bc454e4438f44e - token sk-ant-api03-zzzzzzzzzzzzzzzzzzzzzzz",
   context: {
     apiKey: "sk-or-v1-zzzzzzzzzzzzzzzzzzzz",
     breadcrumb: "ok",

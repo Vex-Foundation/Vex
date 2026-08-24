@@ -30,12 +30,16 @@
  *
  * TWO FIELDS WE HAVE BEEN PAYING FOR AND THROWING AWAY
  *
- * Both profile feeds send `updatedAt` and `cto` on 30/30 rows (re-verified live
- * 2026-07-27), and `validation/profiles.ts` discarded both on
- * `/token-profiles/latest/v1`. `updatedAt` is the ONLY field in either feed from
- * which freshness can be computed at all, and `cto` says whether the project went
- * through a community takeover — which we deleted while maintaining a separate
- * `communityTakeovers` tool to answer the same question.
+ * Both profile feeds sent `updatedAt` and `cto` on 30/30 rows when this card
+ * landed (live 2026-07-27), and `validation/profiles.ts` discarded both on
+ * `/token-profiles/latest/v1`. PROVIDER DRIFT, re-measured live 2026-08-21:
+ * `/token-profiles/latest/v1` no longer sends `updatedAt` at all (0/30 rows;
+ * `cto` still 30/30), while `/token-profiles/recent-updates/v1` still sends
+ * both on 30/30. The `string | null` contract below absorbs the drift; the
+ * recent-updates feed is now the only source of profile freshness. `cto` says
+ * whether the project went through a community takeover — which we deleted
+ * while maintaining a separate `communityTakeovers` tool to answer the same
+ * question.
  *
  * `openGraph` also arrives on 30/30 rows of three feeds and is emitted NOWHERE,
  * by decision rather than oversight: its value is
@@ -44,7 +48,7 @@
  * zero information, costs ~120 B/row (~3.6 KB per call), and the model cannot see
  * an image regardless. `icon` and `header` are NOT derivable, so they survive as
  * opt-in `fields` — dropping them from the default row is what brings four of
- * these feeds from 20-23 KB under the 16 KiB cap.
+ * these feeds down from 20-23 KB.
  */
 
 import type {
@@ -87,7 +91,11 @@ export type FeedSourceRow = FeedRowIdentity &
   (
     | {
         readonly kind: "profile";
-        /** ISO 8601, as the provider sends it. 30/30 rows on BOTH profile feeds. */
+        /**
+         * ISO 8601, as the provider sends it. Provider drift measured live
+         * 2026-08-21: 30/30 rows on recent-updates, 0/30 on latest (the field
+         * vanished there) - hence nullable, never assumed.
+         */
         readonly updatedAt: string | null;
         readonly communityTakeover: boolean | null;
       }

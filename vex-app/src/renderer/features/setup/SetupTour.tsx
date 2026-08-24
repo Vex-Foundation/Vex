@@ -4,9 +4,9 @@
  * screen." Set `VITE_VEX_SETUP_TOUR=1` (e.g. `VITE_VEX_SETUP_TOUR=1 pnpm
  * vex:dev`, or a line in `vex-app/.env.local` — gitignored) and a small
  * mono navigator docks bottom-left with one key per pre-shell view, plus
- * "Replay prologue" (re-arms the boot gate and forces the FULL cinematic
- * cold open, ignoring — and never writing — the play policy's version key)
- * and "Reload boot" (replays the whole Chronos Gate cold open naturally).
+ * "Replay gate" (re-arms the boot gate so the Chronos Gate acts replay
+ * from the first frame) and "Reload boot" (replays the whole cold open
+ * naturally).
  *
  * Scope guarantees:
  *  - Renderer view-routing ONLY. No IPC, no main-process behavior, no
@@ -48,9 +48,9 @@ export function SetupTour(): JSX.Element | null {
   return (
     <div
       data-vex-setup-tour
-      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[rgba(8,11,24,0.85)] p-2 vex-micro text-[var(--color-text-secondary)]"
+      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-surface-2 p-2 vex-micro text-ink-secondary"
     >
-      <span className="px-1 text-[9px] text-[var(--color-text-muted)]">
+      <span className="px-1 text-[9px] text-ink-tertiary">
         Setup tour
       </span>
       {TOUR_VIEWS.map((view) => (
@@ -65,30 +65,28 @@ export function SetupTour(): JSX.Element | null {
           }}
           className={
             view === currentView
-              ? "rounded bg-white/[0.14] px-2 py-1 text-left text-[var(--color-text-primary)]"
-              : "rounded px-2 py-1 text-left hover:bg-white/[0.08]"
+              ? "rounded bg-interactive-active px-2 py-1 text-left text-ink-primary"
+              : "rounded px-2 py-1 text-left hover:bg-interactive-hover"
           }
         >
           {view}
         </button>
       ))}
-      {/* Cinematic prologue, on demand. The play policy condenses the cold
-          open after its first run, so previewing the FULL 3.5s sequence
-          needs a door that ignores the policy: `replayPrologue` re-arms the
-          gate and forces the full variant WITHOUT persisting the version
-          key, so it stays repeatable click after click. */}
+      {/* Gate choreography, on demand: `replayPrologue` re-arms the boot
+          gate and bumps its remount nonce, so the four acts replay from
+          the first frame click after click. */}
       <button
         type="button"
         data-vex-tour-prologue
         onClick={replayPrologue}
-        className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
+        className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-interactive-hover"
       >
-        Replay prologue
+        Replay gate
       </button>
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
+        className="rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-interactive-hover"
       >
         Reload boot
       </button>

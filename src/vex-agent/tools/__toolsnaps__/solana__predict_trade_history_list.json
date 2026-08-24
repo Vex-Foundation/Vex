@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read a wallet's PAST Jupiter prediction activity - the settled record of buys, sells, claims and realized PnL, one row per history event. Use this when the question is what a wallet already did or what it actually made; solana__predict_positions_list answers what it still holds. Returns `data`, one row per event, carrying the event's own fields plus curated eventMetadata and marketMetadata: every *Usd money field (realizedPnl, realizedPnlBeforeFees, feeUsd, payoutAmountUsd and the rest) is an exact-decimal USD string with a raw *Micro sibling, while transferAmountTokenRaw is a DIFFERENT unit family - the transferred token's own native units, never a USD amount - so never convert or compare it against the *Usd fields. Page with offset/limit (integer 1-100, default 20), rejected by name when out of range; continuation is the provider's own `pagination` block passed through verbatim - start, end, total and `hasNext`, where hasNext false is the end and offset = pagination.end fetches the next page.",
+      "name": "solana__predict_trade_history_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Filter to a single history event ID.",
+            "type": "number"
+          },
+          "limit": {
+            "description": "Max results, 1-100 (default 20).",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Skip first N results for pagination.",
+            "type": "number"
+          },
+          "positionPubkey": {
+            "description": "Filter to one position's history.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.predict.history"
+  }
+}

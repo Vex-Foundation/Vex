@@ -259,7 +259,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("getTokenHistory — empty inventory", () => {
+describe("getTokenHistory - empty inventory", () => {
   it("returns the empty available page and issues NO SQL when no wallets are configured", async () => {
     mocks.listWallets.mockReturnValue([]);
     const result = await getTokenHistory({
@@ -279,7 +279,7 @@ describe("getTokenHistory — empty inventory", () => {
   });
 });
 
-describe("getTokenHistory — address normalization", () => {
+describe("getTokenHistory - address normalization", () => {
   it("lower-cases the EVM tokenAddress before binding it into the page query", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({
@@ -317,7 +317,7 @@ describe("getTokenHistory — address normalization", () => {
   });
 });
 
-describe("getTokenHistory — pagination", () => {
+describe("getTokenHistory - pagination", () => {
   it("detects hasMore via limit+1 and mints nextCursor from the last KEPT row", async () => {
     const rows = Array.from({ length: 51 }, (_, i) =>
       activityRow({ source_id: String(i).padStart(20, "0"), cursor_ts: `2026-05-21T10:00:0${i % 10}.000000Z` }),
@@ -400,7 +400,7 @@ describe("getTokenHistory — pagination", () => {
   });
 });
 
-describe("getTokenHistory — page-phase failure classification", () => {
+describe("getTokenHistory - page-phase failure classification", () => {
   it("SQLSTATE 57014 on the page phase returns the unavailable degraded-success shape", async () => {
     scriptTransaction({ page: new FakeDbError("57014") });
     const result = await getTokenHistory({

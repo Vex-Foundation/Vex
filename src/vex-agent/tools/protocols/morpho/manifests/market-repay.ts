@@ -36,6 +36,7 @@ import {
  */
 export const MORPHO_MARKET_REPAY_TOOL: ProtocolToolManifest = {
   toolId: "morpho.market.repay",
+  publicName: "morpho__market_repay",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -81,7 +82,7 @@ export const MORPHO_MARKET_REPAY_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         "How much debt to repay, in the LOAN token's RAW base units as a whole-number string. Read "
-        + "`loanAsset.decimals` from `morpho.market.get` for the scale. Required UNLESS `repayFullDebt` is true, and "
+        + "`loanAsset.decimals` from `morpho__market_get` for the scale. Required UNLESS `repayFullDebt` is true, and "
         + "supplying BOTH is refused because they disagree about how much debt to clear. A human decimal amount is "
         + "refused, not rounded. An amount at or above the current debt is refused by name: use `repayFullDebt` "
         + "instead, because an assets repayment cannot reach zero.",

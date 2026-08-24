@@ -33,6 +33,6 @@ export async function trenchSearchHandler(
     const projected = applyOwnLaunchFlag(rows.map(projectToken), resolveOwnLaunchCreator(context));
     return ok({ query, count: projected.length, tokens: projected });
   } catch (err) {
-    return fail(`Trench search unavailable (${trenchFailureDetail("trench.search", err)})`);
+    return fail(`Trench search unavailable (${trenchFailureDetail("trench__tokens_search", err)})`);
   }
 }

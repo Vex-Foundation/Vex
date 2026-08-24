@@ -20,10 +20,10 @@ export function LoadingBody(): JSX.Element {
         label="Probing the Docker endpoint"
       />
       <div className="flex flex-col items-center gap-1">
-        <p className="text-sm font-medium text-[var(--color-text-primary)]">
+        <p className="text-sm font-medium text-ink-primary">
           Detecting Docker…
         </p>
-        <p className="text-xs text-[var(--color-text-muted)]">
+        <p className="text-xs text-ink-tertiary">
           Probing the Docker endpoint and platform. This should take a few
           seconds.
         </p>

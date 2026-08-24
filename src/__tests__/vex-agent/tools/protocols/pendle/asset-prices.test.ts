@@ -81,7 +81,7 @@ describe("pendle.prices.assets", () => {
     const data = output(await pendleAssetPrices({ chain: "ethereum", ids: PT }, NOW));
     expect(String(data.note)).toMatch(/15-60 ?s|15-60 seconds/i);
     expect(String(data.note).toLowerCase()).toContain("not an executable quote");
-    expect(String(data.nextStep)).toContain("pendle.market.get");
+    expect(String(data.nextStep)).toContain("pendle__market_get");
   });
 
   it("reports paging honestly when the caller lists no ids", async () => {

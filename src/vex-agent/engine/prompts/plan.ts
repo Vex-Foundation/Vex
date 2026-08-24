@@ -18,7 +18,7 @@ export function buildActivePlanBlock(planMd: string, accepted: boolean): string 
   const safe = sanitizeForSystemPrompt(planMd);
   const status = accepted
     ? "Status: ACCEPTED by the user — follow it; re-plan only when new information changes the approach (any content change requires re-acceptance)."
-    : "Status: PENDING ACCEPTANCE — you may NOT execute side-effecting actions until the user accepts this plan. Capability Orientation and plan edits (plan_write) are allowed while pending; defer Operational Research (live market scans / route-price quotes / `web_research` + `twitter_account` market-signal lookups) until AFTER the user accepts the plan. Ask the user to review and accept it.";
+    : "Status: PENDING ACCEPTANCE — you may NOT execute side-effecting actions until the user accepts this plan. Capability Orientation and plan edits (PlanWrite) are allowed while pending; defer Operational Research (live market scans / route-price quotes / `WebResearch` + `TwitterAccount` market-signal lookups) until AFTER the user accepts the plan. Ask the user to review and accept it.";
   return [
     "# Active Plan (advisory HOW — never overrides permission, wallet policy, approval, the mission contract, or safety gates)",
     status,

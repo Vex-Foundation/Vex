@@ -30,6 +30,7 @@ import {
  */
 export const MORPHO_VAULT_WITHDRAW_TOOL: ProtocolToolManifest = {
   toolId: "morpho.vault.withdraw",
+  publicName: "morpho__vault_withdraw",
   namespace: "morpho",
   lifecycle: "active",
   description:
@@ -72,7 +73,7 @@ export const MORPHO_VAULT_WITHDRAW_TOOL: ProtocolToolManifest = {
       required: true,
       description:
         "How much of the vault's ASSET to take out, in that asset's RAW base units as a whole-number string. THE "
-        + "SCALE IS THE VAULT ASSET'S OWN: read `asset.decimals` from `morpho.vault.get` for this vault, not the "
+        + "SCALE IS THE VAULT ASSET'S OWN: read `asset.decimals` from `morpho__vault_get` for this vault, not the "
         + "SHARE decimals and not the share count you want to burn, which is a different quantity in a different "
         + "unit. A human amount is refused, not rounded. It must equal the amount the quote priced.",
     },

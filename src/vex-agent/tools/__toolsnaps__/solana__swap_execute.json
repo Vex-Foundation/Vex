@@ -1,0 +1,74 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute a token swap via Jupiter's Router (/build) - routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana__swap_quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending - it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.",
+      "name": "solana__swap_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Amount to swap. In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit. Converted to base units exactly, with no floating-point step: a value carrying more precision than the input side holds is REJECTED, never silently rounded.",
+            "type": "string"
+          },
+          "computeUnitPricePercentile": {
+            "description": "Priority-fee strategy: medium (25th percentile), high (default, 50th), or veryHigh (75th). This is the LEVER for priority-fee cost — Jupiter picks the actual price per compute unit at the percentile you name, and Vex refuses to sign a build whose resulting priority fee exceeds 10,000,000 lamports (0.01 SOL). If a swap is refused for that reason, lower this and re-quote. Priority prices are congestion-driven and swing by an order of magnitude within minutes, so a fresh quote at the SAME setting often fits too — the refusal is not a property of the pair.",
+            "type": "string"
+          },
+          "dexes": {
+            "description": "Comma-separated DEX allow-list. Mutually exclusive with excludeDexes.",
+            "type": "string"
+          },
+          "excludeDexes": {
+            "description": "Comma-separated DEX deny-list. Mutually exclusive with dexes.",
+            "type": "string"
+          },
+          "forJitoBundle": {
+            "description": "Exclude DEXes incompatible with Jito bundles (default false).",
+            "type": "boolean"
+          },
+          "maxAccounts": {
+            "description": "Max account count in the route (1-64, default 64) — trims transaction size at the cost of route choice.",
+            "type": "number"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It sets otherAmountThreshold, the minimum output the swap enforces once it executes, and is the ONLY price protection on the trade — the execute does NOT re-check the price against the quote. Pass the identical value to quote and execute (a mismatch blocks the execute). On a thin or volatile pair (new mints, memecoins, small pools) 100 bps often fails. Which failure you get depends on tipLamports. On the DEFAULT tipped lane (tipLamports omitted = 1,000,000) Jupiter forwards the transaction without simulating it, so a slippage failure ALWAYS lands on-chain FAILED: the network fee is spent, nothing is swapped, and the reason appears on the activity row rather than in this call's result — this call returns \"broadcast, confirmation pending\". Only tipLamports: 0 takes the RPC lane, which simulates first and can refuse for free with status \"rejected_before_broadcast\". Either way the remedy is the same: re-quote with a higher slippageBps and execute with the identical value. Read a slippage failure as \"this pair needs more tolerance\", not as \"this pair is untradeable\". Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps — no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
+            "type": "number"
+          },
+          "tipLamports": {
+            "description": "SOL tip in lamports for /tx/v1/submit landing (default 1,000,000 = 0.001 SOL; max 10,000,000 = 0.01 SOL).",
+            "type": "number"
+          },
+          "tokenIn": {
+            "description": "Input token symbol or mint — the side you sell.",
+            "type": "string"
+          },
+          "tokenOut": {
+            "description": "Output token symbol or mint — the side you buy.",
+            "type": "string"
+          },
+          "wrapAndUnwrapSol": {
+            "description": "Auto wrap/unwrap native SOL (default true).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tokenIn",
+          "tokenOut",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "solana",
+    "requiresEnv": "JUPITER_API_KEY",
+    "toolId": "solana.swap.execute"
+  }
+}

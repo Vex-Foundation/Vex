@@ -46,7 +46,7 @@ export interface NumericCoercedParams {
 /**
  * The number a string losslessly spells, or `null` to leave the value alone.
  *
- * Exported because `discover_tools` needs the identical admit/refuse rule: it
+ * Exported because `ToolSearch` needs the identical admit/refuse rule: it
  * is a meta-tool with no manifest, so it cannot go through
  * `coerceNumericStringParams`, and a second hand-rolled "is this a number"
  * would be the same decision made twice and drifting apart.

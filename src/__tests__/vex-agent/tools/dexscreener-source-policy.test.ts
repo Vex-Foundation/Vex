@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildResearchPrompt } from "../../../vex-agent/engine/prompts/research.js";
+import { buildProtocolsPrompt } from "../../../vex-agent/engine/prompts/protocols.js";
 import { DEXSCREENER_CORE_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/dexscreener/core.js";
 import { DEXSCREENER_ORDERS_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/dexscreener/orders.js";
 import { DEXSCREENER_TRENDING_DISCOVERY } from "../../../vex-agent/tools/protocols/embeddings/dexscreener/trending.js";
@@ -14,20 +14,31 @@ function discoveryText(
 }
 
 describe("DexScreener agent source policy", () => {
-  it("defines the provider's authority and all identity-aware routing steps", () => {
-    const prompt = buildResearchPrompt().toLowerCase();
+  it("defines the provider's authority and the identity-first research boundary", () => {
+    // Wave 2: the Token Research Map left the research layer. DexScreener's
+    // authority and limits now render in its `### dexscreener` declaration and
+    // the research task shape of the protocols layer (inventory rows
+    // T851-T862).
+    const prompt = buildProtocolsPrompt();
+    const section = (prompt.split("### dexscreener\n")[1]?.split("\n### ")[0] ?? "").toLowerCase();
 
-    expect(prompt).toContain("source of truth for amm pairs dexscreener indexes");
-    expect(prompt).toContain("not contract-safety evidence");
-    expect(prompt).toContain("not that no market exists");
-    expect(prompt).toContain("exact token address + chain -> `dexscreener.tokenpairs`");
-    expect(prompt).toContain("name/symbol -> `dexscreener.search`");
-    expect(prompt).toContain("exact pool address + chain -> `dexscreener.pairs`");
-    expect(prompt).toContain("multiple token addresses on one chain -> `dexscreener.tokens`");
-    expect(prompt).toContain("never identify a token from ticker text alone");
-    expect(prompt).toContain("`dexscreener.trending`, then `dexscreener.meta`");
-    expect(prompt).toContain("request a fresh executable quote from the venue");
-    expect(prompt).toContain("must never be reused as the execution price");
+    expect(section).toContain("read-only market research for indexed automated-market-maker pairs");
+    expect(section).toContain("does not establish contract safety");
+    expect(section).toContain("a missing row does not prove that no market exists");
+    expect(section).toContain("resolve a name or symbol to an exact chain and contract address");
+    expect(section).toContain("canonical identity from a ticker");
+    expect(section).toContain("not a fresh executable quote");
+    expect(section).toContain("executable price");
+    // The declaration teaches no tool name at all: a DexScreener tool becomes
+    // callable only through `ToolSearch`, so neither a dotted toolId (the
+    // internal/audit identity the catalog rejects as a call) nor a publicName
+    // can be taught here by accident.
+    expect(section).not.toMatch(/dexscreener\.[a-z]/);
+    expect(section).not.toContain("dexscreener__");
+
+    const research = (prompt.split("### Research\n")[1]?.split("\n### ")[0] ?? "").toLowerCase();
+    expect(research).toContain("dexscreener indexing lags by minutes to hours for brand-new tokens");
+    expect(research).toContain("use dexscreener afterwards for depth and price sanity");
   });
 
   it("renders the same boundaries in namespace navigation", () => {
@@ -53,11 +64,11 @@ describe("DexScreener agent source policy", () => {
 
   it("does not retrieve profiles as token creation or CTO as proof of control", () => {
     const profiles = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles"]);
-    const recent = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.profiles.recent"]);
     const cto = discoveryText(DEXSCREENER_TRENDING_DISCOVERY["dexscreener.communityTakeovers"]);
 
     expect(profiles).toContain("not a token-creation, launch, or newly listed pair feed");
-    expect(recent).toContain("does not show when a token or pair was created");
+    // The merged passage carries the retired recent-feed's honesty too.
+    expect(profiles).toContain("does not show when a token or pair was created");
     expect(cto).toContain("provider classification");
     expect(cto).toContain("not proof that ownership, admin keys, or contract control changed");
     expect(cto).not.toContain("community has reclaimed control");

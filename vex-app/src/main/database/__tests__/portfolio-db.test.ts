@@ -131,7 +131,7 @@ function scriptPortfolioQueries(opts: {
     .mockResolvedValueOnce({ rows: snapshotRows });
 }
 
-describe("portfolio-db getPortfolio — global scope", () => {
+describe("portfolio-db getPortfolio - global scope", () => {
   it("returns the empty DTO and issues NO SQL when the inventory is empty", async () => {
     mocks.listWallets.mockReturnValue([]);
     const result = await getPortfolio({ scope: "global" });
@@ -221,7 +221,7 @@ describe("portfolio-db getPortfolio — global scope", () => {
   });
 });
 
-describe("portfolio-db getPortfolio — global scope narrowed to one wallet (WP-L2)", () => {
+describe("portfolio-db getPortfolio - global scope narrowed to one wallet (WP-L2)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm"
@@ -272,7 +272,7 @@ describe("portfolio-db getPortfolio — global scope narrowed to one wallet (WP-
   });
 });
 
-describe("portfolio-db getPortfolio — session scope", () => {
+describe("portfolio-db getPortfolio - session scope", () => {
   it("returns the empty DTO and issues NO SQL when the session scope is empty", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(null, null));
     const result = await getPortfolio({ scope: "session", sessionId: SESSION });
@@ -339,7 +339,7 @@ describe("portfolio-db getPortfolio — session scope", () => {
   });
 });
 
-describe("portfolio-db getPortfolio — coercion + fallback", () => {
+describe("portfolio-db getPortfolio - coercion + fallback", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
@@ -442,7 +442,7 @@ describe("portfolio-db getPortfolio — coercion + fallback", () => {
   });
 });
 
-describe("portfolio-db getPortfolio — PnL + token cap (codex review)", () => {
+describe("portfolio-db getPortfolio - PnL + token cap (codex review)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
@@ -497,7 +497,7 @@ describe("portfolio-db getPortfolio — PnL + token cap (codex review)", () => {
   });
 });
 
-describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)", () => {
+describe("portfolio-db getPortfolio - per-chain breakdown (codex plan review)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
@@ -668,7 +668,7 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
     expect(result.data.chains).toHaveLength(64);
   });
 
-  it("keeps equal-total chains contiguous (chain_id tie-breaker) — no duplicate entries", async () => {
+  it("keeps equal-total chains contiguous (chain_id tie-breaker) - no duplicate entries", async () => {
     scriptPortfolioQueries({ live: "20", tokens: [], snapshot: null });
     await getPortfolio({ scope: "global" });
     // The ORDER BY must carry the deterministic chain_id tie-breaker: with
@@ -722,7 +722,7 @@ describe("portfolio-db getPortfolio — per-chain breakdown (codex plan review)"
   });
 });
 
-describe("portfolio-db getPortfolio — address-correct aggregation (position branding)", () => {
+describe("portfolio-db getPortfolio - address-correct aggregation (position branding)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
@@ -732,7 +732,7 @@ describe("portfolio-db getPortfolio — address-correct aggregation (position br
   const LEGIT_WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   const SPOOF_WETH = "0x000000000000000000000000000000000000ff";
 
-  it("groups the flat token list by (chain_id, normalized token_address) — semantic identity, never symbol", async () => {
+  it("groups the flat token list by (chain_id, normalized token_address) - semantic identity, never symbol", async () => {
     scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
     await getPortfolio({ scope: "global" });
     const tokenSql = String(mocks.query.mock.calls[1]?.[0] ?? "");
@@ -740,7 +740,7 @@ describe("portfolio-db getPortfolio — address-correct aggregation (position br
     expect(tokenSql).toContain("GROUP BY chain_id, CASE WHEN token_address ~* '^0x' THEN lower(token_address) ELSE token_address END");
   });
 
-  it("groups the per-chain breakdown by (chain_id, normalized token_address) — semantic identity, never symbol", async () => {
+  it("groups the per-chain breakdown by (chain_id, normalized token_address) - semantic identity, never symbol", async () => {
     scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
     await getPortfolio({ scope: "global" });
     const breakdownSql = String(mocks.query.mock.calls[2]?.[0] ?? "");
@@ -875,7 +875,7 @@ describe("portfolio-db getPortfolio — address-correct aggregation (position br
   });
 });
 
-describe("portfolio-db getPortfolio — token NAME sanitization (main-side gate)", () => {
+describe("portfolio-db getPortfolio - token NAME sanitization (main-side gate)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],

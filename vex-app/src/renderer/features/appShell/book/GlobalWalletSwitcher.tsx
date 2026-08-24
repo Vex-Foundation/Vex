@@ -153,14 +153,14 @@ function WalletChip({
       aria-pressed={pressed}
       onClick={onClick}
       className={cn(
-        "inline-flex h-6 max-w-[120px] items-center gap-1 rounded-full border px-2 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors",
+        "inline-flex h-6 max-w-[120px] items-center gap-1 rounded-full border px-2 text-[10.5px] transition-colors",
         pressed
-          ? "border-[var(--vex-accent-border-strong)] text-[var(--vex-text)]"
-          : "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]",
+          ? "border-accent-primary text-ink-primary"
+          : "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary",
       )}
     >
       {chainId !== undefined ? <ChainIcon chainId={chainId} size={11} /> : null}
-      <span className="truncate normal-case tracking-normal">{label}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }
@@ -193,16 +193,16 @@ function DefaultHoldings({
       ) : tokens.length > 0 ? (
         // Wallet HAS tokens but every row rounds to $0.00 — say so instead
         // of leaving an unexplained gap under the total.
-        <p className="font-mono text-[11px] text-[var(--vex-text-3)]">
+        <p className="text-[11px] text-ink-tertiary">
           No priced balances.
         </p>
       ) : (
-        <p className="text-[11px] text-[var(--vex-text-3)]">
+        <p className="text-[11px] text-ink-tertiary">
           No token balances.
         </p>
       )}
       {remainder > 0 ? (
-        <p className="font-mono text-[10px] tracking-[0.14em] text-[var(--vex-text-3)]">
+        <p className="vex-micro-label text-ink-secondary">
           +{remainder} more
         </p>
       ) : null}
@@ -226,19 +226,19 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
   // never a fabricated $0.00).
   const quantity = formatTokenQuantity(token.amount, symbol);
   return (
-    <li className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1.5 last:border-b-0">
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)]">
-        {symbol ?? "—"}
+    <li className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0">
+      <span className="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
+        {symbol ?? "-"}
       </span>
-      <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
+      <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
         {quantity !== null ? (
-          <span className="text-[var(--vex-text-3)]">{quantity}</span>
+          <span className="text-ink-tertiary">{quantity}</span>
         ) : null}
         <span
           className={
             token.balanceUsd === null
-              ? "text-[var(--vex-text-3)]"
-              : "text-[var(--vex-text)]"
+              ? "text-ink-tertiary"
+              : "text-ink-primary"
           }
         >
           {formatUsd(token.balanceUsd)}
@@ -267,21 +267,21 @@ function WalletScopedHoldings({
 
   if (query.isLoading) {
     return (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <p className="vex-micro-label uppercase text-ink-secondary">
         Loading…
       </p>
     );
   }
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
-      <p className="text-[11px] text-[var(--vex-warn-text)]">
+      <p className="text-[11px] text-warning-label">
         Couldn&apos;t load this wallet&apos;s holdings.
       </p>
     );
   }
   if (portfolio === null) {
     return (
-      <p className="text-[11px] text-[var(--vex-text-3)]">
+      <p className="text-[11px] text-ink-tertiary">
         No holdings for this wallet.
       </p>
     );
@@ -290,10 +290,10 @@ function WalletScopedHoldings({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+        <span className="vex-micro-label uppercase text-ink-secondary">
           Wallet total
         </span>
-        <span className="font-mono text-[13px] tabular-nums text-[var(--vex-text)]">
+        <span className="text-[13px] font-semibold tabular-nums text-ink-primary">
           {formatUsd(portfolio.liveTotalUsd)}
         </span>
       </div>

@@ -22,37 +22,39 @@
 
 import { useMemo, type JSX } from "react";
 import type { StreamPreview } from "../../stores/streamStore.js";
-import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
+import { StreamingMarkdownContent } from "../../lib/markdown/StreamingMarkdownContent.js";
+import { useFrameThrottledValue } from "../../lib/use-throttled-visual-update.js";
 import { TurnIsland } from "./TurnIsland/index.js";
 
 export function StreamingBubble({
   preview,
   awaitingApproval = false,
-  centredSceneUp = false,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session — freezes the island (S5). */
   readonly awaitingApproval?: boolean;
-  /** The centred "vexing…" scene owns the column — the island stands down. */
-  readonly centredSceneUp?: boolean;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
-  // Memoized on the answer text: a reasoning flush must not rebuild the
-  // markdown answer body.
+  // A6 — the visual update is frame-throttled: provider deltas land in the
+  // store at token rate, but the answer body re-renders at most once per 3
+  // frames, trailing edge guaranteed. A5 — the throttled text then renders
+  // through the INCREMENTAL streaming renderer: settled blocks are lexed
+  // once and cached; only the unstable tail re-lexes per commit.
+  const throttledText = useFrameThrottledValue(preview.text);
   const answerBody = useMemo(
     () =>
-      preview.text.length > 0 ? (
+      throttledText.length > 0 ? (
         // Resolves in once beneath the island — clarity "earned" by the
         // thinking. One-shot on first mount; text deltas reuse the same node
-        // so it never re-triggers. The reading register (Instrument Sans
-        // 15px/1.65) arrives with `.vex-chat-prose` inside MarkdownContent, so
-        // the live answer and the persisted row it becomes are set identically.
+        // so it never re-triggers. The reading register arrives with
+        // `.vex-chat-prose` inside the streaming renderer, so the live answer
+        // and the persisted row it becomes are set identically.
         <div className="vex-answer-resolve break-words text-foreground">
-          <MarkdownContent text={preview.text} />
+          <StreamingMarkdownContent text={throttledText} />
         </div>
       ) : null,
-    [preview.text],
+    [throttledText],
   );
 
   return (
@@ -63,11 +65,7 @@ export function StreamingBubble({
       aria-busy={streaming}
       className="relative flex flex-col gap-2 pl-9"
     >
-      <TurnIsland
-        preview={preview}
-        awaitingApproval={awaitingApproval}
-        centredSceneUp={centredSceneUp}
-      />
+      <TurnIsland preview={preview} awaitingApproval={awaitingApproval} />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
     </div>

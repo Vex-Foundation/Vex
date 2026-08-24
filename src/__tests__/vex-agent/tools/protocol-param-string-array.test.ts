@@ -46,6 +46,7 @@ const SINGLE_PARAM: ProtocolParamDef = {
 
 const MANIFEST: ProtocolToolManifest = {
   toolId: "test.string_array",
+  publicName: "test__string_array",
   namespace: "dexscreener",
   lifecycle: "active",
   description: "Fixture manifest for the string|string[] boundary.",
