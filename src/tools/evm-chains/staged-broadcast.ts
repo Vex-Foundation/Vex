@@ -193,10 +193,20 @@ function assertWithinFeeBounds(
  *   3. `createSigner` resolves and decrypts the CURRENTLY authorized wallet.
  *   4. The resulting signer's account and chain must EXACTLY match the prepared
  *      request; a mismatch throws before signing.
- *   5. NO ADDITIONAL PROVIDER CALL happens between the signer being created and
- *      `signTransaction`. The request was already prepared in step 1, so there
- *      is nothing left to ask the node, and nothing that could widen the window
- *      the deferred arm exists to narrow.
+ *   5. NO PROVIDER CALL AT ALL happens between `onBeforeSign` and the
+ *      cryptographic signature - not one, and this is enforced rather than
+ *      asserted by reading the code.
+ *
+ *      viem's `signTransaction` WALLET ACTION is not usable here for exactly
+ *      that reason: it unconditionally awaits `eth_chainId` before it reaches
+ *      the local account's signer (`viem/actions/wallet/signTransaction.js`),
+ *      which is a provider round trip sitting between the authority fence and
+ *      the signature - the window this whole arm exists to close, reopened by
+ *      the library. So the deferred arm signs OFFLINE: it calls the local
+ *      account's OWN `signTransaction` with the chain's own transaction
+ *      serializer, exactly as the action's local-account branch does, and takes
+ *      the chain id from PREPARATION instead of re-reading it. The eager arm
+ *      still goes through the action and is byte-identical to before.
  */
 export interface DeferredEvmSigner {
   readonly kind: "deferred";
@@ -234,6 +244,26 @@ export class DeferredSignerIdentityError extends Error {
       + "transaction was prepared for. Nothing was signed and nothing was broadcast.",
     );
     this.name = "DeferredSignerIdentityError";
+  }
+}
+
+/**
+ * The deferred arm resolved an account that cannot sign locally.
+ *
+ * Only a LOCAL account can produce the signature without asking a provider, and
+ * the whole point of this arm is that no provider is asked after the fence. A
+ * remote or JSON-RPC account would have to be signed through the node, which is
+ * the window this arm exists to close - so it is refused rather than silently
+ * downgraded to the action that reopens it.
+ */
+export class DeferredOfflineSignerUnavailableError extends Error {
+  constructor() {
+    super(
+      "Refusing to sign: this transaction must be signed locally, and the wallet resolved for "
+      + "signing cannot produce a signature without contacting the network. Nothing was signed and "
+      + "nothing was broadcast.",
+    );
+    this.name = "DeferredOfflineSignerUnavailableError";
   }
 }
 
@@ -361,7 +391,12 @@ export async function signStageBroadcast(
     chain,
   );
 
-  const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
+  // THE SIGNATURE. The eager arm keeps viem's wallet action verbatim; the
+  // deferred arm signs offline so that nothing at all reaches a provider between
+  // `onBeforeSign` and this line. See `DeferredEvmSigner` step 5.
+  const serializedTransaction = deferred === null
+    ? await walletClient.signTransaction({ ...request, gas: gasLimit })
+    : await signPreparedTransactionOffline(walletClient, chain, { ...request, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
   const nonce = request.nonce;
   if (nonce === undefined) {
@@ -421,4 +456,48 @@ async function resolveDeferredSigner(
     throw new DeferredSignerIdentityError("chain");
   }
   return walletClient;
+}
+
+/**
+ * Step 5 of the deferred contract: the signature itself, with ZERO provider
+ * calls.
+ *
+ * This is viem's own local-account branch, taken directly instead of through the
+ * wallet action that prefixes it with `eth_chainId`:
+ *
+ *   - the CHAIN ID comes from PREPARATION, not from the node. The prepared
+ *     request already carries one (viem fills `chainId` by default), and it is
+ *     asserted equal to the chain the request was prepared and identity-checked
+ *     against rather than trusted - a request prepared for another chain is a
+ *     `DeferredSignerIdentityError`, not something to sign;
+ *   - the SERIALIZER is the prepared chain's own
+ *     (`chain.serializers.transaction`), which is precisely what viem would have
+ *     passed. A chain that declares none gets viem's default serializer inside
+ *     the account, exactly as before, so no chain type loses coverage here;
+ *   - `account` and `chain` are stripped from the request for the same reason
+ *     viem's action destructures them out: they are client identity, not
+ *     transaction fields.
+ */
+async function signPreparedTransactionOffline(
+  walletClient: WalletClient<Transport, Chain, Account>,
+  preparedChain: Chain,
+  request: Parameters<WalletClient<Transport, Chain, Account>["signTransaction"]>[0],
+): Promise<Hex> {
+  const account = walletClient.account;
+  if (account.type !== "local") throw new DeferredOfflineSignerUnavailableError();
+
+  const { account: _unusedAccount, chain: _unusedChain, ...transaction } = request;
+  const preparedChainId = (transaction as { chainId?: unknown }).chainId;
+  if (preparedChainId !== undefined && preparedChainId !== preparedChain.id) {
+    throw new DeferredSignerIdentityError("chain");
+  }
+
+  return await account.signTransaction(
+    // The account's signer takes the serializable transaction; the request came
+    // out of viem's own `prepareTransactionRequest` and every field it carries
+    // is one that function produced, so this narrows a structural union rather
+    // than asserting an unvalidated shape.
+    { ...transaction, chainId: preparedChain.id } as Parameters<typeof account.signTransaction>[0],
+    { serializer: preparedChain.serializers?.transaction },
+  );
 }

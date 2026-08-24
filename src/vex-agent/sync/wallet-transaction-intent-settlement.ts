@@ -60,24 +60,65 @@ export type LinkedActivityVerdict = "confirmed" | "reverted" | "superseded_unpro
 export const STRANDED_INTENT_RECOVERY_LIMIT = 25;
 
 /**
- * T5 / T6. Settle the intent linked to `activityId`, if there is one.
+ * T5 / T6, and the `consuming` convergence.
  *
  * Called by a lane immediately after its own terminalizing CAS applied. Every
  * failure is logged and swallowed: the lane's activity row is already terminal
  * and correct, and a bookkeeping write that could not run must never turn a
  * successful repair into a failed sweep invocation.
+ *
+ * ## Why `consuming` is settled here too
+ *
+ * The Solana fast lane can terminalize an activity row while its linked intent
+ * is still `consuming` - the handler claimed, staged its hash, and then the
+ * process died. Settling only `broadcast_unconfirmed` skipped that intent; the
+ * stranded scan later moved it to `broadcast_unconfirmed`, and by then the
+ * activity row it hangs off was ALREADY terminal, so no lane would ever select
+ * it again and the intent blocked the money-state gate forever.
+ *
+ * So a `consuming` intent is CONVERGED in the same repair action, under the same
+ * lock, from the verdict this lane just established - `consuming` ->
+ * `broadcast_unconfirmed` (using the hash the lane's own row carries) -> the
+ * verdict's terminal. No chain access, no second observer, and no re-send: this
+ * spends evidence the caller already holds.
+ *
+ * Two guards keep that from becoming interference:
+ *
+ *   - a STAGED HASH is required. Without one there is no proof anything was
+ *     broadcast, and T4a - not this - owns that row;
+ *   - the claim must be older than the handler window. Inside it the confirm
+ *     handler may still be running, and converging its row would be racing a
+ *     live signing path. The same clock the stranded scan uses, for the same
+ *     reason.
  */
 export async function settleLinkedTransactionIntent(
   activityId: number,
   verdict: LinkedActivityVerdict,
   protocolExecutionId: number | null,
+  stagedTxHash: string | null = null,
 ): Promise<void> {
   try {
     const intent = await intentsRepo.getByActivityId(activityId);
     if (intent === null) return;
 
-    if (intent.status === "broadcast_unconfirmed") {
-      const settled = await withSessionControlLock(intent.sessionId, (client) => {
+    const convergeFromConsuming =
+      intent.status === "consuming"
+      && stagedTxHash !== null
+      && claimIsOlderThanHandlerWindow(intent.consumedAt);
+
+    if (intent.status === "broadcast_unconfirmed" || convergeFromConsuming) {
+      const settled = await withSessionControlLock(intent.sessionId, async (client) => {
+        if (convergeFromConsuming) {
+          // ONE transaction: if this CAS misses, someone else moved the row and
+          // the verdict below must not be applied to whatever they made of it.
+          const bumped = await intentsRepo.markBroadcastUnconfirmedWith(
+            client,
+            intent.intentId,
+            intent.sessionId,
+            stagedTxHash as string,
+          );
+          if (bumped === null) return null;
+        }
         if (verdict === "confirmed") {
           return intentsRepo.settleUnconfirmedAsExecutedWith(
             client,
@@ -140,17 +181,42 @@ export async function settleLinkedTransactionIntent(
 }
 
 /**
+ * Is this claim old enough that no confirm handler can still be holding it?
+ *
+ * A row with no `consumed_at` is not claimed at all, which cannot be converged
+ * from - so it reads as inside the window, the conservative direction.
+ */
+function claimIsOlderThanHandlerWindow(consumedAt: string | null): boolean {
+  if (consumedAt === null) return false;
+  const claimedAtMs = Date.parse(consumedAt);
+  if (!Number.isFinite(claimedAtMs)) return false;
+  return Date.now() - claimedAtMs >= REPAIR_CANDIDATE_AGE_MS;
+}
+
+/**
  * The activity fields this module needs from a lane's row. Narrower than the
  * full event on purpose, so a lane can hand over what it already holds.
+ *
+ * `txHash` is the STAGED hash, and it is required here because it is the only
+ * thing that lets a `consuming` intent be converged: it is the proof that the
+ * handler got as far as broadcasting before it disappeared.
  */
-export type LinkedActivityRow = Pick<AgentActivityEvent, "id" | "protocolExecutionId">;
+export type LinkedActivityRow = Pick<
+  AgentActivityEvent,
+  "id" | "protocolExecutionId" | "txHash"
+>;
 
 /** Convenience for a lane that holds the whole row. */
 export function settleLinkedIntentForRow(
   row: LinkedActivityRow,
   verdict: LinkedActivityVerdict,
 ): Promise<void> {
-  return settleLinkedTransactionIntent(row.id, verdict, row.protocolExecutionId);
+  return settleLinkedTransactionIntent(
+    row.id,
+    verdict,
+    row.protocolExecutionId,
+    row.txHash ?? null,
+  );
 }
 
 export interface StrandedRecoveryResult {
@@ -159,6 +225,41 @@ export interface StrandedRecoveryResult {
   readonly crashedBeforeBroadcast: number;
   /** T4b - a staged hash exists, so the outcome is unknown and stays tracked. */
   readonly recoveredUnconfirmed: number;
+  /**
+   * The INVERSE ordering: the activity row was already terminal when this scan
+   * reached the intent, so the intent was driven straight to the verdict that
+   * row already carries instead of parking at `broadcast_unconfirmed` under a
+   * row no lane will select again.
+   */
+  readonly convergedFromTerminalActivity: number;
+}
+
+/**
+ * The CHAIN verdict an already-terminal activity row carries, or `null` when it
+ * carries none that this module may act on.
+ *
+ * NO CHAIN ACCESS AND NO GUESSING. This reads a verdict a lane already
+ * established, in the same vocabulary the lane would have handed over had it
+ * been the one to find the intent - which is exactly why this is not a second
+ * observer.
+ *
+ * `superseded_unproven` is kept as itself on BOTH of its shapes: the activity
+ * status a lane writes when a nonce was consumed elsewhere, and the Solana
+ * expiry failure code. Neither established that the transaction ran, and folding
+ * either into `reverted` would tell the user it ran and failed. Any other
+ * failure code returns `null` - an unrecognized terminal is not evidence, and
+ * the row keeps today's behaviour of parking at `broadcast_unconfirmed`.
+ */
+function verdictOfTerminalActivity(
+  status: string,
+  failureCode: string | null,
+): LinkedActivityVerdict | null {
+  if (status === "confirmed") return "confirmed";
+  if (status === "superseded_unproven") return "superseded_unproven";
+  if (status !== "definitively_failed") return null;
+  if (failureCode === "mined_revert") return "reverted";
+  if (failureCode === "solana_signature_expired") return "superseded_unproven";
+  return null;
 }
 
 /**
@@ -176,6 +277,7 @@ export async function recoverStrandedTransactionIntents(
 ): Promise<StrandedRecoveryResult> {
   let crashedBeforeBroadcast = 0;
   let recoveredUnconfirmed = 0;
+  let convergedFromTerminalActivity = 0;
 
   let stranded: readonly intentsRepo.StrandedTransactionIntent[];
   try {
@@ -184,7 +286,12 @@ export async function recoverStrandedTransactionIntents(
     logger.warn("wallet.transaction.stranded_scan_failed", {
       error: error instanceof Error ? error.name : typeof error,
     });
-    return { examined: 0, crashedBeforeBroadcast: 0, recoveredUnconfirmed: 0 };
+    return {
+      examined: 0,
+      crashedBeforeBroadcast: 0,
+      recoveredUnconfirmed: 0,
+      convergedFromTerminalActivity: 0,
+    };
   }
 
   for (const row of stranded) {
@@ -218,6 +325,28 @@ export async function recoverStrandedTransactionIntents(
           "crashed_before_broadcast",
           false,
         );
+        continue;
+      }
+
+      // THE INVERSE ORDERING. The lane got to the activity row FIRST and
+      // terminalized it while this intent was still `consuming`, so it will
+      // never be selected again and nothing would ever move the intent off
+      // `broadcast_unconfirmed`. The verdict it needs is already written on the
+      // row in front of us, so it is applied here - through the same settlement
+      // the lane itself would have called, with no chain access and no re-send.
+      const terminalVerdict = verdictOfTerminalActivity(
+        row.activityStatus,
+        row.activityFailureCode,
+      );
+      if (terminalVerdict !== null) {
+        await settleLinkedTransactionIntent(
+          row.activityId,
+          terminalVerdict,
+          row.protocolExecutionId,
+          row.stagedTxHash,
+        );
+        const after = await intentsRepo.getById(intent.intentId, intent.sessionId);
+        if (after !== null && after.status !== "consuming") convergedFromTerminalActivity++;
         continue;
       }
 
@@ -258,10 +387,16 @@ export async function recoverStrandedTransactionIntents(
       examined: stranded.length,
       crashedBeforeBroadcast,
       recoveredUnconfirmed,
+      convergedFromTerminalActivity,
     });
   }
 
-  return { examined: stranded.length, crashedBeforeBroadcast, recoveredUnconfirmed };
+  return {
+    examined: stranded.length,
+    crashedBeforeBroadcast,
+    recoveredUnconfirmed,
+    convergedFromTerminalActivity,
+  };
 }
 
 /**

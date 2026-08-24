@@ -283,6 +283,18 @@ export async function isSessionResumable(id: string): Promise<boolean> {
 export interface SessionWalletAuthority {
   readonly selectedEvmWalletAddress: string | null;
   readonly selectedSolanaWalletAddress: string | null;
+  /**
+   * The INVENTORY IDENTITY of the selection, not its address.
+   *
+   * Both halves are read because they can move independently: an address alone
+   * cannot distinguish two wallet references that resolve to the same public
+   * key (an imported duplicate, a re-derived entry, a re-pointed row), and a
+   * selection that changed reference is a selection the user changed. The
+   * `chk_sessions_*_wallet_atomic` CHECKs keep id and address moving together,
+   * so a non-null address always carries a non-null id.
+   */
+  readonly selectedEvmWalletId: string | null;
+  readonly selectedSolanaWalletId: string | null;
   readonly permission: string | null;
 }
 
@@ -293,10 +305,13 @@ export async function readSessionWalletAuthorityWith(
   const row = await queryOneWith<{
     selected_evm_wallet_address: string | null;
     selected_solana_wallet_address: string | null;
+    selected_evm_wallet_id: string | null;
+    selected_solana_wallet_id: string | null;
     permission: string | null;
   }>(
     client,
-    `SELECT selected_evm_wallet_address, selected_solana_wallet_address, permission
+    `SELECT selected_evm_wallet_address, selected_solana_wallet_address,
+            selected_evm_wallet_id, selected_solana_wallet_id, permission
        FROM sessions WHERE id = $1`,
     [id],
   );
@@ -304,6 +319,8 @@ export async function readSessionWalletAuthorityWith(
   return {
     selectedEvmWalletAddress: row.selected_evm_wallet_address,
     selectedSolanaWalletAddress: row.selected_solana_wallet_address,
+    selectedEvmWalletId: row.selected_evm_wallet_id,
+    selectedSolanaWalletId: row.selected_solana_wallet_id,
     permission: row.permission,
   };
 }

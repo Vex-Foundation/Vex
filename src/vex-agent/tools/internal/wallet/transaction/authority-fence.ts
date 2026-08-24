@@ -11,15 +11,27 @@
  * the project's wallet scope, or lock Vex - and neither of those could stop
  * wallet A from signing after the project had already moved to B.
  *
- * ## What it re-reads, and why those two facts
+ * ## What it re-reads, and why those facts
  *
  * Under the SESSION CONTROL LOCK, in one transaction:
  *
- *   1. the AUTHORITATIVE wallet selection on the session row. `updateProjectScope`
- *      mirrors a Studio project's selection onto its backing session inside a
- *      transaction that takes this same lock first, so a scope edit is either
- *      wholly visible to this read or wholly after it;
- *   2. the durable STUDIO DISPATCH GENERATION (migration 086), which both
+ *   1. the AUTHORITATIVE wallet selection on the session row - BOTH the address
+ *      and the wallet INVENTORY ID. `updateProjectScope` mirrors a Studio
+ *      project's selection onto its backing session inside a transaction that
+ *      takes this same lock first, so a scope edit is either wholly visible to
+ *      this read or wholly after it. The id is read because the address alone
+ *      cannot tell two wallet references with the same public key apart, and a
+ *      selection re-pointed at a different reference is a selection the user
+ *      changed;
+ *   2. the session PERMISSION. It is the same mirror, written by the same
+ *      transaction, and it decides whether a dispatch needs an approval at all.
+ *      A `full` -> `restricted` flip after the gate proved the wallet meant the
+ *      signature would happen under a permission that now requires an approval
+ *      nobody granted, and address-plus-generation could not see it. ANY change
+ *      refuses, in either direction: the conservative rule is that the authority
+ *      compared must be the authority captured, not a judgement about which
+ *      changes are benign;
+ *   3. the durable STUDIO DISPATCH GENERATION (migration 086), which both
  *      `lockSecretSession` and its unlock advance. A generation that moved since
  *      the anchor means Vex was locked or unlocked in between.
  *
@@ -83,6 +95,13 @@ export interface AuthorityAnchor {
   readonly family: WalletTransactionFamily;
   /** The wallet the intent was prepared for and the session had selected. */
   readonly walletAddress: string;
+  /**
+   * The INVENTORY ID of that selection. `null` when the session row could not be
+   * read, and a null anchor id fails closed exactly like a null generation.
+   */
+  readonly walletId: string | null;
+  /** The session permission the dispatch was authorized under. `null` fails closed. */
+  readonly permission: string | null;
   /** `null` when the gate row could not be read; a null anchor fails closed. */
   readonly dispatchGeneration: string | null;
   readonly intentId: string;
@@ -91,7 +110,30 @@ export interface AuthorityAnchor {
 /** What the authority says right now. */
 interface CurrentAuthority {
   readonly walletAddress: string | null;
+  readonly walletId: string | null;
+  readonly permission: string | null;
   readonly dispatchGeneration: string | null;
+}
+
+/** The session half of the authority, projected onto the dispatching family. */
+async function readSessionAuthorityWith(
+  client: PoolClient,
+  sessionId: string,
+  family: WalletTransactionFamily,
+): Promise<Pick<CurrentAuthority, "walletAddress" | "walletId" | "permission">> {
+  const session = await readSessionWalletAuthorityWith(client, sessionId);
+  if (session === null) return { walletAddress: null, walletId: null, permission: null };
+  return family === "solana"
+    ? {
+        walletAddress: session.selectedSolanaWalletAddress,
+        walletId: session.selectedSolanaWalletId,
+        permission: session.permission,
+      }
+    : {
+        walletAddress: session.selectedEvmWalletAddress,
+        walletId: session.selectedEvmWalletId,
+        permission: session.permission,
+      };
 }
 
 async function readAuthorityWith(
@@ -99,15 +141,9 @@ async function readAuthorityWith(
   sessionId: string,
   family: WalletTransactionFamily,
 ): Promise<CurrentAuthority> {
-  const session = await readSessionWalletAuthorityWith(client, sessionId);
+  const session = await readSessionAuthorityWith(client, sessionId, family);
   const generation = await readStudioDispatchGenerationWith(client);
-  const walletAddress =
-    session === null
-      ? null
-      : family === "solana"
-        ? session.selectedSolanaWalletAddress
-        : session.selectedEvmWalletAddress;
-  return { walletAddress, dispatchGeneration: generation };
+  return { ...session, dispatchGeneration: generation };
 }
 
 /**
@@ -116,7 +152,14 @@ async function readAuthorityWith(
  *
  * A missing generation row (migration 086 not applied) yields `null`, and a
  * `null` anchor generation makes every later comparison refuse: a fence that
- * cannot state what it is fencing against has not proven anything.
+ * cannot state what it is fencing against has not proven anything. The same is
+ * true of a missing session row, which yields a null wallet id and a null
+ * permission.
+ *
+ * The wallet ADDRESS is the one the gate already proved is the intent's and the
+ * session's; the id, the permission and the generation are read here, under the
+ * lock, in the SAME transaction, so the four facts are one consistent snapshot
+ * rather than four reads that could straddle a scope edit.
  */
 export async function captureAuthorityAnchor(input: {
   readonly sessionId: string;
@@ -124,13 +167,15 @@ export async function captureAuthorityAnchor(input: {
   readonly walletAddress: string;
   readonly intentId: string;
 }): Promise<AuthorityAnchor> {
-  const generation = await withSessionControlLock(input.sessionId, (client) =>
-    readStudioDispatchGenerationWith(client));
+  const current = await withSessionControlLock(input.sessionId, (client) =>
+    readAuthorityWith(client, input.sessionId, input.family));
   return {
     sessionId: input.sessionId,
     family: input.family,
     walletAddress: input.walletAddress,
-    dispatchGeneration: generation,
+    walletId: current.walletId,
+    permission: current.permission,
+    dispatchGeneration: current.dispatchGeneration,
     intentId: input.intentId,
   };
 }
@@ -205,12 +250,42 @@ function compareAuthority(
     return fenceRefusal(anchor, point, "Vex was locked or unlocked");
   }
 
+  // THE PERMISSION, before the wallet. A `full` -> `restricted` flip does not
+  // move the address or the generation, so nothing else here can see it, and it
+  // is the change that decides whether this dispatch needed an approval at all.
+  // ANY difference refuses, in either direction: the fence compares the
+  // authority captured, it does not rank which changes are benign.
+  if (anchor.permission === null || current.permission === null) {
+    return fenceRefusal(
+      anchor,
+      point,
+      "Vex could not read the permission this session signs under",
+    );
+  }
+  if (current.permission !== anchor.permission) {
+    return fenceRefusal(anchor, point, "this session's permission was changed");
+  }
+
   if (current.walletAddress === null) {
     return fenceRefusal(anchor, point, "this session no longer has a wallet selected");
   }
   const inventoryFamily = anchor.family === "solana" ? "solana" : "evm";
   if (!walletAddressesEqual(inventoryFamily, current.walletAddress, anchor.walletAddress)) {
     return fenceRefusal(anchor, point, "the wallet this session signs with was changed");
+  }
+  // THE INVENTORY REFERENCE, which the address cannot stand in for: two wallet
+  // entries can carry the same public key, and a selection re-pointed at another
+  // entry is a selection the user changed even though every address still
+  // matches.
+  if (anchor.walletId === null || current.walletId === null) {
+    return fenceRefusal(
+      anchor,
+      point,
+      "Vex could not read which wallet entry this session has selected",
+    );
+  }
+  if (current.walletId !== anchor.walletId) {
+    return fenceRefusal(anchor, point, "the wallet entry this session signs with was changed");
   }
 
   return { ok: true, value: undefined };

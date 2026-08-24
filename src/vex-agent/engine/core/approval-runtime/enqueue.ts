@@ -58,32 +58,10 @@ import {
   buildPolicySnapshot,
   type IntentPreview,
 } from "../approval-intent-preview.js";
+import { buildDurableApprovalCard } from "./durable-approval-card.js";
 
 /** The binding contract, as `ToolResult` declares it structurally. */
 type PreparedApprovalBinding = NonNullable<ToolResult["preparedApprovalBinding"]>;
-
-/**
- * The approval card for a bound proposal: the DECODED effect the user reads,
- * the arguments it binds, and the identity of the row it will consume.
- *
- * The label rides `criticalArgs.effect` because `IntentPreview` has no label
- * field and the renderer shows the whole map. It is the sentence the human
- * authorizes, so it is carried WHOLE.
- */
-function previewFromBinding(
-  toolName: string,
-  binding: PreparedApprovalBinding,
-): IntentPreview {
-  return {
-    toolName,
-    criticalArgs: {
-      ...binding.preview.criticalArgs,
-      effect: binding.preview.label,
-      intentId: binding.resource.intentId,
-      expiresAt: binding.intentExpiresAt,
-    },
-  };
-}
 
 /**
  * Puzzle 5 phase 3 - TTL stamped at enqueue (not at approve). The approve
@@ -194,7 +172,10 @@ export async function enqueueApprovalIntentWithGate(
   // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
   const binding = input.preparedApprovalBinding;
   const intentPreview =
-    (binding === undefined ? undefined : previewFromBinding(input.toolName, binding)) ??
+    // ONE builder, shared with the confirm handler's revalidation - see
+    // `./durable-approval-card.ts` for why the card the human reads may not have
+    // a second, narrower definition on the checking side.
+    (binding === undefined ? undefined : buildDurableApprovalCard(input.toolName, binding)) ??
     input.trustedPreview ??
     buildIntentPreview(
       input.toolName,

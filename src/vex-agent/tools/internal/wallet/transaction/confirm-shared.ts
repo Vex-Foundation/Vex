@@ -32,6 +32,12 @@ import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js"
 import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import type { WalletTransactionFamily } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 import { readApprovalProposalBinding } from "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js";
+import {
+  buildDurableApprovalCard,
+  durableApprovalCardMatches,
+  readEnvelopeToolName,
+  type DurableApprovalCardSource,
+} from "@vex-agent/engine/core/approval-runtime/durable-approval-card.js";
 import logger from "@utils/logger.js";
 
 import type { ToolResult } from "../../../types.js";
@@ -146,7 +152,13 @@ export async function resolveApprovalBoundDigest(
     );
   }
 
-  const cardCheck = await revalidateDurableApprovalCard(approvalId, intent, canonicalPreview);
+  // Built from the intent's OWN canonical values, never from the stored card or
+  // the stored envelope's copy of them: those are the two things being checked.
+  const cardCheck = await revalidateDurableApprovalCard(approvalId, approval.toolCall, intent, {
+    preview: canonicalPreview,
+    intentExpiresAt: intent.expiresAt,
+    resource: { intentId: intent.intentId },
+  });
   if (!cardCheck.ok) return cardCheck;
 
   return accept<string | null>(bound.proposalDigest);
@@ -154,24 +166,30 @@ export async function resolveApprovalBoundDigest(
 
 /**
  * The DURABLE approval card (`approval_intents.preview_json`) re-derived from
- * the intent and compared field for field.
+ * the intent and compared WHOLE.
  *
- * This is the row the approval UI renders, and it is written at enqueue by
- * `previewFromBinding`, so it is reproducible here from bound fields alone: the
- * canonical preview's own arguments, plus the three the enqueue path adds - the
- * label under `effect`, the intent id, and the intent's own expiry.
- * `toolName` is deliberately NOT compared: it is the enqueue path's record of
- * WHICH tool asked, not part of what the transaction does, and the confirm
- * handler has no authoritative copy of it to compare against.
+ * This is the row the approval UI renders, and the renderer shows `toolName` as
+ * the card's TITLE. It is rebuilt here by the SAME function the enqueue path
+ * writes it with (`buildDurableApprovalCard`), from the same inputs: the
+ * canonical preview's own arguments, the label under `effect`, the intent id,
+ * the intent's own expiry - and the tool identity, which comes from the STORED
+ * ENVELOPE, the record of what this approval will actually dispatch.
  *
- * A MISSING card row refuses. An approved resume whose card cannot be read
- * cannot be shown to describe this proposal, and on the money path that is a
- * refusal rather than a skipped check.
+ * `toolName` used to be excluded on the grounds that the confirm handler had no
+ * authoritative copy of it. It does: the envelope. Excluding it left an edit to
+ * `preview_json.toolName` invisible, which shows a human a harmless title over
+ * an envelope that still dispatches the transaction.
+ *
+ * A MISSING card row refuses, and so does an envelope that cannot say which tool
+ * it is. An approved resume whose card cannot be checked cannot be shown to
+ * describe this proposal, and on the money path that is a refusal rather than a
+ * skipped check.
  */
 async function revalidateDurableApprovalCard(
   approvalId: string,
+  approvalToolCall: Record<string, unknown>,
   intent: WalletTransactionIntent,
-  canonicalPreview: PreparedApprovalBinding["preview"],
+  binding: DurableApprovalCardSource,
 ): Promise<TransactionOutcome<void>> {
   const card = await approvalIntentsRepo.getByApprovalId(approvalId);
   if (card === null) {
@@ -184,26 +202,20 @@ async function revalidateDurableApprovalCard(
     );
   }
 
-  const expected: Record<string, string | number | boolean | null> = {
-    ...canonicalPreview.criticalArgs,
-    effect: canonicalPreview.label,
-    intentId: intent.intentId,
-    expiresAt: intent.expiresAt,
-  };
-  const storedArgs = card.previewJson.criticalArgs;
-  const stored =
-    typeof storedArgs === "object" && storedArgs !== null && !Array.isArray(storedArgs)
-      ? (storedArgs as Record<string, unknown>)
-      : null;
+  const toolName = readEnvelopeToolName(approvalToolCall);
+  if (toolName === null) {
+    return refuse(
+      "invalid_input",
+      "Refusing to sign: the approval this call names does not record which tool it would run, so "
+      + `the title the user read before approving intent ${intent.intentId} cannot be checked. `
+      + "Nothing was signed and no funds moved. Prepare the transaction again and request a fresh "
+      + "approval.",
+      { intentId: intent.intentId },
+    );
+  }
 
-  const expectedKeys = Object.keys(expected).sort();
-  const storedKeys = stored === null ? [] : Object.keys(stored).sort();
-  const identical =
-    stored !== null
-    && expectedKeys.length === storedKeys.length
-    && expectedKeys.every((key, index) => key === storedKeys[index] && stored[key] === expected[key]);
-
-  if (!identical) {
+  const expected = buildDurableApprovalCard(toolName, binding);
+  if (!durableApprovalCardMatches(expected, card.previewJson)) {
     return refuse(
       "invalid_input",
       "Refusing to sign: the approval card stored for this decision is not the card this "

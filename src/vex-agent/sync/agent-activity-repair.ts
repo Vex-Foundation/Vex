@@ -312,6 +312,10 @@ export async function resolveEvmPendingRow(
           ? "reverted"
           : "superseded_unproven",
       event.protocolExecutionId,
+      // The STAGED hash this lane just observed. It is what lets a linked intent
+      // still stuck in `consuming` (handler died after staging) converge from
+      // this same verdict instead of being stranded under a terminal row.
+      event.txHash,
     );
   }
 

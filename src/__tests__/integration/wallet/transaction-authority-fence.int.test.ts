@@ -6,10 +6,19 @@
  * can stop being so are the two barriers injected here, and both are applied
  * exactly as production applies them:
  *
- *   LOCK  - `advanceStudioDispatchGeneration()`, the same durable advance
- *           `lockSecretSession` performs after its synchronous scrub;
- *   SCOPE - the `sessions` wallet mirror that `updateProjectScope` writes for a
- *           project's backing session.
+ *   LOCK       - `advanceStudioDispatchGeneration()`, the same durable advance
+ *                `lockSecretSession` performs after its synchronous scrub;
+ *   SCOPE      - the `sessions` wallet mirror that `updateProjectScope` writes
+ *                for a project's backing session;
+ *   PERMISSION - the `full` -> `restricted` flip on the same mirror. It moves
+ *                neither the address nor the generation, so it is invisible to
+ *                every other barrier, and it decides whether this dispatch
+ *                needed an approval at all;
+ *   WALLET ENTRY - the selection re-pointed at a DIFFERENT inventory id with the
+ *                SAME address, which an address comparison cannot see.
+ *
+ * The last two say "two barriers" is now four; the file is the barrier matrix
+ * and every fact the anchor binds gets a row in it.
  *
  * Each barrier is injected at each of the three points:
  *
@@ -145,6 +154,36 @@ const lockVex: Barrier = async () => {
   if (!advanced.ok) throw new Error("the test barrier could not advance the generation");
 };
 
+/**
+ * The backing-session PERMISSION mirror `updateProjectScope` writes when the
+ * project's permission changes.
+ *
+ * `full` -> `restricted` is the dangerous direction and the one seeded here: it
+ * moves neither the wallet address nor the dispatch generation, so before the
+ * anchor carried the permission NOTHING in the fence could see it, and a
+ * dispatch that was authorized without an approval kept signing under a
+ * permission that now requires one.
+ */
+const flipPermission: Barrier = async (sessionId) => {
+  await execute("UPDATE sessions SET permission = 'restricted' WHERE id = $1", [sessionId]);
+};
+
+/**
+ * The SAME ADDRESS, a DIFFERENT wallet entry. Two inventory rows can carry one
+ * public key, so an address comparison passes while the selection now points at
+ * a reference the user did not authorize this dispatch under.
+ */
+function swapWalletEntry(family: "eip155" | "solana"): Barrier {
+  return async (sessionId) => {
+    await execute(
+      family === "solana"
+        ? "UPDATE sessions SET selected_solana_wallet_id = 'sol-duplicate' WHERE id = $1"
+        : "UPDATE sessions SET selected_evm_wallet_id = 'evm-duplicate' WHERE id = $1",
+      [sessionId],
+    );
+  };
+}
+
 /** The backing-session wallet mirror `updateProjectScope` writes on a scope edit. */
 function editScope(family: "eip155" | "solana"): Barrier {
   return async (sessionId) => {
@@ -159,11 +198,14 @@ function editScope(family: "eip155" | "solana"): Barrier {
   };
 }
 
-const BARRIERS = ["lock", "scope"] as const;
+const BARRIERS = ["lock", "scope", "permission", "wallet_entry"] as const;
 type BarrierName = (typeof BARRIERS)[number];
 
 function barrierFor(name: BarrierName, family: "eip155" | "solana"): Barrier {
-  return name === "lock" ? lockVex : editScope(family);
+  if (name === "lock") return lockVex;
+  if (name === "scope") return editScope(family);
+  if (name === "permission") return flipPermission;
+  return swapWalletEntry(family);
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -192,7 +234,8 @@ async function sessionWithWallet(): Promise<string> {
   await execute(
     `UPDATE sessions
         SET selected_evm_wallet_id = 'evm-1', selected_evm_wallet_address = $2,
-            selected_solana_wallet_id = 'sol-1', selected_solana_wallet_address = $3
+            selected_solana_wallet_id = 'sol-1', selected_solana_wallet_address = $3,
+            permission = 'full'
       WHERE id = $1`,
     [sessionId, WALLET, SOL_WALLET],
   );
@@ -380,15 +423,27 @@ function evmDeps(
   }));
 
   const walletClient = {
-    account: { address: WALLET, type: "local" },
+    account: {
+      address: WALLET,
+      type: "local",
+      // THE SIGNATURE, on the account rather than the client: the deferred arm
+      // signs OFFLINE through the local account's own signer, because viem's
+      // wallet action would ask the node for `eth_chainId` first and that round
+      // trip is exactly what may not sit between the fence and the signature.
+      signTransaction: vi.fn(async () => {
+        calls.signed += 1;
+        // The barrier lands AFTER the local signature and BEFORE the staged
+        // evidence and the submission - the (c) window.
+        if (at === "post_sign") await barrier(sessionId);
+        return "0xdeadbeef" as Hex;
+      }),
+    },
     chain: CHAIN,
     prepareTransactionRequest: vi.fn(),
+    // Never reached on this arm; present so the fixture is the shape production
+    // hands over, not a shape shaved to fit the assertion.
     signTransaction: vi.fn(async () => {
-      calls.signed += 1;
-      // The barrier lands AFTER the local signature and BEFORE the staged
-      // evidence and the submission - the (c) window.
-      if (at === "post_sign") await barrier(sessionId);
-      return "0xdeadbeef" as Hex;
+      throw new Error("the deferred arm must not reach viem's wallet action");
     }),
   };
 

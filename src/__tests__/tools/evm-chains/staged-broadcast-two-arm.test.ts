@@ -40,6 +40,19 @@ const SERIALIZED = "0xdeadbeef" as Hex;
 const CHAIN = { id: 8453, name: "Base" } as unknown as Chain;
 const ACCOUNT = { address: FROM, type: "local" } as unknown as Account;
 
+/**
+ * The two arms sign through DIFFERENT functions, and that is the contract:
+ *
+ *   EAGER    - viem's `walletClient.signTransaction` action, unchanged.
+ *   DEFERRED - the local account's OWN `signTransaction`, offline, because the
+ *              action awaits `eth_chainId` first and that round trip would sit
+ *              between the authority fence and the signature.
+ *
+ * `staged-broadcast-offline-signature.test.ts` proves the deferred arm makes no
+ * provider call at all with a real viem client and a throwing transport; this
+ * file pins which function each arm reaches.
+ */
+
 /** Every call the primitive makes, in order, as one readable trace. */
 function harness(overrides: { chainId?: number; account?: string } = {}) {
   const trace: string[] = [];
@@ -71,8 +84,17 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
     }),
   };
 
+  const accountSignTransaction = vi.fn(async () => {
+    trace.push("account.signTransaction");
+    return SERIALIZED;
+  });
+
   const walletClient = {
-    account: { ...ACCOUNT, address: overrides.account ?? FROM },
+    account: {
+      ...ACCOUNT,
+      address: overrides.account ?? FROM,
+      signTransaction: accountSignTransaction,
+    },
     chain: overrides.chainId === undefined ? CHAIN : { ...CHAIN, id: overrides.chainId },
     prepareTransactionRequest: vi.fn(async () => {
       trace.push("walletClient.prepareTransactionRequest");
@@ -93,7 +115,7 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
     }),
   };
 
-  return { trace, publicClient, walletClient, hooks };
+  return { trace, publicClient, walletClient, hooks, accountSignTransaction };
 }
 
 type Args = Parameters<typeof signStageBroadcast>;
@@ -125,6 +147,9 @@ describe("signStageBroadcast - the EAGER arm is unchanged", () => {
     // The public client is NEVER used to prepare on this arm: doing so would
     // change which node fills the nonce and the fees for every venue.
     expect(h.publicClient.prepareTransactionRequest).not.toHaveBeenCalled();
+    // And the offline path is NEVER taken here: the eager arm keeps viem's
+    // wallet action, byte for byte, for all thirteen venue call sites.
+    expect(h.accountSignTransaction).not.toHaveBeenCalled();
   });
 
   it("stages the account's own address and the prepared nonce, and signs the headroomed gas", async () => {
@@ -206,8 +231,9 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
       "onBeforeSign",
       // Then, and only then, the key.
       "createSigner",
-      // And immediately the signature - NO provider call in between.
-      "walletClient.signTransaction",
+      // And immediately the signature - OFFLINE, through the local account's own
+      // signer, so NO provider call can sit in between.
+      "account.signTransaction",
       "hooks.onHashStaged",
       "publicClient.sendRawTransaction",
       "hooks.onAccepted",
@@ -215,6 +241,10 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
     ]);
     expect(signer.onBeforeSign).toHaveBeenCalledTimes(1);
     expect(h.walletClient.prepareTransactionRequest).not.toHaveBeenCalled();
+    // viem's wallet ACTION is not reached on this arm: it awaits `eth_chainId`
+    // before invoking the local signer, which is the round trip this arm exists
+    // to remove.
+    expect(h.walletClient.signTransaction).not.toHaveBeenCalled();
   });
 
   it("a refusing pre-sign hook signs, stages and submits NOTHING", async () => {
@@ -237,7 +267,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
     ).rejects.toThrow("authority fence refused");
 
     expect(createSigner).not.toHaveBeenCalled();
-    expect(h.walletClient.signTransaction).not.toHaveBeenCalled();
+    expect(h.accountSignTransaction).not.toHaveBeenCalled();
     expect(h.hooks.onHashStaged).not.toHaveBeenCalled();
     expect(h.publicClient.sendRawTransaction).not.toHaveBeenCalled();
   });
@@ -274,7 +304,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
         h.hooks,
       ),
     ).rejects.toBeInstanceOf(DeferredSignerIdentityError);
-    expect(h.walletClient.signTransaction).not.toHaveBeenCalled();
+    expect(h.accountSignTransaction).not.toHaveBeenCalled();
     expect(h.publicClient.sendRawTransaction).not.toHaveBeenCalled();
   });
 
@@ -290,7 +320,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
         h.hooks,
       ),
     ).rejects.toBeInstanceOf(DeferredSignerIdentityError);
-    expect(h.walletClient.signTransaction).not.toHaveBeenCalled();
+    expect(h.accountSignTransaction).not.toHaveBeenCalled();
     expect(h.publicClient.sendRawTransaction).not.toHaveBeenCalled();
   });
 
@@ -309,7 +339,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
     ).rejects.toThrow("post-stage fence refused");
     // SEAM A: the local signature already happened and is not retroactively
     // cancelled; what the post-stage refusal prevents is the BROADCAST.
-    expect(h.walletClient.signTransaction).toHaveBeenCalledTimes(1);
+    expect(h.accountSignTransaction).toHaveBeenCalledTimes(1);
     expect(h.publicClient.sendRawTransaction).not.toHaveBeenCalled();
   });
 });

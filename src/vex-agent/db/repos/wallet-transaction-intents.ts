@@ -207,6 +207,13 @@ export interface StrandedTransactionIntent {
   /** The STAGED hash, or `null`. Staging strictly precedes broadcast, so `null` proves no broadcast. */
   readonly stagedTxHash: string | null;
   readonly activityStatus: string;
+  /**
+   * The activity row's failure code, when it has one. Read so the stranded scan
+   * can tell an already-terminal row's CHAIN verdict apart - a `mined_revert` is
+   * evidence the transaction ran and reverted, an expiry is absence of proof -
+   * without asking the chain a question a lane already answered.
+   */
+  readonly activityFailureCode: string | null;
   readonly executionStatus: string;
 }
 
@@ -228,6 +235,7 @@ export async function listStrandedConsuming(
   const rows = await query<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS.split(", ").map((c) => `t.${c}`).join(", ")},
             a.id AS aa_id, a.tx_hash AS aa_tx_hash, a.status AS aa_status,
+            a.failure_code AS aa_failure_code,
             a.protocol_execution_id AS aa_execution_id,
             e.execution_status AS pe_status
        FROM wallet_transaction_intents t
@@ -246,6 +254,7 @@ export async function listStrandedConsuming(
     protocolExecutionId: Number(r.aa_execution_id),
     stagedTxHash: (r.aa_tx_hash as string | null) ?? null,
     activityStatus: String(r.aa_status),
+    activityFailureCode: (r.aa_failure_code as string | null) ?? null,
     executionStatus: r.pe_status === null || r.pe_status === undefined ? "" : String(r.pe_status),
   }));
 }

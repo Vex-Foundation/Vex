@@ -427,6 +427,80 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
     expect(still?.status).toBe("pending");
   });
 
+  it("refuses the dispatch when the card's TOOL NAME - what the UI renders as the TITLE - was edited", async () => {
+    const sessionId = await makeSession();
+    const projectId = await makeProject(sessionId);
+    const intent = await prepareApprovalIntent(sessionId);
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+    const outcome = await enqueueThroughStudio(projectId, sessionId, result);
+    if (outcome.kind !== "enqueued") throw new Error("expected an enqueue");
+
+    const cardRow = await queryOne<{ preview_json: Record<string, unknown> }>(
+      "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
+      [outcome.approvalId],
+    );
+    const card = cardRow?.preview_json as { toolName: string; criticalArgs: Record<string, unknown> };
+    expect(card.toolName).toBe("WalletEvmTransactionConfirm");
+    // EVERY money fact stays true. Only the TITLE changes - which is precisely
+    // the edit that shows a human a harmless heading over an envelope that still
+    // dispatches the transaction.
+    await execute("UPDATE approval_intents SET preview_json = $2 WHERE approval_id = $1", [
+      outcome.approvalId,
+      JSON.stringify({ ...card, toolName: "WalletBalanceRead" }),
+    ]);
+
+    const resumed = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      approvedContext(sessionId, outcome.approvalId),
+    );
+
+    expect(resumed.success).toBe(false);
+    expect(resumed.output).toContain("is not the card this transaction produces");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
+  it("refuses the dispatch when a NAMESPACE was added to the durable card", async () => {
+    const sessionId = await makeSession();
+    const projectId = await makeProject(sessionId);
+    const intent = await prepareApprovalIntent(sessionId);
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      restrictedContext(sessionId),
+    );
+    const outcome = await enqueueThroughStudio(projectId, sessionId, result);
+    if (outcome.kind !== "enqueued") throw new Error("expected an enqueue");
+
+    const cardRow = await queryOne<{ preview_json: Record<string, unknown> }>(
+      "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
+      [outcome.approvalId],
+    );
+    const card = cardRow?.preview_json as Record<string, unknown>;
+    // This lane's card carries NO namespace, and the renderer shows what the row
+    // has. An ADDED field is the classic misleading-card shape: every true fact
+    // still present, plus one more line the user reads as authoritative.
+    expect(card.namespace).toBeUndefined();
+    await execute("UPDATE approval_intents SET preview_json = $2 WHERE approval_id = $1", [
+      outcome.approvalId,
+      JSON.stringify({ ...card, namespace: "kyberswap" }),
+    ]);
+
+    const resumed = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      approvedContext(sessionId, outcome.approvalId),
+    );
+
+    expect(resumed.success).toBe(false);
+    expect(resumed.output).toContain("is not the card this transaction produces");
+    const still = await intentsRepo.getById(intent.intentId, sessionId);
+    expect(still?.status).toBe("pending");
+  });
+
   it("carries the CANONICAL card in the envelope, so the request digest covers the sentence", async () => {
     const sessionId = await makeSession();
     const projectId = await makeProject(sessionId);
