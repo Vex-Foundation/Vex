@@ -302,10 +302,11 @@ not a defect.
 Named here so the pools.fun team is not surprised by them:
 
 - **A kill switch exists on the Vex side.** The contract was confirmed in
-  writing and the endpoint verified on 2026-08-24. The client still carries a
-  strict-boolean configuration flag for the lane; an install with it off sends
-  zero traffic, so silence from one Vex install can mean the switch, not a
-  defect.
+  writing and the endpoint verified on 2026-08-24, and since that date the
+  lane is ON BY DEFAULT: every launch signs and delivers unless the install
+  explicitly stored the flag as `false`. The client still carries that
+  strict-boolean configuration flag; an install with it off sends zero
+  traffic, so silence from one Vex install can mean the switch, not a defect.
 - **The message bytes are versioned `v1` and will never be mutated.** Any change
   to the signed string is a new version marker, supported alongside `v1` for a
   migration window on both sides. A server that pins `v1` bytes will keep

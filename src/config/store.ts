@@ -122,21 +122,31 @@ export interface VexConfig {
   // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
   pendleRpcUrls?: Record<string, string> | undefined;
   /**
-   * Master switch for the pools.fun VEX-badge attestation lane. `false` (the
-   * default) means the launch handler produces NO signature, writes NO
-   * attestation column, sends NO HTTP and logs NOTHING for this lane, and the
-   * sweep claims no rows.
+   * Master switch for the pools.fun VEX-badge attestation lane. `false` means
+   * the launch handler produces NO signature, writes NO attestation column,
+   * sends NO HTTP and logs NOTHING for this lane, and the sweep claims no rows.
    *
-   * FAIL CLOSED, STRICTLY. This is the only flag in this file that gates a
-   * SIGNING operation, so it is parsed after the raw config spread and only a
-   * real JSON `true` enables it. A stored string `"true"`, a `1`, or any other
-   * truthy shape leaves it `false` - see `parsePoolsFunAttestationEnabled`.
+   * ON BY DEFAULT since 2026-08-24: the partner confirmed the contract in
+   * writing and the endpoint was probe-verified the same day, so a fresh
+   * install (and any config file that never stored this key) signs and
+   * delivers. The kill switch remains: a stored boolean `false` turns the
+   * lane fully off.
+   *
+   * FAIL CLOSED FOR PRESENT VALUES, STRICTLY. This is the only flag in this
+   * file that gates a SIGNING operation, so a key that IS in the file is
+   * parsed after the raw config spread and only a real JSON boolean decides:
+   * `true` enables, `false` disables, and a string `"true"`, a `1`, or any
+   * other non-boolean shape leaves it `false` - see
+   * `parsePoolsFunAttestationEnabled`. Only a truly ABSENT key falls back to
+   * the shipped default.
    */
   poolsFunAttestationEnabled: boolean;
 }
 
 /**
  * Strict boolean parse for the one config flag that authorizes a signature.
+ * Judges PRESENT values only - `loadConfig` handles a truly absent key by
+ * falling back to the shipped default before this parse is consulted.
  *
  * `loadConfig` spreads the parsed file over the defaults, so WITHOUT this the
  * disk value would reach the flag unvalidated and a hand-edited or migrated
@@ -201,9 +211,12 @@ export function getDefaultConfig(): VexConfig {
       // unindexed token). An empty override still turns delivery off.
       poolsFunAttestApiUrl: "https://api.bankr.bot",
     },
-    // SHIPS OFF. The lane signs with the launching wallet, so it stays disabled
-    // until it is deliberately turned on.
-    poolsFunAttestationEnabled: false,
+    // ON BY DEFAULT since 2026-08-24: pools.fun confirmed the contract in
+    // writing and the endpoint was probe-verified live the same day. Every
+    // launch from now on signs the attestation and claims the badge. The lane
+    // still signs with the launching wallet, so the kill switch stays: a
+    // stored boolean `false` turns it fully off (see the interface comment).
+    poolsFunAttestationEnabled: true,
   };
 }
 
@@ -397,10 +410,14 @@ export function loadConfig(): VexConfig {
       },
       // AFTER the `...parsedWithoutLegacy` spread above, and deliberately so:
       // that spread would otherwise land the raw disk value on a flag that
-      // authorizes a signature. Only a real boolean `true` enables the lane.
-      poolsFunAttestationEnabled: parsePoolsFunAttestationEnabled(
-        parsed.poolsFunAttestationEnabled,
-      ),
+      // authorizes a signature. A truly ABSENT key means the shipped default
+      // (JSON cannot store `undefined`, so `undefined` here is absence); a
+      // PRESENT key is judged strictly - only a real boolean `true` enables
+      // the lane, and any non-boolean shape fails closed.
+      poolsFunAttestationEnabled:
+        parsed.poolsFunAttestationEnabled === undefined
+          ? defaults.poolsFunAttestationEnabled
+          : parsePoolsFunAttestationEnabled(parsed.poolsFunAttestationEnabled),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),

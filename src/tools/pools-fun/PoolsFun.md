@@ -450,8 +450,18 @@ the gateway contract, exactly as decoded in
 Client state: `services.poolsFunAttestApiUrl` defaults to the live host;
 signing remains behind the strict-boolean `poolsFunAttestationEnabled` flag
 (the lane's kill switch - see `src/config/store.ts` for its current default
-and parse rules). The untested half is the SUCCESS path: it requires a real
-launch-window signature, so its first proof is the first badged launch.
+and parse rules).
+
+The SUCCESS path is now measured too (first badged launch, 2026-08-24):
+"Desu Vex" `0x07aD15f1eBe1C112a0854c40fd6E5ce8BD4F796c`, launched through the
+gateway in tx
+`0x4a76405e80228cdd41c13211aa1108a742b99dbf97f5714e125deb804b85b513`, was
+attested in-process seconds after the confirm - one POST, HTTP 2xx with
+`success: true`, `pools_attributed_at` stamped, no retry needed. The provider
+then surfaced a NEW `/discover` row field for it: `vexAttested: true`
+(boolean, absent-or-false on unbadged rows). That field is not yet projected
+by `pools.tokens`/`pools.search` - it appeared with the first badge and
+surfacing it in the discover row shape is a named follow-up, not an accident.
 
 ## Money-path conditions (verbatim force - change any of these by owner decision only)
 

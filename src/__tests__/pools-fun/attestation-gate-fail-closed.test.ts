@@ -80,8 +80,20 @@ describe("parsePoolsFunAttestationEnabled - strict boolean, nothing else", () =>
 });
 
 describe("loadConfig - the stored value cannot enable the lane by being truthy", () => {
-  it("ships OFF by default", () => {
-    expect(getDefaultConfig().poolsFunAttestationEnabled).toBe(false);
+  it("ships ON by default (endpoint live and contract confirmed 2026-08-24)", () => {
+    expect(getDefaultConfig().poolsFunAttestationEnabled).toBe(true);
+  });
+
+  it("an ABSENT key falls back to the shipped default - every install that never stored the key signs", () => {
+    if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
+    const { poolsFunAttestationEnabled: _omitted, ...withoutKey } = getDefaultConfig();
+    writeFileSync(testConfigFile, JSON.stringify(withoutKey));
+    expect(loadConfig().poolsFunAttestationEnabled).toBe(true);
+  });
+
+  it("a stored boolean `false` is the kill switch and turns the lane off", () => {
+    writeStoredFlag(false);
+    expect(loadConfig().poolsFunAttestationEnabled).toBe(false);
   });
 
   it("ships the LIVE attest host as the URL default (endpoint verified 2026-08-24)", () => {
