@@ -34,6 +34,7 @@ import {
 } from "./amount-decode-lane.js";
 import type { SolanaExecutedLegAmounts } from "./executed-amounts.js";
 import { isSolanaSweepEscalated } from "./candidate-schedule.js";
+import { settleLinkedIntentForRow } from "../wallet-transaction-intent-settlement.js";
 import type {
   SolanaActivitySweepDeps,
   SolanaBatchResolution,
@@ -84,8 +85,30 @@ export async function resolveSolanaPendingRows(
       });
     }
     const outcome = await processSolanaCandidate(event, statusFor(statuses, index), deps, amountBudget);
+    // THE LINKED INTENT (migration 087, T5/T6). This lane owns Solana signature
+    // observation, so it settles the `wallet_transaction_intents` row hanging
+    // off this activity row instead of a second observer asking the chain the
+    // same question. No chain access and no re-send happen in there.
+    //
+    // The verdict must PRESERVE the distinction the row resolution proved: a
+    // `mined_revert` (real on-chain error evidence) is `reverted`, but a
+    // blockhash/height EXPIRY with no landed-or-reverted evidence is
+    // `superseded_unproven` (T6), never `chain_reverted`. Folding expiry into
+    // `reverted` would tell the user the transaction failed on chain when
+    // nobody established that it ran at all.
+    if (outcome === "confirmed" || outcome === "failed" || outcome === "superseded") {
+      const verdict =
+        outcome === "confirmed"
+          ? "confirmed"
+          : outcome === "failed"
+            ? "reverted"
+            : "superseded_unproven";
+      await settleLinkedIntentForRow(event, verdict);
+    }
     if (outcome === "confirmed") confirmed++;
-    else if (outcome === "failed") failed++;
+    // A superseded row is terminal on the activity side (its blockhash expired),
+    // so it counts with the resolved-not-pending rows, never as still pending.
+    else if (outcome === "failed" || outcome === "superseded") failed++;
     else if (outcome === "pending") stillPending++;
     // outcome === "duplicate": a concurrent process already settled this row
     // - logged in logDuplicateCas already; never double-counted here.
@@ -106,7 +129,7 @@ function statusFor(
   return { outcome: "found", value: entry };
 }
 
-type CandidateOutcome = "confirmed" | "failed" | "pending" | "duplicate";
+type CandidateOutcome = "confirmed" | "failed" | "superseded" | "pending" | "duplicate";
 
 async function processSolanaCandidate(
   event: AgentActivityEvent,
@@ -364,7 +387,11 @@ async function finalizeIfExpired(
       `Solana activity sweep: blockhash expired (current block height ${heightLookup.value} `
       + `> persisted last_valid_block_height ${event.lastValidBlockHeight}) with no signature found.`,
   });
-  if (outcome.applied) return "failed";
+  // `superseded`, NOT `failed`: an expired blockhash with no signature ever
+  // observed is absence of proof, not evidence of an on-chain revert. The
+  // linked intent settles `superseded_unproven` (T6); a `failed` verdict here
+  // would map to `chain_reverted` and claim the transaction ran and reverted.
+  if (outcome.applied) return "superseded";
   logDuplicateCas(event.id, "fail");
   return outcome.row.status === "pending" ? "pending" : "duplicate";
 }

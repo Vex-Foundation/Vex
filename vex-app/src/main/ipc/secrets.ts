@@ -132,7 +132,7 @@ export function registerSecretsHandlers(): Array<() => void> {
           });
         }
 
-        const result = unlockSecretSession(input.password);
+        const result = await unlockSecretSession(input.password);
         if (result.ok) {
           recordUnlockSuccess();
           log.info(

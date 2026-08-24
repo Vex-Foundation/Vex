@@ -86,6 +86,11 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   // to an address with no route, price or counterparty, so the `ELSE` arm's
   // "spot" would state a trade that never happened.
   transfer: "transfer",
+  // Migration 087. A generic signed transaction renders as its OWN product: an
+  // approval or an arbitrary contract call has no asset leg to state, so both
+  // the `ELSE` arm's "spot" and the `transfer` product would describe a
+  // movement nobody proved.
+  transaction: "transaction",
 };
 
 /** Every current user-action role per kind; plumbing roles are intentionally absent. */
@@ -106,6 +111,12 @@ const KIND_LOGICAL_ROLES: Readonly<Record<string, readonly string[]>> = {
   launch: ["token_launch"],
   claim: ["pools_claim"],
   transfer: ["wallet_transfer"],
+  transaction: [
+    "tx_approve",
+    "tx_contract_call",
+    "tx_native_transfer",
+    "tx_spl_instruction_set",
+  ],
 };
 
 /** The activity half's row predicate, read from the source it is written in. */

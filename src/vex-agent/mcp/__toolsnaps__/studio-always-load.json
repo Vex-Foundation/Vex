@@ -1,0 +1,29 @@
+{
+  "names": [
+    "AgentScan",
+    "BridgeExecute",
+    "BridgeExecuteRelay",
+    "BridgeQuote",
+    "BridgeQuoteRelay",
+    "BridgeStatus",
+    "ChainRead",
+    "SwapExecute",
+    "SwapExecuteUniswap",
+    "SwapQuote",
+    "SwapQuoteUniswap",
+    "TokenCheck",
+    "TokenFind",
+    "TwitterAccount",
+    "UnitsConvert",
+    "WalletBalances",
+    "WalletEvmTransactionConfirm",
+    "WalletEvmTransactionPrepare",
+    "WalletSendConfirm",
+    "WalletSendPrepare",
+    "WalletSolanaTransactionConfirm",
+    "WalletSolanaTransactionPrepare",
+    "WalletTrackToken",
+    "WebResearch",
+    "vex_ToolSearch"
+  ]
+}

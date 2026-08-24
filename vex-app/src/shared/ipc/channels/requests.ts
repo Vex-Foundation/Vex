@@ -421,6 +421,28 @@ export const CH = {
     claim: "vex:poolsLaunch:claim",
   },
 
+  /**
+   * Vex Studio projects (stage P). A project is a folder under the projects
+   * root plus one backing `sessions` row (`mode = 'agent'`,
+   * `scope = 'vex_studio'`).
+   *
+   * The renderer never sends or receives a filesystem capability here: it sends
+   * a NAME, main derives the slug and resolves the root itself, and the DTO
+   * carries only a root-relative path plus display-only label text.
+   *
+   * `updateScope` edits permission, wallet selection and the agent roster under
+   * optimistic concurrency (`expectedScopeVersion`); a mismatch is refused with
+   * `projects.scope_conflict` and writes nothing. Deletion is deliberately not
+   * part of this surface yet - removing a project means removing a folder of
+   * the user's files, which gets its own explicit workflow.
+   */
+  projects: {
+    create: "vex:projects:create",
+    get: "vex:projects:get",
+    list: "vex:projects:list",
+    updateScope: "vex:projects:updateScope",
+  },
+
   // Cancellation
   cancel: "vex:cancel",
 } as const;

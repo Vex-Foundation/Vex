@@ -36,6 +36,10 @@ import type { PoolClient } from "pg";
 
 import { query, queryOne } from "../client.js";
 import { jsonb } from "../params.js";
+// The mechanics `wallet_transaction_intents` genuinely shares with this table:
+// TIMESTAMPTZ normalisation and the CAS `rowCount` discipline. The STATE
+// MACHINES are deliberately NOT shared; see that module's header.
+import { casRow as casRowShared, toIso, toIsoOrNull } from "./wallet-intent-lifecycle.js";
 
 export type WalletIntentNetwork = "eip155" | "solana";
 export type WalletIntentStatus =
@@ -88,17 +92,6 @@ export interface CreateInput {
   idempotencyKey?: string | null;
 }
 
-// ── ISO normalisation (TIMESTAMPTZ → Date, see approval-intents repo) ──
-
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-function toIsoOrNull(value: string | Date | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  return toIso(value);
-}
-
 const SELECT_COLUMNS =
   "intent_id, session_id, wallet_address, network, chain_alias, " +
   "to_address, amount, token, preview_json, status, " +
@@ -133,14 +126,12 @@ function mapRow(r: Record<string, unknown>): WalletIntent {
  * `null` means the predicate missed — a hard "race lost" signal, never a silent
  * success (see the `rowCount` discipline in the header).
  */
-async function casRow(
+function casRow(
   client: PoolClient,
   sql: string,
   params: readonly unknown[],
 ): Promise<WalletIntent | null> {
-  const res = await client.query<Record<string, unknown>>(sql, [...params]);
-  const row = res.rows[0];
-  return row === undefined ? null : mapRow(row);
+  return casRowShared(client, sql, params, mapRow);
 }
 
 // ── create ──────────────────────────────────────────────────────────────

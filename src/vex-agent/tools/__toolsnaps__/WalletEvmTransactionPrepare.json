@@ -1,0 +1,69 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare an ARBITRARY EVM transaction for approval. It SPENDS NOTHING and signs nothing: it decodes the calldata, simulates it, records one durable intent and hands back its id. THE INTENT IS WHAT GETS APPROVED, so the decoded effects and the fee caps recorded here are exactly what the user is shown and confirms. Use this when the user wants to send a transaction Vex has no dedicated tool for, and before any call to `WalletEvmTransactionConfirm` - confirm has no other way to obtain an intentId. DECODE IS FAIL CLOSED: the v1 set is ERC-20 transfer/approve/transferFrom/increaseAllowance/permit, Permit2 approve/permit/transferFrom at the canonical Permit2 address for the chain, and a plain native transfer with `data` of `0x` sent to an address that has no code. An unknown selector, a malformed layout, a Permit2 call to any other address, or empty calldata sent to a contract is REFUSED BY NAME before an intent exists; router and aggregator calldata is deliberately outside v1. A caller-supplied `from`, fee payer or fee receiver is refused by name too: the sender is the wallet selected for this session. RETURNS intentId, chain, chainId, walletAddress, status 'prepared', expiresAt, the decoded effects, the approval preview, and approvedFeeBounds echoing the caps you supplied. The intent is scoped to this session, expires in 10 minutes, and binds the wallet selected right now; if that selection changes, confirm refuses rather than signing from another address.",
+      "name": "WalletEvmTransactionPrepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "The EVM chain the transaction executes on. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "data": {
+            "description": "Transaction calldata as 0x-prefixed hex. Pass `0x` (the default) for a plain native transfer, which is accepted only when `to` has no contract code.",
+            "type": "string"
+          },
+          "gasLimit": {
+            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "type": "string"
+          },
+          "gasPriceWei": {
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "type": "string"
+          },
+          "maxFeePerGasWei": {
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "type": "string"
+          },
+          "maxPriorityFeePerGasWei": {
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Destination address (0x, 20 bytes): the contract being called, or the recipient for a plain native transfer.",
+            "type": "string"
+          },
+          "valueWei": {
+            "description": "Native coin to send with the call, in RAW wei as a decimal integer STRING (never a human decimal such as \"0.1\", never a JSON number). Defaults to \"0\". Must be \"0\" for a contract call: every function in the v1 decode set is non-payable.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "to",
+          "gasLimit"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

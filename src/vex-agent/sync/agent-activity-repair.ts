@@ -93,6 +93,10 @@ export {
   resolveReadOnlyReceiptClient,
 } from "./agent-activity-repair/chain-sources.js";
 import { REPAIR_CANDIDATE_AGE_MS, isPastHandlerWindow } from "./handler-window.js";
+import {
+  recoverStrandedTransactionIntents,
+  settleLinkedTransactionIntent,
+} from "./wallet-transaction-intent-settlement.js";
 
 // The gate's own leaf module owns both, so the lane and the fast lane can share
 // them without importing each other. Re-exported here because every existing
@@ -173,6 +177,14 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
   // Solana activity sweep (`solana-activity-repair.ts`) owns every
   // chain_family='solana' staged row via its own disjoint candidate query. The
   // claim's own predicate enforces the family.
+  // CRASH RECOVERY FIRST (T4a/T4b), before any observation. It holds no chain
+  // access and takes no claim: it reads linked `consuming` transaction intents
+  // whose handler is provably gone and splits them on whether a signed hash was
+  // ever staged. Running it here rather than as its own scheduled job is the
+  // same choice the Solana lane makes for stale hashless intents - one tick,
+  // one owner, no second scheduler.
+  await recoverStrandedTransactionIntents();
+
   const claim = await claimDuePendingEvm(REPAIR_BATCH_LIMIT);
   reportClaimOverflow(claim);
 
@@ -291,6 +303,23 @@ export async function resolveEvmPendingRow(
   });
 
   const outcome = await applyObservation(event, observation, context);
+
+  // THE LINKED INTENT (migration 087, T5/T6). This lane already holds the only
+  // chain evidence anybody has about this hash, so it settles the
+  // `wallet_transaction_intents` row that hangs off this activity row rather
+  // than a second sweep asking the same question. No chain access happens in
+  // there, and nothing is ever re-broadcast.
+  if (outcome === "confirmed" || outcome === "failed" || outcome === "superseded") {
+    await settleLinkedTransactionIntent(
+      event.id,
+      outcome === "confirmed"
+        ? "confirmed"
+        : outcome === "failed"
+          ? "reverted"
+          : "superseded_unproven",
+      event.protocolExecutionId,
+    );
+  }
 
   // THE PUSH, from ONE place: a row that is still pending after an observation
   // is precisely the case the `resolved` bus cannot carry, and without it the
@@ -549,7 +578,18 @@ async function confirmMinedSuccess(
 /** The fields `resolveEvmPendingRow` actually reads — narrower than the full row on purpose. */
 export type PendingEvmRow = Pick<
   AgentActivityEvent,
-  "id" | "chainId" | "txHash" | "eventRole" | "fromAddress" | "nonce" | "submitAttemptedAt"
+  | "id"
+  | "chainId"
+  | "txHash"
+  | "eventRole"
+  | "fromAddress"
+  | "nonce"
+  | "submitAttemptedAt"
+  // Read only to settle a LINKED wallet transaction intent (migration 087):
+  // completing that intent's execution row needs the id of the execution the
+  // activity row already belongs to, and inventing a second one would
+  // double-count the money state the compaction gate reads.
+  | "protocolExecutionId"
 >;
 
 function logDuplicateCas(id: number, attempted: "confirm" | "fail"): void {

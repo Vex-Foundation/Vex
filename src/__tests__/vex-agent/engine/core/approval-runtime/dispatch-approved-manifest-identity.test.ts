@@ -112,6 +112,10 @@ function snapshotWith(
       queue_tool_call: queueToolCall,
       queue_permission_at_enqueue: "restricted",
       session_permission_live: "restricted",
+      origin: "agent",
+      project_id: null,
+      scope_version_at_enqueue: null,
+      request_digest: null,
     },
   };
 }

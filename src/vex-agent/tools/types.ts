@@ -217,6 +217,16 @@ export interface ToolCallRequest {
 
 // ── Tool result (from handler back to engine) ────────────────────
 
+/**
+ * A refusal cause a caller can act on programmatically. Closed union: a new
+ * variant is a deliberate contract change with its own producer and consumers.
+ */
+export type ToolFailure = {
+  readonly kind: "configuration_unavailable";
+  /** Env variable NAMES that must be set. Never values. */
+  readonly env: readonly string[];
+};
+
 export interface ToolResult {
   /** Whether the tool executed successfully */
   success: boolean;
@@ -226,6 +236,27 @@ export interface ToolResult {
   data?: Record<string, unknown>;
   /** If true, tool queued for approval instead of executing */
   pendingApproval?: boolean;
+  /**
+   * TYPED reason a refusal happened, when the refusal has a machine-readable
+   * remedy. Additive and OPTIONAL: `output` stays the authority for a human and
+   * for the model, and every existing consumer that reads only `success` /
+   * `output` is unaffected.
+   *
+   * `configuration_unavailable` is set at the ONE place the protocol runtime
+   * already refuses a call because a REQUIRED env variable is unset
+   * (`protocols/runtime.ts`, the `manifest.requiresEnv` gate). `env` carries the
+   * variable NAMES only - a name is configuration, a value is a secret (rule
+   * 07). It is never set for an OPTIONAL provider key (a Relay call with no key
+   * still runs), and never for a handler-level provider error: those keep their
+   * own cause.
+   *
+   * It exists because a dynamic internal alias can route to a manifest the
+   * CALLER could not resolve statically - `SwapQuote` on Solana routes to a
+   * Jupiter manifest that requires `JUPITER_API_KEY`, while the alias itself
+   * declares no `requiresEnv`. The Studio MCP executor normalizes its own
+   * pre-dispatch hint layer and this runtime field into one typed outcome.
+   */
+  failure?: ToolFailure;
   /**
    * Set by a handler that PARKED the turn on a human form instead of producing
    * an answer (§C3b — `trench.launch_request_form`). Sibling of
@@ -238,6 +269,35 @@ export interface ToolResult {
    * not carry "waiting" as a state. `intentId` names the row the resume answers.
    */
   pendingUserForm?: { readonly intentId: string };
+  /**
+   * What an approval for this call would be BOUND TO, rebuilt from the durable
+   * intent row by the handler that is asking for it (stage A4b, spec item 2).
+   *
+   * Set ONLY by the generic signing confirm handlers, ONLY on a
+   * `pendingApproval` return, and ONLY from the strictly parsed durable row -
+   * never from a caller parameter and never from an in-memory prepare result,
+   * which a manual agent call or an MCP client would not have. Both enqueue
+   * paths fold it into the canonical approval request digest, so the approval is
+   * bound to the exact proposal a human read rather than to a pair of
+   * identifiers, and the card carries the decoded preview and the INTENT's own
+   * expiry instead of the enqueue path's default TTL.
+   *
+   * Typed structurally rather than by importing the wallet module's interface:
+   * `types.ts` is the tool vocabulary and must not depend on one tool family's
+   * implementation. The producing module's `PreparedApprovalBinding` is
+   * assignable to it, and the compiler checks that at the assignment.
+   */
+  preparedApprovalBinding?: {
+    readonly preview: {
+      readonly label: string;
+      /** The approval card's scalar vocabulary, identical to `WalletIntentPreview`'s. */
+      readonly criticalArgs: Record<string, string | number | boolean | null>;
+    };
+    readonly intentExpiresAt: string;
+    readonly proposalDigest: string;
+    readonly proposalDigestVersion: string;
+    readonly resource: { readonly table: string; readonly intentId: string };
+  };
   /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
   /**

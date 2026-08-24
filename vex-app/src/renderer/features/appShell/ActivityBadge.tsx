@@ -165,6 +165,10 @@ const KIND_LABEL: Record<FeedActivityKind, string> = {
   launch: "LAUNCH",
   claim: "CLAIM",
   transfer: "TRANSFER",
+  // Migration 087 - a generic signed transaction. `TX` rather than
+  // `TRANSACTION`: the badge is a two-segment chip and the role segment beside
+  // it carries the decoded effect (`TX·APPROVE`, `TX·CALL`).
+  transaction: "TX",
   activity: "ACTIVITY",
 };
 
@@ -218,6 +222,13 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // Migration 084 - `null`, like `swap`'s own role: the kind segment already
   // reads TRANSFER, so a second segment would print `TRANSFER·TRANSFER`.
   wallet_transfer: null,
+  // Migration 087 - the decoded EFFECT of a generic signed transaction. This is
+  // the one place a role segment carries real information the kind cannot: the
+  // kind says a transaction was signed, the role says what it does.
+  tx_approve: "APPROVE",
+  tx_contract_call: "CALL",
+  tx_native_transfer: "SEND",
+  tx_spl_instruction_set: "INSTRUCTIONS",
 };
 
 /**

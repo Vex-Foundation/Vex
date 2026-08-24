@@ -19,6 +19,7 @@ import { join, relative, sep } from "node:path";
 import { PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
+import { WALLET_TRANSACTION_TOOLS } from "@vex-agent/tools/registry/wallet-transaction.js";
 import { CANONICAL_CHAIN_SLUGS } from "@vex-agent/tools/protocols/conventions.js";
 import { readRejectedParamReason } from "@vex-agent/tools/protocols/runtime/params.js";
 import { listLocalChains } from "@tools/evm-chains/registry.js";
@@ -73,7 +74,7 @@ function format(issues: readonly ManifestLintIssue[]): string {
 
 const protocolIssues = PROTOCOL_TOOLS.flatMap((manifest) => lintToolSubject(toLintSubject(manifest)));
 
-const aliasIssues = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS].flatMap((tool) =>
+const aliasIssues = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS].flatMap((tool) =>
   lintToolSubject(
     toSchemaLintSubject({
       name: tool.name,

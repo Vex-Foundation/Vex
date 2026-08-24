@@ -42,9 +42,25 @@
  *  5. `wallet_intents` `failed` / `audit_failed` CARRYING a `tx_hash` — a
  *     failure with a hash may still land on chain. A failure without one never
  *     broadcast and is genuinely terminal.
- *  6. `protocol_executions.execution_status = 'intent'` — a durable pre-sign
+ *  6. `wallet_transaction_intents` (migration 087) `consuming`,
+ *     `broadcast_unconfirmed`, or `pending` that has NOT expired. Same reading
+ *     as 4 with one addition the transfer table cannot express:
+ *     `broadcast_unconfirmed` is the DISTINCT durable status for "the bytes are
+ *     on the network and we cannot yet prove the outcome", which is precisely
+ *     an unresolved money state and blocks until a repair lane settles it
+ *     (T5/T6). `superseded_unproven` and `audit_failed` RELEASE: the first is an
+ *     honest terminal the repair lane wrote, the second means the staged-evidence
+ *     write failed BEFORE broadcast, so nothing was signed.
+ *  7. `wallet_transaction_intents` carrying a `tx_hash` in ANY state outside the
+ *     proven-terminal set. Defence in depth rather than a live predicate: the
+ *     migration's evidence CHECK already makes every hash-carrying status either
+ *     proven or covered by 6. It is written out anyway because a future status
+ *     added to the CHECK without a thought for this gate would otherwise release
+ *     a staged hash silently, and that is exactly the failure mode the transfer
+ *     table's weaker CHECK produced.
+ *  8. `protocol_executions.execution_status = 'intent'` - a durable pre-sign
  *     record whose exchange outcome was never written back.
- *  7. `agent_activity.status = 'pending'` — a broadcast awaiting confirmation.
+ *  9. `agent_activity.status = 'pending'` - a broadcast awaiting confirmation.
  *
  * KNOWN GAP (owner decision pending, not a build choice): `protocol_executions`
  * `session_id` is nullable, so an intent row created without a session is
@@ -89,6 +105,8 @@ export interface MoneyStateReason {
     | "approval_in_flight"
     | "wallet_intent_live"
     | "wallet_confirmation_unknown"
+    | "wallet_transaction_intent_live"
+    | "wallet_transaction_confirmation_unknown"
     | "protocol_execution_intent"
     | "agent_activity_pending";
   /** Identifier of the blocking row, for audit and operator diagnosis. */
@@ -109,9 +127,10 @@ export type UnresolvedMoneyState =
 const MAX_REASONS = 50;
 
 /**
- * One statement, six session-scoped predicates. Every branch hits a
+ * One statement, nine session-scoped predicates. Every branch hits a
  * session-scoped index (`idx_approvals_session`, `idx_wallet_intents_session`,
- * `idx_executions_session`, `idx_agent_activity_pending`), because this runs on
+ * `idx_wallet_transaction_intents_session`, `idx_executions_session`,
+ * `idx_agent_activity_pending`), because this runs on
  * the critical path of every apply while the session control lock is held.
  */
 const UNRESOLVED_MONEY_STATE_SQL = `
@@ -152,6 +171,22 @@ const UNRESOLVED_MONEY_STATE_SQL = `
    WHERE w.session_id = $1
      AND w.status IN ('failed', 'audit_failed')
      AND w.tx_hash IS NOT NULL
+
+   UNION ALL
+
+  SELECT 'wallet_transaction_intent_live', t.intent_id::text, t.status::text
+    FROM wallet_transaction_intents t
+   WHERE t.session_id = $1
+     AND (t.status IN ('consuming', 'broadcast_unconfirmed')
+          OR (t.status = 'pending' AND t.expires_at > NOW()))
+
+   UNION ALL
+
+  SELECT 'wallet_transaction_confirmation_unknown', t.intent_id::text, t.status::text
+    FROM wallet_transaction_intents t
+   WHERE t.session_id = $1
+     AND t.tx_hash IS NOT NULL
+     AND t.status NOT IN ('executed', 'failed', 'superseded_unproven', 'broadcast_unconfirmed')
 
    UNION ALL
 

@@ -15,6 +15,7 @@ import { denseScore } from "./dense-score.js";
 import { pinExactToolIdMatch } from "./toolid-pin.js";
 import { describeParamGroupConstraints } from "./runtime/params.js";
 import type {
+  DiscoveryAvailabilityMode,
   ManifestRow,
   ProtocolDiscoveryItem,
   ProtocolDiscoveryListItem,
@@ -352,15 +353,23 @@ export async function discoverProtocolCapabilities(
   }
 
   const query = typeof request.query === "string" ? request.query.trim() : "";
+  // ABSENT means today's in-app filtering. Stated explicitly rather than
+  // inferred so a new caller has to choose (`types/discovery.ts`).
+  const availability: DiscoveryAvailabilityMode = request.availability ?? "filter-env-unmet";
   // Availability is strictly `isProtocolToolAvailable` (lifecycle + env).
   // Execute-time safety still lives in `runtime.ts`; discovery must not hide
   // mutating tools or the agent cannot find them and trigger approval flow.
   const filteredTools = PROTOCOL_TOOLS
     .filter((manifest) => resolvedNamespace ? manifest.namespace === resolvedNamespace : true)
-    // The advertised / lifecycle+env gates, shared verbatim with select mode
-    // so neither path can reach a manifest the other hides.
-    // This consumes `.ok` only; the reason is for the id-by-id caller.
-    .filter((manifest) => evaluateManifestDiscoverability(manifest).ok);
+    // The advertised / lifecycle+env gates, shared verbatim with select mode.
+    // `include-unavailable` keeps an env-unmet manifest in the candidate set
+    // (the Studio MCP export lists it and answers the CALL with a typed
+    // `configuration_unavailable` result); it relaxes NOTHING else.
+    .filter((manifest) => {
+      const outcome = evaluateManifestDiscoverability(manifest);
+      if (outcome.ok) return true;
+      return availability === "include-unavailable" && outcome.reason === "env_missing";
+    });
 
   if (request.list === true) {
     if (typeof resolvedNamespace !== "string") {

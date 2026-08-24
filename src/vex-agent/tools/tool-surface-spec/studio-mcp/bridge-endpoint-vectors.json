@@ -1,0 +1,1025 @@
+{
+  "$comment": "GENERATED CONTRACT FIXTURE. Source of truth: studio-mcp/bridge-endpoint-contract.md. Regenerate deliberately; every value here is a reviewed wire contract consumed by the TypeScript host tests (stage A4a) and the Go bridge tests (stage A4c).",
+  "contractVersion": 1,
+  "modeEncoding": "Directory modes are DECIMAL permission bits: 448 = 0o700, 493 = 0o755, 384 = 0o600. JSON has no octal literal and a string would invite a parse mistake on the Go side.",
+  "hash": {
+    "algorithm": "sha256",
+    "input": "the UTF-8 bytes of the realpath of the Vex config directory, with no trailing separator normalisation",
+    "encoding": "lowercase hex, first 12 characters",
+    "fileNameTemplate": "vex-studio-<hash>.sock",
+    "cases": [
+      {
+        "configDirRealPath": "/home/alice/.config/vex",
+        "hash": "7ea66dd102b3",
+        "fileName": "vex-studio-7ea66dd102b3.sock"
+      },
+      {
+        "configDirRealPath": "/Users/alice/Library/Application Support/vex",
+        "hash": "c9cebed38235",
+        "fileName": "vex-studio-c9cebed38235.sock"
+      },
+      {
+        "configDirRealPath": "/home/alice/.config/vex/",
+        "hash": "5453893f0a39",
+        "fileName": "vex-studio-5453893f0a39.sock"
+      },
+      {
+        "configDirRealPath": "C:\\Users\\alice\\AppData\\Roaming\\vex",
+        "hash": "742dab34d2e9",
+        "fileName": "vex-studio-742dab34d2e9.sock"
+      }
+    ]
+  },
+  "realpathFallback": "literal",
+  "limits": {
+    "sunPathMaxBytes": 103,
+    "handshakeMaxBytes": 4096,
+    "handshakeDeadlineMs": 5000,
+    "mcpMaxLineBytes": 4194304,
+    "maxQueuedInboundMessages": 16,
+    "maxConnections": 16,
+    "maxHandshakePending": 4,
+    "maxListenerSockets": 21,
+    "maxInFlightPerConnection": 8,
+    "maxInFlightGlobal": 32,
+    "shutdownDeadlineMs": 5000,
+    "maxPendingOutbound": 64,
+    "bridgeDialTimeoutMs": 2000,
+    "bridgeAckDeadlineMs": 5000,
+    "bridgeDrainDeadlineMs": 5000,
+    "bridgeDiagnosticMaxBytes": 512
+  },
+  "configDir": {
+    "appName": "vex",
+    "envNames": [
+      "VEX_CONFIG_DIR",
+      "XDG_CONFIG_HOME",
+      "APPDATA"
+    ],
+    "rules": [
+      "VEX_CONFIG_DIR overrides every platform default, and ONLY when it is non-empty AND absolute for the TARGET platform. An accepted value is returned VERBATIM - no join, no clean, no trailing-separator normalisation - because the endpoint hash is taken over exactly these bytes.",
+      "XDG_CONFIG_HOME (unix) and APPDATA (windows) are honoured under the SAME non-empty-and-absolute rule. Empty is treated as unset per the XDG Base Directory specification; relative is treated as unset so a typo cannot put privileged state in the launcher cwd.",
+      "The platform default is joined from the home directory: unix ~/.config/vex, darwin ~/Library/Application Support/vex, windows ~/AppData/Roaming/vex. darwin does NOT consult XDG_CONFIG_HOME.",
+      "Path flavour follows the TARGET platform, not the host running the resolver: windows joins with a backslash and normalises forward slashes; every other platform joins with a forward slash.",
+      "LEXICAL NORMALISATION is part of the join, defined explicitly because the three implementations cannot each invent it: a JOINED platform default is normalised exactly as Node's path.posix.join / path.win32.join normalises - `.` segments dropped, `..` segments resolved against the preceding segment (and discarded at the root of an absolute path), repeated separators collapsed to one, a trailing separator on the base absorbed, forward slashes converted on win32, and a UNC (`\\\\\\\\server\\\\share`) or device (`C:`) root preserved rather than consumed by a `..`. The endpoint hash is taken over the RESULT, so `XDG_CONFIG_HOME=/home/alice/../vex-x` must resolve to `/home/vex-x/vex` on all three sides or the bridge dials a socket the app never bound. An accepted VEX_CONFIG_DIR is still returned VERBATIM and is NOT normalised; that asymmetry is pinned by its own cases."
+    ],
+    "cases": [
+      {
+        "name": "linux: no override and no XDG_CONFIG_HOME falls back to ~/.config/vex",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {},
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "linux: EMPTY VEX_CONFIG_DIR is treated as unset",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "VEX_CONFIG_DIR": ""
+        },
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "linux: RELATIVE VEX_CONFIG_DIR is ignored, never resolved against cwd",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "VEX_CONFIG_DIR": "vex-state"
+        },
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "linux: ABSOLUTE VEX_CONFIG_DIR wins over every platform default",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "VEX_CONFIG_DIR": "/srv/vexstate",
+          "XDG_CONFIG_HOME": "/home/alice/.config-custom"
+        },
+        "expect": "/srv/vexstate"
+      },
+      {
+        "name": "linux: an accepted VEX_CONFIG_DIR keeps its TRAILING SEPARATOR verbatim",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "VEX_CONFIG_DIR": "/srv/vexstate/"
+        },
+        "expect": "/srv/vexstate/"
+      },
+      {
+        "name": "linux: absolute XDG_CONFIG_HOME is honoured",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/home/alice/.config-custom"
+        },
+        "expect": "/home/alice/.config-custom/vex"
+      },
+      {
+        "name": "linux: EMPTY XDG_CONFIG_HOME is treated as unset (XDG rule), never a relative vex",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": ""
+        },
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "linux: RELATIVE XDG_CONFIG_HOME is treated as unset",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": ".config-custom"
+        },
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "linux: a trailing separator on XDG_CONFIG_HOME is absorbed by the join",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/home/alice/.config-custom/"
+        },
+        "expect": "/home/alice/.config-custom/vex"
+      },
+      {
+        "name": "freebsd and every other unix follow the linux rules",
+        "platform": "freebsd",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/home/alice/.config-custom"
+        },
+        "expect": "/home/alice/.config-custom/vex"
+      },
+      {
+        "name": "darwin: the Application Support default",
+        "platform": "darwin",
+        "homedir": "/Users/alice",
+        "env": {},
+        "expect": "/Users/alice/Library/Application Support/vex"
+      },
+      {
+        "name": "darwin: XDG_CONFIG_HOME is IGNORED, the platform convention is not XDG",
+        "platform": "darwin",
+        "homedir": "/Users/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/Users/alice/.config-custom"
+        },
+        "expect": "/Users/alice/Library/Application Support/vex"
+      },
+      {
+        "name": "darwin: EMPTY VEX_CONFIG_DIR is treated as unset",
+        "platform": "darwin",
+        "homedir": "/Users/alice",
+        "env": {
+          "VEX_CONFIG_DIR": ""
+        },
+        "expect": "/Users/alice/Library/Application Support/vex"
+      },
+      {
+        "name": "darwin: ABSOLUTE VEX_CONFIG_DIR wins",
+        "platform": "darwin",
+        "homedir": "/Users/alice",
+        "env": {
+          "VEX_CONFIG_DIR": "/Volumes/work/vexstate"
+        },
+        "expect": "/Volumes/work/vexstate"
+      },
+      {
+        "name": "win32: absolute APPDATA is honoured",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:\\Users\\alice\\AppData\\Roaming"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: APPDATA unset falls back to ~/AppData/Roaming/vex",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {},
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: EMPTY APPDATA is treated as unset",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": ""
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: RELATIVE APPDATA is treated as unset",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "AppData\\Roaming"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: a trailing separator on APPDATA is absorbed by the join",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "D:\\state\\"
+        },
+        "expect": "D:\\state\\vex"
+      },
+      {
+        "name": "win32: a bare drive root as APPDATA keeps its separator exactly once",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "D:\\"
+        },
+        "expect": "D:\\vex"
+      },
+      {
+        "name": "win32: ABSOLUTE VEX_CONFIG_DIR wins over APPDATA",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "VEX_CONFIG_DIR": "C:\\vexstate",
+          "APPDATA": "C:\\Users\\alice\\AppData\\Roaming"
+        },
+        "expect": "C:\\vexstate"
+      },
+      {
+        "name": "win32: RELATIVE VEX_CONFIG_DIR is ignored and APPDATA still applies",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "VEX_CONFIG_DIR": "vexstate",
+          "APPDATA": "C:\\Users\\alice\\AppData\\Roaming"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: a forward-slash APPDATA is absolute and joins with a backslash",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:/Users/alice/AppData/Roaming"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "NORMALISATION: a PARENT segment in XDG_CONFIG_HOME is resolved lexically, not carried into the hash",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/home/alice/../vex-x"
+        },
+        "expect": "/home/vex-x/vex"
+      },
+      {
+        "name": "NORMALISATION: a CURRENT-DIRECTORY segment in XDG_CONFIG_HOME is dropped",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/home/alice/./.config-custom"
+        },
+        "expect": "/home/alice/.config-custom/vex"
+      },
+      {
+        "name": "NORMALISATION: REPEATED separators inside XDG_CONFIG_HOME collapse to one",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/srv//state///cfg"
+        },
+        "expect": "/srv/state/cfg/vex"
+      },
+      {
+        "name": "NORMALISATION: a doubled TRAILING separator on XDG_CONFIG_HOME is absorbed by the join",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/srv/state/cfg//"
+        },
+        "expect": "/srv/state/cfg/vex"
+      },
+      {
+        "name": "NORMALISATION: a PARENT segment cannot escape the posix root",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/a/b/../../../.."
+        },
+        "expect": "/vex"
+      },
+      {
+        "name": "NORMALISATION: mixed dot segments resolve left to right",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "XDG_CONFIG_HOME": "/a/b/./../c/."
+        },
+        "expect": "/a/c/vex"
+      },
+      {
+        "name": "NORMALISATION: the HOME FALLBACK normalises the homedir too (repeated and trailing separators)",
+        "platform": "linux",
+        "homedir": "/home//alice/",
+        "env": {},
+        "expect": "/home/alice/.config/vex"
+      },
+      {
+        "name": "NORMALISATION: the HOME FALLBACK resolves a parent segment in the homedir",
+        "platform": "linux",
+        "homedir": "/home/alice/..",
+        "env": {},
+        "expect": "/home/.config/vex"
+      },
+      {
+        "name": "NORMALISATION: a leading DOUBLE separator in the homedir collapses on posix",
+        "platform": "linux",
+        "homedir": "//srv/x",
+        "env": {},
+        "expect": "/srv/x/.config/vex"
+      },
+      {
+        "name": "NORMALISATION: darwin's Application Support join resolves homedir dot segments",
+        "platform": "darwin",
+        "homedir": "/Users/alice/../bob",
+        "env": {},
+        "expect": "/Users/bob/Library/Application Support/vex"
+      },
+      {
+        "name": "NORMALISATION: darwin's home fallback collapses repeated and trailing separators",
+        "platform": "darwin",
+        "homedir": "/Users//alice//",
+        "env": {},
+        "expect": "/Users/alice/Library/Application Support/vex"
+      },
+      {
+        "name": "win32 NORMALISATION: a PARENT segment in APPDATA is resolved lexically",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:\\Users\\alice\\..\\bob\\AppData\\Roaming"
+        },
+        "expect": "C:\\Users\\bob\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32 NORMALISATION: repeated and trailing separators in APPDATA collapse",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:\\Users\\\\alice\\AppData\\Roaming\\"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32 NORMALISATION: FORWARD SLASHES in APPDATA become backslashes",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:/Users/alice/AppData/Roaming"
+        },
+        "expect": "C:\\Users\\alice\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32 UNC: the two-separator prefix SURVIVES the join",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "\\\\server\\share\\roaming"
+        },
+        "expect": "\\\\server\\share\\roaming\\vex"
+      },
+      {
+        "name": "win32 UNC: a parent segment resolves WITHOUT eating the server and share",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "\\\\server\\share\\a\\..\\roaming"
+        },
+        "expect": "\\\\server\\share\\roaming\\vex"
+      },
+      {
+        "name": "win32 UNC: a bare server-and-share APPDATA is a root the join extends",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "\\\\server\\share"
+        },
+        "expect": "\\\\server\\share\\vex"
+      },
+      {
+        "name": "win32 UNC: a UNC HOMEDIR keeps its prefix through the AppData fallback",
+        "platform": "win32",
+        "homedir": "\\\\server\\share\\home",
+        "env": {},
+        "expect": "\\\\server\\share\\home\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "win32: a SINGLE leading separator is rooted on the current drive, not UNC",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "\\roaming"
+        },
+        "expect": "\\roaming\\vex"
+      },
+      {
+        "name": "win32: a bare DRIVE ROOT keeps its single separator",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "C:\\"
+        },
+        "expect": "C:\\vex"
+      },
+      {
+        "name": "win32: the drive letter's CASE is preserved, never folded",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "APPDATA": "c:/x/./y/../z"
+        },
+        "expect": "c:\\x\\z\\vex"
+      },
+      {
+        "name": "win32 NORMALISATION: the home fallback resolves parent segments in the homedir",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice\\..\\..",
+        "env": {},
+        "expect": "C:\\AppData\\Roaming\\vex"
+      },
+      {
+        "name": "ASYMMETRY: an accepted VEX_CONFIG_DIR is NOT normalised - its dot segments and trailing separator are hashed verbatim",
+        "platform": "win32",
+        "homedir": "C:\\Users\\alice",
+        "env": {
+          "VEX_CONFIG_DIR": "C:\\state\\..\\x\\"
+        },
+        "expect": "C:\\state\\..\\x\\"
+      },
+      {
+        "name": "ASYMMETRY: the same posix override keeps its dot segments and repeated separators verbatim",
+        "platform": "linux",
+        "homedir": "/home/alice",
+        "env": {
+          "VEX_CONFIG_DIR": "/srv//state/../x/"
+        },
+        "expect": "/srv//state/../x/"
+      }
+    ]
+  },
+  "hashRules": {
+    "algorithm": "sha256",
+    "encoding": "lowercase hex, first 12 characters",
+    "fileNameTemplate": "vex-studio-<hash>.sock",
+    "input": "the exact UTF-8 bytes of the resolved config-directory string",
+    "forbidden": [
+      "byte-order mark",
+      "trailing newline",
+      "case folding",
+      "Unicode normalisation (NFC/NFD)",
+      "separator conversion",
+      "filepath.Clean / path.normalize"
+    ],
+    "onSymlinkEvalSuccess": "hash the RESOLVED path. Go filepath.EvalSymlinks CLEANS a successful result and Node realpathSync returns a canonical path, so both sides arrive at the same cleaned string; that agreement is the reason success is the only branch allowed to clean.",
+    "onSymlinkEvalFailure": "hash the ORIGINAL literal string with NO Clean. Failure is every first run, before the directory exists, and a side that cleaned there would derive a different endpoint from the side that did not.",
+    "tmpdirNeverRealpathed": "The endpoint parent under the temporary directory is used AS REPORTED by the platform. Realpathing it would move macOS from /var/folders/... to /private/var/folders/... on one side only.",
+    "cases": [
+      {
+        "name": "a resolvable macOS path: /var is a symlink to /private/var, so the RESOLVED form is hashed",
+        "literal": "/var/root/Library/Application Support/vex",
+        "resolved": "/private/var/root/Library/Application Support/vex",
+        "hashOf": "resolved",
+        "hash": "4ed13594a5b5",
+        "literalHash": "2d3edd332258"
+      },
+      {
+        "name": "an unresolvable path is hashed as the ORIGINAL literal, with NO Clean",
+        "literal": "/home/alice/./.config//vex",
+        "resolved": null,
+        "hashOf": "literal",
+        "hash": "91f8b8415f32",
+        "cleaned": "/home/alice/.config/vex",
+        "cleanedHash": "7ea66dd102b3"
+      },
+      {
+        "name": "a trailing separator is a DIFFERENT string and therefore a different endpoint",
+        "literal": "/home/alice/.config/vex/",
+        "resolved": null,
+        "hashOf": "literal",
+        "hash": "5453893f0a39"
+      },
+      {
+        "name": "a windows config directory is hashed with its backslashes, never converted",
+        "literal": "C:\\Users\\alice\\AppData\\Roaming\\vex",
+        "resolved": null,
+        "hashOf": "literal",
+        "hash": "742dab34d2e9"
+      },
+      {
+        "name": "case is NOT folded: two spellings of one windows path are two endpoints",
+        "literal": "C:\\users\\alice\\AppData\\Roaming\\vex",
+        "resolved": null,
+        "hashOf": "literal",
+        "hash": "b438d5447bb5"
+      },
+      {
+        "name": "Unicode is NOT normalised: the NFD spelling of a precomposed name is a different endpoint",
+        "literal": "/home/alicé/.config/vex",
+        "resolved": null,
+        "hashOf": "literal",
+        "hash": "0239bfa80002",
+        "nfcForm": "/home/alicé/.config/vex",
+        "nfcHash": "adaadbec188f"
+      }
+    ]
+  },
+  "derivation": [
+    {
+      "name": "linux: private XDG_RUNTIME_DIR wins",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/1000"
+      },
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/run/user/1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/run/user/1000",
+        "createParent": false
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR unset falls back to the tmpdir form",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {},
+      "directories": {},
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR that is not a directory falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/1000"
+      },
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": false,
+          "uid": 1000,
+          "mode": 384
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR owned by another user falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/1000"
+      },
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 0,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR wider than 0700 falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/1000"
+      },
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 493
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: relative XDG_RUNTIME_DIR falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "run/user/1000"
+      },
+      "directories": {
+        "run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "macOS: always the tmpdir form, XDG ignored",
+      "platform": "darwin",
+      "uid": 501,
+      "tmpdir": "/var/folders/ab/T",
+      "configDirRealPath": "/Users/alice/Library/Application Support/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/run/user/501"
+      },
+      "directories": {
+        "/run/user/501": {
+          "isDirectory": true,
+          "uid": 501,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/var/folders/ab/T/vex-studio-501/vex-studio-c9cebed38235.sock",
+        "parentDir": "/var/folders/ab/T/vex-studio-501",
+        "createParent": true
+      }
+    },
+    {
+      "name": "win32: derives a named pipe from the same hash input as the unix socket",
+      "platform": "win32",
+      "uid": -1,
+      "tmpdir": "C:\\Temp",
+      "configDirRealPath": "C:\\Users\\alice\\AppData\\Roaming\\vex",
+      "env": {},
+      "directories": {},
+      "expect": {
+        "kind": "pipe",
+        "path": "\\\\.\\pipe\\vex-studio-742dab34d2e9"
+      }
+    },
+    {
+      "name": "sun_path: a derived path over 103 bytes is refused, never truncated",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {},
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "path_too_long"
+      }
+    },
+    {
+      "name": "win32: a different config directory is a DIFFERENT pipe, so two Vex installs never share one",
+      "platform": "win32",
+      "uid": -1,
+      "tmpdir": "C:\\Temp",
+      "configDirRealPath": "C:\\Users\\bob\\AppData\\Roaming\\vex",
+      "env": {},
+      "directories": {},
+      "expect": {
+        "kind": "pipe",
+        "path": "\\\\.\\pipe\\vex-studio-2a3e039f17dd"
+      }
+    }
+  ],
+  "override": [
+    {
+      "name": "override: accepted in a 0700 directory the user owns",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/.vexrun/studio.sock"
+      },
+      "directories": {
+        "/home/alice/.vexrun": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/home/alice/.vexrun/studio.sock",
+        "parentDir": "/home/alice/.vexrun",
+        "createParent": false
+      }
+    },
+    {
+      "name": "override: relative path refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "run/studio.sock"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_not_absolute"
+      }
+    },
+    {
+      "name": "override: missing parent refuses startup (Vex never creates it)",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/.vexrun/studio.sock"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_parent_missing"
+      }
+    },
+    {
+      "name": "override: parent that is a file refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/.vexrun/studio.sock"
+      },
+      "directories": {
+        "/home/alice/.vexrun": {
+          "isDirectory": false,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "refused",
+        "code": "override_parent_not_directory"
+      }
+    },
+    {
+      "name": "override: parent owned by another user refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/.vexrun/studio.sock"
+      },
+      "directories": {
+        "/home/alice/.vexrun": {
+          "isDirectory": true,
+          "uid": 0,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "refused",
+        "code": "override_parent_not_owned"
+      }
+    },
+    {
+      "name": "override: parent mode 0755 refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/.vexrun/studio.sock"
+      },
+      "directories": {
+        "/home/alice/.vexrun": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 493
+        }
+      },
+      "expect": {
+        "kind": "refused",
+        "code": "override_parent_mode"
+      }
+    },
+    {
+      "name": "override: over the sun_path limit refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "/home/alice/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/studio.sock"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "path_too_long"
+      }
+    },
+    {
+      "name": "override: pipe syntax on a LINUX target refuses startup",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "\\\\.\\pipe\\vex-studio-abc"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_pipe_on_unix"
+      }
+    },
+    {
+      "name": "override: pipe syntax on a MACOS target refuses startup",
+      "platform": "darwin",
+      "uid": 501,
+      "tmpdir": "/var/folders/tmp",
+      "configDirRealPath": "/Users/alice/Library/Application Support/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "\\\\?\\pipe\\vex-studio-abc"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_pipe_on_unix"
+      }
+    },
+    {
+      "name": "override: a MALFORMED pipe on a unix target is refused as a pipe-on-unix, not as a bad pipe",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "\\\\.\\pipe\\"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_pipe_on_unix"
+      }
+    },
+    {
+      "name": "override: a valid Windows pipe is accepted syntactically",
+      "platform": "win32",
+      "uid": -1,
+      "tmpdir": "C:\\Temp",
+      "configDirRealPath": "C:\\Users\\alice\\AppData\\Roaming\\vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "\\\\.\\pipe\\vex-studio-abc"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "pipe",
+        "path": "\\\\.\\pipe\\vex-studio-abc"
+      }
+    },
+    {
+      "name": "override: a malformed pipe name refuses startup",
+      "platform": "win32",
+      "uid": -1,
+      "tmpdir": "C:\\Temp",
+      "configDirRealPath": "C:\\Users\\alice\\AppData\\Roaming\\vex",
+      "env": {
+        "VEX_STUDIO_SOCKET": "\\\\.\\pipe\\"
+      },
+      "directories": {},
+      "expect": {
+        "kind": "refused",
+        "code": "override_invalid_pipe"
+      }
+    }
+  ],
+  "handshake": {
+    "request": {
+      "valid": "{\"v\":1,\"projectId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"}\n"
+    },
+    "acks": {
+      "accepted": "{\"ok\":true}\n",
+      "refusalCodes": [
+        "unknown_project",
+        "incompatible_version",
+        "locked",
+        "at_capacity",
+        "malformed"
+      ]
+    },
+    "cases": [
+      {
+        "name": "valid handshake",
+        "line": "{\"v\":1,\"projectId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"}\n",
+        "expect": {
+          "kind": "accepted",
+          "projectId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+          "remainder": ""
+        }
+      },
+      {
+        "name": "coalesced handshake and initialize in one chunk",
+        "line": "{\"v\":1,\"projectId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"}\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+        "expect": {
+          "kind": "accepted",
+          "projectId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+          "remainder": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
+        }
+      },
+      {
+        "name": "unknown major version",
+        "line": "{\"v\":2,\"projectId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"}\n",
+        "expect": {
+          "kind": "refused",
+          "code": "incompatible_version"
+        }
+      },
+      {
+        "name": "missing version",
+        "line": "{\"projectId\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\"}\n",
+        "expect": {
+          "kind": "refused",
+          "code": "malformed"
+        }
+      },
+      {
+        "name": "projectId that is not a uuid",
+        "line": "{\"v\":1,\"projectId\":\"not-a-uuid\"}\n",
+        "expect": {
+          "kind": "refused",
+          "code": "malformed"
+        }
+      },
+      {
+        "name": "not JSON",
+        "line": "hello\n",
+        "expect": {
+          "kind": "refused",
+          "code": "malformed"
+        }
+      },
+      {
+        "name": "a JSON array is not a handshake",
+        "line": "[1,2]\n",
+        "expect": {
+          "kind": "refused",
+          "code": "malformed"
+        }
+      },
+      {
+        "name": "incomplete line is pending",
+        "line": "{\"v\":1,",
+        "expect": {
+          "kind": "pending"
+        }
+      }
+    ]
+  }
+}

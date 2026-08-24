@@ -51,6 +51,19 @@ jobs:
 
       - run: corepack enable
 
+      # The Studio bridge conformance test spawns the BUILT binary against the
+      # real host. Without it the test skips (so a Go-less checkout still
+      # passes); building it here is what makes CI actually run it.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Build the Vex Studio bridge (linux amd64)
+        working-directory: ${{ github.workspace }}
+        run: bash bridge/build.sh linux amd64
+
       - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
@@ -62,10 +75,151 @@ jobs:
         run: pnpm run lint
 
       - name: Test
+        # The Studio bridge conformance suite skips cleanly when the built
+        # binary is absent, so a checkout without Go still passes. This job
+        # BUILT it one step above, so here the skip is turned into a failure:
+        # a silent skip in CI is indistinguishable from a passing run, and it
+        # is the only test that exercises the two implementations against each
+        # other.
+        env:
+          VEX_REQUIRE_BRIDGE_CONFORMANCE: "1"
         run: pnpm test
 
       - name: Build
         run: pnpm run build
+
+  # Vex Studio MCP bridge: the Go side of the frozen wire.
+  #
+  # UNSIGNED and secret-free by design. It cross-compiles all six release
+  # targets so a PR that breaks any of them fails here rather than at tag time,
+  # runs the Go tests (which execute the SAME golden vectors the TypeScript
+  # host tests do, so a contract drift shows up as red on whichever side
+  # drifted), and exercises the fail-closed packaging preflight. It publishes
+  # nothing and reads no release secret.
+  bridge-build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned by full commit SHA (v7.0.0): this action installs the toolchain
+      # for a binary that ships inside the signed bundle.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # Pure stdlib: no go.sum, nothing to cache.
+          cache: false
+
+      - name: gofmt
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l bridge)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: bridge
+        run: GOTOOLCHAIN=local go vet ./...
+
+      - name: Test (race)
+        working-directory: bridge
+        run: GOTOOLCHAIN=local go test -race ./...
+
+      # All six targets = the union of both electron-builder profiles. The
+      # wrapper is the toolchain gate: GOTOOLCHAIN=local plus an exact version
+      # check, so a runner with a different patch fails here loudly.
+      - name: Cross-build all six release targets
+        run: bash bridge/build.sh
+
+      # The packaging gate itself, exercised without packaging: the preflight
+      # must accept every target it will be asked for at release time, and it
+      # is the step that makes a missing bridge a build failure rather than an
+      # electron-builder warning.
+      - name: Staging preflight accepts every packaging target
+        working-directory: vex-app
+        run: |
+          set -euo pipefail
+          node scripts/stage-bridge.mjs --platform mac --arch arm64 --arch x64
+          node scripts/stage-bridge.mjs --platform win --arch x64 --arch arm64
+          node scripts/stage-bridge.mjs --platform linux --arch x64 --arch arm64
+
+      - name: Upload the linux-amd64 bridge for the conformance test
+        uses: actions/upload-artifact@v4
+        with:
+          name: vex-mcp-linux-amd64
+          path: bridge/dist/linux-amd64/vex-mcp
+          retention-days: 7
+
+  # THE WINDOWS TRANSPORT GATE (bridge endpoint contract section 1.6).
+  #
+  # REQUIRED, and a STUB on purpose. The Windows named-pipe transport is
+  # runtime-disabled on both sides of the wire behind one flag each
+  # (`WINDOWS_TRANSPORT_PROVEN` in vex-app/src/main/studio/mcp-host/
+  # endpoint.ts, `endpoint.WindowsTransportProven` in bridge/internal/
+  # endpoint/endpoint.go), because libuv creates the pipe with a NULL security
+  # descriptor and without PIPE_REJECT_REMOTE_CLIENTS, and nobody has measured
+  # what that grants a second user or a remote client on a wallet app.
+  #
+  # Today this job only proves the Windows CODE COMPILES and the golden vectors
+  # pass on windows-latest - including the build-tagged overlapped dial
+  # (cmd/vex-mcp/dial_windows.go), which no Linux job executes.
+  #
+  # FLIPPING EITHER FLAG REQUIRES EXTENDING THIS JOB with the full proof matrix
+  # in contract section 1.6: (1) second-user duplex denial, (2) read-only
+  # cross-user connect and handshake-slot exhaustion, (3) remote-client
+  # rejection posture, (4) a native pipe round trip against the real host,
+  # (5) overlapped duplex - a pending read and a concurrent write on the same
+  # handle both complete, (6) deadline and close cancellation, (7) a
+  # foreign-user first-server pipe-squatting test - a second local user creates
+  # the predictable pipe name FIRST and the bridge must not hand it the project
+  # handshake, and (8) a server impersonation-level test for the
+  # SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION client handle.
+  #
+  # PLUS a REQUIRED host-authentication check that does not exist yet:
+  # GetNamedPipeServerProcessId on the connected handle and a comparison of the
+  # server process token's SID against the current user's, or an equivalent
+  # reviewed mechanism, before the handshake is forwarded. SQOS bounds what a
+  # hostile server can do with our token; it does not say who the server is.
+  #
+  # The gate is mechanical: no matrix in this job, no host-authentication
+  # check, no flip. A reviewer who sees either flag change to true in a diff
+  # that does not add these steps here rejects it.
+  bridge-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Same pinned SHA and same exact toolchain version as the Linux bridge
+      # job: a Windows-only compile difference must be the finding, not a
+      # toolchain difference.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Build every package for windows/amd64 (includes the overlapped dial)
+        working-directory: bridge
+        run: go build ./...
+        env:
+          GOTOOLCHAIN: local
+
+      - name: Vet
+        working-directory: bridge
+        run: go vet ./...
+        env:
+          GOTOOLCHAIN: local
+
+      # The SAME golden vectors the Linux and TypeScript suites run, executed
+      # on the platform whose path handling and build tags differ.
+      - name: Test (race)
+        working-directory: bridge
+        run: go test -race ./...
+        env:
+          GOTOOLCHAIN: local
 
   vex-app-e2e:
     # Required gate from day 1 — boot smoke against the built Electron

@@ -139,6 +139,7 @@ import {
 } from "./dispatch-approved/operator-stop.js";
 import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-tool-context.js";
 import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slot-gate.js";
+import { applyStudioApproveSideEffects } from "./dispatch-approved/studio.js";
 
 /**
  * Side effects after `approved_in_tx` snapshot — claim the continuation, take
@@ -150,6 +151,15 @@ export async function applyApproveSideEffects(
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
+  // A3 - a Vex Studio approval takes its own sibling path. The branch is here,
+  // at the top of the ONLY dispatch path, because everything below is written
+  // for an agent session: a session-hydrated tool context, a transcript tool
+  // result, a resumed turn. None of those exists for a call an external coding
+  // agent made, and reusing them would wake the backing session's agent for a
+  // tool call it never made. Nothing below this line changed.
+  if (row.origin === "studio_mcp") {
+    return applyStudioApproveSideEffects(approvalId, snapshot);
+  }
   const sessionId = row.session_id;
   const missionRunId = row.mission_run_id;
   const fallbackToolCallId =

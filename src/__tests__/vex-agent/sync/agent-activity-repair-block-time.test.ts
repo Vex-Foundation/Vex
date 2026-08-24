@@ -123,6 +123,9 @@ const ROW = {
   fromAddress: INPUT.fromAddress,
   nonce: 7,
   submitAttemptedAt: new Date(0).toISOString(),
+  // The lane reads it only to settle a LINKED wallet transaction intent; this
+  // row has none, so the settlement is a no-op lookup.
+  protocolExecutionId: 1,
 };
 
 async function resolveWith(blockTimeIso: string | null): Promise<void> {

@@ -186,10 +186,17 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  // The ONE runtime refusal on a missing REQUIRED env. The structured
+  // `failure` field is additive: the sentence is unchanged, and a caller that
+  // must branch on the cause (the Studio MCP executor, which cannot resolve a
+  // dynamically routed alias's manifest before dispatch) reads the field
+  // instead of parsing prose. An OPTIONAL provider key never reaches here -
+  // only a manifest-declared `requiresEnv` does.
   if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) {
     return withActionKind({
       success: false,
       output: `${request.toolId} requires ${manifest.requiresEnv} to be set in .env`,
+      failure: { kind: "configuration_unavailable", env: [manifest.requiresEnv] },
     }, effectiveActionKind);
   }
 
