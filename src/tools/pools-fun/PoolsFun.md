@@ -416,30 +416,42 @@ Note that `/token/…`, `/launch`, `/pool-party`, `/leaderboard` and `/search` a
 SPA routes, not API endpoints - calling them on `api.bankr.bot` is what produces
 the HTML 404 the error mapper handles.
 
-## The VEX badge: a proposed endpoint, not a measured one
+## The VEX badge: `POST /pools-fun/vex/attestations` (live, measured 2026-08-24)
 
-Everything above was measured against the live API. This one is the opposite:
-an endpoint that DOES NOT EXIST YET and that pools.fun would have to implement
-for a token launched through Vex to carry a VEX badge on their site, the way
-trench.express already does it (`src/tools/trench-express/attribution.ts`).
+The endpoint pools.fun implemented from `attribution-server-spec.md` (in this
+folder) is LIVE at the proposed path, confirmed by the partner in writing and
+probe-verified against the spec on 2026-08-24. The contract there is an
+external commercial commitment: the request body, the signed message bytes
+(`VEX-attest:v1:pools.fun:4663:<lowercase token>`), the closed error
+vocabulary and the idempotency and backfill requirements are FROZEN; a change
+to the bytes is a new version, never a mutation.
 
-The partner-facing contract is `attribution-server-spec.md`, in this folder. It
-is written for their engineers, in English, and it is an external commercial
-commitment: the request body, the signed message bytes
-(`VEX-attest:v1:pools.fun:4663:<lowercase token>`), the closed error vocabulary
-and the idempotency and backfill requirements are FROZEN there. Only the path
-`POST /pools-fun/vex/attestations` is offered as a counter-proposal.
+Measured conformance (six probes, garbage signatures only - no real
+attestation can be sent outside a launch window):
 
-The one thing that document exists to prevent: on the GATEWAY path
-`TokenLaunched.creator` and `.deployer` are the gateway contract, never the
-human, so a verifier that checks the attestation signature against
-`TokenLaunched.creator` rejects every Vex launch. Identity binds through
-`GatewayLaunch.launcher`, exactly as it does in
+| Probe | Answer | Spec verdict |
+|---|---|---|
+| empty body `{}` | 400 `validation_failed` | conforms |
+| malformed address | 400 `validation_failed` | conforms |
+| unrecoverable signature (bad `v`) | 400 `validation_failed` | conforms (cannot-recover = malformed) |
+| real indexed token + recoverable garbage signature | 401 `invalid_signature`, "recovered signer is not this launch's gateway launcher" | conforms - recovery and launcher compare are real |
+| UNKNOWN token address | 404 `launch_not_ready` | conforms - the critical retryable semantic; an unindexed launch is NOT `not_pools_launch` |
+| `chainId: 1` | 400 `chain_unsupported` | conforms |
+
+Every response carried the flat `code` field, `success: false`, and a
+human-readable `message` the Vex client ignores by design. No redirects.
+
+The one thing the spec exists to prevent held in practice: identity binds
+through `GatewayLaunch.launcher` (the 401 message names it), never
+`TokenLaunched.creator` - on the GATEWAY path `creator` and `.deployer` are
+the gateway contract, exactly as decoded in
 `src/vex-agent/sync/pools-settlement-decoder.ts`.
 
-The Vex client is being built alongside it and SHIPS DARK: no signature is
-produced and no request is sent until pools.fun confirms the contract in
-writing.
+Client state: `services.poolsFunAttestApiUrl` defaults to the live host;
+signing remains behind the strict-boolean `poolsFunAttestationEnabled` flag
+(the lane's kill switch - see `src/config/store.ts` for its current default
+and parse rules). The untested half is the SUCCESS path: it requires a real
+launch-window signature, so its first proof is the first badged launch.
 
 ## Money-path conditions (verbatim force - change any of these by owner decision only)
 

@@ -1,11 +1,12 @@
 # VEX attestation on pools.fun - server specification
 
-Status: the Vex side of this integration is being built now and will ship DARK.
-The client signs nothing and sends nothing until the pools.fun team confirms
-this contract in writing. What is missing is the OTHER HALF: an endpoint on
-the pools.fun API (today `api.bankr.bot`; the base URL is configurable on the
-Vex side) that accepts an attestation, verifies it against Robinhood Chain,
-and grants the token a VEX badge on pools.fun.
+Status: LIVE on both sides as of 2026-08-24. The pools.fun team confirmed this
+contract in writing and implemented the endpoint at the proposed path on
+`api.bankr.bot`; Vex probe-verified its conformance the same day (closed
+error vocabulary, flat `code` field, `launch_not_ready` for an unindexed
+token, recovery against `GatewayLaunch.launcher` - see the measured table in
+`PoolsFun.md`). The success path is exercised by real launches; everything
+below remains the binding contract both sides implemented.
 
 The equivalent flow is already live with trench.express, so this is not a new
 mechanism - it is the same mechanism pointed at a launchpad whose launches go
@@ -300,11 +301,11 @@ not a defect.
 
 Named here so the pools.fun team is not surprised by them:
 
-- **Signing is gated OFF until this contract is confirmed in writing.** The
-  client ships dark. No signature is produced and no request is sent until the
-  endpoint is agreed and enabled, so a pools.fun deployment ahead of that
-  confirmation will see zero traffic - that is the client being correct, not the
-  client being broken.
+- **A kill switch exists on the Vex side.** The contract was confirmed in
+  writing and the endpoint verified on 2026-08-24. The client still carries a
+  strict-boolean configuration flag for the lane; an install with it off sends
+  zero traffic, so silence from one Vex install can mean the switch, not a
+  defect.
 - **The message bytes are versioned `v1` and will never be mutated.** Any change
   to the signed string is a new version marker, supported alongside `v1` for a
   migration window on both sides. A server that pins `v1` bytes will keep

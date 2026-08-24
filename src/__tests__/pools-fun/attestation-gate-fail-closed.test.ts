@@ -84,8 +84,11 @@ describe("loadConfig - the stored value cannot enable the lane by being truthy",
     expect(getDefaultConfig().poolsFunAttestationEnabled).toBe(false);
   });
 
-  it("ships the attest URL DARK by default", () => {
-    expect(getDefaultConfig().services.poolsFunAttestApiUrl).toBe("");
+  it("ships the LIVE attest host as the URL default (endpoint verified 2026-08-24)", () => {
+    // Delivery gains a real default once the partner endpoint exists; the
+    // strict-boolean flag stays the switch that decides whether anything is
+    // signed or sent at all.
+    expect(getDefaultConfig().services.poolsFunAttestApiUrl).toBe("https://api.bankr.bot");
   });
 
   it.each(NON_BOOLEAN_TRUTHY)("leaves the lane off when the file stores %s", (_label, value) => {

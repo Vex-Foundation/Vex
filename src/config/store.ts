@@ -195,9 +195,11 @@ export function getDefaultConfig(): VexConfig {
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
       agentscanApiUrl: "https://agentscan.projectvex.ai",
-      // SHIPS DARK: no partner endpoint exists yet, so there is nothing safe to
-      // point at. The resolver treats "" as "lane off" and claims no rows.
-      poolsFunAttestApiUrl: "",
+      // LIVE since 2026-08-24: pools.fun confirmed the contract in writing and
+      // the endpoint at this host was probe-verified against the spec (all six
+      // closed-vocabulary responses, including launch_not_ready for an
+      // unindexed token). An empty override still turns delivery off.
+      poolsFunAttestApiUrl: "https://api.bankr.bot",
     },
     // SHIPS OFF. The lane signs with the launching wallet, so it stays disabled
     // until it is deliberately turned on.
