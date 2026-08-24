@@ -219,7 +219,7 @@ function findRawStringViolations(
 }
 
 describe("signing-oracle guard — only the named modules may produce VEX-attest / AgentScan Handshake signatures", () => {
-  it("no signing call site exists outside the two allowed modules or the documented transaction-signing allowlist", () => {
+  it("no signing call site exists outside the three allowed modules or the documented transaction-signing allowlist", () => {
     const files = listTsFiles(ROOT);
     expect(files.length, "no source files discovered — readdir walk broken?").toBeGreaterThan(0);
 
