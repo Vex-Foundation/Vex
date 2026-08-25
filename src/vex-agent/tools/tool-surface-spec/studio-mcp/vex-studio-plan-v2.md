@@ -2208,10 +2208,17 @@ serialization, drift, IPC.
    (`studio-mcp/agent-dialect-research-2026-08-24.md`, primary-source
    pass, corrections and UNVERIFIED cells named there). Each id gets a
    CONFIG MODE: `project` (a file the client reads from the repo),
-   `launch` (a generated file plus a documented launch flag - Warp by
-   OWNER DECISION 2026-08-24, and Kimi, which has no project scope),
-   or `unsupported` (cline: user-global config only; shown as such in
-   the picker copy). OWNER DECISION 2026-08-24 on the residual:
+   `launch` (a generated file plus a documented launch flag - Kimi,
+   which has no project scope but takes `--mcp-config-file`), or
+   `unsupported` (cline AND the Warp CLI: user-global config only;
+   shown as such in the picker copy). The Warp launch decision of
+   2026-08-24 is SUPERSEDED by the 2026-08-25 re-verification: its
+   premise (an `oz`-style mcp flag) does not exist on the current
+   `warp` binary, which reads global config only and manages MCP
+   in-session; the Warp APP does read a project `.warp/.mcp.json`
+   behind explicit in-app manual approval - adding that app-scoped
+   writer is a pending OWNER CALL, recorded in the matrix, not built
+   by default. OWNER DECISION 2026-08-24 on the residual:
    Copilot and Grok also reading Claude's `.mcp.json` is ACCEPTED and
    described in the trust copy ("Who cares? Moze tak byc"). The
    IDLE-TIMER finding governs: the host's progress notifications are
@@ -2226,20 +2233,46 @@ serialization, drift, IPC.
    DISTINCT columns and a client env var is NEVER written into the
    bridge's child env), forbidden policy fields, supported client
    major (pinned or detected, never silently guessed). Known
-   corrections already in evidence: Kimi `.kimi-code/mcp.json`
-   (`mcpServers`, `toolTimeoutMs`); Warp has no native project config
-   (`oz --mcp <file>`) - marked UNSUPPORTED in A5 or given an explicit
-   launch integration, owner's call; Mistral Vibe `[[mcp_servers]]`
-   array-of-tables with `tool_timeout_sec`; OpenCode V2
-   `mcp.servers.<name>` with structured timeouts; COPILOT gets
-   `.github/mcp.json` and GROK gets `.grok/config.toml` (never the
-   shared `.mcp.json`), leaving one RESIDUAL: Copilot and Grok also
-   read Claude's `.mcp.json`, so a project with Claude selected is
-   discoverable by unselected Copilot/Grok - an OWNER DECISION to
-   accept (documented in the trust copy) or to move Claude to
-   launch-scoped config; Claude's timeout is the `MCP_TOOL_TIMEOUT`
-   client env variable (documented default ~28 h, version-dependent) -
-   recorded as mechanism `client-env`, set nothing.
+   corrections already in evidence (from the research pass AND its
+   2026-08-25 internet re-verification addendum, which supersedes
+   every earlier spelling): Kimi is LAUNCH-scoped - no project file
+   (user `~/.kimi/mcp.json` or `--mcp-config-file <path>`; timeout is
+   the GLOBAL `[mcp.client] tool_call_timeout_ms`, default 60000, in
+   the USER's config.toml, which a project cannot set), so A5
+   generates `.vex/mcp/kimi.json` and documents the flag; the Warp CLI
+   is UNSUPPORTED - `oz` is vendor-deprecated, the current `warp`
+   binary has NO mcp flag and reads global config only ("project-scoped
+   MCP config files in repositories are not detected"), and the only
+   project-scoped Warp surface is the APP's `.warp/.mcp.json` behind
+   explicit in-app manual approval (owner call, off by default);
+   OpenCode "V2" is REFUTED (npm latest 1.18.23, no v2 line) - config
+   `opencode.json[c]` key `mcp`, `additionalProperties: false`,
+   `type: "local"` REQUIRED, `command` as an ARRAY, `environment` (not
+   `env`), per-server `timeout` ms default 5000, set 3900000; Mistral
+   Vibe is VERIFIED at project `./.vibe/config.toml` (loaded ONLY when
+   the directory is trusted - silently absent otherwise),
+   `[[mcp_servers]]` array-of-tables with REQUIRED `name` and
+   `tool_timeout_sec` float seconds default 60, set 3900; cline stays
+   UNSUPPORTED (user-global only; an omitted `type` defaults to legacy
+   SSE, the inverse of claude - writers never emit `type` in cline
+   dialect); COPILOT gets `.github/mcp.json` with an EXPLICIT
+   `timeout: 3900000` (the vendor default is 180000 ms, far below the
+   approval wait, and a closed vendor bug reverted per-server timeouts
+   after `tools/list_changed` - re-verified at the installed version),
+   loading only after folder trust and silently skipped in untrusted
+   dirs; GROK gets `.grok/config.toml` (`tool_timeout_sec` default
+   6000 s confirmed) whose project file can ALSO carry `[permission]` -
+   the writers NEVER emit `[permission]` or any allow rule, and the
+   drift detector treats a foreign `[permission]` beside our entry as
+   reportable; the RESIDUAL - Copilot and Grok also read Claude's
+   `.mcp.json`, so a project with Claude selected is discoverable by
+   unselected Copilot/Grok - is ACCEPTED by owner decision 2026-08-24
+   and described in the trust copy; Claude's wall-clock timeout is the
+   `MCP_TOOL_TIMEOUT` client env variable (default ~28 h,
+   version-gated), recorded as mechanism `client-env`, set nothing -
+   progress notifications do NOT extend that wall-clock, they reset
+   only the 30-minute stdio IDLE timer, which is exactly the mechanism
+   the host's progress frames exist to serve.
 3. PURE RENDERERS `src/vex-agent/studio/installer/render/*`: per
    dialect, input = the registry record + project facts, output =
    bytes; golden artifacts per agent (fresh file, merged file with
