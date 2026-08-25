@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MarketSymbol } from "../MarketSymbol.js";
 
@@ -64,5 +64,16 @@ describe("MarketSymbol", () => {
     const badge = container.querySelector(".lit-market-symbol");
     expect(badge?.getAttribute("data-market-mark")).toBe("local");
     expect(badge?.querySelector('img[src*="ansem"]')).not.toBeNull();
+  });
+
+  it("falls back to the exact provider ticker when a bundled image cannot render", () => {
+    const { container } = render(
+      <MarketSymbol environment="rhc" market={{ baseAssetId: 0, marketId: 39, symbol: "ANSEM", marketType: "perp" }} />,
+    );
+
+    fireEvent.error(container.querySelector("img")!);
+
+    expect(screen.getByText("ANSEM").getAttribute("data-market-mark")).toBe("ticker");
+    expect(container.querySelector("img")).toBeNull();
   });
 });

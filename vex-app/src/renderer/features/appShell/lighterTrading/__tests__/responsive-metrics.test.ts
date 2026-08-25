@@ -39,4 +39,10 @@ describe("Light it up responsive market metrics", () => {
     expect(css).toContain("width: clamp(860px, 52vw, 960px);");
     expect(css).toContain("max-height: min(640px, calc(100dvh - 300px));");
   });
+
+  it("settles the market catalogue on complete rows so ticker identities stay visible", () => {
+    expect(css).toContain("scroll-snap-type: y mandatory;");
+    expect(css).toContain("scroll-snap-align: start;");
+    expect(css).toContain("overscroll-behavior-y: contain;");
+  });
 });

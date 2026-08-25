@@ -1215,6 +1215,8 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y mandatory;
 }
 
 .lit-market-table > button {
@@ -1225,6 +1227,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   color: var(--lit-ink-secondary);
   font-size: 15px;
   font-variant-numeric: tabular-nums;
+  scroll-snap-align: start;
   text-align: left;
 }
 

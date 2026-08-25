@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import type {
   LighterTradingEnvironment,
   LighterTradingMarket,
@@ -20,27 +20,30 @@ export function MarketSymbol({ environment, market }: {
 }): JSX.Element {
   const symbol = marketSymbols(market.symbol, market.marketType).base;
   const mark = resolveLighterMarketMark(environment, market);
+  const [failedLocalMarkSrc, setFailedLocalMarkSrc] = useState<string | null>(null);
+  const visibleMark = mark?.kind === "local" && mark.src === failedLocalMarkSrc ? null : mark;
   return (
     <span
       aria-hidden="true"
       className="lit-market-symbol"
-      data-market-mark={mark?.kind ?? "ticker"}
-      data-symbol-length={mark === null
+      data-market-mark={visibleMark?.kind ?? "ticker"}
+      data-symbol-length={visibleMark === null
         ? symbol.length <= 3 ? "short" : symbol.length <= 6 ? "medium" : "long"
         : undefined}
     >
-      {mark === null ? symbol : mark.kind === "local" ? (
+      {visibleMark === null ? symbol : visibleMark.kind === "local" ? (
         <img
-          src={mark.src}
+          src={visibleMark.src}
           alt=""
           aria-hidden
           width={128}
           height={128}
           draggable={false}
           className="lit-market-symbol-icon"
+          onError={() => setFailedLocalMarkSrc(visibleMark.src)}
         />
       ) : (
-        <mark.icon
+        <visibleMark.icon
           width="100%"
           height="100%"
           aria-hidden
