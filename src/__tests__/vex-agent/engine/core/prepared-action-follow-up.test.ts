@@ -77,6 +77,7 @@ const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const LIGHTER_ONBOARDING_INTENT_ID =
   "lighter-onboard-00000000-0000-4000-8000-000000000001";
+const LIGHTER_ORDER_PREVIEW_PUBLIC_NAME = toInjectedToolName("lighter.order.preview");
 const LIGHTER_ORDER_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.order.create.prepare");
 const LIGHTER_KEY_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.key.register.prepare");
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
@@ -256,6 +257,33 @@ async function runLighterInjectedPrepare(permission: "restricted" | "full") {
   });
 }
 
+async function runLighterInjectedPreview(permission: "restricted" | "full") {
+  return processTurnToolBatch({
+    context: context(permission),
+    turnResult: {
+      content: "Previewing Lighter order.",
+      reasoning: null,
+      toolCalls: [
+        {
+          id: "lighter-preview-call",
+          name: LIGHTER_ORDER_PREVIEW_PUBLIC_NAME,
+          arguments: {
+            environment: "rhc",
+            marketSymbol: "ETH",
+            side: "buy",
+            baseAmountIn: "1",
+            price: "3000",
+          },
+        },
+      ],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
 async function runLighterRhcKeyRegistrationPrepare() {
   return processTurnToolBatch({
     context: context("restricted"),
@@ -295,6 +323,7 @@ beforeEach(() => {
 
 describe("prepared-action follow-up handoff", () => {
   it.each([
+    "lighter.order.preview",
     "lighter.order.create.prepare",
     "lighter.order.cancel.prepare",
     "lighter.order.modify.prepare",
@@ -422,6 +451,42 @@ describe("prepared-action follow-up handoff", () => {
       executedCalls: [expect.objectContaining({ name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME })],
       executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
     });
+  });
+
+  it("restricted sessions display the trusted create approval directly from a Lighter preview", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterPrepareResult({
+        output: "lighter preview ready with approval intent",
+        actionKind: "read",
+      }))
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterInjectedPreview("restricted");
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(dispatchTool).toHaveBeenCalledTimes(2);
+    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+    });
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trustedPreview: lighterPrepareResult().preparedActionFollowUp.approvalPreview,
+        trustedExpiresAt: EXPIRES_AT,
+      }),
+    );
   });
 
   it("turns an exact RHC key-registration prepare into a separate trusted approval", async () => {

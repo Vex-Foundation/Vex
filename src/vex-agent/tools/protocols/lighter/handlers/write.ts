@@ -145,8 +145,7 @@ export function lighterLiveOrderCreateUserGuidance(
   }
 }
 
-export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
-  "lighter.order.create.prepare": async (params, context) => {
+export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params, context) => {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Lighter order create preparation requires a host session id.");
 
@@ -261,7 +260,10 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       })),
       preparedActionFollowUp: followUp,
     };
-  },
+};
+
+export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.order.create.prepare": prepareLighterOrderCreateApproval,
 
   "lighter.order.create": async (params, context) => {
     const sessionId = context.sessionId;

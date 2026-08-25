@@ -135,7 +135,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Create a read-only Lighter Phase 1 IOC market-order preview using live market detail, order book, and account data. ` +
       `Use when: the user asks to preview or check an IOC market order without placing it. Price is the worst acceptable execution price. Resting limit and post-only orders are unavailable. Pass named assets as market symbols. Unspecified requests default to RHC; preserve Core or RHC after selection. ` +
-      `Returns exact amounts, minimum checks, best bid/ask, position context, and risk notes. Never signs or submits. ` +
+      `Returns exact amounts, minimum checks, best bid/ask, position context, and risk notes. When managed trading is ready, it prepares the exact durable intent and displays the separate approval card directly; it never signs or submits without that explicit approval. ` +
       `Example queries: preview an IOC market buy of 0.001 ETH with worst price 3000, preflight an RHC market buy.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],

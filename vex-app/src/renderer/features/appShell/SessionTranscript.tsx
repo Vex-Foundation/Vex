@@ -36,11 +36,11 @@
  * (initial load + load-older prepends) enter with a hard cut.
  */
 
-import { useCallback, useMemo, useRef, type JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import { IconChevronDown } from "../../components/icons/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
-import { useIsChatSubmitting, useSubmitChat } from "../../lib/api/chat.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
   flattenTranscriptPages,
   useTranscriptInfinite,
@@ -69,10 +69,6 @@ import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
 import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
 import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import {
-  LIGHTER_PREPARE_TRADE_APPROVAL_MESSAGE,
-  LighterPreviewAction,
-} from "./LighterPreviewAction.js";
 import type { TranscriptEntry } from "./transcriptRowModel.js";
 
 // Same cadence as ApprovalsRegion — both observers share one query, so this
@@ -82,94 +78,6 @@ import type { TranscriptEntry } from "./transcriptRowModel.js";
 // the shared key, this one included. Fallback only — not deleted.
 const PENDING_APPROVALS_REFETCH_MS = 60_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isApprovalReadyLighterPreviewOutput(output: string | null): boolean {
-  if (output === null || output.trim().length === 0) return false;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(output);
-  } catch {
-    return false;
-  }
-  return (
-    isRecord(parsed) &&
-    parsed.source === "live_lighter_public_api" &&
-    parsed.status === "preview_ready" &&
-    parsed.approvalReady === true &&
-    parsed.nextStep === "prepare_for_approval"
-  );
-}
-
-function isLighterPrepareAct(row: TranscriptEntry): boolean {
-  if (row.variant === "tool_group") {
-    return row.calls.some(
-      (call) => call.toolName === "lighter.order.create.prepare",
-    );
-  }
-  if (row.variant !== "tool" || row.toolKind !== "call") return false;
-  return (
-    (row.toolCalls ?? []).some(
-      (call) => call.toolName === "lighter.order.create.prepare",
-    ) ||
-    (row.toolActs ?? []).some(
-      (act) => act.toolName === "lighter.order.create.prepare",
-    )
-  );
-}
-
-function isApprovalReadyLighterPreviewRow(row: TranscriptEntry): boolean {
-  if (row.variant === "tool_group") {
-    return row.calls.some(
-      (call) =>
-        call.toolName === "lighter.order.preview" &&
-        isApprovalReadyLighterPreviewOutput(call.output),
-    );
-  }
-  if (row.variant !== "tool") return false;
-  if (
-    row.toolKind === "result" &&
-    row.label === "lighter.order.preview_output" &&
-    isApprovalReadyLighterPreviewOutput(row.content)
-  ) {
-    return true;
-  }
-  if (row.toolKind !== "call") return false;
-  return (row.toolActs ?? []).some(
-    (act) =>
-      act.toolName === "lighter.order.preview" &&
-      isApprovalReadyLighterPreviewOutput(act.output),
-  );
-}
-
-function lastActionableLighterPreviewRowId(
-  rows: readonly TranscriptEntry[],
-): number | null {
-  let waitingForPreviewSummary = false;
-  let lastPreviewSummaryId: number | null = null;
-  for (const row of rows) {
-    if (isLighterPrepareAct(row)) {
-      waitingForPreviewSummary = false;
-      lastPreviewSummaryId = null;
-      continue;
-    }
-    if (isApprovalReadyLighterPreviewRow(row)) {
-      waitingForPreviewSummary = true;
-      lastPreviewSummaryId = null;
-      continue;
-    }
-    if (!waitingForPreviewSummary) continue;
-    if (row.variant !== "assistant" && row.variant !== "assistant_stopped") {
-      continue;
-    }
-    lastPreviewSummaryId = row.id;
-    waitingForPreviewSummary = false;
-  }
-  return lastPreviewSummaryId;
-}
-
 export function SessionTranscript({
   sessionId,
 }: {
@@ -178,7 +86,6 @@ export function SessionTranscript({
   const query = useTranscriptInfinite(sessionId);
   const streamPreview = useStreamPreview(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
-  const submitChat = useSubmitChat();
 
   const pages = query.data?.pages;
   const items = useMemo<SessionMessageDto[]>(
@@ -219,18 +126,6 @@ export function SessionTranscript({
     pendingQuery.data !== undefined &&
     pendingQuery.data.ok &&
     pendingQuery.data.data.length > 0;
-  const lighterPreviewActionRowId = useMemo(
-    () => (hasPendingApproval ? null : lastActionableLighterPreviewRowId(rows)),
-    [hasPendingApproval, rows],
-  );
-  const onPrepareLighterPreview = useCallback((): void => {
-    if (submitChat.isPending || chatSubmitting) return;
-    submitChat.mutate({
-      sessionId,
-      message: LIGHTER_PREPARE_TRADE_APPROVAL_MESSAGE,
-    });
-  }, [chatSubmitting, sessionId, submitChat]);
-
   // Render-time bookkeeping (not an effect): the settle class must be present
   // on a live row's FIRST paint or the animation start is visibly late.
   const settledRef = useRef<SettledIdsTracker | null>(null);
@@ -369,13 +264,6 @@ export function SessionTranscript({
           settledIds={settledIds}
           pendingApprovals={pendingApprovals}
           workingAgentEntryKey={workingAgentEntryKey}
-          lighterPreviewActionRowId={lighterPreviewActionRowId}
-          lighterPreviewAction={
-            <LighterPreviewAction
-              disabled={submitChat.isPending || chatSubmitting}
-              onPrepare={onPrepareLighterPreview}
-            />
-          }
           forkActions={forkActions}
         />
         {/* A17 — the settled turn's tail wears its usage stats. Mounted only

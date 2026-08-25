@@ -439,14 +439,17 @@ describe("prepared-action follow-up registry", () => {
     });
   });
 
-  it("allows immutable lighter.order.create.prepare → lighter.order.create", () => {
+  it.each(["lighter.order.preview", "lighter.order.create.prepare"])(
+    "allows immutable %s → lighter.order.create",
+    (sourceToolName) => {
     const input = lighterCandidate();
-    const result = validatePreparedActionFollowUp("lighter.order.create.prepare", input);
+    const result = validatePreparedActionFollowUp(sourceToolName, input);
     expect(result).toEqual({
       ok: true,
       followUp: input,
     });
-  });
+    },
+  );
 
   it("rejects a public-name projection that was not resolved to immutable identity", () => {
     const input = lighterCandidate();

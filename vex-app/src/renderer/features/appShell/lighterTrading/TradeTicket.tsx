@@ -33,7 +33,7 @@ export function buildLighterReviewMessage(input: {
     "timeInForce=immediate-or-cancel",
     `reduceOnly=${String(input.draft.reduceOnly)}`,
     "orderExpiryOffsetMinutes=30",
-    "After the live preview, show the existing Prepare trade approval action. Nothing may execute without the separate approval card.",
+    "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
   ].join("; ");
 }
 

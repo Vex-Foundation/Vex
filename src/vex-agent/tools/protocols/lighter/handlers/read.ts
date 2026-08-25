@@ -96,6 +96,7 @@ import {
   readLighterManagedTradingReadiness,
   type LighterManagedTradingReadiness,
 } from "../managed-trading-readiness.js";
+import { prepareLighterOrderCreateApproval } from "./write.js";
 
 // Resolves the account index and derives a short-lived read-only auth token from
 // the saved trading key for an authenticated account read. The read must target
@@ -1194,7 +1195,18 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         liveSourceJson: source.provenance as Record<string, unknown>,
       });
       const approvalReady = apiKeyIndex !== null;
-      return ok({
+      const approvalPreparation = approvalReady
+        ? await prepareLighterOrderCreateApproval({
+            environment: environment.value,
+            previewId: preview.previewId,
+          }, context)
+        : null;
+      if (approvalPreparation !== null && !approvalPreparation.success) {
+        return fail(
+          `Lighter order preview was created, but its approval card could not be prepared (${approvalPreparation.output})`,
+        );
+      }
+      const result = ok({
         ...source,
         status: "preview_ready",
         environment: environment.value,
@@ -1205,25 +1217,39 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         preview: preview.preview,
         approvalReady,
         nextStep: approvalReady
-          ? "prepare_for_approval"
+          ? "review_approval"
           : "connect_trading_api_key_before_approval",
-        nextToolId: approvalReady ? "lighter.order.create.prepare" : null,
+        nextToolId: null,
+        approvalUi: approvalReady
+          ? {
+              surface: "approval_card",
+              approveLabel: "Approve and execute trade",
+              rejectLabel: "Reject",
+            }
+          : null,
         responseRules: [
           "Describe this as a live-data-backed read-only preview, not as a simulation.",
           "Render previewSummary as a Markdown table using its columns and rows. Do not use bullets for the main preview unless the user asks for a shorter summary.",
           "Do not render raw preview internals such as integer, decimals, display wrappers, booleans, or JSON object fragments unless the user explicitly asks for technical details.",
           "Do not emit raw HTML such as <br>; use Markdown bullets or sentences.",
-          "Do not say the order can be placed, executed, submitted, or broadcast directly from this preview.",
+          "Do not say the order was placed, executed, submitted, or broadcast from this preview.",
           approvalReady
-            ? "Tell the user they can continue with the Prepare trade approval button in the host UI. Do not mention internal tool names."
+            ? "The approval card is already available in the host UI. Tell the user to review its exact terms and approve or reject it there; do not ask for another preparation step or typed confirmation."
             : "If the user wants to continue, start or continue managed Lighter onboarding for the selected wallet. Vex generates and stores the credential locally; never ask the user to paste a key, visit Settings, or choose an account/API-key index.",
         ],
         userGuidance: approvalReady
-          ? "This is a live-data-backed preview only. Do not describe it as placed, submitted, broadcast, simulated, or ready for execution. Tell the user they can continue with the Prepare trade approval button in the host UI; do not mention internal tool names."
+          ? "This live-data-backed preview has been prepared for the approval card. No order has been placed, signed, submitted, or broadcast. Tell the user to review the exact approval card and approve or reject it there; do not ask them to prepare it again or type another confirmation."
           : "This is a live-data-backed read-only preview only, not a simulation. Do not describe it as placed, submitted, broadcast, or ready for execution. Tell the user Vex must finish managed Lighter setup first, then continue onboarding without asking them to paste a key or provide technical identifiers.",
-        safety:
-          "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
+        safety: approvalReady
+          ? "A durable approval intent was prepared. No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran."
+          : "No signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path ran.",
       });
+      return approvalPreparation?.preparedActionFollowUp === undefined
+        ? result
+        : {
+            ...result,
+            preparedActionFollowUp: approvalPreparation.preparedActionFollowUp,
+          };
     } catch (err) {
       return fail(`Lighter order preview unavailable (${failureDetail("lighter.order.preview", err)})`);
     }

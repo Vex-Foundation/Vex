@@ -506,6 +506,9 @@ beforeEach(() => {
   configureLighterManagedTradingReadinessResolver(null);
   configureLighterReadOnlyAccountAuthResolver(null);
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
+  mocks.previewsRepo.findFreshById.mockResolvedValue(previewRow());
+  mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValue(null);
+  mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValue(executionIntentRow());
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
   mocks.onboarding.buildReaders.mockReturnValue({ marker: "onboarding-readers" });
@@ -1794,7 +1797,7 @@ describe("Lighter agent read handlers", () => {
     });
     mocks.previewsRepo.create.mockResolvedValue(undefined);
 
-    const data = await callJson("lighter.order.preview", {
+    const result = await LIGHTER_HANDLERS["lighter.order.preview"]!({
       environment: "rhc",
       accountIndex: 42,
       apiKeyIndex: 7,
@@ -1807,7 +1810,9 @@ describe("Lighter agent read handlers", () => {
       reduceOnly: false,
       orderExpiry: Date.now() + 10 * 60 * 1000,
       clientOrderIndexPolicy: "vex_assigned_uint48",
-    });
+    }, READ_CTX);
+    expect(result.success, result.output).toBe(true);
+    const data = JSON.parse(result.output) as Record<string, unknown>;
 
     expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
       marketId: 0,
@@ -1827,15 +1832,31 @@ describe("Lighter agent read handlers", () => {
       readonly preview: { readonly matchHash: string };
     };
     expect(persisted.preview.matchHash).toBe(data.matchHash);
+    expect(mocks.previewsRepo.findFreshById).toHaveBeenCalledWith(
+      "session-1",
+      "rhc",
+      data.previewId,
+    );
+    expect(mocks.executionIntentsRepo.createApprovalPendingWith).toHaveBeenCalledTimes(1);
     expect(data.status).toBe("preview_ready");
     expect(data.approvalReady).toBe(true);
-    expect(data.nextStep).toBe("prepare_for_approval");
-    expect(data.nextToolId).toBe("lighter.order.create.prepare");
-    expect(data.userGuidance).toContain("preview only");
-    expect(data.userGuidance).toContain("Prepare trade approval button");
-    expect(data.userGuidance).not.toContain("lighter.order.create.prepare");
-    expect(JSON.stringify(data.responseRules)).toContain("Prepare trade approval button");
+    expect(data.nextStep).toBe("review_approval");
+    expect(data.nextToolId).toBeNull();
+    expect(data.approvalUi).toEqual({
+      surface: "approval_card",
+      approveLabel: "Approve and execute trade",
+      rejectLabel: "Reject",
+    });
+    expect(data.userGuidance).toContain("approval card");
+    expect(data.userGuidance).toContain("do not ask them to prepare it again");
+    expect(data.userGuidance).not.toContain("Prepare trade approval button");
+    expect(JSON.stringify(data.responseRules)).not.toContain("Prepare trade approval button");
     expect(data.safety).toContain("No signer");
+    expect(result.preparedActionFollowUp).toBeDefined();
+    expect(validatePreparedActionFollowUp(
+      "lighter.order.preview",
+      result.preparedActionFollowUp!,
+    ).ok).toBe(true);
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
     expect(data.previewSummary).toMatchObject({
@@ -2324,7 +2345,7 @@ describe("Lighter agent read handlers", () => {
     };
     expect(persisted.preview.identity.apiKeyIndex).toBe("9");
     expect(data.approvalReady).toBe(true);
-    expect(data.nextStep).toBe("prepare_for_approval");
+    expect(data.nextStep).toBe("review_approval");
     expect((data.provenance as Record<string, unknown>).apiKeyLookupStatus).toBe("saved_vault_scope");
     expect(JSON.stringify(data)).not.toContain("let me know which index");
   });

@@ -28,7 +28,7 @@
  * for an anchor that must survive regrouping across a prepend.
  */
 
-import { Fragment, type JSX, type ReactNode } from "react";
+import { Fragment, type JSX } from "react";
 import { cn } from "../../../lib/utils.js";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import { transcriptEntryKey as entryKey } from "../agentActivity.js";
@@ -65,8 +65,6 @@ export function TranscriptRows({
   settledIds,
   pendingApprovals,
   workingAgentEntryKey,
-  lighterPreviewActionRowId,
-  lighterPreviewAction,
   forkActions,
 }: {
   readonly rows: readonly TranscriptEntry[];
@@ -76,8 +74,6 @@ export function TranscriptRows({
   readonly settledIds: ReadonlySet<number> | null;
   readonly pendingApprovals: ReadonlyMap<string, string>;
   readonly workingAgentEntryKey: string | null;
-  readonly lighterPreviewActionRowId?: number | null;
-  readonly lighterPreviewAction?: ReactNode;
   /** Branch/edit hover keys (A14/A18); omitted = read-only transcript. */
   readonly forkActions?: MessageForkActions;
 }): JSX.Element {
@@ -118,10 +114,6 @@ export function TranscriptRows({
                   onBranchFrom={forkActions?.onBranchFrom}
                 />
               </div>
-              {lighterPreviewActionRowId === row.id &&
-              lighterPreviewAction !== undefined ? (
-                <div className="mt-3">{lighterPreviewAction}</div>
-              ) : null}
             </div>
           </Fragment>
         );

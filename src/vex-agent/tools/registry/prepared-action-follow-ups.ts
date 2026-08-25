@@ -200,6 +200,7 @@ const LIGHTER_DEPOSIT_INTENT_ID_RE = /^lighter-onboard-[0-9a-f]{8}-[0-9a-f]{4}-4
 const LIGHTER_WITHDRAWAL_INTENT_ID_RE = /^lighter-withdrawal-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_WITHDRAWAL_CLAIM_ID_RE = /^lighter-withdrawal-claim-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
+  "lighter.order.preview",
   "lighter.order.create.prepare",
 ]);
 const LIGHTER_ORDER_CANCEL_PREPARE_SOURCES = new Set([

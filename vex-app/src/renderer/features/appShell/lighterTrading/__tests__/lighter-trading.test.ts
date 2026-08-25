@@ -117,7 +117,8 @@ describe("Light it up deterministic review handoff", () => {
     expect(message).toContain("orderType=market");
     expect(message).toContain("timeInForce=immediate-or-cancel");
     expect(message).toContain("orderExpiryOffsetMinutes=30");
-    expect(message).toContain("Nothing may execute without the separate approval card");
+    expect(message).toContain("display the approval card directly");
+    expect(message).toContain("Nothing may execute without the user's explicit approval");
     expect(message).not.toMatch(/order (?:was|is) (?:placed|submitted|filled)/i);
   });
 });
