@@ -58,16 +58,35 @@ function resolveRoute(url: string): ServedRoute {
   return route;
 }
 
+function bodyText(route: ServedRoute): string {
+  return typeof route.body === "string" ? route.body : JSON.stringify(route.body);
+}
+
 function bodyBytes(route: ServedRoute): Uint8Array {
-  const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body);
-  return new TextEncoder().encode(text);
+  return new TextEncoder().encode(bodyText(route));
 }
 
 /* ------------------------------------------------------------------ */
-/* Layer 1: the registered transport (what `price-read.ts` reads)      */
+/* Layer 1: the two byte sources the seams read                        */
 /* ------------------------------------------------------------------ */
 
-/** Register the fake transport. Returns the unregister the test must call. */
+/*
+ * TWO SOURCES, ON PURPOSE, because production has two.
+ *
+ * `price-read.ts` names `defaultPublicApiTransport` directly - its three reads
+ * are on the ungated `api.dexscreener.com`, and routing them through the
+ * registry would hand them to the site bridge, whose allowlist refuses that
+ * host (that was a real production defect). The default transport reads bytes
+ * with Node's own `fetch`, so serving `price-read` means serving `fetch`.
+ *
+ * The registered slot still matters for the seams that read the GATED site
+ * hosts (`candles-read.ts` and the agent tools), so both are installed from the
+ * one route table and one recorded request order. A characterization test then
+ * does not have to know which half its consumer went through - which is the
+ * point of a characterization test.
+ */
+
+/** Install both byte sources. Returns the teardown the test must call. */
 export function installFakeTransport(): () => void {
   const transport: DexScreenerTransport = {
     name: "public_api",
@@ -84,7 +103,24 @@ export function installFakeTransport(): () => void {
       throw new Error("price-read-harness: no consumer under test opens a WebSocket");
     },
   };
-  return registerDexScreenerTransport(transport);
+  const unregister = registerDexScreenerTransport(transport);
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const route = resolveRoute(url);
+    // Served as TEXT: `Response` re-encodes it to the same UTF-8 bytes the
+    // transport half hands over, and a string needs no buffer-type dance.
+    return new Response(bodyText(route), {
+      status: route.status ?? 200,
+      headers: route.headers ?? {},
+    });
+  }) as typeof globalThis.fetch;
+
+  return () => {
+    globalThis.fetch = realFetch;
+    unregister();
+  };
 }
 
 /* ------------------------------------------------------------------ */

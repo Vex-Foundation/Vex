@@ -11,6 +11,9 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EngineContext } from "@vex-agent/engine/types.js";
+import { makeEngineContext } from "../_engine-context.js";
+
 const appendMessage = vi.fn().mockResolvedValue({ id: 1 });
 const appendEngineMessage = vi.fn().mockResolvedValue({ id: 2 });
 
@@ -64,9 +67,25 @@ function spec(title = "Board"): BoardSpecV1 {
   } as BoardSpecV1;
 }
 
-function context(missionRunId: string | null = null) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { sessionId: SESSION, missionRunId } as any;
+/** Same reason as everywhere else: the live contract, not a cast literal. */
+function context(missionRunId: string | null = null): EngineContext {
+  return makeEngineContext({ sessionId: SESSION, missionRunId });
+}
+
+/**
+ * The invocation order of a mock's FIRST call, or a named failure.
+ *
+ * Ordering is the assertion in the mission case (the durable board must land
+ * before the continuation cue), so "never called" has to fail loudly here
+ * rather than be waved past with a non-null assertion.
+ */
+function firstCallOrder(
+  mock: { readonly mock: { readonly invocationCallOrder: readonly number[] } },
+  what: string,
+): number {
+  const order = mock.mock.invocationCallOrder[0];
+  if (order === undefined) throw new Error(`${what} never happened`);
+  return order;
 }
 
 /** The assistant row's metadata payload, as it would reach the JSONB column. */
@@ -190,8 +209,11 @@ describe("final prose consumes the staged board", () => {
     expect(appendEngineMessage).toHaveBeenCalledTimes(1);
     // Ordering, not merely both happening: the durable board precedes the cue
     // that lets the mission take another action.
-    const boardWrite = appendMessage.mock.invocationCallOrder[0]!;
-    const continuation = appendEngineMessage.mock.invocationCallOrder[0]!;
+    const boardWrite = firstCallOrder(appendMessage, "the assistant row write");
+    const continuation = firstCallOrder(
+      appendEngineMessage,
+      "the mission continuation cue",
+    );
     expect(boardWrite).toBeLessThan(continuation);
     expect(outcome.kind).toBe("mission_run_continue");
     expect(hasPendingPresentation(SESSION)).toBe(false);

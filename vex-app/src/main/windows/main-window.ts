@@ -17,6 +17,7 @@ import {
   type ExternalAllowEntry,
 } from "../security/url.js";
 import { EXPLORER_EXTERNAL_ALLOW } from "@shared/explorer-links.js";
+import { CHART_ATTRIBUTION_EXTERNAL_ALLOW } from "@shared/chart-attribution.js";
 import {
   clampToVisibleArea,
   type DisplayInfo,
@@ -65,6 +66,12 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // HyperEVM/Robinhood hosts are path-scoped there. https-only and
   // path-boundary matching are enforced upstream in `isAllowedExternalUrl`.
   ...EXPLORER_EXTERNAL_ALLOW,
+  // The chart library's required attribution link (board chart). Single source
+  // of truth in `@shared/chart-attribution` so the anchor the renderer draws
+  // and the host admitted here cannot drift - the drift is silent, the click
+  // just does nothing. Exact host `www.tradingview.com`; lookalikes denied by
+  // `isAllowedExternalUrl`'s hostname equality.
+  ...CHART_ATTRIBUTION_EXTERNAL_ALLOW,
   // Vex release notes (updater toast CTA) — path-scoped per owner decision
   // 2026-07-22. The former github.com/Vex-Foundation/ entry died with this
   // repoint (it existed solely for the release-notes CTA; zero remaining

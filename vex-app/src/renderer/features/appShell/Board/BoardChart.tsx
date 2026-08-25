@@ -38,7 +38,7 @@
  * screen reader.
  */
 
-import { useEffect, useMemo, useRef, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -53,6 +53,7 @@ import {
   BOARD_CHART_MAX_BARS,
   CandleFeed,
   barsToPush,
+  chartMinMove,
   formatChartAxisPrice,
   normalizeBoardBars,
   toDisplayPrice,
@@ -66,6 +67,10 @@ import {
 import { PriceZonePrimitive, type PriceZoneBand } from "./priceZonePrimitive.js";
 import type { BoardChartResolution } from "@vex-lib/board/index.js";
 import type { BoardAnnotationRow } from "./boardModel.js";
+import {
+  CHART_ATTRIBUTION_LABEL,
+  CHART_ATTRIBUTION_URL,
+} from "@shared/chart-attribution.js";
 
 /** A level annotation, still carrying its decimal string. */
 export interface BoardChartLevel {
@@ -131,9 +136,20 @@ export function BoardChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const fittedSubjectRef = useRef<string | null>(null);
 
+  // Bumped by the theme observer below. The ANNOTATION effect reads the
+  // palette too (price lines, zone bands and markers are all accent-coloured),
+  // and it is the owner of those handles, so a theme flip re-runs it rather
+  // than a second writer reaching into its refs. Rare enough that rebuilding
+  // the annotation geometry is cheaper than a parallel recolor path.
+  const [paletteEpoch, setPaletteEpoch] = useState(0);
+
   // Normalization is the adapter's job and it is memoized on the bars
   // identity, so a parent re-render does not re-sort a 200-row array.
   const normalized = useMemo(() => normalizeBoardBars(bars), [bars]);
+
+  // Set ONCE at chart creation with the rest of `priceFormat`, so it is part
+  // of the creation effect's dependency set rather than an applyOptions call.
+  const minMove = useMemo(() => chartMinMove(bars), [bars]);
 
   // A series with no bars is a real outcome (the provider had no candles for
   // this pool at this resolution), and it is NOT a chart. Creating one would
@@ -190,7 +206,15 @@ export function BoardChart({
       wickDownColor: palette.down,
       // Set ONCE at creation: passing priceFormat through applyOptions forces
       // a full chart update, so it must not ride a per-theme or per-tick call.
-      priceFormat: { type: "custom", formatter: formatChartAxisPrice, minMove: 0 },
+      // Finite and positive, derived from this series' own decimal precision.
+      // `minMove: 0` makes the library's base Infinity, which collapses the
+      // degenerate-range extension to zero and renders a FLAT series as a
+      // blank scale. See `chartMinMove`.
+      priceFormat: {
+        type: "custom",
+        formatter: formatChartAxisPrice,
+        minMove,
+      },
     });
 
     const markerPlugin = createSeriesMarkers<Time>(series, []);
@@ -227,6 +251,7 @@ export function BoardChart({
         wickUpColor: next.up,
         wickDownColor: next.down,
       });
+      setPaletteEpoch((epoch) => epoch + 1);
     });
     themeObserver.observe(root, {
       attributes: true,
@@ -261,7 +286,7 @@ export function BoardChart({
       priceLinesRef.current = [];
       fittedSubjectRef.current = null;
     };
-  }, [open, hasSeries, subjectKey]);
+  }, [open, hasSeries, subjectKey, minMove]);
 
   // ── Data. setData on a subject change, update on a refresh. ────────────
   useEffect(() => {
@@ -333,7 +358,7 @@ export function BoardChart({
         ];
       }),
     );
-  }, [levels, zones, markers, subjectKey, open]);
+  }, [levels, zones, markers, subjectKey, open, paletteEpoch]);
 
   return (
     <figure
@@ -362,6 +387,7 @@ export function BoardChart({
         drawn={normalized.bars.length}
         hiddenOlder={normalized.hiddenOlder}
         whitespaceCount={normalized.whitespaceCount}
+        incoherentCount={normalized.incoherentCount}
         lastBarPartial={lastBarPartial}
         truncated={truncated}
       />
@@ -382,6 +408,7 @@ function ChartCaveats({
   drawn,
   hiddenOlder,
   whitespaceCount,
+  incoherentCount,
   lastBarPartial,
   truncated,
 }: {
@@ -389,6 +416,7 @@ function ChartCaveats({
   readonly drawn: number;
   readonly hiddenOlder: number;
   readonly whitespaceCount: number;
+  readonly incoherentCount: number;
   readonly lastBarPartial: boolean;
   readonly truncated: boolean;
 }): JSX.Element {
@@ -401,6 +429,13 @@ function ChartCaveats({
   if (whitespaceCount > 0) {
     caveats.push(
       `${whitespaceCount} ${whitespaceCount === 1 ? "bucket" : "buckets"} with no price`,
+    );
+  }
+  if (incoherentCount > 0) {
+    // Disclosure, not a footnote: the drawn wick is not the number the
+    // provider called the high or the low on these bars.
+    caveats.push(
+      `${incoherentCount} ${incoherentCount === 1 ? "bar" : "bars"} with open or close outside the reported high/low; wicks span all four values`,
     );
   }
   if (lastBarPartial) caveats.push("newest bar still forming");
@@ -456,6 +491,14 @@ function AnnotationLegend({
           <span className="tabular-nums text-ink-tertiary">
             {row.coordinate}
           </span>
+          {row.note !== null ? (
+            <span
+              data-vex-area="board-annotation-note"
+              className="text-warning-label"
+            >
+              {row.note}
+            </span>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -466,9 +509,11 @@ function AnnotationLegend({
  * Owned attribution. The library's built-in logo widget is disabled because
  * it injects an anchor to an external origin through `innerHTML` inside a
  * privileged renderer; this is the same credit as static, reviewable markup.
- * `dexscreener.com` and `tradingview.com` both route through main's
- * external-URL allowlist, so `target=_blank` opens the system browser rather
- * than a child window.
+ * The URL and its label come from `@shared/chart-attribution`, which is also
+ * what main spreads into `ALLOWED_EXTERNAL`: the anchor and the host that
+ * admits it are ONE declaration, because a drift between them is silent (the
+ * credit renders, the click does nothing). `target=_blank` therefore opens the
+ * system browser rather than a child window.
  */
 function ChartAttribution(): JSX.Element {
   return (
@@ -478,12 +523,12 @@ function ChartAttribution(): JSX.Element {
     >
       Charting by{" "}
       <a
-        href="https://www.tradingview.com/"
+        href={CHART_ATTRIBUTION_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="underline decoration-dotted underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
-        TradingView Lightweight Charts
+        {CHART_ATTRIBUTION_LABEL}
       </a>
     </p>
   );

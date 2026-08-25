@@ -45,6 +45,7 @@ export function boardSpecFixture(
         },
       ],
       candles: null,
+      unmatchedMarkerAtMs: null,
       analysisCreatedAt: BOARD_ANALYSIS_AT,
       marketDataFetchedAt: BOARD_MARKET_DATA_AT,
       provenance: {

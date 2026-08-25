@@ -43,6 +43,15 @@ export interface BoardAnnotationRow {
   readonly label: string;
   /** Coordinate as plain text: a price, a price range, or an instant. */
   readonly coordinate: string;
+  /**
+   * Why this annotation is not on the canvas, or null when it is drawn.
+   *
+   * A marker whose instant matched no hydrated candle is omitted from the
+   * chart (the library would otherwise snap it onto a neighbouring bar and
+   * make it read as analysis of that bar). Omitting it silently would delete
+   * the agent's claim, so the legend keeps the label and says why.
+   */
+  readonly note: string | null;
 }
 
 export interface BoardViewModel {
@@ -99,6 +108,7 @@ export function buildAnnotationRows(
   spec: BoardSpecV1,
 ): readonly BoardAnnotationRow[] {
   const annotations = spec.chart?.annotations ?? [];
+  const unmatched = new Set(spec.hydration.unmatchedMarkerAtMs ?? []);
   return annotations.map((annotation, index) => {
     const key = `${annotation.kind}/${index}`;
     switch (annotation.kind) {
@@ -108,6 +118,7 @@ export function buildAnnotationRows(
           kind: "level",
           label: annotation.label,
           coordinate: annotation.price,
+          note: null,
         };
       case "zone":
         return {
@@ -115,14 +126,20 @@ export function buildAnnotationRows(
           kind: "zone",
           label: annotation.label,
           coordinate: `${annotation.priceFrom} to ${annotation.priceTo}`,
+          note: null,
         };
-      case "marker":
+      case "marker": {
+        const instant = new Date(annotation.atMs).toISOString();
         return {
           key,
           kind: "marker",
           label: annotation.label,
-          coordinate: new Date(annotation.atMs).toISOString(),
+          coordinate: instant,
+          note: unmatched.has(annotation.atMs)
+            ? `marker at ${instant} matches no candle`
+            : null,
         };
+      }
       default: {
         // Closed union: a new annotation kind must be handled here, and the
         // compiler says so at the point the contract changes.

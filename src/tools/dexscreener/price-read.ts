@@ -38,12 +38,31 @@
  * the site bridge that a headless caller does not have.
  *
  * The three reads therefore stay exactly the three the old REST client made,
- * with the same paths, the same validators and the same rate class. What
- * changed is the TRANSPORT: bytes now come from the registered transport
- * (`transport.ts`), which is the site bridge inside the desktop app and the
- * degraded public-API transport everywhere else. Both serve
- * `api.dexscreener.com`, so this seam works headless, which is a hard
- * requirement: the poller runs in the agent process with or without a bridge.
+ * with the same paths, the same validators and the same rate class.
+ *
+ * ## Why this seam names `defaultPublicApiTransport` instead of asking the
+ * ## registry which transport is in force
+ *
+ * MEASURED, and the reason is a production outage rather than a preference.
+ * `getDexScreenerTransport()` answers with the REGISTERED transport whenever
+ * one exists, and inside the desktop app the registered transport is the site
+ * bridge, whose host allowlist admits `io.dexscreener.com` and
+ * `dd.dexscreener.com` and NOTHING else. Every read in this file targets
+ * `api.dexscreener.com`, so routing through the registry would have made all
+ * three throw before the network inside the shipped app while passing headless:
+ * price-watch arming, the Uniswap liquidity safety check, balance valuation and
+ * the `$VEX` banner would each have failed or gone null in production only.
+ *
+ * The public REST API is UNGATED - that is the measured property that put it on
+ * the default transport's origin list in the first place - so it needs no
+ * browser impersonation and gains nothing from the bridge. The bridge exists
+ * for the site hosts, which this seam never touches. Naming the public
+ * transport directly therefore makes `publicApi: true` truthful here and makes
+ * the routing identical in every process: desktop, CLI, tests, CI.
+ *
+ * The registry-routed reads are a different question with a different answer:
+ * `candles-read.ts` and the agent-facing tools read `io.dexscreener.com`, which
+ * IS gated, and must keep asking the registry so the bridge serves them.
  *
  * ## What is shared with every other caller of this host
  *
@@ -67,7 +86,7 @@
  *    Search is an agent-facing question and belongs to the tool surface.
  */
 
-import { getDexScreenerTransport, DEXSCREENER_PUBLIC_API_ORIGIN } from "./transport.js";
+import { defaultPublicApiTransport, DEXSCREENER_PUBLIC_API_ORIGIN } from "./transport.js";
 import {
   awaitWithinCallerBounds,
   boundsTheWait,
@@ -154,7 +173,7 @@ async function request<T>(
   try {
     // The shared request carries NO caller policy - see `caller-bounds.ts`.
     const shared = throttle.run(url, rateClass, ttlMs, async () => {
-      const response = await getDexScreenerTransport().httpGet(url, {
+      const response = await defaultPublicApiTransport.httpGet(url, {
         timeoutMs: PRICE_READ_REQUEST_TIMEOUT_MS,
         accept: "application/json",
         maxBytes: PRICE_READ_MAX_BYTES,

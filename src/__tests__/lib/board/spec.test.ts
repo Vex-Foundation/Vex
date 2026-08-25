@@ -67,6 +67,10 @@ function hydrationFor(poolCount: number, withCandles: boolean): unknown {
     analysisCreatedAt: 1_756_000_000_000,
     marketDataFetchedAt: 1_756_000_030_000,
     provenance: { transport: "http", sourceObservation: "dex/pairs/v1 batch, 1 subject" },
+    // The runtime's marker-membership verdict. It is a LIST whenever the board
+    // has a chart (empty when every marker matched a candle) and null when it
+    // has none, which is what these fixtures pair with `withCandles`.
+    unmatchedMarkerAtMs: withCandles ? [] : null,
     staleAfterMs: BOARD_STALE_AFTER_MS,
   };
 }
@@ -425,6 +429,54 @@ describe("boardSpecV1Schema - the persisted document", () => {
     const missing = structuredClone(hydration) as { rows: Record<string, unknown>[] };
     delete missing.rows[0]?.priceUsd;
     expect(boardSpecV1Schema.safeParse(spec({ hydration: missing })).success).toBe(false);
+  });
+
+  it("binds the unmatched-marker verdict to the chart's OWN markers", () => {
+    const chart = {
+      poolIndex: 0,
+      resolution: "1h",
+      annotations: [
+        { kind: "marker", atMs: 1_756_000_000_000, label: "entry" },
+        { kind: "marker", atMs: 1_756_000_003_000, label: "off-grid" },
+      ],
+    };
+    const withVerdict = (unmatchedMarkerAtMs: unknown) =>
+      spec({
+        chart,
+        hydration: { ...(hydrationFor(1, true) as object), unmatchedMarkerAtMs },
+      });
+
+    // The honest verdicts: none unmatched, or the marker that really missed.
+    expect(boardSpecV1Schema.safeParse(withVerdict([])).success).toBe(true);
+    expect(
+      boardSpecV1Schema.safeParse(withVerdict([1_756_000_003_000])).success,
+    ).toBe(true);
+
+    // An instant no marker on this chart claims would omit the WRONG
+    // annotation from the canvas.
+    const foreign = boardSpecV1Schema.safeParse(withVerdict([1_700_000_000_000]));
+    expect(foreign.success).toBe(false);
+    expect(foreign.error?.issues[0]?.path).toEqual([
+      "hydration",
+      "unmatchedMarkerAtMs",
+    ]);
+
+    // A chart with no verdict at all never went through the membership check.
+    const unchecked = boardSpecV1Schema.safeParse(withVerdict(null));
+    expect(unchecked.success).toBe(false);
+    expect(unchecked.error?.issues[0]?.message).toContain("matched no candle");
+
+    // And a board with no chart cannot carry a verdict about markers it has
+    // no place to draw.
+    const noChart = boardSpecV1Schema.safeParse(
+      spec({
+        hydration: {
+          ...(hydrationFor(1, false) as object),
+          unmatchedMarkerAtMs: [],
+        },
+      }),
+    );
+    expect(noChart.success).toBe(false);
   });
 
   it("pins the v1 staleness horizon", () => {

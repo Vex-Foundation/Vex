@@ -20,9 +20,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { boardSpecV1Schema } from "@vex-lib/board/index.js";
+import { BOARD_STALE_AFTER_MS, boardSpecV1Schema } from "@vex-lib/board/index.js";
 import { BoardBlock } from "../BoardBlock.js";
 import { boardSpec, candle, hydratedRow, FIXTURE_FETCHED_AT } from "./boardFixture.js";
 
@@ -222,6 +222,44 @@ describe("BoardBlock staleness", () => {
     ).not.toBeNull();
   });
 
+  it("crosses from fresh to stale while it stays mounted, without a ticking clock", async () => {
+    // The defect this pins: a board appended to an OPEN chat mounted fresh and
+    // never gained "Snapshot, not live", because the freshness clock was read
+    // once per mount. Nobody remounts a transcript row to age it.
+    vi.setSystemTime(FIXTURE_FETCHED_AT + 1_000);
+    const container = renderBoard();
+    const block = container.querySelector('[data-vex-area="board-block"]')!;
+    expect(block.getAttribute("data-stale")).toBe("false");
+
+    // One step over the boundary, and only one: the surface changes exactly
+    // once, at `marketDataFetchedAt + staleAfterMs`.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BOARD_STALE_AFTER_MS);
+    });
+
+    expect(block.getAttribute("data-stale")).toBe("true");
+    expect(block.getAttribute("aria-label")).toContain("market data delayed");
+    expect(
+      container.querySelector('[data-vex-area="board-stale-note"]')?.textContent,
+    ).toContain("Snapshot, not live");
+    // No countdown: nothing else is pending once the boundary has passed.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("schedules nothing at all for a board that is already stale", () => {
+    vi.setSystemTime(FIXTURE_FETCHED_AT + 4 * 3_600_000);
+    renderBoard();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears its freshness timeout on unmount", () => {
+    vi.setSystemTime(FIXTURE_FETCHED_AT + 1_000);
+    const { unmount } = render(createElement(BoardBlock, { spec: boardSpec() }));
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("keeps the analysis clock and the market-data clock as separate lines", () => {
     const container = renderBoard();
     const clocks = container.querySelector('[data-vex-area="board-clocks"]')!;
@@ -319,6 +357,148 @@ describe("BoardBlock chart disclosure", () => {
       type: string;
     };
     expect(priceFormat.type).toBe("custom");
+  });
+
+  it("gives the price format a FINITE POSITIVE minMove, never 0", () => {
+    // `minMove: 0` makes the library's base Infinity, which zeroes the
+    // degenerate-range extension and renders a flat series as a blank scale.
+    renderBoard(withChart());
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    const priceFormat = chartInstances[0]!.seriesOptions["priceFormat"] as {
+      minMove: number;
+    };
+    expect(Number.isFinite(priceFormat.minMove)).toBe(true);
+    expect(priceFormat.minMove).toBeGreaterThan(0);
+    // Derived from the fixture's own 8-decimal prices, not a fixed 0.01.
+    expect(priceFormat.minMove).toBe(1e-8);
+  });
+
+  it("keeps a FLAT sub-cent series on a non-blank render path", () => {
+    // The illiquid pool that did not move all window: every bar identical at
+    // 1e-13. This is the case `minMove: 0` rendered blank.
+    const flat = boardSpec({
+      bars: [1, 2, 3].map((i) =>
+        candle(FIXTURE_FETCHED_AT - i * 3_600_000, "0.0000000000001"),
+      ),
+    });
+    renderBoard(flat);
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+
+    const priceFormat = chartInstances[0]!.seriesOptions["priceFormat"] as {
+      minMove: number;
+      formatter: (value: number) => string;
+    };
+    expect(priceFormat.minMove).toBe(1e-13);
+    // The autoscale input on the library's degenerate-range branch: the range
+    // it would widen a single-point series by is a real interval, not zero.
+    expect(5 * priceFormat.minMove).toBeGreaterThan(0);
+    expect(Number.isFinite(1 / priceFormat.minMove)).toBe(true);
+    // And the axis label for that price is not "0.00".
+    expect(priceFormat.formatter(1e-13)).not.toBe("0.00");
+  });
+
+  it("discloses bars whose open or close sat outside the reported high/low", () => {
+    // A measured provider row: bucket 1784037600000 printed openUsd
+    // 0.000002874 against highUsd 0.000002871 (382 of 999 hourly bars showed
+    // this). The chart draws wicks spanning all four values and SAYS so.
+    const container = renderBoard(
+      boardSpec({
+        bars: [
+          {
+            tMs: FIXTURE_FETCHED_AT - 3_600_000,
+            o: "0.000002874",
+            h: "0.000002871",
+            l: "0.000002800",
+            c: "0.000002850",
+          },
+          candle(FIXTURE_FETCHED_AT, "0.000002860"),
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    expect(
+      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+        .textContent,
+    ).toContain("open or close outside the reported high/low");
+  });
+
+  it("says nothing about divergence when every bar is coherent", () => {
+    const container = renderBoard(withChart());
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    expect(
+      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+        .textContent,
+    ).not.toContain("outside the reported high/low");
+  });
+
+  it("omits a marker that matches no candle and names it in the legend", () => {
+    // The library SNAPS an unmatched marker onto a neighbouring bar, which
+    // turns the agent's claim about one moment into a claim about a bar it
+    // never looked at. Unmatched markers are therefore not drawn, and the
+    // legend says which one and why.
+    const offGrid = FIXTURE_FETCHED_AT - 1_800_000;
+    const container = renderBoard(
+      boardSpec({
+        annotations: [
+          { kind: "marker", atMs: FIXTURE_FETCHED_AT, label: "on a bar" },
+          { kind: "marker", atMs: offGrid, label: "between bars" },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+
+    // One marker drawn, and it is the one that landed on a bar.
+    expect(chartInstances[0]!.markers).toHaveLength(1);
+    expect(
+      (chartInstances[0]!.markers[0] as { time: number }).time,
+    ).toBe(Math.floor(FIXTURE_FETCHED_AT / 1000));
+
+    // Nothing is lost: both labels are still readable, and the omitted one
+    // carries the reason in words.
+    const legend = container.querySelector('[aria-label="Chart annotations"]')!;
+    expect(legend.textContent).toContain("on a bar");
+    expect(legend.textContent).toContain("between bars");
+    expect(
+      container.querySelector('[data-vex-area="board-annotation-note"]')!
+        .textContent,
+    ).toBe(`marker at ${new Date(offGrid).toISOString()} matches no candle`);
+  });
+
+  it("recolors existing levels, zones and markers when the theme flips", async () => {
+    const container = renderBoard(withChart());
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    const before = chartInstances[0]!.priceLineTitles.length;
+    const markersBefore = chartInstances[0]!.markers.length;
+    expect(before).toBeGreaterThan(0);
+
+    await act(async () => {
+      document.documentElement.setAttribute("data-vex-theme", "light");
+      // MutationObserver callbacks land on a microtask.
+      await Promise.resolve();
+    });
+
+    // The annotation owner re-ran against the new palette: the geometry it
+    // owns was rebuilt rather than left painted in the old theme's accent.
+    expect(chartInstances[0]!.priceLineTitles.length).toBeGreaterThan(before);
+    expect(chartInstances[0]!.markers.length).toBeGreaterThan(markersBefore);
+    expect(chartInstances[0]!.removed).toBe(false);
+    expect(container.querySelector('[data-vex-area="board-chart"]')).not.toBeNull();
+    document.documentElement.removeAttribute("data-vex-theme");
+  });
+
+  it("draws a marker that lands exactly on a candle, with no note", () => {
+    const container = renderBoard(
+      boardSpec({
+        annotations: [
+          { kind: "marker", atMs: FIXTURE_FETCHED_AT, label: "listing" },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    expect(chartInstances[0]!.markers).toHaveLength(1);
+    expect(
+      container.querySelector('[data-vex-area="board-annotation-note"]'),
+    ).toBeNull();
   });
 
   it("fits the viewport exactly once for the subject, not per render", () => {

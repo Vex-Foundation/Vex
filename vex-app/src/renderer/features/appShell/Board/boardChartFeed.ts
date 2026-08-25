@@ -82,6 +82,12 @@ export interface NormalizedBoardBars {
   readonly hiddenOlder: number;
   /** Rows that could not yield four finite prices and became whitespace. */
   readonly whitespaceCount: number;
+  /**
+   * Drawn bars whose reported high/low did not span their own open/close, so
+   * the chart derived its extremes from all four values instead. A measured
+   * provider fact, not a defensive branch - see `toChartBar`.
+   */
+  readonly incoherentCount: number;
 }
 
 /**
@@ -90,16 +96,26 @@ export interface NormalizedBoardBars {
  * It never becomes a fabricated zero and it is never dropped, because a gap
  * the provider reported is a fact about the market, not an absence of data.
  */
-export function toChartBar(row: BoardCandleInput): BoardChartBar {
+/** A converted bar plus the facts the caller has to REPORT about it. */
+interface ConvertedBar {
+  readonly bar: BoardChartBar;
+  /**
+   * True when the provider's own high/low did not span its open/close, so the
+   * high and low handed to the library are derived rather than reported.
+   */
+  readonly incoherent: boolean;
+}
+
+function convertBar(row: BoardCandleInput): ConvertedBar {
   const time = Math.floor(row.tMs / 1000) as UTCTimestamp;
   if (!Number.isFinite(row.tMs)) {
     // A non-finite timestamp cannot index anything; surface it as whitespace
     // at time 0 rather than poisoning the axis with NaN.
-    return { time: 0 as UTCTimestamp };
+    return { bar: { time: 0 as UTCTimestamp }, incoherent: false };
   }
   const { o, h, l, c } = row;
   if (o === null || h === null || l === null || c === null) {
-    return { time };
+    return { bar: { time }, incoherent: false };
   }
   const open = Number(o);
   const high = Number(h);
@@ -111,9 +127,80 @@ export function toChartBar(row: BoardCandleInput): BoardChartBar {
     !Number.isFinite(low) ||
     !Number.isFinite(close)
   ) {
-    return { time };
+    return { bar: { time }, incoherent: false };
   }
-  return { time, open, high, low, close };
+  // CHART-ONLY EXTREMES.
+  //
+  // MEASURED provider behavior, not a guard against the impossible: the
+  // DexScreener USD OHLC series reports an open or a close OUTSIDE its own
+  // high/low on 382 of 999 rows measured (the candles handler records the
+  // count). The library autoscales the price axis from `high`/`low` ALONE, so
+  // forwarding the reported pair unchanged clips the body of every such
+  // candle out of the visible range - the reader sees a bar whose open or
+  // close is off the chart and reads the wrong extreme for the period.
+  //
+  // The four values are all facts the provider reported, so the honest chart
+  // geometry is the one that contains all four. The reported high/low are not
+  // corrected anywhere else: nothing here is written back, and the divergence
+  // is COUNTED so the caveat line can disclose it.
+  const drawnHigh = Math.max(open, high, low, close);
+  const drawnLow = Math.min(open, high, low, close);
+  return {
+    bar: { time, open, high: drawnHigh, low: drawnLow, close },
+    incoherent: drawnHigh !== high || drawnLow !== low,
+  };
+}
+
+/**
+ * THE conversion boundary. A row that cannot yield four finite numbers
+ * becomes WHITESPACE - it holds its slot on the time axis and draws nothing.
+ * It never becomes a fabricated zero and it is never dropped, because a gap
+ * the provider reported is a fact about the market, not an absence of data.
+ *
+ * The `high`/`low` of the returned bar span all four reported values; see
+ * `convertBar` for the measured reason.
+ */
+export function toChartBar(row: BoardCandleInput): BoardChartBar {
+  return convertBar(row).bar;
+}
+
+/**
+ * Smallest price movement the axis must be able to distinguish, derived from
+ * the series' OWN decimal precision.
+ *
+ * WHY IT CANNOT BE 0. The library computes `base = 1 / minMove`, so a
+ * `minMove` of 0 makes the base `Infinity` and `priceScale.minMove()` collapse
+ * back to `1 / Infinity = 0`. The one place that value is load-bearing is the
+ * degenerate-range branch of autoscaling: a series whose min equals its max is
+ * extended by `5 * minMove` to avoid "incorrect range and empty (blank)
+ * scale", and with 0 that extension is 0 - so a FLAT series (an illiquid pool
+ * that did not move all window) renders as a blank scale. Verified against the
+ * installed 5.2.1 bundle.
+ *
+ * WHY IT IS DERIVED RATHER THAN FIXED. A board price is a decimal string that
+ * may be 1e-13; a fixed 0.01 would make every tick on such a series identical.
+ * The strings carry their own precision, so the tick is the last place value
+ * the series actually uses, bounded at {@link CHART_MIN_MOVE_MAX_DECIMALS}
+ * (past ~15 significant digits a double cannot represent the difference
+ * anyway). Display geometry only: no figure a user acts on is derived here.
+ */
+export const CHART_MIN_MOVE_MAX_DECIMALS = 15;
+
+export function chartMinMove(rows: readonly BoardCandleInput[]): number {
+  let decimals = 0;
+  for (const row of rows) {
+    for (const leg of [row.o, row.h, row.l, row.c]) {
+      if (leg === null) continue;
+      const dot = leg.indexOf(".");
+      if (dot < 0) continue;
+      const used = leg.length - dot - 1;
+      if (used > decimals) decimals = used;
+    }
+  }
+  if (decimals > CHART_MIN_MOVE_MAX_DECIMALS) decimals = CHART_MIN_MOVE_MAX_DECIMALS;
+  // `Number("1e-13")` rather than `10 ** -13`: the exponent literal is exact
+  // to the nearest double, the repeated multiplication is not.
+  return Number(`1e-${decimals}`);
 }
 
 /** True when a bar carries real prices rather than reserving a slot. */
@@ -138,9 +225,15 @@ export function normalizeBoardBars(
   rows: readonly BoardCandleInput[],
 ): NormalizedBoardBars {
   const byTime = new Map<number, BoardChartBar>();
+  const incoherentTimes = new Set<number>();
   for (const row of rows) {
-    const bar = toChartBar(row);
-    byTime.set(bar.time as number, bar);
+    const { bar, incoherent } = convertBar(row);
+    const time = bar.time as number;
+    byTime.set(time, bar);
+    // LAST value wins for the bar, so the verdict follows it: a re-emitted
+    // forming bar that arrives coherent clears the flag its earlier copy set.
+    if (incoherent) incoherentTimes.add(time);
+    else incoherentTimes.delete(time);
   }
   const ordered = [...byTime.values()].sort(
     (a, b) => (a.time as number) - (b.time as number),
@@ -149,10 +242,12 @@ export function normalizeBoardBars(
   const hiddenOlder = Math.max(0, totalDistinct - BOARD_CHART_MAX_BARS);
   const bars = hiddenOlder === 0 ? ordered : ordered.slice(hiddenOlder);
   let whitespaceCount = 0;
+  let incoherentCount = 0;
   for (const bar of bars) {
     if (!isDrawnBar(bar)) whitespaceCount += 1;
+    else if (incoherentTimes.has(bar.time as number)) incoherentCount += 1;
   }
-  return { bars, totalDistinct, hiddenOlder, whitespaceCount };
+  return { bars, totalDistinct, hiddenOlder, whitespaceCount, incoherentCount };
 }
 
 /**

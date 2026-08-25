@@ -218,9 +218,25 @@ export async function hydrateBoard(args: HydrateArgs): Promise<BoardHydration> {
           ...(args.signal === undefined ? {} : { signal: args.signal }),
         });
 
+  // MARKER MEMBERSHIP, decided here and nowhere else.
+  //
+  // A marker is the agent's claim about ONE bar. The chart library does not
+  // refuse a marker whose time is absent from the series - it snaps it to a
+  // neighbouring bar - so a marker placed a few minutes off a 1-hour series
+  // would silently become a claim about a bar the agent never looked at.
+  // Compose time is the only moment at which the marker and the candle set
+  // that will be persisted beside it are both authoritative, so the verdict is
+  // taken here, against the EXACT millisecond timestamps of the bars that were
+  // stored. The renderer omits these and names each one in the legend.
+  const unmatchedMarkerAtMs = unmatchedMarkerInstants(
+    args.input.chart,
+    candles?.series.bars ?? [],
+  );
+
   return {
     rows,
     candles: candles === null ? null : candles.series,
+    unmatchedMarkerAtMs,
     analysisCreatedAt: args.nowMs,
     marketDataFetchedAt: args.nowMs,
     provenance: {
@@ -236,6 +252,27 @@ export async function hydrateBoard(args: HydrateArgs): Promise<BoardHydration> {
     },
     staleAfterMs: BOARD_STALE_AFTER_MS,
   };
+}
+
+/**
+ * The marker instants that match NO bar in the persisted series, in the order
+ * the agent wrote them. Null when the board has no chart.
+ *
+ * Exact equality on the millisecond, deliberately: a marker is a claim about
+ * ONE bar, and "close to a bar" is the thing the chart library would silently
+ * turn into a claim about a different bar.
+ */
+export function unmatchedMarkerInstants(
+  chart: BoardComposeInput["chart"],
+  bars: readonly BoardCandle[],
+): number[] | null {
+  if (chart === undefined) return null;
+  const candleTimes = new Set(bars.map((bar) => bar.tMs));
+  return (chart.annotations ?? []).flatMap((annotation) =>
+    annotation.kind === "marker" && !candleTimes.has(annotation.atMs)
+      ? [annotation.atMs]
+      : [],
+  );
 }
 
 interface HydratedCandles {

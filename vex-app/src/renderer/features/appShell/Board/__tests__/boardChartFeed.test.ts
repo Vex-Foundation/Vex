@@ -22,7 +22,9 @@ import type {
 } from "lightweight-charts";
 import {
   BOARD_CHART_MAX_BARS,
+  CHART_MIN_MOVE_MAX_DECIMALS,
   CandleFeed,
+  chartMinMove,
   barsToPush,
   boardChartSubjectKey,
   formatChartAxisPrice,
@@ -154,6 +156,7 @@ describe("normalizeBoardBars", () => {
       totalDistinct: 0,
       hiddenOlder: 0,
       whitespaceCount: 0,
+      incoherentCount: 0,
     });
   });
 });
@@ -287,5 +290,139 @@ describe("boardChartSubjectKey", () => {
     expect(boardChartSubjectKey("base", "0xabc", "1h")).not.toBe(
       boardChartSubjectKey("solana", "0xabc", "1h"),
     );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The provider's own rows disagree with themselves                    */
+/* ------------------------------------------------------------------ */
+
+describe("chart-only high/low", () => {
+  /*
+   * MEASURED, not defensive. Across 999 non-inverted hourly bars the provider
+   * returned 382 rows whose `openUsd` or `closeUsd` sat OUTSIDE their own
+   * `[lowUsd, highUsd]`. The row below is one of them, verbatim from the
+   * measurement recorded in
+   * `src/vex-agent/tools/protocols/dexscreener/handlers/deep-dive/candles.ts`
+   * (bucket 1784037600000: openUsd 0.000002874 against highUsd 0.000002871).
+   *
+   * The library autoscales the price axis from `high`/`low` ALONE, so
+   * forwarding that pair unchanged puts the open above the top of the visible
+   * range and the reader sees a bar with its body clipped off the chart.
+   */
+  const INCONSISTENT_ROW: BoardCandleInput = {
+    tMs: 1_784_037_600_000,
+    o: "0.000002874",
+    h: "0.000002871",
+    l: "0.000002800",
+    c: "0.000002850",
+  };
+
+  it("spans all four reported values on a row whose open exceeds its high", () => {
+    const converted = toChartBar(INCONSISTENT_ROW) as CandlestickData<UTCTimestamp>;
+    expect(converted.high).toBe(0.000002874);
+    expect(converted.low).toBe(0.0000028);
+    // The reported values themselves are untouched facts: open and close are
+    // exactly what the provider printed.
+    expect(converted.open).toBe(0.000002874);
+    expect(converted.close).toBe(0.00000285);
+    // The geometry contains every value the provider reported.
+    for (const value of [converted.open, converted.close]) {
+      expect(value).toBeLessThanOrEqual(converted.high);
+      expect(value).toBeGreaterThanOrEqual(converted.low);
+    }
+  });
+
+  it("counts the divergence so the surface can disclose it", () => {
+    const coherent: BoardCandleInput = {
+      tMs: 1_784_041_200_000,
+      o: "0.000002850",
+      h: "0.000002880",
+      l: "0.000002800",
+      c: "0.000002860",
+    };
+    const normalized = normalizeBoardBars([INCONSISTENT_ROW, coherent]);
+    expect(normalized.incoherentCount).toBe(1);
+    expect(normalizeBoardBars([coherent]).incoherentCount).toBe(0);
+    // A bar with no prices at all is whitespace, not a divergence.
+    expect(normalizeBoardBars([bar(1_784_044_800_000, null)]).incoherentCount).toBe(0);
+  });
+
+  it("lets a re-emitted forming bar clear the verdict its earlier copy set", () => {
+    const later: BoardCandleInput = {
+      ...INCONSISTENT_ROW,
+      h: "0.000002900",
+      l: "0.000002800",
+    };
+    expect(normalizeBoardBars([INCONSISTENT_ROW, later]).incoherentCount).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* minMove: finite, positive, and the series' own precision            */
+/* ------------------------------------------------------------------ */
+
+describe("chartMinMove", () => {
+  /*
+   * `minMove: 0` makes the library's `base = 1 / minMove` Infinity, and
+   * `priceScale.minMove()` (`1 / base`) collapses back to 0. The one place
+   * that is load-bearing is the degenerate-range branch of autoscaling: a
+   * series whose min equals its max is widened by `5 * minMove` precisely to
+   * avoid an "empty (blank) scale". With 0 there is no widening, so a FLAT
+   * series renders blank. Verified against the installed 5.2.1 bundle.
+   */
+  function flatSeries(price: string): BoardCandleInput[] {
+    return [1, 2, 3].map((i) => ({
+      tMs: 1_784_037_600_000 + i * 3_600_000,
+      o: price,
+      h: price,
+      l: price,
+      c: price,
+    }));
+  }
+
+  it("is finite and strictly positive for every series, flat ones included", () => {
+    for (const rows of [
+      flatSeries("0.0000000000001"),
+      flatSeries("1"),
+      [] as BoardCandleInput[],
+      [bar(1_784_037_600_000, null)],
+    ]) {
+      const minMove = chartMinMove(rows);
+      expect(Number.isFinite(minMove)).toBe(true);
+      expect(minMove).toBeGreaterThan(0);
+      // The autoscale input the flat branch actually uses.
+      expect(Number.isFinite(1 / minMove)).toBe(true);
+      expect(5 * minMove).toBeGreaterThan(0);
+    }
+  });
+
+  it("takes the last place value the series actually uses", () => {
+    expect(chartMinMove(flatSeries("0.0000000000001"))).toBe(1e-13);
+    expect(chartMinMove(flatSeries("1"))).toBe(1);
+    expect(chartMinMove(flatSeries("1.25"))).toBe(0.01);
+    // Mixed precision takes the finest leg on any bar.
+    expect(
+      chartMinMove([
+        { tMs: 1, o: "1.5", h: "1.5", l: "1.5", c: "1.5" },
+        { tMs: 2, o: "1.5", h: "1.50001", l: "1.5", c: "1.5" },
+      ]),
+    ).toBe(0.00001);
+  });
+
+  it("bounds the precision where a double stops being able to tell values apart", () => {
+    const absurd = `0.${"0".repeat(40)}1`;
+    expect(chartMinMove(flatSeries(absurd))).toBe(
+      Number(`1e-${CHART_MIN_MOVE_MAX_DECIMALS}`),
+    );
+  });
+
+  it("widens a flat 1e-13 series by a visible amount rather than by nothing", () => {
+    // The library's own arithmetic on the degenerate branch: a range that
+    // would otherwise be a single point becomes a real interval.
+    const minMove = chartMinMove(flatSeries("0.0000000000001"));
+    const point = 1e-13;
+    const extended = { min: point - 5 * minMove, max: point + 5 * minMove };
+    expect(extended.max).toBeGreaterThan(extended.min);
   });
 });

@@ -12,6 +12,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestContext } from "./_test-context.js";
+
 const hydrateBoard = vi.fn();
 
 vi.mock("@vex-agent/tools/internal/board/hydrate.js", () => ({
@@ -33,8 +35,25 @@ const { siteError, DexScreenerSiteErrorCodes } = await import(
 
 const SESSION = "session-compose";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const context = { sessionId: SESSION, missionRunId: null } as any;
+/**
+ * The context a HOST builds - `runTool`, an approval cold resume, a sync job.
+ * None of them carries the model-origin provenance, which is exactly the
+ * conservative default BoardCompose's gate reads. Built through the shared
+ * factory so a new required field on the live `InternalToolContext` contract
+ * breaks the compiler here rather than passing silently.
+ */
+const hostContext = makeTestContext({ sessionId: SESSION });
+
+/**
+ * The context the turn loop builds for a call the MODEL emitted.
+ * `buildToolContext` in `engine/core/turn-loop-tool-batch/execute.ts` is the
+ * only producer of `modelOriginated`, and it is the provenance BoardCompose
+ * requires before it will spend a provider byte.
+ */
+const modelContext = makeTestContext({
+  sessionId: SESSION,
+  modelOriginated: true,
+});
 
 function hydrationFor(poolCount: number, noteBytes = 0) {
   return {
@@ -52,6 +71,7 @@ function hydrationFor(poolCount: number, noteBytes = 0) {
       pairAgeSeconds: 86_400,
     })),
     candles: null,
+    unmatchedMarkerAtMs: null,
     analysisCreatedAt: 1_700_000_000_000,
     marketDataFetchedAt: 1_700_000_000_000,
     provenance: {
@@ -77,7 +97,7 @@ beforeEach(() => {
 describe("BoardCompose input contract", () => {
   it("stages a valid board and says STAGED, not attached", async () => {
     beginPresentationScope(SESSION);
-    const result = await handleBoardCompose({ ...VALID_INPUT }, context);
+    const result = await handleBoardCompose({ ...VALID_INPUT }, modelContext);
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("staged");
@@ -91,7 +111,7 @@ describe("BoardCompose input contract", () => {
     beginPresentationScope(SESSION);
     const result = await handleBoardCompose(
       { ...VALID_INPUT, color: "#ff0000", url: "https://example.invalid" },
-      context,
+      modelContext,
     );
 
     expect(result.success).toBe(false);
@@ -105,7 +125,7 @@ describe("BoardCompose input contract", () => {
     const bidi = "Board ‮txen eht yub‬";
     const result = await handleBoardCompose(
       { ...VALID_INPUT, title: bidi },
-      context,
+      modelContext,
     );
 
     expect(result.success).toBe(false);
@@ -119,13 +139,13 @@ describe("BoardCompose input contract", () => {
     beginPresentationScope(SESSION);
     const bad = await handleBoardCompose(
       { ...VALID_INPUT, title: "line one\nline two" },
-      context,
+      modelContext,
     );
     expect(bad.success).toBe(false);
 
     const good = await handleBoardCompose(
       { ...VALID_INPUT, notes: ["first line\nsecond line"] },
-      context,
+      modelContext,
     );
     expect(good.success).toBe(true);
   });
@@ -134,7 +154,7 @@ describe("BoardCompose input contract", () => {
     beginPresentationScope(SESSION);
     const result = await handleBoardCompose(
       { ...VALID_INPUT, chart: { poolIndex: 3, resolution: "1h" } },
-      context,
+      modelContext,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("poolIndex");
@@ -152,7 +172,7 @@ describe("BoardCompose staging outcomes", () => {
       ),
     );
 
-    const result = await handleBoardCompose({ ...VALID_INPUT }, context);
+    const result = await handleBoardCompose({ ...VALID_INPUT }, modelContext);
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("not staged");
@@ -163,16 +183,32 @@ describe("BoardCompose staging outcomes", () => {
 
   it("refuses a second board rather than replacing the first", async () => {
     beginPresentationScope(SESSION);
-    await handleBoardCompose({ ...VALID_INPUT, title: "first" }, context);
-    const second = await handleBoardCompose({ ...VALID_INPUT, title: "second" }, context);
+    await handleBoardCompose({ ...VALID_INPUT, title: "first" }, modelContext);
+    const second = await handleBoardCompose({ ...VALID_INPUT, title: "second" }, modelContext);
 
     expect(second.success).toBe(false);
     expect(second.output).toContain("already staged");
     expect(consumePendingPresentation(SESSION)?.spec.title).toBe("first");
   });
 
+  it("refuses a host-built direct dispatch even while a live turn's scope is open", async () => {
+    // The bypass this closes: `runTool` dispatches any tool with a host-built
+    // context and never crosses the engine's pre-dispatch presentation gate.
+    // With a normal turn's scope open, a direct BoardCompose would otherwise
+    // stage into that turn and be consumed by unrelated model prose.
+    beginPresentationScope(SESSION);
+
+    const result = await handleBoardCompose({ ...VALID_INPUT }, hostContext);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("nothing was staged");
+    expect(hasPendingPresentation(SESSION)).toBe(false);
+    // Refused BEFORE hydration: no provider byte was spent on it.
+    expect(hydrateBoard).not.toHaveBeenCalled();
+  });
+
   it("refuses to stage outside a live turn", async () => {
-    const result = await handleBoardCompose({ ...VALID_INPUT }, context);
+    const result = await handleBoardCompose({ ...VALID_INPUT }, modelContext);
     expect(result.success).toBe(false);
     expect(result.output).toContain("live turn");
   });
@@ -181,7 +217,7 @@ describe("BoardCompose staging outcomes", () => {
     beginPresentationScope(SESSION);
     hydrateBoard.mockResolvedValueOnce(maximalRows());
 
-    const result = await handleBoardCompose(maximalInput(), context);
+    const result = await handleBoardCompose(maximalInput(), modelContext);
 
     expect(result.success).toBe(true);
     const staged = consumePendingPresentation(SESSION)?.spec;
@@ -195,6 +231,7 @@ describe("BoardCompose staging outcomes", () => {
     // strings: the one combination the field bounds still allow past 48 KiB.
     hydrateBoard.mockResolvedValueOnce({
       ...maximalRows(),
+      unmatchedMarkerAtMs: [],
       candles: {
         bars: Array.from({ length: 200 }, (_, i) => ({
           tMs: 1_700_000_000_000 + i * 3_600_000,
@@ -212,7 +249,7 @@ describe("BoardCompose staging outcomes", () => {
 
     const result = await handleBoardCompose(
       { ...maximalInput(), chart: { poolIndex: 0, resolution: "1h" } },
-      context,
+      modelContext,
     );
 
     expect(result.success).toBe(false);

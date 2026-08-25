@@ -103,6 +103,18 @@ export function boardSpec(overrides: BoardSpecOverrides = {}): BoardSpecV1 {
               resolution: chart.resolution,
               truncated: overrides.truncated ?? false,
             },
+      // The runtime's marker-membership verdict: computed here the way
+      // `hydrate.ts` computes it, against the SAME bars the fixture persists,
+      // so the fixture cannot claim a marker is drawable when it is not.
+      unmatchedMarkerAtMs:
+        chart === undefined
+          ? null
+          : (chart.annotations ?? []).flatMap((annotation) =>
+              annotation.kind === "marker" &&
+              !bars.some((bar) => bar.tMs === annotation.atMs)
+                ? [annotation.atMs]
+                : [],
+            ),
       analysisCreatedAt:
         overrides.analysisCreatedAt ?? marketDataFetchedAt - 30_000,
       marketDataFetchedAt,

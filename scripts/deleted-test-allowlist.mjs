@@ -187,7 +187,7 @@ export const DELETED_TEST_ALLOWLIST = [
     reason:
       "Error taxonomy of the retired public-API REST client, deleted with it at measured zero production consumers (S11 assembly).",
     covered:
-      "The same taxonomy (mapDexScreenerError, mapTransportError) is exercised through the seam by `price-read.test.ts` provider-400 and transport-failure cases.",
+      "The mapping functions themselves (mapDexScreenerError, mapTransportError) still live in errors.ts and are exercised directly by `dexscreener-errors.test.ts`; the seam's own suite (`price-read.test.ts`) covers the outcomes it can produce - a 429 that parks the rate class, a caller abort, a caller deadline and an over-cap body - not the full status taxonomy.",
   },
 ];
 

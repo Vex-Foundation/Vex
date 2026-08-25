@@ -11,6 +11,11 @@
 
 import { describe, expect, it } from "vitest";
 import { boardSpecFixture } from "@shared/schemas/__tests__/board-spec-fixture.js";
+import { boardProjectionSchema } from "@shared/schemas/messages.js";
+import {
+  BOARD_SPEC_MAX_BYTES,
+  checkBoardSpecByteBudget,
+} from "@vex-lib/board/index.js";
 import {
   MESSAGE_ROW_COLUMNS,
   toDto,
@@ -107,6 +112,60 @@ describe("toDto - board projection (metadata -> 'board')", () => {
       const spec = boardSpecFixture({ title: `SOL${forbidden}check` });
       expect(toDto(row("assistant", spec)).board).toBeNull();
     }
+  });
+
+  it("rejects a structurally valid board that is over the byte budget", () => {
+    // The field bounds alone still admit a board of roughly 60 KiB, and this
+    // mapper reads a DURABLE row that some other writer may have produced. The
+    // budget is therefore rechecked here with the same function `BoardCompose`
+    // refuses with, so a page cannot carry a board the contract caps out.
+    const base = boardSpecFixture();
+    const oversize = {
+      ...base,
+      notes: Array.from({ length: 6 }, () => "n".repeat(280)),
+      pools: Array.from({ length: 8 }, (_, i) => ({
+        chain: "solana",
+        pairAddress: `Pool${i}`,
+        caption: "c".repeat(140),
+      })),
+      chart: { poolIndex: 0, resolution: "1h" as const },
+      hydration: {
+        ...base.hydration,
+        rows: Array.from({ length: 8 }, () => ({
+          ...base.hydration.rows[0]!,
+          baseTokenSymbol: "S".repeat(512),
+          baseTokenName: "N".repeat(512),
+          quoteTokenSymbol: "Q".repeat(512),
+        })),
+        unmatchedMarkerAtMs: [],
+        candles: {
+          bars: Array.from({ length: 200 }, (_, i) => ({
+            tMs: 1_756_000_000_000 + i * 3_600_000,
+            o: `1.${"9".repeat(38)}`,
+            h: `2.${"9".repeat(38)}`,
+            l: `0.${"9".repeat(38)}`,
+            c: `1.${"8".repeat(38)}`,
+          })),
+          lastBarPartial: false,
+          coveredRange: { fromMs: 1_756_000_000_000, toMs: 1_756_716_400_000 },
+          resolution: "1h" as const,
+          truncated: true,
+        },
+      },
+    };
+    // It really is a valid document; only its SIZE disqualifies it.
+    expect(boardProjectionSchema.safeParse(oversize).success).toBe(true);
+    expect(
+      checkBoardSpecByteBudget(oversize).byteLength,
+    ).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+
+    expect(toDto(row("assistant", oversize)).board).toBeNull();
+  });
+
+  it("keeps a board that sits inside the budget", () => {
+    const spec = boardSpecFixture();
+    expect(checkBoardSpecByteBudget(spec).withinBudget).toBe(true);
+    expect(toDto(row("assistant", spec)).board).toEqual(spec);
   });
 
   it("does not disturb the sibling projections", () => {

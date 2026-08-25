@@ -35,6 +35,7 @@ import {
   type ToolCallDisplay,
   type ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
+import { checkBoardSpecByteBudget } from "@vex-lib/board/index.js";
 import { canonicalToolName } from "../../agent/tool-name-canonical.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
@@ -284,7 +285,13 @@ function extractDisplayStatus(row: MessageRow): ToolDisplayStatus | null {
 function extractBoard(row: MessageRow): BoardProjection | null {
   if (row.role !== "assistant") return null;
   const parsed = boardProjectionSchema.safeParse(row.board);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+  // The byte budget is rechecked HERE, not only at compose. The field bounds
+  // alone still admit a structurally valid board of roughly 60 KiB, and this
+  // mapper reads a durable row that a different (older, or future) writer may
+  // have produced. One guard, the same function `BoardCompose` refuses with,
+  // so the two cannot drift.
+  return checkBoardSpecByteBudget(parsed.data).withinBudget ? parsed.data : null;
 }
 
 export function toDto(row: MessageRow): SessionMessageDto {

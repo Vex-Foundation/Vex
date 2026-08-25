@@ -14,6 +14,8 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import type { PairSubject } from "@tools/dexscreener/endpoints/pair-subject.js";
+
 const resolvePairSubject = vi.fn();
 const walkBars = vi.fn();
 const getDexScreenerTransport = vi.fn();
@@ -37,8 +39,12 @@ const TRANSPORT = { name: "site_bridge" };
 /**
  * The subject the live probe of 2026-08-25 resolved for the VEX pool. The
  * quote token's MIXED CASE is the point of the fixture, not decoration.
+ *
+ * Annotated with the REAL contract, so a field the resolver starts returning
+ * (or stops) breaks this fixture at compile time instead of being cast past
+ * the parameter it is handed to.
  */
-const SUBJECT = {
+const SUBJECT: PairSubject = {
   chainId: "robinhood",
   pairAddress: "0x817f16F5D8da83d1B089B082c0172af3923618dA",
   ammId: "uniswap",
@@ -161,7 +167,7 @@ describe("readRecentCandles", () => {
       subject: { chainId: "robinhood", pairAddress: SUBJECT.pairAddress },
       resolution: "1h",
       limit: 24,
-      resolvedSubject: SUBJECT as never,
+      resolvedSubject: SUBJECT,
     });
 
     expect(resolvePairSubject).not.toHaveBeenCalled();

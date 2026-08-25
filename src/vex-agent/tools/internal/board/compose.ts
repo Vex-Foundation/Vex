@@ -16,7 +16,11 @@
  * to write prose. The two pre-dispatch rules that enforce this live in the
  * engine (`engine/core/turn-loop-tool-batch/presentation-gate.ts`); this
  * handler defends the same invariant a second time at the staging call, so a
- * compose reached from anywhere but a live turn fails closed.
+ * compose reached from anywhere but a live turn fails closed. Because those
+ * engine rules sit on the batch path only, the handler ALSO checks the call's
+ * provenance (`context.modelOriginated`) before hydrating: a host-built
+ * dispatch such as `runTool`'s never crosses the batch path and must not be
+ * able to stage a board into somebody else's open turn.
  *
  * WHAT THE MODEL CANNOT SEND. No URL, HTML, markdown, colour, CSS, chart
  * option, fee or destination field exists in the schema, and unknown keys are
@@ -82,6 +86,28 @@ export async function handleBoardCompose(
     // and reader-visible text, and echoing an injected bidi run into it would
     // carry the payload into the surface the check defends.
     return fail(`BoardCompose: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
+  }
+
+  // PROVENANCE GATE, before a single provider byte is spent.
+  //
+  // The engine's pre-dispatch rules (sole-call-in-batch, no-tool-after-compose)
+  // live on the turn loop's batch path, and `runTool` reaches this handler
+  // without passing through any of them, with a host-built context. If a live
+  // turn has an open presentation scope, a direct dispatch could stage a board
+  // into that turn and let unrelated model prose consume it - a board the model
+  // never composed, presented as the model's own analysis beside its reply.
+  //
+  // `modelOriginated` is set in exactly one place (`buildToolContext` in
+  // `engine/core/turn-loop-tool-batch/execute.ts`) and can never be derived
+  // from tool arguments, so it is the one honest answer to "did the model emit
+  // this call in a live turn". ABSENT means no, which is the correct and
+  // conservative reading for every host-built context.
+  if (context.modelOriginated !== true) {
+    return fail(
+      "BoardCompose: a board can only be staged by a tool call the model emitted in a live turn "
+      + "that ends with its own reply. This call did not come from one, so nothing was staged and "
+      + "no market data was read.",
+    );
   }
 
   const nowMs = Date.now();

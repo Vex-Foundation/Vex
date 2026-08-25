@@ -32,6 +32,7 @@ import {
   requestedPaths,
   serveDexScreener,
 } from "./price-read-harness.js";
+import { makeTestContext } from "../vex-agent/tools/_test-context.js";
 
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -172,8 +173,10 @@ describe("token_price watch: default provider wiring", () => {
         direction: "above",
         priceUsd: "5",
       },
-      // The evaluator's provider path never touches the tool context.
-      {} as never,
+      // The evaluator's provider path never touches the tool context, but it
+      // is a REAL one: built through the shared factory so this call keeps
+      // typechecking against the live `InternalToolContext` contract.
+      makeTestContext(),
     );
 
     expect(armed).toMatchObject({
@@ -207,7 +210,7 @@ describe("token_price watch: default provider wiring", () => {
           direction: "above",
           priceUsd: "5",
         },
-        {} as never,
+        makeTestContext(),
       ),
     ).rejects.toThrow(/no priced pool/i);
   });

@@ -25,6 +25,9 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EngineContext } from "@vex-agent/engine/types.js";
+import { makeEngineContext } from "../_engine-context.js";
+
 import {
   BOARD_COMPOSE_NOT_SOLE_CALL_OUTPUT,
   BOARD_PENDING_TOOL_REFUSED_OUTPUT,
@@ -235,17 +238,20 @@ const { processTurnToolBatch } = await import(
   "../../../../vex-agent/engine/core/turn-loop-tool-batch.js"
 );
 
-function context() {
-  return {
+/**
+ * Built through the shared `EngineContext` factory rather than a cast literal:
+ * the contract is live, and a cast is exactly what stops the compiler from
+ * saying so when it gains a required field.
+ */
+function context(): EngineContext {
+  return makeEngineContext({
     sessionId: SESSION,
-    sessionKind: "chat",
+    // "agent" is the non-mission kind. The cast this replaced claimed "chat",
+    // which is not a member of `SessionKind` at all - the exact wrong shape a
+    // cast hides.
+    sessionKind: "agent",
     sessionPermission: "full",
-    missionId: null,
-    missionRunId: null,
-    loadedDocuments: new Map(),
-    walletPolicy: { kind: "none" },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  });
 }
 
 async function runBatch(names: readonly string[]) {

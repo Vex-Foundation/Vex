@@ -19,7 +19,7 @@
  * mapping and the components below own presentation.
  */
 
-import { useId, useMemo, useRef, useState, type JSX } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
 import type { BoardSpecV1 } from "@vex-lib/board/index.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { BoardChart } from "./BoardChart.js";
@@ -42,12 +42,34 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [chartOpen, setChartOpen] = useState(false);
 
-  // The staleness clock is read ONCE per mount rather than ticking. A board
-  // is a snapshot; a second-by-second countdown would imply the surface is
-  // tracking something live, which it is not.
-  const now = useMemo(() => Date.now(), []);
+  // THE FRESHNESS CLOCK, and why it is one timeout rather than a tick.
+  //
+  // A board is a snapshot, so a second-by-second countdown would imply this
+  // surface tracks something live. But reading `Date.now()` once per mount was
+  // wrong in the other direction: a board appended to an open chat mounts
+  // FRESH and, with the chat left open, never gains "Snapshot, not live" no
+  // matter how old its market data gets.
+  //
+  // There is exactly one moment at which anything on this surface changes:
+  // `marketDataFetchedAt + staleAfterMs`. So this effect owns ONE timeout
+  // aimed at that boundary, clears it on unmount and re-aims it whenever the
+  // spec's own clock moves (a refresh rewrites `marketDataFetchedAt`). A board
+  // already past the boundary schedules nothing at all: it is stale forever.
+  const [now, setNow] = useState(() => Date.now());
+  const staleAt = spec.hydration.marketDataFetchedAt + spec.hydration.staleAfterMs;
+  useEffect(() => {
+    const remainingMs = staleAt - Date.now();
+    if (remainingMs <= 0) return undefined;
+    const timer = setTimeout(() => setNow(Date.now()), remainingMs);
+    return () => clearTimeout(timer);
+  }, [staleAt]);
+
   const model = useMemo(() => buildBoardViewModel(spec, now), [spec, now]);
   const annotationRows = useMemo(() => buildAnnotationRows(spec), [spec]);
+  const unmatchedMarkers = useMemo(
+    () => new Set(spec.hydration.unmatchedMarkerAtMs ?? []),
+    [spec],
+  );
 
   const chart = spec.chart ?? null;
   const candles = spec.hydration.candles ?? null;
@@ -113,8 +135,13 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
                     ]
                   : [],
               )}
+              // Only markers whose instant matched a hydrated candle EXACTLY
+              // reach the canvas. The rest keep their label and their instant
+              // in the legend below, with the reason they are not drawn - the
+              // library would otherwise snap them onto a neighbouring bar.
               markers={(chart.annotations ?? []).flatMap((annotation, index) =>
                 annotation.kind === "marker"
+                  && !unmatchedMarkers.has(annotation.atMs)
                   ? [{ key: `marker/${index}`, atMs: annotation.atMs }]
                   : [],
               )}

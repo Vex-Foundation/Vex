@@ -448,6 +448,27 @@ export const boardHydrationSchema = z
       .min(BOARD_MARKER_MIN_MS)
       .max(BOARD_MARKER_MAX_MS),
     provenance: boardProvenanceSchema,
+    /**
+     * Marker instants the runtime could NOT match to a hydrated candle, in the
+     * order the annotations were given. Null when the board carries no chart.
+     *
+     * MEASURED REASON THIS EXISTS. The chart library snaps a marker whose time
+     * is not in the series to a NEIGHBOURING bar rather than refusing it, so a
+     * marker the agent placed at 14:03 on a 1-hour series would be drawn on
+     * the 14:00 candle and read as analysis of that bar. A marker is the
+     * agent's claim about a specific moment, so the only honest options are
+     * "exactly this bar" or "not drawn, and said so".
+     *
+     * Membership is decided ONCE, at compose time, against the candle set that
+     * was persisted beside the marker (`./hydrate.ts`), because that is the
+     * only moment both facts are authoritative and runtime-authored. The
+     * renderer omits these markers from the canvas and names each one in the
+     * legend; nothing is silently dropped.
+     */
+    unmatchedMarkerAtMs: z
+      .array(z.number().int().min(BOARD_MARKER_MIN_MS).max(BOARD_MARKER_MAX_MS))
+      .max(BOARD_MAX_ANNOTATIONS)
+      .nullable(),
     staleAfterMs: z.literal(BOARD_STALE_AFTER_MS),
   })
   .strict();
@@ -516,6 +537,41 @@ export const boardSpecV1Schema = z
         path: ["hydration", "candles"],
         message: "must be null when the board has no chart",
       });
+    }
+    // The unmatched-marker verdict is positional against the chart's OWN
+    // markers: a board that reports an instant no marker claimed would omit
+    // the wrong annotation from the canvas, and one that reports nothing while
+    // carrying a chart has not been through the membership check at all.
+    if (spec.chart === undefined) {
+      if (spec.hydration.unmatchedMarkerAtMs !== null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["hydration", "unmatchedMarkerAtMs"],
+          message: "must be null when the board has no chart",
+        });
+      }
+    } else if (spec.hydration.unmatchedMarkerAtMs === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hydration", "unmatchedMarkerAtMs"],
+        message:
+          "must be the list of marker instants that matched no candle (empty when they all matched)",
+      });
+    } else {
+      const claimed = new Set(
+        (spec.chart.annotations ?? []).flatMap((annotation) =>
+          annotation.kind === "marker" ? [annotation.atMs] : [],
+        ),
+      );
+      for (const atMs of spec.hydration.unmatchedMarkerAtMs) {
+        if (!claimed.has(atMs)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["hydration", "unmatchedMarkerAtMs"],
+            message: `names ${atMs}, which no marker annotation on this chart claims`,
+          });
+        }
+      }
     }
   });
 
