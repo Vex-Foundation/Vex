@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   getPrimaryEvmAddress: vi.fn(),
   getLighterIntegrationSetting: vi.fn(),
   setLighterIntegrationEnabled: vi.fn(),
+  inspectLighterCredentialConnections: vi.fn(),
+  forgetLighterCredentialConnection: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -51,6 +53,20 @@ vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
   setLighterIntegrationEnabled: (...args: unknown[]) =>
     mocks.setLighterIntegrationEnabled(...args),
 }));
+vi.mock("../../lighter/credential-connection-cleanup.js", () => {
+  class LighterCredentialCleanupError extends Error {
+    constructor(readonly reason: string) {
+      super(reason);
+    }
+  }
+  return {
+    LighterCredentialCleanupError,
+    inspectLighterCredentialConnections: (...args: unknown[]) =>
+      mocks.inspectLighterCredentialConnections(...args),
+    forgetLighterCredentialConnection: (...args: unknown[]) =>
+      mocks.forgetLighterCredentialConnection(...args),
+  };
+});
 
 const { registerSettingsHandlers } = await import("../settings.js");
 const { CH } = await import("@shared/ipc/channels.js");
@@ -80,7 +96,61 @@ beforeEach(() => {
   mocks.ensureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
   mocks.getPrimaryEvmAddress.mockReturnValue(WALLET);
   mocks.getLighterIntegrationSetting.mockResolvedValue(null);
+  mocks.inspectLighterCredentialConnections.mockResolvedValue({ connections: [] });
   registerSettingsHandlers();
+});
+
+describe("settings Lighter credential cleanup", () => {
+  const STRAY = "0x2222222222222222222222222222222222222222";
+  const scopes = [
+    { environment: "core", accountIndex: 736778, apiKeyIndex: 7, managed: true },
+    { environment: "rhc", accountIndex: 1171, apiKeyIndex: 7, managed: true },
+  ] as const;
+
+  it("exposes only the sanitized live ownership review", async () => {
+    mocks.inspectLighterCredentialConnections.mockResolvedValueOnce({
+      connections: [{ walletAddress: STRAY, protected: false, scopes }],
+    });
+
+    const result = await call(CH.settings.inspectLighterCredentialConnections, {});
+
+    expect(result).toEqual({
+      ok: true,
+      data: { connections: [{ walletAddress: STRAY, protected: false, scopes }] },
+    });
+  });
+
+  it("binds the destructive request to the exact reviewed wallet and scopes", async () => {
+    mocks.forgetLighterCredentialConnection.mockResolvedValueOnce({
+      walletAddress: STRAY,
+      removedScopes: scopes,
+    });
+
+    const result = await call(CH.settings.forgetLighterCredentialConnection, {
+      walletAddress: STRAY,
+      scopes,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { walletAddress: STRAY, removedScopes: scopes },
+    });
+    expect(mocks.forgetLighterCredentialConnection).toHaveBeenCalledWith({
+      walletAddress: STRAY,
+      scopes,
+    });
+  });
+
+  it("rejects an unreviewed empty scope set at the IPC boundary", async () => {
+    const result = await call(CH.settings.forgetLighterCredentialConnection, {
+      walletAddress: STRAY,
+      scopes: [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("validation.invalid_input");
+    expect(mocks.forgetLighterCredentialConnection).not.toHaveBeenCalled();
+  });
 });
 
 describe("settings.getLighterIntegration", () => {

@@ -48,6 +48,8 @@ import {
 import { statusFor } from "./api-keys/status-helpers.js";
 import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
 import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
+import { LighterCredentialConnections } from "./api-keys/LighterCredentialConnections.js";
+import { LighterKeysConfigSection } from "./api-keys/LighterKeysConfigSection.js";
 import {
   JupiterCard,
   LighterTradingCard,
@@ -179,6 +181,31 @@ export function ApiKeysStep({
     );
   }
 
+  const rhcTradingCard = (
+    <LighterTradingCard
+      environment="rhc"
+      status={statusFor(lighterRhcTradingConfigured)}
+      configured={lighterRhcTradingConfigured}
+      managedScopes={lighterRhcManagedTradingScopes}
+      accountIndexRef={refs.lighterRhcTradingAccountIndex}
+      apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
+      privateKeyRef={refs.lighterRhcTradingPrivateKey}
+      removeRef={refs.lighterRhcTradingRemove}
+    />
+  );
+  const coreTradingCard = (
+    <LighterTradingCard
+      environment="core"
+      status={statusFor(lighterCoreTradingConfigured)}
+      configured={lighterCoreTradingConfigured}
+      managedScopes={lighterCoreManagedTradingScopes}
+      accountIndexRef={refs.lighterCoreTradingAccountIndex}
+      apiKeyIndexRef={refs.lighterCoreTradingApiKeyIndex}
+      privateKeyRef={refs.lighterCoreTradingPrivateKey}
+      removeRef={refs.lighterCoreTradingRemove}
+    />
+  );
+
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "apikeys", value: "form" }}
@@ -237,27 +264,28 @@ export function ApiKeysStep({
           inputRef={refs.relay}
         />
 
-        <LighterTradingCard
-          environment="rhc"
-          status={statusFor(lighterRhcTradingConfigured)}
-          configured={lighterRhcTradingConfigured}
-          managedScopes={lighterRhcManagedTradingScopes}
-          accountIndexRef={refs.lighterRhcTradingAccountIndex}
-          apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
-          privateKeyRef={refs.lighterRhcTradingPrivateKey}
-          removeRef={refs.lighterRhcTradingRemove}
-        />
-
-        <LighterTradingCard
-          environment="core"
-          status={statusFor(lighterCoreTradingConfigured)}
-          configured={lighterCoreTradingConfigured}
-          managedScopes={lighterCoreManagedTradingScopes}
-          accountIndexRef={refs.lighterCoreTradingAccountIndex}
-          apiKeyIndexRef={refs.lighterCoreTradingApiKeyIndex}
-          privateKeyRef={refs.lighterCoreTradingPrivateKey}
-          removeRef={refs.lighterCoreTradingRemove}
-        />
+        {flowMode === "back-edit" ? (
+          <LighterKeysConfigSection
+            configuredCount={
+              Number(lighterRhcTradingConfigured) +
+              Number(lighterCoreTradingConfigured)
+            }
+          >
+            <div
+              className="flex flex-col gap-6"
+              data-vex-lighter-environment-list
+            >
+              {rhcTradingCard}
+              {coreTradingCard}
+            </div>
+            <LighterCredentialConnections />
+          </LighterKeysConfigSection>
+        ) : (
+          <>
+            {rhcTradingCard}
+            {coreTradingCard}
+          </>
+        )}
 
         {formError ? (
           <p className="text-sm text-danger" role="alert">

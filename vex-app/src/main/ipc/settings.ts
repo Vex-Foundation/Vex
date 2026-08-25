@@ -14,13 +14,25 @@ import {
   type UserProfile,
 } from "@shared/schemas/user-profile.js";
 import {
+  forgetLighterCredentialConnectionInputSchema,
+  forgetLighterCredentialConnectionResultSchema,
   getLighterIntegrationInputSchema,
+  inspectLighterCredentialConnectionsInputSchema,
+  inspectLighterCredentialConnectionsResultSchema,
   lighterIntegrationStateSchema,
   setLighterIntegrationInputSchema,
+  type ForgetLighterCredentialConnectionResult,
+  type InspectLighterCredentialConnectionsResult,
   type LighterIntegrationState,
 } from "@shared/schemas/lighter-integration.js";
 import { getPrimaryEvmAddress } from "@vex-lib/wallet.js";
 import { preferencesStore } from "../preferences/store.js";
+import {
+  forgetLighterCredentialConnection,
+  inspectLighterCredentialConnections,
+  LighterCredentialCleanupError,
+  type LighterCredentialCleanupFailure,
+} from "../lighter/credential-connection-cleanup.js";
 import {
   disableSentry,
   initSentryIfConsented,
@@ -89,6 +101,48 @@ export function registerSettingsHandlers(): Array<() => void> {
             cause,
           );
           return err(controlFailedError(ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.inspectLighterCredentialConnections,
+      domain: "settings",
+      inputSchema: inspectLighterCredentialConnectionsInputSchema,
+      outputSchema: inspectLighterCredentialConnectionsResultSchema,
+      handle: async (_input, ctx): Promise<Result<InspectLighterCredentialConnectionsResult>> => {
+        try {
+          return ok(await inspectLighterCredentialConnections());
+        } catch (cause) {
+          const reason = cleanupFailureReason(cause);
+          log.warn(
+            `[ipc:vex:settings:inspectLighterCredentialConnections] failed `
+              + `reason=${reason} correlationId=${ctx.requestId}`,
+          );
+          return err(cleanupFailureError(reason, ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.forgetLighterCredentialConnection,
+      domain: "settings",
+      inputSchema: forgetLighterCredentialConnectionInputSchema,
+      outputSchema: forgetLighterCredentialConnectionResultSchema,
+      handle: async (input, ctx): Promise<Result<ForgetLighterCredentialConnectionResult>> => {
+        try {
+          return ok(await forgetLighterCredentialConnection(input));
+        } catch (cause) {
+          const reason = cleanupFailureReason(cause);
+          log.warn(
+            `[ipc:vex:settings:forgetLighterCredentialConnection] refused `
+              + `reason=${reason} correlationId=${ctx.requestId}`,
+          );
+          return err(cleanupFailureError(reason, ctx.requestId));
         }
       },
     }),
@@ -213,6 +267,90 @@ export function registerSettingsHandlers(): Array<() => void> {
   );
 
   return handlers;
+}
+
+function cleanupFailureReason(cause: unknown): LighterCredentialCleanupFailure {
+  return cause instanceof LighterCredentialCleanupError
+    ? cause.reason
+    : "vault_write_failed";
+}
+
+function cleanupFailureError(
+  reason: LighterCredentialCleanupFailure,
+  correlationId: string,
+): VexError {
+  switch (reason) {
+    case "vault_locked":
+      return {
+        code: "wallet.keystore_locked",
+        domain: "settings",
+        message: "Unlock Vex before reviewing or forgetting Lighter access.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "primary_wallet_unavailable":
+      return {
+        code: "wallet.keystore_missing",
+        domain: "settings",
+        message: "Vex could not resolve the primary EVM wallet. Nothing was removed.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "provider_unavailable":
+      return {
+        code: "provider.unavailable",
+        domain: "settings",
+        message: "Vex could not verify every stored Lighter credential against the live owner account. Nothing was removed.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "protected_wallet":
+      return {
+        code: "wallet.policy_blocked",
+        domain: "settings",
+        message: "This is the primary Vex wallet, so its Lighter access is protected. Nothing was removed.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "connection_not_found":
+      return {
+        code: "wallet.not_found",
+        domain: "settings",
+        message: "That Lighter connection is no longer stored locally. Review the connections again.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "state_changed":
+      return {
+        code: "wallet.policy_blocked",
+        domain: "settings",
+        message: "The stored Lighter scopes changed after review. Nothing was removed; review them again.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "vault_write_failed":
+      return {
+        code: "wallet.vault_unavailable",
+        domain: "settings",
+        message: "Vex could not update the encrypted vault. Nothing was removed.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+  }
 }
 
 function mapLighterIntegrationSetting(setting: {

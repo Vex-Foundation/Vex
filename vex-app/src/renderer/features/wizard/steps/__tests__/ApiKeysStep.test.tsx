@@ -208,7 +208,7 @@ describe("ApiKeysStep", () => {
     const apiKeyInput = container.querySelector(
       "#vex-apikey-lighter-rhc-trading-api-key-index",
     ) as HTMLInputElement;
-    const privateKeyInput = getByLabelText(/Lighter RHC trading API private key/i) as HTMLInputElement;
+    const privateKeyInput = getByLabelText(/RHC trading key API private key/i) as HTMLInputElement;
     fireEvent.input(accountInput, { target: { value: "1171" } });
     fireEvent.input(apiKeyInput, { target: { value: "7" } });
     fireEvent.input(privateKeyInput, { target: { value: `0x${"1".repeat(80)}` } });
@@ -320,11 +320,11 @@ describe("ApiKeysStep", () => {
       '[data-vex-lighter-managed-credential="core"]',
     );
     expect(managedStatus).not.toBeNull();
-    expect(getByText("Managed by Vex")).toBeTruthy();
+    expect(getByText(/Encrypted locally/)).toBeTruthy();
     expect(managedStatus?.textContent ?? "").toContain("737810");
     expect(managedStatus?.textContent ?? "").toContain("4");
     expect(card?.textContent ?? "").toContain("MANAGED");
-    expect(card?.textContent ?? "").toContain("Nothing needs to be copied from the Lighter dashboard");
+    expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
     expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
     expect(container.querySelector(
       '[data-vex-lighter-manual-credential="core"]',
@@ -346,11 +346,11 @@ describe("ApiKeysStep", () => {
       '[data-vex-lighter-managed-credential="rhc"]',
     );
     expect(managedStatus).not.toBeNull();
-    expect(getByText("Managed by Vex")).toBeTruthy();
+    expect(getByText(/Encrypted locally/)).toBeTruthy();
     expect(managedStatus?.textContent ?? "").toContain("1171");
     expect(managedStatus?.textContent ?? "").toContain("7");
     expect(card?.textContent ?? "").toContain("MANAGED");
-    expect(card?.textContent ?? "").toContain("Nothing needs to be copied from the Lighter dashboard");
+    expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
     expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
     expect(container.querySelector(
       '[data-vex-lighter-manual-credential="rhc"]',
@@ -365,7 +365,7 @@ describe("ApiKeysStep", () => {
     );
 
     const card = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
-    expect(card?.textContent ?? "").toContain("Vex creates and registers the key locally");
+    expect(card?.textContent ?? "").toContain("Normal setup creates and registers this key");
     expect(card?.textContent ?? "").toContain("Advanced: manage an externally created Core key");
     expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
   });
@@ -378,12 +378,35 @@ describe("ApiKeysStep", () => {
     );
 
     const card = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
-    expect(card?.textContent ?? "").toContain("Vex creates and registers the key locally");
+    expect(card?.textContent ?? "").toContain("Normal setup creates and registers this key");
     expect(card?.textContent ?? "").toContain("Advanced: manage an externally created RHC key");
     expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
     expect(container.querySelector(
       '[data-vex-lighter-manual-credential="rhc"]',
     )?.hasAttribute("open")).toBe(false);
+  });
+
+  it("distinguishes RHC and Core with factual metadata and restrained RHC atmosphere", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const rhcCard = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    const coreCard = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    expect(rhcCard?.getAttribute("data-vex-lighter-environment")).toBe("rhc");
+    expect(coreCard?.getAttribute("data-vex-lighter-environment")).toBe("core");
+    expect(rhcCard?.textContent ?? "").toContain("RHC trading key");
+    expect(coreCard?.textContent ?? "").toContain("Core trading key");
+    expect(rhcCard?.textContent ?? "").toContain("Robinhood Chain");
+    expect(rhcCard?.textContent ?? "").toContain("USDG");
+    expect(coreCard?.textContent ?? "").toContain("Lighter Core");
+    expect(coreCard?.textContent ?? "").toContain("USDC");
+    expect(rhcCard?.classList.contains("vex-lighter-rhc-shadow")).toBe(true);
+    expect(coreCard?.classList.contains("vex-lighter-rhc-shadow")).toBe(false);
+    expect(rhcCard?.querySelector(".bg-accent-wash")).toBeNull();
+    expect(coreCard?.querySelector(".bg-accent-wash")).toBeNull();
   });
 
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
@@ -397,6 +420,55 @@ describe("ApiKeysStep", () => {
     );
     expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).toBeNull();
+  });
+
+  it("groups every Lighter setting into one collapsed Settings disclosure", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterCoreTradingConfigured: true,
+      lighterRhcTradingConfigured: true,
+    })));
+    const { container, getByRole } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets", "apiKeys"]}
+        onAdvance={mockOnAdvance}
+        flowMode="back-edit"
+      />,
+    );
+
+    const trigger = getByRole("button", { name: /Lighter Keys Config/i });
+    const content = container.querySelector(
+      "[data-vex-lighter-keys-config] [role='region']",
+    ) as HTMLElement;
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.textContent ?? "").toContain("2/2 configured");
+    expect(content.hidden).toBe(true);
+
+    fireEvent.click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(content.hidden).toBe(false);
+    expect(content.textContent ?? "").toContain("RHC trading key");
+    expect(content.textContent ?? "").toContain("Core trading key");
+    expect(content.textContent ?? "").toContain("Stored Lighter access");
+    const environmentList = container.querySelector(
+      "[data-vex-lighter-environment-list]",
+    );
+    expect(environmentList).not.toBeNull();
+    expect(
+      Array.from(
+        environmentList?.querySelectorAll("[data-vex-lighter-environment]") ??
+          [],
+      ).map((element) => element.getAttribute("data-vex-lighter-environment")),
+    ).toEqual(["rhc", "core"]);
+
+    const accountInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-account-index",
+    ) as HTMLInputElement;
+    fireEvent.input(accountInput, { target: { value: "1171" } });
+    fireEvent.click(trigger);
+    expect(content.hidden).toBe(true);
+    fireEvent.click(trigger);
+    expect(accountInput.value).toBe("1171");
   });
 
   // ── PR8 redesign — per-provider cards ────────────────────────────────

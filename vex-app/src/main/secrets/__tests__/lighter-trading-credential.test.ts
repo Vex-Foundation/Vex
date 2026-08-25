@@ -466,4 +466,42 @@ describe("Lighter trading credential vault status and removal", () => {
       { filePath: "/tmp/vex-test-vault" },
     );
   });
+
+  it("deletes a multi-environment connection in one vault rewrite", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    const coreReference: LighterTradingCredentialVaultReference = {
+      kind: "encrypted_vault_reference",
+      environment: "core",
+      accountIndex: 736778,
+      apiKeyIndex: 7,
+      vaultCredentialId: "lighter/core/account-736778/api-key-7",
+    };
+    const rhcReference: LighterTradingCredentialVaultReference = {
+      kind: "encrypted_vault_reference",
+      environment: "rhc",
+      accountIndex: 1171,
+      apiKeyIndex: 7,
+      vaultCredentialId: "lighter/rhc/account-1171/api-key-7",
+    };
+    const { deleteUnlockedLighterTradingApiPrivateKeys } = await loadModule();
+
+    expect(deleteUnlockedLighterTradingApiPrivateKeys([
+      coreReference,
+      rhcReference,
+    ])).toEqual([
+      { present: false, reference: coreReference },
+      { present: false, reference: rhcReference },
+    ]);
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledTimes(1);
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
+      "correct-password",
+      {
+        [coreReference.vaultCredentialId]: null,
+        [`${coreReference.vaultCredentialId}/registration-state`]: null,
+        [rhcReference.vaultCredentialId]: null,
+        [`${rhcReference.vaultCredentialId}/registration-state`]: null,
+      },
+      { filePath: "/tmp/vex-test-vault" },
+    );
+  });
 });

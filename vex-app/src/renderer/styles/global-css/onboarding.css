@@ -20,6 +20,31 @@
   --color-ring: var(--vex-onboarding-accent);
 }
 
+/* RHC borrows one restrained atmospheric cue from the Light it up workspace.
+ * The offset and tight negative spread keep this a soft pool of Robin Neon
+ * beneath the section, not a resting halo or a colored card surface. Core stays
+ * neutral. Celeris uses the workspace's darker Robinhood expression so the
+ * shadow remains visible without turning fluorescent on paper. */
+:root {
+  --vex-lighter-rhc-shadow-color: color-mix(
+    in srgb,
+    #ccff00 24%,
+    transparent
+  );
+}
+
+[data-vex-theme="celeris"] {
+  --vex-lighter-rhc-shadow-color: color-mix(
+    in srgb,
+    #6d8800 16%,
+    transparent
+  );
+}
+
+.vex-lighter-rhc-shadow {
+  box-shadow: 0 14px 34px -26px var(--vex-lighter-rhc-shadow-color);
+}
+
 /* Countersign glint — single one-shot flare on the star the mark already
  * carries, fired at 100%. Stylesheet @keyframes (CSP-safe under
  * `style-src 'self'`); the element mounts only when ready, plays once and
@@ -84,4 +109,3 @@
     scrollbar-width: thin;
   }
 }
-

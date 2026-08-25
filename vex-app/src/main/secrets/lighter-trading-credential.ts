@@ -214,27 +214,47 @@ export function activateUnlockedLighterTradingCredential(
 export function deleteUnlockedLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
 ): UnlockedLighterTradingCredentialStatus {
-  assertReference(reference);
+  return deleteUnlockedLighterTradingApiPrivateKeys([reference])[0]!;
+}
+
+/**
+ * Remove a reviewed set of Lighter credentials in one encrypted-vault rewrite.
+ * A multi-environment wallet connection must never be left half-removed if a
+ * second write fails after the first one succeeded.
+ */
+export function deleteUnlockedLighterTradingApiPrivateKeys(
+  references: readonly LighterTradingCredentialVaultReference[],
+): readonly UnlockedLighterTradingCredentialStatus[] {
+  if (references.length === 0) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "No Lighter trading credential was selected for removal.",
+      "Review the stored Lighter connections again before removing access.",
+    );
+  }
+  for (const reference of references) assertReference(reference);
   const password = requireUnlockedMasterPassword();
   if (!password.ok) {
     throw lockedCredentialError("removed");
   }
 
   try {
+    const updates: Record<string, null> = {};
+    for (const reference of references) {
+      updates[reference.vaultCredentialId] = null;
+      updates[registrationStateVaultId(reference)] = null;
+    }
     writeSecretVaultExtraSecrets(
       password.data,
-      {
-        [reference.vaultCredentialId]: null,
-        [registrationStateVaultId(reference)]: null,
-      },
+      updates,
       { filePath: SECRETS_VAULT_FILE },
     );
-    return { present: false, reference };
+    return references.map((reference) => ({ present: false, reference }));
   } catch {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      "Lighter trading credential could not be removed through the privileged vault boundary.",
-      "Unlock Vex and retry removing the Lighter trading credential.",
+      "Lighter trading credentials could not be removed through the privileged vault boundary.",
+      "Unlock Vex and review the stored Lighter connection before retrying.",
     );
   }
 }
