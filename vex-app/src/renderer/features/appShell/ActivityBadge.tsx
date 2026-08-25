@@ -229,6 +229,11 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   tx_contract_call: "CALL",
   tx_native_transfer: "SEND",
   tx_spl_instruction_set: "INSTRUCTIONS",
+  // Migration 088 - the Vex fee leg of a generic signed transaction. `FEE`, the
+  // same word every other venue's fee leg wears, because it IS the same kind of
+  // leg. The feeds do not render it as its own row; this label exists for the
+  // surfaces that show a row by id.
+  tx_vex_fee: "FEE",
 };
 
 /**

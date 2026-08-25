@@ -176,7 +176,20 @@ export type AgentActivityEventRole =
   | "tx_approve"
   | "tx_contract_call"
   | "tx_native_transfer"
-  | "tx_spl_instruction_set";
+  | "tx_spl_instruction_set"
+  /**
+   * Migration 088 - Vex's 25 bps integrator fee on the GENERIC EVM signing
+   * lane, charged on the transaction's own native value as a separate treasury
+   * transfer that runs only after that transaction confirms.
+   *
+   * Its own role rather than `swap_fee` or `trench_fee`: both of those name a
+   * venue whose feeds and repair sweeps select on them, and neither is admitted
+   * on the `transaction` arm of the kind/role binding. It is EVM-ONLY, bound by
+   * `agent_activity_tx_vex_fee_eip155` - no Solana fee-leg runtime exists on
+   * this lane, and the database enforces the gap rather than trusting the
+   * writer to observe it.
+   */
+  | "tx_vex_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

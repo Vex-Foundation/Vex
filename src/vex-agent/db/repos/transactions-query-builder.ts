@@ -60,7 +60,7 @@ const VEX_FEE_LATERALS = `
         FROM agent_activity fee
        WHERE fee.protocol_execution_id = agent_activity.protocol_execution_id
          AND fee.id        <> agent_activity.id
-         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')
+         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')
          AND fee.status     = 'confirmed'
        ORDER BY fee.event_index ASC
        LIMIT 1
@@ -175,8 +175,12 @@ export function buildActivityHalf(
   // a Trench/Uniswap fee transfer as a standalone "spot" trade. `bridge_fee`
   // needs no entry here: its whole `kind = 'bridge'` arm is already admitted
   // only through `event_role = 'bridge_fill_expected'`.
+  // `tx_vex_fee` (migration 088) joins them: the `transaction` kind IS admitted
+  // above, so without this exclusion the generic lane's fee transfer would
+  // render as a standalone signed transaction beside the one it charges for.
+  // The parent still reports the charge, through the fee lateral above.
   activityConds.push(
-    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee')",
+    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee')",
   );
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,

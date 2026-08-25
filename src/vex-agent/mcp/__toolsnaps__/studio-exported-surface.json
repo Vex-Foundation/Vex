@@ -955,7 +955,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1285,
+      "descriptionBytes": 1804,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -977,7 +977,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1475,
+      "descriptionBytes": 2288,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {

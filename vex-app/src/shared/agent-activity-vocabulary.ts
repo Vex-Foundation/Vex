@@ -195,6 +195,11 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "tx_contract_call",
   "tx_native_transfer",
   "tx_spl_instruction_set",
+  // Migration 088: Vex's 25 bps integrator fee on the generic EVM signing lane,
+  // a separate treasury transfer that runs only after the signed transaction
+  // confirms. A CHILD LEG of the transaction execution, never its own feed row.
+  // EVM-only by database CHECK - the Solana pair on this lane charges nothing.
+  "tx_vex_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

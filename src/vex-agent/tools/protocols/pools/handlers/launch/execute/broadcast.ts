@@ -483,7 +483,7 @@ async function chargePoolsVexFee(
       feeRowId,
       chainId: POOLS_CHAIN_ID,
       publicClient: x.publicClient,
-      walletClient: x.walletClient,
+      signer: x.walletClient,
       // Anchor the fee's gas estimate on the block the launch confirmed in.
       priorLeg: priorLegAnchorFrom(outcome.receipt.blockNumber),
     });

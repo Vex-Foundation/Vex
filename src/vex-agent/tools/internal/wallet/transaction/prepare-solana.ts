@@ -115,6 +115,9 @@ export async function handleWalletSolanaTransactionPrepare(
     chainAlias: null,
     decoded: decoded.value,
     feeBounds: feeBounds.value,
+    // Solana charges no Vex fee on this lane (migration 088 binds `tx_vex_fee`
+    // to eip155), so there is no fee section to render and no base for one.
+    evmValueWei: null,
   });
 
   const digest = computeProposalDigest({

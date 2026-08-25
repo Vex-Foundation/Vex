@@ -50,6 +50,7 @@ export function canonicalPreviewOfIntent(
     chainAlias: intent.chainAlias,
     decoded: intent.decoded,
     feeBounds: intent.feeBounds,
+    evmValueWei: intent.payload.family === "eip155" ? intent.payload.evm.valueWei : null,
   });
   return { label: preview.label, criticalArgs: { ...preview.criticalArgs } };
 }

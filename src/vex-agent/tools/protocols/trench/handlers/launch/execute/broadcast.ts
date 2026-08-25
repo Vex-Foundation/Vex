@@ -484,7 +484,7 @@ async function chargeVexFee(
       plan,
       feeRowId,
       publicClient: x.publicClient,
-      walletClient: x.walletClient,
+      signer: x.walletClient,
       // Anchor the fee's gas estimate on the block the launch confirmed in —
       // the same dependent-leg discipline the approve→sell path uses.
       priorLeg: priorLegAnchorFrom(outcome.receipt.blockNumber),

@@ -120,6 +120,8 @@ async function prepareSolanaIntent(
         chainAlias: null,
         decoded: SOL_DECODED,
         feeBounds: FEE_BOUNDS,
+        // Solana charges no Vex fee on this lane (migration 088).
+        evmValueWei: null,
       }),
       feeBounds: FEE_BOUNDS,
       proposalDigest: "0".repeat(64),

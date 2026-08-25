@@ -126,6 +126,8 @@ function intent(overrides: Partial<WalletTransactionIntent> = {}): WalletTransac
             chainAlias: base.chainAlias,
             decoded: base.decoded,
             feeBounds: base.feeBounds,
+            evmValueWei:
+              base.payload.family === "eip155" ? base.payload.evm.valueWei : null,
           }),
         }
       : base;

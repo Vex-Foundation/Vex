@@ -192,7 +192,7 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
     // needs no entry there because its whole `kind = 'bridge'` arm is admitted
     // only through `event_role = 'bridge_fill_expected'`.
     expect(QUERY_BUILDER_SRC).toContain(
-      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee')",
+      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee')",
     );
     // The app feeds are positive-role only: every known technical role is
     // absent, and a future one therefore cannot become a row by default.
@@ -203,6 +203,11 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
       "swap_fee",
       "trench_fee",
       "pools_fee",
+      // Migration 088. Unlike `bridge_fee`, its `kind = 'transaction'` arm IS
+      // admitted by the agent half, so without the exclusion above the generic
+      // lane's fee transfer would render as a second signed transaction beside
+      // the one it charges for.
+      "tx_vex_fee",
     ]) {
       expect(logicalRowPredicate()).not.toContain(`'${role}'`);
     }

@@ -665,6 +665,55 @@ the coordinator's scratchpad `a1-probe/REPORT.md`):
     provider call between signer creation and sign; post-stage fence
     outside the stageEvm catch so it is never audit_failed), plus a
     central eager-path trace regression.
+56. A4b pass 7 - the 25 bps Vex fee on the generic EVM signing lane.
+    OWNER DECISION 2026-08-25: the generic signing tools charge the
+    standard 25 bps, reusing the native-fee-leg infrastructure rather than
+    a lane-specific mechanism, WITH a deterministic economic threshold.
+    Base is the transaction's own `payload.valueWei`, so an ERC-20
+    transfer or an approve through this lane pays NOTHING; only
+    native-value-bearing transactions pay.
+
+    THE THRESHOLD, and the research it came from. The fee is charged only
+    when it EXCEEDS the most its own collection transfer could cost at the
+    approved per-gas cap (`VEX_FEE_TRANSFER_GAS_LIMIT x maxFeePerGasWei`,
+    legacy `x gasPriceWei`); an exactly-equal fee is skipped, and the skip
+    reason is named `at_or_below_collection_cost` so the inclusive
+    equality is stated rather than inferred. The reference wallets in
+    `agents-colab/` were read before the rule was written: MetaMask
+    (`BRIDGE_MM_FEE_RATE = 0.875` in bridge-controller) and Rabby
+    (`feeRate`/`feeAddress` embedded in aggregator quotes, with
+    same-type-pair waivers) both EMBED their fee in the same transaction,
+    where dust costs nothing extra, and NEITHER charges anything at all on
+    generic signing. Vex's own separate-leg venues charge any positive
+    fee, which is right for them because their action sizes are meaningful
+    by construction; this lane's are arbitrary, so without a floor a dust
+    fee would trigger a transfer costing the user more than the fee is
+    worth.
+
+    DERIVED, NOT STORED. The fee is a pure function of digest-bound fields
+    plus build constants, so there is no new intent column. The canonical
+    preview renders the fee lines, digest v2 -> v3 binds that preview, and
+    confirm recomputes both, so a drifted fee is a digest or whole-card
+    mismatch rather than a silently different number. The fee row is
+    pre-created as `event_index` 1 inside the T2 claim transaction from
+    one FROZEN plan object, and that same object is what gets signed;
+    collection performs no second planning step. The fee leg carries its
+    own pre-sign AND post-stage pre-submit authority fences, its own
+    approved gas ceiling (`gasLimitWithHeadroom(21000)` = 42000, derived
+    through the production helper because the staged primitive applies the
+    headroom BEFORE the bounds check), and it runs only after the
+    transaction it charges for has confirmed.
+
+    NAMED OMISSION - SOLANA CHARGES NOTHING. The Solana pair on this lane
+    takes no fee, and this is a deliberate gap rather than a backlog item.
+    No Solana fee-leg runtime exists here, and the only mechanism
+    available would be appending an instruction to the canonical message -
+    the exact bytes the user already read and approved. Rewriting an
+    approved message is forbidden by construction on this lane, so the fee
+    does not exist there. Migration 088 ENFORCES the gap with
+    `agent_activity_tx_vex_fee_eip155`: a Solana `tx_vex_fee` row is
+    rejected by the database, so a future writer cannot record one without
+    stating the mechanism in a migration first.
 
 ## 0. Decisions in force
 

@@ -12,8 +12,13 @@
  *   2. `createExecutionIntent` - the `protocol_executions` row at `intent`;
  *   3. `createPendingActivityEvent` - the `agent_activity` row at `pending`,
  *      kind `transaction`;
- *   4. `stampActivityWith` - the intent's `activity_id`, so recovery can find
- *      the row from the intent and the intent from the row.
+ *   4. `createPendingActivityEvent` again, at `event_index` 1 and ONLY when a
+ *      Vex fee applies (`./vex-fee.ts` planned one before the claim) - the fee
+ *      leg's `agent_activity` row, `pending`, hashless, signed later and only
+ *      if the transaction confirms;
+ *   5. `stampActivityWith` - the intent's `activity_id`, so recovery can find
+ *      the row from the intent and the intent from the row. It names event 0:
+ *      the fee is a CHILD LEG of this execution, not what the intent is about.
  *
  * Any failure ROLLS THE WHOLE THING BACK, which leaves the intent `pending`:
  * nothing was claimed, nothing was signed, and the operator can cancel or let
@@ -54,6 +59,7 @@ import {
   markBroadcastAccepted,
   type AgentActivityEventRole,
   type BridgeChainFamily,
+  type CreatePendingActivityEventInput,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { createExecutionIntent } from "@vex-agent/db/repos/executions.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
@@ -89,9 +95,32 @@ const ROLE_BY_EFFECT: Readonly<Record<WalletTransactionRole, AgentActivityEventR
   spl_instruction_set: "tx_spl_instruction_set",
 };
 
+/**
+ * The pre-planned Vex fee row, created as event 1 of the SAME claim transaction.
+ *
+ * It is passed IN, never planned here. The plan is computed once by
+ * `./vex-fee.ts` before the claim and the same object is what later gets signed,
+ * so this writer has no arithmetic of its own to disagree with.
+ *
+ * Creating it inside the claim is what makes the row's existence atomic with the
+ * intent's consumption: an insert failure rolls the whole claim back, which
+ * leaves the intent `pending` with nothing signed, rather than producing a
+ * confirmed transaction whose fee had no row to record it.
+ */
+export type PlannedFeeEvent = Omit<
+  CreatePendingActivityEventInput,
+  "protocolExecutionId" | "eventIndex"
+>;
+
 export interface TransactionActivity {
   readonly executionId: number;
   readonly activityId: number;
+  /**
+   * The pre-created Vex fee row, or `null` when no fee applies to this
+   * transaction. `null` is not "the row failed": a claim that could not create
+   * a planned fee row rolled back entirely and produced no handle at all.
+   */
+  readonly feeRowId: number | null;
   /** When the tool attempt began, for the execution row's `duration_ms`. */
   readonly startedAtMs: number;
   /** EVM staging. THROWS on a CAS miss - the caller must abort before submitting. */
@@ -204,6 +233,7 @@ export async function claimTransactionIntent(
   intent: WalletTransactionIntent,
   approvedProposalDigest: string,
   fence: (client: PoolClient) => Promise<TransactionOutcome<void>>,
+  plannedFeeEvent: PlannedFeeEvent | null = null,
 ): Promise<TransactionClaim> {
   const startedAtMs = Date.now();
   const chain = chainIdentityOf(intent);
@@ -264,6 +294,20 @@ export async function claimTransactionIntent(
         client,
       );
 
+      // EVENT 1: the Vex fee leg, when one applies. Created HERE, inside the
+      // same locked transaction, so it exists before anything is signed and
+      // rolls back with the claim if it cannot be written. The WTI stays linked
+      // to event 0 - the fee is a child leg of this execution, never the thing
+      // the intent is about.
+      let feeRowId: number | null = null;
+      if (plannedFeeEvent !== null) {
+        const feeEvent = await createPendingActivityEvent(
+          { ...plannedFeeEvent, protocolExecutionId: executionId, eventIndex: 1 },
+          client,
+        );
+        feeRowId = feeEvent.id;
+      }
+
       const stamped = await intentsRepo.stampActivityWith(
         client,
         claimed.intentId,
@@ -281,7 +325,7 @@ export async function claimTransactionIntent(
       return {
         ok: true as const,
         intent: stamped,
-        activity: makeHandle(stamped.sessionId, executionId, event.id, startedAtMs),
+        activity: makeHandle(stamped.sessionId, executionId, event.id, feeRowId, startedAtMs),
       };
     });
   } catch (cause) {
@@ -303,11 +347,13 @@ function makeHandle(
   sessionId: string,
   executionId: number,
   activityId: number,
+  feeRowId: number | null,
   startedAtMs: number,
 ): TransactionActivity {
   return {
     executionId,
     activityId,
+    feeRowId,
     startedAtMs,
 
     async stageEvm(handles) {

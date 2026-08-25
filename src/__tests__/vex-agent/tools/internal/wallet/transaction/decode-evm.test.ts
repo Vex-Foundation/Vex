@@ -326,7 +326,7 @@ describe("EVM decode - V6: ERC-20 target identity is UNVERIFIED", () => {
     expect(result.value.criticalArgs.tokenIdentityVerified).toBe("false");
     expect(result.value.warnings.join(" ")).toContain("TOKEN IDENTITY UNVERIFIED");
 
-    const preview = buildTransactionPreview(result.value, FEE_BOUNDS, "base");
+    const preview = buildTransactionPreview(result.value, FEE_BOUNDS, "base", "0");
     expect(preview.label).toContain("UNVERIFIED TOKEN");
     // The raw decoded args and the target are still shown in the bound panel.
     expect(preview.criticalArgs.recipient.toLowerCase()).toBe(EOA);
@@ -343,7 +343,7 @@ describe("EVM decode - V6: ERC-20 target identity is UNVERIFIED", () => {
     if (!result.ok) return;
     expect(result.value.criticalArgs.tokenIdentityVerified).toBe("false");
     expect(result.value.warnings.join(" ")).toContain("TOKEN IDENTITY UNVERIFIED");
-    const preview = buildTransactionPreview(result.value, FEE_BOUNDS, "base");
+    const preview = buildTransactionPreview(result.value, FEE_BOUNDS, "base", "0");
     expect(preview.label).toContain("UNVERIFIED TOKEN");
   });
 
@@ -354,7 +354,7 @@ describe("EVM decode - V6: ERC-20 target identity is UNVERIFIED", () => {
     // Without a chain probe the decoder has no basis to distinguish this real
     // token from the two cases above, so it does not claim to.
     expect(result.value.criticalArgs.tokenIdentityVerified).toBe("false");
-    expect(buildTransactionPreview(result.value, FEE_BOUNDS, "base").label).toContain("UNVERIFIED TOKEN");
+    expect(buildTransactionPreview(result.value, FEE_BOUNDS, "base", "0").label).toContain("UNVERIFIED TOKEN");
   });
 
   it("the unverified label is DETERMINISTIC across a prepare and a confirm re-decode", async () => {

@@ -239,7 +239,7 @@ async function attachVexFee(
     feeRowId: fee.rowId,
     chainId: x.chainId,
     publicClient: x.publicClient,
-    walletClient: x.walletClient,
+    signer: x.walletClient,
     priorLeg,
   });
   return withFeeDisclosure(finalized.result, collection, plan.disclosure);

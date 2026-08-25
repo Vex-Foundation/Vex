@@ -19,6 +19,14 @@ import type {
   WalletTransactionPreview,
 } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 
+import {
+  approvedPerGasCapWei,
+  quoteWalletTxVexFee,
+  walletTxVexFeeSkipSentence,
+  WALLET_TX_FEE_BPS,
+  WALLET_TX_FEE_RECEIVER_EVM,
+} from "./vex-fee.js";
+
 /**
  * Address ellipsis for the LABEL only. NEVER applied to a `criticalArgs` value:
  * the full address always sits in the bound panel of the same object, so
@@ -67,10 +75,55 @@ function solanaLabel(decoded: Extract<DecodedWalletTransaction, { family: "solan
   return `Solana transaction: ${named}`;
 }
 
+/**
+ * The Vex-fee lines, ALWAYS present on an EVM card - charged or explicitly not.
+ *
+ * WHY ALWAYS. A card that shows fee lines only when a fee applies teaches a
+ * reader that their absence means the section did not render, not that nothing
+ * is charged. The skipped arm states the reason with its numbers, so a user can
+ * see the decision rather than infer it from silence.
+ *
+ * Every value is DERIVED from fields the digest already binds - the payload's
+ * `valueWei` and the approved fee bounds - plus build constants, so digest v3
+ * covers these lines by covering this preview and the fee can never differ
+ * between the card, the digest and the transfer.
+ *
+ * `evmValueWei` of `null` is the Solana family: no fee lane exists there, so
+ * nothing is stated. A row whose fee bounds are not EVM bounds is likewise
+ * silent - it is a shape prepare never writes and confirm refuses by name.
+ */
+function appendVexFeeLines(
+  criticalArgs: Record<string, string>,
+  evmValueWei: string | null,
+  feeBounds: WalletTransactionFeeBounds,
+): void {
+  if (evmValueWei === null) return;
+  const perGasCapWei = approvedPerGasCapWei(feeBounds);
+  if (perGasCapWei === null) return;
+
+  const quote = quoteWalletTxVexFee(BigInt(evmValueWei), perGasCapWei);
+  if (!quote.charged) {
+    criticalArgs.vexFee = `none - ${walletTxVexFeeSkipSentence(quote)}`;
+    return;
+  }
+  criticalArgs.vexFeeBps = String(WALLET_TX_FEE_BPS);
+  criticalArgs.vexFeeBaseWei = quote.baseWei.toString();
+  criticalArgs.vexFeeWei = quote.feeWei.toString();
+  criticalArgs.vexFeeReceiver = WALLET_TX_FEE_RECEIVER_EVM;
+  criticalArgs.vexFeeMaxNetworkFeeWei = quote.maxNetworkFeeWei.toString();
+  criticalArgs.vexFeeNote =
+    "Vex platform fee, separate from the network fee. It is a SEPARATE transfer that runs only "
+    + "AFTER this transaction confirms, IN ADDITION to the value this transaction sends and to its "
+    + "own network fee, and it pays the network fee shown as vexFeeMaxNetworkFeeWei on top. A "
+    + "transaction that does not happen is never charged, and a fee transfer that fails leaves this "
+    + "transaction untouched.";
+}
+
 export function buildTransactionPreview(
   decoded: DecodedWalletTransaction,
   feeBounds: WalletTransactionFeeBounds,
   chainLabel: string,
+  evmValueWei: string | null,
 ): WalletTransactionPreview {
   const criticalArgs: Record<string, string> = { chain: chainLabel };
 
@@ -106,6 +159,8 @@ export function buildTransactionPreview(
     criticalArgs.computeUnitPriceMicroLamports = feeBounds.computeUnitPriceMicroLamports;
   }
 
+  appendVexFeeLines(criticalArgs, evmValueWei, feeBounds);
+
   // Numbered, and carried WHOLE. A warning is the sentence that tells a user an
   // approval is unlimited or routes through a shared spender; it is never the
   // thing to shorten.
@@ -138,6 +193,14 @@ export interface CanonicalPreviewInput {
   readonly chainAlias: string | null;
   readonly decoded: DecodedWalletTransaction;
   readonly feeBounds: WalletTransactionFeeBounds;
+  /**
+   * The EVM payload's RAW `valueWei`, or `null` on Solana. REQUIRED, not
+   * optional: it is the base of the Vex fee lines, and a caller that could omit
+   * it would silently render a card with no fee section on a transaction that
+   * will be charged one. It is a digest-bound field, so covering it here keeps
+   * the card a pure function of what the digest already binds.
+   */
+  readonly evmValueWei: string | null;
 }
 
 /**
@@ -157,5 +220,5 @@ export function canonicalTransactionPreview(
   input: CanonicalPreviewInput,
 ): WalletTransactionPreview {
   const chainLabel = input.family === "solana" ? "solana" : (input.chainAlias ?? "");
-  return buildTransactionPreview(input.decoded, input.feeBounds, chainLabel);
+  return buildTransactionPreview(input.decoded, input.feeBounds, chainLabel, input.evmValueWei);
 }

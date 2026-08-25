@@ -283,6 +283,7 @@ function evmRow(sessionId: string, intentId: string): intentsRepo.CreateWalletTr
         maxPriorityFeePerGasWei: "1000000",
         maxTotalFeeWei: "60000000000000",
       },
+      evmValueWei: "1000",
     }),
     feeBounds: {
       mode: "eip1559" as const,
@@ -327,6 +328,8 @@ function solanaRow(
         maxPriorityFeeLamports: "200",
         maxTotalFeeLamports: "10000",
       },
+      // Solana charges no Vex fee on this lane (migration 088).
+      evmValueWei: null,
     }),
     feeBounds: {
       mode: "solana" as const,

@@ -52,7 +52,7 @@ import {
   canonicalPreviewOfIntent,
   type PreparedApprovalBinding,
 } from "./approval-binding.js";
-import type { TransactionActivity, TransactionClaim } from "./activity-writer.js";
+import type { PlannedFeeEvent, TransactionActivity, TransactionClaim } from "./activity-writer.js";
 import { claimTransactionIntent } from "./activity-writer.js";
 import { WALLET_TRANSACTION_INTENTS_RESOURCE } from "./proposal-digest.js";
 import { accept, refuse, type TransactionOutcome } from "./refusal.js";
@@ -404,9 +404,19 @@ export async function gateConfirm(
 export async function claimOrRefuse(
   intent: WalletTransactionIntent,
   anchor: AuthorityAnchor,
+  /**
+   * The PRE-PLANNED Vex fee row, created inside this same transaction. `null`
+   * on Solana and on any EVM proposal that attracts no fee. It is a plan, never
+   * a computation this path performs.
+   */
+  plannedFeeEvent: PlannedFeeEvent | null = null,
 ): Promise<{ kind: "claimed"; claim: Extract<TransactionClaim, { ok: true }> } | { kind: "return"; result: ToolResult }> {
-  const claim = await claimTransactionIntent(intent, intent.proposalDigest, (client) =>
-    recheckAuthorityWith(client, anchor, "claim"));
+  const claim = await claimTransactionIntent(
+    intent,
+    intent.proposalDigest,
+    (client) => recheckAuthorityWith(client, anchor, "claim"),
+    plannedFeeEvent,
+  );
   if (claim.ok) return { kind: "claimed", claim };
   if (claim.reason === "fence_refused") {
     return { kind: "return", result: refusalToResult(claim.refusal) };

@@ -31,8 +31,17 @@
  *
  * v2 (2026-08-24) added the canonical preview to the preimage. A v1 digest was
  * computed over a serialization that never saw it, so it CANNOT be re-verified
- * on this build; v1 is refused BY NAME wherever a digest is compared. This is a
- * deliberate pre-release wire-format change with no migration: an in-flight
+ * on this build.
+ *
+ * v3 (2026-08-25) added the VEX FEE LINES to that canonical preview - the 25 bps
+ * platform fee an EVM proposal's own native value attracts, or the explicit
+ * reason none is taken. It adds NO new input to the preimage: the fee is derived
+ * from `payload.valueWei` and the fee bounds, both of which v2 already bound.
+ * What moved is the SENTENCE the human authorizes, and covering that sentence is
+ * precisely why the preview is in the preimage.
+ *
+ * A v1 or v2 digest is refused BY NAME wherever a digest is compared. Both are
+ * deliberate pre-release wire-format changes with no migration: an in-flight
  * intent expires in minutes, and re-preparing is both cheap and safe.
  *
  * ## Canonical serialization
@@ -142,6 +151,11 @@ export function proposalDigestPreimage(input: ProposalDigestInput): string {
     chainAlias: input.chainAlias,
     decoded: input.decoded,
     feeBounds: input.feeBounds,
+    // Read from the canonical payload this preimage ALREADY covers, never
+    // accepted as a second input: the fee lines the preview renders have to be
+    // derived from the same `valueWei` the digest binds, or the card and the
+    // digest would be two sources of truth for one number.
+    evmValueWei: input.family === "eip155" ? (input.payload.valueWei ?? null) : null,
   });
   const body: Canonical = {
     digestVersion: PROPOSAL_DIGEST_VERSION,

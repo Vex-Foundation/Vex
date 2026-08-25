@@ -167,6 +167,18 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // the network. A crash between intent creation and staging is reaped here
   // instead of pinning the session's money state open forever.
   "wallet_transfer",
+  // Migration 088 (the generic EVM signing lane's Vex fee). The same dependent
+  // fee leg once more: created `pending` and hashless inside the T2 claim, and
+  // signed only if the transaction it charges for confirms. Every arm on which
+  // it is never signed - the transaction reverted, was ambiguous, was refused at
+  // a fence, or the process died - finalizes it best-effort at return time, and
+  // this sweep is the backstop for the arm where that write itself did not land.
+  //
+  // Safe for the reason every other role here is: the CAS predicate
+  // (`status='pending' AND tx_hash IS NULL`) is the SAME one
+  // `markActivityBroadcast` needs, so a staged fee leg is invisible to this
+  // sweep and a reaped one can no longer be broadcast.
+  "tx_vex_fee",
 ];
 
 /**

@@ -55,8 +55,8 @@ preconditions appear inside the first 2000 bytes.
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2803 |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1397 |
 | WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 1576 |
-| WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 1285 |
-| WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 1475 |
+| WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 1804 |
+| WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 2288 |
 | WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1503 |
 | WalletSendPrepare | Prepare a wallet transfer | internal | no | no | yes | - | 1252 |
 | WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | internal | no | yes | yes | - | 1273 |

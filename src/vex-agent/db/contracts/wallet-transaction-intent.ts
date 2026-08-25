@@ -232,10 +232,18 @@ export type WalletTransactionPreview = z.infer<typeof WalletTransactionPreviewSc
  *
  * v2 folded the CANONICAL PREVIEW - the sentence and argument panel the human
  * reads - into the preimage, so a hand-edited `preview_json` no longer passes
- * every digest check untouched. A v1 digest was taken over a serialization that
- * never saw the preview and therefore cannot be re-verified here; it is refused
- * by name, with no migration, because an in-flight intent expires in minutes
- * and preparing again is the honest and cheap answer.
+ * every digest check untouched.
+ *
+ * v3 (2026-08-25) added the VEX FEE LINES to that canonical preview: the 25 bps
+ * platform fee an EVM proposal's own native value attracts, or the explicit
+ * reason none is taken. The fee is DERIVED from fields v2 already bound, so v3
+ * binds no new input - what changed is the sentence the human authorizes, which
+ * is exactly what the preview is in the preimage for.
+ *
+ * A v1 or v2 digest was taken over a serialization that produces a different
+ * preview and therefore cannot be re-verified here; both are refused BY NAME,
+ * with no migration, because an in-flight intent expires in minutes and
+ * preparing again is the honest and cheap answer.
  */
-export const PROPOSAL_DIGEST_VERSION = "v2" as const;
+export const PROPOSAL_DIGEST_VERSION = "v3" as const;
 export type ProposalDigestVersion = typeof PROPOSAL_DIGEST_VERSION;

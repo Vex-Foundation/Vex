@@ -42,6 +42,12 @@ import { forbiddenRedirectFieldRefusal, parseEvmFeeBounds } from "./fee-bounds.j
 import { canonicalTransactionPreview } from "./preview.js";
 import { computeProposalDigest } from "./proposal-digest.js";
 import { refusalToResult, requireHexData, requireString } from "./tool-io.js";
+import {
+  approvedPerGasCapWei,
+  quoteWalletTxVexFee,
+  walletTxFeeVenue,
+  walletTxVexFeeDisclosure,
+} from "./vex-fee.js";
 
 export interface EvmPrepareDeps {
   readonly chainFactory: EvmPrepareChainFactory;
@@ -111,6 +117,29 @@ export async function handleWalletEvmTransactionPrepare(
   const feeBounds = parseEvmFeeBounds(params, await chain.estimateFees(call));
   if (!feeBounds.ok) return refusalToResult(feeBounds.refusal);
 
+  // The Vex fee, from the caps just accepted and the raw value. The card below
+  // renders the same decision from the same two facts through the canonical
+  // renderer, so the number the caller is told and the number the human reads
+  // are one computation.
+  const feeVenue = walletTxFeeVenue({
+    chainSlug: chain.chainAlias,
+    nativeSymbol: chain.nativeSymbol,
+    nativeDecimals: chain.nativeDecimals,
+  });
+  const perGasCapWei = approvedPerGasCapWei(feeBounds.value);
+  const feeQuote =
+    perGasCapWei === null ? null : quoteWalletTxVexFee(BigInt(valueWei.value), perGasCapWei);
+  const vexFee =
+    feeQuote === null
+      ? null
+      : {
+          ...walletTxVexFeeDisclosure(feeVenue, feeQuote),
+          // The ceiling the fee's OWN transfer is signed under, stated because
+          // it is IN ADDITION to the transaction's own network fee.
+          maxNetworkFeeWei: feeQuote.maxNetworkFeeWei.toString(),
+          ...(feeQuote.charged ? {} : { reason: feeQuote.reason }),
+        };
+
   const intentId = `wtx-${randomUUID()}`;
   const expiresAt = new Date(Date.now() + WALLET_INTENT_TTL_MS).toISOString();
   // THE canonical card, rendered from bound fields only. The digest below
@@ -121,6 +150,7 @@ export async function handleWalletEvmTransactionPrepare(
     chainAlias: chain.chainAlias,
     decoded: decoded.value,
     feeBounds: feeBounds.value,
+    evmValueWei: valueWei.value,
   });
 
   // 6. The digest covers the payload AND the authority fields around it.
@@ -176,6 +206,10 @@ export async function handleWalletEvmTransactionPrepare(
     // Echoed so the caller can see exactly which caps the approval will carry
     // and which confirm will enforce.
     approvedFeeBounds: feeBounds.value,
+    // THE VEX FEE, stated at prepare because it is part of what the approval
+    // covers. Derived from the same bound fields the card renders it from and
+    // the confirm path recomputes it from, so these three cannot disagree.
+    vexFee,
     nativeCurrency: { symbol: chain.nativeSymbol, decimals: chain.nativeDecimals },
     message:
       "Prepared. Nothing was signed and nothing was spent. Confirm with "

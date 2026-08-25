@@ -330,6 +330,11 @@ describe("recoverStaleHashlessIntents", () => {
         // transfer row is positive proof that nothing was ever sent and is
         // therefore definitively not-attempted.
         "wallet_transfer",
+        // Migration 088 (the generic EVM signing lane's Vex fee). The same
+        // dependent fee leg once more, and EVM-only by database CHECK: the
+        // Solana pair on that lane charges nothing. Locally signed, owned by no
+        // sweep, and definitively not-attempted when it is never signed.
+        "tx_vex_fee",
       ].sort(),
     );
   });
@@ -358,6 +363,10 @@ describe("recoverStaleHashlessIntents", () => {
       "swap_fee",
       // pools.fun is Robinhood Chain (4663) only, so its fee leg is EVM-only.
       "pools_fee",
+      // The generic signing lane's fee is EVM-only by DATABASE CHECK
+      // (`agent_activity_tx_vex_fee_eip155`, migration 088), not merely by
+      // where the venue happens to be deployed.
+      "tx_vex_fee",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

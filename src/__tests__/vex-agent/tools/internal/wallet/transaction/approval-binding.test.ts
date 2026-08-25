@@ -62,6 +62,7 @@ const INTENT: WalletTransactionIntent = {
       gasPriceWei: "1000000000",
       maxTotalFeeWei: "21000000000000",
     },
+    evmValueWei: "1",
   }),
   feeBounds: {
     mode: "legacy",

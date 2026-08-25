@@ -118,6 +118,9 @@ const CANONICAL_PREVIEW = canonicalTransactionPreview({
   chainAlias: "base",
   decoded: DECODED,
   feeBounds: FEE_BOUNDS,
+  // An `approve` sends no native value, so this proposal attracts no Vex fee -
+  // and the card says so explicitly rather than omitting the section.
+  evmValueWei: "0",
 });
 
 async function prepareApprovalIntent(sessionId: string): Promise<intentsRepo.WalletTransactionIntent> {
@@ -522,7 +525,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       preview: { label: string; criticalArgs: Record<string, unknown> };
       proposalDigestVersion: string;
     };
-    expect(bound.proposalDigestVersion).toBe("v2");
+    expect(bound.proposalDigestVersion).toBe(PROPOSAL_DIGEST_VERSION);
     expect(bound.preview.label).toBe(CANONICAL_PREVIEW.label);
     expect(bound.preview.criticalArgs).toEqual(CANONICAL_PREVIEW.criticalArgs);
 
@@ -549,7 +552,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
 
     expect(result.success).toBe(false);
     expect(result.output).toContain('carries proposal digest version "v1"');
-    expect(result.output).toContain('this build computes "v2"');
+    expect(result.output).toContain(`this build computes "${PROPOSAL_DIGEST_VERSION}"`);
     expect(result.output).toContain("rather than reported as proposal drift");
     const still = await intentsRepo.getById(intent.intentId, sessionId);
     expect(still?.status).toBe("pending");

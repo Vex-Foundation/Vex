@@ -42,10 +42,20 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
       + "to any other address, or empty calldata sent to a contract is REFUSED BY NAME before an intent "
       + "exists; router and aggregator calldata is deliberately outside v1. A caller-supplied `from`, "
       + "fee payer or fee receiver is refused by name too: the sender is the wallet selected for this "
-      + "session. RETURNS intentId, chain, chainId, walletAddress, status 'prepared', expiresAt, the "
-      + "decoded effects, the approval preview, and approvedFeeBounds echoing the caps you supplied. "
-      + "The intent is scoped to this session, expires in 10 minutes, and binds the wallet selected "
-      + "right now; if that selection changes, confirm refuses rather than signing from another address.",
+      + "session. VEX FEE: Vex charges 25 bps (0.25%) of this transaction's own valueWei, as a "
+      + "SEPARATE transfer to the Vex treasury that runs only AFTER the transaction confirms, with "
+      + "its own bounded network fee on top of the transaction's. A zero-value transaction - every "
+      + "ERC-20 transfer and every approve - pays NOTHING. Nor is anything charged when the 25 bps "
+      + "would be at or below what its own collection transfer could cost at the gas caps you set: "
+      + "Vex does not take a fee that costs the user more to collect than it is worth. Whichever "
+      + "applies is shown ON THE APPROVAL CARD, with its amount, the treasury address and that extra "
+      + "network-fee ceiling, or the explicit reason no fee is taken. The fee is not a parameter and "
+      + "cannot be set, redirected or waived by a caller. RETURNS intentId, chain, chainId, "
+      + "walletAddress, status 'prepared', expiresAt, the decoded effects, the approval preview, "
+      + "approvedFeeBounds echoing the caps you supplied, and vexFee stating the charge or the reason "
+      + "there is none. The intent is scoped to this session, expires in 10 minutes, and binds the "
+      + "wallet selected right now; if that selection changes, confirm refuses rather than signing "
+      + "from another address.",
     parameters: {
       type: "object",
       properties: {
@@ -119,7 +129,13 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
       + "confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and failed before "
       + "broadcast. Only the last is safe to prepare again: a reverted transaction is real and paid "
       + "a network fee, and an unknown one may be settling right now - Vex tracks it and NEVER "
-      + "re-sends it, and neither should you.",
+      + "re-sends it, and neither should you. VEX FEE: the 25 bps fee shown on the approval card is "
+      + "charged ONLY if this transaction CONFIRMS, as a separate treasury transfer signed afterwards "
+      + "under its own bounded gas ceiling. A transaction that reverts, stays unconfirmed or refuses "
+      + "before broadcast is never charged. A fee that fails, reverts or cannot be confirmed leaves "
+      + "this transaction completely unaffected and is NEVER re-sent. The result echoes vexFee with "
+      + "its own outcome, the amount planned, and - only where the chain proved it - the amount "
+      + "collected.",
     parameters: {
       type: "object",
       properties: {

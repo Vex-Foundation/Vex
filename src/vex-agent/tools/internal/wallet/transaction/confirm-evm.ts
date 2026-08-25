@@ -66,6 +66,17 @@ import {
 import { decodeEvmTransaction } from "./decode-evm.js";
 import { refusalToResult } from "./tool-io.js";
 import { revalidateDecodedEffects, revalidateEvmChainIdentity } from "./revalidate.js";
+import {
+  prepareWalletTransactionVexFeePlan,
+  type WalletTransactionVexFeePlan,
+} from "./vex-fee.js";
+import {
+  buildFeeLegDeferredSigner,
+  collectWalletTransactionVexFee,
+  finalizeWalletTransactionFeeRowNeverAttempted,
+  walletTransactionVexFeeNotCharged,
+  type WalletTransactionVexFeeReport,
+} from "./vex-fee-collection.js";
 
 /**
  * The clients the staged primitive needs, behind a seam so the whole confirm
@@ -214,7 +225,22 @@ export async function handleWalletEvmTransactionConfirm(
   const revalidated = await revalidateEvmAtCommit(intent, payload, chain);
   if (revalidated !== null) return revalidated;
 
-  const claimed = await claimOrRefuse(intent, anchor);
+  // THE FEE, PLANNED ONCE, after commit-time revalidation and before the claim.
+  // Pure: it reads the digest-bound value and the approved caps and computes.
+  // The same object's `event` becomes the fee row inside the claim transaction
+  // below and its `leg` is what gets signed if this transaction confirms, so
+  // what is recorded and what is charged cannot be two different numbers.
+  const feePlan = prepareWalletTransactionVexFeePlan(intent, {
+    chainSlug: chain.chainAlias,
+    nativeSymbol: chain.nativeSymbol,
+    nativeDecimals: chain.nativeDecimals,
+  });
+
+  const claimed = await claimOrRefuse(
+    intent,
+    anchor,
+    feePlan !== null && feePlan.charged ? feePlan.leg.event : null,
+  );
   if (claimed.kind === "return") return claimed.result;
 
   const execution = await executeEvmTransaction({
@@ -224,14 +250,29 @@ export async function handleWalletEvmTransactionConfirm(
     anchor,
     bounds,
     activity: claimed.claim.activity,
+    feePlan,
+    chain,
     deps,
   });
 
-  return settleExecution(claimed.claim.intent, claimed.claim.activity, execution, {
+  const result = await settleExecution(claimed.claim.intent, claimed.claim.activity, execution, {
     chain: intent.chainAlias,
     chainId: intent.chainId,
     approvedFeeBounds: intent.feeBounds,
   });
+
+  // A transaction that did not confirm is never charged. The pre-created fee row
+  // is finalized never-attempted AFTER the settlement, so the transaction's own
+  // three rows reach their terminal state first and a failure here cannot delay
+  // or alter them. Hashless recovery is the backstop if this write never lands.
+  if (execution.kind !== "confirmed" && claimed.claim.activity.feeRowId !== null) {
+    await finalizeWalletTransactionFeeRowNeverAttempted(
+      claimed.claim.activity.executionId,
+      `the transaction ended ${execution.kind}, so the Vex fee leg was never signed`,
+    );
+  }
+
+  return result;
 }
 
 /** Steps a to d. `null` means every check passed. */
@@ -280,9 +321,12 @@ async function executeEvmTransaction(args: {
   readonly anchor: AuthorityAnchor;
   readonly bounds: StagedFeeBounds;
   readonly activity: TransactionActivity;
+  /** The frozen fee plan, or `null` when this row can carry no fee at all. */
+  readonly feePlan: WalletTransactionVexFeePlan | null;
+  readonly chain: EvmPrepareChain;
   readonly deps: EvmConfirmDeps;
 }): Promise<TransactionExecution> {
-  const { intent, payload, loadSigner, anchor, bounds, activity, deps } = args;
+  const { intent, payload, loadSigner, anchor, bounds, activity, feePlan, deps } = args;
 
   let clients: EvmSignerClients;
   try {
@@ -456,6 +500,21 @@ async function executeEvmTransaction(args: {
     };
   }
 
+  // THE FEE LEG, and only here: the transaction is confirmed on-chain. It rides
+  // the confirmed arm so `settleExecution` echoes its report without needing to
+  // know anything about fees. Nothing below can change this outcome - the runner
+  // never throws, and a failed fee is missed Vex revenue and nothing more.
+  const vexFee = await collectFeeOnConfirmed({
+    feePlan,
+    activity,
+    anchor,
+    loadSigner,
+    clients,
+    chainId: args.chain.chainId,
+    walletAddress: intent.walletAddress,
+    blockNumber: outcome.receipt.blockNumber,
+  });
+
   return {
     kind: "confirmed",
     txHash: outcome.txHash,
@@ -466,8 +525,63 @@ async function executeEvmTransaction(args: {
       blockNumber: Number(outcome.receipt.blockNumber),
       _executionId: activity.executionId,
       _explorerRefs: [{ chain: clients.chainName, txRef: outcome.txHash }],
+      ...(vexFee === null ? {} : { vexFee }),
     },
   };
+}
+
+/**
+ * Run the fee leg for a CONFIRMED transaction, or state why none was taken.
+ *
+ * `null` means this row can carry no fee at all - a shape confirm has already
+ * refused by name elsewhere - so nothing is stated rather than a fee of zero
+ * being implied.
+ */
+async function collectFeeOnConfirmed(args: {
+  readonly feePlan: WalletTransactionVexFeePlan | null;
+  readonly activity: TransactionActivity;
+  readonly anchor: AuthorityAnchor;
+  readonly loadSigner: () => SignerLoad;
+  readonly clients: EvmSignerClients;
+  readonly chainId: number;
+  readonly walletAddress: string;
+  readonly blockNumber: bigint;
+}): Promise<WalletTransactionVexFeeReport | null> {
+  const { feePlan, activity } = args;
+  if (feePlan === null) return null;
+  if (!feePlan.charged) return walletTransactionVexFeeNotCharged(feePlan);
+  if (activity.feeRowId === null) {
+    // Unreachable: a charged plan's event was passed into the claim, and a claim
+    // that could not create it rolled back and produced no handle. Stated, not
+    // asserted, and reported honestly rather than signing an unrecorded leg.
+    return {
+      collection: "not_attempted",
+      collectionNote:
+        "No Vex fee was taken: the fee leg had no recorded row, so nothing was signed. Your "
+        + "transaction is unaffected.",
+      plannedFeeWei: feePlan.quote.feeWei.toString(),
+      receiver: feePlan.venue.receiver,
+    };
+  }
+
+  return collectWalletTransactionVexFee({
+    plan: feePlan,
+    feeRowId: activity.feeRowId,
+    executionId: activity.executionId,
+    chainId: args.chainId,
+    publicClient: args.clients.publicClient,
+    deferredSigner: buildFeeLegDeferredSigner({
+      walletAddress: args.walletAddress,
+      chain: args.clients.chain,
+      anchor: args.anchor,
+      loadSigner: args.loadSigner,
+      createWalletClient: args.clients.createWalletClient,
+    }),
+    anchor: args.anchor,
+    // The block the transaction confirmed in: the fee leg's gas estimate must
+    // not run against a node that has not yet applied it.
+    priorLeg: { blockNumber: args.blockNumber },
+  });
 }
 
 /**
