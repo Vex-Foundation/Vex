@@ -80,7 +80,7 @@ describe("record — idempotent by construction", () => {
     mockQueryOne.mockResolvedValue(dbRow());
     const result = await repo.record(INPUT);
     expect(result.inserted).toBe(true);
-    const sql = mockQueryOne.mock.calls[0]![0].replace(/\s+/g, " ");
+    const sql = firstCall(mockQueryOne).sql;
     expect(sql).toContain("ON CONFLICT (chain_id, LOWER(token_address)) DO NOTHING");
     // DO UPDATE would let a re-derivation overwrite the first proof of an
     // on-chain fact. The first writer wins, deliberately.
@@ -116,7 +116,7 @@ describe("identity is case-insensitive", () => {
   it("getByIdentity matches on LOWER(token_address)", async () => {
     mockQueryOne.mockResolvedValue(dbRow());
     await repo.getByIdentity(4663, TOKEN.toLowerCase());
-    const sql = mockQueryOne.mock.calls[0]![0].replace(/\s+/g, " ");
+    const sql = firstCall(mockQueryOne).sql;
     expect(sql).toContain("LOWER(token_address) = LOWER($2)");
   });
 });
@@ -141,6 +141,153 @@ describe("listForWallets — the trench.my_launches read path", () => {
     expect(sql).not.toContain("chain_id =");
     expect(sql.replace(/\s+/g, " ")).toContain("LIMIT $2");
     expect(params).toEqual([[WALLET.toLowerCase()], 10]);
+  });
+});
+
+/**
+ * Launchpad confinement, pinned in the FAST suite as well.
+ *
+ * The behavioural proof lives in
+ * `integration/repos/launched-tokens-launchpad-confinement.int.test.ts`, where a
+ * real table holds both venues' rows - a mocked pool cannot prove a selection.
+ * These assertions exist because that suite needs Docker: they keep the
+ * predicate from being deleted unnoticed by anyone running only `pnpm test`.
+ */
+/**
+ * The first query this repo call issued, with whitespace flattened.
+ *
+ * A throwing accessor rather than a non-null assertion: if the repo issued no
+ * query at all, "no call" is the defect and it should be named, not turned into
+ * an undefined-property crash three lines later.
+ */
+function firstCall(mock: QueryMock | QueryOneMock): { sql: string; params: readonly unknown[] } {
+  const call = mock.mock.calls[0];
+  if (call === undefined) throw new Error("expected the repo to issue a query, but none was made");
+  return { sql: call[0].replace(/\s+/g, " "), params: call[1] ?? [] };
+}
+
+describe("launchpad confinement - chain_id stopped being a venue selector at 082", () => {
+  it("claimAttributionCandidates is confined to trench_express", async () => {
+    await repo.claimAttributionCandidates({ chainId: 4663, limit: 25, retryAfterSeconds: 600 });
+    expect(firstCall(mockQuery).sql).toContain("launchpad = 'trench_express'");
+  });
+
+  it("claimAgentscanAttestCandidates is confined to trench_express", async () => {
+    // Sharper than its twin: `attest_signature` is the TRENCH-formatted proof,
+    // so a pools row here would ship a signature over the wrong message.
+    await repo.claimAgentscanAttestCandidates({ chainId: 4663, limit: 25, retryAfterSeconds: 600 });
+    expect(firstCall(mockQuery).sql).toContain("launchpad = 'trench_express'");
+  });
+
+  it("countUnsignedAttributionGap is confined to trench_express", async () => {
+    await repo.countUnsignedAttributionGap(4663);
+    expect(firstCall(mockQueryOne).sql).toContain("launchpad = 'trench_express'");
+  });
+
+  it("every pools lane selector is confined to pools_fun", async () => {
+    await repo.claimPoolsAttributionCandidates({ limit: 25, retryWindowSeconds: 600 });
+    expect(firstCall(mockQuery).sql).toContain("launchpad = 'pools_fun'");
+
+    resetMocks();
+    await repo.countPoolsUnsignedAttributionGap();
+    expect(firstCall(mockQueryOne).sql).toContain("launchpad = 'pools_fun'");
+
+    resetMocks();
+    await repo.stampPoolsAttestSignature({
+      chainId: 4663,
+      tokenAddress: TOKEN,
+      attestSignature: "0xsig",
+    });
+    expect(firstCall(mockQueryOne).sql).toContain("launchpad = 'pools_fun'");
+  });
+});
+
+describe("pools attribution lane - write-once and CAS shapes", () => {
+  it("the stamp is write-once: it refuses a row that already has a signature", async () => {
+    await repo.stampPoolsAttestSignature({
+      chainId: 4663,
+      tokenAddress: TOKEN,
+      attestSignature: "0xsig",
+    });
+    const sql = firstCall(mockQueryOne).sql;
+    expect(sql).toContain("pools_attest_signature IS NULL");
+    // `null` from the pool means no row matched - already signed, or not pools.
+    expect(await repo.stampPoolsAttestSignature({
+      chainId: 4663,
+      tokenAddress: TOKEN,
+      attestSignature: "0xsig",
+    })).toBe(false);
+  });
+
+  it("the claim excludes BOTH terminal states, not just success", async () => {
+    // A definitively refused row must leave the candidate set for good; leaving
+    // it in would re-serve a row whose answer can never change.
+    await repo.claimPoolsAttributionCandidates({ limit: 25, retryWindowSeconds: 600 });
+    const sql = firstCall(mockQuery).sql;
+    expect(sql).toContain("pools_attributed_at IS NULL");
+    expect(sql).toContain("pools_attribution_rejected_at IS NULL");
+    expect(sql).toContain("pools_attest_signature IS NOT NULL");
+    expect(sql).toContain("FOR UPDATE SKIP LOCKED");
+    // Stamped in the SAME statement - otherwise a refused row starves the rest.
+    expect(sql).toContain("SET pools_attribution_attempted_at = NOW()");
+  });
+
+  it("the claim binds limit and the retry window, and takes no chainId", async () => {
+    await repo.claimPoolsAttributionCandidates({ limit: 7, retryWindowSeconds: 900 });
+    expect(firstCall(mockQuery).params).toEqual([7, "900"]);
+  });
+
+  it("the claim maps the pools signature and the create tx hash the POST needs", async () => {
+    mockQuery.mockResolvedValue([
+      {
+        id: "5",
+        chain_id: "4663",
+        token_address: TOKEN,
+        pools_attest_signature: "0xpools",
+        create_tx_hash: TX,
+      },
+    ]);
+    const [candidate] = await repo.claimPoolsAttributionCandidates({
+      limit: 25,
+      retryWindowSeconds: 600,
+    });
+    expect(candidate).toEqual({
+      id: 5,
+      chainId: 4663,
+      tokenAddress: TOKEN,
+      attestSignature: "0xpools",
+      createTxHash: TX,
+    });
+  });
+
+  it("BOTH terminal writers CAS on BOTH terminal columns", async () => {
+    // Not just on their own column: a late success must not overwrite a
+    // recorded refusal, and a late refusal must not overwrite a landed badge.
+    await repo.markPoolsAttributed({ id: 5 });
+    const attributedSql = firstCall(mockQueryOne).sql;
+    expect(attributedSql).toContain("pools_attributed_at IS NULL");
+    expect(attributedSql).toContain("pools_attribution_rejected_at IS NULL");
+
+    resetMocks();
+    await repo.markPoolsAttributionRejected({ id: 5, code: "not_pools_launch" });
+    const rejectedSql = firstCall(mockQueryOne).sql;
+    expect(rejectedSql).toContain("pools_attributed_at IS NULL");
+    expect(rejectedSql).toContain("pools_attribution_rejected_at IS NULL");
+  });
+
+  it("a rejection writes its reason in the SAME statement as the timestamp", async () => {
+    // 087's CHECK makes the pair a database fact; writing them apart could not
+    // even commit.
+    await repo.markPoolsAttributionRejected({ id: 5, code: "invalid_signature" });
+    const sql = firstCall(mockQueryOne).sql;
+    expect(sql).toContain("pools_attribution_rejected_at = NOW()");
+    expect(sql).toContain("pools_attribution_rejection_code = $2");
+    expect(firstCall(mockQueryOne).params).toEqual([5, "invalid_signature"]);
+  });
+
+  it("a CAS that matched nothing reports false rather than throwing", async () => {
+    expect(await repo.markPoolsAttributed({ id: 5 })).toBe(false);
+    expect(await repo.markPoolsAttributionRejected({ id: 5, code: "validation_failed" })).toBe(false);
   });
 });
 

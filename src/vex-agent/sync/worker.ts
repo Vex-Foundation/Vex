@@ -143,6 +143,14 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
         result = { ...attributionResult };
         rowsAffected = attributionResult.attributed;
+      } else if (syncType === "pools_attribution") {
+        // pools.fun attribution retry lane - see sync/pools-attribution.ts.
+        // Keyless POST only; holds no signer.
+        const { attributePoolsLaunches } = await import("./pools-attribution.js");
+        const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
+        const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+        result = { ...poolsAttributionResult };
+        rowsAffected = poolsAttributionResult.attributed;
       } else if (syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();
@@ -260,6 +268,14 @@ export async function processNextRun(): Promise<boolean> {
       const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
       const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
       await syncRepo.completeRun(run.id, { ...attributionResult }, attributionResult.attributed);
+    } else if (job.syncType === "pools_attribution") {
+      // pools.fun attribution retry lane - BOTH dispatchers need this branch;
+      // the bridge job shipped with one missing and its timer silently fired
+      // nothing for weeks. See sync/pools-attribution.ts.
+      const { attributePoolsLaunches } = await import("./pools-attribution.js");
+      const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
+      const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+      await syncRepo.completeRun(run.id, { ...poolsAttributionResult }, poolsAttributionResult.attributed);
     } else if (job.syncType === "launch_form_expiry") {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();

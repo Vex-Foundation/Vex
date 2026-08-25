@@ -61,6 +61,7 @@ import type { ToolResult } from "../../../../../types.js";
 import { fail } from "../../../../handler-helpers.js";
 import { poolsFailureDetail } from "../../failure.js";
 import { settlePoolsLaunchFailure } from "./authorize.js";
+import { postPoolsLaunchAttribution, signAndStorePoolsAttestation } from "./attribute.js";
 import type { PoolsLaunchPlan } from "./plan.js";
 
 const TOOL_ID = "pools.launch_execute";
@@ -311,6 +312,10 @@ async function finalizeConfirmedPoolsLaunch(
 
   const launch = decoded.value;
   let intentMayConfirm = true;
+  // The VEX badge's proof. Signable ONLY here, while the launch's signing
+  // clients are open - see `./attribute.ts`. Never fails a launch, and stays
+  // `null` whenever the lane is disabled.
+  let attestSignature: string | null = null;
 
   // Read ONCE, before the bookkeeping, so the activity row and the reply quote
   // the same proven scale - or both say the scale is unknown.
@@ -341,6 +346,12 @@ async function finalizeConfirmedPoolsLaunch(
       sessionId: x.sessionId,
       protocolExecutionId: executionId,
     });
+
+    // IMMEDIATELY after the identity record, and inside the same try: the
+    // signature is stamped onto the row that was just written, so the sweep can
+    // retry the POST later from durable state. A store failure still returns
+    // the signature (see `./attribute.ts`) so the POST below can proceed.
+    attestSignature = await signAndStorePoolsAttestation(x.walletClient, launch.tokenAddress);
 
     // `event_role='token_launch'` requires BOTH executed legs: the native value
     // spent, and the token the launch produced. `devBuyOut` is PROVEN by
@@ -385,6 +396,20 @@ async function finalizeConfirmedPoolsLaunch(
   }
 
   const vexFee = await chargePoolsVexFee(x, executionId, feeRowId, outcome);
+
+  // LAST, after the money is settled: claiming the badge is cosmetic and must
+  // never sit in front of the fee leg or the launch's own result. Awaited, not
+  // floated - a rejection after this handler returns would be an unhandled
+  // rejection in the agent process.
+  //
+  // The leg promises never to throw; the launch must not depend on that promise
+  // being kept - same rule as the fee runner below. A badge that could throw
+  // here would turn a confirmed, charged launch into a failed tool call.
+  try {
+    await postPoolsLaunchAttribution(launch.tokenAddress, attestSignature, txHash);
+  } catch (err) {
+    logger.warn("pools.launch_execute.attribution_threw", { executionId, error: safeDetail(err) });
+  }
 
   const data = {
     summary:
