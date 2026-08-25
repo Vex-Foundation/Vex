@@ -167,3 +167,33 @@ describe("prepared-action approval intent", () => {
     expect(stored.previewJson.toolName).toBe("WalletSendConfirm");
   });
 });
+
+/**
+ * THE AGENT LANE'S REQUEST DIGEST (pass 6 / N3).
+ *
+ * It used to be Studio-only, and while it was, a CONSISTENT co-edit of the
+ * durable card AND the stored envelope passed every check the agent resume ran:
+ * the two agreed with each other because both had been changed, and nothing
+ * recorded what the pair looked like when the human approved. The digest is that
+ * record, so the lane that dispatches the same money-path tools stores it too.
+ */
+describe("the agent lane records the request digest at enqueue", () => {
+  it("stores the digest of the envelope it also stores, so a resume can recompute it", async () => {
+    const { computeRequestDigest } = await import(
+      "../../../../vex-agent/engine/core/approval-runtime/tool-call-envelope.js"
+    );
+    await enqueueApprovalIntent(
+      baseArgs({ trustedPreview: TRUSTED_PREVIEW, trustedExpiresAt: PREPARED_EXPIRY }),
+    );
+
+    const storedEnvelope = enqueueWith.mock.calls[0]![2] as Record<string, unknown>;
+    const stored = createWith.mock.calls[0]![1];
+    expect(stored.requestDigest).toBe(computeRequestDigest(storedEnvelope));
+    // Not the placeholder it used to be.
+    expect(stored.requestDigest).not.toBeNull();
+    // And it is genuinely a function of the envelope: any edit to it moves.
+    expect(computeRequestDigest({ ...storedEnvelope, args: { spoofed: true } })).not.toBe(
+      stored.requestDigest,
+    );
+  });
+});

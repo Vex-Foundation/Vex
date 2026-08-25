@@ -754,3 +754,64 @@ describe("the authority fence: Solana barriers at all three points", () => {
 // would be refused by row revalidation and prove nothing about the fence. The
 // "no barrier" cases at the top of each block are that proof: they reach a
 // signature and a submission through the identical setup.
+
+/**
+ * THE ANCHOR'S OWN CROSS-CHECK (pass 6 / N3).
+ *
+ * The three barriers above all compare the anchor against the session row LATER.
+ * This one is about the anchor's own construction: the approval gate decides
+ * from `InternalToolContext.sessionPermission`, and the fence defends
+ * `sessions.permission`. If those two disagree at capture time, the dispatch was
+ * admitted under one answer and would be fenced under the other, and there is no
+ * safe way to pick a winner - so it does not proceed at all.
+ */
+describe("the authority anchor refuses when the gate's permission is not the session's", () => {
+  beforeEach(async () => {
+    await resetDb();
+    await seedStudioGate();
+    resolveSelectedAddress.mockReset().mockReturnValue(WALLET);
+    resolveSigningWallet
+      .mockReset()
+      .mockReturnValue({ family: "eip155", address: WALLET, privateKey: `0x${"1".repeat(64)}` });
+  });
+
+  it("signs NOTHING and leaves the intent pending when the context is stale", async () => {
+    const sessionId = await sessionWithWallet();
+    // The durable authority moved to `restricted`; the tool context still
+    // carries the `full` it was built with, which is what let this call past
+    // the approval gate.
+    await execute("UPDATE sessions SET permission = 'restricted' WHERE id = $1", [sessionId]);
+    const intent = await insert(evmRow(sessionId, `wtx-${randomUUID()}`));
+    const { calls, deps } = evmDeps(sessionId, lockVex, "never");
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      context(sessionId),
+      deps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Nothing was signed");
+    expect(calls.signed).toBe(0);
+    expect(calls.sent).toBe(0);
+    // Nothing was claimed either: the intent is still preparable-again.
+    const row = await readIntent(intent.intentId);
+    expect(row?.status).toBe("pending");
+    expect(row?.tx_hash).toBeNull();
+  });
+
+  it("CONTROL: the same call proceeds when the two agree", async () => {
+    const sessionId = await sessionWithWallet();
+    const intent = await insert(evmRow(sessionId, `wtx-${randomUUID()}`));
+    const { calls, deps } = evmDeps(sessionId, lockVex, "never");
+
+    const result = await handleWalletEvmTransactionConfirm(
+      { intentId: intent.intentId },
+      context(sessionId),
+      deps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(calls.signed).toBe(1);
+  });
+});

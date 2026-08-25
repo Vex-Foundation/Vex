@@ -86,8 +86,8 @@ import { claimResumeContinuation } from "../../continuation.js";
 import { extractToolCall, shortSha256, summarizeErrorForLog } from "../../helpers.js";
 import type { ApproveSnapshot } from "../../snapshot.js";
 import {
+  approvalRequestDigestMatches,
   checkApprovalManifestIdentity,
-  computeRequestDigest,
 } from "../../tool-call-envelope.js";
 import {
   ApprovalPostDecisionError,
@@ -230,22 +230,18 @@ export async function applyStudioApproveSideEffects(
       output: identity.refusal,
     });
   }
-  const storedDigest = row.request_digest;
-  if (storedDigest !== null) {
-    const liveDigest = computeRequestDigest(row.queue_tool_call);
-    if (liveDigest !== storedDigest) {
-      logger.warn("engine.studio.request_digest_mismatch", {
-        approvalId,
-        projectId,
-      });
-      return settleDispatched(approvalId, snapshot, continuation, {
-        success: false,
-        output: studioRefusalText(
-          "the stored request no longer matches the one this approval was "
-          + "granted for",
-        ),
-      });
-    }
+  if (!approvalRequestDigestMatches(row.queue_tool_call, row.request_digest)) {
+    logger.warn("engine.studio.request_digest_mismatch", {
+      approvalId,
+      projectId,
+    });
+    return settleDispatched(approvalId, snapshot, continuation, {
+      success: false,
+      output: studioRefusalText(
+        "the stored request no longer matches the one this approval was "
+        + "granted for",
+      ),
+    });
   }
 
   // 4. Dispatch through the SAME admission the original call took, with the

@@ -41,6 +41,10 @@ import { parseAccount } from "viem/accounts";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
+  acquireEvmNonceOwner,
+  type EvmNonceOwnerLease,
+} from "@tools/evm-chains/nonce-owner.js";
+import {
   waitForReceiptWithRetry,
   type ReceiptWaitRetryOptions,
 } from "@tools/evm-chains/receipt-guard.js";
@@ -184,6 +188,10 @@ function assertWithinFeeBounds(
  *
  * THE ORDER IS THE CONTRACT, and it is what the tests assert:
  *
+ *   0. THE NONCE OWNER for `(address, chain.id)` is taken FIRST, before the
+ *      nonce is filled, and held through step 5 and the submit
+ *      (`./nonce-owner.ts`, which also documents the lock order against the
+ *      session control lock the fence takes inside this hold).
  *   1. KEYLESS PREPARATION. `address` + `chain` are the preparation identity -
  *      enough for `eth_estimateGas`, for `prepareTransactionRequest` (nonce and
  *      fees) and for the fee-bound refusal, and never enough to sign.
@@ -317,6 +325,47 @@ export async function signStageBroadcast(
   receiptWaitRetry?: ReceiptWaitRetryOptions,
   bounds?: StagedFeeBounds,
 ): Promise<StagedBroadcastOutcome> {
+  // THE NONCE OWNER, on the DEFERRED ARM ONLY (`nonce-owner.ts`). Taken BEFORE
+  // the nonce is filled and held across the pre-sign fence, the signature and
+  // the staging hook, so two concurrent confirms for one wallet cannot read the
+  // same pending count from the node and sign the same nonce. The body releases
+  // it as soon as the submit has settled; this `finally` is the idempotent
+  // backstop that covers every refusal, throw and early return before that.
+  //
+  // The EAGER arm takes no owner and is unchanged in every respect: its thirteen
+  // venue call sites keep their exact prior behaviour, including their
+  // concurrency.
+  if (!isDeferred(signer)) {
+    return await runStagedBroadcast(
+      publicClient, signer, txParams, hooks, null, priorLeg, receiptWaitRetry, bounds,
+    );
+  }
+  const nonceOwner = await acquireEvmNonceOwner(signer.address, signer.chain.id);
+  try {
+    return await runStagedBroadcast(
+      publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, bounds,
+    );
+  } finally {
+    nonceOwner.release();
+  }
+}
+
+/**
+ * The staged sequence itself. `nonceOwner` is the lease the deferred arm holds
+ * (`null` on the eager arm); it is released the instant the submit settles, so
+ * the bounded receipt wait never serializes one wallet's next transaction on
+ * block time.
+ */
+async function runStagedBroadcast(
+  publicClient: PublicClient<Transport, Chain>,
+  signer: StagedSigner,
+  txParams: StagedTxParams,
+  hooks: StagedBroadcastHooks,
+  nonceOwner: EvmNonceOwnerLease | null,
+  priorLeg?: ConfirmedPriorLeg,
+  receiptWaitRetry?: ReceiptWaitRetryOptions,
+  bounds?: StagedFeeBounds,
+): Promise<StagedBroadcastOutcome> {
   const deferred = isDeferred(signer) ? signer : null;
   const eager: WalletClient<Transport, Chain, Account> | null =
     deferred === null ? (signer as WalletClient<Transport, Chain, Account>) : null;
@@ -413,6 +462,13 @@ export async function signStageBroadcast(
     await publicClient.sendRawTransaction({ serializedTransaction });
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "send", reason: describeFailureForLog(err) };
+  } finally {
+    // THE SUBMIT HAS SETTLED, in either direction. The raw transaction either
+    // reached the node - which moves the pending count the next preparation
+    // reads - or it did not, and in both cases this wallet's nonce is no longer
+    // being decided here. Released before the receipt wait for exactly that
+    // reason; the caller's `finally` makes a second release a no-op.
+    nonceOwner?.release();
   }
 
   // Best-effort bookkeeping (per this function's contract) — a throw here

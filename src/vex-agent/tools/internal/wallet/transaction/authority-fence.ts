@@ -81,7 +81,7 @@ import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-stat
 import { studioDispatchPreflightAllows } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-gate.js";
 import logger from "@utils/logger.js";
 
-import { refuse, type TransactionOutcome } from "./refusal.js";
+import { accept, refuse, type TransactionOutcome } from "./refusal.js";
 
 /** Where the fence was asked. Structural, and the only thing a log line names. */
 export type AuthorityFencePoint = "claim" | "pre_sign" | "pre_submit";
@@ -166,10 +166,40 @@ export async function captureAuthorityAnchor(input: {
   readonly family: WalletTransactionFamily;
   readonly walletAddress: string;
   readonly intentId: string;
-}): Promise<AuthorityAnchor> {
+  /**
+   * The permission the APPROVAL GATE just decided under
+   * (`InternalToolContext.sessionPermission`). The anchor's own permission is
+   * read from the session row; if the two disagree, the gate that let this
+   * dispatch past the approval check was applied to a different authority than
+   * the one the fence would then defend, and there is no safe way to pick a
+   * winner between them.
+   */
+  readonly gatePermission: string;
+}): Promise<TransactionOutcome<AuthorityAnchor>> {
   const current = await withSessionControlLock(input.sessionId, (client) =>
     readAuthorityWith(client, input.sessionId, input.family));
-  return {
+  // ONE FIELD, ONE REFUSAL. `sessionPermission` is the value the tool context
+  // carried into the approval decision; `current.permission` is the durable row
+  // the fence compares against at claim, pre-sign and pre-submit. A dispatch
+  // whose two halves of "which permission is this?" disagree - a permission
+  // edited between context construction and this capture, or a context built
+  // from a stale mirror - would be gated under one answer and fenced under the
+  // other, so it does not proceed at all.
+  if (current.permission === null || current.permission !== input.gatePermission) {
+    logger.warn("wallet.transaction.authority_anchor_permission_mismatch", {
+      intentId: input.intentId,
+      sessionId: input.sessionId,
+    });
+    return refuse<AuthorityAnchor>(
+      "forbidden_field",
+      "Refusing to sign: the permission this call was admitted under is not the permission this "
+      + "session currently signs under, so the approval decision and the authority check disagree "
+      + "about what is allowed. Nothing was signed and no funds moved. Prepare the transaction "
+      + "again under the current permission.",
+      { intentId: input.intentId },
+    );
+  }
+  return accept<AuthorityAnchor>({
     sessionId: input.sessionId,
     family: input.family,
     walletAddress: input.walletAddress,
@@ -177,7 +207,7 @@ export async function captureAuthorityAnchor(input: {
     permission: current.permission,
     dispatchGeneration: current.dispatchGeneration,
     intentId: input.intentId,
-  };
+  });
 }
 
 /**

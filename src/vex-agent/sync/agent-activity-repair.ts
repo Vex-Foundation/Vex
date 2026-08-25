@@ -452,6 +452,13 @@ async function applyObservation(
       // this hash has no receipt. It does NOT establish that nothing was spent
       // or that a retry is safe — see the pending reason's own doc — so the only
       // thing that follows is that we stop tracking it as in flight.
+      //
+      // CONCLUSIVE, so it does NOT wait out the non-inclusion window: the node
+      // said a transaction from this sender with this nonce is already included,
+      // and this hash has no receipt, so this hash can never land. The CAS
+      // enforces that distinction itself (`markSupersededUnproven` guard 5); the
+      // 90 s money gate still applies. The clock is still STARTED so the row can
+      // say when the run of non-inclusion began.
       await clearVerificationStall(event.id, claimToken);
       await noteNonInclusionObserved(event.id, claimToken);
       await notePendingReason(event.id, "nonce_superseded", { kind: "claim", claimToken });

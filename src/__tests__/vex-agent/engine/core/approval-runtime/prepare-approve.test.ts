@@ -240,6 +240,8 @@ interface SnapshotRowOverrides {
   // approve/dispatch characterization stays byte-identical (no drift).
   queue_permission_at_enqueue?: "restricted" | "full";
   session_permission_live?: "restricted" | "full";
+  /** The digest recorded at enqueue; a pre-digest row carries none. */
+  request_digest?: string | null;
 }
 
 function buildSnapshotRow(o: SnapshotRowOverrides = {}): Record<string, unknown> {
@@ -261,6 +263,9 @@ function buildSnapshotRow(o: SnapshotRowOverrides = {}): Record<string, unknown>
       command: "wallet_send_confirm",
       args: { to: "0xabc", amount: "1.0" },
     },
+    // A pre-digest row records no digest, which `approvalRequestDigestMatches`
+    // reads as "nothing to compare" rather than as a mismatch.
+    request_digest: o.request_digest ?? null,
     queue_tool_call_id: "call-1",
     queue_permission_at_enqueue: o.queue_permission_at_enqueue ?? "restricted",
     session_permission_live: o.session_permission_live ?? "restricted",

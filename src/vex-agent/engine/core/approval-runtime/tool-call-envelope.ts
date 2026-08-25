@@ -375,6 +375,24 @@ function buildIdentityRefusal(cause: string): string {
  * `undefined` cannot survive a JSONB round trip and are dropped on both sides,
  * so dropping them here keeps enqueue and commit in agreement.
  */
+/**
+ * Does the stored envelope still hash to the digest recorded at enqueue?
+ *
+ * ONE OWNER for the COMPARISON as well as for the hash, because the null rule is
+ * policy and not a formatting detail: a `null` stored digest is a row written
+ * before this column existed, and refusing those would refuse historical
+ * approvals that nothing has tampered with. Every lane that dispatches an
+ * approved call asks THIS function, so the two lanes cannot drift into two
+ * different answers about what an unrecorded digest means.
+ */
+export function approvalRequestDigestMatches(
+  rawToolCall: Record<string, unknown>,
+  storedDigest: string | null,
+): boolean {
+  if (storedDigest === null) return true;
+  return computeRequestDigest(rawToolCall) === storedDigest;
+}
+
 export function computeRequestDigest(envelope: Record<string, unknown>): string {
   return createHash("sha256")
     .update(JSON.stringify(canonicalizeJsonValue(envelope)))

@@ -126,6 +126,9 @@ function approvedMissionSnapshot() {
       mission_run_id: MISSION_RUN_ID,
       tool_call_id: null,
       queue_tool_call_id: "tc-1",
+      // The row as the snapshot SELECT returns it: a pre-digest row records none,
+      // which `approvalRequestDigestMatches` reads as "nothing to compare".
+      request_digest: null,
       queue_tool_call: { command: "kyberswap_swap", args: {} },
       queue_permission_at_enqueue: "restricted",
     },
@@ -148,6 +151,9 @@ function approvedChatSnapshot() {
       mission_run_id: null,
       tool_call_id: null,
       queue_tool_call_id: "tc-1",
+      // The row as the snapshot SELECT returns it: a pre-digest row records none,
+      // which `approvalRequestDigestMatches` reads as "nothing to compare".
+      request_digest: null,
       queue_tool_call: { command: "kyberswap_swap", args: {} },
       queue_permission_at_enqueue: "restricted",
     },

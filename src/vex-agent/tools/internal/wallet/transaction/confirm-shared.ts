@@ -360,12 +360,17 @@ export async function gateConfirm(
   // The ANCHOR: the authority as it stands now, captured before any key
   // material exists and compared at the claim, before signing, and before
   // submission.
-  const anchor = await captureAuthorityAnchor({
+  const anchored = await captureAuthorityAnchor({
     sessionId: intent.sessionId,
     family: intent.family,
     walletAddress: signerAddress,
     intentId: intent.intentId,
+    // The permission the approval gate above was applied to. The anchor refuses
+    // when it disagrees with the session row it reads under the lock.
+    gatePermission: context.sessionPermission,
   });
+  if (!anchored.ok) return { kind: "return", result: refusalToResult(anchored.refusal) };
+  const anchor = anchored.value;
 
   const loadSigner = (): SignerLoad => {
     let signer: ChainWallet;

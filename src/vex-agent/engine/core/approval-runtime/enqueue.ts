@@ -208,8 +208,14 @@ export async function enqueueApprovalIntentWithGate(
   // INSIDE it, which is what folds the proposal digest into the canonical
   // request digest rather than bolting a second digest on beside it.
   const envelope = buildApprovalToolCall(input.toolName, input.toolArgs, binding);
-  const requestDigest =
-    input.origin === "studio_mcp" ? computeRequestDigest(envelope) : null;
+  // BOTH LANES, not Studio only. The digest was introduced for the Studio
+  // dispatch, and while the agent lane stored `null` a CONSISTENT co-edit of
+  // `approval_intents.preview_json` AND `approval_queue.tool_call` passed every
+  // check the agent resume ran: the card matched the envelope because both had
+  // been changed together, and nothing else recorded what the pair looked like
+  // when the human approved. The digest is that record, and the agent lane
+  // dispatches the same money-path tools, so it gets the same one.
+  const requestDigest = computeRequestDigest(envelope);
 
   const outcome = await withTransaction(async (client): Promise<ApprovalEnqueueOutcome> => {
     const verdict = await gate(client);
