@@ -103,3 +103,71 @@ of wall-clock config.
 - Empirical probes owed (stage A-test): cursor/amp/kiro/copilot/warp
   timeouts, vibe path, grok forbidden fields, per-client progressToken
   emission.
+
+## Addendum 2026-08-25 - internet re-verification (owner-ordered)
+
+A second primary-source pass (vendor docs, npm registry, live JSON
+schemas, vendor issue trackers; citations in the session record) over the
+UNVERIFIED cells and the corrected rows. Where this addendum disagrees
+with a row above, THE ADDENDUM WINS.
+
+- warp - THE LAUNCH PREMISE IS REFUTED. `oz` is vendor-deprecated
+  (confirmed), but the current `warp` CLI has NO `--mcp` flag at all
+  (its reference lists only api-key/auto-approve/resume/version flags;
+  MCP is managed in-session via the `/mcp` command), and the CLI reads
+  MCP servers "from its global config file only. Project-scoped MCP
+  config files in repositories are not detected" (macOS
+  `~/.warp_cli/.mcp.json`, Linux `$XDG_CONFIG_HOME/warp-terminal/cli/`,
+  Windows `%LOCALAPPDATA%\warp\Warp\config\cli\`). The launch-mode
+  design (generate a file + document a flag) has nothing to attach to.
+  The Warp APP (not the CLI) does read a project-scoped
+  `.warp/.mcp.json`, gated on explicit in-app manual approval (an
+  anti-clone-attack measure). => A5 consequence: warp is UNSUPPORTED as
+  a CLI target (user-global config only, same class as cline); the
+  app-file `.warp/.mcp.json` with a "requires manual approval in Warp"
+  note is the only honest integration and is an OWNER CALL. Timeout
+  still undocumented.
+- vibe - path VERIFIED: project `./.vibe/config.toml` (user
+  `~/.vibe/config.toml`), loaded ONLY when the working directory is
+  trusted (silent when not). `name` is a hard required field (source:
+  `vibe/core/config/models.py`, `name: str = Field(...)`);
+  `tool_timeout_sec: float = 60.0`, `startup_timeout_sec: float = 10.0`
+  (seconds, float) -> SET tool_timeout_sec 3900. The path probe owed
+  above is settled; the trust gate joins the honest-DTO rule.
+- copilot - timeout VERIFIED: per-server `timeout` in MILLISECONDS,
+  default 180000 (180 s - far below the 65-minute approval wait), so
+  the writer MUST set `timeout: 3900000` explicitly. Vendor tracker
+  (copilot-cli#1378, closed): a per-server timeout was lost after a
+  `notifications/tools/list_changed` and reverted to 180 s - re-verify
+  at the installed version if our server ever emits that notification.
+  Both project paths confirmed (`.mcp.json` walking up to repo root,
+  precedence over `.github/mcp.json` at the same level); project
+  servers load only after folder trust and are SILENTLY skipped in
+  untrusted dirs.
+- grok - forbidden fields VERIFIED: the project `.grok/config.toml`
+  contributes `[mcp_servers]`, `[plugins]` AND `[permission]` - a
+  project file CAN grant tool authority (`allow` rules), which is
+  exactly the rule-09 violation class. NEVER write `[permission]`
+  (any `allow`), never touch `[ui] permission_mode` (user-scope).
+  `tool_timeout_sec` default 6000 s and `startup_timeout_sec` 30
+  confirmed in the vendor settings reference.
+- kimi - confirmed launch-scoped (no project path; `~/.kimi/mcp.json`
+  or `--mcp-config-file`), global `[mcp.client] tool_call_timeout_ms`
+  default 60000 confirmed. MINOR SOURCES-DISAGREE: the rebranded "Kimi
+  Code" docs reportedly use `~/.kimi-code/` and per-server overrides;
+  the MoonshotAI/kimi-cli repo does not - irrelevant to the writer
+  (still no project scope), resolve only if we ever READ the path.
+- opencode - all six schema claims re-confirmed against the LIVE
+  `https://opencode.ai/config.json` ($defs.McpLocalConfig) and npm
+  (`opencode-ai` latest 1.18.23; no v2 line exists).
+- claude-code - two precision corrections: `MCP_TOOL_TIMEOUT` default
+  is ~28 h (confirmed) and is a HARD wall-clock that progress
+  notifications do NOT extend - progress resets only the IDLE timer
+  (30 min stdio; `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` ms override, 0
+  disables, v2.1.187+; stdio exempt before v2.1.203; a per-server
+  `timeout` >= 1000 floors the idle window on v2.1.203+). Semantics
+  are version-gated - pin against the installed CLI at build time.
+- STILL-UNVERIFIABLE after this pass (no documented tool-call
+  timeout): warp, cursor, amp, kiro. Docs absence is not binary
+  absence: the A-test live probe (deliberately slow stdio tool,
+  measure the abort) remains the honest resolution.
