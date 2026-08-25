@@ -32,6 +32,7 @@ import {
 } from "./order-evidence.js";
 import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
+import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -47,6 +48,7 @@ const ACCOUNT_AUTH_TTL_SECONDS = 10 * 60;
 const PROVIDER_OUTCOME_ACTIVE_ATTEMPTS = 3;
 const PROVIDER_OUTCOME_MIN_DELAY_MS = 100;
 const PROVIDER_OUTCOME_MAX_DELAY_MS = 2_000;
+const FRESH_PUBLIC_READ = { fresh: true } as const;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
@@ -141,8 +143,13 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, unsignedOrder, deps } = input;
+  assertLighterTradingApiKeyIndexAllowed(plan.environment, plan.apiKeyIndex);
   assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
   await revalidateLiveOrderState(plan, deps);
+  // Prove the exact registered provider key and current nonce before asking
+  // the encrypted vault for private key material. Besides minimizing secret
+  // exposure time, this keeps every provider-read refusal truthful: no private
+  // trading key has been loaded when public identity evidence is unavailable.
   const providerCredential = await readLiveProviderCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(
     plan.credentialReference,
@@ -157,15 +164,17 @@ export async function executeApprovedLighterCreateOrder(input: {
     deps.signer,
   );
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
-  await assertProviderOutcomeRepairReady(plan, unsignedOrder, auth.authToken, deps);
-  const observedNonce = await deps.nonceState.recordExecutionObserved({
-    environment: plan.environment,
-    accountIndex: plan.accountIndex,
-    apiKeyIndex: plan.apiKeyIndex,
-    nonce: providerCredential.nextNonce,
-    publicKey: providerCredential.publicKey,
-    transactionTime: providerCredential.transactionTime,
-  });
+  const [, observedNonce] = await Promise.all([
+    assertProviderOutcomeRepairReady(plan, unsignedOrder, auth.authToken, deps),
+    deps.nonceState.recordExecutionObserved({
+      environment: plan.environment,
+      accountIndex: plan.accountIndex,
+      apiKeyIndex: plan.apiKeyIndex,
+      nonce: providerCredential.nextNonce,
+      publicKey: providerCredential.publicKey,
+      transactionTime: providerCredential.transactionTime,
+    }),
+  ]);
   if (observedNonce === null) {
     throw blockedBeforeSubmit(
       "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted. "
@@ -333,15 +342,15 @@ async function revalidateLiveOrderState(
       deps.client.getMarketDetails(plan.environment, {
         marketId: plan.marketIndex,
         filter: "all",
-      }),
+      }, FRESH_PUBLIC_READ),
       deps.client.getOrderBookOrders(plan.environment, {
         marketId: plan.marketIndex,
         limit: 250,
-      }),
+      }, FRESH_PUBLIC_READ),
       deps.client.getAccount(plan.environment, {
         by: "index",
         value: plan.accountIndex,
-      }),
+      }, FRESH_PUBLIC_READ),
     ]);
   } catch {
     throw blockedBeforeSubmit(
@@ -392,11 +401,11 @@ async function readLiveProviderCredential(
       deps.client.getApiKeys(plan.environment, {
         accountIndex: plan.accountIndex,
         apiKeyIndex: plan.apiKeyIndex,
-      }),
+      }, FRESH_PUBLIC_READ),
       deps.client.getNextNonce(plan.environment, {
         accountIndex: plan.accountIndex,
         apiKeyIndex: plan.apiKeyIndex,
-      }),
+      }, FRESH_PUBLIC_READ),
     ]);
   } catch {
     throw blockedBeforeSubmit(

@@ -195,6 +195,7 @@ export async function reserveLighterApiKeySlotWith(
     [input.environment, input.accountIndex],
   );
   const apiKeyIndex = selectAvailableLighterApiKeyIndex(
+    input.environment,
     input.observation,
     held.rows.map((row) => row.api_key_index),
   );

@@ -6,6 +6,7 @@ import {
   type LighterEnvironment,
 } from "../constants.js";
 import {
+  isLighterTradingApiKeyIndexAllowed,
   LIGHTER_TRADING_API_KEY_INDEX_MAX,
   LIGHTER_TRADING_API_KEY_INDEX_MIN,
 } from "../trading-credentials.js";
@@ -107,8 +108,9 @@ export function inspectLighterApiKeySlots(
   };
 }
 
-/** Select the lowest conservatively usable slot after provider and DB evidence. */
+/** Select the lowest environment-eligible slot after provider and DB evidence. */
 export function selectAvailableLighterApiKeyIndex(
+  environment: LighterEnvironment,
   observation: LighterApiKeySlotObservation,
   locallyReservedApiKeyIndexes: readonly number[],
 ): number {
@@ -133,7 +135,10 @@ export function selectAvailableLighterApiKeyIndex(
     apiKeyIndex <= LIGHTER_TRADING_API_KEY_INDEX_MAX;
     apiKeyIndex += 1
   ) {
-    if (!unavailable.has(apiKeyIndex)) return apiKeyIndex;
+    if (
+      isLighterTradingApiKeyIndexAllowed(environment, apiKeyIndex)
+      && !unavailable.has(apiKeyIndex)
+    ) return apiKeyIndex;
   }
 
   throw new VexError(

@@ -26,10 +26,11 @@ import {
   LIGHTER_AGENT_MARKET_PAGE_MAX,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_DEFAULT,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX,
-  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX,
-  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN,
   LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT,
   LIGHTER_AGENT_RECENT_TRADES_LIMIT_MAX,
+  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX,
+  LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN,
+  LIGHTER_ORDER_PREVIEW_MARKET_TYPES,
 } from "../params.js";
 
 const ENVIRONMENT_PARAM: ProtocolParamDef = {
@@ -59,7 +60,15 @@ const MARKET_SYMBOL_PARAM: ProtocolParamDef = {
   key: "marketSymbol",
   type: "string",
   description:
-    "Optional market symbol such as ETH. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets.",
+    "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+};
+
+const ORDER_PREVIEW_MARKET_TYPE_PARAM: ProtocolParamDef = {
+  key: "marketType",
+  type: "string",
+  enum: LIGHTER_ORDER_PREVIEW_MARKET_TYPES,
+  description:
+    "Optional exact Lighter product type for this order preview: perp or spot. Include it when resolving marketSymbol so a spot request cannot silently select the same asset's perpetual market. With marketId, the live market detail must match this value or the preview is refused.",
 };
 
 const MARKET_FILTER_PARAM: ProtocolParamDef = {
@@ -81,7 +90,7 @@ const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
   key: "accountIndex",
   type: "number",
   description:
-    "Optional account index. Omit to use the account embedded in the read-only token. Single-account tokens refuse mismatches.",
+    "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
 };
 
 const REQUIRED_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
@@ -235,7 +244,7 @@ const ONBOARDING_REQUIRED_COLLATERAL_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
   description:
-    "Optional intended position collateral in human settlement-asset decimals (USDC on Core or USDG on RHC, both 6 decimals), for example \"11\". Pass a known trade amount with marketSymbol or marketId so Vex checks the live market minimum before deposit preparation, then compares live Lighter collateral with the wallet's directly depositable settlement asset. Omit only during amount-free setup discovery. Never ask the user for account or API-key indexes.",
+    "Optional target collateral for an explicitly requested trade, in human settlement-asset decimals (USDC on Core or USDG on RHC, both 6 decimals), for example \"11\". This is not a direct deposit amount. Never pass a user's request to deposit or fund an exact amount here; call lighter__deposit_prepare with that amount unchanged instead. Pass a known trade amount with marketSymbol or marketId so Vex checks the live market minimum before comparing current collateral with the target. Omit during amount-free setup discovery. Never ask the user for account or API-key indexes.",
 };
 
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
@@ -245,7 +254,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report the selected Vex wallet's complete managed Lighter readiness on Core or Robinhood Chain and the minimal setup steps still required. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. This tool moves no funds and signs nothing.",
+      "Report the selected Vex wallet's managed Lighter trade readiness on Core or Robinhood Chain and the minimal setup steps still required. Do not use this tool to resize a direct deposit request: when the user says deposit or fund an explicit amount, call lighter__deposit_prepare with that amount unchanged. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: for an explicitly requested trade it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic trade-funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible trade funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. This tool moves no funds and signs nothing.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -335,7 +344,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated open Lighter orders for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -348,7 +357,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated inactive Lighter order history for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for filled, cancelled, inactive, or historical orders. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated inactive Lighter order history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for filled, cancelled, inactive, or historical orders. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -361,7 +370,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated Lighter account trade history for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated Lighter account trade history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -387,7 +396,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Phase 1 Lighter IOC market-order preview for a future exact matching order. The price is the user's worst acceptable execution price. Prefer marketSymbol over marketId when the user names an asset. Omit accountIndex, apiKeyIndex, orderType, timeInForce, and reduceOnly unless the user explicitly overrides them; market and immediate-or-cancel are the only enabled values. If buy/sell is missing, ask for that direction in plain language. Returns previewId, the persisted preview identity, exact integer and display amounts, live market context, risk notes, and approvalReady. Inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and managed Lighter setup must finish before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+      "Create a live-data-backed Phase 1 Lighter perpetual or spot IOC market-order preview for a future exact matching order. The price is the user's worst acceptable execution price. Prefer marketSymbol over marketId when the user names an asset, and include marketType=perp or marketType=spot whenever the product is stated or the symbol can exist in both books; Vex refuses a product mismatch instead of silently switching markets. Omit accountIndex, apiKeyIndex, orderType, timeInForce, and reduceOnly unless the user explicitly overrides them; market and immediate-or-cancel are the only enabled values. Spot previews must use reduceOnly=false. If buy/sell is missing, ask for that direction in plain language. Returns previewId, the persisted preview identity, exact integer and display amounts, live market context, risk notes, and approvalReady. Inspect approvalReady: if true, say the next step is the Prepare trade approval button in the host UI and do not print internal tool names; if false, say the preview is read-only and managed Lighter setup must finish before approval preparation. Do not ask to place, execute, submit, or broadcast from the preview result. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -396,6 +405,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       API_KEY_INDEX_PARAM,
       MARKET_ID_OPTIONAL_PARAM,
       MARKET_SYMBOL_PARAM,
+      ORDER_PREVIEW_MARKET_TYPE_PARAM,
       ORDER_SIDE_PARAM,
       BASE_AMOUNT_PARAM,
       ORDER_PRICE_PARAM,
@@ -408,9 +418,11 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     atMostOne: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     atLeastOneOf: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     exampleParams: {
-      marketSymbol: "ETH",
+      environment: "core",
+      marketSymbol: "ETH/USDC",
+      marketType: "spot",
       side: "buy",
-      baseAmountIn: "0.001",
+      baseAmountIn: "0.005",
       price: "3000",
       orderType: "market",
       timeInForce: "immediate-or-cancel",
@@ -445,13 +457,13 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Reconcile one durable Core USDC or RHC USDG withdrawal from exact evidence. Use when a submitted withdrawal is pending, claimable, completed, ambiguous, or needs final-delivery proof. It reads the environment-specific TxType 13 transaction, authenticated paginated history, current gateway pending balance, and any canonical destination receipt and block. It adopts only one exact amount/time/history identity and marks delivery only after a matching gateway event, exact token transfer to the owner, canonical block membership, zero pending balance, and 12 confirmations. Returns durable execution, approval, history, claim, destination, confirmation, and next-action fields. Missing or contradictory evidence never triggers a retry; omit intentId for the latest session withdrawal.",
+      "Reconcile one durable Core USDC or RHC USDG withdrawal from exact evidence. Use when a submitted withdrawal is pending, claimable, completed, ambiguous, or needs final-delivery proof. It reads the environment-specific TxType 13 transaction, authenticated paginated history, current gateway pending balance, and any canonical destination receipt and block. It adopts only one exact amount/time/history identity and marks delivery only after a matching gateway event, exact token transfer to the owner, canonical block membership, zero pending balance, and 12 confirmations. Returns durable execution, approval, history, claim, destination, confirmation, and next-action fields. Missing or contradictory evidence never triggers a retry; omit intentId to recover the latest withdrawal for the selected wallet, including one created in an earlier session.",
     mutating: false,
     actionKind: "read",
     params: [{
       key: "intentId",
       type: "string",
-      description: "Optional session-scoped Core or RHC withdrawal intent id from lighter__withdraw_prepare or lighter__withdraw.",
+      description: "Optional Core or RHC withdrawal intent id from lighter__withdraw_prepare or lighter__withdraw. Exact ids may be recovered from an earlier session only when they belong to the selected wallet.",
     }],
     exampleParams: {},
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.status"],

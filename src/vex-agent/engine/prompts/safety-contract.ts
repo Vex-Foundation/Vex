@@ -86,9 +86,11 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 2. **Fresh balance before each mutation.** After a successful swap/bridge, read fresh live balances before the next mutation. Use \`WalletBalances\` — it covers every wallet family in one call. Never chain multiple swaps based on estimated post-tx balances. **Units:** \`balance\` and other machine fields are RAW base units beside a \`decimals\` field — the human amount is raw ÷ 10^decimals (balance "11387967888002780" at decimals 18 is 0.0114 ETH, not eleven quadrillion). Convert before sizing anything, never show a raw figure to the user, and pass amounts as HUMAN decimal strings (e.g. "0.0026") — never raw units — to \`amountIn\` and every amount parameter.
 
-3. **Address-first for EVM mutations.** Resolve exact token contract addresses with \`TokenFind(query="SYMBOL", chainIds="...")\` BEFORE passing them to \`SwapExecute\` or \`BridgeExecute\`. Pass the address, not the symbol.
+3. **Direct amounts are exact transfers.** If the user asks to deposit, transfer, bridge, or withdraw 5 tokens, move exactly 5 tokens. Never subtract an existing destination or protocol balance and reinterpret the request as "top up to 5." Calculate a balance gap only when the user explicitly asks to reach a target total, or when an explicitly identified trade requires a collateral target.
 
-4. **Check before swap.** Before any EVM \`SwapExecute\`, run \`TokenCheck(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
+4. **Address-first for EVM mutations.** Resolve exact token contract addresses with \`TokenFind(query="SYMBOL", chainIds="...")\` BEFORE passing them to \`SwapExecute\` or \`BridgeExecute\`. Pass the address, not the symbol.
+
+5. **Check before swap.** Before any EVM \`SwapExecute\`, run \`TokenCheck(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
 
    What the runtime does and does not do here: it independently blocks a CONFIRMED honeypot at quote time, so that one class cannot slip past you. It does NOT verify that you ran \`TokenCheck\`, and it cannot see fee-on-transfer tax before you commit. Catching the tax — and everything \`TokenCheck\` reports short of a confirmed honeypot — is yours.`;
 }

@@ -155,6 +155,89 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("filter")).toBe("perp");
   });
 
+  it("retains default caching for normal market-detail reads", async () => {
+    mockOk({
+      code: 200,
+      order_book_details: [{ ...MARKET, last_trade_price: 3000 }],
+      spot_order_book_details: [],
+    });
+
+    const first = await client.getMarketDetails("core", { marketId: 0, filter: "all" });
+    const second = await client.getMarketDetails("core", { marketId: 0, filter: "all" });
+
+    expect(first.order_book_details[0]?.last_trade_price).toBe(3000);
+    expect(second.order_book_details[0]?.last_trade_price).toBe(3000);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("bypasses completed public-read cache entries when a fresh read is required", async () => {
+    mockOk({
+      code: 200,
+      order_book_details: [{ ...MARKET, last_trade_price: 3000 }],
+      spot_order_book_details: [],
+    });
+    mockOk({
+      code: 200,
+      order_book_details: [{ ...MARKET, last_trade_price: 3001 }],
+      spot_order_book_details: [],
+    });
+    await client.getMarketDetails("core", { marketId: 0, filter: "all" });
+    const market = await client.getMarketDetails(
+      "core",
+      { marketId: 0, filter: "all" },
+      { fresh: true },
+    );
+
+    mockOk({ code: 200, total_asks: 1, asks: [{ ...ORDER, price: "3000" }], total_bids: 0, bids: [] });
+    mockOk({ code: 200, total_asks: 1, asks: [{ ...ORDER, price: "3001" }], total_bids: 0, bids: [] });
+    await client.getOrderBookOrders("core", { marketId: 0, limit: 25 });
+    const book = await client.getOrderBookOrders(
+      "core",
+      { marketId: 0, limit: 25 },
+      { fresh: true },
+    );
+
+    mockOk({ code: 200, accounts: [{ index: 42, available_balance: "10", positions: [], assets: [] }] });
+    mockOk({ code: 200, accounts: [{ index: 42, available_balance: "11", positions: [], assets: [] }] });
+    await client.getAccount("core", { by: "index", value: 42 });
+    const account = await client.getAccount(
+      "core",
+      { by: "index", value: 42 },
+      { fresh: true },
+    );
+
+    mockOk({
+      code: 200,
+      api_keys: [{ account_index: 42, api_key_index: 7, nonce: 1, public_key: "a", transaction_time: 1 }],
+    });
+    mockOk({
+      code: 200,
+      api_keys: [{ account_index: 42, api_key_index: 7, nonce: 2, public_key: "b", transaction_time: 2 }],
+    });
+    await client.getApiKeys("core", { accountIndex: 42, apiKeyIndex: 7 });
+    const keys = await client.getApiKeys(
+      "core",
+      { accountIndex: 42, apiKeyIndex: 7 },
+      { fresh: true },
+    );
+
+    mockOk({ code: 200, nonce: 1 });
+    mockOk({ code: 200, nonce: 2 });
+    await client.getNextNonce("core", { accountIndex: 42, apiKeyIndex: 7 });
+    const nonce = await client.getNextNonce(
+      "core",
+      { accountIndex: 42, apiKeyIndex: 7 },
+      { fresh: true },
+    );
+
+    expect(market.order_book_details[0]?.last_trade_price).toBe(3001);
+    expect(book.asks[0]?.price).toBe("3001");
+    expect(account.accounts[0]?.available_balance).toBe("11");
+    expect(keys.api_keys[0]?.public_key).toBe("b");
+    expect(nonce.nonce).toBe(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(10);
+  });
+
   it("reads public L1 deposit metadata and exact transaction evidence", async () => {
     mockOk({
       contract_address: "0x1111111111111111111111111111111111111111",
@@ -239,6 +322,41 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("l1_address")).toBe("0x3333333333333333333333333333333333333333");
     expect(url.searchParams.get("cursor")).toBe("page-1");
     expect(response.sub_accounts.map((account) => account.index)).toEqual([42, 43]);
+  });
+
+  it("accepts priced-only metadata on unrelated assets without weakening settlement checks", async () => {
+    mockOk({
+      code: 200,
+      asset_details: [
+        {
+          asset_id: 3,
+          symbol: "USDC",
+          l1_decimals: 6,
+          decimals: 6,
+          min_transfer_amount: "1.000000",
+          min_withdrawal_amount: "1.000000",
+          l1_address: "0x2222222222222222222222222222222222222222",
+          margin_mode: "enabled",
+        },
+        {
+          asset_id: 12,
+          symbol: "rhSPY",
+          l1_decimals: 18,
+          decimals: 6,
+          min_transfer_amount: "0.010000",
+          min_withdrawal_amount: "0.010000",
+          l1_address: "0x4444444444444444444444444444444444444444",
+          margin_mode: "priced_only",
+        },
+      ],
+    });
+
+    const assets = await client.getAssetDetails("core");
+
+    expect(assets.asset_details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ asset_id: 3, margin_mode: "enabled" }),
+      expect.objectContaining({ asset_id: 12, margin_mode: "priced_only" }),
+    ]));
   });
 
   it("validates the official account position shape before returning it", async () => {
@@ -354,55 +472,44 @@ describe("LighterClient URL selection", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("attaches Authorization from the privileged provider for authenticated reads", async () => {
-    mockOk({ code: 200, tokens: [] });
-    const authClient = new LighterClient(
-      ENDPOINTS,
-      undefined,
-      (environment, mode) => `ro-token-for-${environment}-${mode}`,
-    );
-
-    await authClient.getReadOnlyTokens("rhc", { accountIndex: 42 });
-    const url = lastUrl();
-    expect(url.pathname).toBe("/api/v1/tokens");
-    expect(url.searchParams.get("account_index")).toBe("42");
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
-    expect(new Headers(init.headers).get("Authorization")).toBe("ro-token-for-rhc-read-only");
+  it("fails closed on getReadOnlyTokens, which has no privileged-auth parameter", async () => {
+    await expect(
+      client.getReadOnlyTokens("rhc", { accountIndex: 42 }),
+    ).rejects.toMatchObject({ code: ErrorCodes.LIGHTER_INVALID_REQUEST });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("builds authenticated account order read params", async () => {
+  it("builds authenticated account order read params from explicit privileged auth", async () => {
     mockOk({ code: 200, orders: [] });
     mockOk({ code: 200, orders: [] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+    const auth = { token: "privileged-token", accountIndex: 42 };
 
-    await authClient.getAccountActiveOrders("core", {
+    await client.getAccountActiveOrders("core", {
       accountIndex: 42,
       marketId: 0,
       marketType: "perp",
-    });
+    }, auth);
     let url = lastUrl();
     expect(url.pathname).toBe("/api/v1/accountActiveOrders");
     expect(url.searchParams.get("account_index")).toBe("42");
     expect(url.searchParams.get("market_id")).toBe("0");
     expect(url.searchParams.get("market_type")).toBe("perp");
 
-    await authClient.getAccountInactiveOrders("core", {
+    await client.getAccountInactiveOrders("core", {
       accountIndex: 42,
       limit: 1,
-    });
+    }, auth);
     url = lastUrl();
     expect(url.pathname).toBe("/api/v1/accountInactiveOrders");
     expect(url.searchParams.get("account_index")).toBe("42");
     expect(url.searchParams.get("limit")).toBe("1");
   });
 
-  it("uses exact privileged canonical auth without reading the read-only token provider", async () => {
+  it("attaches the exact privileged auth token to the Authorization header", async () => {
     mockOk({ code: 200, orders: [] });
-    const authProvider = vi.fn(() => { throw new Error("must not run"); });
-    const authClient = new LighterClient(ENDPOINTS, undefined, authProvider);
     const token = `1893456600:42:7:${"a".repeat(128)}`;
 
-    await authClient.getAccountActiveOrders(
+    await client.getAccountActiveOrders(
       "rhc",
       { accountIndex: 42, marketId: 0 },
       { token, accountIndex: 42 },
@@ -410,7 +517,6 @@ describe("LighterClient URL selection", () => {
 
     const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
     expect(new Headers(init.headers).get("Authorization")).toBe(token);
-    expect(authProvider).not.toHaveBeenCalled();
   });
 
   it("rejects privileged canonical auth for a different account before sending", async () => {
@@ -422,39 +528,28 @@ describe("LighterClient URL selection", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("defaults authenticated account reads to the token account index", async () => {
-    mockOk({ code: 200, orders: [] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
-
-    await authClient.getAccountActiveOrders("core", {});
-
-    const url = lastUrl();
-    expect(url.pathname).toBe("/api/v1/accountActiveOrders");
-    expect(url.searchParams.get("account_index")).toBe("42");
+  it("refuses authenticated account reads with no explicit account index, even with privileged auth", async () => {
+    await expect(
+      client.getAccountActiveOrders("core", {}, { token: "privileged-token", accountIndex: 42 }),
+    ).rejects.toMatchObject({ code: ErrorCodes.LIGHTER_INVALID_REQUEST });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("refuses account reads outside a single-account token before sending", async () => {
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
-
+  it("refuses authenticated account reads with no privileged auth at all", async () => {
     await expect(
-      authClient.getAccountActiveOrders("core", { accountIndex: 43 }),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
-      message: "Lighter read-only auth token for core is scoped to account 42, not account 43.",
-    });
+      client.getAccountActiveOrders("core", { accountIndex: 42 }),
+    ).rejects.toMatchObject({ code: ErrorCodes.LIGHTER_INVALID_REQUEST });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("does not cache authenticated reads", async () => {
-    mockOk({ code: 200, tokens: [{ token_id: "first" }] });
-    mockOk({ code: 200, tokens: [{ token_id: "second" }] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+    mockOk({ code: 200, orders: [ACCOUNT_ORDER] });
+    mockOk({ code: 200, orders: [ACCOUNT_ORDER] });
+    const auth = { token: "privileged-token", accountIndex: 42 };
 
-    const first = await authClient.getReadOnlyTokens("core", { accountIndex: 42 });
-    const second = await authClient.getReadOnlyTokens("core", { accountIndex: 42 });
+    await client.getAccountActiveOrders("core", { accountIndex: 42 }, auth);
+    await client.getAccountActiveOrders("core", { accountIndex: 42 }, auth);
 
-    expect(first.tokens[0]?.token_id).toBe("first");
-    expect(second.tokens[0]?.token_id).toBe("second");
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -646,9 +741,9 @@ describe("LighterClient validation", () => {
 
   it("preserves exact string ids on account order reads", async () => {
     mockOk({ code: 200, next_cursor: "cursor-1", orders: [ACCOUNT_ORDER] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+    const auth = { token: "privileged-token", accountIndex: 42 };
 
-    const response = await authClient.getAccountActiveOrders("core", { accountIndex: 42 });
+    const response = await client.getAccountActiveOrders("core", { accountIndex: 42 }, auth);
 
     expect(response.next_cursor).toBe("cursor-1");
     expect(response.orders[0]?.order_id).toBe(String(UNSAFE_INTEGER));
@@ -659,9 +754,11 @@ describe("LighterClient validation", () => {
   it("requires exact string ids on account order reads", async () => {
     const { client_order_id: _clientOrderId, ...orderWithoutClientString } = ACCOUNT_ORDER;
     mockOk({ code: 200, orders: [orderWithoutClientString] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+    const auth = { token: "privileged-token", accountIndex: 42 };
 
-    await expect(authClient.getAccountActiveOrders("core", { accountIndex: 42 })).rejects.toMatchObject({
+    await expect(
+      client.getAccountActiveOrders("core", { accountIndex: 42 }, auth),
+    ).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
     });
   });
@@ -723,9 +820,9 @@ describe("LighterClient validation", () => {
 
   it("validates account trades with exact string ids", async () => {
     mockOk({ code: 200, trades: [TRADE] });
-    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
+    const auth = { token: "privileged-token", accountIndex: 42 };
 
-    const tape = await authClient.getAccountTrades("core", { limit: 1 });
+    const tape = await client.getAccountTrades("core", { accountIndex: 42, limit: 1 }, auth);
 
     expect(lastUrl().searchParams.get("account_index")).toBe("42");
     expect(tape.trades[0]?.trade_id_str).toBe("1");

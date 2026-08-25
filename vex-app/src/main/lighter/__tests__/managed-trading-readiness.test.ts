@@ -153,6 +153,30 @@ describe("managed Lighter trading readiness", () => {
     }));
   });
 
+  it("rejects a legacy RHC scope at provider-reserved index 157 before verification or vault access", async () => {
+    const setup = deps({
+      listManagedScopes: vi.fn(() => [{
+        environment: "rhc" as const,
+        accountIndex: 42,
+        apiKeyIndex: 157,
+      }]),
+    });
+
+    const result = await resolveManagedLighterTradingReadiness("rhc", 42, setup);
+
+    expect(result).toMatchObject({
+      ready: false,
+      reason: "provider_reserved_api_key_index",
+      activeManagedCredential: true,
+    });
+    expect(setup.findRegistrationIntent).not.toHaveBeenCalled();
+    expect(setup.client.getApiKeys).not.toHaveBeenCalled();
+    expect(setup.client.getNextNonce).not.toHaveBeenCalled();
+    expect(setup.findNonceState).not.toHaveBeenCalled();
+    expect(setup.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(setup.keyChecker.check).not.toHaveBeenCalled();
+  });
+
   it("does not accept an imported or pending credential as managed readiness", async () => {
     const setup = deps({ listManagedScopes: () => [] });
 

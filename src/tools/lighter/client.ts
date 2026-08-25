@@ -89,12 +89,6 @@ import {
   validateLighterWithdrawalDelay,
   validateLighterWithdrawHistory,
 } from "./validation.js";
-import {
-  authorizeLighterReadOnlyAuthTokenForAccount,
-  requireLighterReadOnlyAuthToken,
-  type LighterReadOnlyAccountAuthorization,
-} from "./credentials.js";
-
 const REQUEST_HEADERS = {
   "User-Agent": "Vex-Agent/1.0 (+https://vexlabs.ai)",
   Accept: "application/json",
@@ -102,14 +96,20 @@ const REQUEST_HEADERS = {
 
 type QueryValue = string | undefined;
 type LighterAuthMode = "read-only";
-export type LighterAuthTokenProvider = (
-  environment: LighterEnvironment,
-  mode: LighterAuthMode,
-) => string;
 
 interface RequestOptions {
   readonly auth?: LighterAuthMode;
   readonly authToken?: string;
+  readonly fresh?: boolean;
+}
+
+/**
+ * Bypass Vex's completed-response cache and in-flight request coalescing while
+ * retaining the normal provider rate limit. Intended only for launch-critical
+ * state reads immediately before signing.
+ */
+export interface LighterPublicReadOptions {
+  readonly fresh?: boolean;
 }
 
 export interface LighterPrivilegedAccountAuth {
@@ -123,7 +123,6 @@ export class LighterClient {
   constructor(
     private readonly endpoints: Record<LighterEnvironment, LighterEndpointConfig> = LIGHTER_ENDPOINTS,
     throttle = new LighterThrottle(),
-    private readonly authTokenProvider: LighterAuthTokenProvider = defaultAuthTokenProvider,
   ) {
     this.throttle = throttle;
   }
@@ -169,7 +168,9 @@ export class LighterClient {
     const url = this.buildUrl(environment, path, query);
     const headers = this.headersFor(environment, options.auth, options.authToken);
     try {
-      const ttlMs = options.auth === undefined ? this.throttle.defaultTtlMs : 0;
+      const ttlMs = options.auth === undefined && options.fresh !== true
+        ? this.throttle.defaultTtlMs
+        : 0;
       return await this.throttle.run(url, environment, ttlMs, async () => {
         const response = await fetchWithTimeout(url, { headers });
 
@@ -223,35 +224,34 @@ export class LighterClient {
   }
 
   private headersFor(
-    environment: LighterEnvironment,
+    _environment: LighterEnvironment,
     auth?: LighterAuthMode,
     authToken?: string,
   ): Record<string, string> {
     if (auth === undefined) return { ...REQUEST_HEADERS };
+    if (authToken === undefined) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        `Lighter ${auth} request requires an explicit auth token; there is no implicit fallback.`,
+      );
+    }
     return {
       ...REQUEST_HEADERS,
-      Authorization: authToken ?? this.authTokenProvider(environment, auth),
+      Authorization: authToken,
     };
   }
 
-  private readOnlyAuthForAccount(
-    environment: LighterEnvironment,
-    requestedAccountIndex?: number,
-  ): LighterReadOnlyAccountAuthorization {
-    return authorizeLighterReadOnlyAuthTokenForAccount(
-      environment,
-      this.authTokenProvider(environment, "read-only"),
-      requestedAccountIndex,
-    );
-  }
-
   private accountAuth(
-    environment: LighterEnvironment,
+    _environment: LighterEnvironment,
     requestedAccountIndex: number | undefined,
     privilegedAuth?: LighterPrivilegedAccountAuth,
-  ): Pick<LighterReadOnlyAccountAuthorization, "token" | "accountIndex"> {
+  ): { readonly token: string; readonly accountIndex: number } {
     if (privilegedAuth === undefined) {
-      return this.readOnlyAuthForAccount(environment, requestedAccountIndex);
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        "This Lighter account read requires an explicit privileged account authorization.",
+        "Unlock Vex so a read-only authorization can be derived from your saved trading credential.",
+      );
     }
     const accountIndex = readAccountIndex(privilegedAuth.accountIndex);
     if (requestedAccountIndex === undefined || requestedAccountIndex !== accountIndex) {
@@ -379,6 +379,7 @@ export class LighterClient {
   async getAccount(
     environment: LighterEnvironment,
     params: LighterAccountQuery,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterAccountResponse> {
     return this.request(
       environment,
@@ -389,6 +390,7 @@ export class LighterClient {
         value: String(params.value),
         active_only: params.activeOnly === undefined ? undefined : String(params.activeOnly),
       },
+      options,
     );
   }
 
@@ -411,6 +413,7 @@ export class LighterClient {
   async getApiKeys(
     environment: LighterEnvironment,
     params: LighterApiKeysParams,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterApiKeysResponse> {
     const accountIndex = readAccountIndex(params.accountIndex);
     const apiKeyIndex = readBoundedInt(
@@ -427,12 +430,14 @@ export class LighterClient {
         account_index: String(accountIndex),
         api_key_index: String(apiKeyIndex),
       },
+      options,
     );
   }
 
   async getNextNonce(
     environment: LighterEnvironment,
     params: LighterNextNonceParams,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterNextNonceResponse> {
     const accountIndex = readAccountIndex(params.accountIndex);
     const apiKeyIndex = readBoundedInt(
@@ -449,6 +454,7 @@ export class LighterClient {
         account_index: String(accountIndex),
         api_key_index: String(apiKeyIndex),
       },
+      options,
     );
   }
 
@@ -532,6 +538,7 @@ export class LighterClient {
   async getMarketDetails(
     environment: LighterEnvironment,
     params: LighterMarketDetailQuery,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterMarketDetailsResponse> {
     const marketId = readUint16(params.marketId, "marketId");
     return this.request(
@@ -542,12 +549,14 @@ export class LighterClient {
         market_id: String(marketId),
         filter: params.filter,
       },
+      options,
     );
   }
 
   async getOrderBookOrders(
     environment: LighterEnvironment,
     params: LighterOrderBookOrdersParams,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterOrderBookOrdersResponse> {
     const marketId = readUint16(params.marketId, "marketId");
     const limit = readBoundedInt(
@@ -564,6 +573,7 @@ export class LighterClient {
         market_id: String(marketId),
         limit: String(limit),
       },
+      options,
     );
   }
 
@@ -788,14 +798,6 @@ function resolutionToMs(resolution: LighterCandleResolution): number {
 }
 
 let cachedClient: LighterClient | null = null;
-
-const defaultAuthTokenProvider: LighterAuthTokenProvider = (environment, mode) => {
-  if (mode === "read-only") return requireLighterReadOnlyAuthToken(environment);
-  throw new VexError(
-    ErrorCodes.LIGHTER_INVALID_REQUEST,
-    `Unsupported Lighter auth mode: ${String(mode)}`,
-  );
-};
 
 export function getLighterClient(): LighterClient {
   if (cachedClient) return cachedClient;

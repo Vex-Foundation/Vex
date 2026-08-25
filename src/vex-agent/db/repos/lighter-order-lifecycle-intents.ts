@@ -311,7 +311,7 @@ export async function markSigned(input: {
   readonly sessionId: string;
   readonly reservationId: string;
   readonly signerTxHash: string;
-  readonly signerExpiryMs: number;
+  readonly signerExpiryMs: number | null;
 }): Promise<LighterOrderLifecycleIntentRow | null> {
   return transition(
     `UPDATE lighter_order_lifecycle_intents

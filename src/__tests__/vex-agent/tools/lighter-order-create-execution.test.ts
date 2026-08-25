@@ -10,6 +10,7 @@ import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
+import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
 
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
@@ -19,7 +20,7 @@ const PUBLIC_KEY = "b".repeat(80);
 const AUTH_TOKEN = `1893456600:42:7:${"a".repeat(128)}`;
 const NOW = 1_893_456_000_000;
 const ORDER_EXPIRY = NOW + 10 * 60 * 1_000;
-const MARKET = {
+const MARKET: LighterMarketDetail = {
   symbol: "ETH",
   market_id: 0,
   market_type: "perp",
@@ -64,7 +65,7 @@ const ORDER_BOOK = {
     transaction_time: NOW,
   }],
 };
-const ACCOUNT = {
+const ACCOUNT: LighterAccountResponse = {
   code: 200,
   total: 1,
   accounts: [{
@@ -203,6 +204,14 @@ function first<T>(values: readonly T[]): T {
   const value = values.at(0);
   if (value === undefined) throw new Error("test fixture must not be empty");
   return value;
+}
+
+function createGate(): { readonly promise: Promise<void>; readonly release: () => void } {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
 }
 
 const UNSIGNED_ORDER = buildLighterUnsignedCreateOrderRequest(PLAN);
@@ -380,6 +389,37 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
+  it("refuses RHC provider-reserved index 157 before revalidation, vault, or nonce work", async () => {
+    const reservedPlan: LighterOrderReadyForSignerPlan = {
+      ...PLAN,
+      apiKeyIndex: 157,
+      credentialReference: {
+        ...PLAN.credentialReference,
+        apiKeyIndex: 157,
+        vaultCredentialId: "lighter/rhc/account-42/api-key-157",
+      },
+      nonceScope: {
+        ...PLAN.nonceScope,
+        apiKeyIndex: 157,
+      },
+    };
+    const d = deps();
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: reservedPlan,
+      unsignedOrder: buildLighterUnsignedCreateOrderRequest(reservedPlan),
+      deps: d,
+    })).rejects.toThrow("reserved by the Lighter RHC provider");
+
+    expect(d.previews.findFreshById).not.toHaveBeenCalled();
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
   it("blocks a live price beyond the approved market-order worst price before vault access", async () => {
     const d = deps({
       client: {
@@ -405,27 +445,113 @@ describe("Lighter approved create execution pipeline", () => {
   });
 
   it("revalidates a spot market from the provider spot-detail array", async () => {
+    const spotMarket: LighterMarketDetail = {
+      ...MARKET,
+      symbol: "ETH/USDC",
+      market_id: 2048,
+      market_type: "spot",
+      base_asset_id: 1,
+      quote_asset_id: 3,
+    };
+    const spotAccount: LighterAccountResponse = {
+      ...ACCOUNT,
+      accounts: [{
+        ...ACCOUNT.accounts[0],
+        assets: [{
+          symbol: "USDC",
+          asset_id: 3,
+          balance: "5000.000000",
+          locked_balance: "0.000000",
+          margin_balance: "5000.000000",
+          margin_mode: "enabled",
+          multiplier: "1.000000000000000000",
+        }],
+      }],
+    };
+    const spotPreview = buildLighterOrderPreview({
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      accountIndex: PLAN.accountIndex,
+      apiKeyIndex: PLAN.apiKeyIndex,
+      marketId: 2048,
+      side: PLAN.side,
+      baseAmount: "1",
+      price: "3002",
+      orderType: PLAN.orderType,
+      timeInForce: PLAN.timeInForce,
+      reduceOnly: false,
+      orderExpiry: PLAN.orderExpiryMs,
+      clientOrderIndexPolicy: PLAN.clientOrderIndexPolicy,
+      nowMs: NOW,
+    }, { market: spotMarket, orderBook: ORDER_BOOK, account: spotAccount });
+    const spotPlan = {
+      ...PLAN,
+      previewId: spotPreview.previewId,
+      matchHash: spotPreview.matchHash,
+      marketIndex: 2048,
+      baseAmountInteger: spotPreview.identity.baseAmountInteger,
+      priceInteger: spotPreview.identity.priceInteger,
+    };
+    const spotPreviewRow = {
+      ...APPROVED_PREVIEW_ROW,
+      previewId: spotPlan.previewId,
+      matchHash: spotPlan.matchHash,
+      marketIndex: spotPlan.marketIndex,
+      baseAmountInteger: spotPlan.baseAmountInteger,
+      priceInteger: spotPlan.priceInteger,
+      previewJson: { ...spotPreview.preview },
+    };
+    const base = deps();
     const d = deps({
       client: {
-        ...deps().client,
+        ...base.client,
         getMarketDetails: vi.fn(async () => ({
           code: 200,
           order_book_details: [],
-          spot_order_book_details: [{ ...MARKET, market_type: "spot" }],
+          spot_order_book_details: [spotMarket],
+        })),
+        getAccount: vi.fn(async () => spotAccount),
+      },
+      previews: { findFreshById: vi.fn(async () => spotPreviewRow) },
+      intents: {
+        ...base.intents,
+        markPreSubmitRevalidated: vi.fn(async () => ({
+          ...APPROVED_INTENT_ROW,
+          previewId: spotPlan.previewId,
+          matchHash: spotPlan.matchHash,
+          marketIndex: spotPlan.marketIndex,
+          baseAmountInteger: spotPlan.baseAmountInteger,
+          priceInteger: spotPlan.priceInteger,
         })),
       },
     });
 
     const result = await executeApprovedLighterCreateOrder({
-      plan: PLAN,
-      unsignedOrder: UNSIGNED_ORDER,
+      plan: spotPlan,
+      unsignedOrder: buildLighterUnsignedCreateOrderRequest(spotPlan),
       deps: d,
     });
 
     expect(d.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
-      marketId: PLAN.marketIndex,
+      marketId: spotPlan.marketIndex,
       filter: "all",
-    });
+    }, { fresh: true });
+    expect(d.client.getOrderBookOrders).toHaveBeenCalledWith("rhc", {
+      marketId: spotPlan.marketIndex,
+      limit: 250,
+    }, { fresh: true });
+    expect(d.client.getAccount).toHaveBeenCalledWith("rhc", {
+      by: "index",
+      value: spotPlan.accountIndex,
+    }, { fresh: true });
+    expect(d.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: spotPlan.accountIndex,
+      apiKeyIndex: spotPlan.apiKeyIndex,
+    }, { fresh: true });
+    expect(d.client.getNextNonce).toHaveBeenCalledWith("rhc", {
+      accountIndex: spotPlan.accountIndex,
+      apiKeyIndex: spotPlan.apiKeyIndex,
+    }, { fresh: true });
     expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalled();
     expect(d.client.sendTx).toHaveBeenCalledTimes(1);
     expect(result.status).toBe("sequencer_pending");
@@ -451,7 +577,7 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("blocks before key material when live key identity or next nonce is unavailable", async () => {
+  it("blocks before vault access when live key identity or next nonce is unavailable", async () => {
     const d = deps({
       client: {
         ...deps().client,
@@ -471,6 +597,63 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("finishes provider credential reads before loading the trading key", async () => {
+    const revalidationGate = createGate();
+    const credentialGate = createGate();
+    const base = deps();
+    const markPreSubmitRevalidated = vi.fn(async () => {
+      await revalidationGate.promise;
+      return APPROVED_INTENT_ROW;
+    });
+    const getApiKeys = vi.fn(async () => {
+      await credentialGate.promise;
+      return {
+        code: 200,
+        api_keys: [{
+          account_index: PLAN.accountIndex,
+          api_key_index: PLAN.apiKeyIndex,
+          nonce: 0,
+          public_key: PUBLIC_KEY,
+          transaction_time: 1_784_732_516_903_382,
+        }],
+      };
+    });
+    const readTradingApiPrivateKey = vi.fn(async () => PRIVATE_KEY);
+    const d = deps({
+      secretReader: { readTradingApiPrivateKey },
+      client: {
+        ...base.client,
+        getApiKeys,
+      },
+      intents: {
+        ...base.intents,
+        markPreSubmitRevalidated,
+      },
+    });
+
+    const execution = executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    await vi.waitFor(() => expect(markPreSubmitRevalidated).toHaveBeenCalledTimes(1));
+    expect(getApiKeys).not.toHaveBeenCalled();
+    expect(readTradingApiPrivateKey).not.toHaveBeenCalled();
+
+    revalidationGate.release();
+    await vi.waitFor(() => expect(getApiKeys).toHaveBeenCalledTimes(1));
+    expect(readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.signer.createAccountAuth).not.toHaveBeenCalled();
+
+    credentialGate.release();
+    await vi.waitFor(() => expect(readTradingApiPrivateKey).toHaveBeenCalledTimes(1));
+    const result = await execution;
+
+    expect(d.signer.createAccountAuth).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("sequencer_pending");
   });
 
   it("blocks before nonce reservation when canonical account reads are unavailable", async () => {
@@ -513,10 +696,64 @@ describe("Lighter approved create execution pipeline", () => {
       deps: d,
     })).rejects.toThrow("same Vex client order id");
 
-    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.nonceState.recordExecutionObserved).toHaveBeenCalledTimes(1);
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("overlaps duplicate-evidence readiness with nonce observation and gates reservation on both", async () => {
+    const repairReadGate = createGate();
+    const observedNonceGate = createGate();
+    const base = deps();
+    let activeOrdersCallCount = 0;
+    const getAccountActiveOrders = vi.fn(async () => {
+      activeOrdersCallCount += 1;
+      if (activeOrdersCallCount === 1) await repairReadGate.promise;
+      return { code: 200, orders: [] };
+    });
+    const recordExecutionObserved = vi.fn<
+      ExecuteApprovedLighterCreateOrderDeps["nonceState"]["recordExecutionObserved"]
+    >(async () => {
+      await observedNonceGate.promise;
+      return { status: "observed" } as never;
+    });
+    const d = deps({
+      client: {
+        ...base.client,
+        getAccountActiveOrders,
+      },
+      nonceState: { recordExecutionObserved },
+    });
+
+    const execution = executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    await vi.waitFor(() => {
+      expect(getAccountActiveOrders).toHaveBeenCalledTimes(1);
+      expect(recordExecutionObserved).toHaveBeenCalledTimes(1);
+    });
+    expect(d.signer.createAccountAuth).toHaveBeenCalledTimes(1);
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+
+    repairReadGate.release();
+    await Promise.resolve();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+
+    observedNonceGate.release();
+    const result = await execution;
+
+    expect(d.reserveNonce).toHaveBeenCalledTimes(1);
+    expect(d.signer.signCreateOrder).toHaveBeenCalledTimes(1);
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("sequencer_pending");
   });
 
   it("blocks a vault key that does not match the live registered public key", async () => {
@@ -541,6 +778,7 @@ describe("Lighter approved create execution pipeline", () => {
       deps: d,
     })).rejects.toThrow("does not match the public key");
 
+    expect(d.client.getAccountActiveOrders).not.toHaveBeenCalled();
     expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();

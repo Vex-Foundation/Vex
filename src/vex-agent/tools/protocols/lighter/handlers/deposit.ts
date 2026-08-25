@@ -35,6 +35,7 @@ import {
   executeApprovedLighterDeposit,
   type LighterDepositExecutionResult,
 } from "@tools/lighter/wallet-funding/deposit-execution.js";
+import { formatLighterIntegerAmount } from "@tools/lighter/order-preview.js";
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { assertLighterDepositApprovalBinding } from "../deposit-approval-binding.js";
 import {
@@ -106,6 +107,7 @@ function depositApprovalPreparedPayload(intent: LighterOnboardingIntentRow): Rec
     source: "vex_lighter_onboarding_deposit_intent",
     status: "approval_prepared",
     message: "Lighter deposit prepared; Vex will request approval for this exact deposit.",
+    amountSemantics: "exact_transfer",
     intentId: intent.intentId,
     environment: intent.environment,
     amountDisplay: disclosure.amountDisplay,
@@ -131,7 +133,7 @@ function depositApprovalPreparedPayload(intent: LighterOnboardingIntentRow): Rec
       rejectLabel: "Reject",
     },
     userGuidance:
-      "An approval card is now available in the app. Tell the user to review the deposit details and click Approve and deposit only if they are correct; do not ask them to type another approval command.",
+      `An approval card is now available for the exact ${disclosure.amountDisplay} transfer the user requested. Do not subtract existing Lighter collateral, describe this as a target balance, or resize it as a top-up. Tell the user briefly to review the amount and click Approve and deposit only if it is correct; do not ask them to type another approval command.`,
   };
 }
 
@@ -349,15 +351,37 @@ function canSupersedePristineDepositFromAnotherSession(input: {
   ) || isPristineApprovedDepositIntent(intent);
 }
 
-function depositUserGuidance(execution: LighterDepositExecutionResult): string {
+function depositUserGuidance(
+  execution: LighterDepositExecutionResult,
+  amountDisplay: string,
+): string {
   switch (execution.status) {
     case "l2_pending":
-      return "The settlement chain confirmed the deposit, but Vex has not yet proven that Lighter credited this exact transaction. Tell the user the deposit is awaiting Lighter confirmation and must not be retried.";
+      return `Reply with exactly this message, preserving its three paragraphs and final question:
+
+"🎉 **Your ${amountDisplay} deposit has been sent!**
+
+The settlement went through successfully, and Lighter is now adding the funds to your available balance. It may take a moment for the updated balance to appear, but everything is moving as expected.
+
+Once it arrives, we can put those funds to work. Would you like me to explore potential trades, show you what’s moving in the market, or keep tracking the deposit until it becomes available?"
+
+Do not include balances, target totals, allowance steps, transaction hashes, wallet addresses, trading-key or onboarding notes, tables, raw status fields, or warnings. Do not say Lighter credit is complete. This question is an invitation for the user's next turn: do not research markets, prepare a trade, or start tracking until the user chooses what to do next.`;
     case "ambiguous":
-      return `The ${execution.stage} transaction outcome could not be confirmed. Tell the user the state is uncertain and that it must be reconciled before any retry; do not say it succeeded or failed.`;
+      return `Reply briefly: "The ${amountDisplay} deposit outcome is still being verified. Please do not retry it yet." Do not say it succeeded or failed, and do not add unrelated account or onboarding information.`;
     case "failed":
-      return `The ${execution.stage} transaction failed, so no funds moved to Lighter. Tell the user the deposit did not go through.`;
+      return `Reply briefly: "The ${amountDisplay} deposit did not go through; no funds moved to Lighter." Do not add unrelated account or onboarding information.`;
   }
+}
+
+function depositIntentAmountDisplay(intent: LighterOnboardingIntentRow): string | null {
+  if (intent.amountUnits === null || !/^[1-9][0-9]*$/.test(intent.amountUnits)) {
+    return null;
+  }
+  const funding = getLighterFundingDeployment(intent.environment);
+  return `${formatLighterIntegerAmount(
+    BigInt(intent.amountUnits),
+    funding.settlementDecimals,
+  )} ${funding.settlementSymbol}`;
 }
 
 function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
@@ -371,8 +395,13 @@ function depositStatusNextAction(intent: LighterOnboardingIntentRow): string {
     return "Wait for the user to approve or reject the existing approval card.";
   }
   switch (intent.executionState) {
-    case "credited":
-      return "The deposit is credited; no retry is needed. Immediately run lighter.account.onboarding.status for this wallet and environment. If its tradingAccessRoute requests key-registration preparation, continue in the same turn so the separate secure-trading approval card is shown.";
+    case "credited": {
+      const amountDisplay = depositIntentAmountDisplay(intent);
+      const confirmation = amountDisplay === null
+        ? "🎉 Deposit confirmed! Your Lighter account has been credited."
+        : `🎉 ${amountDisplay} deposit confirmed! Your Lighter account has been credited.`;
+      return `Reply with exactly this confirmation and nothing else: "${confirmation}" Do not include balances, transaction hashes, wallet addresses, allowance details, onboarding, trading-key registration, tables, or follow-up questions.`;
+    }
     case "failed":
       return "The deposit is terminally failed. Verify the reason before preparing a new deposit.";
     case "approval_pending":
@@ -406,6 +435,7 @@ function projectDepositStatus(intent: LighterOnboardingIntentRow): Record<string
     approvalStatus: intent.approvalStatus,
     executionState: intent.executionState,
     amountUnits: intent.amountUnits,
+    amountDisplay: depositIntentAmountDisplay(intent),
     settlementTokenAddress: intent.settlementTokenAddress,
     settlementTokenSymbol: intent.settlementTokenSymbol,
     settlementTokenDecimals: intent.settlementTokenDecimals,
@@ -541,6 +571,17 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       environment.value,
       walletAddress,
     );
+    const creditedIntent = refreshedIntents.find(
+      (intent) => intent.executionState === "credited",
+    ) ?? null;
+    const creditedAmountDisplay = creditedIntent === null
+      ? null
+      : depositIntentAmountDisplay(creditedIntent);
+    const confirmationMessage = creditedIntent === null
+      ? null
+      : creditedAmountDisplay === null
+        ? "🎉 Deposit confirmed! Your Lighter account has been credited."
+        : `🎉 ${creditedAmountDisplay} deposit confirmed! Your Lighter account has been credited.`;
 
     return ok({
       source: "vex_lighter_local_deposit_status",
@@ -551,17 +592,26 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       reconciliationErrors,
       reconciliationReports: repairReports,
       intents: refreshedIntents.map(projectDepositStatus),
+      ...(confirmationMessage === null
+        ? {}
+        : {
+            status: "credited",
+            presentation: "concise_confirmation",
+            confirmationMessage,
+            userGuidance:
+              `Reply with exactly this confirmation and nothing else: "${confirmationMessage}" Do not include balances, transaction hashes, wallet addresses, allowance details, onboarding, trading-key registration, tables, technical evidence, or follow-up questions.`,
+          }),
       riskNotes: [
         "Phase 2 reconciliation is evidence-only: it never signs, broadcasts, retries, or replaces a deposit transaction.",
         "Credited requires the exact staged settlement hash, matching Deposit event, executed Lighter transaction, and ownership of the event-selected master account.",
         "Any submitted or ambiguous intent must be reconciled from chain and Lighter evidence before a new deposit is prepared.",
       ],
       message:
-        intents.length === 0
+        confirmationMessage ?? (intents.length === 0
           ? `No unresolved Lighter deposit intents exist for this ${environment.value} wallet.`
           : reconciliationErrors === 0
             ? `Checked and reconciled ${intents.length} Lighter deposit intent(s) for this wallet.`
-            : `Checked ${intents.length} Lighter deposit intent(s); ${reconciliationErrors} could not be reconciled from provider evidence and remain unresolved.`,
+            : `Checked ${intents.length} Lighter deposit intent(s); ${reconciliationErrors} could not be reconciled from provider evidence and remain unresolved.`),
     });
   },
 
@@ -644,6 +694,67 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(
         "Vex could not safely reserve the Lighter deposit intent. No deposit was prepared.",
       );
+    }
+    if (creation.outcome === "live_conflict") {
+      const conflict = creation.intent;
+      if (
+        conflict !== null
+        && onboardingIntentsRepo.isSafelyExpirableDepositApprovalPending(conflict)
+      ) {
+        try {
+          const restarted = await withSessionControlLocks(
+            [conflict.sessionId, sessionId],
+            async (client) => {
+              if (
+                conflict.depositContract === null
+                || conflict.depositTo === null
+                || conflict.assetIndex === null
+                || conflict.routeType === null
+                || conflict.amountUnits === null
+              ) return null;
+              const expired = await onboardingIntentsRepo
+                .expireStaleDepositApprovalPendingWith(client, {
+                  intentId: conflict.intentId,
+                  sessionId: conflict.sessionId,
+                  environment: conflict.environment,
+                  walletAddress: conflict.walletAddress,
+                  chainId: conflict.chainId,
+                  depositContract: conflict.depositContract,
+                  depositTo: conflict.depositTo,
+                  assetIndex: conflict.assetIndex,
+                  routeType: conflict.routeType,
+                  amountUnits: conflict.amountUnits,
+                });
+              if (expired === null) return null;
+              const replacement = await onboardingIntentsRepo
+                .createOrFindLiveDepositApprovalPendingWith(client, {
+                  sessionId,
+                  environment: environment.value,
+                  walletAddress: preflight.walletAddress,
+                  chainId: preflight.chainId,
+                  depositContract: preflight.gatewayAddress,
+                  depositTo: preflight.walletAddress,
+                  assetIndex: preflight.assetIndex,
+                  routeType: preflight.routeType,
+                  amountUnits: preflight.amountUnits,
+                  preflight,
+                  expiresAt: new Date(Date.now() + INTENT_TTL_MS),
+                });
+              if (replacement.outcome !== "created") {
+                throw new Error("A replacement Lighter deposit intent was not created.");
+              }
+              return replacement;
+            },
+          );
+          if (restarted !== null) {
+            creation = restarted;
+          }
+        } catch {
+          return fail(
+            "Vex could not safely retire the expired Lighter deposit preparation. Nothing was signed or submitted; check onboarding status and try again.",
+          );
+        }
+      }
     }
     if (creation.outcome === "live_conflict") {
       const conflict = creation.intent;
@@ -965,11 +1076,16 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         assertExecutionLease: () => leaseHandle.assertOwned(),
       });
       const execution = await executeApprovedLighterDeposit({ intent: approved, deps });
+      const amountDisplay = buildLighterDepositApprovalDisclosure(approved).amountDisplay;
       return ok({
         source: "vex_lighter_live_deposit",
         ...execution,
         intentId: approved.intentId,
-        userGuidance: depositUserGuidance(execution),
+        amountDisplay,
+        presentation: execution.status === "l2_pending"
+          ? "celebratory_handoff"
+          : "concise_error",
+        userGuidance: depositUserGuidance(execution, amountDisplay),
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

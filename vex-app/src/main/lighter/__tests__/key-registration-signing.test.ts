@@ -172,6 +172,28 @@ describe("Lighter Phase 3 privileged registration signing", () => {
     }));
   });
 
+  it("refuses RHC provider-reserved index 157 before reading either vault value", async () => {
+    const signWalletMessage = vi.fn<SignApprovedLighterKeyRegistrationDeps["signWalletMessage"]>();
+    const testDeps = deps({ signWalletMessage });
+    const intent = {
+      ...approvedIntent("rhc"),
+      apiKeyIndex: 157,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-157",
+    };
+
+    await expect(signApprovedLighterKeyRegistration({
+      sessionId: "session-1",
+      intent,
+      wallet: wallet(),
+      revalidatedNonce: "0",
+    }, testDeps)).rejects.toThrow("reserved by the Lighter RHC provider");
+
+    expect(testDeps.readVaultPrivateKey).not.toHaveBeenCalled();
+    expect(testDeps.readVaultRegistrationState).not.toHaveBeenCalled();
+    expect(signWalletMessage).not.toHaveBeenCalled();
+    expect(testDeps.signer.signChangePubKey).not.toHaveBeenCalled();
+  });
+
   it("refuses nonce drift before reading either secret", async () => {
     const testDeps = deps();
     await expect(signApprovedLighterKeyRegistration({

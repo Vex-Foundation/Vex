@@ -215,8 +215,8 @@ describe("Lighter order stream supervisor", () => {
 
     expect(h.sockets[0]!.sent.map((value) => JSON.parse(value))).toEqual([
       { type: "subscribe", channel: "account_all_orders/42", auth: AUTH_TOKEN },
-      { type: "subscribe", channel: "account_all_trades/42" },
-      { type: "subscribe", channel: "account_all_positions/42" },
+      { type: "subscribe", channel: "account_all_trades/42", auth: AUTH_TOKEN },
+      { type: "subscribe", channel: "account_all_positions/42", auth: AUTH_TOKEN },
     ]);
     expect(h.resnapshot).toHaveBeenCalledWith(
       "rhc",

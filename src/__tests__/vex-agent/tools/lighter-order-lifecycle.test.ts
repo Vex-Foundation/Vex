@@ -74,7 +74,7 @@ function intent(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): Lighte
     requestedPriceInteger: null,
     requestedSide: null,
     reduceOnly: false,
-    providerSnapshotJson: lifecycleSnapshot(openOrder),
+    providerSnapshotJson: { ...lifecycleSnapshot(openOrder) },
     credentialRefJson: {
       kind: "encrypted_vault_reference",
       environment: "rhc",
@@ -604,6 +604,9 @@ describe("Lighter reduce-only position close lifecycle", () => {
         baseAmountInteger: "10000",
         priceInteger: "4950",
       }),
+    }));
+    expect(dependencies.intents.markSigned).toHaveBeenCalledWith(expect.objectContaining({
+      signerExpiryMs: null,
     }));
     expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
   });

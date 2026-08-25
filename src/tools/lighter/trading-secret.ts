@@ -1,5 +1,8 @@
 import { ErrorCodes, VexError } from "../../errors.js";
-import type { LighterTradingCredentialVaultReference } from "./trading-credentials.js";
+import {
+  assertLighterTradingApiKeyIndexAllowed,
+  type LighterTradingCredentialVaultReference,
+} from "./trading-credentials.js";
 
 const LIGHTER_TRADING_SECRET_BRAND: unique symbol = Symbol("lighter.trading.secret");
 
@@ -79,6 +82,7 @@ export function materialFromSecret(secret: string): LighterTradingSecretMaterial
 }
 
 function validateReference(reference: LighterTradingCredentialVaultReference): void {
+  assertLighterTradingApiKeyIndexAllowed(reference.environment, reference.apiKeyIndex);
   if (reference.kind !== "encrypted_vault_reference" || reference.vaultCredentialId.trim().length === 0) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,

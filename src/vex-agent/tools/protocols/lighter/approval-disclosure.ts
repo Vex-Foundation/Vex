@@ -13,6 +13,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
  */
 export interface LighterOrderApprovalDisclosure {
   readonly marketSymbol: string;
+  readonly marketType: "perp" | "spot";
   readonly baseAmountDisplay: string;
   readonly priceDisplay: string;
   readonly notionalDisplay: string;
@@ -64,15 +65,18 @@ export function buildLighterOrderApprovalDisclosure(
 
   const priceLabel = intent.orderType === "market" ? "worst acceptable price" : "limit price";
   const environmentLabel = ENVIRONMENT_LABELS[intent.environment];
+  const productLabel = stored.marketType === "spot" ? "spot" : "perpetual";
   const orderSummary =
     `${intent.side === "buy" ? "Buy" : "Sell"} ${baseAmountDisplay} ${stored.symbol} `
     + `at ${priceLabel} ${priceDisplay} (est. notional ${notionalDisplay}) `
-    + `on ${environmentLabel} (${intent.environment}); ${intent.timeInForce}`
+    + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${intent.timeInForce}`
     + `${intent.reduceOnly ? "; reduce-only" : ""}; expires ${orderExpiryIso}. `
+    + `${intent.timeInForce === "immediate-or-cancel" ? "Any unfilled remainder is canceled immediately. " : ""}`
     + "API acceptance is not final execution.";
 
   return {
     marketSymbol: stored.symbol,
+    marketType: stored.marketType,
     baseAmountDisplay,
     priceDisplay,
     notionalDisplay,
@@ -83,27 +87,31 @@ export function buildLighterOrderApprovalDisclosure(
 
 function readStoredDisplayContext(previewJson: Record<string, unknown>): {
   readonly symbol: string;
+  readonly marketType: "perp" | "spot";
   readonly baseDecimals: number;
   readonly priceDecimals: number;
   readonly quoteDecimals: number;
 } {
   const symbol = previewJson.symbol;
+  const marketType = previewJson.marketType;
   const baseDecimals = readRecord(previewJson.baseAmount)?.decimals;
   const priceDecimals = readRecord(previewJson.price)?.decimals;
   const quoteDecimals = readRecord(previewJson.quoteNotional)?.decimals;
   if (
     typeof symbol !== "string"
     || symbol.trim().length === 0
+    || (marketType !== "perp" && marketType !== "spot")
     || !isDecimalsValue(baseDecimals)
     || !isDecimalsValue(priceDecimals)
     || !isDecimalsValue(quoteDecimals)
   ) {
     throw disclosureUnavailable(
-      "The persisted Lighter preview is missing the market symbol or decimal precision needed for the approval disclosure.",
+      "The persisted Lighter preview is missing the market type, symbol, or decimal precision needed for the approval disclosure.",
     );
   }
   return {
     symbol: symbol.trim(),
+    marketType,
     baseDecimals,
     priceDecimals,
     quoteDecimals,

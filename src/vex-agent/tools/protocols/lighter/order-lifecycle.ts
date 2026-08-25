@@ -1249,7 +1249,11 @@ export async function executeApprovedLighterClosePosition(
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
-      signerExpiryMs: deps.now() + SIGNER_EXPIRY_MS,
+      // Create-order transactions do not carry the lifecycle signer's
+      // ExpiredAt field. For market IOC close orders, wire OrderExpiry is nil,
+      // so there is no signed expiry that repair may safely use to release an
+      // ambiguous nonce reservation.
+      signerExpiryMs: null,
     });
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
     const staged = await deps.intents.markSubmissionStaged({

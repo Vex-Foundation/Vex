@@ -206,14 +206,14 @@ export async function processTurnToolBatch(args: {
       toolContext,
     );
 
-    // Trusted prepare→execute handoff (WalletSendPrepare → confirm ONLY,
-    // see the registry allow-list): validates the handler-authored contract
-    // and fails closed (never dispatches) on any unknown mapping or
-    // malformed shape. `resultForTranscript` is what actually gets
+    // Trusted prepare→execute handoff (see the registry allow-list): resolves
+    // the model-visible source to its immutable identity, validates the
+    // handler-authored contract, and fails closed (never dispatches) on any
+    // unknown mapping or malformed shape. `resultForTranscript` is what actually gets
     // persisted/returned below — identical to `result` unless the follow-up
     // was rejected, in which case it carries the rejection message instead.
     const { resultForTranscript, followUp } = resolvePreparedActionFollowUp(
-      toolCall.name,
+      toolCall,
       result,
     );
 

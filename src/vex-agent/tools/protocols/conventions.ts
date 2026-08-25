@@ -103,6 +103,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["environment", "explicit public service environment selector, such as Lighter core vs rhc"],
   ["marketId", "protocol-native market identifier returned by a market catalog read"],
   ["marketSymbol", "protocol-native market symbol used to resolve a market id"],
+  ["marketType", "exact exchange product selector used to disambiguate perpetual and spot markets"],
   ["accountIndex", "protocol-native L2 account index (a public integer identity, not an address)"],
   ["apiKeyIndex", "protocol-native API-key slot index on an exchange account; public metadata, never key material"],
   ["orderId", "protocol-native order identifier returned by an authenticated exchange order read"],

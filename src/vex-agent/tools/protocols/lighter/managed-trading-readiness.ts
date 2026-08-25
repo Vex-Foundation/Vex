@@ -4,6 +4,7 @@ export type LighterManagedTradingReadinessReason =
   | "ready"
   | "privileged_resolver_unavailable"
   | "active_managed_credential_missing"
+  | "provider_reserved_api_key_index"
   | "durable_activation_missing"
   | "live_key_mismatch"
   | "client_check_failed"

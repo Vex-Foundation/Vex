@@ -57,7 +57,15 @@ describe("Lighter Phase 3 API-key slot inspection", () => {
     );
 
     expect(observation.occupiedApiKeyIndexes).toEqual([0, 4, 7]);
-    expect(selectAvailableLighterApiKeyIndex(observation, [5])).toBe(6);
+    expect(selectAvailableLighterApiKeyIndex("core", observation, [5])).toBe(6);
+  });
+
+  it("skips provider-reserved index 157 on RHC while preserving Core eligibility", () => {
+    const occupiedThrough156 = Array.from({ length: 153 }, (_, offset) => apiKey(offset + 4));
+    const observation = inspectLighterApiKeySlots(response(occupiedThrough156), 42, OBSERVED_AT);
+
+    expect(selectAvailableLighterApiKeyIndex("rhc", observation, [])).toBe(158);
+    expect(selectAvailableLighterApiKeyIndex("core", observation, [])).toBe(157);
   });
 
   it("canonicalizes provider row order and optional public-key prefixes", () => {
@@ -82,7 +90,7 @@ describe("Lighter Phase 3 API-key slot inspection", () => {
     ["malformed public key", response([{ ...apiKey(4), public_key: "abcd" }])],
     ["duplicate index", response([apiKey(4), { ...apiKey(4), public_key: publicKey(9) }])],
     ["non-success code", { code: 400, api_keys: [] }],
-  ] as const)("refuses a %s response conservatively", (_label, raw) => {
+  ] satisfies readonly (readonly [string, LighterApiKeysResponse])[])("refuses a %s response conservatively", (_label, raw) => {
     expect(() => inspectLighterApiKeySlots(raw, 42, OBSERVED_AT)).toThrow(VexError);
     try {
       inspectLighterApiKeySlots(raw, 42, OBSERVED_AT);
@@ -93,7 +101,7 @@ describe("Lighter Phase 3 API-key slot inspection", () => {
 
   it("refuses corrupt local reservations", () => {
     const observation = inspectLighterApiKeySlots(response([]), 42, OBSERVED_AT);
-    expect(() => selectAvailableLighterApiKeyIndex(observation, [3])).toThrow(
+    expect(() => selectAvailableLighterApiKeyIndex("core", observation, [3])).toThrow(
       "invalid trading-key index",
     );
   });
@@ -102,7 +110,7 @@ describe("Lighter Phase 3 API-key slot inspection", () => {
     const occupied = Array.from({ length: 251 }, (_, offset) => apiKey(offset + 4));
     const observation = inspectLighterApiKeySlots(response(occupied), 42, OBSERVED_AT);
 
-    expect(() => selectAvailableLighterApiKeyIndex(observation, [])).toThrow(
+    expect(() => selectAvailableLighterApiKeyIndex("core", observation, [])).toThrow(
       "No unused Lighter trading API-key slot",
     );
   });

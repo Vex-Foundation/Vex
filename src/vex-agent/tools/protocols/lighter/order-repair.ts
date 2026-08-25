@@ -3,7 +3,6 @@ import {
   type LighterClient,
   type LighterPrivilegedAccountAuth,
 } from "@tools/lighter/client.js";
-import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
@@ -28,25 +27,22 @@ import {
  * sequencer outcome) with its nonce reservation still held, which blocks every
  * later order on the same (environment, account, apiKey). This module resolves
  * those states from provider evidence and provable nonce facts only. It never
- * signs an order and never calls sendTx. Account reads use a read-only token
- * when one is configured; otherwise, if a privileged account-auth resolver is
- * installed (main process only), it derives a short-lived READ-ONLY account
- * auth token from the saved trading key so one-key setups can still classify a
- * stranded order from account evidence. That token authorizes account reads
- * only — it is never used to sign or submit an order.
+ * signs an order and never calls sendTx. When a privileged account-auth resolver
+ * is installed (main process only), it derives a short-lived READ-ONLY account
+ * auth token from the saved trading key so the order can be classified from
+ * account evidence. That token authorizes account reads only — it is never used
+ * to sign or submit an order.
  *
  * Release rules are deliberately narrow. A reservation is freed only when:
  *  - the live nextNonce moved past the reserved nonce (the nonce is spent, so
  *    the reservation no longer guards anything), or
- *  - the signed transaction provably never left Vex, or
- *  - the order's own expiry (plus grace) has passed while the nonce stayed
- *    unconsumed — Lighter advances nonces on sequencer acceptance, so an
- *    unconsumed nonce after expiry proves the create can no longer execute.
+ *  - the signed transaction provably never left Vex.
  * Anything else stays reserved with wait guidance instead of a blind retry.
+ *
+ * Create-order repair must not use the locally approved order expiry as proof
+ * that a signed transaction is dead. Market IOC orders are signed with a nil
+ * wire OrderExpiry, so that local timestamp does not constrain the sequencer.
  */
-
-/** Order expiry slack before an unconsumed nonce is treated as proof of death. */
-export const LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS = 10 * 60 * 1000;
 
 /**
  * Keep the unattended sweep inside Lighter's documented request budget.
@@ -104,8 +100,8 @@ export interface LighterOrderRepairSweepReport {
 }
 
 // Derives a short-lived READ-ONLY account auth token from a saved trading key so
-// repair can classify orders when no read-only token exists. Returns null when a
-// token cannot be derived (locked vault, signer unavailable, unknown scope).
+// repair can classify orders. Returns null when a token cannot be derived
+// (locked vault, signer unavailable, unknown scope).
 // Installed by the main process only; agent code never sees key material.
 export type LighterRepairPrivilegedAccountAuthResolver = (
   reference: LighterTradingCredentialVaultReference,
@@ -135,9 +131,8 @@ export interface LighterOrderRepairDeps {
     typeof lighterNonceStateRepo,
     "find" | "releaseReservation" | "recordExecutionObserved"
   >;
-  readonly hasReadOnlyCredential: (environment: LighterEnvironment) => boolean;
-  // Optional: derive a read-only account auth token from the saved trading key
-  // when no read-only token is configured. Absent in pure agent runtime.
+  // Optional: derive a read-only account auth token from the saved trading key.
+  // Absent in pure agent runtime.
   readonly resolvePrivilegedAccountAuth?: LighterRepairPrivilegedAccountAuthResolver;
   readonly now: () => number;
 }
@@ -147,8 +142,6 @@ export function defaultLighterOrderRepairDeps(): LighterOrderRepairDeps {
     client: getLighterClient(),
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,
-    hasReadOnlyCredential: (environment) =>
-      getLighterReadOnlyCredentialStatus(environment).configured,
     resolvePrivilegedAccountAuth: configuredPrivilegedAuthResolver ?? undefined,
     now: Date.now,
   };
@@ -171,7 +164,7 @@ export async function repairUnresolvedLighterOrders(
  *
  * This deliberately disables account-auth derivation and authenticated order
  * history. It can still unblock a consumed nonce, release a transaction proven
- * never submitted, or release an expired unconsumed create. It cannot classify
+ * never submitted. It cannot classify
  * a live order's terminal outcome; that remains the full, user-driven repair
  * path above (and a future low-cost stream consumer).
  *
@@ -193,7 +186,6 @@ export async function repairUnresolvedLighterOrdersInBackground(
   const intents = await deps.intents.listUnresolved(input.environment, limit);
   const backgroundDeps: LighterOrderRepairDeps = {
     ...deps,
-    hasReadOnlyCredential: () => false,
     resolvePrivilegedAccountAuth: undefined,
   };
   const reports: LighterOrderRepairReport[] = [];
@@ -267,17 +259,14 @@ async function resolveFromProviderEvidence(
   const base = baseReport(intent, liveNextNonce);
   if (intent.clientOrderIndex === null) return null;
 
-  // Prefer a configured read-only token. Otherwise derive a short-lived
-  // read-only account auth token from the saved trading key so one-key setups
-  // can still read account evidence. If neither is available, defer to nonce facts.
-  let privilegedAuth: LighterPrivilegedAccountAuth | undefined;
-  if (!deps.hasReadOnlyCredential(intent.environment)) {
-    const derived = deps.resolvePrivilegedAccountAuth
-      ? await deps.resolvePrivilegedAccountAuth(intent.credentialRefJson)
-      : null;
-    if (derived === null) return null;
-    privilegedAuth = derived;
-  }
+  // Derive a short-lived read-only account auth token from the saved trading
+  // key so one-key setups can still read account evidence. If unavailable,
+  // defer to nonce facts.
+  const derived = deps.resolvePrivilegedAccountAuth
+    ? await deps.resolvePrivilegedAccountAuth(intent.credentialRefJson)
+    : null;
+  if (derived === null) return null;
+  const privilegedAuth: LighterPrivilegedAccountAuth = derived;
 
   const scope: LighterOrderEvidenceScope = {
     accountIndex: intent.accountIndex,
@@ -453,7 +442,7 @@ async function resolveFromNonceFacts(
       resolution: "nonce_reset_consumed",
       guidance:
         "The reserved nonce was consumed on Lighter, so new orders are unblocked. The order outcome itself is still "
-        + "unproven; run this again with a read-only token configured to classify it from account evidence.",
+        + "unproven; unlock Vex and run this again so bounded read-only account authorization can be derived from the saved trading credential.",
     };
   }
 
@@ -465,24 +454,14 @@ async function resolveFromNonceFacts(
         detail: "The signed transaction never left Vex, so the reserved nonce could not have been consumed.",
       });
     }
-    const expiryDeadline = intent.orderExpiryMs + LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS;
-    if (deps.now() > expiryDeadline) {
-      return releaseAndReject(intent, deps, base, reservedNonce, liveNextNonce, {
-        repair: "nonce_release_expired_unconsumed",
-        resolution: "nonce_released_expired_unconsumed",
-        detail:
-          "The order expiry passed with the reserved nonce unconsumed. Lighter advances nonces on sequencer "
-          + "acceptance, so the submitted create can no longer execute.",
-      });
-    }
     return {
       ...base,
       reservedNonce,
       resolution: "awaiting_provider",
       guidance:
-        `The submission may still reach the sequencer, so the nonce stays reserved. Check again after `
-        + `${new Date(expiryDeadline).toISOString()}; if the nonce is still unconsumed then, repair will release it. `
-        + "Do not resubmit the order in the meantime.",
+        "The submission may still reach the sequencer, so the nonce stays reserved. The approved preview expiry "
+        + "is not a signed sequencer expiry for market IOC orders. Wait for provider evidence or proof that the "
+        + "transaction never left Vex. Do not resubmit the order in the meantime.",
     };
   }
 

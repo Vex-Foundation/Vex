@@ -79,7 +79,7 @@ const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    'Settlement amount to deposit in human decimals: USDC on Core or USDG on Robinhood Chain (both use 6 decimals), for example "11". Minimum 1 settlement token; a smaller deposit is not credited.',
+    'Exact settlement amount to transfer from the Vex wallet into Lighter, in human decimals: USDC on Core or USDG on Robinhood Chain (both use 6 decimals), for example "11". A request to deposit 5 means amountIn "5" even when Lighter already has a balance; never subtract existing collateral or reinterpret this as a target account total. Minimum 1 settlement token; a smaller deposit is not credited.',
 };
 
 const DEPOSIT_INTENT_ID_PARAM: ProtocolParamDef = {
@@ -111,6 +111,13 @@ const WITHDRAW_INTENT_ID_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description: "Session-scoped environment-bound withdrawal intent produced by lighter__withdraw_prepare.",
+};
+
+const WITHDRAW_CLAIM_SOURCE_INTENT_ID_PARAM: ProtocolParamDef = {
+  key: "intentId",
+  type: "string",
+  required: true,
+  description: "Environment-bound claimable withdrawal intent. An exact earlier-session intent may be recovered only when it belongs to the currently selected wallet; the new manual claim receives its own current-session approval.",
 };
 
 const WITHDRAW_CLAIM_ID_PARAM: ProtocolParamDef = {
@@ -234,7 +241,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Prepare a separate settlement-wallet approval for one exact claimable Core USDC or RHC USDG withdrawal. Use when reconciliation reports that exact withdrawal as claimable. It requires the selected wallet to equal the fixed owner, exact pending amount, reviewed environment-specific gateway implementation/code and enabled asset-3 token mapping, successful zero-value call simulation, fresh fees, and enough ETH for the disclosed hard fee ceiling. Returns a durable claim id, amount, settlement network, fee ceiling, expiry, and separate host approval card. It never signs or broadcasts.",
     mutating: false,
     actionKind: "approval_prepare",
-    params: [WITHDRAW_INTENT_ID_PARAM],
+    params: [WITHDRAW_CLAIM_SOURCE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-withdrawal-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.claim.prepare"],
   },
@@ -309,7 +316,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare an exact approval-gated Lighter perps deposit from the selected Vex wallet: Ethereum USDC for Core or Robinhood Chain USDG for RHC. Use only after managed onboarding proves the direct settlement balance covers the exact shortfall. The host approval card is the consent surface. Preparation persists live balances, allowance, native ETH fee readiness, environment/chain/contracts, reviewed proxy identities, exact beneficiary, calldata, and zero transaction value. It owns no signer and moves no funds. Returns the durable intent id, exact reviewed deposit details, approval status, expiry, and host approval-card guidance. Only the matching approved resume may resolve the local wallet key and execute it.",
+      "Prepare an exact approval-gated Lighter perps deposit from the selected Vex wallet: Ethereum USDC for Core or Robinhood Chain USDG for RHC. Call this directly when the user asks to deposit or fund an explicit amount. For example, \"fund my Lighter RHC account with 5 USDG from my Vex wallet\" means pass amountIn \"5\" unchanged. That amount is the exact transfer, not a desired final Lighter balance, so never subtract existing collateral. Managed trade onboarding may instead provide an exact collateral shortfall for a named trade. The host approval card is the consent surface. Preparation persists live balances, allowance, native ETH fee readiness, environment/chain/contracts, reviewed proxy identities, exact beneficiary, calldata, and zero transaction value. It owns no signer and moves no funds. Returns the durable intent id, exact reviewed deposit details, approval status, expiry, and host approval-card guidance. Only the matching approved resume may resolve the local wallet key and execute it.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, DEPOSIT_AMOUNT_PARAM],

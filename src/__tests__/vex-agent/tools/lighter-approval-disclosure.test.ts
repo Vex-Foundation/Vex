@@ -28,6 +28,7 @@ function previewRow(overrides: Partial<LighterOrderPreviewRow> = {}): LighterOrd
     providerVersion: "lighter-order-preview-v1",
     previewJson: {
       symbol: "ETH",
+      marketType: "perp",
       baseAmount: { display: "1.25", integer: "12500", decimals: 4 },
       price: { display: "2999.99", integer: "299999", decimals: 2 },
       quoteNotional: { display: "3749.9875", integer: "3749987500", decimals: 6 },
@@ -71,6 +72,7 @@ describe("Lighter order approval disclosure", () => {
 
     expect(disclosure).toEqual({
       marketSymbol: "ETH",
+      marketType: "perp",
       baseAmountDisplay: "1.25",
       priceDisplay: "2999.99",
       notionalDisplay: "3749.9875",
@@ -79,6 +81,7 @@ describe("Lighter order approval disclosure", () => {
     });
     expect(disclosure.orderSummary).toContain("est. notional 3749.9875");
     expect(disclosure.orderSummary).toContain("Robinhood Chain Lighter (rhc)");
+    expect(disclosure.orderSummary).toContain("perpetual market");
     expect(disclosure.orderSummary).toContain("good-till-time");
     expect(disclosure.orderSummary).toContain("API acceptance is not final execution.");
     expect(disclosure.orderSummary).not.toContain("reduce-only");
@@ -100,6 +103,25 @@ describe("Lighter order approval disclosure", () => {
     expect(disclosure.orderSummary).toContain("Lighter Core (core)");
     expect(disclosure.orderSummary).toContain("immediate-or-cancel");
     expect(disclosure.orderSummary).toContain("reduce-only");
+    expect(disclosure.orderSummary).toContain("Any unfilled remainder is canceled immediately.");
+  });
+
+  it("names the spot product explicitly", () => {
+    const disclosure = buildLighterOrderApprovalDisclosure(
+      intentRow({ environment: "core", marketIndex: 2_048, orderType: "market", timeInForce: "immediate-or-cancel" }),
+      previewRow({
+        environment: "core",
+        marketIndex: 2_048,
+        previewJson: {
+          ...previewRow().previewJson,
+          marketType: "spot",
+          symbol: "ETH/USDC",
+        },
+      }),
+    );
+
+    expect(disclosure.marketType).toBe("spot");
+    expect(disclosure.orderSummary).toContain("spot market on Lighter Core");
   });
 
   it("refuses when the persisted preview no longer matches the prepared intent", () => {
@@ -115,9 +137,10 @@ describe("Lighter order approval disclosure", () => {
 
   it("refuses when the persisted preview lacks symbol or decimal precision", () => {
     for (const previewJson of [
-      { baseAmount: { decimals: 4 }, price: { decimals: 2 }, quoteNotional: { decimals: 6 } },
-      { symbol: "ETH", price: { decimals: 2 }, quoteNotional: { decimals: 6 } },
+      { marketType: "perp", baseAmount: { decimals: 4 }, price: { decimals: 2 }, quoteNotional: { decimals: 6 } },
+      { marketType: "perp", symbol: "ETH", price: { decimals: 2 }, quoteNotional: { decimals: 6 } },
       {
+        marketType: "perp",
         symbol: "ETH",
         baseAmount: { decimals: 4 },
         price: { decimals: 2 },

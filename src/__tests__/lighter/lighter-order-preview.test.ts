@@ -6,6 +6,7 @@ import {
   computeLighterOrderPreviewHash,
   type LighterOrderPreviewInput,
 } from "@tools/lighter/order-preview.js";
+import { validateLighterAccount } from "@tools/lighter/validation.js";
 import type {
   LighterAccountResponse,
   LighterMarketDetail,
@@ -80,13 +81,70 @@ const ACCOUNT: LighterAccountResponse = {
         {
           market_id: 0,
           symbol: "ETH",
+          initial_margin_fraction: "5.00",
+          open_order_count: 0,
+          pending_order_count: 0,
+          position_tied_order_count: 0,
           sign: 1,
           position: "1.5",
+          avg_entry_price: "3000",
+          position_value: "4500",
+          unrealized_pnl: "0",
+          realized_pnl: "0",
+          liquidation_price: "2000",
+          margin_mode: 0,
+          allocated_margin: "0",
         },
       ],
     },
   ],
 };
+
+const SPOT_MARKET: LighterMarketDetail = {
+  ...MARKET,
+  symbol: "ETH/USDC",
+  market_id: 2048,
+  market_type: "spot",
+  base_asset_id: 1,
+  quote_asset_id: 3,
+  taker_fee: "0.0000",
+};
+
+function spotAccount(
+  baseBalance = "2.00000000",
+  baseLocked = "0.50000000",
+  quoteBalance = "5000.000000",
+  quoteLocked = "100.000000",
+): LighterAccountResponse {
+  return {
+    code: 200,
+    total: 1,
+    accounts: [{
+      index: 42,
+      status: 1,
+      assets: [
+        {
+          symbol: "ETH",
+          asset_id: 1,
+          balance: baseBalance,
+          locked_balance: baseLocked,
+          margin_balance: "0.00000000",
+          margin_mode: "disabled",
+          multiplier: "1.000000000000000000",
+        },
+        {
+          symbol: "USDC",
+          asset_id: 3,
+          balance: quoteBalance,
+          locked_balance: quoteLocked,
+          margin_balance: "0.000000",
+          margin_mode: "enabled",
+          multiplier: "1.000000000000000000",
+        },
+      ],
+    }],
+  };
+}
 
 function first<T>(values: readonly T[]): T {
   const value = values.at(0);
@@ -115,6 +173,17 @@ function preview(overrides: Partial<LighterOrderPreviewInput> = {}) {
   return buildLighterOrderPreview(
     { ...INPUT, ...overrides },
     { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT },
+  );
+}
+
+function spotPreview(
+  side: "buy" | "sell",
+  account = spotAccount(),
+  market: LighterMarketDetail = SPOT_MARKET,
+) {
+  return buildLighterOrderPreview(
+    { ...INPUT, marketId: 2048, side },
+    { market, orderBook: ORDER_BOOK, account },
   );
 }
 
@@ -238,13 +307,21 @@ describe("Lighter order preview", () => {
     );
   });
 
-  it("refuses market ids beyond the signer's int16 market index bound", () => {
+  it("refuses market ids beyond lighter-go's product-specific market range", () => {
     expect(() => preview({ marketId: 40_000 })).toThrowError(
       expect.objectContaining({
         code: ErrorCodes.LIGHTER_INVALID_REQUEST,
-        message: expect.stringContaining("32767"),
+        message: expect.stringContaining("4094"),
       }),
     );
+    expect(() => buildLighterOrderPreview(
+      { ...INPUT, marketId: 255 },
+      { market: { ...MARKET, market_id: 255 }, orderBook: ORDER_BOOK, account: ACCOUNT },
+    )).toThrowError(expect.objectContaining({ message: expect.stringContaining("0 through 254") }));
+    expect(() => buildLighterOrderPreview(
+      { ...INPUT, marketId: 2047 },
+      { market: { ...SPOT_MARKET, market_id: 2047 }, orderBook: ORDER_BOOK, account: spotAccount() },
+    )).toThrowError(expect.objectContaining({ message: expect.stringContaining("2048 through 4094") }));
   });
 
   it("fails closed when quote decimals do not match Lighter documented size+price scale", () => {
@@ -253,5 +330,94 @@ describe("Lighter order preview", () => {
       orderBook: ORDER_BOOK,
       account: ACCOUNT,
     })).toThrowError(expect.objectContaining({ code: ErrorCodes.LIGHTER_INVALID_REQUEST }));
+  });
+
+  it("parses typed account asset inventory from the live account shape", () => {
+    const parsed = validateLighterAccount(spotAccount());
+
+    expect(parsed.accounts[0]?.assets?.[0]).toEqual(expect.objectContaining({
+      symbol: "ETH",
+      asset_id: 1,
+      balance: "2.00000000",
+      locked_balance: "0.50000000",
+    }));
+    expect(() => validateLighterAccount({
+      ...spotAccount(),
+      accounts: [{ index: 42, assets: [{ asset_id: 1, balance: "2" }] }],
+    })).toThrowError(expect.objectContaining({ code: ErrorCodes.LIGHTER_INVALID_RESPONSE }));
+  });
+
+  it("proves unlocked base inventory before previewing a spot sell", () => {
+    const result = spotPreview("sell");
+
+    expect(result.preview.spotInventoryContext).toEqual({
+      verified: true,
+      assetId: 1,
+      symbol: "ETH",
+      balance: "2",
+      lockedBalance: "0.5",
+      unlockedBalance: "1.5",
+      requiredAmount: "1.25",
+      requiredKind: "base_amount",
+      takerFee: "none",
+      takerFeePercent: null,
+      takerFeeAmount: "0",
+    });
+  });
+
+  it("refuses a spot sell when locked base leaves insufficient free inventory", () => {
+    expect(() => spotPreview("sell", spotAccount("2", "1"))).toThrowError(
+      expect.objectContaining({
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: expect.stringContaining("unlocked base asset balance"),
+      }),
+    );
+  });
+
+  it("proves unlocked quote inventory against the spot buy worst-price notional", () => {
+    const result = spotPreview("buy");
+
+    expect(result.preview.spotInventoryContext).toEqual(expect.objectContaining({
+      verified: true,
+      assetId: 3,
+      symbol: "USDC",
+      unlockedBalance: "4900",
+      requiredAmount: "3749.9875",
+      requiredKind: "worst_price_quote_notional",
+      takerFee: "zero_from_live_market",
+      takerFeePercent: "0",
+      takerFeeAmount: "0",
+    }));
+  });
+
+  it("refuses a spot buy when locked quote leaves insufficient free inventory", () => {
+    expect(() => spotPreview("buy", spotAccount("2", "0", "3800", "100"))).toThrowError(
+      expect.objectContaining({
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: expect.stringContaining("unlocked quote asset balance"),
+      }),
+    );
+  });
+
+  it("includes the live percentage fee in a spot buy inventory proof", () => {
+    const result = spotPreview("buy", spotAccount(), { ...SPOT_MARKET, taker_fee: "0.0280" });
+
+    expect(result.preview.spotInventoryContext).toEqual(expect.objectContaining({
+      requiredAmount: "3751.037497",
+      requiredKind: "worst_price_quote_notional_with_taker_fee",
+      takerFee: "included_live_market_percentage",
+      takerFeePercent: "0.028",
+      takerFeeAmount: "1.049997",
+    }));
+  });
+
+  it("refuses spot reduce-only and missing inventory", () => {
+    expect(() => buildLighterOrderPreview(
+      { ...INPUT, marketId: 2048, reduceOnly: true },
+      { market: SPOT_MARKET, orderBook: ORDER_BOOK, account: spotAccount() },
+    )).toThrowError(expect.objectContaining({ message: expect.stringContaining("reduceOnly must be false") }));
+
+    expect(() => spotPreview("sell", { code: 200, accounts: [{ index: 42, assets: [] }] }))
+      .toThrowError(expect.objectContaining({ message: expect.stringContaining("exactly one asset 1") }));
   });
 });

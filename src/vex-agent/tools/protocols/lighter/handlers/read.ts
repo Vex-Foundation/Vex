@@ -69,6 +69,7 @@ import {
   readResolution,
   readSetTimestampToEnd,
   readTimestamp,
+  type LighterOrderPreviewMarketType,
 } from "../params.js";
 import {
   projectCandles,
@@ -96,14 +97,12 @@ import {
   type LighterManagedTradingReadiness,
 } from "../managed-trading-readiness.js";
 
-// Resolves the account index and, when one can be derived from the saved trading
-// key, a short-lived read-only auth token for an authenticated account read.
-// When a token is derived, the read must target that exact account (the client
-// rejects a privileged token whose account index does not match), so the
-// resolved index is returned alongside it. When no token is derived, the
-// caller's request — which may be undefined — is preserved unchanged so the
-// client still falls back to a separately configured read-only token exactly as
-// before.
+// Resolves the account index and derives a short-lived read-only auth token from
+// the saved trading key for an authenticated account read. The read must target
+// that exact account (the client rejects a privileged token whose account index
+// does not match), so the resolved index is returned alongside it. When no token
+// can be derived, the caller's request is preserved and the client fails closed;
+// there is no standalone-token fallback.
 async function resolveAuthenticatedAccountRead(
   environment: LighterEnvironment,
   requestedAccountIndex: number | undefined,
@@ -333,7 +332,11 @@ function marketSymbolScore(market: LighterMarket, wanted: string): number {
 async function resolvePreviewMarketId(
   client: LighterClient,
   environment: LighterEnvironment,
-  params: { readonly marketId?: number; readonly marketSymbol?: string },
+  params: {
+    readonly marketId?: number;
+    readonly marketSymbol?: string;
+    readonly marketType?: LighterOrderPreviewMarketType;
+  },
 ): Promise<number> {
   if (params.marketId !== undefined) return params.marketId;
   if (params.marketSymbol === undefined) {
@@ -345,8 +348,10 @@ async function resolvePreviewMarketId(
   }
 
   const wanted = normalizeMarketSymbol(params.marketSymbol);
-  const markets = await client.getMarkets(environment, { filter: "all" });
+  const filter = params.marketType ?? "all";
+  const markets = await client.getMarkets(environment, { filter });
   const selected = markets.order_books
+    .filter((market) => params.marketType === undefined || market.market_type === params.marketType)
     .map((market) => ({ market, score: marketSymbolScore(market, wanted) }))
     .filter((candidate) => Number.isFinite(candidate.score))
     .sort((left, right) => {
@@ -357,10 +362,13 @@ async function resolvePreviewMarketId(
       return left.market.market_id - right.market.market_id;
     })[0]?.market;
   if (!selected) {
+    const product = params.marketType === undefined ? "" : ` ${params.marketType}`;
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `No live Lighter ${environment} market found for ${wanted}.`,
-      "Use a listed Lighter market symbol, for example ETH.",
+      `No live Lighter ${environment}${product} market found for ${wanted}.`,
+      params.marketType === undefined
+        ? "Use a listed Lighter market symbol, for example ETH."
+        : `Use a listed Lighter ${params.marketType} market symbol, or choose the other product type explicitly.`,
     );
   }
   return selected.market_id;
@@ -1137,6 +1145,14 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           `No live Lighter market detail found for marketId ${marketId} on ${environment.value}.`,
         );
       }
+      if (
+        previewParams.value.marketType !== undefined
+        && market.market_type !== previewParams.value.marketType
+      ) {
+        return fail(
+          `Lighter marketId ${marketId} is a ${market.market_type} market, not the requested ${previewParams.value.marketType} market. No preview was persisted.`,
+        );
+      }
       const source = liveProvenance(environment.value, "lighter.order.preview", [
         ...(previewParams.value.marketId === undefined ? [LIGHTER_ENDPOINT_PATHS.orderBooks] : []),
         ...(previewParams.value.apiKeyIndex === null ? [LIGHTER_ENDPOINT_PATHS.apiKeys] : []),
@@ -1146,6 +1162,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       ], {
         marketId,
         marketSymbol: previewParams.value.marketSymbol ?? null,
+        requestedMarketType: previewParams.value.marketType ?? null,
+        resolvedMarketType: market.market_type,
         accountIndex,
         apiKeyIndex,
         apiKeyLookupStatus,

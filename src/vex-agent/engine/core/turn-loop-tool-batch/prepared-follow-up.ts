@@ -5,6 +5,8 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
+import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
 import {
   validatePreparedActionFollowUp,
   type ValidatedPreparedActionFollowUp,
@@ -13,6 +15,7 @@ import type { ToolResult } from "@vex-agent/tools/types.js";
 import { deriveExplorerRefs, type ExplorerRef } from "../explorer-refs.js";
 import { displayStatusPayload } from "../tool-display-status.js";
 import type { EngineContext } from "../../types.js";
+import logger from "@utils/logger.js";
 import {
   assertApprovalActionKind,
   enqueueApprovalIntent,
@@ -30,31 +33,78 @@ export interface PreparedFollowUpResolution {
   readonly followUp: ValidatedPreparedActionFollowUp | null;
 }
 
+const SAFE_DIAGNOSTIC_TOOL_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+
+/**
+ * Resolve the model-visible source projection to the immutable identity used by
+ * the trusted handoff registry. Protocol public names are catalog projections
+ * and may change; their dotted toolId is the durable identity. Internal tools
+ * keep their canonical registered name as identity.
+ *
+ * `execute_tool` is retained only as a structural legacy envelope. Its source
+ * identity comes from its explicit `args.toolId`; the bare wrapper name never
+ * authorizes a follow-up by itself.
+ */
+export function resolvePreparedActionSourceIdentity(
+  sourceCall: Pick<ParsedToolCall, "name" | "arguments">,
+): string {
+  const canonicalName = resolveToolName(sourceCall.name);
+  if (canonicalName === "execute_tool") {
+    return typeof sourceCall.arguments.toolId === "string"
+      ? sourceCall.arguments.toolId
+      : "unknown.execute_tool.source";
+  }
+  return resolveInjectedProtocolTool(canonicalName)?.toolId ?? canonicalName;
+}
+
 /** Validate the handler contract; unknown or malformed mappings fail closed. */
 export function resolvePreparedActionFollowUp(
-  sourceToolName: string,
+  sourceCall: Pick<ParsedToolCall, "name" | "arguments">,
   result: ToolResult,
 ): PreparedFollowUpResolution {
   const candidate = result.preparedActionFollowUp;
   if (candidate === undefined) {
     return { resultForTranscript: result, followUp: null };
   }
+  const sourceIdentity = resolvePreparedActionSourceIdentity(sourceCall);
   const validation = result.success
-    ? validatePreparedActionFollowUp(sourceToolName, candidate)
+    ? validatePreparedActionFollowUp(sourceIdentity, candidate)
     : null;
   if (validation === null || !validation.ok) {
+    const reason = validation?.reason ?? "source_result_failed";
+    const targetToolId = typeof candidate.args.toolId === "string"
+      ? candidate.args.toolId
+      : candidate.toolName;
+    // SAFE DIAGNOSTICS ONLY. Tool identities and the bounded reason enum are
+    // catalog metadata. Never log the candidate args or approval preview: those
+    // may contain amounts, wallet addresses, route identity, or fee details.
+    logger.warn("engine.prepared_action_follow_up.rejected", {
+      reason,
+      sourceToolId: safeDiagnosticToolIdentity(sourceIdentity),
+      targetToolId: safeDiagnosticToolIdentity(targetToolId),
+    });
+    const output = reason === "unknown_mapping"
+      ? "Prepared-action follow-up rejected by the trusted registry because the internal approval mapping is unavailable. The preparation may have been saved, but no approval card or automatic action was dispatched."
+      : reason === "invalid_contract"
+        ? "Prepared-action follow-up rejected by the trusted registry because the prepared details failed a safety consistency check. No approval card or automatic action was dispatched."
+        : "Prepared-action follow-up rejected because the preparation step did not complete successfully. No approval card or automatic action was dispatched.";
     return {
       resultForTranscript: {
         ...result,
         success: false,
-        output:
-          "Prepared-action follow-up rejected by the trusted registry; no automatic action was dispatched.",
+        output,
         preparedActionFollowUp: undefined,
       },
       followUp: null,
     };
   }
   return { resultForTranscript: result, followUp: validation.followUp };
+}
+
+function safeDiagnosticToolIdentity(value: unknown): string {
+  return typeof value === "string" && SAFE_DIAGNOSTIC_TOOL_ID_RE.test(value)
+    ? value
+    : "unknown";
 }
 
 /**

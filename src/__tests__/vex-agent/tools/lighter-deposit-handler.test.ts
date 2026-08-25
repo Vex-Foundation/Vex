@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   renewPristineApproved: vi.fn(),
   renewConfirmedApproval: vi.fn(),
   supersedePristine: vi.fn(),
+  isSafelyExpirable: vi.fn(),
+  expireStaleApprovalPending: vi.fn(),
   markAmbiguous: vi.fn(),
   withSessionControlLock: vi.fn(),
   withSessionControlLocks: vi.fn(),
@@ -49,6 +51,10 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
     mocks.renewConfirmedApproval(input),
   supersedePristineDepositIntentWith: (_client: unknown, input: unknown) =>
     mocks.supersedePristine(input),
+  isSafelyExpirableDepositApprovalPending: (intent: unknown) =>
+    mocks.isSafelyExpirable(intent),
+  expireStaleDepositApprovalPendingWith: (_client: unknown, input: unknown) =>
+    mocks.expireStaleApprovalPending(input),
   markAmbiguousWith: (_client: unknown, intentId: string, reason: string) =>
     mocks.markAmbiguous(intentId, reason),
 }));
@@ -241,7 +247,7 @@ function rhcPreflightSnapshot(overrides: Record<string, unknown> = {}) {
     settlementNetworkName: "Robinhood Chain mainnet",
     chainId: 4663,
     gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-    gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+    gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
     settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
     settlementTokenSymbol: "USDG",
@@ -293,6 +299,7 @@ beforeEach(() => {
   }));
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.markAmbiguous.mockResolvedValue(intentRow({ executionState: "ambiguous" }));
+  mocks.isSafelyExpirable.mockReturnValue(false);
   mocks.renewPristineApproved.mockImplementation(async (input) =>
     intentRow({
       approvalId: "approval-previous",
@@ -346,6 +353,18 @@ beforeEach(() => {
       executionState: "failed",
       failureReason:
         "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.",
+    }));
+  mocks.expireStaleApprovalPending.mockImplementation(async (input) =>
+    intentRow({
+      intentId: input.intentId,
+      sessionId: input.sessionId,
+      approvalStatus: "expired",
+      executionState: "failed",
+      decisionReason:
+        "Prepared Lighter deposit expired before an approval was dispatched; no transaction was signed or submitted.",
+      failureReason:
+        "Prepared Lighter deposit expired before an approval was dispatched; no transaction was signed or submitted.",
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
     }));
   mocks.leaseAssertOwned.mockResolvedValue(undefined);
   mocks.leaseRelease.mockResolvedValue(undefined);
@@ -463,6 +482,57 @@ describe("lighter.deposit.status", () => {
       intents: [{ executionState: "deposit_submitted" }],
     });
     expect(mocks.repairDepositIntent).not.toHaveBeenCalled();
+    expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
+  });
+
+  it("returns a concise celebratory confirmation when Lighter credit is proven", async () => {
+    const pending = rhcIntentRow({
+      amountUnits: "5000000",
+      approvalStatus: "approved",
+      executionState: "deposit_confirmed",
+    });
+    const credited = rhcIntentRow({
+      amountUnits: "5000000",
+      approvalStatus: "approved",
+      executionState: "credited",
+      resolvedAccountIndex: 10231,
+    });
+    mocks.listUnresolvedDepositsForWallet.mockResolvedValueOnce([pending]);
+    mocks.repairDepositIntent.mockResolvedValueOnce({
+      intentId: pending.intentId,
+      stateBefore: "deposit_confirmed",
+      stateAfter: "credited",
+      resolution: "credited",
+      evidence: "exact_l1_and_lighter_match",
+      txHash: pending.depositTxHash,
+      accountIndex: 10231,
+      guidance: "credited",
+    });
+    mocks.findByIntentId.mockResolvedValueOnce(credited);
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+      { environment: "rhc" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "credited",
+      presentation: "concise_confirmation",
+      confirmationMessage:
+        "🎉 5 USDG deposit confirmed! Your Lighter account has been credited.",
+      message:
+        "🎉 5 USDG deposit confirmed! Your Lighter account has been credited.",
+      intents: [{
+        executionState: "credited",
+        amountDisplay: "5 USDG",
+        nextAction: expect.stringContaining("exactly this confirmation and nothing else"),
+      }],
+    });
+    expect(result.data?.userGuidance).toContain(
+      "🎉 5 USDG deposit confirmed! Your Lighter account has been credited.",
+    );
+    expect(result.data?.userGuidance).not.toContain("prepare_key_registration");
     expect(mocks.resolveSigningWallet).not.toHaveBeenCalled();
   });
 });
@@ -651,8 +721,92 @@ describe("lighter.deposit execution lease", () => {
       intent: expect.objectContaining({ executionState: "approved" }),
       deps: { marker: "execution-deps" },
     });
-    expect(JSON.stringify(result.output)).toContain("awaiting Lighter confirmation");
+    expect(JSON.stringify(result.output)).toContain("Lighter is now adding the funds");
+    expect(result.data).toMatchObject({
+      amountDisplay: "11 USDC",
+      presentation: "celebratory_handoff",
+    });
+    expect(result.data?.userGuidance).toContain("🎉 **Your 11 USDC deposit has been sent!**");
+    expect(result.data?.userGuidance).toContain(
+      "Would you like me to explore potential trades, show you what’s moving in the market, or keep tracking the deposit until it becomes available?",
+    );
+    expect(result.data?.userGuidance).toContain("do not research markets, prepare a trade, or start tracking");
+    expect(result.data?.userGuidance).not.toContain("trading key");
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses an error presentation when deposit execution remains ambiguous", async () => {
+    mocks.acquireExecutionLease.mockResolvedValue({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValue({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValue({
+      status: "ambiguous",
+      stage: "deposit",
+      txHash: `0x${"b".repeat(64)}`,
+      reason: "provider evidence unavailable",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "ambiguous",
+      amountDisplay: "11 USDC",
+      presentation: "concise_error",
+    });
+    expect(result.data?.userGuidance).toContain(
+      "The 11 USDC deposit outcome is still being verified",
+    );
+    expect(result.data?.userGuidance).not.toContain("deposit has been sent");
+  });
+
+  it("uses an error presentation when deposit execution fails", async () => {
+    mocks.acquireExecutionLease.mockResolvedValue({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValue({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValue({
+      status: "failed",
+      stage: "deposit",
+      txHash: `0x${"b".repeat(64)}`,
+      reason: "transaction reverted",
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+      { intentId: intentRow().intentId },
+      approvedContext,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "failed",
+      amountDisplay: "11 USDC",
+      presentation: "concise_error",
+    });
+    expect(result.data?.userGuidance).toContain(
+      "The 11 USDC deposit did not go through",
+    );
+    expect(result.data?.userGuidance).not.toContain("deposit has been sent");
   });
 
   it("executes a pristine approved intent only through a freshly bound approval", async () => {
@@ -860,6 +1014,49 @@ describe("lighter.deposit.prepare", () => {
     expect(mocks.acquireExecutionLease).not.toHaveBeenCalled();
   });
 
+  it("keeps a requested 5 USDG deposit as an exact 5 USDG transfer", async () => {
+    const depositCalldata = buildLighterDepositCalldata({
+      environment: "rhc",
+      to: WALLET,
+      amountUnits: 5_000_000n,
+    }).data;
+    const preflight = rhcPreflightSnapshot({
+      amountUnits: "5000000",
+      depositCalldata,
+      walletBalanceUnits: "8335721",
+    });
+    mocks.readDepositPreflight.mockResolvedValueOnce(preflight);
+    mocks.createOrFind.mockResolvedValueOnce({
+      outcome: "created",
+      intent: rhcIntentRow({
+        amountUnits: "5000000",
+        preflightWalletBalanceUnits: "8335721",
+        preflightPublicSnapshot: {
+          ...preflight,
+          observedAt: preflight.observedAt.toISOString(),
+        },
+      }),
+    });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "rhc", amountIn: "5" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.readDepositPreflight).toHaveBeenCalledWith(expect.objectContaining({
+      amountUnits: 5_000_000n,
+    }));
+    expect(result.data).toMatchObject({
+      amountSemantics: "exact_transfer",
+      amountDisplay: "5 USDG",
+    });
+    expect(result.preparedActionFollowUp?.approvalPreview.criticalArgs).toMatchObject({
+      amountUnits: "5000000",
+      amountDisplay: "5 USDG",
+    });
+  });
+
   it("activates managed Lighter setup before preparing a deposit", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
     mocks.createOrFind.mockResolvedValue({
@@ -926,7 +1123,7 @@ describe("lighter.deposit.prepare", () => {
     });
     expect(
       validatePreparedActionFollowUp(
-        "lighter__deposit__prepare",
+        "lighter.deposit.prepare",
         result.preparedActionFollowUp!,
       ),
     ).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
@@ -1128,9 +1325,96 @@ describe("lighter.deposit.prepare", () => {
   });
 
   it.each([
+    { label: "Core preparation from the same session", environment: "core", previousSessionId: "session-1" },
+    { label: "Core preparation from a previous session", environment: "core", previousSessionId: "session-previous" },
+    { label: "RHC preparation from the same session", environment: "rhc", previousSessionId: "session-1" },
+    { label: "RHC preparation from a previous session", environment: "rhc", previousSessionId: "session-previous" },
+  ] as const)("atomically replaces an expired evidence-free $label", async ({
+    environment,
+    previousSessionId,
+  }) => {
+    const row = environment === "rhc" ? rhcIntentRow : intentRow;
+    const preflight = environment === "rhc" ? rhcPreflightSnapshot() : preflightSnapshot();
+    const expired = row({
+      sessionId: previousSessionId,
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    const fresh = row({
+      intentId: "lighter-onboard-00000000-0000-4000-8000-000000000002",
+      sessionId: "session-1",
+    });
+    mocks.readDepositPreflight.mockResolvedValueOnce(preflight);
+    mocks.isSafelyExpirable.mockReturnValueOnce(true);
+    mocks.createOrFind
+      .mockResolvedValueOnce({ outcome: "live_conflict", intent: expired })
+      .mockResolvedValueOnce({ outcome: "created", intent: fresh });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment, amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approval_prepared",
+      intentId: fresh.intentId,
+    });
+    expect(mocks.withSessionControlLocks).toHaveBeenCalledWith(
+      [previousSessionId, "session-1"],
+      expect.any(Function),
+    );
+    expect(mocks.expireStaleApprovalPending).toHaveBeenCalledWith({
+      intentId: expired.intentId,
+      sessionId: previousSessionId,
+      environment,
+      walletAddress: WALLET,
+      chainId: preflight.chainId,
+      depositContract: expired.depositContract,
+      depositTo: WALLET,
+      assetIndex: 3,
+      routeType: 0,
+      amountUnits: "11000000",
+    });
+    expect(mocks.createOrFind).toHaveBeenLastCalledWith(
+      { marker: "multi-locked-client" },
+      expect.objectContaining({
+        sessionId: "session-1",
+        environment,
+        walletAddress: WALLET,
+        chainId: preflight.chainId,
+        depositContract: preflight.gatewayAddress,
+        amountUnits: "11000000",
+      }),
+    );
+    expect(mocks.supersedePristine).not.toHaveBeenCalled();
+    expect(result.preparedActionFollowUp).toMatchObject({
+      args: {
+        toolId: "lighter.deposit",
+        params: { intentId: fresh.intentId },
+      },
+    });
+  });
+
+  it("fails closed when an expired preparation changes before the expiry CAS", async () => {
+    const expired = intentRow({ expiresAt: new Date("2020-01-01T00:00:00.000Z") });
+    mocks.isSafelyExpirable.mockReturnValueOnce(true);
+    mocks.expireStaleApprovalPending.mockResolvedValueOnce(null);
+    mocks.createOrFind.mockResolvedValueOnce({ outcome: "live_conflict", intent: expired });
+
+    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+      { environment: "core", amountIn: "11" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already unresolved");
+    expect(mocks.createOrFind).toHaveBeenCalledTimes(1);
+    expect(result.preparedActionFollowUp).toBeUndefined();
+  });
+
+  it.each([
     { approvalId: "approval-previous" },
     { approveTxHash: `0x${"a".repeat(64)}` },
-    { expiresAt: new Date("2020-01-01T00:00:00.000Z") },
   ])("refuses to reissue a non-pristine approval conflict: %o", async (override) => {
     mocks.createOrFind.mockResolvedValue({
       outcome: "live_conflict",

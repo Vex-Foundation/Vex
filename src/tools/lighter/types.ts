@@ -64,7 +64,7 @@ export interface LighterAssetDetail {
   min_transfer_amount: string;
   min_withdrawal_amount?: string;
   l1_address: string;
-  margin_mode?: "enabled" | "disabled";
+  margin_mode?: "enabled" | "disabled" | "priced_only";
   [key: string]: unknown;
 }
 
@@ -127,7 +127,19 @@ export interface LighterAccount {
   cross_initial_margin_requirement?: string;
   cross_maintenance_margin_requirement?: string;
   positions?: LighterAccountPosition[];
-  assets?: unknown[];
+  assets?: LighterAccountAsset[];
+  [key: string]: unknown;
+}
+
+/** Exact spot-asset inventory returned inside a live Lighter account row. */
+export interface LighterAccountAsset {
+  symbol: string;
+  asset_id: number;
+  balance: string;
+  locked_balance: string;
+  margin_balance: string;
+  margin_mode: "enabled" | "disabled";
+  multiplier: string;
   [key: string]: unknown;
 }
 

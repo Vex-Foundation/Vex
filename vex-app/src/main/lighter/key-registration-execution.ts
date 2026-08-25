@@ -11,6 +11,7 @@ import {
 } from "@tools/lighter/signer-binary-adapter.js";
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import {
+  assertLighterTradingApiKeyIndexAllowed,
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
@@ -87,6 +88,7 @@ async function runLighterKeyRegistration(
   if (intent === null || intent.sessionId !== input.sessionId) {
     throw executionError("the approved registration intent is unavailable in this session");
   }
+  assertLighterTradingApiKeyIndexAllowed(intent.environment, intent.apiKeyIndex);
   assertIntentShape(intent);
   if (intent.approvalStatus !== "approved") {
     throw executionError("the registration intent does not have durable approval");

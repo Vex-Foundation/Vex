@@ -241,7 +241,10 @@ const assetDetailsResponseSchema = z
       min_transfer_amount: numericString,
       min_withdrawal_amount: numericString.optional(),
       l1_address: z.string().min(1),
-      margin_mode: z.enum(["enabled", "disabled"]).optional(),
+      // Lighter added `priced_only` for assets that expose an index price but
+      // are not collateral-enabled. Withdrawal/deposit preflights still
+      // require the exact settlement asset (USDC/USDG) to be `enabled`.
+      margin_mode: z.enum(["enabled", "disabled", "priced_only"]).optional(),
     }).passthrough()),
   })
   .passthrough();
@@ -308,6 +311,18 @@ const accountPositionSchema = z
   })
   .passthrough();
 
+const accountAssetSchema = z
+  .object({
+    symbol: z.string().min(1),
+    asset_id: int,
+    balance: numericString,
+    locked_balance: numericString,
+    margin_balance: numericString,
+    margin_mode: z.enum(["enabled", "disabled"]),
+    multiplier: numericString,
+  })
+  .passthrough();
+
 const accountSchema = z
   .object({
     index: int.optional(),
@@ -320,7 +335,7 @@ const accountSchema = z
     cross_initial_margin_requirement: optionalNumericString,
     cross_maintenance_margin_requirement: optionalNumericString,
     positions: z.array(accountPositionSchema).optional(),
-    assets: z.array(z.unknown()).optional(),
+    assets: z.array(accountAssetSchema).optional(),
   })
   .passthrough();
 

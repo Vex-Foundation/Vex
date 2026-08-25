@@ -10,6 +10,7 @@ import {
 } from "@tools/lighter/trading-secret.js";
 import {
   defaultLighterTradingVaultCredentialId,
+  isLighterTradingApiKeyIndexAllowed,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
@@ -44,6 +45,9 @@ export async function resolveManagedLighterTradingReadiness(
   const scope = deps.listManagedScopes(environment)
     .find((candidate) => candidate.accountIndex === accountIndex);
   if (scope === undefined) return notReady("active_managed_credential_missing");
+  if (!isLighterTradingApiKeyIndexAllowed(environment, scope.apiKeyIndex)) {
+    return notReady("provider_reserved_api_key_index", { activeManagedCredential: true });
+  }
 
   let intent: Awaited<ReturnType<LighterManagedTradingReadinessDeps["findRegistrationIntent"]>>;
   try {

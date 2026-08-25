@@ -84,8 +84,6 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
-      lighterCoreReadOnlyConfigured: false,
-      lighterRhcReadOnlyConfigured: false,
       lighterCoreTradingConfigured: false,
       lighterRhcTradingConfigured: false,
       ...overrides,

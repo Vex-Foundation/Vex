@@ -16,6 +16,7 @@ const CRITICAL_ARG_KEYS = [
   "intentId",
   "marketIndex",
   "marketSymbol",
+  "marketType",
   "matchHash",
   "notionalDisplay",
   "orderExpiryIso",
@@ -98,6 +99,7 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.accountIndex === intent.accountIndex
     && criticalArgs.apiKeyIndex === intent.apiKeyIndex
     && criticalArgs.marketIndex === intent.marketIndex
+    && marketTypeMatchesIndex(criticalArgs.marketType, intent.marketIndex)
     && criticalArgs.side === intent.side
     && criticalArgs.baseAmountInteger === intent.baseAmountInteger
     && criticalArgs.priceInteger === intent.priceInteger
@@ -113,6 +115,12 @@ function approvalPreviewMatchesIntent(
     && isNonEmptyString(criticalArgs.priceDisplay)
     && isNonEmptyString(criticalArgs.notionalDisplay)
   );
+}
+
+function marketTypeMatchesIndex(value: unknown, marketIndex: number): boolean {
+  return value === "perp"
+    ? marketIndex >= 0 && marketIndex <= 254
+    : value === "spot" && marketIndex >= 2_048 && marketIndex <= 4_094;
 }
 
 function isNonEmptyString(value: unknown): value is string {

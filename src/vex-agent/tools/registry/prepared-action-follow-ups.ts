@@ -1,6 +1,7 @@
 /** Explicit allow-list for trusted prepare → execute handoffs. */
 
 import { createHash } from "node:crypto";
+import { encodeFunctionData, formatEther, formatUnits } from "viem";
 
 import type {
   ApprovalPreviewScalar,
@@ -11,6 +12,8 @@ import {
 } from "@tools/lighter/wallet-funding/constants.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
+import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
+import { LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS } from "../protocols/lighter/withdrawal-claim-approval-binding.js";
 
 /**
  * The ONE prepare → confirm handoff pair, as two exported constants.
@@ -160,6 +163,20 @@ export interface ValidatedLighterWithdrawalFollowUp {
   };
 }
 
+export interface ValidatedLighterWithdrawalClaimFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.withdraw.claim";
+    readonly params: { readonly claimId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "claim";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export type ValidatedPreparedActionFollowUp =
   | ValidatedWalletSendFollowUp
   | ValidatedLighterOrderCreateFollowUp
@@ -169,6 +186,7 @@ export type ValidatedPreparedActionFollowUp =
   | ValidatedLighterPositionCloseFollowUp
   | ValidatedLighterDepositFollowUp
   | ValidatedLighterWithdrawalFollowUp
+  | ValidatedLighterWithdrawalClaimFollowUp
   | ValidatedLighterKeyRegistrationFollowUp;
 
 export type PreparedActionFollowUpValidation =
@@ -180,42 +198,39 @@ const LIGHTER_INTENT_ID_RE = /^lighter-exec-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}
 const LIGHTER_LIFECYCLE_INTENT_ID_RE = /^lighter-lifecycle-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_DEPOSIT_INTENT_ID_RE = /^lighter-onboard-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_WITHDRAWAL_INTENT_ID_RE = /^lighter-withdrawal-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LIGHTER_WITHDRAWAL_CLAIM_ID_RE = /^lighter-withdrawal-claim-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIGHTER_ORDER_CREATE_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__order__create__prepare",
+  "lighter.order.create.prepare",
 ]);
 const LIGHTER_ORDER_CANCEL_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__order__cancel__prepare",
+  "lighter.order.cancel.prepare",
 ]);
 const LIGHTER_ORDER_MODIFY_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__order__modify__prepare",
+  "lighter.order.modify.prepare",
 ]);
 const LIGHTER_ORDER_CANCEL_ALL_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__order__cancelAll__prepare",
+  "lighter.order.cancelAll.prepare",
 ]);
 const LIGHTER_POSITION_CLOSE_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__position__close__prepare",
+  "lighter.position.close.prepare",
 ]);
 const LIGHTER_DEPOSIT_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__deposit__prepare",
+  "lighter.deposit.prepare",
 ]);
 const LIGHTER_KEY_REGISTRATION_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__key__register__prepare",
+  "lighter.key.register.prepare",
 ]);
 const LIGHTER_WITHDRAWAL_PREPARE_SOURCES = new Set([
-  "execute_tool",
-  "lighter__withdraw__prepare",
+  "lighter.withdraw.prepare",
+]);
+const LIGHTER_WITHDRAWAL_CLAIM_PREPARE_SOURCES = new Set([
+  "lighter.withdraw.claim.prepare",
 ]);
 const PREVIEW_KEYS = ["network", "chain", "to", "amount", "token"] as const;
 const LIGHTER_PREVIEW_KEYS = [
   "orderSummary",
   "marketSymbol",
+  "marketType",
   "baseAmountDisplay",
   "priceDisplay",
   "notionalDisplay",
@@ -296,7 +311,6 @@ const LIGHTER_WITHDRAWAL_PREVIEW_KEYS = [
   "estimatedClaimableAt", "gatewayAddress", "gatewayImplementation", "gatewayCodeHash",
   "settlementTokenCodeHash", "preflightObservedAt", "summary", "scopeNote",
 ] as const;
-
 const LIGHTER_DISPLAY_AMOUNT_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 const LIGHTER_DEPOSIT_DISPLAY_AMOUNT_RE =
   /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? (?:USDC|USDG)$/;
@@ -320,9 +334,9 @@ function isScalar(value: unknown): value is ApprovalPreviewScalar {
  *
  * Maintainer decision: every prepare → execute/confirm mapping must be named
  * here. The registry currently allows WalletSendPrepare → WalletSendConfirm
- * and the protocol `execute_tool` handoffs for the explicitly registered
- * Lighter order, deposit, key-registration, and withdrawal intents. Every
- * other source/target pair fails closed as "unknown_mapping".
+ * and immutable Lighter prepare tool IDs to hand off to their exact registered
+ * execute targets. The `execute_tool` wrapper is not itself a source identity.
+ * Every other source/target pair fails closed as "unknown_mapping".
  */
 export function validatePreparedActionFollowUp(
   sourceToolName: string,
@@ -383,6 +397,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.withdraw"
   ) {
     return validateLighterWithdrawalFollowUp(candidate);
+  }
+  if (
+    LIGHTER_WITHDRAWAL_CLAIM_PREPARE_SOURCES.has(sourceToolName)
+    && candidate.toolName === "execute_tool"
+    && candidate.args.toolId === "lighter.withdraw.claim"
+  ) {
+    return validateLighterWithdrawalClaimFollowUp(candidate);
   }
 
   if (
@@ -766,6 +787,7 @@ function validateLighterOrderCreateFollowUp(
     typeof criticalArgs.marketSymbol !== "string" ||
     criticalArgs.marketSymbol.trim().length === 0 ||
     criticalArgs.marketSymbol.length > 32 ||
+    (criticalArgs.marketType !== "perp" && criticalArgs.marketType !== "spot") ||
     typeof criticalArgs.baseAmountDisplay !== "string" ||
     !LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.baseAmountDisplay) ||
     typeof criticalArgs.priceDisplay !== "string" ||
@@ -788,6 +810,9 @@ function validateLighterOrderCreateFollowUp(
     !Number.isSafeInteger(criticalArgs.marketIndex) ||
     criticalArgs.marketIndex < 0 ||
     criticalArgs.marketIndex > 65_535 ||
+    (criticalArgs.marketType === "perp"
+      ? criticalArgs.marketIndex > 254
+      : criticalArgs.marketIndex < 2_048 || criticalArgs.marketIndex > 4_094) ||
     (criticalArgs.side !== "buy" && criticalArgs.side !== "sell") ||
     typeof criticalArgs.baseAmountInteger !== "string" ||
     !/^[1-9][0-9]*$/.test(criticalArgs.baseAmountInteger) ||
@@ -1109,7 +1134,11 @@ function validateLighterWithdrawalFollowUp(
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     args[key] = value;
   }
-  const funding = getLighterFundingDeployment("core");
+  const environment = args.environment;
+  if (environment !== "core" && environment !== "rhc") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const funding = getLighterFundingDeployment(environment);
   if (
     args.toolId !== "lighter.withdraw"
     || args.intentId !== intentId
@@ -1117,7 +1146,7 @@ function validateLighterWithdrawalFollowUp(
     || !/^lwp_[0-9a-f]{24}$/.test(args.previewId)
     || typeof args.matchHash !== "string"
     || !/^[0-9a-f]{64}$/.test(args.matchHash)
-    || args.environment !== "core"
+    || args.environment !== funding.environment
     || args.operationClass !== "secure_l2_withdrawal"
     || !safeNonNegativeInt(args.accountIndex)
     || !safeNonNegativeInt(args.apiKeyIndex)
@@ -1126,19 +1155,19 @@ function validateLighterWithdrawalFollowUp(
     || typeof args.walletAddress !== "string"
     || !EVM_ADDRESS_RE.test(args.walletAddress)
     || args.destinationAddress !== args.walletAddress
-    || args.signingChainId !== 304
-    || args.settlementChainId !== 1
-    || args.settlementNetworkName !== "Ethereum mainnet"
-    || args.assetIndex !== 3
-    || args.assetSymbol !== "USDC"
-    || args.assetDecimals !== 6
+    || args.signingChainId !== funding.lighterSignerChainId
+    || args.settlementChainId !== funding.settlementChainId
+    || args.settlementNetworkName !== funding.settlementNetworkName
+    || args.assetIndex !== funding.settlementAssetIndex
+    || args.assetSymbol !== funding.settlementSymbol
+    || args.assetDecimals !== funding.settlementDecimals
     || typeof args.settlementTokenAddress !== "string"
     || args.settlementTokenAddress.toLowerCase() !== funding.settlementTokenProxy.toLowerCase()
-    || args.routeType !== 0
+    || args.routeType !== funding.perpsRouteType
     || args.route !== "secure"
     || !isPositiveIntegerString(args.amountUnits)
     || typeof args.amountDisplay !== "string"
-    || !/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)? USDC$/.test(args.amountDisplay)
+    || !new RegExp(`^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)? ${funding.settlementSymbol}$`).test(args.amountDisplay)
     || !isPositiveIntegerString(args.minimumWithdrawalUnits)
     || !isNonNegativeIntegerString(args.availableBalanceUnits)
     || !isNonNegativeIntegerString(args.collateralUnits)
@@ -1174,6 +1203,143 @@ function validateLighterWithdrawalFollowUp(
       args: { toolId: "lighter.withdraw", params: { intentId } },
       expiresAt: candidate.expiresAt,
       approvalPreview: { toolName: "withdraw", namespace: "lighter", criticalArgs: args },
+    },
+  };
+}
+
+function validateLighterWithdrawalClaimFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  if (
+    Object.keys(candidate.args).sort().join(",") !== "params,toolId"
+    || candidate.args.toolId !== "lighter.withdraw.claim"
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const params = candidate.args.params;
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const paramsRecord = params as Record<string, unknown>;
+  const claimId = paramsRecord.claimId;
+  if (
+    Object.keys(paramsRecord).join(",") !== "claimId"
+    || typeof claimId !== "string"
+    || !LIGHTER_WITHDRAWAL_CLAIM_ID_RE.test(claimId)
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "claim" || preview.namespace !== "lighter") {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  if (
+    Object.keys(preview.criticalArgs).sort().join(",")
+    !== [...LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS].sort().join(",")
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+  const args: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
+    args[key] = value;
+  }
+
+  const settlementChainId = args.settlementChainId;
+  const environment = settlementChainId === 1
+    ? "core"
+    : settlementChainId === 4663
+      ? "rhc"
+      : null;
+  if (environment === null) return { ok: false, reason: "invalid_contract" };
+  const funding = getLighterFundingDeployment(environment);
+  const operationClass = environment === "core"
+    ? "manual_core_usdc_claim"
+    : "manual_rhc_usdg_claim";
+  const ownerAddress = args.ownerAddress;
+  const amountUnits = args.amountUnits;
+  let exactCalldata: string | null = null;
+  if (
+    typeof ownerAddress === "string"
+    && EVM_ADDRESS_RE.test(ownerAddress)
+    && isPositiveIntegerString(amountUnits)
+  ) {
+    try {
+      exactCalldata = encodeFunctionData({
+        abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
+        functionName: "withdrawPendingBalance",
+        args: [ownerAddress as `0x${string}`, 3, BigInt(amountUnits)],
+      });
+    } catch {
+      exactCalldata = null;
+    }
+  }
+  const networkFeeCeilingWei = args.networkFeeCeilingWei;
+  if (
+    args.toolId !== "lighter.withdraw.claim"
+    || args.claimId !== claimId
+    || typeof args.withdrawalIntentId !== "string"
+    || !LIGHTER_WITHDRAWAL_INTENT_ID_RE.test(args.withdrawalIntentId)
+    || typeof args.previewId !== "string"
+    || !/^lwcp_[0-9a-f]{24}$/.test(args.previewId)
+    || typeof args.matchHash !== "string"
+    || !/^[0-9a-f]{64}$/.test(args.matchHash)
+    || args.operationClass !== operationClass
+    || args.settlementChainId !== funding.settlementChainId
+    || args.settlementNetworkName !== funding.settlementNetworkName
+    || typeof args.walletAddress !== "string"
+    || !EVM_ADDRESS_RE.test(args.walletAddress)
+    || args.ownerAddress !== args.walletAddress
+    || typeof args.gatewayAddress !== "string"
+    || args.gatewayAddress.toLowerCase() !== funding.gatewayProxy.toLowerCase()
+    || typeof args.gatewayImplementation !== "string"
+    || funding.expectedGatewayImplementation === undefined
+    || args.gatewayImplementation.toLowerCase()
+      !== funding.expectedGatewayImplementation.toLowerCase()
+    || typeof args.gatewayCodeHash !== "string"
+    || !/^0x[0-9a-f]{64}$/i.test(args.gatewayCodeHash)
+    || typeof args.settlementTokenAddress !== "string"
+    || args.settlementTokenAddress.toLowerCase() !== funding.settlementTokenProxy.toLowerCase()
+    || typeof args.settlementTokenCodeHash !== "string"
+    || !/^0x[0-9a-f]{64}$/i.test(args.settlementTokenCodeHash)
+    || args.assetIndex !== funding.settlementAssetIndex
+    || args.assetSymbol !== funding.settlementSymbol
+    || args.assetDecimals !== funding.settlementDecimals
+    || !isPositiveIntegerString(amountUnits)
+    || BigInt(amountUnits) > (1n << 128n) - 1n
+    || args.amountDisplay !== `${formatUnits(BigInt(amountUnits), funding.settlementDecimals)} ${funding.settlementSymbol}`
+    || typeof args.calldata !== "string"
+    || exactCalldata === null
+    || args.calldata.toLowerCase() !== exactCalldata.toLowerCase()
+    || args.valueWei !== "0"
+    || !isPositiveIntegerString(args.gasLimit)
+    || !isPositiveIntegerString(args.quotedMaxFeePerGasWei)
+    || !isNonNegativeIntegerString(args.quotedPriorityFeePerGasWei)
+    || BigInt(args.quotedPriorityFeePerGasWei) > BigInt(args.quotedMaxFeePerGasWei)
+    || !isPositiveIntegerString(networkFeeCeilingWei)
+    || BigInt(networkFeeCeilingWei) < BigInt(args.gasLimit) * BigInt(args.quotedMaxFeePerGasWei)
+    || args.networkFeeCeilingDisplay !== `${formatEther(BigInt(networkFeeCeilingWei))} ETH`
+    || !isPositiveIntegerString(args.preflightBlockNumber)
+    || typeof args.preflightObservedAt !== "string"
+    || !Number.isFinite(Date.parse(args.preflightObservedAt))
+    || !isBoundedText(args.summary)
+    || !isBoundedText(args.scopeNote)
+  ) {
+    return { ok: false, reason: "invalid_contract" };
+  }
+
+  return {
+    ok: true,
+    followUp: {
+      toolName: "execute_tool",
+      args: { toolId: "lighter.withdraw.claim", params: { claimId } },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: "claim", namespace: "lighter", criticalArgs: args },
     },
   };
 }

@@ -226,10 +226,34 @@ const ACCOUNT: LighterAccount = {
   collateral: "1000",
   available_balance: "750",
   positions: [
-    { market_id: 0, symbol: "ETH", position: "1.25", avg_entry_price: "3000" },
+    {
+      market_id: 0,
+      symbol: "ETH",
+      initial_margin_fraction: "5.00",
+      open_order_count: 0,
+      pending_order_count: 0,
+      position_tied_order_count: 0,
+      sign: 1,
+      position: "1.25",
+      avg_entry_price: "3000",
+      position_value: "3750",
+      unrealized_pnl: "0",
+      realized_pnl: "0",
+      liquidation_price: "2000",
+      margin_mode: 0,
+      allocated_margin: "0",
+    },
   ],
   assets: [
-    { asset_id: 1, symbol: "USDC", balance: "750" },
+    {
+      asset_id: 1,
+      symbol: "USDC",
+      balance: "750",
+      locked_balance: "0",
+      margin_balance: "750",
+      margin_mode: "enabled",
+      multiplier: "1",
+    },
   ],
 };
 
@@ -304,7 +328,7 @@ function candle(index: number): LighterCandle {
     c: index + 0.5,
     v: index * 2,
     V: index * 2000,
-    i: index,
+    i: String(index),
   };
 }
 
@@ -329,6 +353,7 @@ function previewRow() {
     providerVersion: "lighter-preview-v1",
     previewJson: {
       symbol: "ETH",
+      marketType: "perp",
       baseAmount: { display: "1", integer: "10000", decimals: 4 },
       price: { display: "3000", integer: "300000", decimals: 2 },
       quoteNotional: { display: "3000", integer: "3000000000", decimals: 6 },
@@ -417,9 +442,10 @@ function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
       namespace: "lighter",
       criticalArgs: {
         orderSummary:
-          "Buy 1 ETH at worst acceptable price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
-          + "immediate-or-cancel; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+          "Buy 1 ETH at worst acceptable price 3000 (est. notional 3000) on the perpetual market on Robinhood Chain Lighter (rhc); "
+          + "immediate-or-cancel; expires 2030-01-01T00:00:00.000Z. Any unfilled remainder is canceled immediately. API acceptance is not final execution.",
         marketSymbol: "ETH",
+        marketType: "perp",
         baseAmountDisplay: "1",
         priceDisplay: "3000",
         notionalDisplay: "3000",
@@ -782,7 +808,7 @@ describe("Lighter agent read handlers", () => {
     configureLighterManagedTradingReadinessResolver({
       read: vi.fn(async () => ({
         ready: true,
-        reason: "ready",
+        reason: "ready" as const,
         activeManagedCredential: true,
         durableActivation: true,
         exactPublicKeyMatch: true,
@@ -881,7 +907,7 @@ describe("Lighter agent read handlers", () => {
     configureLighterManagedTradingReadinessResolver({
       read: vi.fn(async () => ({
         ready: false,
-        reason: "nonce_not_reservable",
+        reason: "nonce_not_reservable" as const,
         activeManagedCredential: true,
         durableActivation: true,
         exactPublicKeyMatch: true,
@@ -1202,7 +1228,7 @@ describe("Lighter agent read handlers", () => {
       environment: "rhc",
     }, READ_CTX);
     const validated = validatePreparedActionFollowUp(
-      "execute_tool",
+      "lighter.order.create.prepare",
       prepared.preparedActionFollowUp!,
     );
     expect(validated.ok, JSON.stringify(validated)).toBe(true);
@@ -1984,6 +2010,132 @@ describe("Lighter agent read handlers", () => {
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 
+  it("resolves an explicitly requested spot symbol without falling back to perp", async () => {
+    const spotMarket: LighterMarket = {
+      ...MARKET,
+      symbol: "ETH/USDC",
+      market_id: 2048,
+      market_type: "spot",
+      quote_asset_id: 3,
+      taker_fee: "0",
+      is_taker_fee_enabled: false,
+    };
+    const spotDetail: LighterMarketDetail = {
+      ...DETAIL,
+      ...spotMarket,
+    };
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 0, symbol: "ETH-USD", market_type: "perp" },
+        spotMarket,
+      ],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [spotDetail],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [{
+        ...ACCOUNT,
+        assets: [{
+          asset_id: 3,
+          symbol: "USDC",
+          balance: "10000",
+          locked_balance: "0",
+        }],
+      }],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "core",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketSymbol: "ETH",
+      marketType: "spot",
+      side: "buy",
+      baseAmountIn: "0.25",
+      price: "3499.99",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(mocks.client.getMarkets).toHaveBeenCalledWith("core", { filter: "spot" });
+    expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("core", {
+      marketId: 2048,
+      filter: "all",
+    });
+    expect(data.preview).toMatchObject({
+      marketIndex: 2048,
+      marketType: "spot",
+      symbol: "ETH/USDC",
+    });
+    expect(data.provenance).toMatchObject({
+      requestedMarketType: "spot",
+      resolvedMarketType: "spot",
+    });
+    expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an exact market id that conflicts with the requested product type", async () => {
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+
+    const output = await callFail("lighter.order.preview", {
+      environment: "core",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketId: 0,
+      marketType: "spot",
+      side: "buy",
+      baseAmountIn: "0.25",
+      price: "3499.99",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("marketId 0 is a perp market, not the requested spot market");
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+    expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported preview market type before provider reads", async () => {
+    const output = await callFail("lighter.order.preview", {
+      environment: "core",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketSymbol: "ETH",
+      marketType: "all",
+      side: "buy",
+      baseAmountIn: "0.25",
+      price: "3499.99",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("marketType must be perp, spot");
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+    expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
+  });
+
   it("refuses to guess the account when multiple Lighter trading keys are configured", async () => {
     configureLighterTradingCredentialScopeResolver({
       findSavedScope: (environment, accountIndex) =>
@@ -2480,7 +2632,7 @@ describe("Lighter agent read handlers", () => {
     expect(data.count).toBe(100);
     expect(data.totalProviderRows).toBe(105);
     expect(data.truncated).toBe(true);
-    expect((data.candles as Record<string, unknown>[])[0]?.index).toBe(5);
+    expect((data.candles as Record<string, unknown>[])[0]?.index).toBe("5");
   });
 
   it("rejects missing or invalid params before reaching the client", async () => {

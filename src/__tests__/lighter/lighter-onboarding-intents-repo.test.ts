@@ -91,7 +91,7 @@ function rhcPreflight(walletAddress: string, amountUnits: string) {
     ethereumBlockNumber: "40124106",
     lighterBlockNumber: "40124098",
     gatewayAddress: RHC_CONTRACT,
-    gatewayImplementationAddress: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+    gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
     settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
     settlementTokenSymbol: "USDG" as const,
@@ -143,6 +143,99 @@ function preflight(walletAddress: string, amountUnits: string) {
     requiredNativeBalanceWei: "10000000000000000",
   };
 }
+
+function expiredEvidenceFreeIntent(overrides: Record<string, unknown> = {}) {
+  return {
+    capability: "deposit",
+    approvalStatus: "approval_pending",
+    executionState: "approval_pending",
+    approvalId: null,
+    protocolExecutionId: null,
+    decisionReason: null,
+    failureReason: null,
+    approveTxHash: null,
+    approveTxFrom: null,
+    approveTxNonce: null,
+    approveReplacementTxHash: null,
+    approveReplacementReason: null,
+    approveReplacementObservedAt: null,
+    depositTxHash: null,
+    depositTxFrom: null,
+    depositTxNonce: null,
+    depositReplacementTxHash: null,
+    depositReplacementReason: null,
+    depositReplacementObservedAt: null,
+    depositL1BlockHash: null,
+    depositL1BlockNumber: null,
+    depositEventAccountIndex: null,
+    lighterTxHash: null,
+    lighterTxStatus: null,
+    lighterBlockHeight: null,
+    lighterExecutedAt: null,
+    lighterEvidenceObservedAt: null,
+    resolvedAccountIndex: null,
+    expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    ...overrides,
+  } as unknown as repo.LighterOnboardingIntentRow;
+}
+
+describe("isSafelyExpirableDepositApprovalPending", () => {
+  it("accepts only an expired evidence-free approval preparation", () => {
+    expect(repo.isSafelyExpirableDepositApprovalPending(
+      expiredEvidenceFreeIntent(),
+      Date.parse("2020-01-01T00:00:01.000Z"),
+    )).toBe(true);
+    expect(repo.isSafelyExpirableDepositApprovalPending(
+      expiredEvidenceFreeIntent({ expiresAt: new Date("2030-01-01T00:00:00.000Z") }),
+      Date.parse("2020-01-01T00:00:01.000Z"),
+    )).toBe(false);
+  });
+
+  it.each([
+    ["non-deposit capability", { capability: "key_registration" }],
+    ["approved approval state", { approvalStatus: "approved" }],
+    ["approved execution state", { executionState: "approved" }],
+    ["invalid expiry", { expiresAt: new Date(Number.NaN) }],
+  ])("rejects an expired row with %s", (_label, override) => {
+    expect(repo.isSafelyExpirableDepositApprovalPending(
+      expiredEvidenceFreeIntent(override),
+      Date.parse("2020-01-01T00:00:01.000Z"),
+    )).toBe(false);
+  });
+
+  it.each([
+    ["approval id", { approvalId: "approval-1" }],
+    ["protocol execution", { protocolExecutionId: 1 }],
+    ["decision", { decisionReason: "decided" }],
+    ["failure", { failureReason: "failed" }],
+    ["approval hash", { approveTxHash: `0x${"a".repeat(64)}` }],
+    ["approval sender", { approveTxFrom: `0x${"1".repeat(40)}` }],
+    ["approval nonce", { approveTxNonce: "1" }],
+    ["approval replacement hash", { approveReplacementTxHash: `0x${"b".repeat(64)}` }],
+    ["approval replacement reason", { approveReplacementReason: "repriced" }],
+    ["approval replacement observation", { approveReplacementObservedAt: new Date() }],
+    ["deposit hash", { depositTxHash: `0x${"c".repeat(64)}` }],
+    ["deposit sender", { depositTxFrom: `0x${"2".repeat(40)}` }],
+    ["deposit nonce", { depositTxNonce: "2" }],
+    ["deposit replacement hash", { depositReplacementTxHash: `0x${"d".repeat(64)}` }],
+    ["deposit replacement reason", { depositReplacementReason: "repriced" }],
+    ["deposit replacement observation", { depositReplacementObservedAt: new Date() }],
+    ["settlement block hash", { depositL1BlockHash: `0x${"e".repeat(64)}` }],
+    ["settlement block number", { depositL1BlockNumber: "1" }],
+    ["settlement account", { depositEventAccountIndex: 1 }],
+    ["Lighter hash", { lighterTxHash: "lighter-hash" }],
+    ["Lighter status", { lighterTxStatus: 3 }],
+    ["Lighter block", { lighterBlockHeight: 1 }],
+    ["Lighter execution", { lighterExecutedAt: 1 }],
+    ["Lighter observation", { lighterEvidenceObservedAt: new Date() }],
+    ["resolved account", { resolvedAccountIndex: 1 }],
+  ])("rejects an expired row carrying %s evidence", (_label, evidence) => {
+    expect(repo.isSafelyExpirableDepositApprovalPending(
+      expiredEvidenceFreeIntent(evidence),
+      Date.parse("2020-01-01T00:00:01.000Z"),
+    )).toBe(false);
+  });
+});
 
 d("lighter_onboarding_intents repo", () => {
   it("walks the full RHC direct-deposit lifecycle through durable CAS transitions", async () => {
@@ -589,6 +682,101 @@ d("lighter_onboarding_intents repo", () => {
         intentId: previous.intentId,
         decision: "approved",
       }))).resolves.toBeNull();
+  });
+
+  it("expires an evidence-free preparation and creates a replacement in the same session", async () => {
+    const sessionId = await newSession();
+    const stale = await newDepositIntent(sessionId);
+    await execute(
+      "UPDATE lighter_onboarding_intents SET expires_at = NOW() - interval '1 minute' WHERE intent_id = $1",
+      [stale.intentId],
+    );
+    const observed = await repo.findByIntentId(stale.intentId);
+    expect(observed).not.toBeNull();
+    expect(repo.isSafelyExpirableDepositApprovalPending(observed!)).toBe(true);
+
+    const replacement = await withSessionControlLocks([sessionId, sessionId], async (client) => {
+      const expired = await repo.expireStaleDepositApprovalPendingWith(client, {
+        intentId: stale.intentId,
+        sessionId,
+        environment: stale.environment,
+        walletAddress: stale.walletAddress,
+        chainId: stale.chainId,
+        depositContract: stale.depositContract!,
+        depositTo: stale.depositTo!,
+        assetIndex: stale.assetIndex!,
+        routeType: stale.routeType!,
+        amountUnits: stale.amountUnits!,
+      });
+      expect(expired).toMatchObject({
+        approvalStatus: "expired",
+        executionState: "failed",
+      });
+      return repo.createOrFindLiveDepositApprovalPendingWith(client, {
+        sessionId,
+        environment: "core",
+        walletAddress: stale.walletAddress,
+        chainId: 1,
+        depositContract: CONTRACT,
+        depositTo: stale.walletAddress,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: "12000000",
+        preflight: preflight(stale.walletAddress, "12000000"),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+    });
+
+    expect(replacement).toMatchObject({
+      outcome: "created",
+      intent: {
+        sessionId,
+        approvalStatus: "approval_pending",
+        executionState: "approval_pending",
+        amountUnits: "12000000",
+      },
+    });
+    expect(await repo.findByIntentId(stale.intentId)).toMatchObject({
+      approvalStatus: "expired",
+      executionState: "failed",
+      failureReason: expect.stringContaining("no transaction was signed or submitted"),
+    });
+  });
+
+  it("refuses to expire a stale preparation after transaction identity appears", async () => {
+    const sessionId = await newSession();
+    const stale = await newDepositIntent(sessionId);
+    await execute(
+      `UPDATE lighter_onboarding_intents
+          SET expires_at = NOW() - interval '1 minute',
+              approve_tx_hash = $2
+        WHERE intent_id = $1`,
+      [stale.intentId, `0x${"a".repeat(64)}`],
+    );
+    const observed = await repo.findByIntentId(stale.intentId);
+    expect(observed).not.toBeNull();
+    expect(repo.isSafelyExpirableDepositApprovalPending(observed!)).toBe(false);
+
+    const expired = await withSessionControlLock(sessionId, (client) =>
+      repo.expireStaleDepositApprovalPendingWith(client, {
+        intentId: stale.intentId,
+        sessionId,
+        environment: stale.environment,
+        walletAddress: stale.walletAddress,
+        chainId: stale.chainId,
+        depositContract: stale.depositContract!,
+        depositTo: stale.depositTo!,
+        assetIndex: stale.assetIndex!,
+        routeType: stale.routeType!,
+        amountUnits: stale.amountUnits!,
+      }));
+
+    expect(expired).toBeNull();
+    expect(await repo.findByIntentId(stale.intentId)).toMatchObject({
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+      approveTxHash: `0x${"a".repeat(64)}`,
+    });
   });
 
   it("proves the compaction race harness detects an unlocked onboarding writer", async () => {

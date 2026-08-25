@@ -52,6 +52,20 @@ describe("Lighter trading secret boundary", () => {
       .rejects.not.toThrow(PRIVATE_KEY);
   });
 
+  it("refuses the RHC provider-reserved index before invoking the vault reader", async () => {
+    const reader: LighterTradingSecretReader = {
+      readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
+    };
+
+    await expect(loadLighterTradingSecretMaterial({
+      ...REFERENCE,
+      apiKeyIndex: 157,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-157",
+    }, reader)).rejects.toThrow("reserved by the Lighter RHC provider");
+
+    expect(reader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+  });
+
   it("rejects missing, incomplete, or read-only token material", async () => {
     await expect(loadLighterTradingSecretMaterial(REFERENCE, {
       readTradingApiPrivateKey: async () => null,

@@ -46,6 +46,11 @@ import {
   writeSecretVaultExtraSecrets,
   writeSecretVaultSecrets,
 } from "../../lib/local-secret-vault.js";
+import {
+  MANAGED_SECRET_ENV_KEYS,
+  RETIRED_SECRET_ENV_KEYS,
+  VAULT_SECRET_KEYS,
+} from "../../lib/secret-keys.js";
 
 let testDir = "";
 let vaultFile = "";
@@ -230,7 +235,9 @@ describe("local secret vault", () => {
       envFile,
       [
         'OPENROUTER_API_KEY="legacy"',
-        'LIGHTER_CORE_READ_ONLY_AUTH_TOKEN="ro:1:single:4102444800:abcdef"',
+        'RELAY_API_KEY="legacy-relay-key"',
+        'LIGHTER_CORE_READ_ONLY_AUTH_TOKEN="retired-core-token"',
+        'LIGHTER_RHC_READ_ONLY_AUTH_TOKEN="retired-rhc-token"',
         'VEX_KEYSTORE_PASSWORD="legacy-password"',
         'AGENT_MODEL="openai/test"',
       ].join("\n") + "\n",
@@ -239,9 +246,22 @@ describe("local secret vault", () => {
     stripManagedSecretsFromDotenvFile(envFile);
     const raw = readFileSync(envFile, "utf8");
     expect(raw).not.toContain("OPENROUTER_API_KEY");
+    expect(raw).not.toContain("RELAY_API_KEY");
     expect(raw).not.toContain("LIGHTER_CORE_READ_ONLY_AUTH_TOKEN");
+    expect(raw).not.toContain("LIGHTER_RHC_READ_ONLY_AUTH_TOKEN");
     expect(raw).not.toContain("VEX_KEYSTORE_PASSWORD");
     expect(raw).toContain('AGENT_MODEL="openai/test"');
+  });
+
+  it("keeps retired Lighter tokens scrub-only and never vault-injected", () => {
+    expect(RETIRED_SECRET_ENV_KEYS).toEqual([
+      "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+      "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
+    ]);
+    for (const key of RETIRED_SECRET_ENV_KEYS) {
+      expect(MANAGED_SECRET_ENV_KEYS).toContain(key);
+      expect(VAULT_SECRET_KEYS).not.toContain(key);
+    }
   });
 
   it("creates fresh vaults with CURRENT_KDF_PARAMS", () => {

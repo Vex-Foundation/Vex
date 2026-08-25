@@ -23,7 +23,6 @@ import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/
 import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
 import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
-import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
 import {
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
@@ -43,6 +42,7 @@ import {
 } from "@vex-agent/tools/protocols/lighter/withdrawal-execution.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { log } from "../logger/index.js";
 import { ErrorCodes, VexError } from "../../../../src/errors.js";
 
 // Short-lived account-auth token lifetime for read-only reconciliation reads.
@@ -72,6 +72,14 @@ export async function deriveLighterReadOnlyAccountAuth(
     );
     return { token: auth.authToken, accountIndex: reference.accountIndex };
   } catch {
+    // This path has already crossed the secret-loading boundary. Do not attach
+    // the raw error: signer/helper failures can contain private-key material or
+    // signed input that generic log redaction is not allowed to rely on.
+    log.warn("[lighter] read-only account authorization derivation failed", {
+      environment: reference.environment,
+      accountIndex: reference.accountIndex,
+      apiKeyIndex: reference.apiKeyIndex,
+    });
     return null;
   }
 }
@@ -150,15 +158,28 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     (reference) => deriveLighterReadOnlyAccountAuth(reference, secretReader, signer),
   );
   // Lets the authenticated account reads (open orders, order history, trades)
-  // work on a single-key setup by deriving the same short-lived read-only token
-  // from the saved trading key, instead of failing over to inference. Prefers a
-  // separately configured read-only token when one exists.
+  // work on a single-key setup by deriving a short-lived read-only token from
+  // the saved trading key, instead of failing over to inference. Always
+  // derives fresh from the vault — there is no standalone pasted-token
+  // shortcut any more (it silently blocked withdrawal/order-read auth
+  // whenever the pasted token went stale, e.g. after a key re-registration).
   const uninstallReadAuth = configureLighterReadOnlyAccountAuthResolver(
     async (environment, accountIndex) => {
-      if (getLighterReadOnlyCredentialStatus(environment).configured) return null;
-      const scope = listUnlockedLighterTradingCredentialScopes(environment)
-        .find((candidate) => candidate.accountIndex === accountIndex);
-      if (scope === undefined) return null;
+      const unlockedScopes = listUnlockedLighterTradingCredentialScopes(environment);
+      const scope = unlockedScopes.find((candidate) => candidate.accountIndex === accountIndex);
+      if (scope === undefined) {
+        // Distinguishes a genuinely locked/empty vault (unlockedScopes.length === 0)
+        // from an accountIndex that simply isn't present among the unlocked scopes —
+        // both currently surface upstream as "the vault is locked", which is only
+        // true for the first case.
+        log.warn("[lighter] read-only auth resolver: no matching unlocked scope", {
+          environment,
+          accountIndex,
+          unlockedScopeCount: unlockedScopes.length,
+          unlockedAccountIndexes: unlockedScopes.map((s) => s.accountIndex),
+        });
+        return null;
+      }
       const reference: LighterTradingCredentialVaultReference = {
         kind: "encrypted_vault_reference",
         environment: scope.environment,

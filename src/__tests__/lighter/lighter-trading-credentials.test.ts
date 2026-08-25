@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ErrorCodes } from "../../errors.js";
 import {
   evaluateLighterTradingCredentialReadiness,
+  isLighterTradingApiKeyIndexAllowed,
   LIGHTER_SIGNER_SECRET_POLICY,
   requireLighterTradingCredentialReadiness,
 } from "@tools/lighter/trading-credentials.js";
@@ -47,6 +48,29 @@ describe("Lighter trading credential boundary", () => {
         reason: "apiKeyIndex must be a trading API key index from 4 to 254.",
       });
     }
+  });
+
+  it("reserves provider index 157 only on Robinhood Chain", () => {
+    expect(isLighterTradingApiKeyIndexAllowed("core", 157)).toBe(true);
+    expect(isLighterTradingApiKeyIndexAllowed("rhc", 157)).toBe(false);
+    expect(evaluateLighterTradingCredentialReadiness({
+      environment: "rhc",
+      accountIndex: 7,
+      apiKeyIndex: 157,
+      vaultCredentialId: "lighter/rhc/account-7/api-key-157",
+    })).toEqual({
+      ready: false,
+      capability: "lighter_transaction_signing",
+      code: "invalid_api_key_index",
+      reason: "apiKeyIndex 157 is reserved by the Lighter RHC provider and cannot be used "
+        + "for Vex-managed trading credentials.",
+    });
+    expect(evaluateLighterTradingCredentialReadiness({
+      environment: "core",
+      accountIndex: 7,
+      apiKeyIndex: 157,
+      vaultCredentialId: "lighter/core/account-7/api-key-157",
+    }).ready).toBe(true);
   });
 
   it("blocks raw secret-shaped values masquerading as vault references", () => {
@@ -101,7 +125,10 @@ describe("Lighter trading credential boundary", () => {
         min: 4,
         max: 254,
       },
-      reservedApiKeyIndexes: [0, 1, 2, 3, 255],
+      reservedApiKeyIndexesByEnvironment: {
+        core: [0, 1, 2, 3, 255],
+        rhc: [0, 1, 2, 3, 157, 255],
+      },
     });
   });
 });

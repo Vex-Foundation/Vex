@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { toInjectedToolName } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 
 const dispatchTool = vi.fn();
+const loggerWarn = vi.fn();
 const persistBatchTranscript = vi.fn().mockResolvedValue(undefined);
 const enqueueApprovalIntent = vi.fn().mockResolvedValue("approval-1");
 
 vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...args: unknown[]) => dispatchTool(...args),
+}));
+
+vi.mock("@utils/logger.js", () => ({
+  default: { warn: (...args: unknown[]) => loggerWarn(...args) },
 }));
 vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/execute.js", () => ({
   buildToolContext: (context: Record<string, unknown>) => ({
@@ -63,11 +69,16 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", () => ({
 const { processTurnToolBatch } = await import(
   "../../../../vex-agent/engine/core/turn-loop-tool-batch.js"
 );
+const { resolvePreparedActionSourceIdentity } = await import(
+  "../../../../vex-agent/engine/core/turn-loop-tool-batch/prepared-follow-up.js"
+);
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
 const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const LIGHTER_ONBOARDING_INTENT_ID =
   "lighter-onboard-00000000-0000-4000-8000-000000000001";
+const LIGHTER_ORDER_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.order.create.prepare");
+const LIGHTER_KEY_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.key.register.prepare");
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 const LIGHTER_KEY_PUBLIC_KEY = "ab".repeat(40);
 const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
@@ -119,6 +130,7 @@ function lighterPrepareResult(overrides: Record<string, unknown> = {}) {
             "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
             + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
           marketSymbol: "ETH",
+          marketType: "perp",
           baseAmountDisplay: "1",
           priceDisplay: "3000",
           notionalDisplay: "3000",
@@ -230,7 +242,7 @@ async function runLighterInjectedPrepare(permission: "restricted" | "full") {
       toolCalls: [
         {
           id: "lighter-prepare-call",
-          name: "lighter__order__create__prepare",
+          name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME,
           arguments: {
             environment: "rhc",
           },
@@ -252,7 +264,7 @@ async function runLighterRhcKeyRegistrationPrepare() {
       reasoning: null,
       toolCalls: [{
         id: "lighter-key-prepare-call",
-        name: "lighter__key__register__prepare",
+        name: LIGHTER_KEY_PREPARE_PUBLIC_NAME,
         arguments: { environment: "rhc" },
       }],
     },
@@ -264,7 +276,14 @@ async function runLighterRhcKeyRegistrationPrepare() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // `clearAllMocks` preserves queued `mockResolvedValueOnce` implementations.
+  // A fail-closed prepare result can deliberately skip its follow-up, so reset
+  // every queue to prevent one test's unused confirm result from becoming the
+  // next test's prepare result.
+  dispatchTool.mockReset();
+  loggerWarn.mockReset();
+  persistBatchTranscript.mockReset();
+  enqueueApprovalIntent.mockReset();
   // The enqueue transaction now returns a discriminated outcome so the batch
   // can tell "parked for approval" from "auto-rejected onto a dead run".
   enqueueApprovalIntent.mockResolvedValue({
@@ -275,6 +294,37 @@ beforeEach(() => {
 });
 
 describe("prepared-action follow-up handoff", () => {
+  it.each([
+    "lighter.order.create.prepare",
+    "lighter.order.cancel.prepare",
+    "lighter.order.modify.prepare",
+    "lighter.order.cancelAll.prepare",
+    "lighter.position.close.prepare",
+    "lighter.deposit.prepare",
+    "lighter.key.register.prepare",
+    "lighter.withdraw.prepare",
+    "lighter.withdraw.claim.prepare",
+  ])("resolves the live %s projection to its immutable source tool id", (toolId) => {
+    expect(resolvePreparedActionSourceIdentity({
+      name: toInjectedToolName(toolId),
+      arguments: {},
+    })).toBe(toolId);
+  });
+
+  it("resolves legacy envelopes structurally and rejects a bare wrapper identity", () => {
+    expect(resolvePreparedActionSourceIdentity({
+      name: "execute_tool",
+      arguments: {
+        toolId: "lighter.withdraw.prepare",
+        params: { environment: "rhc", amountIn: "1" },
+      },
+    })).toBe("lighter.withdraw.prepare");
+    expect(resolvePreparedActionSourceIdentity({
+      name: "execute_tool",
+      arguments: { params: {} },
+    })).toBe("unknown.execute_tool.source");
+  });
+
   it("restricted sessions persist prepare, synthesize confirm, and immediately enqueue its trusted preview", async () => {
     dispatchTool
       .mockResolvedValueOnce(prepareResult())
@@ -339,7 +389,7 @@ describe("prepared-action follow-up handoff", () => {
     });
     expect(dispatchTool).toHaveBeenCalledTimes(2);
     expect(dispatchTool.mock.calls[0]![0]).toMatchObject({
-      name: "lighter__order__create__prepare",
+      name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME,
     });
     expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
       name: "execute_tool",
@@ -369,7 +419,7 @@ describe("prepared-action follow-up handoff", () => {
     );
     expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
       content: "Preparing Lighter order.",
-      executedCalls: [expect.objectContaining({ name: "lighter__order__create__prepare" })],
+      executedCalls: [expect.objectContaining({ name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME })],
       executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
     });
   });
@@ -505,6 +555,21 @@ describe("prepared-action follow-up handoff", () => {
     const outcome = await run("restricted");
     expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
     expect(dispatchTool).toHaveBeenCalledOnce();
+    const rejectionOutput = persistBatchTranscript.mock.calls[0]![0]
+      .executedResults[0].output as string;
+    expect(rejectionOutput).toContain("internal approval mapping is unavailable");
+    expect(rejectionOutput).not.toContain(trustedPreview.criticalArgs.to);
+    expect(rejectionOutput).not.toContain(trustedPreview.criticalArgs.amount);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "engine.prepared_action_follow_up.rejected",
+      {
+        reason: "unknown_mapping",
+        sourceToolId: "WalletSendPrepare",
+        targetToolId: "swap",
+      },
+    );
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(trustedPreview.criticalArgs.to);
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(trustedPreview.criticalArgs.amount);
     expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
       executedResults: [
         expect.objectContaining({
@@ -513,6 +578,42 @@ describe("prepared-action follow-up handoff", () => {
         }),
       ],
     });
+  });
+
+  it("distinguishes invalid contracts without exposing prepared preview data", async () => {
+    const invalidAmount = "private-preview-amount";
+    dispatchTool.mockResolvedValueOnce(
+      prepareResult({
+        preparedActionFollowUp: {
+          ...prepareResult().preparedActionFollowUp,
+          approvalPreview: {
+            ...trustedPreview,
+            criticalArgs: {
+              ...trustedPreview.criticalArgs,
+              network: "eip155",
+              to: invalidAmount,
+            },
+          },
+        },
+      }),
+    );
+
+    const outcome = await run("restricted");
+    expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    const rejectionOutput = persistBatchTranscript.mock.calls[0]![0]
+      .executedResults[0].output as string;
+    expect(rejectionOutput).toContain("failed a safety consistency check");
+    expect(rejectionOutput).not.toContain(invalidAmount);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "engine.prepared_action_follow_up.rejected",
+      {
+        reason: "invalid_contract",
+        sourceToolId: "WalletSendPrepare",
+        targetToolId: "WalletSendConfirm",
+      },
+    );
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(invalidAmount);
   });
 
   it("rejects recursive chains after one follow-up and never dispatches a third tool", async () => {

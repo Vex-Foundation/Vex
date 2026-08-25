@@ -6,6 +6,15 @@ import {
 
 export const LIGHTER_TRADING_API_KEY_INDEX_MIN = 4;
 export const LIGHTER_TRADING_API_KEY_INDEX_MAX = 254;
+export const LIGHTER_RHC_PROVIDER_RESERVED_API_KEY_INDEX = 157;
+
+const LIGHTER_BASE_RESERVED_API_KEY_INDEXES = [
+  0,
+  1,
+  2,
+  3,
+  LIGHTER_API_KEY_INDEX_ALL,
+] as const;
 
 export const LIGHTER_SIGNER_SECRET_POLICY = {
   secretSource: "encrypted_vault_only",
@@ -23,7 +32,17 @@ export const LIGHTER_SIGNER_SECRET_POLICY = {
     min: LIGHTER_TRADING_API_KEY_INDEX_MIN,
     max: LIGHTER_TRADING_API_KEY_INDEX_MAX,
   },
-  reservedApiKeyIndexes: [0, 1, 2, 3, LIGHTER_API_KEY_INDEX_ALL],
+  reservedApiKeyIndexesByEnvironment: {
+    core: LIGHTER_BASE_RESERVED_API_KEY_INDEXES,
+    rhc: [
+      0,
+      1,
+      2,
+      3,
+      LIGHTER_RHC_PROVIDER_RESERVED_API_KEY_INDEX,
+      LIGHTER_API_KEY_INDEX_ALL,
+    ],
+  },
 } as const;
 
 export type LighterTradingCredentialCapability = "lighter_transaction_signing";
@@ -75,6 +94,26 @@ export function defaultLighterTradingVaultCredentialId(input: {
   return `lighter/${input.environment}/account-${input.accountIndex}/api-key-${input.apiKeyIndex}`;
 }
 
+export function isLighterTradingApiKeyIndexAllowed(
+  environment: LighterEnvironment,
+  apiKeyIndex: number,
+): boolean {
+  return lighterTradingApiKeyIndexRefusalReason(environment, apiKeyIndex) === null;
+}
+
+export function assertLighterTradingApiKeyIndexAllowed(
+  environment: LighterEnvironment,
+  apiKeyIndex: number,
+): void {
+  const reason = lighterTradingApiKeyIndexRefusalReason(environment, apiKeyIndex);
+  if (reason === null) return;
+  throw new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `Lighter trading credential is not ready: ${reason}`,
+    "Select a provider-eligible Vex-managed trading API-key slot before signing or execution.",
+  );
+}
+
 export function evaluateLighterTradingCredentialReadiness(
   input: LighterTradingCredentialReadinessInput,
 ): LighterTradingCredentialReadiness {
@@ -92,14 +131,14 @@ export function evaluateLighterTradingCredentialReadiness(
       "apiKeyIndex is required for Lighter trading credentials.",
     );
   }
-  if (
-    !Number.isInteger(apiKeyIndex)
-    || apiKeyIndex < LIGHTER_TRADING_API_KEY_INDEX_MIN
-    || apiKeyIndex > LIGHTER_TRADING_API_KEY_INDEX_MAX
-  ) {
+  const apiKeyIndexRefusal = lighterTradingApiKeyIndexRefusalReason(
+    input.environment,
+    apiKeyIndex,
+  );
+  if (apiKeyIndexRefusal !== null) {
     return blocked(
       "invalid_api_key_index",
-      "apiKeyIndex must be a trading API key index from 4 to 254.",
+      apiKeyIndexRefusal,
     );
   }
 
@@ -166,4 +205,22 @@ function isSafeVaultCredentialId(value: string): boolean {
   if (/^(?:0x)?[a-fA-F0-9]{64}$/.test(value)) return false;
   if (/^ro:\d+:(?:single|all):\d+:[a-fA-F0-9]+$/.test(value)) return false;
   return true;
+}
+
+function lighterTradingApiKeyIndexRefusalReason(
+  environment: LighterEnvironment,
+  apiKeyIndex: number,
+): string | null {
+  if (
+    !Number.isInteger(apiKeyIndex)
+    || apiKeyIndex < LIGHTER_TRADING_API_KEY_INDEX_MIN
+    || apiKeyIndex > LIGHTER_TRADING_API_KEY_INDEX_MAX
+  ) {
+    return "apiKeyIndex must be a trading API key index from 4 to 254.";
+  }
+  if (environment === "rhc" && apiKeyIndex === LIGHTER_RHC_PROVIDER_RESERVED_API_KEY_INDEX) {
+    return "apiKeyIndex 157 is reserved by the Lighter RHC provider and cannot be used "
+      + "for Vex-managed trading credentials.";
+  }
+  return null;
 }

@@ -61,6 +61,7 @@ function buildCreateApprovalFollowUp(
   const criticalArgs = scalarApprovalPreview({
     orderSummary: disclosure.orderSummary,
     marketSymbol: disclosure.marketSymbol,
+    marketType: disclosure.marketType,
     baseAmountDisplay: disclosure.baseAmountDisplay,
     priceDisplay: disclosure.priceDisplay,
     notionalDisplay: disclosure.notionalDisplay,

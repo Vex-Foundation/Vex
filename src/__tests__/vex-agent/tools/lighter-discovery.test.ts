@@ -169,12 +169,37 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
+  it("publishes an exact perp-or-spot selector for order previews", () => {
+    const preview = getProtocolManifest("lighter.order.preview");
+    expect(preview).toBeDefined();
+    const marketType = preview?.params.find((param) => param.key === "marketType");
+    expect(marketType).toMatchObject({
+      type: "string",
+      enum: ["perp", "spot"],
+    });
+    expect(marketType?.required).not.toBe(true);
+    expect(preview?.description).toContain("refuses a product mismatch");
+    expect(preview?.exampleParams).toMatchObject({
+      environment: "core",
+      marketSymbol: "ETH/USDC",
+      marketType: "spot",
+    });
+
+    const accepted = validateProtocolParams(preview!, preview!.exampleParams);
+    expect(accepted.ok).toBe(true);
+    const rejected = validateProtocolParams(preview!, {
+      ...preview!.exampleParams,
+      marketType: "all",
+    });
+    expect(rejected.ok).toBe(false);
+  });
+
   it("lists the complete lighter namespace as lean discovery rows", async () => {
     const result = await discoverProtocolCapabilities({ list: true, namespace: "lighter" });
     expect(result.success).toBe(true);
     expect(result.retrieval?.method).toBe("list");
     expect(result.tools.map((tool) => tool.toolId)).toEqual(LIGHTER_TOOL_IDS);
-    expect(result.nextStep).toContain("describe_tools");
+    expect(result.nextStep).toContain('ToolSearch(query="select:');
 
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(false);
@@ -320,6 +345,17 @@ describe("Lighter agent discovery surface", () => {
     expect(status.tools.map((tool) => tool.toolId)).toContain(
       "lighter.deposit.status",
     );
+  });
+
+  it("routes an explicit deposit amount to exact deposit preparation, not target-balance onboarding", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "fund my Lighter RHC account with 5 USDG from my Vex wallet",
+      limit: 5,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools[0]?.toolId).toBe("lighter.deposit.prepare");
   });
 
   it("recalls Lighter tools from natural market-data queries", async () => {

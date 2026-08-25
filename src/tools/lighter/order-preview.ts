@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { ErrorCodes, VexError } from "../../errors.js";
 import type {
   LighterAccount,
+  LighterAccountAsset,
   LighterAccountResponse,
   LighterEnvironment,
   LighterMarketDetail,
@@ -124,6 +125,22 @@ export interface LighterOrderPreview {
       readonly marketPosition: string | null;
       readonly positionSide: "long" | "short" | "flat" | "unknown";
     };
+    readonly spotInventoryContext: {
+      readonly verified: true;
+      readonly assetId: number;
+      readonly symbol: string;
+      readonly balance: string;
+      readonly lockedBalance: string;
+      readonly unlockedBalance: string;
+      readonly requiredAmount: string;
+      readonly requiredKind:
+        | "base_amount"
+        | "worst_price_quote_notional"
+        | "worst_price_quote_notional_with_taker_fee";
+      readonly takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage";
+      readonly takerFeePercent: string | null;
+      readonly takerFeeAmount: string;
+    } | null;
     readonly riskNotes: readonly string[];
   };
 }
@@ -134,13 +151,15 @@ const MAX_ORDER_EXPIRY_OFFSET_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Lighter wire limits enforced by the official signer (uint32 price, int64
- * base amount, int16 market index). Checked at preview time so an unsignable
- * order fails before approval and nonce reservation instead of inside the
- * signer helper.
+ * base amount, and the product-specific market ranges enforced by lighter-go
+ * v1.0.7). Checked at preview time so an unsignable order fails before approval
+ * and nonce reservation instead of inside the signer helper.
  */
 const LIGHTER_WIRE_PRICE_MAX = 4_294_967_295n;
 const LIGHTER_WIRE_BASE_AMOUNT_MAX = 9_223_372_036_854_775_807n;
-const LIGHTER_WIRE_MARKET_INDEX_MAX = 32_767;
+const LIGHTER_PERP_MARKET_INDEX_MAX = 254;
+const LIGHTER_SPOT_MARKET_INDEX_MIN = 2_048;
+const LIGHTER_SPOT_MARKET_INDEX_MAX = 4_094;
 
 export function buildLighterOrderPreview(
   input: LighterOrderPreviewInput,
@@ -149,6 +168,7 @@ export function buildLighterOrderPreview(
   const nowMs = input.nowMs ?? Date.now();
   validateInputScalars(input);
   assertMarketMatches(input, context.market);
+  assertSignableMarketIndex(context.market);
   assertAccountContainsIndex(input, context.account);
   assertQuoteScale(context.market);
   assertExpiry(input.orderExpiry, nowMs);
@@ -215,6 +235,13 @@ export function buildLighterOrderPreview(
       `Lighter order preview refused: quote notional is below market minimum ${context.market.min_quote_amount}.`,
     );
   }
+
+  const spotInventoryContext = assertSpotOrderInventory(
+    input,
+    context,
+    baseAmountInteger,
+    quoteNotionalInteger,
+  );
 
   const positionContext = readPositionContext(context.account, input.marketId);
   if (input.reduceOnly && !isReduceOnlyVerifiable(input.side, positionContext)) {
@@ -308,9 +335,15 @@ export function buildLighterOrderPreview(
         priceComparison,
       },
       positionContext,
+      spotInventoryContext,
       riskNotes: [
         "Preview only. No order was signed, submitted, placed, cancelled, deposited, withdrawn, or transferred.",
         "A later API acceptance is not final execution; order outcome must be proven by Lighter order or transaction evidence.",
+        ...(spotInventoryContext === null
+          ? []
+          : [
+              `Spot inventory verified: unlocked ${spotInventoryContext.symbol} balance ${spotInventoryContext.unlockedBalance} covers required ${spotInventoryContext.requiredAmount}.`,
+            ]),
       ],
     },
   };
@@ -356,10 +389,10 @@ function validateInputScalars(input: LighterOrderPreviewInput): void {
   if (
     !Number.isInteger(input.marketId)
     || input.marketId < 0
-    || input.marketId > LIGHTER_WIRE_MARKET_INDEX_MAX
+    || input.marketId > LIGHTER_SPOT_MARKET_INDEX_MAX
   ) {
     throw invalidRequest(
-      `marketId must be an integer from 0 to ${LIGHTER_WIRE_MARKET_INDEX_MAX} for signable orders.`,
+      `marketId must be an integer from 0 to ${LIGHTER_SPOT_MARKET_INDEX_MAX} for signable orders.`,
     );
   }
   if (input.clientOrderIndexPolicy.trim().length === 0) {
@@ -375,6 +408,21 @@ function assertMarketMatches(input: LighterOrderPreviewInput, market: LighterMar
   }
   if (market.status !== "active") {
     throw invalidRequest(`Lighter order preview refused: market ${input.marketId} is not active.`);
+  }
+}
+
+function assertSignableMarketIndex(market: LighterMarketDetail): void {
+  const signable = market.market_type === "perp"
+    ? market.market_id >= 0 && market.market_id <= LIGHTER_PERP_MARKET_INDEX_MAX
+    : market.market_id >= LIGHTER_SPOT_MARKET_INDEX_MIN
+      && market.market_id <= LIGHTER_SPOT_MARKET_INDEX_MAX;
+  if (!signable) {
+    const range = market.market_type === "perp"
+      ? `0 through ${LIGHTER_PERP_MARKET_INDEX_MAX}`
+      : `${LIGHTER_SPOT_MARKET_INDEX_MIN} through ${LIGHTER_SPOT_MARKET_INDEX_MAX}`;
+    throw invalidRequest(
+      `Lighter order preview refused: ${market.market_type} market ${market.market_id} is outside the lighter-go v1.0.7 signing range ${range}.`,
+    );
   }
 }
 
@@ -418,6 +466,108 @@ function assertOrderCombination(input: LighterOrderPreviewInput): void {
   if (input.triggerPrice !== undefined && input.triggerPrice !== null) {
     throw invalidRequest("Trigger-price order previews are not supported in this wave.");
   }
+}
+
+function assertSpotOrderInventory(
+  input: LighterOrderPreviewInput,
+  context: LighterOrderPreviewContext,
+  baseAmountInteger: bigint,
+  quoteNotionalInteger: bigint,
+): LighterOrderPreview["preview"]["spotInventoryContext"] {
+  if (context.market.market_type !== "spot") return null;
+  if (input.reduceOnly) {
+    throw invalidRequest(
+      "Lighter spot order preview refused: reduceOnly must be false because spot inventory is not a perpetual position.",
+    );
+  }
+
+  const owner = context.account.accounts.find(
+    (account) => accountIndexOf(account) === input.accountIndex,
+  );
+  if (owner === undefined || !Array.isArray(owner.assets)) {
+    throw invalidRequest(
+      "Lighter spot order preview refused: the live account read did not include typed spot asset inventory.",
+    );
+  }
+
+  const requiredAssetId = input.side === "sell"
+    ? context.market.base_asset_id
+    : context.market.quote_asset_id;
+  const matches = owner.assets.filter((asset) => asset.asset_id === requiredAssetId);
+  if (matches.length !== 1) {
+    throw invalidRequest(
+      `Lighter spot order preview refused: the live account read did not return exactly one asset ${requiredAssetId} inventory row.`,
+    );
+  }
+  const asset = matches[0];
+  if (asset === undefined) {
+    throw invalidRequest("Lighter spot order preview refused: required asset inventory is unavailable.");
+  }
+
+  const unlockedBalance = subtractDecimalStrings(
+    asset.balance,
+    asset.locked_balance,
+    `spot asset ${requiredAssetId} balance`,
+  );
+  let takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage" = "none";
+  let takerFeeInteger = 0n;
+  let takerFeePercent: string | null = null;
+  if (input.side === "buy" && context.market.is_taker_fee_enabled) {
+    const fee = decimalParts(context.market.taker_fee);
+    if (fee === null || fee.integer > 100n * (10n ** BigInt(fee.scale))) {
+      throw invalidRequest(
+        "Lighter spot buy preview refused: the live market taker fee was not a valid percentage.",
+      );
+    }
+    takerFeePercent = normalizeDecimalString(context.market.taker_fee);
+    if (fee.integer === 0n) {
+      takerFee = "zero_from_live_market";
+    } else {
+      // The orderBooks contract defines maker/taker fees in percentage. Round
+      // upward to quote minor units so the inventory proof never understates
+      // the maximum amount a fee-bearing spot buy can consume.
+      const denominator = 100n * (10n ** BigInt(fee.scale));
+      takerFeeInteger = divideCeil(quoteNotionalInteger * fee.integer, denominator);
+      takerFee = "included_live_market_percentage";
+    }
+  }
+
+  const requiredInteger = input.side === "sell"
+    ? baseAmountInteger
+    : quoteNotionalInteger + takerFeeInteger;
+  const requiredDecimals = input.side === "sell"
+    ? context.market.supported_size_decimals
+    : context.market.supported_quote_decimals;
+  const requiredAmount = formatInteger(requiredInteger, requiredDecimals);
+
+  if (compareDecimalStrings(unlockedBalance, requiredAmount) < 0) {
+    const role = input.side === "sell" ? "base asset" : "quote asset";
+    throw invalidRequest(
+      `Lighter spot ${input.side} preview refused: unlocked ${role} balance ${unlockedBalance} is below required ${requiredAmount}.`,
+    );
+  }
+
+  return {
+    verified: true,
+    assetId: asset.asset_id,
+    symbol: asset.symbol,
+    balance: normalizeDecimalString(asset.balance),
+    lockedBalance: normalizeDecimalString(asset.locked_balance),
+    unlockedBalance,
+    requiredAmount,
+    requiredKind: input.side === "sell"
+      ? "base_amount"
+      : takerFeeInteger === 0n
+        ? "worst_price_quote_notional"
+        : "worst_price_quote_notional_with_taker_fee",
+    takerFee,
+    takerFeePercent,
+    takerFeeAmount: formatInteger(takerFeeInteger, context.market.supported_quote_decimals),
+  };
+}
+
+function divideCeil(numerator: bigint, denominator: bigint): bigint {
+  return numerator === 0n ? 0n : ((numerator - 1n) / denominator) + 1n;
 }
 
 export function decimalToLighterInteger(
@@ -552,6 +702,33 @@ function decimalParts(value: string): { readonly integer: bigint; readonly scale
     integer: BigInt(`${whole}${fraction}`.replace(/^0+(?=\d)/, "")),
     scale: fraction.length,
   };
+}
+
+function subtractDecimalStrings(left: string, right: string, field: string): string {
+  const a = decimalParts(left);
+  const b = decimalParts(right);
+  if (a === null || b === null) {
+    throw invalidRequest(
+      `Lighter spot order preview refused: live ${field} was not a non-negative decimal.`,
+    );
+  }
+  const scale = Math.max(a.scale, b.scale);
+  const leftInteger = a.integer * (10n ** BigInt(scale - a.scale));
+  const rightInteger = b.integer * (10n ** BigInt(scale - b.scale));
+  if (rightInteger > leftInteger) {
+    throw invalidRequest(
+      `Lighter spot order preview refused: live ${field} had locked inventory above total inventory.`,
+    );
+  }
+  return formatInteger(leftInteger - rightInteger, scale);
+}
+
+function normalizeDecimalString(value: string): string {
+  const parts = decimalParts(value);
+  if (parts === null) {
+    throw invalidRequest("Lighter spot order preview refused: live asset inventory was invalid.");
+  }
+  return formatInteger(parts.integer, parts.scale);
 }
 
 function readReferencePrice(market: LighterMarketDetail): string | null {

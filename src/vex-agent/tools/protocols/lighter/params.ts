@@ -41,6 +41,10 @@ export const LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_API_KEY_LIMIT_MAX = 50;
 export const LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MIN = 5;
 export const LIGHTER_ORDER_EXPIRY_OFFSET_MINUTES_MAX = 30 * 24 * 60;
+export const LIGHTER_ORDER_PREVIEW_MARKET_TYPES = ["perp", "spot"] as const;
+
+export type LighterOrderPreviewMarketType =
+  (typeof LIGHTER_ORDER_PREVIEW_MARKET_TYPES)[number];
 
 export type ParamRead<T> =
   | { readonly ok: true; readonly value: T }
@@ -59,6 +63,7 @@ export interface LighterOrderPreviewParams {
   readonly apiKeyIndex?: number | null;
   readonly marketId?: number;
   readonly marketSymbol?: string;
+  readonly marketType?: LighterOrderPreviewMarketType;
   readonly side: LighterOrderSide;
   readonly baseAmount: string;
   readonly price: string;
@@ -331,6 +336,13 @@ export function readLighterOrderPreviewParams(
   if (marketId.value === undefined && marketSymbol === undefined) {
     return { ok: false, reason: "Missing required: marketId or marketSymbol." };
   }
+  const marketType = readEnum(
+    params,
+    "marketType",
+    LIGHTER_ORDER_PREVIEW_MARKET_TYPES,
+    false,
+  );
+  if (!marketType.ok) return marketType;
   const side = readEnum(params, "side", LIGHTER_ORDER_SIDES, false);
   if (!side.ok) return side;
   if (side.value === undefined) {
@@ -367,6 +379,7 @@ export function readLighterOrderPreviewParams(
       apiKeyIndex: apiKeyIndex.value ?? null,
       marketId: marketId.value,
       marketSymbol,
+      marketType: marketType.value as LighterOrderPreviewMarketType | undefined,
       side: side.value as LighterOrderSide,
       baseAmount: baseAmount.value,
       price: price.value,

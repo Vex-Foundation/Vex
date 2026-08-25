@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS,
   LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT,
   repairLighterOrderIntent,
   repairUnresolvedLighterOrders,
@@ -99,7 +98,6 @@ function nonceRow(overrides: Record<string, unknown> = {}) {
 function makeDeps(overrides: {
   readonly nextNonce?: number | Error;
   readonly nonceRow?: ReturnType<typeof nonceRow> | null;
-  readonly hasReadOnlyCredential?: boolean;
   readonly activeOrders?: unknown[];
   readonly inactiveOrders?: unknown[];
   readonly trades?: unknown[];
@@ -116,7 +114,7 @@ function makeDeps(overrides: {
       getAccountTrades: vi.fn(async () => ({ code: 200, trades: overrides.trades ?? [] })),
     },
     intents: {
-      listUnresolved: vi.fn(async () => []),
+      listUnresolved: vi.fn<LighterOrderRepairDeps["intents"]["listUnresolved"]>(async () => []),
       findByIntentIdAnySession: vi.fn(async () => null),
       markRepairResolved: vi.fn(async (input: { state: string }) =>
         intentRow({ executionState: input.state as LighterOrderExecutionIntentRow["executionState"] })),
@@ -126,51 +124,17 @@ function makeDeps(overrides: {
       releaseReservation: vi.fn(async () => nonceRow({ status: "observed", reservedNonce: null, reservationId: null })),
       recordExecutionObserved: vi.fn(async () => nonceRow({ status: "observed" })),
     },
-    hasReadOnlyCredential: vi.fn(() => overrides.hasReadOnlyCredential ?? false),
     now: () => overrides.now ?? NOW,
   };
   return deps as typeof deps & LighterOrderRepairDeps;
 }
 
 describe("Lighter order repair", () => {
-  it("classifies from provider evidence and refreshes the nonce when a read-only token exists", async () => {
-    const deps = makeDeps({
-      hasReadOnlyCredential: true,
-      nextNonce: 1201,
-      inactiveOrders: [{
-        order_index: null,
-        order_id: "987",
-        client_order_id: "123456",
-        market_index: 0,
-        owner_account_index: 42,
-        status: "filled",
-        filled_base_amount: "1.0",
-        remaining_base_amount: "0",
-      }],
-    });
-
-    const report = await repairLighterOrderIntent(intentRow(), deps);
-
-    expect(report.resolution).toBe("provider_evidence");
-    expect(report.evidenceSource).toBe("inactive_order");
-    expect(report.stateAfter).toBe("filled");
-    expect(deps.intents.markRepairResolved).toHaveBeenCalledWith(expect.objectContaining({
-      intentId: INTENT_ID,
-      state: "filled",
-      source: "inactive_order",
-      providerOrderId: "987",
-    }));
-    expect(deps.nonceState.recordExecutionObserved).toHaveBeenCalledWith(expect.objectContaining({
-      nonce: 1201,
-    }));
-  });
-
-  it("classifies from provider evidence via a trading-key auth token when no read-only token exists", async () => {
+  it("classifies from provider evidence via a trading-key auth token", async () => {
     const privilegedAuth = { token: "derived-account-auth-token", accountIndex: 42 };
     const resolvePrivilegedAccountAuth = vi.fn(async () => privilegedAuth);
     const deps = {
       ...makeDeps({
-        hasReadOnlyCredential: false,
         nextNonce: 1201,
         inactiveOrders: [{
           order_index: null,
@@ -205,10 +169,9 @@ describe("Lighter order repair", () => {
     }));
   });
 
-  it("skips account reads and defers to nonce facts when no read-only token and no trading-key auth are available", async () => {
+  it("skips account reads and defers to nonce facts when no trading-key auth is available", async () => {
     const deps = {
       ...makeDeps({
-        hasReadOnlyCredential: false,
         nextNonce: 1201,
         inactiveOrders: [{
           order_index: null,
@@ -285,18 +248,19 @@ describe("Lighter order repair", () => {
     expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
   });
 
-  it("releases the reservation once the order expiry passed with the nonce unconsumed", async () => {
+  it("keeps an ambiguous IOC reservation after the local preview expiry", async () => {
     const deps = makeDeps({
       nextNonce: 1200,
-      now: ORDER_EXPIRY_MS + LIGHTER_ORDER_REPAIR_EXPIRY_GRACE_MS + 1,
+      now: ORDER_EXPIRY_MS + 24 * 60 * 60 * 1000,
     });
 
     const report = await repairLighterOrderIntent(intentRow(), deps);
 
-    expect(report.resolution).toBe("nonce_released_expired_unconsumed");
-    expect(report.stateAfter).toBe("rejected");
-    expect(report.nonceBlockedAfter).toBe(false);
-    expect(deps.nonceState.releaseReservation).toHaveBeenCalled();
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(report.stateAfter).toBe("submitted");
+    expect(report.nonceBlockedAfter).toBe(true);
+    expect(report.guidance).toContain("not a signed sequencer expiry");
+    expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
   });
 
   it("never frees a reservation held by a different intent", async () => {
@@ -361,7 +325,6 @@ describe("Lighter order repair", () => {
   it("keeps unattended recovery public, bounded, and free of account-auth reads", async () => {
     const deps = {
       ...makeDeps({
-        hasReadOnlyCredential: true,
         nextNonce: 1250,
         inactiveOrders: [{ client_order_id: "123456", status: "filled" }],
       }),

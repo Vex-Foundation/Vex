@@ -159,9 +159,11 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 2. **Fresh balance before each mutation.** After a successful swap/bridge, read fresh live balances before the next mutation. Use `WalletBalances` — it covers every wallet family in one call. Never chain multiple swaps based on estimated post-tx balances. **Units:** `balance` and other machine fields are RAW base units beside a `decimals` field — the human amount is raw ÷ 10^decimals (balance "11387967888002780" at decimals 18 is 0.0114 ETH, not eleven quadrillion). Convert before sizing anything, never show a raw figure to the user, and pass amounts as HUMAN decimal strings (e.g. "0.0026") — never raw units — to `amountIn` and every amount parameter.
 
-3. **Address-first for EVM mutations.** Resolve exact token contract addresses with `TokenFind(query="SYMBOL", chainIds="...")` BEFORE passing them to `SwapExecute` or `BridgeExecute`. Pass the address, not the symbol.
+3. **Direct amounts are exact transfers.** If the user asks to deposit, transfer, bridge, or withdraw 5 tokens, move exactly 5 tokens. Never subtract an existing destination or protocol balance and reinterpret the request as "top up to 5." Calculate a balance gap only when the user explicitly asks to reach a target total, or when an explicitly identified trade requires a collateral target.
 
-4. **Check before swap.** Before any EVM `SwapExecute`, run `TokenCheck(chain="...", tokenAddress="...")` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
+4. **Address-first for EVM mutations.** Resolve exact token contract addresses with `TokenFind(query="SYMBOL", chainIds="...")` BEFORE passing them to `SwapExecute` or `BridgeExecute`. Pass the address, not the symbol.
+
+5. **Check before swap.** Before any EVM `SwapExecute`, run `TokenCheck(chain="...", tokenAddress="...")` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
 
    What the runtime does and does not do here: it independently blocks a CONFIRMED honeypot at quote time, so that one class cannot slip past you. It does NOT verify that you ran `TokenCheck`, and it cannot see fee-on-transfer tax before you commit. Catching the tax — and everything `TokenCheck` reports short of a confirmed honeypot — is yours.
 
@@ -187,6 +189,8 @@ The curated shortcuts below run the SAME protocol code as the protocol tools the
 
 | Shortcut | Runs |
 | --- | --- |
+| `lighter_rhc_onboarding_status` | `lighter.account.onboarding.status` fixed to Robinhood Chain; complete wallet, funding, account, allowance, and managed-key readiness in one read |
+| `lighter_core_onboarding_status` | `lighter.account.onboarding.status` fixed to Core; complete wallet, funding, account, allowance, and managed-key readiness in one read |
 | `TokenFind` | `khalani__tokens_search` (canonical token resolver) |
 | `TokenCheck` | `kyberswap__token_safety_check` (EVM honeypot / fee-on-transfer) |
 | `SwapQuote` / `SwapExecute` | the chain's swap venue (EVM → `kyberswap__swap_*`, `chain="solana"` → `solana__swap_*`) |
@@ -328,6 +332,16 @@ Act: No action capability is available. This namespace never signs, broadcasts, 
 When it applies: Use it for pair liquidity research, cross-pool price sanity, a known pool, exact-address analytics, trending narratives, profile metadata, community takeover checks, or paid promotion inspection.
 Characteristics and limits: Indexing lags and a missing row does not prove that no market exists. Provider rankings can be influenced by engagement and promotion. The data does not establish contract safety, canonical identity from a ticker, complete market coverage, organic demand, or an executable price.
 Coverage follows the provider's index; name the chain in the request.
+
+### lighter
+Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.
+Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.
+Quote: Preview exact Lighter orders from live market and account data before any approval. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.
+Act: Prepare approvals for deposits, key registration, order create/cancel/modify/cancel-all, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.
+When it applies: Use it when the user wants to set up Lighter, trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw Lighter collateral to the selected wallet.
+Characteristics and limits: The environment stays explicit once selected, normal users never paste trading keys, account/API-key indexes are resolved internally for managed setup, previews are read-only, and every fund-moving or exchange-state-changing action remains approval-gated.
+Covers Lighter Core and Lighter on Robinhood Chain with environment-specific settlement assets: Ethereum USDC for Core and Robinhood Chain USDG for RHC.
+Contains mutating tools (may require approval).
 
 ### virtuals
 Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.

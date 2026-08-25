@@ -283,6 +283,146 @@ async function findLiveDepositConflictWith(
   return conflict === undefined ? null : mapRow(conflict);
 }
 
+/**
+ * True only for an expired deposit preparation that never reached approval,
+ * signing, staging, submission, replacement, or settlement observation.
+ *
+ * This predicate is an in-memory fast path only. The writer below repeats every
+ * condition in its SQL compare-and-set, which remains the cross-process
+ * authority if the row changes after this read.
+ */
+export function isSafelyExpirableDepositApprovalPending(
+  intent: LighterOnboardingIntentRow,
+  nowMs = Date.now(),
+): boolean {
+  return intent.capability === "deposit"
+    && intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approval_pending"
+    && intent.approvalId === null
+    && intent.protocolExecutionId === null
+    && intent.decisionReason === null
+    && intent.failureReason === null
+    && intent.approveTxHash === null
+    && intent.approveTxFrom === null
+    && intent.approveTxNonce === null
+    && intent.approveReplacementTxHash === null
+    && intent.approveReplacementReason === null
+    && intent.approveReplacementObservedAt === null
+    && intent.depositTxHash === null
+    && intent.depositTxFrom === null
+    && intent.depositTxNonce === null
+    && intent.depositReplacementTxHash === null
+    && intent.depositReplacementReason === null
+    && intent.depositReplacementObservedAt === null
+    && intent.depositL1BlockHash === null
+    && intent.depositL1BlockNumber === null
+    && intent.depositEventAccountIndex === null
+    && intent.lighterTxHash === null
+    && intent.lighterTxStatus === null
+    && intent.lighterBlockHeight === null
+    && intent.lighterExecutedAt === null
+    && intent.lighterEvidenceObservedAt === null
+    && intent.resolvedAccountIndex === null
+    && Number.isFinite(intent.expiresAt.getTime())
+    && intent.expiresAt.getTime() <= nowMs;
+}
+
+/**
+ * Retire an expired approval preparation only when the database still proves
+ * that no approval or execution evidence exists. The full environment, wallet,
+ * chain, contract, beneficiary, asset, route, and amount identity is included
+ * in the CAS so a stale caller cannot retire a different deposit scope.
+ */
+export async function expireStaleDepositApprovalPendingWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+    readonly chainId: number;
+    readonly depositContract: string;
+    readonly depositTo: string;
+    readonly assetIndex: number;
+    readonly routeType: number;
+    readonly amountUnits: string;
+  },
+): Promise<LighterOnboardingIntentRow | null> {
+  const reason =
+    "Prepared Lighter deposit expired before an approval was dispatched; no transaction was signed or submitted.";
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET approval_status = 'expired',
+            execution_state = 'failed',
+            decision_reason = $11,
+            decided_at = NOW(),
+            failure_reason = $11,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND chain_id = $5
+        AND LOWER(deposit_contract) = LOWER($6)
+        AND LOWER(deposit_to) = LOWER($7)
+        AND asset_index = $8
+        AND route_type = $9
+        AND amount_units = $10
+        AND capability = 'deposit'
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approval_pending'
+        AND expires_at <= NOW()
+        AND approval_id IS NULL
+        AND protocol_execution_id IS NULL
+        AND decision_reason IS NULL
+        AND failure_reason IS NULL
+        AND approve_tx_hash IS NULL
+        AND approve_tx_from IS NULL
+        AND approve_tx_nonce IS NULL
+        AND approve_replacement_tx_hash IS NULL
+        AND approve_replacement_reason IS NULL
+        AND approve_replacement_observed_at IS NULL
+        AND deposit_tx_hash IS NULL
+        AND deposit_tx_from IS NULL
+        AND deposit_tx_nonce IS NULL
+        AND deposit_replacement_tx_hash IS NULL
+        AND deposit_replacement_reason IS NULL
+        AND deposit_replacement_observed_at IS NULL
+        AND deposit_l1_block_hash IS NULL
+        AND deposit_l1_block_number IS NULL
+        AND deposit_event_account_index IS NULL
+        AND lighter_tx_hash IS NULL
+        AND lighter_tx_status IS NULL
+        AND lighter_block_height IS NULL
+        AND lighter_executed_at IS NULL
+        AND lighter_evidence_observed_at IS NULL
+        AND resolved_account_index IS NULL
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.environment,
+      input.walletAddress,
+      input.chainId,
+      input.depositContract,
+      input.depositTo,
+      input.assetIndex,
+      input.routeType,
+      input.amountUnits,
+      reason,
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  await requireDepositWorkflowTransition(client, intent, {
+    expectedStates: ["deposit_approval_pending", "deposit_preflight_validated"],
+    nextState: "failed",
+    failureCode: "deposit_expired_before_approval_dispatch",
+  });
+  return intent;
+}
+
 export async function markApprovalDecisionWith(
   client: LighterOnboardingQueryClient,
   input: {

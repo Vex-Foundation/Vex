@@ -15,6 +15,7 @@ import {
   type LighterApiKeyGenerator,
 } from "@tools/lighter/signer-binary-adapter.js";
 import {
+  assertLighterTradingApiKeyIndexAllowed,
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
@@ -57,6 +58,7 @@ export async function signApprovedLighterKeyRegistration(input: {
   LighterChangePubKeySignerResult
 > {
   const { intent } = input;
+  assertLighterTradingApiKeyIndexAllowed(intent.environment, intent.apiKeyIndex);
   if (
     intent.sessionId !== input.sessionId
     || intent.executionState !== "approved"

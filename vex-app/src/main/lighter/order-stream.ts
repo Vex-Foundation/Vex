@@ -351,10 +351,12 @@ export class LighterOrderStreamSupervisor {
       {
         type: "subscribe",
         channel: `account_all_trades/${watcher.target.accountIndex}`,
+        auth: token,
       },
       {
         type: "subscribe",
         channel: `account_all_positions/${watcher.target.accountIndex}`,
+        auth: token,
       },
     ];
     if (

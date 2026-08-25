@@ -386,10 +386,25 @@ internal public nonce sync helper:
   refuses if the intent already has a nonce or is not approved. This helper
   still creates no signature and performs no provider submission.
 
-## Milestone 4 Auth Boundary
+## Milestone 4 Auth Boundary (REMOVED)
 
-Milestone 4 is the read-only credential and request boundary, not account-tool
-activation and not trading. It must use Lighter read-only auth tokens only:
+**Removed.** The standalone pasted read-only auth token described in this
+section (`credentials.ts`, `auth-token.ts`, the `LIGHTER_CORE/RHC_READ_ONLY_AUTH_TOKEN`
+vault secrets, `LighterClient`'s implicit fallback when no `privilegedAuth` is
+supplied) was deleted: it was a manually-pasted, never-regenerated credential
+with no mint/rotation path in Vex, and a stale one silently caused
+`lighter.withdraw.prepare` and other privileged reads to fail closed with a
+misleading "vault is locked" message instead of a token error — even while the
+vault was genuinely unlocked and the real trading credential was registered
+and active. All privileged read-only auth is now always derived fresh from the
+saved trading credential via the local signer
+(`deriveLighterReadOnlyAccountAuth`); there is no more BYOK read-only-token
+path. The rest of this section is kept as a historical record of what Milestone
+4 verified live against Lighter — the endpoint auth classifications below are
+still accurate, only the token-acquisition mechanism is gone.
+
+Milestone 4 was the read-only credential and request boundary, not account-tool
+activation and not trading. It used Lighter read-only auth tokens only:
 `ro:{account_index}:{single|all}:{expiry_unix}:{random_hex}`. Normal Lighter
 API keys can read and write, so API private keys and signer-client material are
 explicitly excluded from this milestone.
@@ -506,13 +521,21 @@ Every successful agent response includes provenance:
 
 ## Account Endpoint Auth Matrix
 
+The classifications below are a historical live-verification record from
+Milestone 4 (now removed, see above). The auth *requirement* per endpoint is
+still accurate; the read-only-token *mechanism* used to prove it no longer
+exists in the codebase, and the `pnpm run lighter:probe:auth*` scripts /
+`test:lighter:live:auth*` tests referenced below were removed with it.
+
 Which account endpoints require a credential is live-verified per endpoint, not
 inferred from the docs. Lighter's behavior is not uniform, and two endpoints
 that look equally account-scoped can sit on opposite sides of the auth line.
 
 Full Core and RHC classifications were verified on 2026-08-10 with real
-read-only tokens through `pnpm run test:lighter:live:auth:prompt`.
-`pnpm run lighter:probe:auth` exits non-zero when that proof is incomplete.
+read-only tokens through the now-removed
+`pnpm run test:lighter:live:auth:prompt` command. The removed
+`pnpm run lighter:probe:auth` command used to exit non-zero when that historical
+proof was incomplete; it is not a current verification command.
 
 | Endpoint | Without credentials | With read-only token | Access |
 |---|---|---|---|
@@ -547,17 +570,13 @@ Two provider behaviors that the client must account for:
   credentials only as an `Authorization` header. A token must never enter a URL,
   where it would reach logs, proxies, referrers, and error strings.
 
-Regenerate the full matrix with `pnpm run lighter:probe:auth`. The probe is
-read-only and never prints token material. It requires both Core and RHC
-read-only tokens and exits non-zero when the matrix is incomplete or unknown.
-Run `pnpm run lighter:probe:auth:public` for a public-only drift check; that
-mode does not prove read-only token reachability.
+The probe scripts that used to regenerate this matrix (`pnpm run
+lighter:probe:auth`, `lighter:probe:auth:public`) were removed along with the
+read-only-token mechanism they depended on.
 
 ## Verification
 
 - Client foundation: `pnpm test src/__tests__/lighter/lighter-client.test.ts src/__tests__/lighter/lighter-throttle.test.ts`
-- Account endpoint auth matrix: `pnpm run lighter:probe:auth`
-- Auth boundary: `pnpm test src/__tests__/lighter/lighter-auth-token.test.ts src/__tests__/lighter/lighter-credentials.test.ts`
 - Agent discovery: `pnpm test src/__tests__/vex-agent/tools/lighter-discovery.test.ts`
 - Agent handlers: `pnpm test src/__tests__/vex-agent/tools/lighter-handlers.test.ts`
 - Protocol guardrails: manifest lint, embedding lint, registry completeness, and
@@ -577,23 +596,11 @@ mode does not prove read-only token reachability.
   src/__tests__/vex-agent/tools/lighter-execution-boundary.test.ts` verifies
   durable nonce observation/reservation behavior and confirms no Lighter
   create/cancel/submit/sign hook has been introduced.
-- Live read-only auth proof: `pnpm run test:lighter:live:auth` runs the gated
-  `VEX_LIGHTER_AUTH_LIVE=1` smoke against real Core and RHC account endpoints.
-  It requires `LIGHTER_CORE_READ_ONLY_AUTH_TOKEN` and
-  `LIGHTER_RHC_READ_ONLY_AUTH_TOKEN` to be present through the encrypted local
-  secret vault or process environment. If either real token is absent, expired,
-  or malformed, the live auth proof fails rather than substituting fixtures,
-  mocks, or simulated provider responses. The proof uses read-only-compatible
-  account data endpoints: `/api/v1/trades`, `/api/v1/accountActiveOrders`, and
-  `/api/v1/accountInactiveOrders`. `/api/v1/tokens` is not treated as proof for
-  a read-only token because live Core rejected that endpoint with a read-only
-  token while accepting account trade history. This smoke also calls
-  `/api/v1/account`, which the auth matrix later showed to be public. That call
-  exercises the client path but is not evidence of authenticated access.
-- Prompted live proof: `pnpm run test:lighter:live:auth:prompt` asks for the
-  Core read-only token, then the RHC read-only token, hides both inputs, and
-  runs the live auth smoke followed by the full account auth matrix probe with
-  those tokens only in child-process environment variables.
+- Live read-only auth proof (REMOVED): `test:lighter:live:auth` and
+  `test:lighter:live:auth:prompt` were deleted along with the read-only-token
+  mechanism they proved. Privileged account reads (open orders, order history,
+  trades) are now verified through the signer-derived auth path exercised by
+  `lighter-order-repair.test.ts` / `lighter-handlers.test.ts` instead.
 
 ## Live Verification Notes
 

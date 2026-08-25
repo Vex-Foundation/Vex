@@ -271,7 +271,7 @@ describe("lighter.key.register.prepare", () => {
       registrationNonce: "0",
     }));
     expect(validatePreparedActionFollowUp(
-      "lighter__key__register__prepare",
+      "lighter.key.register.prepare",
       result.preparedActionFollowUp!,
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
     expect(result.data).toMatchObject({
@@ -330,7 +330,7 @@ describe("lighter.key.register.prepare", () => {
       apiKeyIndex: 6,
     });
     expect(validatePreparedActionFollowUp(
-      "lighter__key__register__prepare",
+      "lighter.key.register.prepare",
       result.preparedActionFollowUp!,
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
   });
@@ -393,7 +393,7 @@ describe("lighter.key.register.prepare", () => {
     }));
     expect(result.preparedActionFollowUp).toBeDefined();
     expect(validatePreparedActionFollowUp(
-      "lighter__key__register__prepare",
+      "lighter.key.register.prepare",
       result.preparedActionFollowUp!,
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
     expect(mocks.prepareCredential).not.toHaveBeenCalled();
