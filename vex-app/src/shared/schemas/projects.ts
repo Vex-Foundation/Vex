@@ -23,6 +23,7 @@
  */
 
 import { z } from "zod";
+import { STUDIO_AGENT_IDS } from "@vex-lib/studio-agent-ids.js";
 import { sessionPermissionSchema } from "./sessions.js";
 
 /** Backing-session scope marker. Agent-mode reads filter `vex_app`, so a
@@ -36,25 +37,19 @@ export const PROJECT_SLUG_MAX_LENGTH = 64;
  * Closed roster of coding agents a project may enable. Closed on purpose: the
  * ids are used to select instruction files and installer behaviour later in the
  * Studio arcs, so an unknown id must be a rejected input rather than a value
- * that silently does nothing. Extending the roster is a deliberate edit here.
+ * that silently does nothing.
+ *
+ * The list itself is NOT authored here. It is re-exported from
+ * `@vex-lib/studio-agent-ids.js`, which the engine's agent registry
+ * (`src/vex-agent/studio/agents.ts`) also reads: the root tsconfig compiles only
+ * `src`, so the engine cannot import this module, and a second hand-kept copy
+ * would be a second source of truth for a DURABLE stored value. Extending the
+ * roster is a deliberate edit in that module; the parity tests on both sides
+ * (`src/__tests__/lib/studio-agent-ids.test.ts` and
+ * `./__tests__/projects.test.ts`) pin the same ordered list so an edit that
+ * reaches only one package fails.
  */
-export const STUDIO_AGENT_IDS = [
-  "claude-code",
-  "codex",
-  "gemini-cli",
-  "opencode",
-  "grok-build",
-  "kimi",
-  "qwen-code",
-  "copilot-cli",
-  "cursor",
-  "amp",
-  "kiro",
-  "mistral-vibe",
-  "cline",
-  "droid",
-  "warp",
-] as const;
+export { STUDIO_AGENT_IDS };
 
 export const studioAgentIdSchema = z.enum(STUDIO_AGENT_IDS);
 export type StudioAgentId = z.infer<typeof studioAgentIdSchema>;

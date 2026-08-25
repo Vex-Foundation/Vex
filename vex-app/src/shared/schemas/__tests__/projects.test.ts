@@ -13,8 +13,54 @@ import {
   STUDIO_AGENT_IDS,
   projectCreateInputSchema,
   projectUpdateScopeInputSchema,
+  studioAgentIdSchema,
   studioAgentsSchema,
 } from "../projects.js";
+
+/**
+ * PARITY PIN, app half.
+ *
+ * `../projects.js` no longer authors the roster: it re-exports
+ * `@vex-lib/studio-agent-ids.js`, which the engine's agent registry
+ * (`src/vex-agent/studio/agents.ts`) reads too, because the root tsconfig
+ * compiles only `src` and a second hand-kept copy would be a second source of
+ * truth for a DURABLE stored value.
+ *
+ * The import removes drift in one direction and hides it in the other: an edit
+ * in the lib would silently change this package's request validation. So both
+ * sides pin the same literal list. The engine half is
+ * `src/__tests__/lib/studio-agent-ids.test.ts`. Changing the roster means
+ * editing the module and BOTH pins deliberately.
+ */
+const PINNED_ROSTER = [
+  "claude-code",
+  "codex",
+  "gemini-cli",
+  "opencode",
+  "grok-build",
+  "kimi",
+  "qwen-code",
+  "copilot-cli",
+  "cursor",
+  "amp",
+  "kiro",
+  "mistral-vibe",
+  "cline",
+  "droid",
+  "warp",
+];
+
+describe("the canonical agent roster reaching the app schemas", () => {
+  it("is exactly the reviewed list, in order", () => {
+    expect([...STUDIO_AGENT_IDS]).toEqual(PINNED_ROSTER);
+  });
+
+  it("is the enum the request schema validates against", () => {
+    expect(studioAgentIdSchema.options).toEqual(PINNED_ROSTER);
+    expect(studioAgentIdSchema.safeParse("warp").success).toBe(true);
+    expect(studioAgentIdSchema.safeParse("oz").success).toBe(false);
+  });
+});
 
 describe("studioAgentsSchema", () => {
   it("accepts an empty roster and the full distinct roster", () => {

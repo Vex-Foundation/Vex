@@ -714,6 +714,55 @@ the coordinator's scratchpad `a1-probe/REPORT.md`):
     `agent_activity_tx_vex_fee_eip155`: a Solana `tx_vex_fee` row is
     rejected by the database, so a future writer cannot record one without
     stating the mechanism in a migration first.
+57. Stage A5a LANDED (2026-08-25): the PURE half of the installer. No
+    filesystem write, no IPC and no vex-app main-process code exists yet -
+    all of that is A5b.
+
+    WHAT SHIPPED. `src/lib/studio-agent-ids.ts` is now THE source of the
+    fifteen ids and `vex-app/src/shared/schemas/projects.ts` imports it
+    through the `@vex-lib/*` alias its four tsconfigs and three Vite
+    configs already declare (import chosen over derivation because the
+    alias made it clean; both packages pin the same literal roster so an
+    edit that reaches only one side fails). `src/vex-agent/studio/agents.ts`
+    carries one record per id with config mode as a DISCRIMINATED UNION, so
+    `renderStudioAgentConfig` accepts only writable records and "cline and
+    the Warp CLI have no writer" is a compile error rather than a runtime
+    guard. `studio-mcp/agent-dialect-matrix.md` is the reviewed artifact,
+    and a table test parses its tables and compares every config path,
+    alternate read path, dialect, owned path, `type` value, entry-key
+    allowlist, timeout field, unit, written value, never-written token and
+    inertness against the registry, in BOTH directions.
+    `studio/installer/render/*` holds the pure renderers - fresh, merge and
+    remove per dialect, JSON/JSONC through `jsonc-parser` `modify` (the one
+    new dependency) and TOML through section-level text replacement - plus
+    the `AGENTS.md` managed block and its hash-in-the-marker drift
+    contract. Fifty-two golden files (four per writable agent) are asserted
+    byte for byte and regenerate with the repo's existing
+    `UPDATE_TOOLSNAPS=true` protocol. `.vex/protocols.md` renders through a
+    generator lane mirroring `generate:studio-tools-doc`, with `--check`.
+
+    THE SECURITY SHAPE. The Vex entry is built from a closed per-dialect
+    key allowlist, and NO allowlist contains `env` or `environment`: the
+    bridge finds its own socket, so "a client's own timeout environment
+    variable never reaches the bridge child" is structural rather than
+    remembered. Never-written fields are asserted absent from the bytes VEX
+    AUTHORS, while the golden fixtures prove a FOREIGN Grok `[permission]`
+    section survives a merge and a remove verbatim - the two are different
+    questions and are tested as such. Every timeout Vex can influence is
+    asserted against `APPROVAL_TTL_MS` itself, not a copied number; the
+    four it cannot (cursor, amp, kiro unverified; kimi user-global) say so
+    by type with a named owed probe or user action.
+
+    NAMED GAPS, deliberately left to A5b rather than guessed here: the
+    managed block carries the safety prefix, the shared usage notes and the
+    protocols pointer, but NOT the project's permission and wallet lines
+    from section 2.6 (that needs the project DTO A5b owns), and there is no
+    `CLAUDE.md` `@AGENTS.md` import renderer yet. One whitespace nuance is
+    documented in the code: a remove reclaims the single blank separator
+    line an append inserted, so a file that ALREADY ended in a blank line
+    at that exact seam loses it. The extraction of the usage notes out of
+    `mcp/instructions.ts` keeps `STUDIO_MCP_INSTRUCTIONS` byte-identical,
+    pinned by a literal captured before the move.
 
 ## 0. Decisions in force
 

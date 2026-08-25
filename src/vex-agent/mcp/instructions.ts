@@ -22,6 +22,11 @@
  * from the call.
  */
 
+import {
+  STUDIO_INSTRUCTIONS_SEPARATOR,
+  STUDIO_USAGE_NOTES,
+} from "../studio/instructions/shared-usage.js";
+
 /**
  * The first 512 characters: what an agent must know before it calls anything.
  *
@@ -39,36 +44,21 @@ export const STUDIO_SAFETY_PREFIX =
   + "Read the field's description; never guess.";
 
 /**
- * The rest: how to find tools, and what an unavailable tool looks like.
+ * The complete `instructions` value.
  *
- * Everything here is a fact about THIS SERVER that does not change between
- * projects, so none of it can go stale between the handshake and a call.
+ * The tail - how to find tools, what an unavailable tool looks like, and what
+ * the four failure words mean - was EXTRACTED to
+ * `../studio/instructions/shared-usage.ts` because the `AGENTS.md` managed block
+ * the Studio installer writes must say the SAME words. Two copies would be two
+ * sources of truth for text a model acts on. Everything there is still a fact
+ * about THIS SERVER that does not change between projects, so none of it can go
+ * stale between the handshake and a call.
+ *
+ * The composed bytes are unchanged by that extraction and pinned by
+ * `__tests__/vex-agent/studio/instructions-extraction.test.ts`.
  */
-const STUDIO_USAGE_NOTES =
-  "\n\n"
-  + "FINDING TOOLS: this server lists every tool it has. The Vex tools and "
-  + "vex_ToolSearch are loaded up front; the protocol tools are found with "
-  + "vex_ToolSearch, which is read-only and runs nothing. Call any tool "
-  + "directly by the publicName it reports - there is no activation step.\n"
-  + "AMOUNTS: this server carries BOTH unit styles, so there is no server-wide "
-  + "rule to apply. A field documented as a human decimal string takes exactly "
-  + "the user's amount as a string (\"1.5\", never wei or lamports). A field "
-  + "documented as raw or atomic units takes an integer string in the token's "
-  + "smallest units, read together with that token's decimals. Never convert on "
-  + "a guess and never round.\n"
-  + "PROJECT SCOPE: each connection is bound to one Vex project, and that "
-  + "project's permission and wallet selection are read fresh on every call. "
-  + "The user can change either at any time, so read each result rather than "
-  + "assuming what a previous call was allowed to do.\n"
-  + "UNAVAILABLE TOOLS: a tool whose provider key is not configured returns an "
-  + "error naming the environment variable and the remedy. It has not run. "
-  + "Report the name to the user; do not work around it.\n"
-  + "ERRORS: every refusal says what did not happen. Read it. \"Declined\", "
-  + "\"expired\", \"cancelled\" and \"unknown outcome\" mean different things and "
-  + "only the first three mean nothing was executed.";
-
-/** The complete `instructions` value. */
-export const STUDIO_MCP_INSTRUCTIONS = `${STUDIO_SAFETY_PREFIX}${STUDIO_USAGE_NOTES}`;
+export const STUDIO_MCP_INSTRUCTIONS =
+  `${STUDIO_SAFETY_PREFIX}${STUDIO_INSTRUCTIONS_SEPARATOR}${STUDIO_USAGE_NOTES}`;
 
 /** The bound the safety prefix must fit in, in CHARACTERS. */
 export const STUDIO_SAFETY_PREFIX_MAX_CHARS = 512;

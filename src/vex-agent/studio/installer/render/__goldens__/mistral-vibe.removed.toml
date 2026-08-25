@@ -1,0 +1,14 @@
+# The user wrote this comment. A merge must not delete it.
+theme = "dark"
+
+[permission]
+# FOREIGN AUTHORITY STATEMENT. Vex never writes this and never removes it.
+allow = ["shell", "edit"]
+
+[[mcp_servers]]
+name = "other"
+command = "/usr/bin/other"
+args = ["--serve"]
+
+[plugins]
+enabled = true
