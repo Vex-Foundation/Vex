@@ -462,7 +462,8 @@ export interface LighterCandle {
   c: number;
   v: number;
   V: number;
-  i: number;
+  /** Exact decimal last-trade id. Provider JSON may encode this above JS safe range. */
+  i: string;
   O?: number;
   H?: number;
   L?: number;

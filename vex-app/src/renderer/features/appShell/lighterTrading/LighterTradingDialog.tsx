@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type JSX } from "react";
 import type {
+  LighterTradingCandle,
+  LighterTradingCandleConnectionStatus,
   LighterTradingEnvironment,
+  LighterTradingLiveResolution,
   LighterTradingMarket,
-  LighterTradingResolution,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 import {
@@ -19,6 +21,7 @@ import { useUiStore } from "../../../stores/uiStore.js";
 import { SessionPanel } from "../SessionPanel.js";
 import { MarketChart } from "./MarketChart.js";
 import { OrderBook } from "./OrderBook.js";
+import { useLighterCandleStream } from "./useLighterCandleStream.js";
 import {
   formatCompact,
   formatNumber,
@@ -26,9 +29,12 @@ import {
   formatRetrievedAt,
 } from "./format.js";
 
-const RESOLUTIONS: readonly LighterTradingResolution[] = [
-  "1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d", "1w",
+const RESOLUTIONS: readonly LighterTradingLiveResolution[] = [
+  "1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d",
 ];
+const EMPTY_CANDLES: readonly LighterTradingCandle[] = [];
+const EMPTY_BOOK: LighterTradingSnapshot["book"] = { asks: [], bids: [] };
+const EMPTY_TRADES: LighterTradingSnapshot["trades"] = [];
 
 type MarketCategory = "perp" | "stocks" | "spot";
 
@@ -47,7 +53,7 @@ export function LighterTradingDialog({
   const [environment, setEnvironment] = useState<LighterTradingEnvironment>("rhc");
   const [category, setCategory] = useState<MarketCategory>("perp");
   const [marketId, setMarketId] = useState<number | null>(null);
-  const [resolution, setResolution] = useState<LighterTradingResolution>("15m");
+  const [resolution, setResolution] = useState<LighterTradingLiveResolution>("5m");
   const [marketPickerOpen, setMarketPickerOpen] = useState(false);
   const marketsQuery = useLighterTradingMarkets(environment, open);
   const marketList = marketsQuery.data?.ok === true ? marketsQuery.data.data : null;
@@ -73,6 +79,13 @@ export function LighterTradingDialog({
     open && category !== "stocks",
   );
   const snapshot = snapshotQuery.data?.ok === true ? snapshotQuery.data.data : null;
+  const candleStream = useLighterCandleStream({
+    enabled: open && category !== "stocks",
+    environment,
+    marketId,
+    resolution,
+    restCandles: snapshot?.candles ?? EMPTY_CANDLES,
+  });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -140,18 +153,31 @@ export function LighterTradingDialog({
               market={market}
               onOpenMarketPicker={() => setMarketPickerOpen(true)}
               snapshot={snapshot}
+              streamStatus={candleStream.status}
             />
-            {snapshotQuery.data?.ok === false ? (
-              <WorkspaceError title="Market data unavailable" message={snapshotQuery.data.error.message} />
-            ) : snapshotQuery.isLoading || snapshot === null || market === null ? (
+            {market === null || (snapshotQuery.isLoading && candleStream.candles.length === 0) ? (
               <WorkspaceLoading label="Building the live market view…" />
+            ) : snapshot === null && candleStream.candles.length === 0 ? (
+              <WorkspaceError
+                title="Market data unavailable"
+                message={snapshotQuery.data?.ok === false
+                  ? snapshotQuery.data.error.message
+                  : "Lighter has not returned market data yet."}
+              />
             ) : (
               <div className="lit-workspace">
                 <section className="lit-panel lit-chart-panel" aria-labelledby="lit-chart-title">
                   <header className="lit-panel-header lit-chart-heading">
                     <span>
                       <h3 id="lit-chart-title">{market.symbol} · {market.marketType === "perp" ? "Perpetual" : "Spot"}</h3>
-                      <small>Updated {formatRetrievedAt(snapshot.retrievedAt)}</small>
+                      <small>
+                        {candleStream.receivedAt === null ? "Snapshot" : "Candle feed"}{" "}
+                        {formatRetrievedAt(
+                          candleStream.receivedAt
+                          ?? snapshot?.retrievedAt
+                          ?? marketList.retrievedAt,
+                        )}
+                      </small>
                     </span>
                     <div className="lit-resolution-tabs" aria-label="Chart interval">
                       {RESOLUTIONS.map((item) => (
@@ -167,16 +193,25 @@ export function LighterTradingDialog({
                     </div>
                   </header>
                   <div className="lit-chart-body">
-                    <MarketChart candles={snapshot.candles} symbol={market.symbol} theme={theme} />
+                    <MarketChart
+                      candles={candleStream.candles}
+                      symbol={market.symbol}
+                      theme={theme}
+                      environment={environment}
+                      marketId={market.marketId}
+                      resolution={resolution}
+                      pricePrecision={market.decimals.price}
+                      priceMinMove={10 ** -market.decimals.price}
+                    />
                   </div>
                   <footer className="lit-chart-footer">
-                    <span>OHLCV from Lighter · no simulated points</span>
+                    <span>REST history + Lighter candle stream · no simulated points</span>
                     <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
                   </footer>
                 </section>
-                <OrderBook book={snapshot.book} />
+                <OrderBook book={snapshot?.book ?? EMPTY_BOOK} />
                 <LighterConversation open={open} activeSessionId={activeSessionId} />
-                <RecentTrades trades={snapshot.trades} />
+                <RecentTrades trades={snapshot?.trades ?? EMPTY_TRADES} />
               </div>
             )}
             {marketPickerOpen ? (
@@ -248,10 +283,12 @@ function MarketBar({
   market,
   onOpenMarketPicker,
   snapshot,
+  streamStatus,
 }: {
   readonly market: LighterTradingMarket | null;
   readonly onOpenMarketPicker: () => void;
   readonly snapshot: LighterTradingSnapshot | null;
+  readonly streamStatus: LighterTradingCandleConnectionStatus;
 }): JSX.Element {
   const change = snapshot?.detail.daily.priceChange ?? null;
   return (
@@ -275,11 +312,22 @@ function MarketBar({
       <MarketMetric label="24h volume" value={formatCompact(snapshot?.detail.daily.quoteTokenVolume ?? null)} />
       <MarketMetric label="Open interest" value={formatCompact(snapshot?.detail.openInterest ?? null)} />
       <MarketMetric label="Trades" value={formatCompact(snapshot?.detail.daily.tradesCount ?? null)} />
-      <span className="lit-live-status" data-stale={snapshot === null || Date.now() - snapshot.retrievedAt > 15_000 || undefined}>
-        <i aria-hidden="true" /> {snapshot === null ? "Waiting" : Date.now() - snapshot.retrievedAt > 15_000 ? "Delayed" : "Live"}
+      <span className="lit-live-status" data-stale={streamStatus !== "live" || undefined}>
+        <i aria-hidden="true" /> {streamStatusLabel(streamStatus)}
       </span>
     </section>
   );
+}
+
+function streamStatusLabel(status: LighterTradingCandleConnectionStatus): string {
+  switch (status) {
+    case "live": return "Live";
+    case "connecting": return "Connecting";
+    case "reconnecting": return "Reconnecting";
+    case "delayed": return "Delayed";
+    case "unavailable": return "Unavailable";
+    case "stopped": return "Waiting";
+  }
 }
 
 function MarketPicker({

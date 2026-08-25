@@ -65,6 +65,15 @@ vi.mock("../MarketChart.js", () => ({
   MarketChart: () => <div data-testid="real-chart-host" />,
 }));
 
+vi.mock("../useLighterCandleStream.js", () => ({
+  useLighterCandleStream: () => ({
+    candles: SNAPSHOT.candles,
+    status: "live",
+    providerTimestamp: SNAPSHOT.retrievedAt,
+    receivedAt: SNAPSHOT.retrievedAt,
+  }),
+}));
+
 vi.mock("../../SessionPanel.js", () => ({
   SessionPanel: ({ surface }: { surface?: string }) => (
     <div data-testid="active-session-chat" data-surface={surface}>
@@ -117,6 +126,14 @@ describe("Light it up dialog", () => {
       />,
     );
     expect(screen.queryByTestId("active-session-chat")).toBeNull();
+  });
+
+  it("starts on Lighter's live 5m interval and does not expose unsupported weekly streaming", async () => {
+    renderDialog();
+
+    expect((await screen.findByRole("button", { name: "5m" })).getAttribute("aria-pressed"))
+      .toBe("true");
+    expect(screen.queryByRole("button", { name: "1w" })).toBeNull();
   });
 
   it("searches and selects a real provider market from the Lighter-style picker", async () => {

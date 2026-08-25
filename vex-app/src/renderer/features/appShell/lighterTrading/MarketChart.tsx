@@ -1,109 +1,443 @@
-import { useEffect, useRef, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import {
   CandlestickSeries,
   ColorType,
   createChart,
   HistogramSeries,
+  LineStyle,
+  type CandlestickData,
+  type HistogramData,
   type IChartApi,
+  type IRange,
   type ISeriesApi,
+  type Time,
+  type UTCTimestamp,
 } from "lightweight-charts";
-import type { LighterTradingSnapshot } from "@shared/schemas/lighter-trading.js";
-import { toChartCandles, toChartVolume } from "./chart-adapter.js";
+import type {
+  LighterTradingCandle,
+  LighterTradingEnvironment,
+  LighterTradingResolution,
+} from "@shared/schemas/lighter-trading.js";
+import {
+  toChartCandles,
+  toChartVolume,
+  upsertChartCandles,
+  type ChartCandleRow,
+} from "./chart-adapter.js";
 
-export interface MarketChartProps {
-  readonly candles: LighterTradingSnapshot["candles"];
-  readonly symbol: string;
-  readonly theme: "chronos" | "celeris";
+const INITIAL_VISIBLE_BARS = 100;
+const LIVE_RIGHT_OFFSET = 7;
+
+interface ChartLegendValues {
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+  readonly volume: number;
 }
 
-export function MarketChart({ candles, symbol, theme }: MarketChartProps): JSX.Element {
+interface AppliedChartData {
+  readonly identity: string;
+  readonly sourceRows: ChartCandleRow[];
+  readonly candles: CandlestickData<UTCTimestamp>[];
+  readonly volumes: HistogramData<UTCTimestamp>[];
+  readonly viewportDecided: boolean;
+}
+
+export interface MarketChartProps {
+  readonly candles: readonly LighterTradingCandle[];
+  readonly symbol: string;
+  readonly theme: "chronos" | "celeris";
+  readonly environment?: LighterTradingEnvironment;
+  readonly marketId?: number;
+  readonly resolution?: LighterTradingResolution;
+  readonly pricePrecision?: number;
+  readonly priceMinMove?: number;
+}
+
+function timestampToLocalDate(time: Time): Date | null {
+  if (typeof time === "number") return new Date(Number(time) * 1_000);
+  if (typeof time === "string") {
+    const parsed = new Date(time);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed = new Date(time.year, time.month - 1, time.day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function formatLocalChartTime(time: Time): string {
+  const date = timestampToLocalDate(time);
+  if (date === null) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatLocalChartTick(time: Time): string {
+  const date = timestampToLocalDate(time);
+  if (date === null) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function resolvePriceFormat(
+  precisionInput: number | undefined,
+  minMoveInput: number | undefined,
+): { type: "price"; precision: number; minMove: number } {
+  const precision = Number.isInteger(precisionInput) && precisionInput! >= 0
+    ? Math.min(precisionInput!, 18)
+    : 2;
+  const defaultMinMove = 10 ** -precision;
+  const minMove = Number.isFinite(minMoveInput) && minMoveInput! > 0
+    ? minMoveInput!
+    : defaultMinMove;
+  return { type: "price", precision, minMove };
+}
+
+function initialVisibleRange(length: number): IRange<number> {
+  return {
+    from: Math.max(0, length - INITIAL_VISIBLE_BARS),
+    to: Math.max(0, length - 1) + LIVE_RIGHT_OFFSET,
+  };
+}
+
+function sameCandle(
+  left: CandlestickData<UTCTimestamp>,
+  right: CandlestickData<UTCTimestamp>,
+): boolean {
+  return left.time === right.time
+    && left.open === right.open
+    && left.high === right.high
+    && left.low === right.low
+    && left.close === right.close;
+}
+
+function sameVolume(
+  left: HistogramData<UTCTimestamp>,
+  right: HistogramData<UTCTimestamp>,
+): boolean {
+  return left.time === right.time
+    && left.value === right.value
+    && left.color === right.color;
+}
+
+function latestLegend(
+  candles: readonly CandlestickData<UTCTimestamp>[],
+  volumes: readonly HistogramData<UTCTimestamp>[],
+): ChartLegendValues | null {
+  const candle = candles.at(-1);
+  if (candle === undefined) return null;
+  const volume = volumes.findLast((point) => point.time === candle.time);
+  return {
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume: volume?.value ?? 0,
+  };
+}
+
+function getChartColors(host: HTMLElement): {
+  readonly ink: string;
+  readonly grid: string;
+  readonly positive: string;
+  readonly negative: string;
+  readonly positiveVolume: string;
+  readonly negativeVolume: string;
+  readonly fontFamily: string;
+  readonly fontSize: number;
+} {
+  const styles = getComputedStyle(host);
+  const chartFontSize = Number.parseFloat(
+    styles.getPropertyValue("--lit-chart-font-size").trim(),
+  );
+  return {
+    ink: styles.getPropertyValue("--lit-ink-secondary").trim(),
+    grid: styles.getPropertyValue("--lit-grid").trim(),
+    positive: styles.getPropertyValue("--lit-positive").trim(),
+    negative: styles.getPropertyValue("--lit-negative").trim(),
+    positiveVolume: styles.getPropertyValue("--lit-positive-volume").trim(),
+    negativeVolume: styles.getPropertyValue("--lit-negative-volume").trim(),
+    fontFamily: styles.fontFamily,
+    fontSize: Number.isFinite(chartFontSize) ? chartFontSize : 13,
+  };
+}
+
+export function MarketChart({
+  candles,
+  symbol,
+  theme,
+  environment,
+  marketId,
+  resolution,
+  pricePrecision,
+  priceMinMove,
+}: MarketChartProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const appliedDataRef = useRef<AppliedChartData | null>(null);
+  const latestLegendRef = useRef<ChartLegendValues | null>(null);
+  const crosshairActiveRef = useRef(false);
+  const [legend, setLegend] = useState<ChartLegendValues | null>(null);
+  const identity = `${environment ?? "unknown"}:${marketId ?? symbol}:${resolution ?? "unknown"}`;
+  const precision = resolvePriceFormat(pricePrecision, priceMinMove).precision;
 
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return undefined;
-
-    const styles = getComputedStyle(host);
-    const ink = styles.getPropertyValue("--lit-ink-secondary").trim();
-    const grid = styles.getPropertyValue("--lit-grid").trim();
-    const positive = styles.getPropertyValue("--lit-positive").trim();
-    const negative = styles.getPropertyValue("--lit-negative").trim();
-    const chartFontSize = Number.parseFloat(
-      styles.getPropertyValue("--lit-chart-font-size").trim(),
-    );
+    const colors = getChartColors(host);
+    const priceFormat = resolvePriceFormat(pricePrecision, priceMinMove);
 
     const chart = createChart(host, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: ink,
+        textColor: colors.ink,
         attributionLogo: false,
-        fontFamily: styles.fontFamily,
-        fontSize: Number.isFinite(chartFontSize) ? chartFontSize : 13,
+        fontFamily: colors.fontFamily,
+        fontSize: colors.fontSize,
       },
+      localization: { timeFormatter: formatLocalChartTime },
       grid: {
-        vertLines: { color: grid },
-        horzLines: { color: grid },
+        vertLines: { color: colors.grid },
+        horzLines: { color: colors.grid },
       },
-      rightPriceScale: { borderColor: grid },
+      rightPriceScale: { borderColor: colors.grid },
       timeScale: {
-        borderColor: grid,
+        borderColor: colors.grid,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 4,
+        rightOffset: LIVE_RIGHT_OFFSET,
+        shiftVisibleRangeOnNewBar: false,
+        tickMarkFormatter: formatLocalChartTick,
       },
       crosshair: {
-        vertLine: { color: ink, labelBackgroundColor: ink },
-        horzLine: { color: ink, labelBackgroundColor: ink },
+        vertLine: { color: colors.ink, labelBackgroundColor: colors.ink },
+        horzLine: { color: colors.ink, labelBackgroundColor: colors.ink },
       },
       handleScale: true,
       handleScroll: true,
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: positive,
-      downColor: negative,
-      wickUpColor: positive,
-      wickDownColor: negative,
+      upColor: colors.positive,
+      downColor: colors.negative,
+      wickUpColor: colors.positive,
+      wickDownColor: colors.negative,
       borderVisible: false,
+      priceFormat,
       priceLineVisible: true,
+      priceLineStyle: LineStyle.Dotted,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false,
     });
     volumeSeries.priceScale().applyOptions({
       scaleMargins: { top: 0.82, bottom: 0 },
     });
+
+    const handleCrosshairMove = (param: Parameters<IChartApi["subscribeCrosshairMove"]>[0] extends (
+      event: infer TEvent,
+    ) => void ? TEvent : never): void => {
+      const candlePoint = param.seriesData.get(candleSeries);
+      const volumePoint = param.seriesData.get(volumeSeries);
+      if (
+        param.point !== undefined
+        && candlePoint !== undefined
+        && "open" in candlePoint
+        && "high" in candlePoint
+        && "low" in candlePoint
+        && "close" in candlePoint
+      ) {
+        crosshairActiveRef.current = true;
+        setLegend({
+          open: candlePoint.open,
+          high: candlePoint.high,
+          low: candlePoint.low,
+          close: candlePoint.close,
+          volume: volumePoint !== undefined && "value" in volumePoint
+            ? volumePoint.value
+            : 0,
+        });
+        return;
+      }
+      crosshairActiveRef.current = false;
+      setLegend(latestLegendRef.current);
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
 
     return () => {
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      appliedDataRef.current = null;
     };
-  }, [theme]);
+    // The chart is intentionally created once. Theme and precision changes are
+    // applied in place so they cannot reset the user's visible range.
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
+    const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
-    if (host === null || candleSeries === null || volumeSeries === null) return;
-    const styles = getComputedStyle(host);
-    const positive = styles.getPropertyValue("--lit-positive-volume").trim();
-    const negative = styles.getPropertyValue("--lit-negative-volume").trim();
-    const chartCandles = toChartCandles(candles);
-    candleSeries.setData(chartCandles);
-    volumeSeries.setData(toChartVolume(candles, positive, negative));
-    if (chartCandles.length > 0) chartRef.current?.timeScale().fitContent();
-  }, [candles, theme]);
+    if (host === null || chart === null || candleSeries === null || volumeSeries === null) return;
+
+    const colors = getChartColors(host);
+    const timeScale = chart.timeScale();
+    const visibleRange = timeScale.getVisibleLogicalRange();
+    chart.applyOptions({
+      layout: {
+        textColor: colors.ink,
+        fontFamily: colors.fontFamily,
+        fontSize: colors.fontSize,
+      },
+      grid: {
+        vertLines: { color: colors.grid },
+        horzLines: { color: colors.grid },
+      },
+      rightPriceScale: { borderColor: colors.grid },
+      timeScale: { borderColor: colors.grid },
+      crosshair: {
+        vertLine: { color: colors.ink, labelBackgroundColor: colors.ink },
+        horzLine: { color: colors.ink, labelBackgroundColor: colors.ink },
+      },
+    });
+    candleSeries.applyOptions({
+      upColor: colors.positive,
+      downColor: colors.negative,
+      wickUpColor: colors.positive,
+      wickDownColor: colors.negative,
+      priceFormat: resolvePriceFormat(pricePrecision, priceMinMove),
+    });
+
+    const applied = appliedDataRef.current;
+    if (applied !== null) {
+      const recoloredVolumes = toChartVolume(
+        applied.sourceRows,
+        colors.positiveVolume,
+        colors.negativeVolume,
+      );
+      const latestTime = recoloredVolumes.at(-1)?.time;
+      for (const point of recoloredVolumes) {
+        volumeSeries.update(point, point.time !== latestTime);
+      }
+      appliedDataRef.current = { ...applied, volumes: recoloredVolumes };
+      latestLegendRef.current = latestLegend(applied.candles, recoloredVolumes);
+      if (!crosshairActiveRef.current) setLegend(latestLegendRef.current);
+    }
+    if (visibleRange !== null) timeScale.setVisibleLogicalRange(visibleRange);
+  }, [theme, pricePrecision, priceMinMove]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    if (host === null || chart === null || candleSeries === null || volumeSeries === null) return;
+
+    const colors = getChartColors(host);
+    const previous = appliedDataRef.current;
+    const identityChanged = previous === null || previous.identity !== identity;
+    const sourceRows = upsertChartCandles(
+      identityChanged ? [] : previous.sourceRows,
+      candles,
+    );
+    const chartCandles = toChartCandles(sourceRows);
+    const chartVolumes = toChartVolume(
+      sourceRows,
+      colors.positiveVolume,
+      colors.negativeVolume,
+    );
+    const timeScale = chart.timeScale();
+
+    if (identityChanged) {
+      candleSeries.setData(chartCandles);
+      volumeSeries.setData(chartVolumes);
+      const viewportDecided = chartCandles.length > 0;
+      appliedDataRef.current = {
+        identity,
+        sourceRows,
+        candles: chartCandles,
+        volumes: chartVolumes,
+        viewportDecided,
+      };
+      crosshairActiveRef.current = false;
+      latestLegendRef.current = latestLegend(chartCandles, chartVolumes);
+      setLegend(latestLegendRef.current);
+      if (viewportDecided) {
+        timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
+      }
+      return;
+    }
+
+    const visibleRange = timeScale.getVisibleLogicalRange();
+    const previousLastTime = previous.candles.at(-1)?.time;
+    const wasLive = visibleRange !== null
+      && previous.candles.length > 0
+      && visibleRange.to >= previous.candles.length - 1;
+    const priorCandlesByTime = new Map(previous.candles.map((point) => [point.time, point]));
+    const priorVolumesByTime = new Map(previous.volumes.map((point) => [point.time, point]));
+    let appendedBars = 0;
+    let changed = false;
+
+    for (const point of chartCandles) {
+      const prior = priorCandlesByTime.get(point.time);
+      if (prior === undefined || !sameCandle(prior, point)) {
+        const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
+        candleSeries.update(point, historicalUpdate);
+        changed = true;
+        if (previousLastTime === undefined || point.time > previousLastTime) appendedBars += 1;
+      }
+    }
+    for (const point of chartVolumes) {
+      const prior = priorVolumesByTime.get(point.time);
+      if (prior === undefined || !sameVolume(prior, point)) {
+        const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
+        volumeSeries.update(point, historicalUpdate);
+        changed = true;
+      }
+    }
+
+    let viewportDecided = previous.viewportDecided;
+    if (!viewportDecided && chartCandles.length > 0) {
+      timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
+      viewportDecided = true;
+    } else if (visibleRange !== null && changed) {
+      timeScale.setVisibleLogicalRange(
+        wasLive && appendedBars > 0
+          ? { from: visibleRange.from + appendedBars, to: visibleRange.to + appendedBars }
+          : visibleRange,
+      );
+    }
+
+    appliedDataRef.current = {
+      identity,
+      sourceRows,
+      candles: chartCandles,
+      volumes: chartVolumes,
+      viewportDecided,
+    };
+    latestLegendRef.current = latestLegend(chartCandles, chartVolumes);
+    if (!crosshairActiveRef.current) setLegend(latestLegendRef.current);
+  }, [candles, identity]);
 
   return (
     <>
@@ -114,6 +448,15 @@ export function MarketChart({ candles, symbol, theme }: MarketChartProps): JSX.E
         aria-label={`${symbol} candlestick chart with volume`}
         data-testid="lighter-market-chart"
       />
+      {legend !== null ? (
+        <div className="lit-chart-legend" aria-label={`${symbol} chart values`}>
+          <span><b>O</b> {legend.open.toFixed(precision)}</span>
+          <span><b>H</b> {legend.high.toFixed(precision)}</span>
+          <span><b>L</b> {legend.low.toFixed(precision)}</span>
+          <span><b>C</b> {legend.close.toFixed(precision)}</span>
+          <span><b>Vol</b> {legend.volume.toLocaleString()}</span>
+        </div>
+      ) : null}
       {candles.length === 0 ? (
         <div className="lit-chart-empty" role="status">
           <span>No candle history is available for {symbol}.</span>

@@ -620,12 +620,7 @@ export class LighterClient {
     params: LighterCandlesParams,
   ): Promise<LighterCandlesResponse> {
     const query = buildCandlesQuery(params);
-    const response = await this.request(
-      environment,
-      LIGHTER_ENDPOINT_PATHS.candles,
-      validateLighterCandles,
-      query,
-    );
+    const response = await this.requestCandles(environment, query);
     if (response.c.length > LIGHTER_CANDLES_COUNT_MAX) {
       throw new VexError(
         ErrorCodes.LIGHTER_INVALID_RESPONSE,
@@ -634,6 +629,51 @@ export class LighterClient {
       );
     }
     return response;
+  }
+
+  private async requestCandles(
+    environment: LighterEnvironment,
+    query: Record<string, QueryValue>,
+  ): Promise<LighterCandlesResponse> {
+    const url = this.buildUrl(environment, LIGHTER_ENDPOINT_PATHS.candles, query);
+    const headers = this.headersFor(environment);
+    try {
+      return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async () => {
+        const response = await fetchWithTimeout(url, { headers });
+        if (!response.ok) {
+          if (response.status === 429) {
+            const retryMs = parseRetryAfterMs(response.headers.get("retry-after"));
+            this.throttle.penalize(environment, retryMs);
+          }
+          throw mapLighterError(
+            environment,
+            response.status,
+            await readLighterErrorBody(response),
+          );
+        }
+        return validateLighterCandles(await readExactCandleJson(response));
+      });
+    } catch (err) {
+      mapLighterTransportError(err);
+    }
+  }
+}
+
+async function readExactCandleJson(response: Response): Promise<unknown> {
+  try {
+    const textReader = (response as Response & { text?: () => Promise<string> }).text;
+    const text = typeof textReader === "function"
+      ? await textReader.call(response)
+      : JSON.stringify(await response.json());
+    // JSON.parse would round a provider integer before validation. Quote only
+    // candle last-trade ids so their original decimal lexemes remain lossless.
+    const exact = text.replace(
+      /(\"i\"\s*:\s*)(-?\d+)(?=\s*[,}])/g,
+      (_match, prefix: string, value: string) => `${prefix}\"${value}\"`,
+    );
+    return JSON.parse(exact) as unknown;
+  } catch {
+    return null;
   }
 }
 

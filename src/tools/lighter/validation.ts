@@ -140,22 +140,46 @@ const tradeSchema = z
   })
   .passthrough();
 
-const candleSchema = z
+const rawCandleSchema = z
   .object({
     t: int,
-    o: finiteNumber,
-    h: finiteNumber,
-    l: finiteNumber,
-    c: finiteNumber,
-    v: finiteNumber,
-    V: finiteNumber,
-    i: int,
+    o: finiteNumber.optional(),
+    h: finiteNumber.optional(),
+    l: finiteNumber.optional(),
+    c: finiteNumber.optional(),
+    v: finiteNumber.optional(),
+    V: finiteNumber.optional(),
+    i: integerString,
     O: finiteNumber.optional(),
     H: finiteNumber.optional(),
     L: finiteNumber.optional(),
     C: finiteNumber.optional(),
   })
   .passthrough();
+
+const candleSchema = rawCandleSchema.transform((candle, context) => {
+  const o = candle.o ?? candle.O;
+  const h = candle.h ?? candle.H;
+  const l = candle.l ?? candle.L;
+  const c = candle.c ?? candle.C;
+  if (o === undefined || h === undefined || l === undefined || c === undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "Candle is missing OHLC values.",
+    });
+    return z.NEVER;
+  }
+  return {
+    ...candle,
+    o,
+    h,
+    l,
+    c,
+    // Lighter omits zero-valued fields in sparse REST candles.
+    v: candle.v ?? 0,
+    V: candle.V ?? 0,
+  };
+});
 
 const statusSchema = z
   .object({

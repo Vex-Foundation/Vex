@@ -113,14 +113,14 @@ function fakeClient(): LighterTradingPanelClient {
         },
       ],
     })),
-    getCandles: vi.fn(async () => ({
+    getCandles: vi.fn(async (_environment, params) => ({
       code: 200,
-      r: "1h",
+      r: params.resolution,
       c: [
-        { t: 1_787_530_000_000, o: 4_100, h: 4_250, l: 4_050, c: 4_200, v: 8, V: 33_000, i: 2 },
-        { t: 1_787_526_400_000, o: 4_050, h: 4_150, l: 4_000, c: 4_100, v: 7, V: 28_000, i: 1 },
-        { t: 1_787_530_000_000, o: 4_100, h: 4_260, l: 4_050, c: 4_210, v: 9, V: 37_000, i: 3 },
-        { t: 1_787_533_600_000, o: 4_200, h: 4_100, l: 4_000, c: 4_050, v: 1, V: 4_000, i: 4 },
+        { t: 1_787_530_000_000, o: 4_100, h: 4_250, l: 4_050, c: 4_200, v: 8, V: 33_000, i: "2" },
+        { t: 1_787_526_400_000, o: 4_050, h: 4_150, l: 4_000, c: 4_100, v: 7, V: 28_000, i: "1" },
+        { t: 1_787_530_000_000, o: 4_100, h: 4_260, l: 4_050, c: 4_210, v: 9, V: 37_000, i: "3" },
+        { t: 1_787_533_600_000, o: 4_200, h: 4_100, l: 4_000, c: 4_050, v: 1, V: 4_000, i: "4" },
       ],
     })),
   } as unknown as LighterTradingPanelClient;
@@ -141,9 +141,10 @@ describe("Lighter trading panel service", () => {
   });
 
   it("sorts book and candles, deduplicates candle time, and normalizes seconds", async () => {
+    const client = fakeClient();
     const result = await readLighterTradingSnapshot(
       { environment: "core", marketId: 7, resolution: "1h" },
-      fakeClient(),
+      client,
       () => 1_787_530_000_000,
     );
 
@@ -154,7 +155,17 @@ describe("Lighter trading panel service", () => {
       1_787_526_400_000,
       1_787_530_000_000,
     ]);
-    expect(result.candles[1]?.close).toBe(4_210);
+    expect(result.candles[1]).toMatchObject({
+      close: 4_210,
+      lastTradeId: "3",
+      providerResolution: "1h",
+      source: "rest_snapshot",
+    });
+    expect(client.getCandles).toHaveBeenCalledWith("core", expect.objectContaining({
+      marketId: 7,
+      resolution: "1h",
+      setTimestampToEnd: false,
+    }));
     expect(lighterTradingSnapshotSchema.safeParse(result).success).toBe(true);
   });
 
@@ -195,5 +206,35 @@ describe("Lighter trading panel service", () => {
     });
     expect(result.detail).toMatchObject({ lastTradePrice: 4_200 });
     expect(lighterTradingSnapshotSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("rejects unsupported weekly candles before calling the provider", async () => {
+    const client = fakeClient();
+
+    await expect(readLighterTradingSnapshot(
+      { environment: "core", marketId: 7, resolution: "1w" },
+      client,
+      () => 1_787_530_000_000,
+    )).rejects.toThrow("does not support 1w");
+
+    expect(client.getCandles).not.toHaveBeenCalled();
+    expect(client.getOrderBookOrders).not.toHaveBeenCalled();
+  });
+
+  it("starts candle history independently of order-book availability", async () => {
+    const client = fakeClient();
+    vi.mocked(client.getOrderBookOrders).mockRejectedValueOnce(new Error("book unavailable"));
+
+    await expect(readLighterTradingSnapshot(
+      { environment: "rhc", marketId: 7, resolution: "15m" },
+      client,
+      () => 1_787_530_000_000,
+    )).rejects.toThrow("book unavailable");
+
+    expect(client.getCandles).toHaveBeenCalledOnce();
+    expect(client.getCandles).toHaveBeenCalledWith("rhc", expect.objectContaining({
+      resolution: "15m",
+      setTimestampToEnd: false,
+    }));
   });
 });

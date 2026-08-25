@@ -447,6 +447,26 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   inset: 0;
 }
 
+.lit-chart-legend {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  left: 12px;
+  display: flex;
+  max-width: calc(100% - 90px);
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  pointer-events: none;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  text-shadow: 0 1px 2px var(--lit-panel), 0 0 6px var(--lit-panel);
+}
+
+.lit-chart-legend span { white-space: nowrap; }
+.lit-chart-legend b { color: var(--lit-ink-muted); font-weight: 600; }
+
 .lit-chart-empty {
   display: flex;
   height: 100%;
@@ -1007,6 +1027,12 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
     min-height: 42px;
     padding-inline: 18px;
     font-size: 13px;
+  }
+  .lit-chart-legend {
+    top: 12px;
+    left: 16px;
+    gap: 6px 16px;
+    font-size: 14px;
   }
 
   .lit-book-side { padding-block: 7px; }

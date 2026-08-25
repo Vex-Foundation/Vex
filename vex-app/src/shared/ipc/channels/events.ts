@@ -27,6 +27,11 @@ export const EV = {
   market: {
     vex: "vex:event:market:vex",
   },
+  lighterTrading: {
+    candleSnapshot: "vex:event:lighter:candleSnapshot",
+    candleUpdate: "vex:event:lighter:candleUpdate",
+    candleStatus: "vex:event:lighter:candleStatus",
+  },
   updater: {
     // Full `UpdateStatus` discriminated union pushed on every updater state
     // transition (checking → available → downloading → downloaded → … |

@@ -178,6 +178,8 @@ describe("preload bridge surface", () => {
       // Light it up — read-only Lighter market list + analysis snapshot.
       "CH.lighterTrading.listMarkets",
       "CH.lighterTrading.getSnapshot",
+      "CH.lighterTrading.startCandleSubscription",
+      "CH.lighterTrading.stopCandleSubscription",
       // "Vex setup" user profile (DB-backed, replaces persona.md).
       "CH.settings.getUserProfile",
       "CH.settings.setUserProfile",
@@ -268,6 +270,20 @@ describe("preload bridge surface", () => {
       corpus,
       "onVexUpdate not exposed by the preload composer",
     ).toContain("onVexUpdate");
+  });
+
+  it("exposes only typed Lighter candle subscription methods and event channels", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const reference of [
+      "EV.lighterTrading.candleSnapshot",
+      "EV.lighterTrading.candleUpdate",
+      "EV.lighterTrading.candleStatus",
+      "onCandleSnapshot",
+      "onCandleUpdate",
+      "onCandleStatus",
+    ]) {
+      expect(corpus).toContain(reference);
+    }
   });
 
 });

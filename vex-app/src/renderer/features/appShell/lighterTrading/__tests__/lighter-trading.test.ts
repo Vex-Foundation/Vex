@@ -1,11 +1,16 @@
-import { render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   LighterTradingMarket,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
-import { toChartCandles, toChartVolume } from "../chart-adapter.js";
+import {
+  compareCandleTradeIds,
+  toChartCandles,
+  toChartVolume,
+  upsertChartCandles,
+} from "../chart-adapter.js";
 import { MarketChart } from "../MarketChart.js";
 import { bestBookPrice, OrderBook } from "../OrderBook.js";
 import { buildLighterReviewMessage } from "../TradeTicket.js";
@@ -15,27 +20,54 @@ const chartHarness = vi.hoisted(() => {
   const histogramToken = Symbol("HistogramSeries");
   const candleSetData = vi.fn();
   const volumeSetData = vi.fn();
-  const fitContent = vi.fn();
+  const candleUpdate = vi.fn();
+  const volumeUpdate = vi.fn();
+  const candleApplyOptions = vi.fn();
+  const chartApplyOptions = vi.fn();
+  const setVisibleLogicalRange = vi.fn();
+  const getVisibleLogicalRange = vi.fn();
   const remove = vi.fn();
   const volumeApplyOptions = vi.fn();
+  const subscribeCrosshairMove = vi.fn();
+  const unsubscribeCrosshairMove = vi.fn();
+  const candleSeries = {
+    setData: candleSetData,
+    update: candleUpdate,
+    applyOptions: candleApplyOptions,
+  };
+  const volumeSeries = {
+    setData: volumeSetData,
+    update: volumeUpdate,
+    applyOptions: vi.fn(),
+    priceScale: () => ({ applyOptions: volumeApplyOptions }),
+  };
   const createChart = vi.fn(() => ({
     addSeries: vi.fn((definition: symbol) => definition === candlestickToken
-      ? { setData: candleSetData }
-      : {
-          setData: volumeSetData,
-          priceScale: () => ({ applyOptions: volumeApplyOptions }),
-        }),
+      ? candleSeries
+      : volumeSeries),
+    applyOptions: chartApplyOptions,
     remove,
-    timeScale: () => ({ fitContent }),
+    subscribeCrosshairMove,
+    unsubscribeCrosshairMove,
+    timeScale: () => ({ getVisibleLogicalRange, setVisibleLogicalRange }),
   }));
   return {
     candlestickToken,
     histogramToken,
     candleSetData,
     volumeSetData,
-    fitContent,
+    candleUpdate,
+    volumeUpdate,
+    candleSeries,
+    volumeSeries,
+    candleApplyOptions,
+    chartApplyOptions,
+    setVisibleLogicalRange,
+    getVisibleLogicalRange,
     remove,
     createChart,
+    subscribeCrosshairMove,
+    unsubscribeCrosshairMove,
   };
 });
 
@@ -43,6 +75,7 @@ vi.mock("lightweight-charts", () => ({
   CandlestickSeries: chartHarness.candlestickToken,
   HistogramSeries: chartHarness.histogramToken,
   ColorType: { Solid: "solid" },
+  LineStyle: { Dotted: 1 },
   createChart: chartHarness.createChart,
 }));
 
@@ -91,19 +124,44 @@ describe("Light it up deterministic review handoff", () => {
 describe("Light it up chart adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    chartHarness.getVisibleLogicalRange.mockReturnValue(null);
   });
 
   it("sorts, de-duplicates, and converts provider millisecond candles", () => {
     const rows = [
-      candle({ timestamp: 1_720_000_060_000, open: 101, close: 102, high: 103, low: 100 }),
+      { ...candle({ timestamp: 1_720_000_060_000, open: 101, close: 102, high: 103, low: 100 }), lastTradeId: "2" },
       candle({ timestamp: 1_720_000_000_000, open: 99, close: 101, high: 102, low: 98 }),
-      candle({ timestamp: 1_720_000_060_000, open: 101, close: 104, high: 105, low: 100 }),
+      { ...candle({ timestamp: 1_720_000_060_000, open: 101, close: 104, high: 105, low: 100 }), lastTradeId: "3" },
     ];
 
     const chartRows = toChartCandles(rows);
     expect(chartRows).toHaveLength(2);
     expect(Number(chartRows[0]?.time)).toBe(1_720_000_000);
     expect(chartRows[1]).toMatchObject({ close: 104, high: 105 });
+  });
+
+  it("upserts equal-time candles with lossless provider ids and rejects stale echoes", () => {
+    const enormous = "90071992547409931234567890";
+    expect(compareCandleTradeIds(enormous, "90071992547409931234567889")).toBe(1);
+
+    const rest = {
+      ...candle({ close: 105, high: 106 }),
+      lastTradeId: enormous,
+      source: "rest_snapshot" as const,
+    };
+    const staleStream = {
+      ...candle({ close: 103, high: 104 }),
+      lastTradeId: "90071992547409931234567889",
+      source: "websocket_update" as const,
+    };
+    const equalStream = {
+      ...candle({ close: 104, high: 105 }),
+      lastTradeId: enormous,
+      source: "websocket_update" as const,
+    };
+
+    expect(upsertChartCandles([rest], [staleStream, equalStream])).toEqual([rest]);
+    expect(upsertChartCandles([equalStream], [rest])).toEqual([rest]);
   });
 
   it("uses provider volume and directional colors", () => {
@@ -119,7 +177,14 @@ describe("Light it up chart adapter", () => {
 
   it("keeps a real chart host mounted when history is initially empty", () => {
     const { rerender } = render(
-      createElement(MarketChart, { candles: [], symbol: "ETH", theme: "chronos" }),
+      createElement(MarketChart, {
+        candles: [],
+        symbol: "ETH",
+        theme: "chronos",
+        environment: "core",
+        marketId: 7,
+        resolution: "1h",
+      }),
     );
 
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
@@ -136,13 +201,184 @@ describe("Light it up chart adapter", () => {
       candles: liveCandles,
       symbol: "ETH",
       theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
     }));
 
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
-    expect(chartHarness.candleSetData).toHaveBeenLastCalledWith([
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
+    expect(chartHarness.candleUpdate).toHaveBeenLastCalledWith(
       expect.objectContaining({ time: 1_720_000_000, close: 102 }),
-    ]);
-    expect(chartHarness.fitContent).toHaveBeenCalledTimes(1);
+      false,
+    );
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
+  });
+
+  it("shows the latest 100 bars once and follows only an already-live range", () => {
+    const initial = Array.from({ length: 120 }, (_, index) => candle({
+      timestamp: 1_720_000_000_000 + index * 60_000,
+      open: 100 + index,
+      close: 101 + index,
+      high: 102 + index,
+      low: 99 + index,
+    }));
+    const { rerender } = render(createElement(MarketChart, {
+      candles: initial,
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1m",
+    }));
+
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 20, to: 126 });
+
+    chartHarness.getVisibleLogicalRange.mockReturnValue({ from: 20, to: 126 });
+    const next = candle({
+      timestamp: 1_720_000_000_000 + 120 * 60_000,
+      open: 220,
+      close: 221,
+      high: 222,
+      low: 219,
+    });
+    rerender(createElement(MarketChart, {
+      candles: [...initial, next],
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1m",
+    }));
+
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
+    expect(chartHarness.candleUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ time: 1_720_007_200, close: 221 }),
+      false,
+    );
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 21, to: 127 });
+
+    chartHarness.getVisibleLogicalRange.mockReturnValue({ from: 4, to: 45 });
+    const later = candle({
+      timestamp: 1_720_000_000_000 + 121 * 60_000,
+      open: 221,
+      close: 222,
+      high: 223,
+      low: 220,
+    });
+    rerender(createElement(MarketChart, {
+      candles: [...initial, next, later],
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1m",
+    }));
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 4, to: 45 });
+  });
+
+  it("preserves range through theme updates and resets it on an explicit resolution change", () => {
+    const rows = [candle()];
+    const { rerender } = render(createElement(MarketChart, {
+      candles: rows,
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
+      pricePrecision: 3,
+      priceMinMove: 0.001,
+    }));
+    const createdChart = chartHarness.createChart.mock.results[0]?.value;
+    expect(chartHarness.createChart).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        localization: expect.objectContaining({ timeFormatter: expect.any(Function) }),
+        timeScale: expect.objectContaining({
+          rightOffset: 7,
+          tickMarkFormatter: expect.any(Function),
+        }),
+      }),
+    );
+    expect(createdChart?.addSeries).toHaveBeenNthCalledWith(
+      1,
+      chartHarness.candlestickToken,
+      expect.objectContaining({
+        priceFormat: { type: "price", precision: 3, minMove: 0.001 },
+        priceLineVisible: true,
+        priceLineStyle: 1,
+      }),
+    );
+    expect(createdChart?.addSeries).toHaveBeenNthCalledWith(
+      2,
+      chartHarness.histogramToken,
+      expect.objectContaining({ lastValueVisible: true }),
+    );
+    chartHarness.getVisibleLogicalRange.mockReturnValue({ from: -3, to: 7 });
+
+    rerender(createElement(MarketChart, {
+      candles: rows,
+      symbol: "ETH",
+      theme: "celeris",
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
+      pricePrecision: 3,
+      priceMinMove: 0.001,
+    }));
+    expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
+    expect(chartHarness.chartApplyOptions).toHaveBeenCalled();
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: -3, to: 7 });
+
+    rerender(createElement(MarketChart, {
+      candles: rows,
+      symbol: "ETH",
+      theme: "celeris",
+      environment: "core",
+      marketId: 7,
+      resolution: "4h",
+      pricePrecision: 3,
+      priceMinMove: 0.001,
+    }));
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(2);
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
+  });
+
+  it("renders a DOM OHLC and volume legend from crosshair data with latest fallback", () => {
+    render(createElement(MarketChart, {
+      candles: [candle({ open: 100, high: 104, low: 98, close: 103, volumeBase: 12 })],
+      symbol: "ETH",
+      theme: "chronos",
+      pricePrecision: 2,
+    }));
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("O 100.00");
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("H 104.00");
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("Vol 12");
+
+    const handler = chartHarness.subscribeCrosshairMove.mock.calls[0]?.[0];
+    act(() => {
+      handler?.({
+        point: { x: 10, y: 10 },
+        seriesData: new Map([
+          [chartHarness.candleSeries, {
+            time: 1_720_000_000,
+            open: 90,
+            high: 95,
+            low: 89,
+            close: 94,
+          }],
+          [chartHarness.volumeSeries, { time: 1_720_000_000, value: 42 }],
+        ]),
+      });
+    });
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("O 90.00");
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("C 94.00");
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("Vol 42");
+
+    act(() => handler?.({ point: undefined, seriesData: new Map() }));
+    expect(screen.getByLabelText("ETH chart values").textContent).toContain("C 103.00");
   });
 });
 

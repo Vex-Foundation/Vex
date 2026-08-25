@@ -321,6 +321,8 @@ export const CH = {
   lighterTrading: {
     listMarkets: "vex:lighterTrading:listMarkets",
     getSnapshot: "vex:lighterTrading:getSnapshot",
+    startCandleSubscription: "vex:lighterTrading:startCandleSubscription",
+    stopCandleSubscription: "vex:lighterTrading:stopCandleSubscription",
   },
 
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)

@@ -531,7 +531,7 @@ describe("LighterClient URL selection", () => {
     mockOk({
       code: 200,
       r: "1m",
-      c: [{ t: 1717770000000, o: 1, h: 2, l: 1, c: 2, v: 3, V: 4, i: 5 }],
+      c: [{ t: 1717770000000, o: 1, h: 2, l: 1, c: 2, v: 3, V: 4, i: "5" }],
     });
     await client.getCandles("core", {
       marketId: 0,
@@ -544,6 +544,61 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("market_id")).toBe("0");
     expect(url.searchParams.get("resolution")).toBe("1m");
     expect(url.searchParams.get("count_back")).toBe("1");
+  });
+
+  it("preserves unsafe candle last-trade ids from numeric JSON lexemes", async () => {
+    const lastTradeId = "19694823713123456789";
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        code: 200,
+        r: "1m",
+        c: [{
+          t: 1717770000000,
+          o: 1,
+          h: 2,
+          l: 1,
+          c: 2,
+          v: 3,
+          V: 4,
+          marker: lastTradeId,
+        }],
+      }).replace(`\"marker\":\"${lastTradeId}\"`, `\"i\":${lastTradeId}`),
+    });
+
+    const response = await client.getCandles("core", {
+      marketId: 0,
+      resolution: "1m",
+      startTimestamp: 1717770000000,
+      endTimestamp: 1717770060000,
+    });
+
+    expect(response.c[0]?.i).toBe(lastTradeId);
+  });
+
+  it("normalizes sparse zero-volume REST candles", async () => {
+    mockOk({
+      code: 200,
+      r: "1m",
+      c: [{
+        t: 1717770000000,
+        O: 1,
+        H: 2,
+        L: 1,
+        C: 2,
+        i: "5",
+      }],
+    });
+
+    const response = await client.getCandles("core", {
+      marketId: 0,
+      resolution: "1m",
+      startTimestamp: 1717770000000,
+      endTimestamp: 1717770060000,
+    });
+
+    expect(response.c[0]).toMatchObject({ o: 1, h: 2, l: 1, c: 2, v: 0, V: 0 });
   });
 
   it("rejects broad candle ranges that exceed countBack", async () => {
@@ -707,7 +762,7 @@ describe("LighterClient validation", () => {
   });
 
   it("rejects overlarge candle responses", async () => {
-    const candle = { t: 1717770000000, o: 1, h: 2, l: 1, c: 2, v: 3, V: 4, i: 5 };
+    const candle = { t: 1717770000000, o: 1, h: 2, l: 1, c: 2, v: 3, V: 4, i: "5" };
     mockOk({ code: 200, r: "1m", c: Array.from({ length: 501 }, () => candle) });
     await expect(
       client.getCandles("core", {

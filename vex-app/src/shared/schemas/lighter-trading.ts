@@ -14,6 +14,17 @@ export const lighterTradingResolutionSchema = z.enum([
   "1w",
 ]);
 
+export const lighterTradingLiveResolutionSchema = z.enum([
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "4h",
+  "12h",
+  "1d",
+]);
+
 const marketIdSchema = z.number().int().min(0).max(65_535);
 const assetIdSchema = z.number().int().nonnegative();
 const decimalStringSchema = z
@@ -75,6 +86,36 @@ export const lighterTradingSnapshotInputSchema = z
   })
   .strict();
 
+export const lighterTradingCandleSubscriptionStartInputSchema = z
+  .object({
+    subscriptionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+    marketId: marketIdSchema,
+    resolution: lighterTradingLiveResolutionSchema,
+  })
+  .strict();
+
+export const lighterTradingCandleSubscriptionStartResultSchema = z
+  .object({
+    subscriptionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+    marketId: marketIdSchema,
+    resolution: lighterTradingLiveResolutionSchema,
+    status: z.literal("started"),
+  })
+  .strict();
+
+export const lighterTradingCandleSubscriptionStopInputSchema = z
+  .object({ subscriptionId: z.string().uuid() })
+  .strict();
+
+export const lighterTradingCandleSubscriptionStopResultSchema = z
+  .object({
+    subscriptionId: z.string().uuid(),
+    status: z.literal("stopped"),
+  })
+  .strict();
+
 const lighterTradingBookRowSchema = z
   .object({
     orderId: z.string().min(1).max(128).regex(/^\d+$/),
@@ -95,7 +136,7 @@ const lighterTradingTradeSchema = z
   })
   .strict();
 
-const lighterTradingCandleSchema = z
+export const lighterTradingCandleSchema = z
   .object({
     timestamp: z.number().int().nonnegative(),
     open: z.number().finite(),
@@ -104,6 +145,9 @@ const lighterTradingCandleSchema = z
     close: z.number().finite(),
     volumeBase: z.number().finite().nonnegative(),
     volumeQuote: z.number().finite().nonnegative(),
+    lastTradeId: z.string().min(1).max(128).regex(/^\d+$/).optional(),
+    providerResolution: lighterTradingResolutionSchema.optional(),
+    source: z.enum(["rest_snapshot", "websocket_update"]).optional(),
   })
   .strict()
   .refine(
@@ -112,6 +156,59 @@ const lighterTradingCandleSchema = z
       candle.low <= Math.min(candle.open, candle.close, candle.high),
     { message: "Invalid OHLC candle bounds." },
   );
+
+export const lighterTradingStreamCandleSchema = lighterTradingCandleSchema
+  .safeExtend({
+    lastTradeId: z.string().min(1).max(128).regex(/^\d+$/),
+    providerResolution: lighterTradingLiveResolutionSchema,
+    source: z.enum(["rest_snapshot", "websocket_update"]),
+  })
+  .strict();
+
+const lighterTradingCandleEventBaseSchema = z
+  .object({
+    subscriptionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+    marketId: marketIdSchema,
+    resolution: lighterTradingLiveResolutionSchema,
+    providerTimestamp: z.number().int().nonnegative(),
+    receivedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const lighterTradingCandleSnapshotEventSchema =
+  lighterTradingCandleEventBaseSchema
+    .extend({
+      status: z.literal("live"),
+      candles: z.array(lighterTradingStreamCandleSchema).min(1).max(500),
+    })
+    .strict();
+
+export const lighterTradingCandleUpdateEventSchema =
+  lighterTradingCandleEventBaseSchema
+    .extend({
+      status: z.literal("live"),
+      candles: z.array(lighterTradingStreamCandleSchema).min(1).max(50),
+    })
+    .strict();
+
+export const lighterTradingCandleConnectionStatusSchema = z.enum([
+  "connecting",
+  "live",
+  "reconnecting",
+  "delayed",
+  "unavailable",
+  "stopped",
+]);
+
+export const lighterTradingCandleStatusEventSchema =
+  lighterTradingCandleEventBaseSchema
+    .extend({
+      status: lighterTradingCandleConnectionStatusSchema,
+      providerTimestamp: z.number().int().nonnegative().nullable(),
+      candles: z.array(lighterTradingStreamCandleSchema).max(0),
+    })
+    .strict();
 
 export const lighterTradingSnapshotSchema = z
   .object({
@@ -158,6 +255,9 @@ export type LighterTradingEnvironment = z.infer<
 export type LighterTradingResolution = z.infer<
   typeof lighterTradingResolutionSchema
 >;
+export type LighterTradingLiveResolution = z.infer<
+  typeof lighterTradingLiveResolutionSchema
+>;
 export type LighterTradingMarket = z.infer<typeof lighterTradingMarketSchema>;
 export type LighterTradingListMarketsInput = z.infer<
   typeof lighterTradingListMarketsInputSchema
@@ -170,4 +270,32 @@ export type LighterTradingSnapshotInput = z.infer<
 >;
 export type LighterTradingSnapshot = z.infer<
   typeof lighterTradingSnapshotSchema
+>;
+export type LighterTradingCandle = z.infer<typeof lighterTradingCandleSchema>;
+export type LighterTradingStreamCandle = z.infer<
+  typeof lighterTradingStreamCandleSchema
+>;
+export type LighterTradingCandleSubscriptionStartInput = z.infer<
+  typeof lighterTradingCandleSubscriptionStartInputSchema
+>;
+export type LighterTradingCandleSubscriptionStartResult = z.infer<
+  typeof lighterTradingCandleSubscriptionStartResultSchema
+>;
+export type LighterTradingCandleSubscriptionStopInput = z.infer<
+  typeof lighterTradingCandleSubscriptionStopInputSchema
+>;
+export type LighterTradingCandleSubscriptionStopResult = z.infer<
+  typeof lighterTradingCandleSubscriptionStopResultSchema
+>;
+export type LighterTradingCandleSnapshotEvent = z.infer<
+  typeof lighterTradingCandleSnapshotEventSchema
+>;
+export type LighterTradingCandleUpdateEvent = z.infer<
+  typeof lighterTradingCandleUpdateEventSchema
+>;
+export type LighterTradingCandleConnectionStatus = z.infer<
+  typeof lighterTradingCandleConnectionStatusSchema
+>;
+export type LighterTradingCandleStatusEvent = z.infer<
+  typeof lighterTradingCandleStatusEventSchema
 >;

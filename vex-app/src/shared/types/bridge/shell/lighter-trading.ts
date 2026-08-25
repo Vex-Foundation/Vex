@@ -1,5 +1,12 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  LighterTradingCandleSnapshotEvent,
+  LighterTradingCandleStatusEvent,
+  LighterTradingCandleSubscriptionStartInput,
+  LighterTradingCandleSubscriptionStartResult,
+  LighterTradingCandleSubscriptionStopInput,
+  LighterTradingCandleSubscriptionStopResult,
+  LighterTradingCandleUpdateEvent,
   LighterTradingListMarketsInput,
   LighterTradingMarketList,
   LighterTradingSnapshot,
@@ -14,4 +21,19 @@ export interface LighterTradingBridge {
   readonly getSnapshot: (
     input: LighterTradingSnapshotInput,
   ) => Promise<Result<LighterTradingSnapshot>>;
+  readonly startCandleSubscription: (
+    input: LighterTradingCandleSubscriptionStartInput,
+  ) => Promise<Result<LighterTradingCandleSubscriptionStartResult>>;
+  readonly stopCandleSubscription: (
+    input: LighterTradingCandleSubscriptionStopInput,
+  ) => Promise<Result<LighterTradingCandleSubscriptionStopResult>>;
+  readonly onCandleSnapshot: (
+    callback: (event: LighterTradingCandleSnapshotEvent) => void,
+  ) => () => void;
+  readonly onCandleUpdate: (
+    callback: (event: LighterTradingCandleUpdateEvent) => void,
+  ) => () => void;
+  readonly onCandleStatus: (
+    callback: (event: LighterTradingCandleStatusEvent) => void,
+  ) => () => void;
 }

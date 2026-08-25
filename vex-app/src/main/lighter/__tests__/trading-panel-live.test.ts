@@ -1,7 +1,20 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { lighterTradingSnapshotSchema } from "@shared/schemas/lighter-trading.js";
 import {
+  lighterTradingCandleSnapshotEventSchema,
+  lighterTradingCandleUpdateEventSchema,
+  lighterTradingSnapshotSchema,
+  type LighterTradingCandleSnapshotEvent,
+  type LighterTradingCandleUpdateEvent,
+  type LighterTradingEnvironment,
+} from "@shared/schemas/lighter-trading.js";
+import {
+  defaultLighterCandleStreamSupervisorDeps,
+  LighterCandleStreamSupervisor,
+} from "../candle-stream.js";
+import {
+  readLighterTradingCandleHistory,
   readLighterTradingMarketList,
   readLighterTradingSnapshot,
 } from "../trading-panel-service.js";
@@ -56,5 +69,114 @@ describeLive("Light it up live read-only market surface", () => {
         })}\n`,
       );
     });
+
+    it(`streams and reconciles real ${environment} candles`, { timeout: 60_000 }, async () => {
+      const list = await readLighterTradingMarketList(environment);
+      const active = list.markets.filter((market) => market.status === "active");
+      const preferred = active.filter((market) =>
+        PREFERRED_SYMBOLS.includes(market.symbol.toUpperCase()),
+      );
+      const candidates = [...preferred, ...active].slice(0, 8);
+
+      let proof: Awaited<ReturnType<typeof readStreamParityProof>> | null = null;
+      for (const market of candidates) {
+        try {
+          proof = await readStreamParityProof(environment, market.marketId);
+          if (proof.commonClosedCandles > 0) break;
+        } catch {
+          proof = null;
+        }
+      }
+
+      expect(proof).not.toBeNull();
+      expect(proof?.commonClosedCandles).toBeGreaterThan(0);
+      expect(proof?.mismatches).toEqual([]);
+      process.stdout.write(
+        `${JSON.stringify({
+          event: "lighter.panel.live_candle_parity",
+          environment,
+          marketId: proof?.event.marketId,
+          resolution: proof?.event.resolution,
+          streamCandles: proof?.event.candles.length,
+          commonClosedCandles: proof?.commonClosedCandles,
+          liveUpdateCandles: proof?.liveUpdate.candles.length,
+        })}\n`,
+      );
+    });
   }
 });
+
+async function readStreamParityProof(
+  environment: LighterTradingEnvironment,
+  marketId: number,
+): Promise<{
+  readonly event: LighterTradingCandleSnapshotEvent;
+  readonly liveUpdate: LighterTradingCandleUpdateEvent;
+  readonly commonClosedCandles: number;
+  readonly mismatches: string[];
+}> {
+  const supervisor = new LighterCandleStreamSupervisor(
+    defaultLighterCandleStreamSupervisorDeps(),
+  );
+  const subscriptionId = randomUUID();
+  try {
+    const { event, liveUpdate } = await new Promise<{
+      readonly event: LighterTradingCandleSnapshotEvent;
+      readonly liveUpdate: LighterTradingCandleUpdateEvent;
+    }>((resolve, reject) => {
+      let snapshot: LighterTradingCandleSnapshotEvent | null = null;
+      const timeout = setTimeout(
+        () => reject(new Error("Timed out waiting for Lighter candle stream update.")),
+        30_000,
+      );
+      supervisor.subscribe(
+        `live-canary:${environment}`,
+        { subscriptionId, environment, marketId, resolution: "1m" },
+        (candidate) => {
+          const { kind, ...payload } = candidate;
+          if (kind === "snapshot") {
+            const parsed = lighterTradingCandleSnapshotEventSchema.safeParse(payload);
+            if (parsed.success) snapshot = parsed.data;
+            return;
+          }
+          if (kind !== "update" || snapshot === null) return;
+          const parsed = lighterTradingCandleUpdateEventSchema.safeParse(payload);
+          if (
+            !parsed.success
+            || !parsed.data.candles.some((candle) => candle.source === "websocket_update")
+          ) return;
+          clearTimeout(timeout);
+          resolve({ event: snapshot, liveUpdate: parsed.data });
+        },
+      );
+    });
+    const rest = await readLighterTradingCandleHistory({
+      environment,
+      marketId,
+      resolution: "1m",
+      count: 10,
+    });
+    const restByTime = new Map(rest.map((candle) => [candle.timestamp, candle]));
+    const common = event.candles
+      .slice(0, -1)
+      .filter((candle) => restByTime.has(candle.timestamp));
+    const mismatches: string[] = [];
+    for (const candle of common) {
+      const reference = restByTime.get(candle.timestamp)!;
+      if (
+        candle.open !== reference.open
+        || candle.high !== reference.high
+        || candle.low !== reference.low
+        || candle.close !== reference.close
+        || candle.volumeBase !== reference.volumeBase
+        || candle.volumeQuote !== reference.volumeQuote
+        || candle.lastTradeId !== reference.lastTradeId
+      ) {
+        mismatches.push(`${candle.timestamp}`);
+      }
+    }
+    return { event, liveUpdate, commonClosedCandles: common.length, mismatches };
+  } finally {
+    supervisor.stop();
+  }
+}
